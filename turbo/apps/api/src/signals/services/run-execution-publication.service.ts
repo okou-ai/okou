@@ -3,7 +3,6 @@ import type {
   ExecutionContext,
   PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { generateFirewallToken, generateSandboxToken } from "../auth/tokens";
@@ -105,12 +104,6 @@ export function buildExecutionContext(args: {
     featureFlags: _featureFlags,
     ...runnerContext
   } = args.preparedContext;
-  const bundledMountPaths = new Set([
-    ...args.contentBundles.skills.map((skill) => {
-      return skill.mountPath;
-    }),
-    ...(args.contentBundles.templates ?? []).map(templateGuidanceMountPath),
-  ]);
   return {
     ...runnerContext,
     contentBundles: args.contentBundles,
@@ -121,14 +114,11 @@ export function buildExecutionContext(args: {
     appendSystemPrompt: args.run.appendSystemPrompt,
     vars: { ...args.run.vars, ...args.preparedContext.vars },
     storageManifest: {
-      storageMounts: args.preparedContext.storageMounts
-        .filter((mount) => {
-          return !bundledMountPaths.has(mount.mountPath);
-        })
-        .map((storageMount) => {
-          const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
-          return mount;
-        }),
+      // The sole mount is member Memory, in a separate directory from the content bundles.
+      storageMounts: args.preparedContext.storageMounts.map((storageMount) => {
+        const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
+        return mount;
+      }),
     },
     sandboxToken: generateSandboxToken(
       args.run.userId,

@@ -1,6 +1,14 @@
 //! Translate the API's publication protocol into normalized execution inputs.
 
-use guest_contracts::agent_instructions::instruction_paths;
+use api_contracts::generated::constants::runners::paths::{
+    CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_CLAUDE_MEMORY_MOUNT_PATH, CANONICAL_CODEX_HOME_DIR,
+    CANONICAL_CODEX_MEMORY_MOUNT_PATH, CANONICAL_GUEST_HOME_DIR, CANONICAL_PI_MEMORY_MOUNT_PATH,
+    PI_AGENT_DIR,
+};
+use guest_contracts::{
+    agent_instructions::instruction_paths,
+    env::{CliAgentTypeSelection, CliFramework},
+};
 use runner_types::{
     storage_manifest::{
         INSTRUCTION_STORAGE_NAME, InstructionFile, StorageEntry, StorageManifest,
@@ -158,6 +166,25 @@ fn normalize(
     mut context: ExecutionContext,
     packages: ContentBundles,
 ) -> Result<ExecutionContext, String> {
+    let framework = CliAgentTypeSelection::parse(&context.cli_agent_type);
+    let (config_dir, memory_path) = match framework.framework() {
+        CliFramework::ClaudeCode | CliFramework::Antigravity => (
+            CANONICAL_CLAUDE_CONFIG_DIR,
+            CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+        ),
+        CliFramework::Codex => (CANONICAL_CODEX_HOME_DIR, CANONICAL_CODEX_MEMORY_MOUNT_PATH),
+        CliFramework::Pi => (PI_AGENT_DIR, CANONICAL_PI_MEMORY_MOUNT_PATH),
+    };
+    // The API still encodes paths for older Runners. Keep the decoded paths
+    // only when they agree with this Runner's framework layout.
+    if let Some(manifest) = &context.storage_manifest
+        && manifest
+            .artifacts
+            .iter()
+            .any(|entry| entry.vas_storage_name == "memory" && entry.mount_path != memory_path)
+    {
+        return Err("Member Memory path does not match the selected framework".into());
+    }
     let mut paths: HashSet<String> = context
         .storage_manifest
         .iter()
@@ -171,7 +198,7 @@ fn normalize(
         .collect();
     let mut entries = Vec::with_capacity(packages.skills.len() + 1);
     for skill in packages.skills {
-        validate_workflow_mount(&skill.mount_path)?;
+        validate_workflow_mount(&skill.mount_path, config_dir)?;
         if !paths.insert(skill.mount_path.clone()) {
             return Err("Conflicting content bundle mount".into());
         }
@@ -185,9 +212,8 @@ fn normalize(
         );
     }
     let instruction_file = if let Some(reference) = packages.instructions {
-        let framework = guest_contracts::env::CliAgentTypeSelection::parse(&context.cli_agent_type);
         let mount = instruction_paths(
-            Path::new("/home/user"),
+            Path::new(CANONICAL_GUEST_HOME_DIR),
             framework.normalized_cli_agent_type(),
         )
         .ok_or("Unsupported instruction framework")?

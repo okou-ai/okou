@@ -97,6 +97,8 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
         "size",
         "url",
         "mount",
+        "skill-framework",
+        "memory-framework",
         "duplicate",
         "storage-conflict",
         "instruction-conflict",
@@ -123,6 +125,15 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
             "mount" => {
                 body["contentBundles"]["skills"][0]["mountPath"] =
                     serde_json::json!("/home/user/.codex")
+            }
+            "skill-framework" => {
+                body["contentBundles"]["skills"][0]["mountPath"] =
+                    serde_json::json!("/home/user/.claude/skills/fixture-skill");
+            }
+            "memory-framework" => {
+                let memory = &mut body["storageManifest"]["storageMounts"][1];
+                memory["name"] = serde_json::json!("memory");
+                memory["mountPath"] = serde_json::json!("/home/user/.pi/agent/memory");
             }
             "duplicate" => {
                 let duplicate = body["contentBundles"]["skills"][0].clone();
@@ -151,14 +162,61 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
 }
 
 #[test]
-fn publication_stages_antigravity_instructions_for_its_global_rules() {
-    let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
-    body["cliAgentType"] = serde_json::json!("antigravity");
-    let context = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
-    assert_eq!(
-        context.instruction_file.unwrap().storage_mount,
-        "/home/user/.vm0/agent-instructions/antigravity"
-    );
+fn publication_binds_member_memory_and_skill_to_the_admitted_framework() {
+    let claude_memory = "/home/user/.claude/projects/-home-user-workspace/memory";
+    for (framework, skill_root, memory_path) in [
+        ("claude-code", "/home/user/.claude/skills", claude_memory),
+        (
+            "codex",
+            "/home/user/.codex/skills",
+            "/home/user/.codex/memories",
+        ),
+        (
+            "pi",
+            "/home/user/.pi/agent/skills",
+            "/home/user/.pi/agent/memory",
+        ),
+        ("antigravity", "/home/user/.claude/skills", claude_memory),
+    ] {
+        let skill_path = format!("{skill_root}/fixture-skill");
+        let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
+        body["cliAgentType"] = serde_json::json!(framework);
+        body["contentBundles"]["skills"][0]["mountPath"] = serde_json::json!(skill_path);
+        body["storageManifest"]["storageMounts"] = serde_json::json!([{
+            "name": "memory",
+            "storageId": "member-memory-id",
+            "versionId": "accepted-memory-version",
+            "mountPath": memory_path,
+            "writeback": true,
+            "missingRootPolicy": "preserveParentVersion",
+            "empty": true,
+        }]);
+        let context = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
+        let manifest = context.storage_manifest.unwrap();
+        assert!(
+            manifest
+                .storages
+                .iter()
+                .any(|entry| entry.mount_path == skill_path)
+        );
+        let [memory] = manifest.artifacts.as_slice() else {
+            panic!("expected one Member Memory writeback input for {framework}");
+        };
+        assert_eq!(memory.mount_path, memory_path);
+        assert_eq!(memory.vas_storage_id, "member-memory-id");
+        assert_eq!(memory.vas_version_id, "accepted-memory-version");
+        assert_eq!(memory.empty, Some(true));
+        assert_eq!(
+            memory.missing_root_policy,
+            Some(
+                api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy::PreserveParentVersion,
+            ),
+        );
+        assert_eq!(
+            context.instruction_file.unwrap().storage_mount,
+            format!("/home/user/.vm0/agent-instructions/{framework}"),
+        );
+    }
 }
 
 #[test]

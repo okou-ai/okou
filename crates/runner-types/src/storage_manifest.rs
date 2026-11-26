@@ -22,15 +22,12 @@ pub struct StorageManifest {
     pub artifacts: Vec<ArtifactEntry>,
 }
 
-pub fn validate_workflow_mount(mount_path: &str) -> Result<(), String> {
-    let name = [
-        "/home/user/.claude/skills/",
-        "/home/user/.codex/skills/",
-        "/home/user/.pi/agent/skills/",
-    ]
-    .iter()
-    .find_map(|prefix| mount_path.strip_prefix(prefix))
-    .ok_or("Workflow skill path is outside a framework skill directory")?;
+/// Validate the legacy path encoding against the selected framework's skill directory.
+pub fn validate_workflow_mount(mount_path: &str, config_dir: &str) -> Result<(), String> {
+    let name = mount_path
+        .strip_prefix(config_dir)
+        .and_then(|suffix| suffix.strip_prefix("/skills/"))
+        .ok_or("Workflow skill path does not match the selected framework")?;
     if name.is_empty()
         || name.len() > 64
         || !name
