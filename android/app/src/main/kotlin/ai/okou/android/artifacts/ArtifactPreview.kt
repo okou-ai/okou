@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -63,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
@@ -108,17 +110,27 @@ internal fun ArtifactPreview(
     onShare: (() -> Unit)?,
     sharing: Boolean,
     shareSnackbar: SnackbarHostState,
+    links: ArtifactLinkActions?,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val dates = rememberArtifactDates()
     val browser = LocalUriHandler.current
     val sourceFocus = remember { FocusRequester() }
+    val websiteLinkFocus = remember { FocusRequester() }
+    var websiteLinkFocused by remember { mutableStateOf(false) }
+    var restoreWebsiteLinkFocus by remember { mutableStateOf(false) }
     var browserUnavailable by remember { mutableStateOf(false) }
     LaunchedEffect(source?.id, restoreSourceFocus) {
         if (source != null && restoreSourceFocus) {
             sourceFocus.requestFocus()
             onSourceFocusRestored()
+        }
+    }
+    LaunchedEffect(links?.panelOpen) {
+        if (links?.panelOpen == false && restoreWebsiteLinkFocus) {
+            restoreWebsiteLinkFocus = false
+            websiteLinkFocus.requestFocus()
         }
     }
     Box(
@@ -139,53 +151,60 @@ internal fun ArtifactPreview(
         ) {
             val item = preview?.item
             if (item != null) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        item.title,
-                        Modifier.semantics { heading() }.testTag("artifact_preview_title"),
-                        style =
-                            MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.SemiBold,
-                            ),
-                        color = colors.onSurface,
-                    )
-                    val kind = stringResource(item.kind.label())
-                    val metadata =
-                        item.createdAt?.let {
-                            stringResource(
-                                R.string.artifact_metadata,
-                                kind,
-                                dates.timestamp(it, showDay = true),
-                            )
-                        } ?: kind
-                    Text(
-                        if (preview.access?.previewOnly == true)
-                            stringResource(
-                                R.string.artifact_metadata,
-                                metadata,
-                                stringResource(R.string.artifact_preview_only),
-                            )
-                        else metadata,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.onSurfaceVariant,
-                    )
-                    source
-                        ?.title
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { title ->
-                            Text(
-                                stringResource(R.string.artifact_source_name, title),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = colors.onSurfaceVariant,
-                            )
-                        }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            item.title,
+                            Modifier.semantics { heading() }.testTag("artifact_preview_title"),
+                            style =
+                                MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                            color = colors.onSurface,
+                        )
+                        val kind = stringResource(item.kind.label())
+                        val metadata =
+                            item.createdAt?.let {
+                                stringResource(
+                                    R.string.artifact_metadata,
+                                    kind,
+                                    dates.timestamp(it, showDay = true),
+                                )
+                            } ?: kind
+                        Text(
+                            if (preview.access?.previewOnly == true)
+                                stringResource(
+                                    R.string.artifact_metadata,
+                                    metadata,
+                                    stringResource(R.string.artifact_preview_only),
+                                )
+                            else metadata,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.onSurfaceVariant,
+                        )
+                        source
+                            ?.title
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { title ->
+                                Text(
+                                    stringResource(R.string.artifact_source_name, title),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.onSurfaceVariant,
+                                )
+                            }
+                    }
+                    if (links != null) ArtifactOverflowMenu(R.string.artifact_more_actions, links)
                 }
             }
             val save = preview?.access?.save
             val browserUrl = preview?.info?.browserUrl
             val reserveBrowserAction =
                 browserUrl != null || preview?.info?.resource is ArtifactResource.Site
-            if (source != null || save != null || reserveBrowserAction) {
+            val openWebsiteLink = links?.openWebsiteLink
+            if (source != null || save != null || reserveBrowserAction || openWebsiteLink != null) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -214,6 +233,19 @@ internal fun ArtifactPreview(
                             enabled = saveEnabled,
                         ) {
                             onSave(save)
+                        }
+                    }
+                    if (openWebsiteLink != null) {
+                        ArtifactAction(
+                            R.string.artifact_share_link,
+                            icon = R.drawable.ic_share,
+                            modifier =
+                                Modifier.focusRequester(websiteLinkFocus).onFocusChanged {
+                                    websiteLinkFocused = it.isFocused
+                                },
+                        ) {
+                            restoreWebsiteLinkFocus = websiteLinkFocused
+                            openWebsiteLink()
                         }
                     }
                     if (reserveBrowserAction) {

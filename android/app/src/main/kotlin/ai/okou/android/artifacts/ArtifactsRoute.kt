@@ -330,41 +330,50 @@ internal fun ArtifactSelectionPreview(
                 }
             }
         }
-        if (generated && preview?.isImage == true) {
-            val save = preview.access?.save
-            ArtifactImageViewer(
-                preview = preview,
-                model = model,
-                wide = wide,
-                backLabel = backLabel,
-                onBack = onBack,
-                saveEnabled = saveEnabled,
-                onSave = save?.let { { saveArtifact(it) } },
-                saveResult = saveResult,
-                onShare = onShare,
-                sharing = sharing,
-                shareSnackbar = shareSnackbar,
-                onSource = source?.let { { openSource(it) } },
-                restoreSourceFocus = page.restoreSource,
-                onSourceFocusRestored = { page.restoreSource = false },
-            )
-        } else {
-            toolbar()
-            ArtifactPreview(
-                preview,
-                rememberScrollState(),
-                wide,
-                source,
-                restoreSourceFocus = page.restoreSource,
-                onSourceFocusRestored = { page.restoreSource = false },
-                onSource = openSource,
-                saveEnabled = saveEnabled,
-                onSave = saveArtifact,
-                saveResult = saveResult,
-                onShare = onShare,
-                sharing = sharing,
-                shareSnackbar = shareSnackbar,
-            )
+        ArtifactLinkControls(
+            preview?.linkSource,
+            preview?.item?.title.orEmpty(),
+            model,
+            shareSnackbar,
+        ) { links ->
+            if (generated && preview?.isImage == true) {
+                val save = preview.access?.save
+                ArtifactImageViewer(
+                    preview = preview,
+                    model = model,
+                    wide = wide,
+                    backLabel = backLabel,
+                    onBack = onBack,
+                    saveEnabled = saveEnabled,
+                    onSave = save?.let { { saveArtifact(it) } },
+                    saveResult = saveResult,
+                    onShare = onShare,
+                    sharing = sharing,
+                    shareSnackbar = shareSnackbar,
+                    links = links,
+                    onSource = source?.let { { openSource(it) } },
+                    restoreSourceFocus = page.restoreSource,
+                    onSourceFocusRestored = { page.restoreSource = false },
+                )
+            } else {
+                toolbar()
+                ArtifactPreview(
+                    preview,
+                    rememberScrollState(),
+                    wide,
+                    source,
+                    restoreSourceFocus = page.restoreSource,
+                    onSourceFocusRestored = { page.restoreSource = false },
+                    onSource = openSource,
+                    saveEnabled = saveEnabled,
+                    onSave = saveArtifact,
+                    saveResult = saveResult,
+                    onShare = onShare,
+                    sharing = sharing,
+                    shareSnackbar = shareSnackbar,
+                    links = links,
+                )
+            }
         }
     }
 }

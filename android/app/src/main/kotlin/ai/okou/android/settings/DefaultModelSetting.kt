@@ -3,13 +3,13 @@ package ai.okou.android.settings
 import ai.okou.android.R
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsModal
+import ai.okou.android.SettingsRadioRow
 import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.settingsPanelContentPadding
-import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,8 +36,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -290,7 +287,7 @@ internal fun ModelPickerSheet(
                     }
                 }
                 Column(Modifier.fillMaxWidth().selectableGroup()) {
-                    ModelOption(
+                    SettingsRadioRow(
                         stringResource(R.string.settings_auto_model),
                         selected = selectedId == null,
                         enabled = true,
@@ -300,7 +297,7 @@ internal fun ModelPickerSheet(
                     )
                     for (choice in choices) {
                         key(choice.id) {
-                            ModelOption(
+                            SettingsRadioRow(
                                 choice.label,
                                 selected = choice.id == selected?.id,
                                 enabled = choice.canSelect,
@@ -360,62 +357,6 @@ internal fun ModelPickerSheet(
                     )
                 }
             }
-    }
-}
-
-@Composable
-private fun ModelOption(
-    title: String,
-    selected: Boolean,
-    enabled: Boolean,
-    supportingText: String?,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
-    val radioColor = MaterialTheme.colorScheme.primary
-    val disabledColor = colors.onSurface.copy(alpha = 0.38f)
-    val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
-            .clip(shape)
-            .updateFocusOutline(shape, foreground)
-            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
-            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                color = if (enabled) foreground else foreground.copy(alpha = 0.38f),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            supportingText?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant,
-                )
-            }
-        }
-        RadioButton(
-            selected,
-            onClick = null,
-            enabled = enabled,
-            colors =
-                RadioButtonDefaults.colors(
-                    selectedColor = radioColor,
-                    unselectedColor = colors.onSurfaceVariant,
-                    disabledSelectedColor = disabledColor,
-                    disabledUnselectedColor = disabledColor,
-                ),
-        )
     }
 }
 
