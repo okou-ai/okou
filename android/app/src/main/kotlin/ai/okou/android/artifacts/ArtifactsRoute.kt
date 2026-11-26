@@ -119,7 +119,7 @@ internal fun ArtifactsRoute(
         if (current == null || searchArtifactId != null) {
             onClose()
         } else {
-            page.restoreRow = current
+            page.restoreRow = current.takeIf { inputMode.inputMode == InputMode.Keyboard }
             page.selectedId = null
             model.select(null)
         }
@@ -151,6 +151,7 @@ internal fun ArtifactsRoute(
                 restoreRow = page.restoreRow,
                 onFocusRestored = { page.restoreRow = null },
                 onSelect = { item ->
+                    page.restoreRow = null
                     if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     page.selectedId = item.id

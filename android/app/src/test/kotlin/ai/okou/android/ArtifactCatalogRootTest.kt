@@ -1080,6 +1080,29 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    fun touchBackFromAnArtifactKeepsTheDirectorySearchUnfocused() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(true)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.summary.title)
+            compose.onNodeWithText(fixture.summary.title).performClick()
+            awaitText("Preview only", partial = true)
+
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+
+            compose.onNodeWithTag("artifact_query").assertIsNotFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
     fun openingTheSourceConversationLeavesFindAndBackRestoresThePreview() {
         val fixture = ArtifactApiFixture(app.fixture)

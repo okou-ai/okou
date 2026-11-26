@@ -16,6 +16,7 @@ import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
 import ai.okou.android.state.ChatSearchState
@@ -196,7 +197,7 @@ internal fun WorkflowScreen(
     }
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
     var discard by rememberWorkflowDiscardConfirmation(route.id, editing != null)
-    var restoreRow by remember { mutableStateOf<String?>(null) }
+    var restoreRow by remember(query, query.keyword, route.scope) { mutableStateOf<String?>(null) }
     val draftFocusAction = route.draftReturn?.action
     val canNavigate = editing == null && !state.writing
     fun exitEditor() {
@@ -209,7 +210,7 @@ internal fun WorkflowScreen(
             editing != null -> exitEditor()
             state.writing -> Unit
             route.id != null && !wide && !directEntry && !handoffPending -> {
-                restoreRow = route.id
+                restoreRow = route.id.takeIf { inputMode.inputMode == InputMode.Keyboard }
                 changeRoute(route.copy(id = null, tab = WorkflowTab.Instructions))
             }
             else -> onClose()
@@ -269,6 +270,7 @@ internal fun WorkflowScreen(
                     }
                 },
                 onSelect = {
+                    restoreRow = null
                     if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     if (it != route.id)
@@ -360,6 +362,7 @@ private fun WorkflowToolbar(
     title: String,
     onBack: () -> Unit,
     backEnabled: Boolean,
+    backModifier: Modifier = Modifier,
     action: (@Composable () -> Unit)? = null,
 ) {
     Column {
@@ -370,7 +373,7 @@ private fun WorkflowToolbar(
         ) {
             IconButton(
                 onClick = onBack,
-                modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
+                modifier = backModifier.workspaceSearchFocusOutline(CircleShape),
                 enabled = backEnabled,
             ) {
                 Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back))
@@ -469,14 +472,31 @@ private fun WorkflowDirectory(
             )
         }
     }
+    val rowFocus = remember { FocusRequester() }
+    val backFocus = remember { FocusRequester() }
     Column(
-        modifier.testTag("workflow_directory"),
+        modifier
+            .restoreDirectoryFocus(
+                restoreRow,
+                catalog != null || state.catalogFailure != null,
+                query.position,
+                rowFocus,
+                backFocus,
+                onRowRestored,
+                rowEnabled =
+                    restoreRow != null &&
+                        canNavigate &&
+                        state.catalogFailure != WorkflowReadFailure.Unavailable &&
+                        rows.any { it.id == restoreRow },
+            )
+            .testTag("workflow_directory"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         WorkflowToolbar(
             stringResource(R.string.workspace_workflows),
             onBack,
             backEnabled = inputEnabled && !state.writing,
+            backModifier = Modifier.focusRequester(backFocus),
         ) {
             val enabled =
                 (canNavigate || keepCreateFocus) &&
@@ -577,8 +597,9 @@ private fun WorkflowDirectory(
                                 connections,
                                 row.id == route.id,
                                 canNavigate,
-                                row.id == restoreRow,
-                                onRowRestored,
+                                modifier =
+                                    if (row.id == restoreRow) Modifier.focusRequester(rowFocus)
+                                    else Modifier,
                                 onSelect = { onSelect(row.id) },
                             )
                         }
@@ -665,8 +686,7 @@ private fun WorkflowRow(
     connections: Set<String>?,
     selected: Boolean,
     enabled: Boolean,
-    restoreFocus: Boolean,
-    onRestored: () -> Unit,
+    modifier: Modifier,
     onSelect: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -683,18 +703,11 @@ private fun WorkflowRow(
             sources.isEmpty() -> stringResource(R.string.workflow_manual)
             else -> sources.map { stringResource(it.label) }.joinToString(" · ")
         }
-    val requester = remember { FocusRequester() }
-    LaunchedEffect(restoreFocus, enabled) {
-        if (restoreFocus && enabled) {
-            requester.requestFocus()
-            onRestored()
-        }
-    }
     WorkspaceToolDirectoryRow(
         title = item.displayName ?: item.name,
         selected = selected,
         onClick = onSelect,
-        modifier = Modifier.focusRequester(requester).testTag("workflow_row_${item.id}"),
+        modifier = modifier.testTag("workflow_row_${item.id}"),
         enabled = enabled,
         leading = {
             Icon(painterResource(glyph), null, Modifier.size(20.dp), tint = colors.onBackground)
