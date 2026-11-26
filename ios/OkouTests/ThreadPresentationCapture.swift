@@ -1,4 +1,5 @@
 import CCStateSwiftUI
+import ChatDataTestSupport
 import SwiftUI
 import XCTest
 
@@ -16,14 +17,16 @@ final class ThreadPresentationCapture: XCTestCase {
     let morning = today.addingTimeInterval(9 * 3600 + 40 * 60)
     let first = ConversationHistoryFixture.id(201)
     let second = ConversationHistoryFixture.id(202)
-    let fixture = ConversationHistoryFixture(rows: [
-      try event(1, "input.prompt", "明天晨会几点开始？", first, evening),
-      try event(2, "output.message", "早上九点半开始，在二楼会议室。", first, evening.addingTimeInterval(2)),
-      try event(3, "run.completed", "", first, evening.addingTimeInterval(4)),
-      try event(4, "input.prompt", "把晨会的两个要点发我。", second, morning),
-      try event(5, "output.message", "先确认本周排期，再核对上线前的检查项。", second, morning.addingTimeInterval(4)),
-      try event(6, "run.completed", "", second, morning.addingTimeInterval(8))
-    ])
+    let fixture = ConversationHistoryFixture(
+      rows: [
+        try event(1, "input.prompt", "明天晨会几点开始？", first, evening),
+        try event(2, "output.message", "早上九点半开始，在二楼会议室。", first, evening.addingTimeInterval(2)),
+        try event(3, "run.completed", "", first, evening.addingTimeInterval(4)),
+        try event(4, "input.prompt", "把晨会的两个要点发我。", second, morning),
+        try event(
+          5, "output.message", "先确认本周排期，再核对上线前的检查项。", second, morning.addingTimeInterval(4)),
+        try event(6, "run.completed", "", second, morning.addingTimeInterval(8))
+      ], additional: { _ in ChatHTTPResponse(status: 404, body: "{}") })
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { workspace.close() }
     await workspace.refresh()
