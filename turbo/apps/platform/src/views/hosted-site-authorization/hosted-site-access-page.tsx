@@ -17,11 +17,11 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import { ResourceAccessCard } from "../components/resource-access-card.tsx";
 
-function hostedSiteAccessDescription(
+function useHostedSiteAccessDescription(
   reason: HostedSiteAccessReason,
   signedIn: boolean,
-  t: ReturnType<typeof useTranslation>["t"],
 ): string {
+  const { t } = useTranslation();
   return reason === "authenticate"
     ? signedIn
       ? t(($) => {
@@ -61,6 +61,7 @@ export function HostedSiteAccessCard({
   const pageSignal = useGet(pageSignal$);
   const [switching, switchAccount] = useLoadableSet(openClerkAddAccount$);
   const title = hostedSiteAccessTitle(reason);
+  const description = useHostedSiteAccessDescription(reason, Boolean(user));
   const showAuthorizationLink =
     reason === "authenticate" ||
     reason === "expired" ||
@@ -69,7 +70,7 @@ export function HostedSiteAccessCard({
     <div className="h-full overflow-y-auto">
       <ResourceAccessCard
         title={title}
-        description={hostedSiteAccessDescription(reason, Boolean(user), t)}
+        description={description}
         help={
           reason === "denied"
             ? t(($) => {
