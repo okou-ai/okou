@@ -1399,17 +1399,17 @@ connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	cust
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-029	planned		extension after sandbox reset		pilot
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-031	planned		extension after sandbox reset		pilot
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-032	planned		extension after sandbox reset		pilot
-connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-001	planned				B03
-connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-002	planned				B03
+connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-001	rewritten	118.7		src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-002	rewritten	75.0		src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03
 connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-003	planned				B03
-connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-007	planned				B03
-connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-008	planned				B03
-connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-009	planned				B03
-connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-011	planned				B03
-connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-012	planned				B03
-connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-014	planned				B03
-connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-019	planned				B03
-connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-020	planned				B03
+connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-007	rewritten	120.3		src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-008	rewritten	113.5		src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-009	rewritten	122.4		src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-011	rewritten	118.6		src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-012	rewritten	85.9		src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-014	rewritten	97.0		src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-019	rewritten	103.2		src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-020	rewritten	113.9		src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03
 connectors	src/signals/routes/__tests__/custom-connector-hostnames.test.ts	custom-connector-hostnames-001	planned				
 connectors	src/signals/routes/__tests__/custom-connector-hostnames.test.ts	custom-connector-hostnames-003	planned				
 connectors	src/signals/routes/__tests__/custom-connector-hostnames.test.ts	custom-connector-hostnames-004	planned				
