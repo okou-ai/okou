@@ -47,64 +47,24 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("keeps three-point timing enabled for Bingjie's user ID across workspaces", () => {
+  it("enables three-point timing for everyone and honors personal overrides", () => {
     const key = FeatureSwitchKey.ArtifactThreePointTiming;
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
-    for (const orgId of [
-      undefined,
-      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      "external-org",
-    ]) {
-      const identity = {
-        userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
-        orgId,
-      };
-      expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
-      expect(isFeatureEnabled(key, identity)).toBe(true);
-      expect(getAllFeatureStates(identity)[key]).toBe(true);
-      for (const enabled of [false, true]) {
-        const context = { ...identity, overrides: { [key]: enabled } };
-        expect(isFeatureEnabled(key, context)).toBe(enabled);
-        expect(getAllFeatureStates(context)[key]).toBe(enabled);
-      }
-    }
-  });
-
-  it("enables three-point timing in staff workspaces and honors personal overrides", () => {
-    const key = FeatureSwitchKey.ArtifactThreePointTiming;
-    for (const identity of [
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-      { userId: "staff-colleague", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-    ]) {
-      expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
-      expect(isFeatureEnabled(key, identity)).toBe(true);
-      expect(getAllFeatureStates(identity)[key]).toBe(true);
-      for (const enabled of [false, true]) {
-        const context = { ...identity, overrides: { [key]: enabled } };
-        expect(isFeatureEnabled(key, context)).toBe(enabled);
-        expect(getAllFeatureStates(context)[key]).toBe(enabled);
-      }
-    }
-  });
-
-  it("rejects three-point timing opt-ins outside its rollout audience", () => {
-    const key = FeatureSwitchKey.ArtifactThreePointTiming;
     for (const identity of [
       {},
-      { email: "bingjie@okou.ai" },
+      { orgId: "external-org" },
       { userId: "external-user", orgId: "external-org" },
-      { userId: "staff-colleague" },
-      {
-        userId: "staff-colleague",
-        email: "ethan@okou.ai",
-        orgId: "external-org",
-      },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { userId: "staff-colleague", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { userId: "staff-colleague", orgId: "external-org" },
     ]) {
-      expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
-      for (const overrides of [{}, { [key]: true }, { [key]: false }]) {
-        const context = { ...identity, overrides };
-        expect(isFeatureEnabled(key, context)).toBe(false);
-        expect(getAllFeatureStates(context)[key]).toBe(false);
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
+      expect(isFeatureEnabled(key, identity)).toBe(true);
+      expect(getAllFeatureStates(identity)[key]).toBe(true);
+      for (const enabled of [false, true]) {
+        const context = { ...identity, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
       }
     }
   });
