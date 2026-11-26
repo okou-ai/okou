@@ -205,7 +205,7 @@ private final class OnboardingHTTPFixture: Sendable {
       case ("GET", "/api/onboarding/status"):
         return ChatHTTPResponse(
           body: state.value.withLock {
-            "{\"needsOnboarding\":\(!($0.completed)),\"onboardingComplete\":\($0.completed),\"isAdmin\":false,\"hasOrg\":true,\"nativeOnboardingEnabled\":true}"
+            "{\"needsOnboarding\":\(!($0.completed)),\"onboardingComplete\":\($0.completed),\"isAdmin\":false,\"hasOrg\":true}"
           })
       case ("GET", "/api/onboarding/draft"):
         struct Response: Encodable { let draft: OnboardingDraft? }

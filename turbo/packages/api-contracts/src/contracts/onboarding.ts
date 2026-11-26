@@ -33,7 +33,6 @@ const c = initContract();
  * Onboarding status response schema
  */
 export const onboardingStatusResponseSchema = object({
-  nativeOnboardingEnabled: boolean().optional(),
   needsOnboarding: boolean(),
   onboardingComplete: boolean(),
   isAdmin: boolean(),
@@ -103,7 +102,9 @@ export type OnboardingRecommendationStatus = zInfer<
   typeof onboardingRecommendationStatusSchema
 >;
 
-/** Onboarding status contract for workspace members. */
+/**
+ * Onboarding status contract for workspace members
+ */
 export const onboardingStatusContract = c.router({
   getStatus: {
     method: "GET",

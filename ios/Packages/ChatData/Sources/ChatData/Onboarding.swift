@@ -5,8 +5,6 @@ public struct OnboardingStatus: Decodable, Sendable {
   public let onboardingComplete: Bool
   public let isAdmin: Bool
   public let hasOrg: Bool
-  public let nativeOnboardingEnabled: Bool
-  public var presentsOnboarding: Bool { nativeOnboardingEnabled && needsOnboarding }
 }
 
 public enum OnboardingStep: String, Codable, CaseIterable, Sendable {

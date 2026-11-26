@@ -239,6 +239,9 @@ final class WorkspaceLifecycle {
     store = workspaceStore
     onboarding = OnboardingStore(
       client: data.client, webURL: configuration.webURL, graph: workspaceStore.graph,
+      memberAccessEnabled: { [weak workspaceStore] in
+        workspaceStore?.settingsResources.featureSnapshot.current?.usesMemberConnectorAccess == true
+      },
       didFail: { [weak workspaceStore] in workspaceStore?.reportWorkspaceFailure($0) },
       signOut: { try await authentication.signOut() },
       didComplete: { [weak workspaceStore] threadID in

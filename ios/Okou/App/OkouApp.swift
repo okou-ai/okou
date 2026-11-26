@@ -168,7 +168,10 @@ struct AppRootView: View {
         if let workspace = lifecycle.workspace, workspace.data.scopeID == scopeID,
           scenePhase != .background || lifecycle.presentedScopeID == scopeID
         {
-          OnboardingGate(store: workspace.onboarding, needsUpgrade: workspace.store.needsUpgrade) {
+          OnboardingGate(
+            store: workspace.onboarding, workspace: workspace.store.settingsResources,
+            needsUpgrade: workspace.store.needsUpgrade
+          ) {
             WorkspaceRootView(
               authentication: authentication,
               workspaceID: workspaceID, userID: userID,

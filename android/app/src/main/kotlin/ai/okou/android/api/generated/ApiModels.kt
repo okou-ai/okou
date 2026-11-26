@@ -15844,7 +15844,6 @@ object InputStatusSerializer : KSerializer<InputStatus> {
 
 @Serializable
 data class OnboardingStatus(
-    val `nativeOnboardingEnabled`: Boolean? = null,
     val `needsOnboarding`: Boolean,
     val `onboardingComplete`: Boolean,
     val `isAdmin`: Boolean,

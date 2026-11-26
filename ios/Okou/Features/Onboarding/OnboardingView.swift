@@ -4,12 +4,63 @@ import SwiftUI
 
 struct OnboardingGate<Content: View>: View {
   let store: OnboardingStore
+  let workspace: WorkspaceResources
   let needsUpgrade: Bool
   @ViewBuilder let content: () -> Content
 
   var body: some View {
     StoreProvider(store.resources.store) {
-      OnboardingGateContent(store: store, needsUpgrade: needsUpgrade, content: content)
+      OnboardingFeatureGate(
+        store: store, workspace: workspace, needsUpgrade: needsUpgrade, content: content)
+    }
+  }
+}
+
+private struct OnboardingFeatureGate<Content: View>: View {
+  let store: OnboardingStore
+  let workspace: WorkspaceResources
+  let needsUpgrade: Bool
+  let content: () -> Content
+  @LoadableValue private var features: Loadable<SidebarFeatureSwitches>
+
+  init(
+    store: OnboardingStore, workspace: WorkspaceResources, needsUpgrade: Bool,
+    content: @escaping () -> Content
+  ) {
+    self.store = store
+    self.workspace = workspace
+    self.needsUpgrade = needsUpgrade
+    self.content = content
+    _features = LoadableValue(task: workspace.featureSwitches, keepLast: true)
+  }
+
+  var body: some View {
+    if needsUpgrade {
+      RequiredUpdateView()
+    } else {
+      switch features {
+      case .loading: ChatSettingsLoadingView(title: "Getting your workspace ready…")
+      case .hasError(let error):
+        OkouEmptyState(
+          "Unable to load your workspace", icon: "triangle-alert",
+          description: Text(ChatRequestFailure.message(for: error))
+        ) {
+          Button("Try again") {
+            do { try workspace.prepareSettings() } catch { store.report(error) }
+          }
+          .buttonStyle(OkouButtonStyle(isPrimary: true))
+          if store.canSignOut {
+            Button("Sign out") { Task { await store.signOut() } }
+              .buttonStyle(OkouButtonStyle(isPrimary: false))
+          }
+        }
+      case .hasData(let value):
+        if value.canOnboardNatively {
+          OnboardingGateContent(store: store, needsUpgrade: needsUpgrade, content: content)
+        } else {
+          content()
+        }
+      }
     }
   }
 }
@@ -57,7 +108,7 @@ private struct OnboardingGateContent<Content: View>: View {
             }
           }
         case .hasData(let value):
-          if value.presentsOnboarding
+          if value.needsOnboarding
             || (resolvedState?.task != nil && resolvedState?.didFinish != true)
           {
             OnboardingView(store: store)
@@ -69,7 +120,7 @@ private struct OnboardingGateContent<Content: View>: View {
     }
     .background(OkouColor.background.ignoresSafeArea())
     .onChange(of: scenePhase) { _, phase in
-      if phase == .active, status.data?.presentsOnboarding == true, !store.snapshot.isWorking,
+      if phase == .active, status.data?.needsOnboarding == true, !store.snapshot.isWorking,
         store.snapshot.task == nil
       {
         store.retry(.status)

@@ -76,6 +76,7 @@ final class OnboardingStore {
 
   init(
     client: APIClient, webURL: URL, graph: CCState.Store, locale: String = "en-US",
+    memberAccessEnabled: @escaping @MainActor () -> Bool = { false },
     didFail: @escaping @MainActor (Error) -> Void,
     signOut: (@MainActor () async throws -> Void)? = nil,
     didComplete: @escaping @MainActor (String?) async throws -> Void
@@ -92,7 +93,7 @@ final class OnboardingStore {
     connectors = ComposerConnectorStore(
       service: ChatComposerAccess(client: client),
       authorizationService: ChatConnectorService(client: client), webURL: webURL, graph: graph,
-      includesRemote: false, didFail: didFail)
+      includesRemote: false, memberAccessEnabled: memberAccessEnabled, didFail: didFail)
     commands = ChatCommands(client: client, sync: ChatSync(client: client))
     self.didFail = didFail
     signOutAction = signOut
@@ -247,6 +248,8 @@ final class OnboardingStore {
       if !closed { didFail(error) }
     }
   }
+
+  func report(_ error: Error) { didFail(error) }
 
   func retry(_ resource: OnboardingResources.Resource) {
     do { try resources.retry(resource) } catch {

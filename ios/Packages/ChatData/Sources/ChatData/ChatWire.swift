@@ -210,6 +210,7 @@ struct ChatEventRow: Decodable, Sendable {
 public struct SidebarFeatureSwitches: Codable, Sendable {
   public let effectiveSwitches: [String: Bool]
 
+  public var canOnboardNatively: Bool { effectiveSwitches["nativeOnboarding"] == true }
   public var canLinkSubscriptions: Bool { effectiveSwitches["subscriptionLinkingEntry"] == true }
   public var canManageConnectors: Bool { effectiveSwitches["iosConnectorManagement"] == true }
   public var usesMemberConnectorAccess: Bool {
