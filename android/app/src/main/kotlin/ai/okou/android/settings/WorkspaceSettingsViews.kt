@@ -145,8 +145,7 @@ internal fun WorkspaceSettingsDataPage(
     }
     when (destination) {
         SettingsDestination.ModelAccounts -> ModelAccounts(workspace, state, model::activate)
-        SettingsDestination.CreditBalance ->
-            CreditBalance(workspace, state, model.showWorkspaceCredits)
+        SettingsDestination.CreditBalance -> CreditBalance(workspace, state)
         else -> Unit
     }
 }
@@ -496,7 +495,6 @@ private fun resetLabel(value: Instant, locale: Locale): String {
 private fun CreditBalance(
     workspace: String,
     state: WorkspaceSettingsState,
-    showWorkspaceCredits: Boolean,
 ) {
     val member = state.usagePack.value
     val shared = state.workspaceCredits.value
@@ -512,7 +510,7 @@ private fun CreditBalance(
             )
         } else CreditReadState(state.usagePack)
     }
-    if (showWorkspaceCredits) {
+    if (state.showWorkspaceCredits) {
         SettingsSection(stringResource(R.string.settings_credit_workspace)) {
             if (shared != null) {
                 val byCategory =

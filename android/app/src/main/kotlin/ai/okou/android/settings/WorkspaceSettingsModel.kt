@@ -91,6 +91,7 @@ internal data class WorkspaceSettingsState(
     val accounts: SettingsRead<List<RecoverySubscriptionsSubscriptionsItem>> = SettingsRead(),
     val usagePack: SettingsRead<UsagePackCredits> = SettingsRead(),
     val workspaceCredits: SettingsRead<WorkspaceCreditSummary> = SettingsRead(),
+    val showWorkspaceCredits: Boolean = false,
     val switching: Map<ModelAccountProvider, AccountSwitch> = emptyMap(),
 )
 
@@ -100,13 +101,15 @@ internal constructor(
     private val service: WorkspaceSession,
     private val identity: WorkspaceIdentity,
     defaultModelStore: DefaultModelStore,
-    internal val showWorkspaceCredits: Boolean,
+    initialWorkspaceAdmin: Boolean,
+    private val readWorkspaceAdmin: suspend () -> Boolean,
     private val authorized: () -> Boolean,
     private val onSessionFailure: (Exception) -> Unit,
     private val cache: WorkspaceSettingsCache? = null,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
-    private val mutable = MutableStateFlow(WorkspaceSettingsState())
+    private val mutable =
+        MutableStateFlow(WorkspaceSettingsState(showWorkspaceCredits = initialWorkspaceAdmin))
     internal val uiState = mutable.asStateFlow()
     private val messages = Channel<SettingsNotice>(Channel.CONFLATED)
     internal val notices = messages.receiveAsFlow()
@@ -185,7 +188,7 @@ internal constructor(
                 val usagePack =
                     restore(WorkspaceSettingsResource.UsagePack, UsagePackCredits.serializer())
                 val credits =
-                    if (showWorkspaceCredits)
+                    if (mutable.value.showWorkspaceCredits)
                         restore(
                             WorkspaceSettingsResource.WorkspaceCredits,
                             WorkspaceCreditSummary.serializer(),
@@ -238,7 +241,7 @@ internal constructor(
     }
 
     private fun refreshWorkspaceCredits() {
-        if (!showWorkspaceCredits || workspaceCreditsRead?.isActive == true) return
+        if (workspaceCreditsRead?.isActive == true) return
         workspaceCreditsRead = viewModelScope.launch {
             read(
                 WorkspaceSettingsResource.WorkspaceCredits,
@@ -249,10 +252,31 @@ internal constructor(
                 },
                 { mutable.value.workspaceCredits },
                 onCachedFailure = ::reportCreditRefreshFailure,
+                beforeFetch = ::confirmWorkspaceCreditAccess,
             ) { data ->
                 mutable.update { it.copy(workspaceCredits = data) }
             }
         }
+    }
+
+    private suspend fun confirmWorkspaceCreditAccess(): Boolean {
+        val admin = readWorkspaceAdmin()
+        currentCoroutineContext().ensureActive()
+        if (!authorized()) return false
+        val current = mutable.value
+        if (admin != current.showWorkspaceCredits) {
+            mutable.value =
+                current.copy(showWorkspaceCredits = admin, workspaceCredits = SettingsRead())
+            if (!admin) {
+                cache?.save(
+                    identity,
+                    WorkspaceSettingsResource.WorkspaceCredits.cacheKey,
+                    WorkspaceCreditSummary.serializer(),
+                    null,
+                )
+            }
+        }
+        return admin
     }
 
     private fun refreshAccounts() {
@@ -412,6 +436,7 @@ internal constructor(
         fetch: suspend () -> T,
         state: () -> SettingsRead<T>,
         onCachedFailure: () -> Unit = {},
+        beforeFetch: (suspend () -> Boolean)? = null,
         publish: (SettingsRead<T>) -> Unit,
     ) {
         val token = Any()
@@ -420,9 +445,13 @@ internal constructor(
             val before = state()
             if (before.initialFailure) publish(SettingsRead())
             showProgress(resource, before.isStale(nowMillis()))
+            var checkAccess = beforeFetch
             for (attempt in 1..settingsReadAttempts) {
                 if (!canRead()) return
                 try {
+                    if (checkAccess?.invoke() == false) return
+                    // A billing retry can reuse the role confirmed for this visible refresh.
+                    checkAccess = null
                     val data = fetch()
                     currentCoroutineContext().ensureActive()
                     if (authorized()) {
