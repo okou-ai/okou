@@ -26,6 +26,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl
 
 internal const val CONNECTOR_ACCOUNT_NAME_LIMIT = 255
+internal const val CONNECTOR_EXTERNAL_CODE_LIMIT = 4096
 private const val RECENT_READ_LIMIT = 8
 private const val ACCOUNT_READBACK_LIMIT = 3
 private val CONNECTOR_READ_LIFETIME = 10.minutes
@@ -77,6 +78,12 @@ internal data class ConnectorAction(
 ) {
     val blocksOtherActions: Boolean
         get() = busy || reconciling || authorization != null
+
+    val awaitingExternalReceipt: Boolean
+        get() =
+            authorization is ConnectorAuthorization.External &&
+                (problem == ConnectorProblem.VerificationPending ||
+                    problem == ConnectorProblem.VerificationNetwork)
 }
 
 internal data class ConnectorImpact(val accountId: String, val read: ConnectorRead<Long>)
@@ -651,7 +658,7 @@ class ConnectorModel(
 
     internal fun openBrowser(launch: (HttpUrl) -> Boolean) {
         val action = mutableState.value.action ?: return
-        if (!open || !authorized() || action.busy) return
+        if (!open || !authorized() || action.busy || action.awaitingExternalReceipt) return
         val step = action.authorization ?: return
         if (authorizationExpired()) {
             // The device job may still be receiving the result of a poll sent before expiry.
@@ -758,15 +765,17 @@ class ConnectorModel(
     internal fun completeExternal(code: String) {
         val action = mutableState.value.action ?: return
         val step = action.authorization as? ConnectorAuthorization.External ?: return
-        if (!open || code.isBlank() || code.trim().length > 4096 || action.busy) return
-        if (authorizationExpired()) {
+        val trimmed = code.trim()
+        if (!open || trimmed.length !in 1..CONNECTOR_EXTERNAL_CODE_LIMIT || action.busy) return
+        // The server can still return the receipt of a completed session after its expiry.
+        if (authorizationExpired() && !action.awaitingExternalReceipt) {
             updateAction {
                 it.copy(authorization = null, problem = ConnectorProblem.AuthorizationIncomplete)
             }
             return
         }
         runAction(action) {
-            val connectionId = service.completeExternal(action.target.slug, step, code.trim())
+            val connectionId = service.completeExternal(action.target.slug, step, trimmed)
             finishAuthorization(action.target, connectionId)
         }
     }
@@ -834,7 +843,16 @@ class ConnectorModel(
             throw ApiFailure.IncompatibleResponse()
         }
         updateAction {
-            it.copy(authorization = ConnectorAuthorization.Receipt(receipt), reconciling = true)
+            val externalCodeSessionId =
+                when (val previous = it.authorization) {
+                    is ConnectorAuthorization.External -> previous.sessionId
+                    is ConnectorAuthorization.Receipt -> previous.externalCodeSessionId
+                    else -> null
+                }
+            it.copy(
+                authorization = ConnectorAuthorization.Receipt(receipt, externalCodeSessionId),
+                reconciling = true,
+            )
         }
         val connected = service.accountIsConnected(target.slug, receipt)
         val accounts = service.accounts(target.slug)
@@ -993,23 +1011,30 @@ class ConnectorModel(
                         error.status in 400..499 &&
                         error.status != 408 &&
                         error.status != 429
-                val canRetryBrowserReceipt = error.hasUncertainResponse() && !authorizationExpired()
+                val connectionFailed = error.connectionFailed()
+                val uncertain = error.hasUncertainResponse()
+                val canRetryBrowserReceipt = uncertain && !authorizationExpired()
                 if (definitive) pendingChange = null
                 updateAction {
+                    val checkExternalSession =
+                        it.authorization is ConnectorAuthorization.External &&
+                            (action.awaitingExternalReceipt || uncertain && !connectionFailed)
                     val verifying =
                         !definitive &&
-                            (it.reconciling || it.awaitingBrowserReceipt && canRetryBrowserReceipt)
+                            (it.reconciling ||
+                                it.awaitingBrowserReceipt && canRetryBrowserReceipt ||
+                                checkExternalSession)
                     it.copy(
                         reconciling = it.reconciling && !definitive,
                         authorization =
                             if (definitive && it.reconciling) null else it.authorization,
                         problem =
                             when {
-                                verifying && error.connectionFailed() ->
+                                verifying && connectionFailed ->
                                     ConnectorProblem.VerificationNetwork
                                 verifying -> ConnectorProblem.VerificationPending
-                                error.connectionFailed() -> ConnectorProblem.Network
-                                mayAuthorize && error.hasUncertainResponse() ->
+                                connectionFailed -> ConnectorProblem.Network
+                                mayAuthorize && uncertain ->
                                     ConnectorProblem.AuthorizationUnconfirmed
                                 else -> ConnectorProblem.Failed
                             },

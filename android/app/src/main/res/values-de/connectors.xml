@@ -72,6 +72,9 @@
     <string name="connector_change_failed">Aktion konnte nicht abgeschlossen werden. Prüfe das Konto und versuche es erneut.</string>
     <string name="connector_device_code">Gib diesen Code auf der Seite des Anbieters ein</string>
     <string name="connector_external_code">Autorisierungscode</string>
+    <string name="connector_checking_code">Wird geprüft…</string>
+    <string name="connector_external_code_too_long">Maximale Codelänge ist %1$d.</string>
+    <string name="connector_external_code_failed">Code konnte nicht bestätigt werden.</string>
     <string name="connector_external_instructions">Schließe die Autorisierung beim Anbieter ab und gib hier den Code ein.</string>
     <string name="connector_submit_code">Code bestätigen</string>
     <string name="connector_working">Konto wird geprüft…</string>

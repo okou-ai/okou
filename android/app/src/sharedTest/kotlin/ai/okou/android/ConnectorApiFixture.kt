@@ -35,9 +35,15 @@ internal const val CONNECTOR_AUTHORIZATION_URL = "https://provider.example/autho
 internal const val CONNECTOR_DEVICE_ACCOUNT = "10000000-0000-4000-8000-000000000006"
 internal const val CONNECTOR_DEVICE_EXAMPLE = "device-example"
 internal const val CONNECTOR_MANUAL_EXAMPLE = "manual-example"
+internal const val CONNECTOR_EXTERNAL_EXAMPLE = "external-example"
+internal const val CONNECTOR_EXTERNAL_ACCOUNT = "10000000-0000-4000-8000-000000000007"
+internal const val CONNECTOR_EXAMPLE_EXTERNAL_CODE = "fixture-authorization-code"
 internal const val CONNECTOR_EXAMPLE_DEVICE_CODE = "ABCD-1234"
 private const val DEVICE_POLL_PATH =
     "/api/connectors/$CONNECTOR_DEVICE_EXAMPLE/oauth/device/sessions/$CONNECTOR_OAUTH_ATTEMPT/poll"
+private const val EXTERNAL_START_PATH =
+    "/api/connectors/$CONNECTOR_EXTERNAL_EXAMPLE/external-code/sessions"
+private const val EXTERNAL_COMPLETE_PATH = "$EXTERNAL_START_PATH/$CONNECTOR_OAUTH_ATTEMPT/complete"
 
 internal data class FixtureConnectorIcon(
     val asset: String,
@@ -81,6 +87,11 @@ internal class ConnectorApiFixture(
     @Volatile var devicePollReplyGate: CountDownLatch? = null
     val devicePollRequests = AtomicInteger()
     val deviceStartRequests = AtomicInteger()
+    val externalCodeRequests = AtomicInteger()
+    val externalAccountReadStarted = CountDownLatch(1)
+    @Volatile var externalCodeReplyGate: CountDownLatch? = null
+    @Volatile var externalAccountReplyGate: CountDownLatch? = null
+    @Volatile var loseFirstExternalCodeReply = false
     @Volatile var loseRenameReply = false
     @Volatile var deferRenameCommit = false
     @Volatile var renameReplyGate: CountDownLatch? = null
@@ -131,6 +142,16 @@ internal class ConnectorApiFixture(
                     "engineering-team-execution",
                     null,
                     grantKind = "manual",
+                ),
+            )
+            add(
+                CatalogEntry(
+                    CONNECTOR_EXTERNAL_EXAMPLE,
+                    "External code sample",
+                    "Connect with an authorization code from the provider.",
+                    "engineering-team-execution",
+                    null,
+                    grantKind = "external-code",
                 ),
             )
         }
@@ -219,6 +240,13 @@ internal class ConnectorApiFixture(
                             },
                         )
                     }
+                    if (
+                        request.method == "GET" &&
+                            url.encodedPath == "/api/connector-accounts/$CONNECTOR_EXTERNAL_ACCOUNT"
+                    ) {
+                        externalAccountReadStarted.countDown()
+                        externalAccountReplyGate?.await()
+                    }
                     val response = synchronized(accounts) { respond(request) }
                     if (url.pathSegments.size == 3 && url.pathSegments[1] == "connector-catalog")
                         detailReplyGate?.await()
@@ -226,6 +254,8 @@ internal class ConnectorApiFixture(
                         devicePollReplyStarted.countDown()
                         devicePollReplyGate?.await()
                     }
+                    if (request.method == "POST" && url.encodedPath == EXTERNAL_COMPLETE_PATH)
+                        externalCodeReplyGate?.await()
                     if (
                         request.method == "PATCH" &&
                             url.pathSegments.getOrNull(1) == "connector-accounts"
@@ -588,6 +618,39 @@ internal class ConnectorApiFixture(
                     }
                 if (attempt == 1 && loseFirstDevicePollReply) rejected(503) else response
             }
+            path == EXTERNAL_START_PATH && request.method == "POST" -> {
+                val input = body(request)
+                if (
+                    input["authMethod"]?.jsonPrimitive?.content != "external-code" ||
+                        input["account"]?.jsonObject?.get("intent")?.jsonPrimitive?.content != "add"
+                )
+                    return rejected(400)
+                jsonResponse(
+                    """{"sessionId":"$CONNECTOR_OAUTH_ATTEMPT","sessionToken":"fixture-only","connectorSlug":"$CONNECTOR_EXTERNAL_EXAMPLE","status":"pending","authorizationUrl":"$CONNECTOR_AUTHORIZATION_URL","expiresIn":600}""",
+                )
+            }
+            path == EXTERNAL_COMPLETE_PATH && request.method == "POST" -> {
+                externalCodeRequests.incrementAndGet()
+                val input = body(request)
+                if (
+                    input["sessionToken"]?.jsonPrimitive?.content != "fixture-only" ||
+                        input["code"]?.jsonPrimitive?.content != CONNECTOR_EXAMPLE_EXTERNAL_CODE
+                )
+                    return rejected(400)
+                val firstCompletion = CONNECTOR_EXTERNAL_ACCOUNT !in accounts
+                accounts[CONNECTOR_EXTERNAL_ACCOUNT] =
+                    FixtureAccount(
+                        CONNECTOR_EXTERNAL_EXAMPLE,
+                        "Verified account",
+                        "external@example.com",
+                        authMethod = "external-code",
+                    )
+                if (firstCompletion && loseFirstExternalCodeReply) rejected(503)
+                else
+                    jsonResponse(
+                        """{"status":"complete","connectionId":"$CONNECTOR_EXTERNAL_ACCOUNT"}""",
+                    )
+            }
             path == "/api/connectors/$CONNECTOR_MANUAL_EXAMPLE/manual-grant" &&
                 request.method == "POST" -> {
                 val requestBody = body(request)
@@ -709,6 +772,8 @@ internal class ConnectorApiFixture(
         discoveryGate?.countDown()
         detailReplyGate?.countDown()
         devicePollReplyGate?.countDown()
+        externalCodeReplyGate?.countDown()
+        externalAccountReplyGate?.countDown()
         renameReplyGate?.countDown()
         defaultReplyGate?.countDown()
         chatOverrideReplyGate?.countDown()

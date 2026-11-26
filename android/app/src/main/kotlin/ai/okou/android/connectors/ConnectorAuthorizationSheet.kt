@@ -21,6 +21,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,11 +53,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
@@ -190,16 +193,32 @@ internal fun ConnectorAuthorizationSheet(
             if (canContinue && !browserOpened && action?.problem == null) continueInBrowser()
         }
     }
-    val code = remember((step as? ConnectorAuthorization.External)?.sessionId) { TextFieldState() }
+    val externalCodeSessionId =
+        when (step) {
+            is ConnectorAuthorization.External -> step.sessionId
+            is ConnectorAuthorization.Receipt -> step.externalCodeSessionId
+            else -> null
+        }
+    val code = remember(externalCodeSessionId) { TextFieldState() }
+    val codeLength = code.text.trim().length
+    val checkingCode = externalCodeSessionId != null && !canDismiss
+    val awaitingExternalReceipt = action?.awaitingExternalReceipt == true
     val submitLabel =
         when (step) {
             is ConnectorAuthorization.Browser ->
                 if (browserOpened) R.string.connector_verify_authorization
                 else R.string.connector_open_provider
             is ConnectorAuthorization.Device -> R.string.connector_continue_provider
-            is ConnectorAuthorization.External -> R.string.connector_submit_code
-            is ConnectorAuthorization.DeviceVerification,
-            is ConnectorAuthorization.Receipt -> R.string.connector_verify_authorization
+            is ConnectorAuthorization.External ->
+                when {
+                    checkingCode -> R.string.connector_checking_code
+                    awaitingExternalReceipt -> R.string.connector_verify_authorization
+                    else -> R.string.connector_submit_code
+                }
+            is ConnectorAuthorization.Receipt ->
+                if (checkingCode) R.string.connector_checking_code
+                else R.string.connector_verify_authorization
+            is ConnectorAuthorization.DeviceVerification -> R.string.connector_verify_authorization
             null ->
                 when (method?.grantKind) {
                     null -> null
@@ -212,7 +231,8 @@ internal fun ConnectorAuthorizationSheet(
         when (step) {
             is ConnectorAuthorization.Receipt,
             is ConnectorAuthorization.DeviceVerification -> canDismiss
-            is ConnectorAuthorization.External -> canContinue && code.text.trim().length in 1..4096
+            is ConnectorAuthorization.External ->
+                canContinue && codeLength in 1..CONNECTOR_EXTERNAL_CODE_LIMIT
             null ->
                 canModify &&
                     action?.problem != ConnectorProblem.AuthorizationUnconfirmed &&
@@ -229,31 +249,43 @@ internal fun ConnectorAuthorizationSheet(
         dismissible = canDismiss,
         expandInShortWindow = true,
         actions = {
-            ConnectorFormActions(
-                submitLabel?.let { stringResource(it) },
-                enabled = canSubmit,
+            OkouFormActions(
+                cancelLabel = stringResource(R.string.settings_cancel),
+                confirmLabel = submitLabel?.let { stringResource(it) },
                 cancel = cancel,
+                confirm = {
+                    when (step) {
+                        is ConnectorAuthorization.Browser ->
+                            if (browserOpened) model.checkAuthorization() else continueInBrowser()
+                        is ConnectorAuthorization.Device -> continueInBrowser()
+                        is ConnectorAuthorization.External ->
+                            model.completeExternal(code.text.toString())
+                        is ConnectorAuthorization.DeviceVerification,
+                        is ConnectorAuthorization.Receipt -> model.checkAuthorization()
+                        null ->
+                            if (method != null) {
+                                val values = options + fields.mapValues { it.value.text.toString() }
+                                model.startAuthorization(
+                                    account?.id,
+                                    method.id,
+                                    values.filterValues { it.isNotBlank() },
+                                )
+                            }
+                    }
+                },
+                confirmEnabled = canSubmit,
+                modifier = Modifier.padding(top = OkouFormLayout.ActionGap),
                 cancelEnabled = canDismiss,
-            ) {
-                when (step) {
-                    is ConnectorAuthorization.Browser ->
-                        if (browserOpened) model.checkAuthorization() else continueInBrowser()
-                    is ConnectorAuthorization.Device -> continueInBrowser()
-                    is ConnectorAuthorization.External ->
-                        model.completeExternal(code.text.toString())
-                    is ConnectorAuthorization.DeviceVerification,
-                    is ConnectorAuthorization.Receipt -> model.checkAuthorization()
-                    null ->
-                        if (method != null) {
-                            val values = options + fields.mapValues { it.value.text.toString() }
-                            model.startAuthorization(
-                                account?.id,
-                                method.id,
-                                values.filterValues { it.isNotBlank() },
-                            )
-                        }
-                }
-            }
+                confirmLayoutLabels =
+                    if (externalCodeSessionId == null) emptyList()
+                    else
+                        listOf(
+                            stringResource(R.string.connector_submit_code),
+                            stringResource(R.string.connector_checking_code),
+                            stringResource(R.string.connector_verify_authorization),
+                        ),
+                keepConfirmFocusWhilePending = checkingCode,
+            )
         },
     ) {
         ConnectorAuthorizationAccount(accountLabel)
@@ -312,29 +344,74 @@ internal fun ConnectorAuthorizationSheet(
                 if (browserOpened && action.problem == null && canDismiss)
                     ConnectorProgress(R.string.connector_waiting_provider)
             }
-            is ConnectorAuthorization.External -> {
-                Text(
-                    stringResource(R.string.connector_external_instructions),
-                    style = connectorBodyType(),
+            is ConnectorAuthorization.External,
+            is ConnectorAuthorization.Receipt ->
+                if (externalCodeSessionId != null) {
+                    ConnectorExternalCodeForm(
+                        code,
+                        tooLong = codeLength > CONNECTOR_EXTERNAL_CODE_LIMIT,
+                        editable =
+                            step is ConnectorAuthorization.External &&
+                                canContinue &&
+                                !awaitingExternalReceipt,
+                        problem = action?.problem.takeIf { canDismiss },
+                        openProvider = continueInBrowser,
+                    )
+                }
+            is ConnectorAuthorization.DeviceVerification -> Unit
+        }
+        if (externalCodeSessionId == null) ConnectorActionFeedback(action)
+    }
+}
+
+@Composable
+private fun ConnectorExternalCodeForm(
+    code: TextFieldState,
+    tooLong: Boolean,
+    editable: Boolean,
+    problem: ConnectorProblem?,
+    openProvider: () -> Unit,
+) {
+    val lengthError =
+        stringResource(R.string.connector_external_code_too_long, CONNECTOR_EXTERNAL_CODE_LIMIT)
+    val errorMessage =
+        when {
+            tooLong -> lengthError
+            problem == ConnectorProblem.Failed ->
+                stringResource(R.string.connector_external_code_failed)
+            problem == ConnectorProblem.Network || problem == ConnectorProblem.BrowserUnavailable ->
+                stringResource(connectorActionProblemMessage(problem))
+            else -> null
+        }
+    val colors = MaterialTheme.colorScheme
+    Text(stringResource(R.string.connector_external_instructions), style = connectorBodyType())
+    ConnectorButton(
+        stringResource(R.string.connector_open_provider),
+        openProvider,
+        treatment = ConnectorButtonTreatment.Outline,
+        enabled = editable,
+    )
+    ConnectorInput(
+        stringResource(R.string.connector_external_code),
+        code,
+        readOnly = !editable,
+        secret = true,
+        supportingText = {
+            Box {
+                OkouFormFieldSupport(
+                    lengthError,
+                    colors.onSurfaceVariant,
+                    Modifier.clearAndSetSemantics {}.alpha(0f),
                 )
-                ConnectorButton(
-                    stringResource(R.string.connector_open_provider),
-                    continueInBrowser,
-                    treatment = ConnectorButtonTreatment.Outline,
-                    enabled = canContinue,
-                )
-                ConnectorInput(
-                    stringResource(R.string.connector_external_code),
-                    code,
-                    readOnly = !canContinue,
-                    secret = true,
+                OkouFormFieldSupport(
+                    errorMessage
+                        ?: problem?.let { stringResource(connectorActionProblemMessage(it)) },
+                    if (errorMessage == null) colors.onSurfaceVariant else colors.error,
                 )
             }
-            is ConnectorAuthorization.DeviceVerification,
-            is ConnectorAuthorization.Receipt -> Unit
-        }
-        ConnectorActionFeedback(action)
-    }
+        },
+        errorMessage = errorMessage,
+    )
 }
 
 @Composable
@@ -506,25 +583,6 @@ private fun ConnectorInput(
             )
         }
     }
-}
-
-@Composable
-private fun ConnectorFormActions(
-    label: String?,
-    enabled: Boolean,
-    cancel: () -> Unit,
-    cancelEnabled: Boolean,
-    submit: () -> Unit,
-) {
-    OkouFormActions(
-        cancelLabel = stringResource(R.string.settings_cancel),
-        confirmLabel = label,
-        cancel = cancel,
-        confirm = submit,
-        confirmEnabled = enabled,
-        modifier = Modifier.padding(top = OkouFormLayout.ActionGap),
-        cancelEnabled = cancelEnabled,
-    )
 }
 
 private fun launchConnectorBrowser(context: Context, url: HttpUrl): Boolean =

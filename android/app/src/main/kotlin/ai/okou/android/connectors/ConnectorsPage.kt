@@ -515,7 +515,7 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                         style = connectorFeedbackType().copy(fontWeight = FontWeight(550)),
                     )
                 },
-                selectedContentColor = MaterialTheme.colorScheme.onBackground,
+                selectedContentColor = accent,
                 unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

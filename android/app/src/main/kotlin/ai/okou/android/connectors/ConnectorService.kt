@@ -169,7 +169,8 @@ internal data class ConnectorPermission(val name: String, val description: Strin
 internal data class ConnectorAccountTarget(val slug: String, val connectionId: String?)
 
 internal sealed interface ConnectorAuthorization {
-    data class Receipt(val connectionId: String) : ConnectorAuthorization
+    data class Receipt(val connectionId: String, val externalCodeSessionId: String? = null) :
+        ConnectorAuthorization
 
     data class Browser(val url: HttpUrl, val attemptId: String) : ConnectorAuthorization
 
