@@ -1645,7 +1645,7 @@ account-org	src/signals/routes/__tests__/hooks-ops.bdd.test.ts	hooks-ops.bdd-004
 account-org	src/signals/routes/__tests__/hooks-ops.bdd.test.ts	hooks-ops.bdd-005	planned				
 artifacts	src/signals/routes/__tests__/host-delete.bdd.test.ts	host-delete.bdd-001	skipped		slow-setup: 335-396 ms in-file even after a lighter case ran first (deployment, delivery and storage deletion flow)		B01
 artifacts	src/signals/routes/__tests__/host-delete.bdd.test.ts	host-delete.bdd-002	revisit		revisit: the only test in its file and 236 ms run alone, all of it first-test warm-up (115-131 ms when not first); resume: merge it into host.bdd.test.ts behind a lighter first case		B01
-artifacts	src/signals/routes/__tests__/host-delivery-authorization.test.ts	host-delivery-authorization-004	revisit		revisit: over 200 ms (276.4 ms, single idle run) after the file-level warm-up; evidence: draft at /home/user/pilot-env/wip/r8/host-delivery-authorization.test.ts; resume: split into segments with their own Given per the 200 ms rule, or record slow-setup with segment timings if Given plus the first When/Then exceeds 200 ms		B03
+artifacts	src/signals/routes/__tests__/host-delivery-authorization.test.ts	host-delivery-authorization-004	rewritten	147.2	split n=5: 1/5=100.0; 2/5=96.9; 3/5=102.3; 4/5=114.2; 5/5=147.2	src/signals/routes/__tests__/host-delivery-authorization.test.ts	B03
 artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-001	planned				pilot
 artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-003	planned				pilot
 artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-005	planned				pilot
