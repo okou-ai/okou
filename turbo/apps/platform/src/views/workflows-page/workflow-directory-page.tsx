@@ -696,9 +696,12 @@ export function WorkflowDirectoryPage() {
                   })}
                 </h1>
               </div>
+              {/* h-9 buttons are taller than the 28px title line; the negative
+                  margin stops them stretching the gap to the description. */}
               <WorkflowsHeaderActions
                 onImportSkills={importSkills}
                 redesigned
+                className="md:-my-1"
               />
             </div>
             <p className="hidden text-sm leading-relaxed text-muted-foreground md:block">
