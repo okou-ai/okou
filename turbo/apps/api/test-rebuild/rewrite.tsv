@@ -317,21 +317,21 @@ billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	bill
 billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-037	planned				
 billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-038	planned				
 billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-039	planned				
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-004	rewritten	117.7	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-007	rewritten	117.2	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-008	rewritten	171.6	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-009	rewritten	113.8	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-010	rewritten	138.4	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-011	rewritten	121.5	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-014	rewritten	72.9	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-019	rewritten	118.5	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-020	rewritten	113.7	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-022	rewritten	58.3	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-023	rewritten	31.7	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-024	rewritten	45.4	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-025	rewritten	41.1	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-028	rewritten	41.1	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-030	rewritten	40.9	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-004	rewritten	73.1	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-007	rewritten	128.8	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-008	rewritten	77.1	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-009	rewritten	68.1	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-010	rewritten	136.5	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-011	rewritten	116.4	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-014	rewritten	83.6	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-019	rewritten	119.3	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-020	rewritten	118.9	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-022	rewritten	64.0	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-023	rewritten	27.7	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-024	rewritten	47.1	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-025	rewritten	45.3	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-028	rewritten	43.6	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-030	rewritten	43.8	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot
 billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-001	rewritten	119.7		src/signals/routes/__tests__/billing-checkout-complete.test.ts	pilot
 billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-002	rewritten	163.5		src/signals/routes/__tests__/billing-checkout-complete.test.ts	pilot
 billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-005	rewritten	92.9		src/signals/routes/__tests__/billing-checkout-complete.test.ts	pilot

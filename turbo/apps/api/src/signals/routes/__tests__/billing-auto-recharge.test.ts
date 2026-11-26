@@ -179,6 +179,8 @@ describe("GET /api/billing/auto-recharge", () => {
 describe("PUT /api/billing/auto-recharge", () => {
   it("billing-auto-recharge-007 enables auto-recharge for a Pro workspace", async () => {
     await proWorkspace();
+    // Enabling below the threshold starts a recharge against the default card.
+    stripeInvoicing();
 
     const response = await accept(
       autoRechargeApi().update({
