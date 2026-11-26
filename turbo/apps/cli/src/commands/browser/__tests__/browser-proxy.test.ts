@@ -145,6 +145,29 @@ describe("chat-window CDP proxy protocol", () => {
     await provider?.close();
   });
 
+  it("retains the upstream close before disposal disconnects the local client", async () => {
+    provider.disconnectClients(1012, "private upstream detail");
+
+    const [, exit] = await Promise.all([connection.closed, proxy.closed]);
+    expect(exit).toStrictEqual({
+      reason: "upstream-socket-closed",
+      closeCode: 1012,
+      closedAt: expect.any(String),
+    });
+  });
+
+  it("distinguishes the final local client disconnect from an upstream close", async () => {
+    await connection.request("Target.getTargets");
+    connection.close();
+
+    const exit = await proxy.closed;
+    expect(exit).toStrictEqual({
+      reason: "last-client-disconnected",
+      closedAt: expect.any(String),
+    });
+    expect(provider.hasWindow(0)).toBe(true);
+  });
+
   it("serves independent clients when the provider admits only one connection", async () => {
     provider.limitConnections(1);
     const peer = await client(proxy.endpoint);

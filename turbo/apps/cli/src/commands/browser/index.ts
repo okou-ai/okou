@@ -36,6 +36,7 @@ import { captureBrowserInputTargets } from "./browser-user-action-capture";
 import { BrowserInputRequestError } from "./browser-input-request-error";
 import { getConnectedEmailLoginGuidance } from "./connected-email-login";
 import { launchWindowProxy } from "./proxy/launch";
+import { readProxyDiagnostic } from "./proxy/diagnostic";
 import {
   browserTabCommand,
   DEFAULT_AGENT_BROWSER_SESSION,
@@ -376,6 +377,7 @@ async function connectResponse(
     cdpUrl: response.cdpUrl,
     runtimeId: response.extension.runtimeId,
     windowId: response.browser.window.primaryWindowId,
+    instanceId: response.browser.window.instanceId,
   });
   try {
     connectAgentBrowser(proxy.endpoint, sessionName);
@@ -431,6 +433,26 @@ const leaseCommand = new Command()
       }
       console.log(chalk.green("✓ Managed browser lease extended"));
       console.log(chalk.dim(`  ${reclaimNotice(browser)}`));
+    }),
+  );
+
+const diagnoseCommand = new Command()
+  .name("diagnose")
+  .description("Read the last recorded Browser proxy exit in this Run")
+  .option("--json", "Print machine-readable output")
+  .action(
+    withErrorHandler(async (options: OutputOptions) => {
+      const lastProxyExit = await readProxyDiagnostic();
+      if (options.json) {
+        console.log(JSON.stringify({ lastProxyExit }));
+      } else if (lastProxyExit) {
+        const { closedAt, instanceId, reason, closeCode } = lastProxyExit;
+        console.log(
+          `Browser proxy closed at ${closedAt} for instance ${instanceId}: ${reason}${closeCode === undefined ? "" : ` (WebSocket ${closeCode})`}`,
+        );
+      } else {
+        console.log("No Browser proxy exit was recorded in this Run.");
+      }
     }),
   );
 
@@ -612,6 +634,7 @@ export const browserCommand = new Command()
   .addCommand(useCommand)
   .addCommand(restartCommand)
   .addCommand(leaseCommand)
+  .addCommand(diagnoseCommand)
   .addCommand(newCommand)
   .addCommand(statusCommand)
   .addCommand(viewCommand)

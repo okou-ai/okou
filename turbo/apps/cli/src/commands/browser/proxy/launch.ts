@@ -7,7 +7,9 @@ const readySchema = object({
 });
 const receiverSchema = object({ ready: literal(true) });
 
-export async function launchWindowProxy(config: ProxyConfiguration) {
+export async function launchWindowProxy(
+  config: ProxyConfiguration & { readonly instanceId: string },
+) {
   const entrypoint = process.argv[1];
   if (!entrypoint) throw new Error("Cannot locate the Okou CLI entrypoint");
   const runtimeArguments = entrypoint.endsWith(".ts") ? process.execArgv : [];
