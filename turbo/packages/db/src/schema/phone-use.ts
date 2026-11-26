@@ -25,7 +25,7 @@ export const phoneUseDevices = pgTable(
     sessionId: text("session_id").notNull(),
     generation: integer("generation").notNull().default(1),
     displayName: text("display_name").notNull(),
-    remoteDeviceId: uuid("remote_device_id"),
+    remoteDeviceId: uuid("remote_device_id").notNull(),
     osVersion: text("os_version").notNull(),
     appVersion: text("app_version").notNull(),
     ready: boolean("ready").notNull().default(false),

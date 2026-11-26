@@ -73,6 +73,23 @@ mod lifecycle {
             .process
             .replace_monitor_with_panic_trigger_for_test("kmsg")
             .await;
+        let outcome = handle
+            .drain_producer()
+            .drain(
+                NetworkLogDrainContext {
+                    run_id: RunId::new_v4(),
+                    source_ip: "10.0.0.1",
+                    path: std::path::Path::new("kmsg.log"),
+                    generation: 1,
+                },
+                CLEANUP_TIMEOUT,
+            )
+            .await;
+        assert_eq!(
+            outcome,
+            crate::network_log_drain::NetworkLogDrainOutcome::Acknowledged
+        );
+
         let monitor_lifetime = Arc::downgrade(&trigger);
         trigger.notify_one();
         drop(trigger);

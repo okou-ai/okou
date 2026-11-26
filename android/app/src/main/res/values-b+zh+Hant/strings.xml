@@ -80,7 +80,6 @@
     <string name="composer_check">查詢傳送結果</string>
     <string name="composer_retry">重試傳送同一則訊息</string>
     <string name="composer_not_observed">暫時查不到此訊息，傳送結果仍未確認。</string>
-    <string name="composer_request_failed">請求失敗，草稿和待確認訊息已保留。</string>
     <string name="updates_title">應用程式更新</string>
     <string name="updates_installed">目前版本 %1$s</string>
     <string name="updates_current">目前已是最新版</string>

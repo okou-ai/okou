@@ -4,6 +4,24 @@ use serde::de::DeserializeOwned;
 use zeroize::Zeroizing;
 
 const MAX_API_BYTES: usize = 512 * 1024;
+const DEVICE_POLICY: &str = "x-okou-remote-device-policy";
+
+pub(super) fn advertise_device_policy(request: &mut reqwest::Request) {
+    request.headers_mut().insert(
+        DEVICE_POLICY,
+        reqwest::header::HeaderValue::from_static("1"),
+    );
+}
+
+/// An older API or a flag-off resolve leaves the existing Run authority in use.
+/// Drain those Runs before turning the switch on. Retire this branch with the
+/// flag-off policy after the preceding API and Runner versions have drained.
+pub(super) fn uses_device_policy(response: &reqwest::Response) -> bool {
+    response
+        .headers()
+        .get(DEVICE_POLICY)
+        .is_some_and(|value| value == "1")
+}
 
 /// Admit a credential response without exposing its body or transport errors.
 /// The protocol owner maps every rejection to its existing authority failure.

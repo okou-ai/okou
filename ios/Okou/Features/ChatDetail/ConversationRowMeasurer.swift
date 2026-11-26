@@ -208,21 +208,14 @@ final class ConversationRowMeasurer<Content: View> {
     let traitCollection = input.controller.traitCollection
     return rows.map { row in
       switch row {
-      case .message(let message, _, let topSpacing, let pendingRetry, _, _, _):
+      case .message(let message, _, let topSpacing, _, _, _, _):
         let font = OkouTypography.font(forTextStyle: .body, compatibleWith: traitCollection)
         let text = NSAttributedString(string: message.text, attributes: [.font: font])
         let size = text.boundingRect(
           with: CGSize(width: (width - 40) * 0.85 - 28, height: .greatestFiniteMagnitude),
           options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
-        let status =
-          pendingRetry == nil
-          ? 0
-          : 8
-            + OkouTypography.font(
-              forTextStyle: .caption1, compatibleWith: traitCollection
-            ).lineHeight
         return Self.pixelHeight(
-          size.height + 28 + topSpacing + status, scale: traitCollection.displayScale)
+          size.height + 28 + topSpacing, scale: traitCollection.displayScale)
       case .footer(let state, _):
         return Self.pixelHeight(45 + (state.isActive ? 48 : 0), scale: traitCollection.displayScale)
       default:

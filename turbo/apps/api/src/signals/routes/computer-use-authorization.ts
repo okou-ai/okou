@@ -11,6 +11,7 @@ import {
 } from "../services/computer-use-authorization.service";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
+import { remoteDeviceMode$ } from "../services/remote-device-access";
 
 function expired() {
   return {
@@ -61,6 +62,9 @@ const createAuthorizationRequestInner$ = command(
       return badRequestMessage(
         "Computer Use authorization requires a run token",
       );
+    }
+    if (await set(remoteDeviceMode$, auth, signal)) {
+      return notFound("Computer Use authorization request not found");
     }
     const result = await set(
       createComputerUseAuthorizationRequest$,
@@ -132,6 +136,9 @@ const getAuthorizationRequestInner$ = command(
 const applyAuthorizationRequestInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
+    if (await set(remoteDeviceMode$, auth, signal)) {
+      return notFound("Computer Use authorization request not found");
+    }
     const params = get(applyParams$);
     const body = await get(applyBody$);
     signal.throwIfAborted();

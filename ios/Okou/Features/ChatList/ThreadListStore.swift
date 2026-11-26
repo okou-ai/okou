@@ -3,13 +3,12 @@ import ChatData
 import ChatDomain
 import Foundation
 import OSLog
-import Observation
 
 /// Navigation data and list presentation for one workspace.
-@MainActor @Observable
+@MainActor
 final class ThreadListStore {
   private let lifecycleTasks: LifecycleTasks
-  @ObservationIgnored private lazy var actions = ThreadListMutations(
+  private lazy var actions = ThreadListMutations(
     owner: self, client: client, commands: commands, lifecycleTasks: lifecycleTasks,
     readThreads: { [weak self] in self?.threads ?? [] },
     isClosed: { [weak self] in self?.closed != false },
@@ -23,25 +22,33 @@ final class ThreadListStore {
     },
     didMarkRead: { [weak self] in self?.markRead($0, through: $1) },
     advanceReadRevision: { [weak self] in self?.readRevision += 1 }, didFail: didFail)
-  @ObservationIgnored private let confirmedThreads = CCState.State<[ChatThread]>([])
-  @ObservationIgnored private let replaceThreads: Command<Void, [ChatThread]>
+  private let confirmedThreads = CCState.State<[ChatThread]>([])
+  private let replaceThreads: Command<Void, [ChatThread]>
   /// The confirmed chats, kept in the workspace session's Store. Views read it through
   /// CCStateSwiftUI; `threads` serves owner logic, actions and tests.
   let threadsValue: Computed<[ChatThread]>
-  @ObservationIgnored private let confirmedUnread = CCState.State<Set<String>>([])
-  @ObservationIgnored private let replaceUnread: Command<Void, Set<String>>
+  private let confirmedUnread = CCState.State<Set<String>>([])
+  private let replaceUnread: Command<Void, Set<String>>
   /// Chats the read-state snapshot marks unread, kept in the workspace session's Store. Views
   /// read it through CCStateSwiftUI; `unreadThreadIDs` serves owner logic, actions and tests.
   let unreadThreadIDsValue: Computed<Set<String>>
-  private(set) var markingAllRead = false
+  /// Mark-all-read, the indicators read's failure and the rename editor, kept in the workspace
+  /// session's Store. Views resolve `statusValue`; the accessors serve owner logic and tests.
+  struct Status: Equatable {
+    var markingAllRead = false
+    // Standalone indicator failures retain their own policy; list errors live on listValue.
+    var syncError: String?
+    var renameRequest: RenameRequest?
+    var isSavingRename = false
+    var renameTitle = ""
+  }
+  let statusValue: Computed<Status>
+  private let statusState = CCState.State(Status())
   private var readRevision = 0
   var actionError: String? { actions.actionError }
 
-  private var indicatorsError: String?
-  // Standalone indicator failures retain their own policy; list errors live on listValue.
-  var syncError: String? { indicatorsError }
-  @ObservationIgnored private let loadedThreads = CCState.State(false)
-  @ObservationIgnored private let replaceLoadedThreads: Command<Void, Bool>
+  private let loadedThreads = CCState.State(false)
+  private let replaceLoadedThreads: Command<Void, Bool>
   /// Whether a chat list has been published, kept in the workspace session's Store. Views read
   /// it through CCStateSwiftUI; `hasLoadedThreads` serves owner logic and tests.
   let hasLoadedThreadsValue: Computed<Bool>
@@ -69,23 +76,23 @@ final class ThreadListStore {
   private var appliedIndicatorsRevision = 0
   // Online running state can arrive before its list event. Keep the current
   // server set so later metadata can project it; running state is never persisted.
-  private(set) var activeThreadIDs: Set<String> = []
+  private let runningState = CCState.State<Set<String>>([])
+  /// The server's running chats from the last indicators read, kept in the workspace session's
+  /// Store; `activeThreadIDs` serves owner logic and tests.
+  let activeThreadIDsValue: Computed<Set<String>>
   private var creationRevision = 0
-  @ObservationIgnored private let listDemand = CCState.State<UUID?>(nil)
-  @ObservationIgnored private let listLifetime = CCState.State(true)
-  @ObservationIgnored private let reloadList: Command<Void, Void>
-  @ObservationIgnored private let clearList: Command<Void, Void>
+  private let listDemand = CCState.State<UUID?>(nil)
+  private let listLifetime = CCState.State(true)
+  private let reloadList: Command<Void, Void>
+  private let clearList: Command<Void, Void>
   // Original request ownership and coalescing, not a second read phase/result.
   private var listTask: Task<Void, Error>?
   private var listReadID: UUID?
   private var indicatorsTask: Task<Void, Never>?
   private var updateTasks: [String: Task<Void, Never>] = [:]
-  private(set) var renameRequest: RenameRequest?
-  private(set) var isSavingRename = false
-  var renameTitle = ""
   private var renameSessionID = UUID()
   private var closed = false
-  @ObservationIgnored private var blocked = false
+  private var blocked = false
 
   init(
     client: APIClient, sync: ChatSync, commands: ChatCommands, resources: WorkspaceResources,
@@ -101,6 +108,10 @@ final class ThreadListStore {
     lifecycleTasks: LifecycleTasks? = nil
   ) {
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
+    let statusState = statusState
+    statusValue = Computed { try $0(statusState) }
+    let runningState = runningState
+    activeThreadIDsValue = Computed { try $0(runningState) }
     let confirmedThreads = confirmedThreads
     threadsValue = Computed { try $0(confirmedThreads) }
     replaceThreads = Command { context, value in try context.set(confirmedThreads, value) }
@@ -159,7 +170,7 @@ final class ThreadListStore {
   }
 
   var stateStore: CCState.Store { resources.store }
-  @ObservationIgnored lazy var listValue = makeListValue()
+  lazy var listValue = makeListValue()
 
   private func makeListValue() -> Computed<Task<Void, Error>> {
     Computed { [weak self] get, options in
@@ -257,7 +268,7 @@ final class ThreadListStore {
     async let indicators: Void = includingIndicators ? refreshIndicators() : ()
     let refreshed = await refreshList(waitForCurrent: waitForCurrent)
     await indicators
-    return refreshed && indicatorsError == nil && !closed && !blocked
+    return refreshed && syncError == nil && !closed && !blocked
   }
 
   private func refreshList(waitForCurrent: Bool) async -> Bool {
@@ -399,7 +410,7 @@ final class ThreadListStore {
             if thread.isMuted && updated.indicator == .unread { updated.indicator = nil }
             return updated
           }
-          indicatorsError = nil
+          syncError = nil
           // Indicators cannot establish list membership before metadata arrives.
           if hasLoadedThreads { didRefresh(threads) }
         } catch is CancellationError {
@@ -407,7 +418,7 @@ final class ThreadListStore {
         } catch {
           guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
           if let api = error as? APIClientError, api.statusCode == 401 || api.statusCode == 426 {
-            indicatorsError = error.localizedDescription
+            syncError = error.localizedDescription
             blocked = api.statusCode == 426
             didFail(error)
           } else {
@@ -546,7 +557,7 @@ final class ThreadListStore {
     indicatorsTask = nil
     refreshAgain = false
     indicatorsAgain = false
-    indicatorsError = nil
+    syncError = nil
     return interruptedList
   }
 
@@ -582,6 +593,48 @@ extension ThreadListStore {
       do { try stateStore.set(replaceLoadedThreads, newValue) } catch {
         preconditionFailure("Cannot publish the loaded chat list: \(error)")
       }
+    }
+  }
+
+  /// The current value of `statusValue`.
+  var status: Status { confirmed(statusValue) }
+  private(set) var markingAllRead: Bool {
+    get { status.markingAllRead }
+    set { updateStatus { $0.markingAllRead = newValue } }
+  }
+  private(set) var syncError: String? {
+    get { status.syncError }
+    set { updateStatus { $0.syncError = newValue } }
+  }
+  private(set) var renameRequest: RenameRequest? {
+    get { status.renameRequest }
+    set { updateStatus { $0.renameRequest = newValue } }
+  }
+  private(set) var isSavingRename: Bool {
+    get { status.isSavingRename }
+    set { updateStatus { $0.isSavingRename = newValue } }
+  }
+  var renameTitle: String {
+    get { status.renameTitle }
+    set { updateStatus { $0.renameTitle = newValue } }
+  }
+
+  private(set) var activeThreadIDs: Set<String> {
+    get { confirmed(activeThreadIDsValue) }
+    set {
+      guard newValue != activeThreadIDs else { return }
+      do { try stateStore.set(runningState, newValue) } catch {
+        preconditionFailure("Cannot publish running chats: \(error)")
+      }
+    }
+  }
+
+  private func updateStatus(_ change: (inout Status) -> Void) {
+    var next = status
+    change(&next)
+    guard next != status else { return }
+    do { try stateStore.set(statusState, next) } catch {
+      preconditionFailure("Cannot publish the chat list status: \(error)")
     }
   }
 

@@ -25,6 +25,7 @@ import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -645,7 +646,7 @@ private fun FeedbackActions(data: SnackbarData, modifier: Modifier) {
     val label = visuals.actionLabel
     val dismissible = visuals.withDismissAction
     if (label == null && !dismissible) return
-    val accent = SnackbarDefaults.actionColor
+    val accent = SnackbarDefaults.actionContentColor
     Row(
         modifier = modifier.focusGroup(),
         horizontalArrangement = Arrangement.spacedBy(feedbackActionGap),
@@ -657,8 +658,9 @@ private fun FeedbackActions(data: SnackbarData, modifier: Modifier) {
                 modifier =
                     Modifier.weight(1f, fill = false)
                         .sizeIn(minWidth = feedbackTouchTarget, minHeight = feedbackTouchTarget)
-                        .updateFocusOutline(CircleShape, accent),
+                        .updateFocusOutline(ButtonDefaults.textShape, accent),
                 enabled = action?.content?.value?.enabled ?: true,
+                contentPadding = PaddingValues(horizontal = 8.dp),
                 colors =
                     ButtonDefaults.textButtonColors(
                         contentColor = accent,
@@ -678,6 +680,7 @@ private fun FeedbackActions(data: SnackbarData, modifier: Modifier) {
                     painterResource(R.drawable.ic_close),
                     stringResource(R.string.chat_feedback_dismiss),
                     Modifier.size(24.dp),
+                    tint = SnackbarDefaults.dismissActionContentColor,
                 )
             }
         }
@@ -701,7 +704,7 @@ private fun FeedbackLayout(
         val loose = bounds.copy(minWidth = 0, minHeight = 0)
         val buttons = children.getOrNull(1)?.measure(loose)
         val width = bounds.maxWidth
-        val maxTextWidth = width - (buttons?.width ?: 0) - feedbackActionGap.roundToPx()
+        val maxTextWidth = width - (buttons?.width ?: 0) - 8.dp.roundToPx()
         val inline = buttons != null && maxTextWidth >= (textSize.toDp() * 8).roundToPx()
         val stackedHeight = if (inline) 0 else buttons?.height ?: 0
         val text =

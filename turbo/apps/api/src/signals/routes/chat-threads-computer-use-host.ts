@@ -15,6 +15,7 @@ import { nowDate } from "../../lib/time";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
 import { updateOwnedChatThreadWithEvent$ } from "../services/chat-thread-owned-update.service";
+import { remoteDeviceMode$ } from "../services/remote-device-access";
 import type { RouteEntry } from "../route-entry";
 
 const threadExists$ = command(
@@ -108,6 +109,9 @@ const updateComputerUseHostInner$ = command(
       );
     }
     if (hostId !== null) {
+      if (await set(remoteDeviceMode$, auth, signal)) {
+        return notFound("Computer-use host not found");
+      }
       if (
         !(await set(
           computerUseHostExists$,

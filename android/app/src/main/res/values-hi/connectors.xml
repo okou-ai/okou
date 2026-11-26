@@ -72,6 +72,9 @@
     <string name="connector_change_failed">यह कार्रवाई पूरी नहीं हो सकी। खाता जाँचें और फिर कोशिश करें।</string>
     <string name="connector_device_code">यह कोड सेवा प्रदाता के पेज पर डालें</string>
     <string name="connector_external_code">अनुमति का कोड</string>
+    <string name="connector_checking_code">जाँच हो रही है…</string>
+    <string name="connector_external_code_too_long">कोड की अधिकतम लंबाई %1$d है।</string>
+    <string name="connector_external_code_failed">कोड की पुष्टि नहीं हो सकी।</string>
     <string name="connector_external_instructions">सेवा प्रदाता के पेज पर अनुमति दें, फिर उसका कोड यहाँ डालें।</string>
     <string name="connector_submit_code">कोड की पुष्टि करें</string>
     <string name="connector_working">खाते की जाँच हो रही है…</string>

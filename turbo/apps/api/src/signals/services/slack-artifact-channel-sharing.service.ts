@@ -10,8 +10,6 @@ import {
 } from "zod";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { HostedSiteShareAccount } from "@okouai/api-contracts/contracts/hosted-site-sharing";
-import { hostedSiteShareEmailSchema } from "@okouai/api-contracts/validators/hosted-site-sharing";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import {
@@ -24,20 +22,28 @@ import {
 import { db$ } from "../external/db";
 import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
+import { slackArtifactPreviewBlocks } from "../../lib/slack-artifact-preview";
 import {
   createSlackClient,
+  unfurlSlackLinks,
   type SlackUserInfo,
 } from "../external/slack-message-client";
+import {
+  artifactChannelMemberAccess$,
+  type ChannelMemberAccess,
+  type ArtifactChannelRecipient,
+} from "./artifact-channel-access.service";
+import { grantArtifactChannelMembers$ } from "./artifact-channel-grants.service";
+import { artifactChannelPreview$ } from "./artifact-channel-preview.service";
+import { slackPreviewImageUrl } from "./slack-preview-image.service";
 import { settle } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
-  ownedSlackSharingResource$,
-  resolveSlackSharingResource$,
-  type SlackSharingResource,
-} from "./slack-artifact-sharing-resource.service";
-import { shareFileArtifact$ } from "./artifact-file-sharing.service";
-import { shareHostedSite$ } from "./hosted-site-sharing.service";
+  channelSharingResource$,
+  resolveChannelSharingResource$,
+  type ChannelSharingResource,
+} from "./artifact-channel-resource.service";
 import { consumeHostedSiteSharingQuota$ } from "./hosted-site-sharing-quota.service";
 import { updateArtifactShare$ } from "./artifact-shares.service";
 import { updateHostedSiteVisibility$ } from "./hosted-site-access.service";
@@ -101,13 +107,15 @@ const slackActor$ = command(
     return {
       userId: connection.userId,
       botToken: token,
+      canUnfurl:
+        scopes.includes("links:read") && scopes.includes("links:write"),
       client: createSlackClient(token, { automaticRetries: false }),
     };
   },
 );
 
 const sharingEnabled$ = command(
-  async ({ set }, resource: SlackSharingResource, signal: AbortSignal) => {
+  async ({ set }, resource: ChannelSharingResource, signal: AbortSignal) => {
     const context = await set(
       loadUserFeatureSwitchContext$,
       resource.orgId,
@@ -121,212 +129,44 @@ const sharingEnabled$ = command(
   },
 );
 
-interface ChannelRecipient {
-  readonly slackUserId: string;
-  readonly email: string;
-  readonly recipient: HostedSiteShareAccount | undefined;
-}
 interface ChannelCoverage {
-  readonly recipients: readonly ChannelRecipient[];
+  readonly recipients: readonly ArtifactChannelRecipient[];
   readonly unresolved: readonly string[];
   readonly unconfirmed: number;
+  readonly pendingInvitations: number;
   readonly complete: boolean;
   readonly senderIsMember: boolean;
 }
-
-type MemberAccess =
-  | { readonly kind: "covered" }
-  | { readonly kind: "unknown"; readonly slackUserId: string }
-  | { readonly kind: "recipient"; readonly value: ChannelRecipient };
-
-interface MemberInput {
-  readonly resource: SlackSharingResource;
-  readonly slackUserId: string;
-  readonly profile: SlackUserInfo;
-}
-
-function channelInvitation(
-  input: MemberInput,
-  recipient?: HostedSiteShareAccount,
-): MemberAccess {
-  const email = hostedSiteShareEmailSchema.safeParse(
-    recipient?.email ?? input.profile.email,
-  );
-  if (!email.success) {
-    return { kind: "unknown", slackUserId: input.slackUserId };
-  }
-  const existing = input.resource.shares.find((share) => {
-    return share.email === email.data;
-  });
-  if (existing) {
-    // A claimed invitation cannot be reassigned using a recycled email.
-    return existing.userId === null || existing.userId === recipient?.userId
-      ? { kind: "covered" }
-      : { kind: "unknown", slackUserId: input.slackUserId };
-  }
-  return {
-    kind: "recipient",
-    value: { slackUserId: input.slackUserId, email: email.data, recipient },
-  };
-}
-
-const workspaceMemberAccess$ = command(
-  async (
-    { get },
-    args: { readonly orgId: string; readonly userId: string },
-    signal: AbortSignal,
-  ) => {
-    const members = await get(
-      clerk$,
-    ).organizations.getOrganizationMembershipList({
-      organizationId: args.orgId,
-      userId: [args.userId],
-      limit: 1,
-    });
-    signal.throwIfAborted();
-    return members.data.some((member) => {
-      return (
-        member.organization.id === args.orgId &&
-        member.publicUserData?.userId === args.userId
-      );
-    });
-  },
-);
-
-const workspaceEmailAccess$ = command(
-  async (
-    { get },
-    args: { readonly orgId: string; readonly email: string | undefined },
-    signal: AbortSignal,
-  ) => {
-    const email = hostedSiteShareEmailSchema.safeParse(args.email);
-    if (!email.success) {
-      return false;
-    }
-    const members = await get(
-      clerk$,
-    ).organizations.getOrganizationMembershipList({
-      organizationId: args.orgId,
-      emailAddress: [email.data],
-      limit: 1,
-    });
-    signal.throwIfAborted();
-    const memberId = members.data.find((member) => {
-      return member.organization.id === args.orgId;
-    })?.publicUserData?.userId;
-    if (!memberId) {
-      return false;
-    }
-    const user = await findClerkUser(get(clerk$), memberId, signal);
-    return Boolean(
-      user &&
-      !user.banned &&
-      user.emailAddresses.some((address) => {
-        return (
-          address.verification?.status === "verified" &&
-          address.emailAddress.trim().toLowerCase() === email.data
-        );
-      }),
-    );
-  },
-);
-
-const linkedMemberAccess$ = command(
-  async (
-    { get, set },
-    args: MemberInput & { readonly userId: string },
-    signal: AbortSignal,
-  ): Promise<MemberAccess> => {
-    const user = await findClerkUser(get(clerk$), args.userId, signal);
-    if (!user || user.banned) {
-      return { kind: "unknown", slackUserId: args.slackUserId };
-    }
-    if (
-      args.resource.shares.some((share) => {
-        return share.userId === args.userId;
-      })
-    ) {
-      return { kind: "covered" };
-    }
-    if (
-      args.resource.audience === "organization" &&
-      (await set(
-        workspaceMemberAccess$,
-        { orgId: args.resource.orgId, userId: args.userId },
-        signal,
-      ))
-    ) {
-      return { kind: "covered" };
-    }
-    const emails = user.emailAddresses
-      .filter((email) => {
-        return email.verification?.status === "verified";
-      })
-      .map((email) => {
-        return email.emailAddress.trim().toLowerCase();
-      });
-    if (
-      args.resource.shares.some((share) => {
-        return share.userId === null && emails.includes(share.email);
-      })
-    ) {
-      return { kind: "covered" };
-    }
-    const email = emails[0];
-    if (!email) {
-      return { kind: "unknown", slackUserId: args.slackUserId };
-    }
-    return channelInvitation(args, {
-      userId: args.userId,
-      email,
-      name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
-    });
-  },
-);
 
 const channelMemberAccess$ = command(
   async (
     { set },
     args: {
-      readonly resource: SlackSharingResource;
+      readonly resource: ChannelSharingResource;
       readonly workspaceId: string;
       readonly slackUserId: string;
       readonly profile: SlackUserInfo | undefined;
       readonly userId: string | undefined;
     },
     signal: AbortSignal,
-  ): Promise<MemberAccess> => {
+  ): Promise<ChannelMemberAccess> => {
     const profile = args.profile;
     if (!profile) {
-      return { kind: "unknown", slackUserId: args.slackUserId };
+      return { kind: "unknown", memberId: args.slackUserId };
     }
     if (profile.deleted || profile.isBot) {
       return { kind: "covered" };
     }
-    const userId =
-      profile.teamId === args.workspaceId ? args.userId : undefined;
-    if (userId === args.resource.userId) {
-      return { kind: "covered" };
-    }
-    const input = {
-      resource: args.resource,
-      slackUserId: args.slackUserId,
-      profile,
-    };
-    if (userId) {
-      return set(linkedMemberAccess$, { ...input, userId }, signal);
-    }
-    if (
-      args.resource.audience === "organization" &&
-      (await set(
-        workspaceEmailAccess$,
-        { orgId: args.resource.orgId, email: profile.email },
-        signal,
-      ))
-    ) {
-      return { kind: "covered" };
-    }
-    return channelInvitation(input);
+    return await set(
+      artifactChannelMemberAccess$,
+      {
+        resource: args.resource,
+        memberId: args.slackUserId,
+        userId: profile.teamId === args.workspaceId ? args.userId : undefined,
+        email: profile.email,
+      },
+      signal,
+    );
   },
 );
 
@@ -336,7 +176,7 @@ const channelCoverage$ = command(
     { get, set },
     args: SlackActor & {
       readonly channelId: string;
-      readonly resource: SlackSharingResource;
+      readonly resource: ChannelSharingResource;
       readonly botToken: string;
     },
     signal: AbortSignal,
@@ -353,6 +193,7 @@ const channelCoverage$ = command(
         recipients: [],
         unresolved: [],
         unconfirmed: 0,
+        pendingInvitations: 0,
         complete: false,
         senderIsMember: false,
       };
@@ -362,6 +203,7 @@ const channelCoverage$ = command(
         recipients: [],
         unresolved: [],
         unconfirmed: 0,
+        pendingInvitations: 0,
         complete: true,
         senderIsMember: false,
       };
@@ -387,15 +229,16 @@ const channelCoverage$ = command(
     const members = listed.value.filter((id) => {
       return id !== args.slackUserId;
     });
-    const recipients: ChannelRecipient[] = [];
+    const recipients: ArtifactChannelRecipient[] = [];
     const unresolved: string[] = [];
     const seen = new Set<string>();
     let unconfirmed = 0;
+    let pendingInvitations = 0;
     for (let offset = 0; offset < members.length; offset += 10) {
       const access = await Promise.all(
         members
           .slice(offset, offset + 10)
-          .map(async (slackUserId): Promise<MemberAccess> => {
+          .map(async (slackUserId): Promise<ChannelMemberAccess> => {
             const profile = await settle(
               client.fetchUserIdentity(slackUserId),
               signal,
@@ -414,13 +257,18 @@ const channelCoverage$ = command(
               ),
               signal,
             );
-            return result.ok ? result.value : { kind: "unknown", slackUserId };
+            return result.ok
+              ? result.value
+              : { kind: "unknown", memberId: slackUserId };
           }),
       );
       signal.throwIfAborted();
       for (const member of access) {
+        if (member.kind === "invited") {
+          pendingInvitations++;
+        }
         if (member.kind === "unknown") {
-          unresolved.push(member.slackUserId);
+          unresolved.push(member.memberId);
         }
         if (member.kind !== "recipient" || seen.has(member.value.email)) {
           continue;
@@ -436,9 +284,88 @@ const channelCoverage$ = command(
       recipients,
       unresolved,
       unconfirmed,
+      pendingInvitations,
       complete: true,
       senderIsMember: true,
     };
+  },
+);
+
+function everyoneCanView(coverage: ChannelCoverage): boolean {
+  return (
+    coverage.complete &&
+    coverage.senderIsMember &&
+    coverage.recipients.length === 0 &&
+    coverage.unresolved.length === 0 &&
+    coverage.pendingInvitations === 0
+  );
+}
+
+const publishSlackChannelPreview$ = command(
+  async (
+    { set },
+    args: {
+      readonly resource: ChannelSharingResource;
+      readonly botToken: string;
+      readonly url: string;
+      readonly channelId: string;
+      readonly messageTs: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const preview = await set(artifactChannelPreview$, args.resource, signal);
+    if (!preview) {
+      return;
+    }
+    await unfurlSlackLinks(
+      args.botToken,
+      {
+        channel: args.channelId,
+        ts: args.messageTs,
+        unfurls: {
+          [args.url]: {
+            blocks: slackArtifactPreviewBlocks(args.url, {
+              ...preview,
+              imageUrl: preview.imageUrl
+                ? slackPreviewImageUrl(preview.imageUrl)
+                : null,
+            }),
+          },
+        },
+      },
+      signal,
+    );
+  },
+);
+
+/** Rechecks live grants after an action; an invitation alone never permits a shared preview. */
+export const refreshSlackArtifactChannelPreview$ = command(
+  async ({ set }, state: SlackArtifactShareState, signal: AbortSignal) => {
+    const actor = await set(slackActor$, state, signal);
+    if (!actor?.canUnfurl || actor.userId !== state.userId) {
+      return;
+    }
+    const resource = await set(channelSharingResource$, state, signal);
+    if (
+      !resource ||
+      resource.audience === "public" ||
+      resource.orgId !== state.orgId ||
+      !(await set(sharingEnabled$, resource, signal))
+    ) {
+      return;
+    }
+    const coverage = await set(
+      channelCoverage$,
+      { ...state, resource, botToken: actor.botToken },
+      signal,
+    );
+    if (everyoneCanView(coverage)) {
+      await set(
+        publishSlackChannelPreview$,
+        { ...state, resource, botToken: actor.botToken },
+        signal,
+      );
+    }
   },
 );
 
@@ -460,7 +387,7 @@ export const promptSlackArtifactChannelSharing$ = command(
     const prompted = new Set<string>();
     for (const url of args.urls) {
       const resource = await set(
-        resolveSlackSharingResource$,
+        resolveChannelSharingResource$,
         { url, userId: actor.userId },
         signal,
       );
@@ -486,12 +413,17 @@ export const promptSlackArtifactChannelSharing$ = command(
         { ...args, resource, botToken: actor.botToken },
         signal,
       );
-      if (
-        coverage.complete &&
-        (!coverage.senderIsMember ||
-          (coverage.recipients.length === 0 &&
-            coverage.unresolved.length === 0))
-      ) {
+      if (everyoneCanView(coverage)) {
+        if (actor.canUnfurl) {
+          await set(
+            publishSlackChannelPreview$,
+            { ...args, url, resource, botToken: actor.botToken },
+            signal,
+          );
+        }
+        continue;
+      }
+      if (coverage.complete && !coverage.senderIsMember) {
         continue;
       }
       const token = signSlackArtifactShare({
@@ -508,7 +440,10 @@ export const promptSlackArtifactChannelSharing$ = command(
         title: resource.title,
         audience: resource.audience,
         missing: coverage.recipients.length - coverage.unconfirmed,
-        unknown: coverage.unresolved.length + coverage.unconfirmed,
+        unknown:
+          coverage.unresolved.length +
+          coverage.unconfirmed +
+          coverage.pendingInvitations,
       });
       const result = await actor.client.postEphemeral({
         channel: args.channelId,
@@ -595,7 +530,7 @@ const changeSlackArtifactVisibility$ = command(
   async (
     { set },
     args: {
-      readonly resource: SlackSharingResource;
+      readonly resource: ChannelSharingResource;
       readonly state: SlackArtifactShareState;
       readonly action: SlackArtifactShareInteraction["action"];
     },
@@ -640,7 +575,7 @@ const changeSlackArtifactVisibility$ = command(
           : "This artifact is now visible to its Okou workspace. Slack channel members outside that workspace may still need invitations."
         : "Visibility could not be changed. Check the current settings and share the link again.",
       outboxIds: [],
-      refresh: success && audience === "public" ? args.state : null,
+      refresh: success ? args.state : null,
     };
   },
 );
@@ -649,76 +584,20 @@ const shareSlackChannelMembers$ = command(
   async (
     { set },
     args: {
-      readonly resource: SlackSharingResource;
+      readonly resource: ChannelSharingResource;
       readonly coverage: ChannelCoverage;
     },
     signal: AbortSignal,
   ): Promise<SharingResult> => {
-    const outboxIds: string[] = [];
-    let processed = 0;
-    let attempted = 0;
-    let limited =
-      args.coverage.recipients.length > 0 &&
-      (await set(
-        consumeHostedSiteSharingQuota$,
-        {
-          userId: args.resource.userId,
-          orgId: args.resource.orgId,
-          kind: "channel-share",
-        },
-        signal,
-      )) !== null;
-    const unresolved = [...args.coverage.unresolved];
-    for (const recipient of args.coverage.recipients) {
-      if (limited) {
-        break;
-      }
-      const retryAfter = await set(
-        consumeHostedSiteSharingQuota$,
-        {
-          userId: args.resource.userId,
-          orgId: args.resource.orgId,
-          kind: "channel-recipient",
-          email: recipient.email,
-        },
-        signal,
-      );
-      if (retryAfter !== null) {
-        limited = true;
-        break;
-      }
-      attempted++;
-      const shared = await settle(
-        args.resource.kind === "site"
-          ? set(
-              shareHostedSite$,
-              {
-                siteId: args.resource.id,
-                userId: args.resource.userId,
-                orgId: args.resource.orgId,
-                email: recipient.email,
-                recipient: recipient.recipient,
-              },
-              signal,
-            )
-          : set(
-              shareFileArtifact$,
-              {
-                resource: args.resource,
-                email: recipient.email,
-                recipient: recipient.recipient,
-              },
-              signal,
-            ),
-        signal,
-      );
-      if (!shared.ok || shared.value.status !== "ok") {
-        unresolved.push(recipient.slackUserId);
-        continue;
-      }
-      processed++;
-      outboxIds.push(shared.value.outboxId);
-    }
+    const { processed, unresolved, remaining, outboxIds } = await set(
+      grantArtifactChannelMembers$,
+      {
+        resource: args.resource,
+        recipients: args.coverage.recipients,
+        unresolved: args.coverage.unresolved,
+      },
+      signal,
+    );
     const text = [
       `Access granted or invitations created for ${processed} current channel ${processed === 1 ? "member" : "members"}.`,
       ...(unresolved.length
@@ -730,12 +609,12 @@ const shareSlackChannelMembers$ = command(
               .join(", ")}.`,
           ]
         : []),
-      ...(limited
+      ...(remaining > 0
         ? [
-            `The sharing limit was reached with ${args.coverage.recipients.length - attempted} remaining. Share the link again later to finish those invitations.`,
+            `The sharing limit was reached with ${remaining} remaining. Share the link again later to finish those invitations.`,
           ]
         : []),
-      ...(!processed && !unresolved.length && !limited
+      ...(!processed && !unresolved.length && remaining === 0
         ? ["All current members already have access or an invitation."]
         : []),
       "Later channel joins and departures do not change these grants.",
@@ -755,7 +634,7 @@ export const applySlackArtifactChannelSharing$ = command(
     const actor = await set(slackActor$, state, signal);
     const resource =
       actor?.userId === state.userId
-        ? await set(ownedSlackSharingResource$, state, signal)
+        ? await set(channelSharingResource$, state, signal)
         : null;
     if (
       !actor ||
@@ -795,6 +674,11 @@ export const applySlackArtifactChannelSharing$ = command(
         refresh: null,
       };
     }
-    return set(shareSlackChannelMembers$, { resource, coverage }, signal);
+    const shared = await set(
+      shareSlackChannelMembers$,
+      { resource, coverage },
+      signal,
+    );
+    return { ...shared, refresh: state };
   },
 );

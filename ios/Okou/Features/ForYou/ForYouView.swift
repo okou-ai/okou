@@ -12,7 +12,7 @@ import SwiftUI
 struct ForYouView: View {
   let workspace: WorkspaceStore
   let showChat: () -> Void
-  @Environment(\.dismiss) private var dismiss
+  let goBack: () -> Void
   @Environment(\.scenePhase) private var phase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var action: Task<Void, Never>?
@@ -69,10 +69,6 @@ struct ForYouView: View {
   var body: some View {
     layout
       .modifier(ForYouHaptics(store: store))
-      .task {
-        store.beginVisit()
-        await store.load()
-      }
       .task(id: readingID) { if let id = readingID { await store.read(id) } }
       .onChange(of: store.current?.id, initial: true) { _, id in
         if ForYouLoop.cardID(pageID) != id { pageID = id }
@@ -81,7 +77,6 @@ struct ForYouView: View {
         if let id = ForYouLoop.cardID(id) { store.show(id) }
         noteRest(id)
       }
-      .interactiveDismissDisabled(store.busy)
       .onDisappear {
         action?.cancel()
         store.closeDirection()
@@ -93,7 +88,7 @@ struct ForYouView: View {
       ForYouHeader(
         count: store.cards.count, live: livePosition, position: pagePosition,
         isBusy: store.busy, canPage: !store.busy && !isComposing, showsPlace: !isComposing,
-        back: { dismiss() }, show: show)
+        back: goBack, show: show)
       content
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay { if isComposing { aroundCard } }
@@ -255,7 +250,7 @@ struct ForYouView: View {
           handled: store.handled,
           undo: { undo in run { await store.undo(undo) } },
           open: { id in run { if await store.open(id) { showChat() } } },
-          done: { dismiss() }
+          done: goBack
         )
         .disabled(store.busy)
       }
@@ -518,7 +513,7 @@ struct ForYouView: View {
       ForYouSuggestionView(
         suggestion: suggestion, height: height,
         pendingOptionID: pendingOptionID, isContext: store.direction?.cardID == card.id,
-        openSource: { id in run { if await store.open(id) { showChat() } } },
+        openSource: { id in run { await store.openSource(id) } },
         choose: { option in
           guard !store.busy else { return }
           pendingOptionID = option.id

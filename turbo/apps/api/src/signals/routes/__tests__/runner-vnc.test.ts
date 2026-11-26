@@ -2,6 +2,8 @@ import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-r
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   runnerVncContract,
   type RunnerVncCheckRequest,
@@ -17,6 +19,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { remoteDevicesRoutes } from "../remote-devices";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncAccessRoutes } from "../vnc-access";
 import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
@@ -24,6 +27,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { requireVncCredentialId } from "./helpers/vnc-response";
 import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
 import { inlineSshKey } from "./helpers/ssh-credential";
@@ -72,10 +76,11 @@ function check(
   f: VncRuntimeFixture,
   expectedGeneration: number,
   override: Partial<RunnerVncCheckRequest> = {},
+  headers: Readonly<Record<string, string>> = vncRunnerHeaders,
 ) {
   return accept(
     api.runner().check({
-      headers: vncRunnerHeaders,
+      headers,
       params: { runId: f.runId },
       body: {
         connectionId: f.connectionId,
@@ -185,6 +190,121 @@ describe("private Runner VNC authority", () => {
       credentialId: requireVncCredentialId(connection.body),
     };
   }
+
+  it.each(["display", "kdc"] as const)(
+    "requires a separate current device grant for the saved %s SSH hop",
+    async (hop) => {
+      const f = await executionFixture();
+      const ssh = await accept(
+        setupApp({ context, routes: sshConnectionsRoutes })(
+          sshConnectionsContract,
+        ).create({
+          headers: vncSessionHeaders,
+          body: {
+            id: randomUUID(),
+            displayName: "Saved SSH hop",
+            host: "gateway.example.com",
+            credential: inlineSshKey("deploy", "private-key"),
+          },
+        }),
+        [201],
+      );
+      await api.enableDefault(f, "ssh", ssh.body.id);
+      const gateway = { type: "ssh" as const, connectionId: ssh.body.id };
+      const updated = await accept(
+        api.connections().update({
+          headers: vncSessionHeaders,
+          params: { connectionId: f.connectionId },
+          body: {
+            expectedGeneration: 1,
+            ...(hop === "display"
+              ? { transport: gateway }
+              : {
+                  security: {
+                    type: "qemu_x509_gssapi",
+                    trust: { mode: "system" },
+                    service: {
+                      realm: "EXAMPLE.INVALID",
+                      components: ["vnc", "desktop.example.com"],
+                    },
+                    kdc: {
+                      host: "127.0.0.1",
+                      port: 88,
+                      transport: gateway,
+                      ticketLifetimeSeconds: 1200,
+                      renewableLifetimeSeconds: 7200,
+                    },
+                  },
+                  credential: {
+                    create: {
+                      name: "KDC test credentials",
+                      authentication: {
+                        method: "qemu_kerberos_password",
+                        initiator: {
+                          realm: "EXAMPLE.INVALID",
+                          components: ["alice"],
+                        },
+                        password: "synthetic test password",
+                      },
+                    },
+                  },
+                }),
+          },
+        }),
+        [200],
+      );
+      await updateFeatureSwitchesForUser(context, f, {
+        [FeatureSwitchKey.RemoteDevices]: true,
+      });
+      api.authenticate(f);
+      const policy = setupApp({ context, routes: remoteDevicesRoutes })(
+        remoteDevicesContract,
+      );
+      const { devices } = (
+        await accept(policy.list({ headers: vncSessionHeaders }), [200])
+      ).body;
+      const desktop = devices.find((device) => {
+        return device.displayName === "VNC desktop";
+      });
+      const carrier = devices.find((device) => {
+        return device.displayName === "Saved SSH hop";
+      });
+      if (!desktop || !carrier) {
+        throw new Error("Expected separate devices for VNC and its SSH hop");
+      }
+      const transport = { ...gateway, generation: 1 };
+      const binding: Partial<RunnerVncCheckRequest> =
+        hop === "display"
+          ? { expectedTransport: transport }
+          : { expectedCredentialRevision: 1, expectedKdcTransport: transport };
+      const runner = {
+        ...vncRunnerHeaders,
+        "X-Okou-Remote-Device-Policy": "1",
+      };
+      const setMode = (deviceId: string, mode: "always" | "denied") => {
+        return accept(
+          policy.setAccess({
+            headers: vncSessionHeaders,
+            params: { deviceId },
+            body: { mode },
+          }),
+          [200],
+        );
+      };
+      await setMode(desktop.id, "always");
+      expect(
+        (await check(f, updated.body.generation, binding, runner)).body.outcome,
+      ).toBe("unavailable");
+      await setMode(carrier.id, "always");
+      expect(
+        (await check(f, updated.body.generation, binding, runner)).body.outcome,
+      ).toBe("valid");
+      await setMode(carrier.id, "denied");
+      expect(
+        (await check(f, updated.body.generation, binding, runner)).body.outcome,
+      ).toBe("unavailable");
+    },
+  );
 
   async function observe(
     f: VncRuntimeFixture & { readonly connectionCreatedAt: string },

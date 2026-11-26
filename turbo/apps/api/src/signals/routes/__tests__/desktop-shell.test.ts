@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/browser";
+import { desktopShellAuthorizationContract } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -8,6 +10,8 @@ import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-suppor
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
 import { browserAuthorizationRoutes } from "../browser-authorization";
+import { desktopShellAuthorizationRoutes } from "../desktop-shell-authorization";
+import { remoteDevicesRoutes } from "../remote-devices";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockNow, now } from "../../../lib/time";
 
@@ -153,6 +157,89 @@ async function approveAndResume(
 }
 
 describe("Desktop Shell command pipeline", () => {
+  it(
+    "requires both the Remote Device policy and the chat's Shell grant",
+    { timeout: 30_000 },
+    async () => {
+      const scenario = createPublicComputerUseScenario(context);
+      await scenario.run(async () => {
+        const actor = scenario.user();
+        const api = scenario.computerUse;
+        await createAuthDeviceSupportApi(context).updateFeatureSwitches(actor, {
+          desktopShell: true,
+          remoteDevices: true,
+        });
+        const { hostId } = await api.startComputerUseHost(actor, {
+          supportedCapabilities: capabilities,
+        });
+        const run = await scenario.launchRun(actor);
+        createRouteMocks(context).clerk.session(
+          actor.userId,
+          actor.orgId,
+          actor.orgRole,
+        );
+        const policy = setupApp({ context, routes: remoteDevicesRoutes })(
+          remoteDevicesContract,
+        );
+        const headers = { authorization: "Bearer clerk-session" };
+        const [device] = (await accept(policy.list({ headers }), [200])).body
+          .devices;
+        if (!device) {
+          throw new Error("Expected the Desktop's Remote Device");
+        }
+        await accept(
+          policy.setAccess({
+            headers,
+            params: { deviceId: device.id },
+            body: { mode: "always" },
+          }),
+          [200],
+        );
+        const body = { hostId, kind: "shell.list" as const, waitMs: 1000 };
+        const needsShellGrant = await api.requestCreateDesktopShellCommand(
+          { bearer: run.token },
+          body,
+          [403],
+        );
+        expect(needsShellGrant.body).toMatchObject({
+          error: { code: "SHELL_AUTHORIZATION_REQUIRED" },
+        });
+        const request = await accept(
+          setupApp({ context, routes: desktopShellAuthorizationRoutes })(
+            desktopShellAuthorizationContract,
+          ).create({
+            headers: { authorization: `Bearer ${run.token}` },
+            body: { hostId, reason: "Inspect the project in Terminal" },
+          }),
+          [200],
+        );
+        await scenario.cancelRun(actor, run.runId);
+        await scenario.run(flushWaitUntilForTest);
+        await api.actDesktopShellAccess(actor, request.body.id, "approve");
+        const next = await scenario.launchRun(actor, undefined, run.threadId);
+        const queued = await api.requestCreateDesktopShellCommand(
+          { bearer: next.token },
+          body,
+          [200],
+        );
+        expect(queued.body).toMatchObject({ status: "queued" });
+        await accept(
+          policy.setAccess({
+            headers,
+            params: { deviceId: device.id },
+            body: { mode: "denied" },
+          }),
+          [200],
+        );
+        await api.requestCreateDesktopShellCommand(
+          { bearer: next.token },
+          body,
+          [404],
+        );
+      });
+    },
+  );
+
   it.each(["immediate", "queued"] as const)(
     "publishes committed chat_busy authorization when the %s pick acquires the chat slot",
     { timeout: 30_000 },

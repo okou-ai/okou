@@ -93,8 +93,16 @@ struct UserMessageBubbleLayout: Layout {
   func placeSubviews(
     in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
   ) {
-    subviews.first?.place(
+    guard let bubble = subviews.first else { return }
+    let bubbleProposal = ProposedViewSize(width: bounds.width * 0.85, height: nil)
+    bubble.place(
       at: CGPoint(x: bounds.maxX, y: bounds.minY), anchor: .topTrailing,
-      proposal: ProposedViewSize(width: bounds.width * 0.85, height: nil))
+      proposal: bubbleProposal)
+    if let indicator = subviews.dropFirst().first {
+      // The spinner fits in the leading margin without contributing to the bubble's size.
+      let x = bounds.maxX - bubble.dimensions(in: bubbleProposal).width - OkouSpace.sm
+      indicator.place(
+        at: CGPoint(x: x, y: bounds.minY), anchor: .topTrailing, proposal: .unspecified)
+    }
   }
 }

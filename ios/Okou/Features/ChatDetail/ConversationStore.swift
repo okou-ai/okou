@@ -75,6 +75,7 @@ final class ConversationStore {
   /// What the transcript renders. ChatDetailView reads it through CCStateSwiftUI; the
   /// synchronous accessors below serve owner logic and actions, not view bodies.
   var transcript: Computed<ConversationProjection.Value> { projection.value }
+  var pendingMessages: Computed<[PendingMessage]> { projection.pendingMessages }
   /// The synchronous value of `transcript`, for a render whose graph read has not resolved.
   var currentTranscript: ConversationProjection.Value { projection.currentValue }
   /// The workspace session's Store, which keeps this conversation's graph values.

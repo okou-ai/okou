@@ -7,6 +7,17 @@ import type { ClientDescriptor } from "./types";
 export const runnerSshContract: ClientDescriptor<
   typeof OriginalRunnerSshContract
 > = {
+  check: {
+    method: "POST",
+    path: "/api/runners/runs/:runId/ssh/check",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      500: true,
+    },
+  },
   observe: {
     method: "POST",
     path: "/api/runners/runs/:runId/ssh/observations",

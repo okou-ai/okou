@@ -72,6 +72,9 @@
     <string name="connector_change_failed">操作を完了できませんでした。アカウントを確認してもう一度お試しください。</string>
     <string name="connector_device_code">このコードを提供元のページに入力します</string>
     <string name="connector_external_code">認証コード</string>
+    <string name="connector_checking_code">確認中…</string>
+    <string name="connector_external_code_too_long">認証コードは最大%1$d文字です。</string>
+    <string name="connector_external_code_failed">認証コードを確認できませんでした。</string>
     <string name="connector_external_instructions">提供元のページで認証を完了し、ここにコードを入力してください。</string>
     <string name="connector_submit_code">コードを確認</string>
     <string name="connector_working">アカウントを確認中…</string>

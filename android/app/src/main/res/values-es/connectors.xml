@@ -72,6 +72,9 @@
     <string name="connector_change_failed">No se pudo completar esta acción. Comprueba la cuenta e inténtalo de nuevo.</string>
     <string name="connector_device_code">Introduce este código en la página del proveedor</string>
     <string name="connector_external_code">Código de autorización</string>
+    <string name="connector_checking_code">Comprobando…</string>
+    <string name="connector_external_code_too_long">Longitud máxima del código de %1$d.</string>
+    <string name="connector_external_code_failed">No se pudo verificar el código.</string>
     <string name="connector_external_instructions">Completa la autorización con el proveedor y luego introduce aquí el código.</string>
     <string name="connector_submit_code">Confirmar código</string>
     <string name="connector_working">Comprobando la cuenta…</string>

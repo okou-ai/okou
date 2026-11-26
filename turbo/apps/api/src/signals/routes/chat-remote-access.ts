@@ -16,6 +16,7 @@ import {
   updateRemoteHostDefault$,
 } from "../services/chat-remote-access.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
+import { remoteDeviceMode$ } from "../services/remote-device-access";
 
 const ownerAuth = {
   requireOrganization: true,
@@ -51,6 +52,9 @@ const listHostDefaults$ = command(async ({ get, set }, signal: AbortSignal) => {
 const updateHostDefault$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const context = set(accessContext$);
+    if (await set(remoteDeviceMode$, context.owner, signal)) {
+      return unavailable;
+    }
     const params = get(
       pathParamsOf(chatRemoteAccessContract.updateHostDefault),
     );
@@ -98,6 +102,9 @@ const listThreadAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
 const setThreadOverride$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const context = set(accessContext$);
+    if (await set(remoteDeviceMode$, context.owner, signal)) {
+      return unavailable;
+    }
     const params = get(
       pathParamsOf(chatRemoteAccessContract.setThreadOverride),
     );
@@ -133,6 +140,9 @@ const setThreadOverride$ = command(
 const clearThreadOverride$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const context = set(accessContext$);
+    if (await set(remoteDeviceMode$, context.owner, signal)) {
+      return unavailable;
+    }
     const params = get(
       pathParamsOf(chatRemoteAccessContract.clearThreadOverride),
     );

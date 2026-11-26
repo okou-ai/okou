@@ -76,7 +76,7 @@ export async function validatePermanentComputerUseHostStorage(
 
     const [reconnected] = await db
       .insert(computerUseHosts)
-      .values(values)
+      .values({ ...values, remoteDeviceId: device.id })
       .onConflictDoUpdate({
         target: [
           computerUseHosts.orgId,
@@ -123,9 +123,19 @@ export async function validatePermanentComputerUseHostStorage(
       "Both exported mappings must generate legal current SQL",
     );
 
+    const otherUserId = "another-owner";
+    const [otherDevice] = await db
+      .insert(remoteDevices)
+      .values({ orgId, userId: otherUserId, displayName: values.displayName })
+      .returning({ id: remoteDevices.id });
+    assert.ok(otherDevice);
     const [otherOwner] = await db
       .insert(computerUseHosts)
-      .values({ ...values, userId: "another-owner" })
+      .values({
+        ...values,
+        userId: otherUserId,
+        remoteDeviceId: otherDevice.id,
+      })
       .returning();
     assert.ok(otherOwner);
     assert.notEqual(
@@ -142,7 +152,7 @@ export async function validatePermanentComputerUseHostStorage(
     assert.equal(revoked?.connectionGeneration, 1);
     const [replacement] = await db
       .insert(computerUseHosts)
-      .values(values)
+      .values({ ...values, remoteDeviceId: device.id })
       .returning();
     assert.ok(replacement);
     assert.notEqual(

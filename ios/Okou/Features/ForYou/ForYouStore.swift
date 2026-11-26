@@ -75,9 +75,10 @@ final class ForYouStore {
   }
 
   /// A visit starts without the previous one's confirmations.
-  func beginVisit() {
+  func beginVisit() async {
     handled = []
     notice = nil
+    await load()
   }
 
   func load() async {
@@ -267,10 +268,22 @@ final class ForYouStore {
     }
   }
 
+  func openSource(_ id: String) async {
+    guard let sidebar = workspace?.sidebarInteraction, sidebar.path == [.forYou] else { return }
+    await perform {
+      if await open(id), !Task.isCancelled, sidebar.path == [.forYou] {
+        sidebar.path.append(.chat)
+      }
+    }
+  }
+
   func open(_ id: String) async -> Bool {
     guard let workspace else { return false }
     let opened = await workspace.openChatLink(.thread(id: id, runID: nil))
-    if !opened { error = workspace.chatLinkError ?? String(localized: "Couldn’t open this chat.") }
+    if !opened, !Task.isCancelled {
+      error = workspace.chatLinkError ?? String(localized: "Couldn’t open this chat.")
+      workspace.dismissChatLinkError()
+    }
     return opened
   }
 

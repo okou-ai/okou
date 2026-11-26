@@ -10,6 +10,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
 import {
   Check,
+  Circle,
   ChevronRight,
   Loader2,
   PanelTop,
@@ -22,8 +23,6 @@ import {
   Button,
   Input,
   IconButton,
-  Radio,
-  RadioGroup,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -337,7 +336,6 @@ function WebsiteDomainChoices({
 }) {
   const { t } = useTranslation();
   const selectedDomainId = useGet(session.domains.selectedDomainId$);
-  const chooseDomain = useSet(session.domains.choose$);
   const showDomains = useSet(session.domains.show$);
   const manageDomain = useSet(session.domains.manage$);
   const requestRemoval = useSet(session.domains.requestRemoval$);
@@ -348,68 +346,68 @@ function WebsiteDomainChoices({
   return (
     <>
       {configuration.domains.length > 0 && (
-        <RadioGroup
-          value={selectedDomainId ?? ""}
+        <ul
           aria-label={t(($) => {
             return $.artifacts.customDomain.yourDomains;
           })}
           className="space-y-2"
-          onValueChange={(value) => {
-            if (typeof value === "string") {
-              chooseDomain(value);
-            }
-          }}
         >
           {configuration.domains.map((domain) => {
-            const radioId = `${session.inputId}-${domain.id}`;
+            const selected = domain.id === selectedDomainId;
             return (
-              <div
+              <li
                 key={domain.id}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl border border-border p-3",
-                  domain.id === selectedDomainId && "bg-gray-50",
+                  "relative rounded-xl border border-border",
+                  selected && "bg-gray-50",
                 )}
               >
-                <Radio
-                  id={radioId}
-                  value={domain.id}
-                  disabled={
-                    saving ||
-                    !configuration.allowed ||
-                    !domain.ready ||
-                    domain.removing
-                  }
-                />
-                <label htmlFor={radioId} className="min-w-0 flex-1">
-                  <span className="block break-all text-sm font-medium">
-                    {domain.hostname}
-                  </span>
-                  <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                    {domain.ready && <Check size={12} />}
-                    {domain.ready
-                      ? t(($) => {
-                          return $.artifacts.customDomain.httpsReady;
-                        })
-                      : t(($) => {
-                          return $.artifacts.customDomain.needsSetup;
-                        })}
-                  </span>
-                </label>
-                <IconButton
+                <Button
+                  type="button"
+                  variant="quiet"
+                  className="h-auto w-full justify-start gap-3 whitespace-normal rounded-xl py-3 pl-3 pr-14 text-left text-foreground"
                   aria-label={t(
                     ($) => {
                       return $.artifacts.customDomain.manage;
                     },
-                    { hostname: domain.hostname },
+                    {
+                      hostname: domain.hostname,
+                    },
                   )}
-                  disabled={saving}
+                  aria-current={selected ? "true" : undefined}
+                  disabled={saving || domain.removing}
                   onClick={() => {
-                    manageDomain(domain.id);
+                    return manageDomain(domain.id);
                   }}
                 >
-                  <ChevronRight size={14} />
-                </IconButton>
+                  {selected ? (
+                    <Check size={16} aria-hidden />
+                  ) : (
+                    <Circle
+                      size={16}
+                      className="text-muted-foreground"
+                      aria-hidden
+                    />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block break-all text-sm font-medium">
+                      {domain.hostname}
+                    </span>
+                    <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      {domain.ready && <Check size={12} aria-hidden />}
+                      {domain.ready
+                        ? t(($) => {
+                            return $.artifacts.customDomain.httpsReady;
+                          })
+                        : t(($) => {
+                            return $.artifacts.customDomain.needsSetup;
+                          })}
+                    </span>
+                  </span>
+                  <ChevronRight size={14} aria-hidden />
+                </Button>
                 <IconButton
+                  className="absolute right-2 top-1/2 -translate-y-1/2"
                   aria-label={t(
                     ($) => {
                       return $.artifacts.customDomain.removeHostname;
@@ -418,15 +416,15 @@ function WebsiteDomainChoices({
                   )}
                   disabled={saving}
                   onClick={() => {
-                    requestRemoval(domain.id);
+                    return requestRemoval(domain.id);
                   }}
                 >
                   <Trash2 size={14} />
                 </IconButton>
-              </div>
+              </li>
             );
           })}
-        </RadioGroup>
+        </ul>
       )}
       <Button
         type="button"
@@ -1181,6 +1179,7 @@ function HostedSiteShareSessionMenu({
             domainOperations={{
               creating: domainCreating.state === "loading",
               verifying: domainVerifying.state === "loading",
+              verifyFailed: domainVerifying.state === "hasError",
               removing: domainRemoving.state === "loading",
               saving: saving.state === "loading",
               saveFailed: saving.state === "hasError",

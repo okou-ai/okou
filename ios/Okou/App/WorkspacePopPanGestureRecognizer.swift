@@ -4,6 +4,8 @@ import UIKit
 final class WorkspacePopPanGestureRecognizer: UIPanGestureRecognizer, UIGestureRecognizerDelegate {
   private weak var navigation: UINavigationController?
   private(set) var transition: WorkspacePopTransition?
+  /// A swipe on the For you deck pages its cards; only its leading edge navigates back.
+  var requiresLeadingEdge = false
   private var origin: CGPoint?
 
   init(navigation: UINavigationController) {
@@ -104,7 +106,8 @@ final class WorkspacePopPanGestureRecognizer: UIPanGestureRecognizer, UIGestureR
   private func acceptsStart(at point: CGPoint, in view: UIView, target: UIView?) -> Bool {
     let distance = leadingDistance(point, in: view)
     return distance < 16
-      || (distance <= view.bounds.width - 16 && !startsInHorizontalScroll(target))
+      || (!requiresLeadingEdge && distance <= view.bounds.width - 16
+        && !startsInHorizontalScroll(target))
   }
 
   private func startsInHorizontalScroll(_ target: UIView?) -> Bool {

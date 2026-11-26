@@ -2,7 +2,11 @@ import { runnerVncContract } from "@okouai/api-contracts/contracts/runner-vnc";
 import { command } from "ccstate";
 import { runnerAuth$ } from "../auth/runner-auth";
 import { publishUserSignal } from "../external/realtime";
-import { authorization$, setResHeader$ } from "../context/hono";
+import {
+  authorization$,
+  runnerRemoteDevicePolicy$,
+  setResHeader$,
+} from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
@@ -51,9 +55,20 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { runId } = get(pathParamsOf(runnerVncContract.resolve));
-  const result = await set(resolveRunnerVnc$, { runId, ...body.data }, signal);
+  const result = await set(
+    resolveRunnerVnc$,
+    {
+      runId,
+      ...body.data,
+      supportsDevicePolicy: get(runnerRemoteDevicePolicy$) === "1",
+    },
+    signal,
+  );
   if (result.createdAt !== null) {
     set(setResHeader$, "X-VNC-Connection-Created-At", result.createdAt);
+    if (result.remoteDeviceMode) {
+      set(setResHeader$, "X-Okou-Remote-Device-Policy", "1");
+    }
   }
   return { status: 200 as const, body: result.response };
 });
@@ -69,7 +84,18 @@ const check$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const { runId } = get(pathParamsOf(runnerVncContract.check));
-  const result = await set(checkRunnerVnc$, { runId, ...body.data }, signal);
+  const result = await set(
+    checkRunnerVnc$,
+    {
+      runId,
+      ...body.data,
+      supportsDevicePolicy: get(runnerRemoteDevicePolicy$) === "1",
+    },
+    signal,
+  );
+  if (result.outcome === "valid") {
+    set(setResHeader$, "X-VNC-Connection-Created-At", result.createdAt);
+  }
   return { status: 200 as const, body: { outcome: result.outcome } };
 });
 
@@ -89,7 +115,11 @@ const observe$ = command(async ({ get, set }, signal: AbortSignal) => {
     };
   }
   const { runId } = get(pathParamsOf(runnerVncContract.observe));
-  const input = { runId, ...body.data };
+  const input = {
+    runId,
+    ...body.data,
+    supportsDevicePolicy: get(runnerRemoteDevicePolicy$) === "1",
+  };
   const checked = await set(checkRunnerVnc$, input, signal);
   if (checked.outcome !== "valid") {
     return {

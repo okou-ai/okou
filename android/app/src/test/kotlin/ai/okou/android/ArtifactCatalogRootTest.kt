@@ -246,7 +246,7 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         }
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
-        val failureText = "Temporarily unable to load artifacts"
+        val failureText = "Temporarily unable to load"
         try {
             compose.onNodeWithContentDescription("Artifacts").performClick()
             compose.waitUntil(10_000) {
@@ -272,7 +272,21 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         assertEquals(3, attempts.size)
         assertTrue(attempts[1] - attempts[0] >= 4_000)
         assertTrue(attempts[2] - attempts[1] >= 3_000)
-        assertInitialReadFeedback(failureText)
+        val panel = compose.onNodeWithTag("artifact_read_failure").assertIsDisplayed()
+        val bounds = panel.getUnclippedBoundsInRoot()
+        val label =
+            compose
+                .onNodeWithText(failureText)
+                .assertIsDisplayed()
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.LiveRegion,
+                        LiveRegionMode.Polite,
+                    ),
+                )
+                .getUnclippedBoundsInRoot()
+        assertTrue(abs(((label.left - bounds.left) - (bounds.right - label.right)).value) <= 1f)
+        assertTrue(label.top > bounds.top)
         mainLooper.idleFor(12, TimeUnit.SECONDS)
         assertEquals(3, attempts.size)
         app.fixture.commandResponse = respond
