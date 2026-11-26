@@ -183,14 +183,9 @@ describe("/api/feature-switches", () => {
       [realAgent]: false,
       [dummy]: false,
       batchConnectorPermissions: true,
-      agentSuggestion: true,
     });
     expect(Object.keys(updated.effectiveSwitches).sort()).toStrictEqual(
-      [
-        ...Object.values(FeatureSwitchKey),
-        "batchConnectorPermissions",
-        "agentSuggestion",
-      ].sort(),
+      [...Object.values(FeatureSwitchKey), "batchConnectorPermissions"].sort(),
     );
     await expect(read(app)).resolves.toStrictEqual(updated);
   });
