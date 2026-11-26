@@ -11,6 +11,7 @@ import { HttpResponse, http } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -183,5 +184,89 @@ describe("Strava native app authorization", () => {
     });
     const receipt = await readReceipt(member, started.oauthAttemptId);
     expect(receipt.status).toBe(404);
+  });
+  it("connectors-native-app-authorization-003 binds iOS authorization to the registered HTTPS callback and confirms the exact account", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const member = newMember();
+    const refreshToken = `strava-refresh-${randomUUID()}`;
+    const exchanges = mockStrava(refreshToken);
+    const started = await startStrava(member, {
+      nativeAppAuthorization: "ios",
+    });
+
+    expect(started.nativeAppAuthorization).toStrictEqual({
+      provider: "strava",
+    });
+    const authorization = new URL(started.authorizationUrl);
+    expect(`${authorization.origin}${authorization.pathname}`).toBe(
+      "https://www.strava.com/oauth/mobile/authorize",
+    );
+    expect(authorization.searchParams.get("redirect_uri")).toBe(
+      "https://app.okou.ai/connectors/strava/callback",
+    );
+    expect(authorization.searchParams.get("scope")).toBe(
+      STRAVA_SCOPES.join(","),
+    );
+    expect(authorization.searchParams.get("client_secret")).toBeNull();
+    const before = await readReceipt(member, started.oauthAttemptId);
+    expect(before.status).toBe(404);
+
+    const firstCallback = {
+      state: stateOf(started.authorizationUrl),
+      code: "mobile-code",
+      scope: STRAVA_SCOPES.join(","),
+    };
+    const completed = await stravaCallback(firstCallback);
+    expect(completed).toMatchObject({
+      status: "success",
+      nativeAppReturn: { platform: "ios", attemptId: started.oauthAttemptId },
+    });
+    expect(exchanges).toHaveLength(1);
+    expect(exchanges[0]?.body.get("code")).toBe("mobile-code");
+    expect(exchanges[0]?.body.get("client_secret")).toBeTruthy();
+    expect(exchanges[0]?.body.get("redirect_uri")).toBeNull();
+
+    const receipt = await readReceipt(member, started.oauthAttemptId);
+    if (receipt.status !== 200) {
+      throw new Error("Expected the completed Strava receipt");
+    }
+    const { connectionId } = receipt.body;
+    const account = await accept(
+      accounts().connection({
+        headers: as(member),
+        params: { connectionId },
+        query: STRAVA,
+      }),
+      [200],
+    );
+    expect(account.body).toMatchObject({
+      id: connectionId,
+      target: STRAVA,
+      authMethod: "oauth",
+      connectionStatus: "connected",
+      oauthScopes: STRAVA_SCOPES,
+    });
+    expect(JSON.stringify(account.body)).not.toContain(refreshToken);
+
+    const reconnect = await startStrava(member, {
+      nativeAppAuthorization: "ios",
+      account: { intent: "reconnect", connectionId },
+    });
+    const reconnected = await stravaCallback({
+      state: stateOf(reconnect.authorizationUrl),
+      code: "mobile-code",
+      scope: STRAVA_SCOPES.join(","),
+    });
+    expect(reconnected.status).toBe("success");
+    const reconnectReceipt = await readReceipt(
+      member,
+      reconnect.oauthAttemptId,
+    );
+    expect(reconnectReceipt.status).toBe(200);
+    expect(reconnectReceipt.body).toStrictEqual({ connectionId });
+
+    const replayed = await stravaCallback(firstCallback);
+    expect(replayed.status).toBe("error");
+    expect("nativeAppReturn" in replayed).toBeFalsy();
   });
 });
