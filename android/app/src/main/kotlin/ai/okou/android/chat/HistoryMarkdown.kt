@@ -90,6 +90,7 @@ import org.commonmark.node.SoftLineBreak
 import org.commonmark.node.StrongEmphasis
 import org.commonmark.node.Text as MarkdownText
 import org.commonmark.node.ThematicBreak
+import org.commonmark.parser.IncludeSourceSpans
 import org.commonmark.parser.Parser
 
 internal data class ChatArtifactActions(
@@ -532,6 +533,7 @@ private data class MarkdownImage(
     val source: String?,
     val description: String,
     val outerLink: String?,
+    val sourceRange: IntRange?,
 ) : MarkdownInsert
 
 private data class HistoryMarkdownContent(
@@ -664,8 +666,61 @@ private fun HistoryMarkdownContent.findPassages(
     if (start < text.length) yield(MarkdownFindPassage(index, text.text.substring(start)))
 }
 
-private val historyMarkdownParser =
-    Parser.builder().extensions(listOf(TablesExtension.create())).build()
+private val historyMarkdownExtensions = listOf(TablesExtension.create())
+
+private val historyMarkdownParser = Parser.builder().extensions(historyMarkdownExtensions).build()
+
+private val workspaceSearchMarkdownParser by lazy {
+    Parser.builder()
+        .extensions(historyMarkdownExtensions)
+        .includeSourceSpans(IncludeSourceSpans.BLOCKS_AND_INLINES)
+        .build()
+}
+
+internal fun HistoryMessage.workspaceSearchTarget(
+    range: IntRange?,
+    inlineImages: Boolean,
+): ConversationFindTarget {
+    if (role != HistoryRole.Assistant || range == null || range.isEmpty() || range.first < 0)
+        return ConversationFindTarget(id, null)
+    val source =
+        blocks.singleOrNull()?.takeIf { it.kind == HistoryBlockKind.Text }?.text
+            ?: return ConversationFindTarget(id, null)
+    // The index offsets count UTF-16 code units after JavaScript String.trim().
+    val prefix = source.indexOfFirst {
+        it != '\uFEFF' && (!it.isWhitespace() || it in '\u001C'..'\u001F')
+    }
+    if (prefix < 0 || range.last >= source.length - prefix) return ConversationFindTarget(id, null)
+    val start = prefix + range.first
+    val end = prefix + range.last
+    val document = workspaceSearchMarkdownParser.parse(source)
+    val (index, node) =
+        document.children().withIndex().firstOrNull { (_, node) ->
+            node.markdownSourceRange()?.let { start in it && end in it } == true
+        } ?: return ConversationFindTarget(id, null)
+    val imagePath =
+        if (inlineImages && "![" in source) {
+            node
+                .historyMarkdownBlock(
+                    seenArtifacts = null,
+                    interactiveLinks = true,
+                    inlineImages = true,
+                )
+                .indexedImages(index.toString())
+                .firstOrNull { (_, image) ->
+                    image.sourceRange?.let { start in it && end in it } == true
+                }
+                ?.first
+        } else null
+    return ConversationFindTarget(id, index, bodyIndex = 0, markdownImage = imagePath)
+}
+
+private fun Node.markdownSourceRange(): IntRange? {
+    val spans = sourceSpans
+    val start = spans.firstOrNull()?.inputIndex ?: return null
+    val last = spans.last()
+    return start until (last.inputIndex + last.length)
+}
 
 private val artifactMarkdownParser = Parser.builder().build()
 
@@ -1119,7 +1174,15 @@ private fun renderHistoryMarkdownNode(
                         val start = length
                         append(description.ifBlank { "\uFFFC" })
                         images.add(
-                            MarkdownImage(start, length, images.size, source, description, outer),
+                            MarkdownImage(
+                                start,
+                                length,
+                                images.size,
+                                source,
+                                description,
+                                outer,
+                                node.markdownSourceRange(),
+                            ),
                         )
                     }
                     return

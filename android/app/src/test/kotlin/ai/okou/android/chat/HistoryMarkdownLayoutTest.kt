@@ -10,6 +10,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,6 +21,46 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = TestOkouApplication::class)
 class HistoryMarkdownLayoutTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun workspaceSearchUsesTheReportedUtf16RangeInTheOriginalMarkdown() {
+        val word = "截止时间"
+        val indexed = "💬 First **$word**.\r\n\r\n$word from the second paragraph."
+        val prefix = "\r\n".repeat(10) + '\uFEFF'
+        val reply = reply("$prefix$indexed \r\n")
+        val start = indexed.lastIndexOf(word)
+        val target =
+            reply.workspaceSearchTarget(start until start + word.length, inlineImages = true)
+        assertEquals(1, target.markdownBlock)
+        assertEquals(0, target.bodyIndex)
+        assertNull(target.markdownImage)
+
+        val messageOnly = reply.workspaceSearchTarget(null, inlineImages = true)
+        assertEquals(reply.id, messageOnly.id)
+        assertNull(messageOnly.markdownBlock)
+    }
+
+    @Test
+    fun workspaceSearchUsesTheExactInlineImageWithADuplicateDescription() {
+        val image = "![Release plan](https://example.com/plan.png)"
+        val source = "Status\n\n$image before $image."
+        val start = source.lastIndexOf("Release")
+        val range = start until start + "Release".length
+        val reply = reply(source)
+
+        val target = reply.workspaceSearchTarget(range, inlineImages = true)
+        assertEquals(1, target.markdownBlock)
+        assertEquals("1/1", target.markdownImage)
+        assertNull(reply.workspaceSearchTarget(range, inlineImages = false).markdownImage)
+    }
+
+    private fun reply(source: String) =
+        HistoryMessage(
+            "reply",
+            null,
+            HistoryRole.Assistant,
+            listOf(HistoryBlock(HistoryBlockKind.Text, source)),
+        )
 
     @Test
     fun conversationMarkdownUsesItsFormattedHeightOnTheFirstLayout() {

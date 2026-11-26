@@ -31,6 +31,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
@@ -2121,14 +2122,18 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         compose.onNodeWithTag("search_type_Messages").performClick()
         compose.onNodeWithTag("chat_search_query").performTextInput(fixture.keyword)
         val results = hasAnyAncestor(hasTestTag("chat_search_results"))
-        val result = hasText(fixture.hit) and results
+        val result = hasText(fixture.hit, substring = true) and results
         compose.waitUntilExactlyOneExists(result, 5_000)
         compose.onNode(hasText(fixture.otherHit) and results).assertIsDisplayed()
-        compose.onNode(result).performClick()
+        val row = compose.onNode(result)
+        val preview = row.fetchSemanticsNode().config[SemanticsProperties.Text]
+        assertTrue(preview.any { fixture.hit in it.text && '\n' !in it.text })
+        row.performClick()
 
         val focused = hasTestTag("conversation_find_hit") and isFocused()
         compose.waitUntilExactlyOneExists(focused, 5_000)
-        compose.onNode(focused).assertIsDisplayed().assertTextContains(fixture.hit)
+        compose.onNode(focused).assertIsDisplayed().assertTextEquals(fixture.hit)
+        compose.onNodeWithText(fixture.leadingParagraph).assertIsDisplayed()
         compose.onNode(matchedSummary, useUnmergedTree = true).assert(expanded)
         compose.onNode(otherSummary, useUnmergedTree = true).assert(collapsed)
         compose.onNodeWithText(fixture.otherEarlierReply).assertDoesNotExist()

@@ -49,6 +49,7 @@ import ai.okou.android.chat.ProjectMoveFocus
 import ai.okou.android.chat.ProjectMovePicker
 import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RunControlsModel
+import ai.okou.android.chat.SearchMessageAnchor
 import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.SearchRead
 import ai.okou.android.chat.SearchWorkflowIntro
@@ -629,7 +630,11 @@ internal fun OkouApp(
             searchState.reset()
         }
         navigation =
-            navigation.copy(target = WorkspaceTarget.List, search = search, messageSequence = null)
+            navigation.copy(
+                target = WorkspaceTarget.List,
+                search = search,
+                searchMessageAnchor = null,
+            )
     }
 
     val visibleThread = thread?.takeIf {
@@ -657,7 +662,7 @@ internal fun OkouApp(
         destination: WorkspaceTarget,
         fromSearch: Boolean,
         fromLink: Boolean = false,
-        messageSequence: Long? = null,
+        searchMessageAnchor: SearchMessageAnchor? = null,
     ) {
         if (!fromLink) clearConversationLinks()
         closeResources(preservePage = fromLink)
@@ -681,7 +686,7 @@ internal fun OkouApp(
                 settings = null,
                 search = search,
                 artifacts = navigation.artifacts.takeUnless { fromLink },
-                messageSequence = messageSequence,
+                searchMessageAnchor = searchMessageAnchor,
             )
     }
 
@@ -776,7 +781,7 @@ internal fun OkouApp(
             result.id,
             WorkspaceTarget.Chat(result.id),
             fromSearch = true,
-            messageSequence = hit.seqId,
+            searchMessageAnchor = SearchMessageAnchor(hit.seqId, hit.firstRange),
         )
         composer?.acknowledge(result.id)
         activeChats.history.open(result)
@@ -808,7 +813,7 @@ internal fun OkouApp(
             navigation.copy(
                 target = WorkspaceTarget.NewChat(projectId),
                 search = search,
-                messageSequence = null,
+                searchMessageAnchor = null,
             )
     }
 
@@ -849,7 +854,7 @@ internal fun OkouApp(
                                 target = WorkspaceTarget.NewChat(null),
                                 settings = null,
                                 search = nextSearch,
-                                messageSequence = null,
+                                searchMessageAnchor = null,
                             )
                         if (!fromSearch) {
                             changeWorkflowRoute(
@@ -2050,18 +2055,20 @@ internal fun OkouApp(
                                                     linkedFrom?.let { source ->
                                                         { returnFromUnavailableLink(source) }
                                                     },
-                                                messageSequence =
-                                                    navigation.messageSequence.takeIf {
+                                                searchMessageAnchor =
+                                                    navigation.searchMessageAnchor.takeIf {
                                                         artifactSource == null &&
                                                             navigation.target == target
                                                     },
-                                                onSearchMessageResolved = { sequence, found ->
+                                                onSearchMessageResolved = { anchor, found ->
                                                     if (
                                                         navigation.target == target &&
-                                                            navigation.messageSequence == sequence
+                                                            navigation.searchMessageAnchor == anchor
                                                     ) {
                                                         navigation =
-                                                            navigation.copy(messageSequence = null)
+                                                            navigation.copy(
+                                                                searchMessageAnchor = null,
+                                                            )
                                                         if (!found) {
                                                             showConversationNavigationError(
                                                                 target.id,

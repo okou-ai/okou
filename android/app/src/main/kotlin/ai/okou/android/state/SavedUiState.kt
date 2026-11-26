@@ -7,6 +7,7 @@ import ai.okou.android.chat.ConversationAnchor
 import ai.okou.android.chat.ConversationFindTarget
 import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
+import ai.okou.android.chat.SearchMessageAnchor
 import ai.okou.android.chat.WorkspaceSearchType
 import ai.okou.android.hasPendingSearchText
 import androidx.compose.foundation.lazy.LazyListState
@@ -454,7 +455,7 @@ internal data class WorkspaceNavigation(
     val chatResourcesId: String? = null,
     val chatArtifactLink: String? = null,
     val chatArtifactFocusKey: String? = null,
-    val messageSequence: Long? = null,
+    val searchMessageAnchor: SearchMessageAnchor? = null,
 )
 
 internal const val RetainedExternalImagePreview = "external-image"
@@ -503,8 +504,10 @@ private fun WorkspaceNavigation.savedFields(): List<Any> {
         chatResourcesId.orEmpty(),
         chatArtifactLink?.restorableArtifactLink().orEmpty(),
         chatArtifactFocusKey.orEmpty(),
-        messageSequence ?: 0L,
+        searchMessageAnchor?.sequence ?: 0L,
         artifacts?.searchResultId.orEmpty(),
+        searchMessageAnchor?.range?.first ?: -1,
+        searchMessageAnchor?.range?.last ?: -1,
     )
 }
 
@@ -528,6 +531,14 @@ private fun restoreWorkspaceNavigation(fields: List<Any?>): WorkspaceNavigation 
                 searchResultId = (fields.getOrNull(10) as? String)?.ifEmpty { null },
             )
         } else null
+    val searchMessageAnchor =
+        (fields.getOrNull(9) as? Long)
+            ?.takeIf { it > 0 }
+            ?.let { sequence ->
+                val start = fields.getOrNull(11) as? Int ?: -1
+                val end = fields.getOrNull(12) as? Int ?: -1
+                SearchMessageAnchor(sequence, if (start >= 0 && end >= start) start..end else null)
+            }
     return WorkspaceNavigation(
         target,
         destination,
@@ -536,7 +547,7 @@ private fun restoreWorkspaceNavigation(fields: List<Any?>): WorkspaceNavigation 
         (fields.getOrNull(6) as? String)?.ifEmpty { null },
         (fields.getOrNull(7) as? String)?.ifEmpty { null }?.restorableArtifactLink(),
         (fields.getOrNull(8) as? String)?.ifEmpty { null },
-        (fields.getOrNull(9) as? Long)?.takeIf { it > 0 },
+        searchMessageAnchor,
     )
 }
 
