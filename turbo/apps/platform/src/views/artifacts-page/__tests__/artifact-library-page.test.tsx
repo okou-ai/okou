@@ -66,14 +66,27 @@ function getSortHeading(name: string): HTMLElement {
   if (!tableHead) {
     throw new Error("Expected the artifact Library table headings");
   }
-  const heading = queryAllByRoleFast("button", tableHead).find((button) => {
-    const label = button.textContent?.trim();
-    return label === name || label?.startsWith(`${name} Sort `);
-  });
+  const heading = queryAllByRoleFast("columnheader", tableHead).find(
+    (column) => {
+      return column.textContent?.trim() === name;
+    },
+  );
   if (!heading) {
     throw new Error(`Expected the Library sort heading "${name}"`);
   }
   return heading;
+}
+
+function getCreatedSortButton(): HTMLElement {
+  const button = queryAllByRoleFast("button", getCatalogViewport()).find(
+    (candidate) => {
+      return candidate.textContent?.trim().startsWith("Created Sort ");
+    },
+  );
+  if (!button) {
+    throw new Error("Expected the Library creation sort control");
+  }
+  return button;
 }
 
 async function showList() {
@@ -202,12 +215,12 @@ test("The enabled Library defaults to the All category in grid view and supports
     ).map((heading) => {
       return heading.textContent?.trim();
     }),
-  ).toStrictEqual([
-    "Name",
-    "Created Sort ascending",
-    "Type",
-    "More artifact actions",
-  ]);
+  ).toStrictEqual(["Name", "Created", "Type", "More artifact actions"]);
+  expect(
+    queryAllByRoleFast("button", getCatalogViewport()).filter((button) => {
+      return button.textContent?.trim().startsWith("Created Sort ");
+    }),
+  ).toStrictEqual([getCreatedSortButton()]);
   expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("complementary", { name: "Artifact" }),
@@ -234,6 +247,46 @@ test("The enabled Library defaults to the All category in grid view and supports
   await expect(
     screen.findByRole("article", { name: "legacy-plan.txt" }),
   ).resolves.toBeInTheDocument();
+});
+
+test("The view chooser keeps exactly one pressed choice through clicks and keyboard activation", async () => {
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, {
+      artifacts: [artifact({ title: "View selection.txt" })],
+      nextCursor: null,
+    });
+  });
+  await setupLibraryPage();
+  await expect(
+    findArtifactAction("View selection.txt"),
+  ).resolves.toBeInTheDocument();
+  const viewport = getCatalogViewport();
+  const grid = getButtonByName("Grid view", viewport);
+  const list = getButtonByName("List view", viewport);
+  const user = userEvent.setup();
+  expect(grid).toHaveAttribute("aria-pressed", "true");
+  expect(list).toHaveAttribute("aria-pressed", "false");
+  click(grid);
+  expect(grid).toHaveAttribute("aria-pressed", "true");
+  expect(list).toHaveAttribute("aria-pressed", "false");
+
+  list.focus();
+  await user.keyboard(" ");
+  await waitFor(() => {
+    expect(list).toHaveAttribute("aria-pressed", "true");
+    expect(grid).toHaveAttribute("aria-pressed", "false");
+  });
+  click(list);
+  expect(list).toHaveAttribute("aria-pressed", "true");
+  expect(grid).toHaveAttribute("aria-pressed", "false");
+
+  grid.focus();
+  await user.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(grid).toHaveAttribute("aria-pressed", "true");
+    expect(list).toHaveAttribute("aria-pressed", "false");
+  });
+  expect(screen.queryByRole("table")).not.toBeInTheDocument();
 });
 
 test.each([undefined, false])(
@@ -403,7 +456,7 @@ test("Whitespace-only search and clearing it omit the keyword from the productio
   expect(queryParams().has("q")).toBeFalsy();
 });
 
-test("The Created heading changes the server direction without losing the keyword", async () => {
+test("The Created toolbar control changes the server direction without losing the keyword", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     expect(query.keyword).toBe("launch");
     expect(query.kind).toBeUndefined();
@@ -420,7 +473,7 @@ test("The Created heading changes the server direction without losing the keywor
   ).resolves.toBeInTheDocument();
   await showList();
   for (const direction of ["asc", "desc"] as const) {
-    click(getSortHeading("Created"));
+    click(getCreatedSortButton());
 
     await expect(
       findArtifactAction(`launch-${direction}.txt`),
@@ -434,7 +487,7 @@ test("The Created heading changes the server direction without losing the keywor
   }
 });
 
-test("The compact Created button shares direction with the table heading and retains kind and keyword", async () => {
+test("The Created toolbar control retains direction, kind and keyword across grid and list views", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     expect(query.kind).toBe("image");
     expect(query.keyword).toBe("launch");
@@ -468,13 +521,17 @@ test("The compact Created button shares direction with the table heading and ret
     "aria-sort",
     "descending",
   );
-  const heading = getSortHeading("Created");
-  heading.focus();
+  click(getButtonByName("Grid view", getCatalogViewport()));
+  await waitFor(() => {
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+  getCreatedSortButton().focus();
   await user.keyboard(" ");
 
   await expect(
     findArtifactAction("created-asc.png"),
   ).resolves.toBeInTheDocument();
+  await showList();
   expect(getSortHeading("Created").closest("th")).toHaveAttribute(
     "aria-sort",
     "ascending",
@@ -584,7 +641,7 @@ test.each(["category", "direction", "search"] as const)(
     if (change === "category") {
       click(getCategoryTab("Images"));
     } else if (change === "direction") {
-      click(getSortHeading("Created"));
+      click(getCreatedSortButton());
     } else {
       await fill(
         screen.getByRole("searchbox", { name: "Search artifacts" }),
@@ -859,7 +916,7 @@ test.each(["search", "category", "direction"] as const)(
     } else if (change === "category") {
       click(getCategoryTab("Images"));
     } else {
-      click(getSortHeading("Created"));
+      click(getCreatedSortButton());
     }
 
     await expect(

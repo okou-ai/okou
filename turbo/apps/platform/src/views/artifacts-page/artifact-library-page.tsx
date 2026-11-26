@@ -493,11 +493,7 @@ function ArtifactLibrarySearch({ loading }: { readonly loading: boolean }) {
   );
 }
 
-function ArtifactLibrarySort({
-  heading = false,
-}: {
-  readonly heading?: boolean;
-}) {
+function ArtifactLibrarySort() {
   const { t } = useTranslation();
   const direction = useGet(artifactCatalogDirection$);
   const setDirection = useSet(setArtifactCatalogDirection$);
@@ -523,15 +519,7 @@ function ArtifactLibrarySort({
   const toggle = () => {
     setDirection(direction === "asc" ? "desc" : "asc");
   };
-  return heading ? (
-    <button
-      type="button"
-      onClick={toggle}
-      className="inline-flex min-h-9 items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      {content}
-    </button>
-  ) : (
+  return (
     <Button
       type="button"
       variant="neutral"
@@ -553,7 +541,7 @@ function ArtifactLibraryViewToggle({ view }: { readonly view: LibraryView }) {
       aria-label={t(($) => {
         return $.artifacts.library.view;
       })}
-      className="h-9 shrink-0 gap-0.5 rounded-lg border border-control-border bg-control-surface p-0.5"
+      className="h-9 shrink-0 gap-1"
       onValueChange={(values) => {
         const next = values[0];
         if (next) {
@@ -567,8 +555,8 @@ function ArtifactLibraryViewToggle({ view }: { readonly view: LibraryView }) {
     >
       <Toggle
         value="grid"
-        variant="quiet"
-        className="size-7 p-0"
+        variant="filter"
+        className="size-9 p-0"
         aria-label={t(($) => {
           return $.artifacts.library.gridView;
         })}
@@ -577,8 +565,8 @@ function ArtifactLibraryViewToggle({ view }: { readonly view: LibraryView }) {
       </Toggle>
       <Toggle
         value="list"
-        variant="quiet"
-        className="size-7 p-0"
+        variant="filter"
+        className="size-9 p-0"
         aria-label={t(($) => {
           return $.artifacts.library.listView;
         })}
@@ -617,13 +605,14 @@ function ArtifactLibraryToolbar({
           aria-label={t(($) => {
             return $.artifacts.library.type;
           })}
-          className="w-max min-w-full justify-start"
+          className="h-10 w-max min-w-full justify-start gap-5 rounded-none border-b border-divider bg-transparent p-0"
         >
           {options.map((option) => {
             return (
               <TabsTrigger
                 key={option.value}
                 value={option.value}
+                className="rounded-none border-b border-transparent px-0 data-active:border-foreground data-active:bg-transparent data-active:shadow-none not-data-active:hover:bg-transparent focus-visible:ring-inset"
                 onClick={() => {
                   // All also clears a kind filter retained by an older link.
                   if (option.value === "all" && legacyKind) {
@@ -662,7 +651,7 @@ function ArtifactLibraryTable({
         <col className="hidden w-28 @4xl:table-column" />
         <col className="w-12" />
       </colgroup>
-      <TableHeader className="bg-background">
+      <TableHeader className="sr-only">
         <TableRow className="hover:bg-transparent">
           <TableHead className="px-3 text-xs font-normal text-muted-foreground">
             {t(($) => {
@@ -673,7 +662,9 @@ function ArtifactLibraryTable({
             aria-sort={direction === "asc" ? "ascending" : "descending"}
             className="hidden px-3 text-xs font-normal text-muted-foreground @3xl:table-cell"
           >
-            <ArtifactLibrarySort heading />
+            {t(($) => {
+              return $.artifacts.library.created;
+            })}
           </TableHead>
           <TableHead className="hidden px-3 text-xs font-normal text-muted-foreground @4xl:table-cell">
             {t(($) => {
