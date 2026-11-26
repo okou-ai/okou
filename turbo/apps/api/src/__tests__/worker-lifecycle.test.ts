@@ -190,8 +190,7 @@ test("worker-lifecycle-006 uses the certificate binding to call Vertex through t
   const vertexAuthHeaders: (string | null)[] = [];
 
   const gcpMtls: RequestRuntime["gcpMtls"] = {
-    fetch(input, init) {
-      const url = typeof input === "string" ? input : input.url;
+    fetch(url, init) {
       const bodyText = typeof init?.body === "string" ? init.body : "";
       stsRequests.push({
         url,
