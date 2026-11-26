@@ -1,6 +1,5 @@
 package ai.okou.android
 
-import android.graphics.Bitmap
 import android.graphics.BlurMaskFilter
 import android.graphics.Paint
 import androidx.annotation.StringRes
@@ -27,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.scale
 import kotlin.math.roundToInt
 
 @Composable
@@ -86,13 +86,7 @@ internal fun ContentReadFailure(
 
 private fun Modifier.illustrationEdge(bitmap: ImageBitmap, color: Color): Modifier = drawWithCache {
     // Blur the transparent silhouette at its displayed size to keep the edge one dp wide.
-    val scaled =
-        Bitmap.createScaledBitmap(
-            bitmap.asAndroidBitmap(),
-            size.width.roundToInt(),
-            size.height.roundToInt(),
-            true,
-        )
+    val scaled = bitmap.asAndroidBitmap().scale(size.width.roundToInt(), size.height.roundToInt())
     val offset = IntArray(2)
     val paint =
         Paint().apply { maskFilter = BlurMaskFilter(1.dp.toPx(), BlurMaskFilter.Blur.NORMAL) }
