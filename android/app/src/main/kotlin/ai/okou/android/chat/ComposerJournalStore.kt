@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
+import android.net.Uri
 import android.os.SystemClock
 import android.util.AtomicFile
 import java.io.File
@@ -43,6 +44,22 @@ class ComposerJournalStore(
             override fun read() = SystemClock.elapsedRealtimeNanos()
         },
 ) {
+    internal val contentResolver = context.applicationContext.contentResolver
+    private val attachmentCache = context.cacheDir.resolve("chat-attachments")
+
+    internal fun attachmentDirectory(identity: WorkspaceIdentity) =
+        attachmentCache.resolve(identity.workspaceStorageKey())
+
+    internal suspend fun readAttachmentMetadata(uris: List<Uri>) =
+        withContext(dispatcher) { uris.map { it to contentResolver.attachmentMetadata(it) } }
+
+    internal suspend fun pruneAttachmentCache(identity: WorkspaceIdentity, retained: Set<String>) =
+        withContext(dispatcher) {
+            attachmentDirectory(identity).listFiles()?.forEach {
+                if (it.name.removeSuffix(".copy") !in retained) it.delete()
+            }
+        }
+
     private class Write(val journal: ComposerJournal) {
         val done = CompletableDeferred<ComposerCommit>()
     }

@@ -35,7 +35,6 @@
     <string name="settings_model_accounts">Contas de modelos</string>
     <string name="settings_accounts_scope">Escolha as contas de assinatura usadas em “%1$s”.</string>
     <string name="settings_accounts_scope_empty">Contas de modelos em “%1$s”</string>
-    <string name="settings_workspace_status">“%1$s” · %2$s</string>
     <string name="settings_accounts_update_failed">Não foi possível atualizar as contas. Exibindo as últimas informações conhecidas.</string>
     <string name="settings_accounts_empty">Nenhuma conta de modelo vinculada</string>
     <string name="settings_accounts_empty_help">Conecte o ChatGPT ou Claude para ver as cotas e escolher uma conta.</string>

@@ -7,23 +7,122 @@ import ai.okou.android.ChatListApiFixture
 import ai.okou.android.ComposerApiFixture
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.chat.DraftChatAttachment
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.plainText
+import java.io.RandomAccessFile
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class ChatComposerApiTest {
+    @get:Rule val files = TemporaryFolder()
+
+    @Test
+    fun directAndMultipartUploadsUseCanonicalCompletionWithoutSigningApiCredentials() = runTest {
+        ComposerApiFixture().use { fixture ->
+            val requests = CopyOnWriteArrayList<RecordedRequest>()
+            val id = UUID.randomUUID().toString()
+            val artifact = "/artifacts/de14229e13894503b4f8bb96d59656d6.bin"
+            val base = fixture.chats.server.url("/").toString().trimEnd('/')
+            val chunk = 5 * 1024 * 1024L
+            val sizeFor = mapOf("direct.bin" to 3L, "multipart.bin" to chunk + 3L)
+            fun metadata(name: String) =
+                """"id":"$id","filename":"$name","contentType":"application/octet-stream","size":${sizeFor.getValue(name)},"url":"$artifact""""
+            fixture.chats.commandResponse = { request ->
+                val path = request.requestUrl!!.encodedPath
+                requests += request
+                val response =
+                    when (path) {
+                        "/api/uploads/prepare" -> {
+                            val body =
+                                Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                            val name = body.getValue("filename").jsonPrimitive.content
+                            val up =
+                                if (name == "direct.bin")
+                                    """"uploadUrl":"$base/put/direct","uploadHeaders":{"x-amz-meta-chat":"android"}"""
+                                else
+                                    """"multipart":{"uploadId":"test-upload","partSize":$chunk,"parts":[{"partNumber":1,"uploadUrl":"$base/put/part1"},{"partNumber":2,"uploadUrl":"$base/put/part2"}]}"""
+                            "{${metadata(name)},$up}"
+                        }
+                        "/api/uploads/complete" -> "{${metadata("direct.bin")}}"
+                        "/api/uploads/multipart/complete" -> """{"id":"$id","url":"$artifact"}"""
+                        "/put/direct",
+                        "/put/part1",
+                        "/put/part2" -> ""
+                        else -> error("Unexpected upload route $path")
+                    }
+                MockResponse().setHeader("Content-Type", "application/json").setBody(response)
+            }
+            for ((name, size) in sizeFor) {
+                val staged = files.newFile(name)
+                RandomAccessFile(staged, "rw").use {
+                    it.setLength(size)
+                    it.seek(size - 1)
+                    it.write(42)
+                }
+                val uploaded =
+                    fixture.service.uploadChatAttachment(
+                        staged,
+                        DraftChatAttachment(
+                            UUID.randomUUID().toString(),
+                            name,
+                            "application/octet-stream",
+                            size,
+                            staged = true,
+                        ),
+                    ) {}
+                assertEquals(id, uploaded.id)
+                assertEquals(name, uploaded.filename)
+                assertEquals(size, uploaded.size)
+                assertEquals(artifact, uploaded.url)
+            }
+            val transfers = requests.filter { it.method == "PUT" }
+            assertEquals(listOf(3L, chunk, 3L), transfers.map { it.bodySize })
+            assertEquals(
+                listOf(42, 0, 42),
+                transfers.map { it.body[it.bodySize - 1].toInt() },
+            )
+            assertEquals("android", transfers.first().getHeader("x-amz-meta-chat"))
+            assertTrue(transfers.all { it.getHeader("Authorization") == null })
+            assertTrue(
+                requests
+                    .filter { it.method == "POST" }
+                    .all {
+                        it.getHeader("Authorization")?.startsWith("Bearer ") == true
+                    },
+            )
+            assertEquals(
+                listOf(
+                    "/api/uploads/prepare",
+                    "/put/direct",
+                    "/api/uploads/complete",
+                    "/api/uploads/prepare",
+                    "/put/part1",
+                    "/put/part2",
+                    "/api/uploads/multipart/complete",
+                ),
+                requests.map { it.requestUrl!!.encodedPath },
+            )
+        }
+    }
+
     @Test
     fun sharedChatFixtureServesCanonicalDraftsAlongsideConversationHistory() = runTest {
         ChatListApiFixture().use { fixture ->

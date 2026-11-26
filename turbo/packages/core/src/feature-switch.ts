@@ -67,14 +67,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Browse workflows with search, separate visibility and automation filters, and a flat list sorted by creation date.",
     enabled: false,
   },
-  [FeatureSwitchKey.IosConnectorManagement]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "iOS connector management",
-    description:
-      "Manage connector accounts and permissions in native iOS Settings.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.IosConnectorAppAuthorization]: {
     maintainer: "yuma@okou.ai",
     displayName: "iOS connector app authorization",
@@ -187,6 +179,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Hide empty For you",
     description: "Show For you in the chat list only when the feed has cards.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ProjectArchive]: {
     maintainer: "ethan@okou.ai",
@@ -313,22 +306,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Artifact email sharing",
     description:
       "Share websites and files with existing accounts or invite verified email recipients.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.SlackArtifactChannelSharing]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Slack artifact sharing",
-    description:
-      "Privately prompt artifact owners to share restricted links with the current Slack channel members.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.FeishuArtifactChannelSharing]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Feishu and Lark artifact sharing",
-    description:
-      "Preview artifacts per authorized reader and privately help owners share access with current chat members.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

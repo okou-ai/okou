@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -343,18 +344,21 @@ class OkouAppTest {
         assertEquals(12f, (actionBounds.left - searchBounds.right).value, 0.5f)
         val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
         val percentFormat = NumberFormat.getPercentInstance(Locale.GERMANY)
+        val largeRelease = release.copy(size = 2_000_000_000L)
+        fun progressCase(bytes: Long?, expectedFraction: Double) =
+            UpdateTransfer.Downloading(largeRelease, bytes) to
+                compose.activity.getString(
+                    R.string.updates_downloading,
+                    percentFormat.format(expectedFraction),
+                )
+
         listOf(
                 UpdateTransfer.Idle to compose.activity.getString(R.string.updates_download),
-                UpdateTransfer.Downloading(release) to
-                    compose.activity.getString(
-                        R.string.updates_downloading,
-                        percentFormat.format(0),
-                    ),
-                UpdateTransfer.Downloading(release, release.size / 2) to
-                    compose.activity.getString(
-                        R.string.updates_downloading,
-                        percentFormat.format(0.5),
-                    ),
+                progressCase(null, 0.0),
+                progressCase(1_060_000_000L, 0.53),
+                progressCase(1_180_000_000L, 0.59),
+                progressCase(largeRelease.size - 1, 0.99),
+                progressCase(largeRelease.size, 1.0),
                 UpdateTransfer.Ready(release) to compose.activity.getString(R.string.updates_ready),
             )
             .forEach { (transfer, label) ->
@@ -538,6 +542,8 @@ class OkouAppTest {
         render()
         compose.onNodeWithText("New chat").performClick()
         val input = compose.onNodeWithTag("message_input").assertIsDisplayed().assertIsEnabled()
+        val send = compose.onNodeWithContentDescription("Send")
+        send.assertIsDisplayed().assertIsNotEnabled()
         fun resize(heightDp: Int) = compose.runOnIdle {
             val density = compose.activity.resources.displayMetrics.density
             windowSize.value = IntSize((400 * density).toInt(), (heightDp * density).toInt())
@@ -562,11 +568,16 @@ class OkouAppTest {
         val compactLayout = compactLayouts.single()
         assertEquals(1, compactLayout.lineCount)
         assertEquals(draft.length, compactLayout.getLineEnd(0))
-        compose
-            .onNodeWithContentDescription("Send")
+        send
             .assertIsDisplayed()
-            .assertWidthIsEqualTo(48.dp)
-            .assertHeightIsEqualTo(48.dp)
+            .assertIsEnabled()
+            .assertHasClickAction()
+            .assertWidthIsEqualTo(40.dp)
+            .assertHeightIsEqualTo(40.dp)
+        val touchBounds = send.fetchSemanticsNode().touchBoundsInRoot
+        val minimumTouchSize = with(compose.density) { 48.dp.roundToPx() }
+        assertTrue(touchBounds.width >= minimumTouchSize - 1)
+        assertTrue(touchBounds.height >= minimumTouchSize - 1)
         val compactSemantics = input.fetchSemanticsNode().config
         assertEquals(draft, compactSemantics[SemanticsProperties.InputText].text)
         assertEquals(selection, compactSemantics[SemanticsProperties.TextSelectionRange])
@@ -635,9 +646,11 @@ class OkouAppTest {
         assertTrue(editorHeight > 48.dp && editorHeight < 156.dp)
         val send =
             compose.onNodeWithContentDescription("Send").assertIsDisplayed().assertIsEnabled()
-        send.assertHeightIsEqualTo(48.dp)
+        send.assertHeightIsEqualTo(40.dp)
         val visible = send.fetchSemanticsNode().boundsInRoot
-        assertEquals(48 * density, visible.height, 0.5f)
+        assertEquals(40 * density, visible.height, 0.5f)
+        val touchBounds = send.fetchSemanticsNode().touchBoundsInRoot
+        assertTrue(touchBounds.height >= 48 * density - 1)
         assertEquals(
             draft,
             input

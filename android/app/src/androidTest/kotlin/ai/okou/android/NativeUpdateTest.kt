@@ -82,7 +82,7 @@ class NativeUpdateTest {
                         progress: (Long) -> Unit,
                     ): File {
                         firstProgress.await()
-                        progress(release.size / 2)
+                        progress(release.size * 53 / 100)
                         return download.get().await()
                     }
 
@@ -354,7 +354,7 @@ class NativeUpdateTest {
             assertNotNull(text(preparing))
             captureState("details-preparing")
             firstProgress.complete(Unit)
-            val percent = "50%"
+            val percent = "53%"
             val progressLabel = app.getString(R.string.updates_downloading, percent)
             assertNotNull(text(progressLabel))
             captureState("details-progress")

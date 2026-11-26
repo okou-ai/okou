@@ -43,7 +43,6 @@
     <string name="workflow_instructions">Instructions</string>
     <string name="workflow_instructions_heading">Workflow instructions</string>
     <string name="workflow_keep_editing">Keep editing</string>
-    <string name="workflow_load_failed">Could not load workflows</string>
     <string name="workflow_rules_load_failed">Could not load workflow trigger rules.</string>
     <string name="workflow_mail_from_contains">Sender contains %1$s</string>
     <string name="workflow_mail_labeled">Gmail label applied</string>
@@ -109,7 +108,6 @@
     <string name="workflow_write_conflict">This workflow changed while saving. Your edits are preserved.</string>
     <string name="workflow_history_earlier">Show earlier runs</string>
     <string name="workflow_history_event">Event</string>
-    <string name="workflow_history_failed">Could not load run history</string>
     <string name="workflow_history_loading">Loading run history…</string>
     <string name="workflow_history_open_chat">Open source chat</string>
     <string name="workflow_history_unavailable">Run history unavailable</string>

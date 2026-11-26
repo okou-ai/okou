@@ -1,4 +1,4 @@
-import { connectorNativeAppReturnUrl } from "@okouai/api-contracts/validators/connectors";
+import { connectorCallbackResultUrl } from "../services/connector-native-return";
 import { command } from "ccstate";
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import type { ConnectorOauthCallbackResult } from "@okouai/api-contracts/contracts/connectors-slug-callback";
@@ -14,7 +14,6 @@ import {
   providerUnavailable,
   resourceUnavailable,
 } from "../../lib/error";
-import { env } from "../../lib/env";
 import { connectorOAuthRedirectResponse } from "../../lib/connector-oauth-state";
 import { readConnectorResolver$ } from "../services/connector-action-resolver.service";
 import {
@@ -237,19 +236,9 @@ const callbackBuiltinAutomatic$ = command(
     if (query.responseMode === "json") {
       return { status: 200 as const, body: completed.result };
     }
-    if (completed.result.nativeAppReturn) {
-      return connectorOAuthRedirectResponse(
-        connectorNativeAppReturnUrl(completed.result.nativeAppReturn),
-      );
-    }
-    const target = new URL(
-      `/connectors/${encodeURIComponent(completed.connectorSlug)}/callback/${completed.result.status}`,
-      env("APP_URL"),
+    return connectorOAuthRedirectResponse(
+      connectorCallbackResultUrl(completed.connectorSlug, completed.result),
     );
-    if (completed.result.status === "error") {
-      target.searchParams.set("message", completed.result.message);
-    }
-    return connectorOAuthRedirectResponse(target.toString());
   },
 );
 

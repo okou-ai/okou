@@ -385,6 +385,7 @@ const offerToProcess$ = command(
       readonly token: string;
       readonly window: DeliveryWindow;
       readonly preparationTiming: RunnerDispatchPreparationTiming | undefined;
+      readonly resolveFirstPostHandoff: (() => void) | undefined;
     },
     signal: AbortSignal,
   ) => {
@@ -429,6 +430,7 @@ const offerToProcess$ = command(
           timeoutMs: Math.min(15_000, remaining),
           firstRankedTarget: args.preparationTiming !== undefined,
           preparationTiming,
+          resolveFirstPostHandoff: args.resolveFirstPostHandoff,
         },
         signal,
       );
@@ -477,6 +479,10 @@ interface PreparedRunDelivery {
   >;
 }
 
+interface RunDelivery extends PreparedRunDelivery {
+  readonly resolveFirstPostHandoff: (() => void) | undefined;
+}
+
 const rejectRestrictedAntigravityRun$ = command(
   async (
     { set },
@@ -496,7 +502,7 @@ const rejectRestrictedAntigravityRun$ = command(
 );
 
 export const dispatchPreparedRun$ = command(
-  async ({ get, set }, args: PreparedRunDelivery, signal: AbortSignal) => {
+  async ({ get, set }, args: RunDelivery, signal: AbortSignal) => {
     signal.throwIfAborted();
     const input = args.input;
     let owner: DirectRunTarget | null = null;
@@ -579,6 +585,7 @@ export const dispatchPreparedRun$ = command(
             preparationTiming: firstOwner
               ? { ...args.preparationTiming, ownerWriteMs }
               : undefined,
+            resolveFirstPostHandoff: args.resolveFirstPostHandoff,
           },
           signal,
         );

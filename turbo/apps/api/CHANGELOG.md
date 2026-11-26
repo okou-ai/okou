@@ -10,6 +10,58 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.136.0](https://github.com/okou-ai/okou/compare/api-v2.135.0...api-v2.136.0) (2026-11-26)
+
+
+### Features
+
+* **api:** prepare schedules for the standalone proactive cron ([#51079](https://github.com/okou-ai/okou/issues/51079)) ([2b49ea5](https://github.com/okou-ai/okou/commit/2b49ea55c08205b79c036a97f26a2e0e38baf117))
+
+
+### Refactoring
+
+* remove slack artifact sharing feature switch ([#51083](https://github.com/okou-ai/okou/issues/51083)) ([50b7d05](https://github.com/okou-ai/okou/commit/50b7d05735afeaefa0cbcc86b33ffa8e4141922f))
+
+
+### Performance Improvements
+
+* **api:** deduplicate chat search projection around runner dispatch ([#51080](https://github.com/okou-ai/okou/issues/51080)) ([ade8eac](https://github.com/okou-ai/okou/commit/ade8eac256f73ca08fffe6135d19151666a2e02c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.0
+    * @okouai/core bumped to 8.885.1
+    * @okouai/db bumped to 2.71.0
+    * @okouai/pi-agent-runtime bumped to 1.52.89
+
+## [2.135.0](https://github.com/okou-ai/okou/compare/api-v2.134.1...api-v2.135.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** authorize supported connectors through installed apps ([#50975](https://github.com/okou-ai/okou/issues/50975)) ([a105bd9](https://github.com/okou-ai/okou/commit/a105bd92a24247370daf3b932a7d20fc7ab61d87))
+
+
+### Performance Improvements
+
+* **api:** prefetch execution bundle URL cache with package sources ([#51056](https://github.com/okou-ai/okou/issues/51056)) ([897d1e1](https://github.com/okou-ai/okou/commit/897d1e187f337a39688bcaaa9fb32f412f5117fd))
+* **api:** reuse the serialized body for preferred home dispatch ([#51063](https://github.com/okou-ai/okou/issues/51063)) ([52482b9](https://github.com/okou-ai/okou/commit/52482b9014d36c98db7783ead28326ce6d4806e8))
+* **api:** trim run startup SQL results ([#51060](https://github.com/okou-ai/okou/issues/51060)) ([94374ba](https://github.com/okou-ai/okou/commit/94374ba48828673d96c89e7fe1d85691d411146a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.132.0
+    * @okouai/connectors bumped to 3.26.0
+    * @okouai/core bumped to 8.885.0
+    * @okouai/db bumped to 2.70.2
+    * @okouai/pi-agent-runtime bumped to 1.52.88
+
 ## [2.134.1](https://github.com/okou-ai/okou/compare/api-v2.134.0...api-v2.134.1) (2026-11-26)
 
 

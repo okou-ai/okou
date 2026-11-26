@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.23.136](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.135...guest-control-client-v0.23.136) (2026-11-26)
+
+
+### Refactoring
+
+* **guest-control:** share operation reservation and fence state updates ([#51082](https://github.com/okou-ai/okou/issues/51082)) ([6cbe48d](https://github.com/okou-ai/okou/commit/6cbe48dac6d03650cf89b7bd8e4936eb9d4f9afd))
+
+## [0.23.135](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.134...guest-control-client-v0.23.135) (2026-11-26)
+
 ## [0.23.134](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.133...guest-control-client-v0.23.134) (2026-11-26)
 
 ## [0.23.133](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.132...guest-control-client-v0.23.133) (2026-11-25)

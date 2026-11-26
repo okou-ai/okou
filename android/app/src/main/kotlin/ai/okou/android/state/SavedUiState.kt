@@ -1,5 +1,6 @@
 package ai.okou.android.state
 
+import ai.okou.android.ReadFailureAnnouncement
 import ai.okou.android.artifacts.ArtifactFilter
 import ai.okou.android.artifacts.ExternalImagePreviewPrefix
 import ai.okou.android.chat.ConversationAnchor
@@ -87,6 +88,46 @@ internal fun rememberWorkspacePresentationState(): SaveableStateHolder =
 
 @Composable
 internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
+
+internal data class AttachmentPickerSelection(
+    val draftKey: String,
+    val targetKey: String,
+    val replacing: String?,
+)
+
+@Composable
+internal fun rememberAttachmentPickerSelection(): MutableState<AttachmentPickerSelection?> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<AttachmentPickerSelection?, String>(
+                save = { selection ->
+                    if (selection == null) emptyList()
+                    else
+                        listOf(
+                            selection.draftKey,
+                            selection.targetKey,
+                            selection.replacing.orEmpty(),
+                        )
+                },
+                restore = { values ->
+                    values.firstOrNull()?.let {
+                        AttachmentPickerSelection(it, values[1], values[2].ifEmpty { null })
+                    }
+                },
+            ),
+    ) {
+        mutableStateOf(null)
+    }
+
+@Composable
+internal fun rememberDraftAttachmentPreview(): MutableState<String?> = rememberSaveable {
+    mutableStateOf(null)
+}
+
+@Composable
+internal fun rememberDraftAttachmentsOpen(): MutableState<Boolean> = rememberSaveable {
     mutableStateOf(false)
 }
 
@@ -284,13 +325,7 @@ internal class ChatSearchState(
     var pendingFocus by mutableStateOf(focusedResult)
         private set
 
-    private var announcedReadFailure = false
-
-    fun shouldAnnounceReadFailure(failed: Boolean): Boolean {
-        val announce = failed && !announcedReadFailure
-        announcedReadFailure = failed
-        return announce
-    }
+    val readFailureAnnouncement = ReadFailureAnnouncement()
 
     fun edit(value: TextFieldValue) {
         query = value
@@ -325,13 +360,13 @@ internal class ChatSearchState(
     fun reset() {
         type = WorkspaceSearchType.All
         clearQuery()
+        readFailureAnnouncement.reset()
         resetPosition()
     }
 
     private fun resetPosition() {
         pendingAnchor = null
         pendingFocus = null
-        announcedReadFailure = false
         position.requestScrollToItem(0)
     }
 

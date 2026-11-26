@@ -20,9 +20,7 @@ SEED_HASH = hashlib.sha256(SEED).hexdigest()
 
 
 def canonical(value):
-    if not isinstance(value, str) or not report.is_canonical_uuid(value):
-        raise ValueError("continuation has no canonical original identity")
-    return value
+    return report.require_canonical_uuid(value, "continuation has no canonical original identity")
 
 
 def digest(value):

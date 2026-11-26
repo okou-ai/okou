@@ -1,10 +1,13 @@
 package ai.okou.android.api
 
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -13,6 +16,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SignedTransferClientTest {
+    @Test
+    fun streamedUploadsCanCompletePastTheSmallRequestDeadline() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setResponseCode(204).setHeadersDelay(1_200, TimeUnit.MILLISECONDS),
+            )
+            SignedTransferClient(callTimeout = 1.seconds).use { transfers ->
+                transfers.upload(server.url("/upload"), "file".toRequestBody())
+            }
+            assertEquals("file", server.takeRequest().body.readUtf8())
+        }
+    }
+
     @Test
     fun signedReadsPreserveValidServerRetryDelays() = runTest {
         MockWebServer().use { server ->

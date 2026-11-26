@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.67.1](https://github.com/okou-ai/okou/compare/ios-v0.67.0...ios-v0.67.1) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** keep the workspace status and chat row mutations in the session graph ([#51053](https://github.com/okou-ai/okou/issues/51053)) ([fce69c7](https://github.com/okou-ai/okou/commit/fce69c7005f6edbb6ea110eb1e9e8477c53cfe6d))
+
+## [0.67.0](https://github.com/okou-ai/okou/compare/ios-v0.66.10...ios-v0.67.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** authorize supported connectors through installed apps ([#50975](https://github.com/okou-ai/okou/issues/50975)) ([a105bd9](https://github.com/okou-ai/okou/commit/a105bd92a24247370daf3b932a7d20fc7ab61d87))
+
+
+### Refactoring
+
+* **ios:** keep the connector account page's lifetime in the graph ([#51034](https://github.com/okou-ai/okou/issues/51034)) ([e72339f](https://github.com/okou-ai/okou/commit/e72339f4f24242df267ee4d5af099d2b8e771d21))
+
 ## [0.66.10](https://github.com/okou-ai/okou/compare/ios-v0.66.9...ios-v0.66.10) (2026-11-26)
 
 

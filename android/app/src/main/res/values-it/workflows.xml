@@ -43,7 +43,6 @@
     <string name="workflow_instructions">Istruzioni</string>
     <string name="workflow_instructions_heading">Istruzioni del flusso di lavoro</string>
     <string name="workflow_keep_editing">Continua a modificare</string>
-    <string name="workflow_load_failed">Impossibile caricare i flussi di lavoro</string>
     <string name="workflow_rules_load_failed">Impossibile caricare le regole di attivazione.</string>
     <string name="workflow_mail_from_contains">Il mittente contiene %1$s</string>
     <string name="workflow_mail_labeled">Etichetta Gmail applicata</string>
@@ -110,7 +109,6 @@
     <string name="workflow_write_conflict">Questo workflow è cambiato durante il salvataggio. Le tue modifiche sono state conservate.</string>
     <string name="workflow_history_earlier">Mostra le esecuzioni precedenti</string>
     <string name="workflow_history_event">Evento</string>
-    <string name="workflow_history_failed">Impossibile caricare la cronologia delle esecuzioni</string>
     <string name="workflow_history_loading">Caricamento della cronologia delle esecuzioni…</string>
     <string name="workflow_history_open_chat">Apri la chat di origine</string>
     <string name="workflow_history_unavailable">Cronologia delle esecuzioni non disponibile</string>

@@ -287,7 +287,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
       return XCTFail("Upgrade failure must remain in the original resource")
     }
     XCTAssertEqual((error as? APIClientError)?.statusCode, 426)
-    try await waitForBusinessResult { workspace.needsUpgrade }
+    try await waitForBusinessResult(watching: workspace) { workspace.needsUpgrade }
     XCTAssertEqual(conversation.messages, messages)
     XCTAssertThrowsError(
       try conversation.activitySummary.store.get(conversation.activitySummary.value))

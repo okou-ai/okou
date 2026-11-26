@@ -212,7 +212,7 @@ class ConnectorAccountFlowTest {
     }
 
     @Test
-    fun directoryKeepsConfirmedEmptyResultsWhileRefreshing() =
+    fun directoryKeepsCachedResultsAndViewportWhenRefreshingFails() =
         withDirectory(
             configure = { fixture ->
                 fixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
@@ -226,11 +226,26 @@ class ConnectorAccountFlowTest {
             compose.onNodeWithText("Discover").performClick()
             awaitText("Google Calendar")
 
+            val directory = compose.onNodeWithTag("connector-directory")
+            val calendar = compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR")
+            val directoryBounds = directory.getUnclippedBoundsInRoot()
+            val rowBounds = calendar.getUnclippedBoundsInRoot()
+            fixture.discoveryRetryAfterSeconds = 0
             fixture.failDiscovery = true
-            compose.runOnIdle { model.resume() }
-            compose.onNodeWithText("Google Calendar").assertIsDisplayed()
+            compose.runOnIdle {
+                model.pause()
+                model.resume()
+            }
+            val feedback = hasText("Could not refresh connectors.")
+            compose.waitUntilAtLeastOneExists(feedback, 10_000)
+            compose
+                .onNode(feedback and !hasAnyAncestor(hasTestTag("connector-directory")))
+                .assertIsDisplayed()
+            assertEquals(directoryBounds, directory.getUnclippedBoundsInRoot())
+            assertEquals(rowBounds, calendar.getUnclippedBoundsInRoot())
             compose.onNodeWithText("Connected").performClick()
             compose.onNodeWithText(empty).assertIsDisplayed()
+            compose.onNode(feedback).assertDoesNotExist()
 
             fixture.failDiscovery = false
             compose.onNodeWithContentDescription("Filter by service category").performClick()

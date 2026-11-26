@@ -35,7 +35,6 @@
     <string name="settings_model_accounts">Comptes de modèle</string>
     <string name="settings_accounts_scope">Choisissez les comptes d’abonnement utilisés dans «\u00A0%1$s\u00A0».</string>
     <string name="settings_accounts_scope_empty">Comptes de modèle dans «\u00A0%1$s\u00A0»</string>
-    <string name="settings_workspace_status">«\u00A0%1$s\u00A0» · %2$s</string>
     <string name="settings_accounts_update_failed">L’actualisation a échoué. Dernières données connues affichées.</string>
     <string name="settings_accounts_empty">Aucun compte de modèle associé</string>
     <string name="settings_accounts_empty_help">Associez ChatGPT ou Claude pour consulter les quotas et choisir un compte.</string>

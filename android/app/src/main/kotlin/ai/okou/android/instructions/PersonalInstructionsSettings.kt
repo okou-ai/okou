@@ -167,7 +167,7 @@ internal fun PersonalInstructionsSettings(
         else null
     LaunchedEffect(refreshFailure) {
         if (refreshFailure != null)
-            snackbar.showSnackbar(refreshFailure, duration = SnackbarDuration.Short)
+            snackbar.showSnackbar(refreshFailure, duration = SnackbarDuration.Indefinite)
     }
     val editing =
         if (

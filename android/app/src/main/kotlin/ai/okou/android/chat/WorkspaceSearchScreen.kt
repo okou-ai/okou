@@ -6,15 +6,18 @@ import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.WorkspaceFilterRow
+import ai.okou.android.WorkspaceSearchGroupHeading
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.artifacts.label
 import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.rememberReadFailureFeedback
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
 import ai.okou.android.state.ChatSearchState
 import ai.okou.android.workspaceSearchControlHeight
 import ai.okou.android.workspaceSearchFocusOutline
+import ai.okou.android.workspaceSearchSecondaryStyle
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -38,8 +41,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -544,7 +545,6 @@ private fun SearchResults(
                 R.string.chat_search_artifacts_failed
             else -> null
         }
-    val snackbar = remember(search) { SnackbarHostState() }
     val notice =
         if (readFailed && !pending && !showFailure) {
             val message =
@@ -552,11 +552,13 @@ private fun SearchResults(
                 else R.string.chat_search_unavailable
             stringResource(message)
         } else null
-    LaunchedEffect(search, keyword, type, notice) {
-        if (search.shouldAnnounceReadFailure(notice != null) && notice != null) {
-            snackbar.showSnackbar(notice, duration = SnackbarDuration.Indefinite)
-        }
-    }
+    val snackbar =
+        rememberReadFailureFeedback(
+            scope = keyword to type,
+            failureRound = Unit.takeIf { notice != null },
+            message = notice,
+            announcement = search.readFailureAnnouncement,
+        )
     val resultFocus = remember { FocusRequester() }
     val anchor = search.pendingAnchor
     val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
@@ -740,7 +742,7 @@ private fun SearchResults(
                             stringResource(R.string.chat_search_enter_keyword),
                             Modifier.padding(12.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = searchSecondaryStyle(),
+                            style = workspaceSearchSecondaryStyle(),
                         )
                     } else {
                         SearchEmpty(type, onSelectType)
@@ -755,6 +757,7 @@ private fun SearchResults(
             WorkspaceFeedbackHost(
                 snackbar,
                 Modifier.padding(bottom = 8.dp),
+                manageTimeout = false,
                 surfaceModifier = Modifier.testTag("chat_search_feedback"),
             )
         }
@@ -775,13 +778,7 @@ private fun SearchGroup(group: SearchItem.Group, onMore: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            label,
-            modifier =
-                Modifier.weight(1f).padding(top = 10.dp, bottom = 4.dp).semantics { heading() },
-            style = searchSecondaryStyle().copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        WorkspaceSearchGroupHeading(label, Modifier.weight(1f))
         if (group.more) {
             Box(
                 Modifier.widthIn(min = 48.dp)
@@ -795,7 +792,7 @@ private fun SearchGroup(group: SearchItem.Group, onMore: () -> Unit) {
             ) {
                 Text(
                     stringResource(R.string.chat_search_view_all),
-                    style = searchSecondaryStyle(),
+                    style = workspaceSearchSecondaryStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -836,7 +833,7 @@ private fun SearchResult(
         if (snippet != null) {
             Text(
                 snippet,
-                style = searchSecondaryStyle(),
+                style = workspaceSearchSecondaryStyle(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -845,7 +842,7 @@ private fun SearchResult(
         if (metadata != null) {
             Text(
                 metadata,
-                style = searchSecondaryStyle(),
+                style = workspaceSearchSecondaryStyle(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -888,14 +885,6 @@ private fun SearchEmpty(
         }
     }
 }
-
-@Composable
-private fun searchSecondaryStyle() =
-    MaterialTheme.typography.bodyMedium.copy(
-        fontSize = 13.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.sp,
-    )
 
 @get:StringRes
 private val WorkspaceSearchType.label: Int

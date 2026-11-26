@@ -12,6 +12,10 @@ struct ChatSidebarHeader: View {
   let hasUnreadChats: Bool
   /// Whether Mark all as read is in flight, from the list status the sidebar resolves.
   let markingAllRead: Bool
+  /// Whether a chat write is in flight, from the row mutations the sidebar resolves.
+  let updatingChats: Bool
+  /// Whether the workspace requires an update, from the workspace state the sidebar resolves.
+  let needsUpgrade: Bool
   let close: () -> Void
   let newProject: () -> Void
 
@@ -94,7 +98,8 @@ struct ChatSidebarHeader: View {
     HStack(spacing: 0) {
       ChatListFilterMenu(
         store: store, selection: threadFilter, hasUnreadChats: hasUnreadChats,
-        markingAllRead: markingAllRead, newProject: newProject
+        markingAllRead: markingAllRead, updatingChats: updatingChats, needsUpgrade: needsUpgrade,
+        newProject: newProject
       )
       .frame(height: OkouControl.minimumTarget)
       .fixedSize(horizontal: true, vertical: false)

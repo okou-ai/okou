@@ -51,6 +51,7 @@ import ai.okou.android.api.generated.artifactDetail
 import ai.okou.android.api.generated.historyRows
 import ai.okou.android.api.generated.resolveArtifactReference
 import ai.okou.android.api.generated.workflows
+import ai.okou.android.chat.ChatAttachmentReference
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.plainDraftDocument
@@ -260,8 +261,12 @@ class ApiClient(
         if (target.threadId != null) threadDraft(it, target.threadId) else workspaceDraft(it)
     }
 
-    suspend fun saveComposerDraft(target: ServerDraftTarget, text: String) {
-        val body = plainDraftDocument(text)
+    suspend fun saveComposerDraft(
+        target: ServerDraftTarget,
+        text: String,
+        attachments: List<ChatAttachmentReference> = emptyList(),
+    ) {
+        val body = plainDraftDocument(text, attachments)
         writeNoContent {
             if (target.threadId != null)
                 saveThreadDraft(
@@ -272,6 +277,8 @@ class ApiClient(
             else saveWorkspaceDraft(it, json.decodeFromJsonElement<SaveWorkspaceDraft>(body))
         }
     }
+
+    internal suspend fun resolveChatUpload(id: String) = read { chatUploadedFile(it, id) }
 
     suspend fun recoveryCatalog() = read { recoveryCatalog(it) }
 

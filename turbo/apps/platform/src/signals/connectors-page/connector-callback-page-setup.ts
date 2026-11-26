@@ -3,6 +3,7 @@ import type { ConnectorOauthCallbackResult } from "@okouai/api-contracts/contrac
 import {
   connectorNativeAppReturnSchema,
   connectorNativeAppReturnUrl,
+  type ConnectorNativeAppReturn,
 } from "@okouai/api-contracts/validators/connectors";
 import { customConnectorOAuth2Contract } from "@okouai/api-contracts/client/custom-connectors";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -156,8 +157,19 @@ function callbackPageElement(
     errorMessage: result.status === "error" ? result.message : null,
     nativeReturnUrl:
       result.status !== "loading" && result.nativeAppReturn
-        ? connectorNativeAppReturnUrl(result.nativeAppReturn)
+        ? nativeBrowserReturnUrl(result.nativeAppReturn)
         : undefined,
+  });
+}
+
+function nativeBrowserReturnUrl(
+  nativeReturn: ConnectorNativeAppReturn,
+): string {
+  // Same-origin HTTPS navigation can stay in the browser. Open the registered
+  // scheme while keeping this result page available for a manual retry.
+  return connectorNativeAppReturnUrl({
+    platform: nativeReturn.platform,
+    attemptId: nativeReturn.attemptId,
   });
 }
 
@@ -314,9 +326,7 @@ const showConnectorCallbackResult$ = command(
       resultSearchParams,
     );
     if (result.nativeAppReturn) {
-      window.location.assign(
-        connectorNativeAppReturnUrl(result.nativeAppReturn),
-      );
+      window.location.assign(nativeBrowserReturnUrl(result.nativeAppReturn));
     }
   },
 );
@@ -343,13 +353,6 @@ export const setupConnectorCallbackPage$ = command(
       searchParams,
     );
 
-    if (pathResult && !connectorIcon && connectorSlug) {
-      connectorIcon = await set(
-        loadConnectorCallbackIcon$,
-        connectorSlug,
-        signal,
-      );
-    }
     const initialResult =
       pathResult ??
       (!callbackConnectorSlug
@@ -366,7 +369,26 @@ export const setupConnectorCallbackPage$ = command(
     );
     set(updateDocumentTitle$, connectorCallbackDocumentTitle(label));
     await set(hideAppSkeleton$, signal);
-    if (pathResult || !callbackConnectorSlug) {
+    if (pathResult) {
+      if (pathResult.nativeAppReturn) {
+        window.location.assign(
+          nativeBrowserReturnUrl(pathResult.nativeAppReturn),
+        );
+      }
+      if (!connectorIcon && connectorSlug) {
+        connectorIcon = await set(
+          loadConnectorCallbackIcon$,
+          connectorSlug,
+          signal,
+        );
+        set(
+          updatePage$,
+          callbackPageElement(connectorIcon, connectorSlug, label, pathResult),
+        );
+      }
+      return;
+    }
+    if (!callbackConnectorSlug) {
       return;
     }
     if (integration) {
