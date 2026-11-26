@@ -3,11 +3,12 @@ import UIKit
 
 final class ComposerVoiceAttachmentProvider: NSTextAttachmentViewProvider {
   override func loadView() {
-    // TextKit measures attachments off the UI actor, but loads their UIKit views on main.
-    MainActor.assumeIsolated {
-      guard let attachment = textAttachment as? ComposerReferenceAttachment else { return }
-      view = ComposerVoiceClipControl(
-        fileIDs: attachment.voiceFileIDs, font: attachment.referenceFont)
+    guard let attachment = textAttachment as? ComposerReferenceAttachment else { return }
+    let fileIDs = attachment.voiceFileIDs
+    let fontSize = attachment.referenceFont.pointSize
+    // TextKit measures attachments separately and creates their UIKit views on main.
+    view = MainActor.assumeIsolated {
+      ComposerVoiceClipControl(fileIDs: fileIDs, fontSize: fontSize)
     }
   }
 
@@ -42,7 +43,7 @@ final class ComposerVoiceClipControl: UIControl {
     max(104, ceil(font.pointSize * 6))
   }
 
-  init(fileIDs: [String], font: UIFont) {
+  init(fileIDs: [String], fontSize: CGFloat) {
     self.fileIDs = fileIDs
     super.init(frame: .zero)
     isAccessibilityElement = true
@@ -54,7 +55,7 @@ final class ComposerVoiceClipControl: UIControl {
     chip.addSubview(glyph)
     for bar in bars { chip.addSubview(bar) }
     time.font = UIFont.monospacedDigitSystemFont(
-      ofSize: max(12, font.pointSize * 0.71), weight: .regular)
+      ofSize: max(12, fontSize * 0.71), weight: .regular)
     time.textAlignment = .right
     time.adjustsFontSizeToFitWidth = true
     time.minimumScaleFactor = 0.75
