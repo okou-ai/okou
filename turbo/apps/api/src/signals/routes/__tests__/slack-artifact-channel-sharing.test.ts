@@ -45,7 +45,7 @@ const context = testContext();
 const store = createStore();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const CHANNEL = "C_ARTIFACT_SHARE";
-const MESSAGE_TS = "1795586400.000001";
+const MESSAGE_TS = "1796112000.000101";
 const RESPONSE_URL = "https://hooks.slack.com/actions/T0/1/artifact-share";
 
 type Owner = ApiTestUser & { readonly orgId: string };
@@ -250,7 +250,7 @@ async function workspace() {
   join(installed.slackUserId);
   context.mocks.slack.chat.postEphemeral.mockResolvedValue({
     ok: true,
-    message_ts: "1795586400.000002",
+    message_ts: "1796112000.000102",
   });
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
   context.mocks.resend.send.mockResolvedValue({
