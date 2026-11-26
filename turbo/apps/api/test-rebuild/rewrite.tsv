@@ -399,12 +399,12 @@ billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade
 billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-014	rewritten	49.8		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
 billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-015	rewritten	81.7		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
 billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-017	rewritten	53.9		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
-billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-001	planned				B03
-billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-004	planned				B03
-billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-005	planned				B03
-billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-006	planned				B03
-billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-007	planned				B03
-billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-008	planned				B03
+billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-001	rewritten	58.7		src/signals/routes/__tests__/billing-feedback.test.ts	B03
+billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-004	rewritten	102.0		src/signals/routes/__tests__/billing-feedback.test.ts	B03
+billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-005	rewritten	24.1		src/signals/routes/__tests__/billing-feedback.test.ts	B03
+billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-006	rewritten	66.0		src/signals/routes/__tests__/billing-feedback.test.ts	B03
+billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-007	rewritten	116.7		src/signals/routes/__tests__/billing-feedback.test.ts	B03
+billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-008	rewritten	16.7		src/signals/routes/__tests__/billing-feedback.test.ts	B03
 billing	src/signals/routes/__tests__/billing-invoices.test.ts	billing-invoices-003	planned				
 billing	src/signals/routes/__tests__/billing-invoices.test.ts	billing-invoices-004	planned				
 billing	src/signals/routes/__tests__/billing-invoices.test.ts	billing-invoices-005	planned				
