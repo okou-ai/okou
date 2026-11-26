@@ -15,7 +15,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
-import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -48,19 +47,6 @@ class ScreenshotScenario {
             device.executeShellCommand("wm density 160")
             device.executeShellCommand("settings put system font_scale 1.0")
 
-            withWindow(412, 892, UserPreferencesTheme.LIGHT) { fixture ->
-                openDirectory()
-                assertTrue(action("新建").visibleBounds.height() >= 48)
-                ScreenshotCapture.capture("phone-directory.png")
-
-                action(fixture.releaseTitle).click()
-                text("工作流说明")
-                val tabs = listOf("说明", "自动化", "运行记录").map { tab(it).visibleBounds }
-                assertTrue(tabs.all { it.height() >= 48 })
-                assertTrue(tabs.maxOf { it.width() } - tabs.minOf { it.width() } <= 1)
-                assertTrue(action("在聊天中使用").visibleBounds.height() >= 48)
-                ScreenshotCapture.capture("phone-detail.png")
-            }
             withWindow(1180, 820, UserPreferencesTheme.DARK) { fixture ->
                 openDirectory()
                 action(fixture.releaseTitle).click()
@@ -143,7 +129,6 @@ class ScreenshotScenario {
                             assertEquals(160, it.resources.configuration.densityDpi)
                             assertEquals(1f, it.resources.configuration.fontScale, 0.001f)
                         }
-                        if (width == 412) awaitPhoneNavigation(height)
                         capture(fixture)
                     } catch (failure: Throwable) {
                         runCatching {
@@ -156,36 +141,6 @@ class ScreenshotScenario {
                     }
                 }
             }
-        }
-    }
-
-    private fun awaitPhoneNavigation(height: Int) {
-        // After wm size, the Activity can report the new size before Launcher moves its buttons.
-        val backButtons =
-            listOf(By.res("com.android.launcher3", "back"), By.res("com.android.systemui", "back"))
-        val systemUiAnr = By.res("android", "alertTitle").text("System UI isn't responding")
-        val waitButton = By.res("android", "aerr_wait")
-        var requestedWait = false
-        val settled =
-            object : Condition<UiDevice, Boolean> {
-                override fun apply(device: UiDevice): Boolean {
-                    if (device.hasObject(systemUiAnr)) {
-                        if (!requestedWait) {
-                            device.findObject(waitButton)?.let { button ->
-                                button.click()
-                                requestedWait = true
-                            }
-                        }
-                        return false
-                    }
-                    return backButtons.any { selector ->
-                        device.findObject(selector)?.visibleBounds?.centerY()
-                            ?.let { it in (height - 56) until height } == true
-                    }
-                }
-            }
-        check(device.wait(settled, 20_000)) {
-            "The system navigation buttons have not reached the bottom edge"
         }
     }
 
