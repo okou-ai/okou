@@ -190,7 +190,7 @@ struct ForYouView: View {
 
   /// What the page has to say floats under the header, over the scene, so the deck never moves
   /// and the card's directions are never covered. A failure stays until it is dismissed. A
-  /// finished action ("Noted — this is not planned · Undo") is the chat's feedback surface and
+  /// finished action ("Noted for later · Undo") is the chat's feedback surface and
   /// lifts away after a few idle seconds or a sideways swipe, its Undo kept in the caught-up
   /// recap. Each drops in from under the header, and a new one replaces the last in place.
   @ViewBuilder private var notices: some View {

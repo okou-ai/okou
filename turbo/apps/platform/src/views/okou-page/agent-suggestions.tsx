@@ -7,7 +7,7 @@ import {
   X,
   CircleCheck,
   CircleMinus,
-  BellOff,
+  Clock,
   EyeOff,
   SquarePen,
   Send,
@@ -513,23 +513,23 @@ function SuggestionFeedback({
     {
       kind: "already_done" as const,
       label: t(($) => {
-        return $.chat.agentSuggestions.alreadyDone;
+        return $.chat.agentSuggestions.done;
       }),
       Icon: CircleCheck,
     },
     {
       kind: "not_planned" as const,
       label: t(($) => {
-        return $.chat.agentSuggestions.notPlanned;
+        return $.chat.agentSuggestions.wontDo;
       }),
       Icon: CircleMinus,
     },
     {
-      kind: "dont_nudge" as const,
+      kind: "later" as const,
       label: t(($) => {
-        return $.chat.agentSuggestions.dontNudge;
+        return $.chat.agentSuggestions.later;
       }),
-      Icon: BellOff,
+      Icon: Clock,
     },
     {
       kind: "less_like_this" as const,
