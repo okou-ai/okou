@@ -1437,11 +1437,12 @@ describe("CHAT-02: shared user message queue", () => {
     await waitForRunStatus(actor, anchor.runId, "cancelled");
 
     const queuedId = randomUUID();
+    const keyword = `recoveryqueuedsearch${randomUUID().replaceAll("-", "")}`;
     const sent = await chat.requestSendEvent(
       actor,
       {
         threadId: anchor.threadId,
-        prompt: "send during cancellation recovery",
+        prompt: keyword,
         clientEventId: queuedId,
       },
       [201],
@@ -1449,6 +1450,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (sent.status !== 201) {
       throw new Error("Expected recovery-blocked input to be accepted");
     }
+    await flushWaitUntilForTest();
     const beforeRecovery = await chat.listThreadEvents(actor, anchor.threadId);
     expect(userMessages(beforeRecovery.events)).not.toContainEqual(
       expect.objectContaining({
@@ -1456,6 +1458,15 @@ describe("CHAT-02: shared user message queue", () => {
         runId: expect.any(String),
       }),
     );
+    expect((await chat.searchChat(actor, keyword)).results).toStrictEqual([
+      expect.objectContaining({
+        chatThreadId: anchor.threadId,
+        matchedMessage: expect.objectContaining({
+          content: keyword,
+          runId: null,
+        }),
+      }),
+    ]);
 
     await failChatRun(anchor.runId, sandboxHeaders, "Run cancelled");
     await flushWaitUntilForTest();
@@ -1474,6 +1485,15 @@ describe("CHAT-02: shared user message queue", () => {
     if (!launchedRunId) {
       throw new Error("Expected the queued send after cancellation recovery");
     }
+    expect((await chat.searchChat(actor, keyword)).results).toStrictEqual([
+      expect.objectContaining({
+        chatThreadId: anchor.threadId,
+        matchedMessage: expect.objectContaining({
+          content: keyword,
+          runId: launchedRunId,
+        }),
+      }),
+    ]);
     await cancelAndCompleteChatRun(actor, launchedRunId);
   }, 90_000);
 

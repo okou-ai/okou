@@ -244,6 +244,7 @@ interface RunnerDispatchPost {
   readonly timeoutMs: number;
   readonly firstRankedTarget: boolean;
   readonly preparationTiming: RunnerDispatchPreparationTiming | undefined;
+  readonly resolveFirstPostHandoff: (() => void) | undefined;
 }
 
 function dispatchPoolDimensions(
@@ -297,12 +298,13 @@ export async function postRunnerDispatch(
       });
     };
     const fetched = await settleIncludingAbort(() => {
-      return (
+      const response =
         reserved?.response ??
         (currentRequestRuntime()
           ? dispatch()
-          : dispatchTransport().run(transport, dispatch))
-      );
+          : dispatchTransport().run(transport, dispatch));
+      args.resolveFirstPostHandoff?.();
+      return response;
     });
     if (fetched.ok) {
       response = fetched.value;
