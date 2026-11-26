@@ -51,7 +51,7 @@ class ScreenshotScenario {
             device.executeShellCommand("wm density 160")
             device.executeShellCommand("settings put system font_scale 1.0")
 
-            withWindow(412, 892, UserPreferencesTheme.LIGHT) { fixture, fail ->
+            withWindow(412, 892, UserPreferencesTheme.LIGHT) { _, fail ->
                 fail.set("/api/workflows")
                 openDirectory()
                 val status = text(failureLabel)
@@ -59,9 +59,9 @@ class ScreenshotScenario {
                 assertTrue(abs(206 - status.visibleBounds.centerX()) <= 1)
                 assertTrue(device.hasObject(By.pkg(app.packageName).desc("搜索工作流")))
                 ScreenshotCapture.capture("phone-catalog-failure-light.png")
-
+            }
+            withWindow(412, 892, UserPreferencesTheme.LIGHT) { fixture, fail ->
                 fail.set("/api/workflows/$WORKFLOW_RELEASE/run-history")
-                assertTrue(device.pressBack())
                 openDirectory()
                 action(fixture.releaseTitle).click()
                 text("工作流说明")
