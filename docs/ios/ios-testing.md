@@ -99,7 +99,8 @@ A negative result requires a positive causal completion point first.
 `waitForBusinessResult` wakes on Swift Observation. Graph-owned state does not
 publish through Observation, so a predicate over it names the graph signal that
 wakes it: `waitForBusinessResult(watching: composer)` for a composer's draft,
-uploads, voice phase and synchronization state, or
+uploads, voice phase and synchronization state, the overload for another
+owner whose state it watches, or
 `waitForBusinessResult(watching: signal, in: store)` for another signal. A
 hosted view reads graph values from the session Store, so the host provides
 that Store with `StoreProvider` as the workspace root does in production.
