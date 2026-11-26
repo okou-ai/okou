@@ -3447,38 +3447,38 @@ messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-038	rewritten	2
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-039	rewritten	47.8	accepted by the non-first median rule	src/signals/routes/__tests__/whatsapp.test.ts	B12	d-other
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-045	rewritten	47.6	accepted by the non-first median rule	src/signals/routes/__tests__/whatsapp.test.ts	B12	d-other
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-048	rewritten	37.8	accepted by the non-first median rule	src/signals/routes/__tests__/whatsapp.test.ts	B12	d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-001	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-002	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-003	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-004	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-005	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-006	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-008	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-009	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-013	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-014	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-016	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-018	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-025	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-026	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-027	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-028	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-029	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-031	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-033	planned					d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-001	rewritten	107.5		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-002	rewritten	134.0		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-003	rewritten	132.0	split n=3: 1/3=110.1; 2/3=132.0; 3/3=113.4	src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-004	rewritten	82.4		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-005	rewritten	135.0		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-006	rewritten	94.1		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-008	rewritten	70.1		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-009	rewritten	145.6	split n=2: 1/2=76.9; 2/2=145.6	src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-013	rewritten	110.2	split n=2: 1/2=80.6; 2/2=110.2	src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-014	rewritten	70.6		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-016	rewritten	135.2		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-018	rewritten	132.5		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-025	rewritten	105.8		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-026	rewritten	113.4		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-027	rewritten	105.9		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-028	rewritten	97.6		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-029	rewritten	99.3		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-031	rewritten	141.0		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-033	rewritten	131.3		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-034	planned					a-run
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-036	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-048	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-052	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-054	planned					b-install
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-055	planned					b-install
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-056	planned					b-install
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-057	planned					d-other
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-059	planned					d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-036	revisit		revisit: reclassify to a-run: Given runs the first Calendar automation manually via POST /api/workflow-automations/:id/run and Then verifies lastRunAt is preserved, which is only set when a Run is actually claimed and dispatched in thread-claim-run.service.ts			d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-048	rewritten	159.6		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-052	rewritten	170.7	split n=2: 1/2=170.7; 2/2=157.1	src/signals/routes/__tests__/workflow-automations.test.ts		d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-054	rewritten	120.6	split n=2: 1/2=117.9; 2/2=120.6	src/signals/routes/__tests__/workflow-automations.test.ts		b-install
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-055	rewritten	108.9		src/signals/routes/__tests__/workflow-automations.test.ts		b-install
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-056	rewritten	42.5		src/signals/routes/__tests__/workflow-automations.test.ts		b-install
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-057	revisit		revisit: reclassify to a-run: When runs a loop automation manually at 06:05Z via POST /api/workflow-automations/:id/run and Then verifies subsequent interval updates schedule nextRunAt at 07:05Z from lastRunAt, which requires a dispatched Run to record lastRunAt			d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-059	rewritten	53.4		src/signals/routes/__tests__/workflow-automations.test.ts		d-other
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-060	planned					a-run
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-061	planned					a-run
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-063	planned					a-run
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-064	planned					d-other
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-064	revisit		revisit: reclassify to a-run: Given/When run one-time automations via POST /api/workflow-automations/:id/run and Then reads GET /api/workflows/:workflowId/run-history expecting the dispatched Run to appear			d-other
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-065	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("its Run's Okou token creates a first derived loop, whose Run creates a second derived loop"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 workflows	src/signals/routes/__tests__/workflow-execution-distribution.test.ts	workflow-execution-distribution-001	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("A chat input is queued behind an executing Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 workflows	src/signals/routes/__tests__/workflow-execution-distribution.test.ts	workflow-execution-distribution-005	planned					a-run
