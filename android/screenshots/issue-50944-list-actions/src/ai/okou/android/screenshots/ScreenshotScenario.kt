@@ -60,14 +60,10 @@ class ScreenshotScenario {
         val started = CountDownLatch(1)
         val fixture = ChatListApiFixture()
         fun label(id: Int) = By.pkg(app.packageName).text(labels.getString(id))
-        fun assertPoliteStatus(id: Int) {
-            val text = labels.getString(id)
-            val liveRegions = checkNotNull(instrumentation.uiAutomation.rootInActiveWindow)
-                .findAccessibilityNodeInfosByText(text)
-                .filter { it.text?.toString() == text }
-                .map { it.liveRegion }
-            check(View.ACCESSIBILITY_LIVE_REGION_POLITE in liveRegions) {
-                "Expected a polite live region for $text, got $liveRegions"
+        fun politeStatus(id: Int) = device.find(label(id)).also { status ->
+            val liveRegion = status.accessibilityNodeInfo.liveRegion
+            check(liveRegion == View.ACCESSIBILITY_LIVE_REGION_POLITE) {
+                "Expected a polite live region for ${labels.getString(id)}, got $liveRegion"
             }
         }
         try {
@@ -121,13 +117,11 @@ class ScreenshotScenario {
                         ScreenshotCapture.capture("wide-delete-ready.png")
                         confirm.click()
                         check(started.await(10, TimeUnit.SECONDS))
-                        check(!device.find(label(R.string.chat_delete_pending)).isEnabled)
-                        assertPoliteStatus(R.string.chat_delete_pending)
+                        check(!politeStatus(R.string.chat_delete_pending).isEnabled)
                         check(!device.hasObject(label(R.string.chat_project_delete)))
                         ScreenshotCapture.capture("wide-delete-pending.png")
                         release.countDown()
-                        device.find(label(R.string.chat_project_delete_rejected))
-                        assertPoliteStatus(R.string.chat_project_delete_rejected)
+                        politeStatus(R.string.chat_project_delete_rejected)
                         val restored = device.find(label(R.string.chat_project_delete))
                         check(restored.isEnabled)
                         ScreenshotCapture.capture("wide-delete-rejected.png")
