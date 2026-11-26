@@ -738,35 +738,25 @@ pub fn run(unix_socket: Option<&str>) -> io::Result<()> {
     };
 
     loop {
-        let result = if let Some(path) = unix_socket {
+        let connection = if let Some(path) = unix_socket {
             log("INFO", &format!("Connecting to Unix socket: {}...", path));
             connect_unix(path)
-                .map_err(unstable_connection_failure)
-                .and_then(|stream| {
-                    log("INFO", "Connected");
-                    handle_connection_with_outcome(
-                        stream,
-                        process_containment_mode,
-                        EXEC_OUTPUT_DRAIN_DEADLINE,
-                        ConnectionPrograms::production(),
-                        MeminfoSource::production(),
-                    )
-                })
         } else {
             log("INFO", "Connecting to host (CID=2)...");
             connect_vsock()
-                .map_err(unstable_connection_failure)
-                .and_then(|stream| {
-                    log("INFO", "Connected");
-                    handle_connection_with_outcome(
-                        stream,
-                        process_containment_mode,
-                        EXEC_OUTPUT_DRAIN_DEADLINE,
-                        ConnectionPrograms::production(),
-                        MeminfoSource::production(),
-                    )
-                })
         };
+        let result = connection
+            .map_err(unstable_connection_failure)
+            .and_then(|stream| {
+                log("INFO", "Connected");
+                handle_connection_with_outcome(
+                    stream,
+                    process_containment_mode,
+                    EXEC_OUTPUT_DRAIN_DEADLINE,
+                    ConnectionPrograms::production(),
+                    MeminfoSource::production(),
+                )
+            });
 
         match result {
             Ok(ConnectionEnd::Shutdown) => return Ok(()),
