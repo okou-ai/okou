@@ -3,6 +3,7 @@ package ai.okou.android.connectors
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
+import ai.okou.android.WorkspaceSearchGroupHeading
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.chat.ContentReadFeedback
@@ -81,7 +82,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -427,12 +427,9 @@ private fun ConnectorDirectory(
             } else {
                 if (recommended) {
                     item(key = "recommendations") {
-                        Text(
+                        WorkspaceSearchGroupHeading(
                             stringResource(R.string.connector_recommended),
-                            Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 4.dp)
-                                .semantics { heading() },
-                            style = connectorSmallType().copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            Modifier.padding(horizontal = 12.dp),
                         )
                     }
                 }
@@ -512,7 +509,7 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                 text = {
                     Text(
                         stringResource(label),
-                        style = connectorFeedbackType().copy(fontWeight = FontWeight(550)),
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 },
                 selectedContentColor = accent,
