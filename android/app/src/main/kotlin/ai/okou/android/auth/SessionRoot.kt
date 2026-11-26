@@ -153,6 +153,7 @@ internal fun SessionRoot(
                         ready?.composer ?: opened?.composer,
                         ready?.controls,
                         workflows = ready?.workflows,
+                        workflowReadAnnouncements = ready?.workflowReadAnnouncements,
                         workflowTimezone =
                             ready
                                 ?.preferences
