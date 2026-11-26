@@ -27,6 +27,8 @@ public struct ChatArtifact: Equatable, Hashable, Sendable, Identifiable {
   public let contentType: String?
   public let size: Int?
   public let artifactKind: String?
+  public let previewKind: Kind?
+  public let previewImageURL: URL?
   public var id: Source {
     switch source {
     case .reference(let reference, _):
@@ -37,16 +39,19 @@ public struct ChatArtifact: Equatable, Hashable, Sendable, Identifiable {
 
   public init(
     source: Source, filename: String, contentType: String? = nil, size: Int? = nil,
-    artifactKind: String? = nil
+    artifactKind: String? = nil, previewKind: Kind? = nil, previewImageURL: URL? = nil
   ) {
     self.source = source
     self.filename = filename
     self.contentType = contentType
     self.size = size
     self.artifactKind = artifactKind
+    self.previewKind = previewKind
+    self.previewImageURL = previewImageURL
   }
 
   public var kind: Kind {
+    if let previewKind { return previewKind }
     let type =
       (contentType ?? "").split(separator: ";").first.map(String.init)?
       .trimmingCharacters(in: .whitespaces).lowercased() ?? ""

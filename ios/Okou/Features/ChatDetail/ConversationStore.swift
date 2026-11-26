@@ -65,7 +65,7 @@ final class ConversationStore {
   lazy var attachmentViewer = MessageAttachmentStore(
     commands: commands, graph: graph, didFail: didFail)
   lazy var artifacts = MessageArtifactStore(
-    service: commands.artifacts, threadID: thread.id, webURL: webURL, markdown: messageMarkdown,
+    service: commands.artifacts, webURL: webURL, markdown: messageMarkdown,
     graph: graph, didFail: didFail)
   // Confirmed input for delivery, Stop, read watermarks and the native render window.
   // Independent resource phases remain in their original Tasks, not in this snapshot.
@@ -496,8 +496,8 @@ final class ConversationStore {
     reading.cancelRefresh()
   }
 
-  func artifactImageSources(for messageID: String) -> [String] {
-    return reading.artifactImageSources(for: messageID)
+  func artifactGroup(for messageID: String) -> MessageArtifactGroup? {
+    return reading.artifactGroup(for: messageID)
   }
 
   func rememberReadingPosition(_ position: ConversationReadingPosition?) {

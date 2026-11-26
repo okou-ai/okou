@@ -1,93 +1,144 @@
 import { command, computed, type Command, type Computed } from "ccstate";
-import type { ChatThreadArtifactRun } from "@okouai/api-contracts/contracts/chat-threads";
-
 import {
   currentEventImageArtifactNavigation,
+  eventImageCandidates,
   type ImageArtifactNavigationItem,
+  type ImageArtifactNavigation,
 } from "../../views/okou-page/artifact-image-navigation.ts";
-import { lightboxUrl$ } from "../okou-page/attachment-chips.ts";
+import {
+  lightboxUrl$,
+  navigateImageLightbox$,
+} from "../okou-page/attachment-chips.ts";
+import { pageSignal$ } from "../page-signal.ts";
 import type { EventImageGroupProjection } from "./chat-panel-signals.ts";
-import type { ThreadSidebarTarget } from "./thread-sidebar.ts";
+import type { ThreadSidebarSignals } from "./thread-sidebar.ts";
 
 export type EventImageNavigationDirection = "previous" | "next";
 
-/**
- * Previous/next navigation for one image preview surface. Navigation stays in
- * the chat group that contains the current image. The rendering values are
- * primitives so transcript updates elsewhere do not re-render the preview.
- */
+interface ImageSelection {
+  readonly groupId?: string;
+  readonly url: string;
+}
+
 export interface EventImageNavigationSignals {
-  /** Role of the group holding the current image; null when it is not shown. */
-  readonly role$: Computed<EventImageGroupProjection["role"] | null>;
-  readonly hasPrevious$: Computed<boolean>;
-  readonly hasNext$: Computed<boolean>;
-  /** Resolves the neighbor on demand, enriched with the loaded run artifacts. */
-  readonly target$: Command<
-    ImageArtifactNavigationItem | undefined,
-    [EventImageNavigationDirection, readonly ChatThreadArtifactRun[]]
+  readonly neighbors$: Computed<Promise<ImageArtifactNavigation>>;
+  readonly navigate$: Command<
+    Promise<void>,
+    [EventImageNavigationDirection, AbortSignal]
   >;
 }
 
 export interface ThreadImageNavigationSignals {
-  /** The image open in the lightbox dialog. */
+  readonly openGroupForImage$: Command<string | undefined, [string]>;
   readonly lightbox: EventImageNavigationSignals;
-  /** The attachment open in this thread's artifact sidebar. */
   readonly sidebar: EventImageNavigationSignals;
 }
 
 function createEventImageNavigation(
   groups$: Computed<readonly EventImageGroupProjection[]>,
-  url$: Computed<string | null>,
+  selection$: Computed<ImageSelection | null>,
+  select$: Command<void, [ImageArtifactNavigationItem, string, boolean]>,
 ): EventImageNavigationSignals {
-  // Without a current image the groups are not read, so a closed preview does
-  // not follow transcript updates.
-  const neighbors$ = computed((get) => {
-    const url = get(url$);
-    return url === null
-      ? {}
-      : currentEventImageArtifactNavigation([], get(groups$), url);
+  const neighbors$ = computed(async (get): Promise<ImageArtifactNavigation> => {
+    const selection = get(selection$);
+    if (!selection?.groupId) {
+      return {};
+    }
+    const group = get(groups$).find((candidate) => {
+      return candidate.id === selection.groupId;
+    });
+    if (!group) {
+      return {};
+    }
+    // Unclassified links use their own card read. Already typed images require no detail read.
+    const candidates = await Promise.all(
+      eventImageCandidates(group.events).map(async (item) => {
+        const { descriptor$, ...image } = item;
+        if (!descriptor$) {
+          return image;
+        }
+        const descriptor = await get(descriptor$);
+        return descriptor.kind === "image"
+          ? {
+              ...image,
+              filename: descriptor.filename,
+              contentType: descriptor.contentType,
+            }
+          : undefined;
+      }),
+    );
+    const images = candidates.filter((item) => {
+      return item !== undefined;
+    });
+    return currentEventImageArtifactNavigation(group, selection.url, images);
   });
   return {
-    role$: computed((get) => {
-      return get(neighbors$).role ?? null;
-    }),
-    hasPrevious$: computed((get) => {
-      return get(neighbors$).previous !== undefined;
-    }),
-    hasNext$: computed((get) => {
-      return get(neighbors$).next !== undefined;
-    }),
-    target$: command(({ get }, direction, runs) => {
-      const url = get(url$);
-      return url === null
-        ? undefined
-        : currentEventImageArtifactNavigation(runs, get(groups$), url)[
-            direction
-          ];
-    }),
+    neighbors$,
+    navigate$: command(
+      async (
+        { get, set },
+        direction: EventImageNavigationDirection,
+        signal: AbortSignal,
+      ) => {
+        const selection = get(selection$);
+        const groupId = selection?.groupId;
+        const neighbors = await get(neighbors$);
+        signal.throwIfAborted();
+        const item = neighbors[direction];
+        if (groupId && item && get(selection$) === selection) {
+          set(select$, item, groupId, neighbors.role !== "user");
+        }
+      },
+    ),
   };
 }
 
+/** Each surface owns its current URL and group. Switching never enumerates thread artifacts. */
 export function createThreadImageNavigationSignals(
+  threadId: string,
   groups$: Computed<readonly EventImageGroupProjection[]>,
-  sidebarTarget$: Computed<ThreadSidebarTarget | null>,
+  sidebar: Pick<ThreadSidebarSignals, "target$" | "openAttachment$">,
 ): ThreadImageNavigationSignals {
   return {
+    openGroupForImage$: command(({ get }, eventId) => {
+      return get(groups$).find((group) => {
+        return group.events.some((event) => {
+          return event.id === eventId;
+        });
+      })?.id;
+    }),
     lightbox: createEventImageNavigation(
       groups$,
       computed((get) => {
         const preview = get(lightboxUrl$);
-        return preview?.kind === "image" ? preview.url : null;
+        return preview?.kind === "image" && preview.threadId === threadId
+          ? preview
+          : null;
+      }),
+      command(({ set }, item, groupId, shareAvailable) => {
+        set(navigateImageLightbox$, {
+          ...item,
+          groupId,
+          threadId,
+          shareAvailable,
+        });
       }),
     ),
     sidebar: createEventImageNavigation(
       groups$,
       computed((get) => {
-        const target = get(sidebarTarget$);
+        const target = get(sidebar.target$);
         return target?.type === "artifact" &&
           target.source.kind === "attachment"
-          ? target.source.ref.url
+          ? target.source.ref
           : null;
+      }),
+      command(({ get, set }, item, groupId, shareAvailable) => {
+        set(
+          sidebar.openAttachment$,
+          { ...item, groupId, shareAvailable },
+          get(pageSignal$),
+        );
       }),
     ),
   };

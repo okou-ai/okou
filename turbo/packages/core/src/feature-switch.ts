@@ -181,6 +181,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatListAllFilter]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Unarchived and All chat filters",
+    description:
+      "Show unarchived chats by default and include archived Projects and chats in All.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.ProjectArchive]: {
     maintainer: "ethan@okou.ai",
     displayName: "Project archiving",

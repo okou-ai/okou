@@ -1,3 +1,4 @@
+import { isTextPreviewKind } from "../../signals/text-preview.ts";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import { now } from "../../lib/time.ts";
@@ -57,11 +58,7 @@ import { AlertCircle, Coins, Image, Loader2, Play } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import type { MarkdownCardRef } from "../../signals/chat-page/markdown-card-ref.ts";
-import {
-  openFileLightbox$ as openAttachmentFileLightbox$,
-  openImageLightbox$ as openAttachmentImageLightbox$,
-  openVideoLightbox$ as openAttachmentVideoLightbox$,
-} from "../../signals/okou-page/attachment-chips.ts";
+import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { BrowserSessionCard } from "./browser-session-card.tsx";
 import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
 import { BrowserAuthorizationCard } from "./browser-authorization-card.tsx";
@@ -314,6 +311,7 @@ export function MarkdownCardView({
         <ArtifactCardView
           signals={card.signals}
           threadId={card.threadId}
+          eventId={card.eventId}
           label={label}
         />
       );
@@ -384,26 +382,29 @@ export function MarkdownCardView({
 }
 
 function ArtifactCardView({
+  eventId,
   signals,
   threadId,
   label,
 }: {
   signals: ArtifactSignals;
+  eventId: string;
   threadId: string;
   label?: string;
 }) {
   const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
-  const openFileLightbox = useSet(openAttachmentFileLightbox$);
-  const openImageLightbox = useSet(openAttachmentImageLightbox$);
-  const openVideoLightbox = useSet(openAttachmentVideoLightbox$);
-  const attachment = {
-    threadId,
-    url: signals.url,
-    filename: signals.filename,
-    contentType: signals.contentType,
-    preview: signals,
+  const openArtifact = useSet(openMarkdownArtifact$);
+  const openPreview = () => {
+    detach(
+      openArtifact(
+        { kind: "artifact", eventId, threadId, signals },
+        pageSignal,
+      ),
+      Reason.DomCallback,
+    );
   };
+  const display = useLastResolved(signals.descriptor$) ?? signals;
   const previewImageLoadable = useLastLoadable(signals.previewImageUrl$);
   const previewImagePending = previewImageLoadable.state === "loading";
   const previewImageUrl =
@@ -411,23 +412,21 @@ function ArtifactCardView({
       ? previewImageLoadable.data
       : undefined;
 
-  if (signals.kind === "image") {
+  if (display.kind === "image") {
     return (
       <ChatImagePreviewLink
-        alt={signals.filename}
+        alt={display.filename}
         ariaLabel={t(
           ($) => {
             return $.chat.attachments.previewFile;
           },
           {
-            filename: signals.filename,
+            filename: display.filename,
           },
         )}
         imageClassName="block h-full w-full object-contain"
         linkClassName={CHAT_INLINE_IMAGE_PREVIEW_CLASS}
-        onPreview={() => {
-          openImageLightbox(attachment, pageSignal);
-        }}
+        onPreview={openPreview}
         load={signals.previewImageLoad}
         placeholderClassName="h-full w-full"
         resourceUrl$={signals.linkUrl$}
@@ -436,7 +435,7 @@ function ArtifactCardView({
       />
     );
   }
-  if (signals.kind === "video") {
+  if (display.kind === "video") {
     return (
       <ChatVideoPreviewButton
         resourceUrl$={signals.resourceUrl$}
@@ -445,14 +444,12 @@ function ArtifactCardView({
             return $.chat.attachments.previewFile;
           },
           {
-            filename: signals.filename,
+            filename: display.filename,
           },
         )}
         buttonClassName={CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS}
-        filename={signals.filename}
-        onPreview={() => {
-          openVideoLightbox(attachment, pageSignal);
-        }}
+        filename={display.filename}
+        onPreview={openPreview}
         posterClassName="h-full w-full"
         posterLoad={signals.previewImageLoad}
         previewImageUrl$={signals.previewImageUrl$}
@@ -465,17 +462,16 @@ function ArtifactCardView({
       preview={signals}
       threadId={threadId}
       attachment={{
-        filename: signals.kind === "html" && label ? label : signals.filename,
+        filename: display.kind === "html" && label ? label : display.filename,
         url: signals.url,
-        contentType: contentTypeForBodyPreviewKind(signals.kind),
+        contentType:
+          display.contentType ?? contentTypeForBodyPreviewKind(display.kind),
         ...(previewImagePending ? { previewImagePending: true } : {}),
         ...(previewImageUrl ? { previewImageUrl } : {}),
       }}
-      onPreviewFile={() => {
-        openFileLightbox(attachment, pageSignal);
-      }}
+      onPreviewFile={openPreview}
       previewImageLoad={signals.previewImageLoad}
-      text$={signals.text$}
+      text$={isTextPreviewKind(display.kind) ? signals.text$ : undefined}
     />
   );
 }

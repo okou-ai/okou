@@ -29,7 +29,6 @@ import {
   type ChatThreadSnapshotProjection,
   chatThreadsContract,
   chatThreadDraftContract,
-  chatThreadArtifactsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { accountModels } from "./chat-account-model-fixture.ts";
 import {
@@ -412,11 +411,6 @@ test("The pending conversation plays its inline QuickTime recording before its a
       createdAt: "2026-11-23T00:00:00Z",
       selectedModel: body.model ?? "claude-sonnet-5",
       serviceTier: null,
-    });
-  });
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    return respond(404, {
-      error: { code: "THREAD_NOT_FOUND", message: "Chat thread not found" },
     });
   });
   await setupPage({ context, path: "/" });

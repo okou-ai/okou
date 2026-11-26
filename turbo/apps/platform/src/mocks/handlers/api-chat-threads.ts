@@ -1,3 +1,4 @@
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -114,7 +115,12 @@ export const chatThreadHandlers = [
     return respond(200, { artifacts: [], nextCursor: null });
   }),
 
-  // Legacy transcript attachment metadata, not the thread resource list.
+  // A message URL can have a content reader without a managed catalog entry.
+  mockApi(artifactReferencesContract.byUrl, ({ respond }) =>
+    respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact not found" },
+    }),
+  ),
   mockApi(chatThreadArtifactsContract.list, ({ respond }) => {
     return respond(200, { runs: [] });
   }),

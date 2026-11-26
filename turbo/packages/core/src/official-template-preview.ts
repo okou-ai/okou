@@ -1,10 +1,10 @@
-import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { HISTORICAL_VIDEO_TEMPLATE_PREVIEW_URLS } from "@okouai/core/historical-video-template-preview-urls";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "./illustration-template-items";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "./presentation-template-items";
+import { HISTORICAL_VIDEO_TEMPLATE_PREVIEW_URLS } from "./historical-video-template-preview-urls";
 import {
   WELCOME_THREAD_ASSETS,
   MY_OKOU_WELCOME_THREAD_ASSETS,
-} from "@okouai/core/welcome-thread-assets";
+} from "./welcome-thread-assets";
 
 // These exact, public publications also need media identity when the App's
 // preview deployment does not resolve production okou.app hostnames.
@@ -79,4 +79,22 @@ const officialPreviewUrls = Object.freeze([
 
 export function isOfficialTemplatePreviewUrl(url: string): boolean {
   return officialPreviewUrls.includes(url);
+}
+
+/** Public, static template publications have no author-owned database row. */
+export function officialStaticTemplatePreview(url: URL) {
+  if (
+    url.origin !== "https://static.vm0.io" ||
+    !isOfficialTemplatePreviewUrl(url.href)
+  )
+    return null;
+  const deck = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
+    return item.embedUrl === url.href;
+  });
+  return {
+    filename: url.pathname.split("/").at(-1) ?? url.hostname,
+    contentType: officialTemplatePreviewContentType(url.href),
+    artifactKind: deck ? "presentation-html" : undefined,
+    previewImageUrl: deck?.previewImage,
+  };
 }

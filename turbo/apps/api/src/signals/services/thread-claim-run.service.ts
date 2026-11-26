@@ -1268,6 +1268,22 @@ export function createThreadClaimRunObjects(
         throw new Error("A valid prompt model is missing session preparation");
       }
       const { triggerSource, delivery } = material.launch;
+      const parts = (await get(queuedInput$))?.userMessage.parts.filter(
+        (part) => {
+          return part.type !== "model";
+        },
+      );
+      const voiceClipFileIds =
+        parts?.length &&
+        parts.every((part) => {
+          return part.type === "voice";
+        })
+          ? parts.flatMap((part) => {
+              return part.clips.map((clip) => {
+                return clip.fileId;
+              });
+            })
+          : undefined;
       return {
         kind: "assembled",
         source: "prompt",
@@ -1297,6 +1313,7 @@ export function createThreadClaimRunObjects(
             orgId: args.orgId,
             threadId: args.threadId,
             prompt: runPrompt.userPrompt,
+            voiceClipFileIds,
             triggerSource,
             discordDelivery: delivery.discordDelivery,
             wechatDelivery: delivery.wechatDelivery,

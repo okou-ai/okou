@@ -1,5 +1,4 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { waitFor } from "@testing-library/react";
 
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -67,9 +66,6 @@ export function createMessageExperienceHelpers(context: TestContext) {
           message: "Managed browser not found",
         },
       });
-    });
-    context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-      return respond(200, { runs: [] });
     });
     return mockChatLifecycle(context, options);
   }

@@ -2583,6 +2583,7 @@
       "number": "番号"
     },
     "sidebar": {
+      "all": "すべて",
       "archive": "アーカイブ",
       "archived": "アーカイブ済み",
       "chatsWith": "{{assistantName}} とのチャット",
@@ -2602,6 +2603,7 @@
       "newChatWith": "{{assistantName}} との新しいチャット",
       "noArchived": "アーカイブ済みのチャットはありません",
       "noMuted": "ミュート中のチャットはありません",
+      "noUnarchived": "未アーカイブのチャットはありません",
       "noUnread": "未読のチャットはありません",
       "openChatMenu": "チャットメニューを開く",
       "openListMenu": "チャットリストメニューを開く",
@@ -2613,6 +2615,7 @@
       "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
       "unarchive": "アーカイブを解除",
+      "unarchived": "未アーカイブ",
       "unmute": "ミュートを解除",
       "unpin": "ピン留めを解除",
       "unread": "未読",
@@ -2875,6 +2878,7 @@
     "toasts": {
       "archived": "チャットをアーカイブしました。",
       "archivedMuted": "チャットをアーカイブしました。ミュート中のため、新しい返信があっても戻りません。",
+      "chatUnarchived": "チャットのアーカイブを解除しました",
       "copied": "コピーされました",
       "deleted": "チャットが削除されました",
       "muted": "チャットをミュートしました。新しい返信があっても未読にならず、プッシュ通知も届きません。",

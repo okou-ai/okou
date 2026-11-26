@@ -6,7 +6,7 @@ import { accept } from "../lib/accept.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "./api-client.ts";
 import { clerk$ } from "./auth.ts";
-import { isAuthenticatedAttachmentUrl } from "./attachment-resource-url.ts";
+import { authenticatedWebFile } from "../lib/message-url.ts";
 
 type AttachmentDownloadSource = (
   | {
@@ -101,14 +101,11 @@ export const attachmentDownloadSource$ = command(
           result.body.preview.contentType.split(";")[0].trim() === "text/html",
       };
     }
-    if (isAuthenticatedAttachmentUrl(url)) {
-      const fileId = new URL(url).searchParams.get("file_id");
-      if (!fileId) {
-        throw new Error("Authenticated attachment URL is missing file_id");
-      }
+    const file = authenticatedWebFile(url);
+    if (file) {
       const result = await accept(
         get(apiClient$)(webFilesContract).fileUrl({
-          query: { file_id: fileId },
+          query: { file_id: file.id },
           fetchOptions: { signal, cache: "no-store" },
         }),
         [200],

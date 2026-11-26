@@ -11,7 +11,7 @@ struct MessageArtifactCard: View {
   let label: String
   let destination: URL?
   let images: [ChatArtifact]
-  let imageSources: [String]
+  let group: MessageArtifactGroup?
   let viewer: MessageArtifactStore
   let loadsContent: Bool
 
@@ -116,7 +116,7 @@ private struct MessageArtifactCardContent: View {
         openURL(destination)
       } else {
         card.viewer.open(
-          artifact, images: card.images, imageSources: card.imageSources,
+          artifact, images: card.images, group: card.group,
           thumbnail: value.data?.thumbnail)
       }
     } label: {

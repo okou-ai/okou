@@ -443,8 +443,8 @@ final class ConversationPresentation {
         } : [], events: history?.usageEventIDs ?? [:])
   }
 
-  func artifactImageSources(for messageID: String) -> [String] {
-    guard let index = items.firstIndex(where: { $0.id == messageID }) else { return [] }
+  func artifactGroup(for messageID: String) -> MessageArtifactGroup? {
+    guard let index = items.firstIndex(where: { $0.id == messageID }) else { return nil }
     var start = index
     while start > 0, !items[start].beginsWorkSection, items[start - 1].role == items[index].role {
       start -= 1
@@ -453,7 +453,8 @@ final class ConversationPresentation {
     while end < items.count, !items[end].beginsWorkSection, items[end].role == items[index].role {
       end += 1
     }
-    return items[start..<end].compactMap(\.message).map(\.text)
+    return MessageArtifactGroup(
+      id: items[start].id, sources: items[start..<end].compactMap(\.message).map(\.text))
   }
 
   func cancelRefresh() {

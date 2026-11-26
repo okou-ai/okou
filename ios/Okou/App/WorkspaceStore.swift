@@ -151,7 +151,7 @@ final class WorkspaceStore {
     sync: sync, graph: resources.store, didFail: { [weak self] in self?.handle($0) })
   /// Previews of results opened from workspace search, which belong to no chat.
   lazy var searchArtifacts = MessageArtifactStore(
-    service: commands.artifacts, threadID: nil, webURL: webURL, markdown: messageMarkdown,
+    service: commands.artifacts, webURL: webURL, markdown: messageMarkdown,
     graph: resources.store, didFail: { [weak self] in self?.handle($0) })
 
   lazy var list = ThreadListStore(

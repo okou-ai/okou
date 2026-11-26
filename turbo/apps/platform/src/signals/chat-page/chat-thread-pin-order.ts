@@ -4,20 +4,14 @@ import { moveChatThreadPinOrder } from "@okouai/core/chat-thread-pin-order";
 import { apiClient$ } from "../api-client.ts";
 import { currentChatThreadList$ } from "../chat-thread-list.ts";
 import { accept } from "../../lib/accept.ts";
-import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
-import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
-import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
+import { chatThreadFilter$ } from "../okou-page/chat-thread-filter.ts";
 import {
   eventDrivenChatThreads$,
   registerOptimisticChatThreadEvent$,
 } from "./chat-thread-event-sourcing.ts";
 
 export const pinnedThreadReorderEnabled$ = computed((get) => {
-  return (
-    !get(chatThreadOnlyUnread$) &&
-    !get(chatThreadOnlyArchived$) &&
-    !get(chatThreadOnlyMuted$)
-  );
+  return get(chatThreadFilter$) === "unarchived";
 });
 
 interface PinMove {

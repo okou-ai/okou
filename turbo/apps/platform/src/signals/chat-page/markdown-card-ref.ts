@@ -31,7 +31,8 @@ export type MarkdownCardRef =
   | {
       readonly kind: "artifact";
       readonly signals: ArtifactSignals;
-      /** The owning thread, for lightbox targets scoped to its artifacts. */
+      /** The occurrence owns navigation; the URL-keyed card can appear in several groups. */
+      readonly eventId: string;
       readonly threadId: string;
     }
   | {

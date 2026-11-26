@@ -2583,6 +2583,7 @@
       "number": "nomor"
     },
     "sidebar": {
+      "all": "Semua",
       "archive": "Arsipkan",
       "archived": "Diarsipkan",
       "chatsWith": "Chat dengan {{assistantName}}",
@@ -2602,6 +2603,7 @@
       "newChatWith": "Chat baru dengan {{assistantName}}",
       "noArchived": "Tidak ada chat yang diarsipkan",
       "noMuted": "Tidak ada chat yang dibisukan",
+      "noUnarchived": "Tidak ada chat yang belum diarsipkan",
       "noUnread": "Tidak ada chat belum dibaca",
       "openChatMenu": "Buka menu chat",
       "openListMenu": "Buka menu daftar chat",
@@ -2613,6 +2615,7 @@
       "showArchivedChats": "Tampilkan chat yang diarsipkan",
       "titlePlaceholder": "Judul chat",
       "unarchive": "Batalkan pengarsipan",
+      "unarchived": "Tidak diarsipkan",
       "unmute": "Aktifkan notifikasi",
       "unpin": "Lepas sematan",
       "unread": "Belum dibaca",
@@ -2875,6 +2878,7 @@
     "toasts": {
       "archived": "Chat diarsipkan.",
       "archivedMuted": "Chat diarsipkan. Chat ini dibisukan, jadi balasan baru tidak akan mengembalikannya.",
+      "chatUnarchived": "Chat dikeluarkan dari arsip",
       "copied": "Disalin",
       "deleted": "Chat dihapus",
       "muted": "Chat dibisukan. Balasan baru tidak akan ditandai belum dibaca atau mengirim notifikasi push.",

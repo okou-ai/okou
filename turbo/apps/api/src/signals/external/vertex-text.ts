@@ -22,10 +22,18 @@ import { VERTEX_MODELS, type VertexModel } from "./vertex-models";
 export const VERTEX_AUXILIARY_MAX_TOKENS = 2048;
 const RESPONSE_MAX_BYTES = 256 * 1024;
 
-export interface VertexTextMessage {
-  readonly role: "system" | "user" | "assistant";
+export type VertexTextMessage = {
   readonly content: string;
-}
+} & (
+  | { readonly role: "system" | "assistant" }
+  | {
+      readonly role: "user";
+      readonly audio?: readonly {
+        readonly mimeType: string;
+        readonly data: string;
+      }[];
+    }
+);
 
 export interface VertexTextTokens {
   readonly completionTokens?: number;
@@ -217,7 +225,14 @@ export async function generateVertexTextWithUsage(
               .map((message) => {
                 return {
                   role: message.role === "assistant" ? "model" : "user",
-                  parts: [{ text: message.content }],
+                  parts: [
+                    { text: message.content },
+                    ...(message.role === "user"
+                      ? (message.audio ?? []).map((inlineData) => {
+                          return { inlineData };
+                        })
+                      : []),
+                  ],
                 };
               }),
             generationConfig: {

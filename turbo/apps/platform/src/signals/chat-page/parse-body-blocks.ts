@@ -1,5 +1,6 @@
+import { classifyMessageArtifact as classifyChatAttachment } from "@okouai/api-contracts/validators/message-artifact";
 import { getDefaults, Lexer, Tokenizer, type Token, type Tokens } from "marked";
-import { resolveApiBase } from "../api-base.ts";
+import { authenticatedWebFile, tryParseUrl } from "../../lib/message-url.ts";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
@@ -70,7 +71,7 @@ import { isTrustedPlatformHostname } from "./trusted-platform-url.ts";
 import {
   isOfficialTemplatePreviewUrl,
   officialTemplatePreviewContentType,
-} from "./official-template-preview.ts";
+} from "@okouai/core/official-template-preview";
 import {
   parseSubscriptionResetUrl,
   subscriptionResetResourceKey,
@@ -182,7 +183,7 @@ export type ParsedBodyBlock =
       descriptor: BrowserUserActionDescriptor;
     };
 
-type ChatAttachmentKind = BodyPreviewKind;
+export { classifyChatAttachment };
 
 interface ChatAttachmentDescriptor {
   filename: string;
@@ -222,7 +223,7 @@ const PLATFORM_FILE_CDN_HOSTS = [
   "cdn.vm7.io",
 ] as const;
 const HOSTED_SITE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
-const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|connectors|f|artifacts|browsers|computer-use)\/|\/browser\/(?:actions|authorize)\/|\/subscriptions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
+const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|connectors|f|artifacts|browsers|computer-use)\/|\/api\/web\/file-url\?|\/browser\/(?:actions|authorize)\/|\/subscriptions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
 const URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN =
   /^[\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}\p{Sm}\p{So}]$/u;
 const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[-./\\_*;~=&%+@#?]$/u;
@@ -231,180 +232,14 @@ const URL_TOKEN_TRAILING_EMOJI_SEQUENCE_PATTERN =
   /(?:[#*0-9]\uFE0F?\u20E3|\u{1F3F4}[\u{E0061}-\u{E007A}]+\u{E007F})$/u;
 const MARKDOWN_LINK_TOKEN_PREFIX_PATTERN = /\[[^\]\n]+\]\($/u;
 
-// URL.canParse is unavailable on iOS Safari < 17. Instead of relying on it (or
-// on try/catch, which this repo's ESLint forbids), feature-detect it and fall
-// back to a structural validation before constructing a URL. Mirrors the
-// pattern used in signals/auth.ts parseUrl(): the host must match a hostname
-// shape with an in-range optional port, so malformed absolute URLs (for
-// example "https://exa%mple.com") return null instead of throwing on old
-// browsers. Remove together with support for URL.canParse-less browsers.
-const LEGACY_HTTP_URL_REGEX = /^https?:\/\/([^/?#\s]+)([/?#][^\s]*)?$/i;
-const LEGACY_HOST_WITH_OPTIONAL_PORT_REGEX =
-  /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*)(?::(\d{1,5}))?$/i;
-const MAX_URL_PORT = 65_535;
-const PROTOCOL_RELATIVE_URL_REGEX = /^\/\/([^/?#\s]+)([/?#][^\s]*)?$/;
-
-function isLegacyUrlHostValid(host: string | undefined): host is string {
-  if (!host) {
-    return false;
-  }
-  const hostMatch = LEGACY_HOST_WITH_OPTIONAL_PORT_REGEX.exec(host);
-  const port = hostMatch?.[2];
-  return Boolean(hostMatch && (!port || Number(port) <= MAX_URL_PORT));
-}
-
-function tryParseUrl(input: string, base?: string): URL | null {
-  if (typeof URL.canParse === "function") {
-    return URL.canParse(input, base) ? new URL(input, base) : null;
-  }
-
-  if (/\s/u.test(input)) {
-    return null;
-  }
-
-  const absoluteMatch = LEGACY_HTTP_URL_REGEX.exec(input);
-  if (absoluteMatch) {
-    if (!isLegacyUrlHostValid(absoluteMatch[1])) {
-      return null;
-    }
-    return new URL(input);
-  }
-
-  if (base && input.startsWith("/")) {
-    if (input.startsWith("//")) {
-      const protocolRelativeMatch = PROTOCOL_RELATIVE_URL_REGEX.exec(input);
-      if (
-        !protocolRelativeMatch ||
-        !isLegacyUrlHostValid(protocolRelativeMatch[1])
-      ) {
-        return null;
-      }
-    }
-    return new URL(input, base);
-  }
-  return null;
-}
-
 // ---------------------------------------------------------------------------
 // classifyChatAttachment helpers
 // ---------------------------------------------------------------------------
 
-function fileExt(filename: string): string {
-  return filename.split(".").pop()?.toLowerCase() ?? "";
-}
-
-function normalizeType(contentType?: string): string {
-  return (contentType ?? "").split(";")[0]?.trim().toLowerCase();
-}
-
-const CHAT_KIND_BY_CONTENT_TYPE: Readonly<Record<string, BodyPreviewKind>> = {
-  "text/markdown": "markdown",
-  "text/x-markdown": "markdown",
-  "text/plain": "text",
-  "text/tab-separated-values": "text",
-  "text/xml": "text",
-  "text/yaml": "text",
-  "text/x-yaml": "text",
-  "application/xml": "text",
-  "application/yaml": "text",
-  "application/x-yaml": "text",
-  "application/json": "json",
-  "text/csv": "csv",
-  "application/pdf": "pdf",
-  "text/html": "html",
-} as const;
-
-const CHAT_KIND_BY_EXTENSION: Readonly<Record<string, BodyPreviewKind>> = {
-  md: "markdown",
-  txt: "text",
-  log: "text",
-  xml: "text",
-  yaml: "text",
-  yml: "text",
-  tsv: "text",
-  json: "json",
-  csv: "csv",
-  pdf: "pdf",
-  html: "html",
-  htm: "html",
-  png: "image",
-  jpg: "image",
-  jpeg: "image",
-  gif: "image",
-  webp: "image",
-  svg: "image",
-  bmp: "image",
-  avif: "image",
-  heic: "image",
-  heif: "image",
-  tif: "image",
-  tiff: "image",
-  psd: "image",
-  mp4: "video",
-  webm: "video",
-  mov: "video",
-  ogv: "video",
-  mp3: "audio",
-  wav: "audio",
-  wave: "audio",
-  m4a: "audio",
-  aac: "audio",
-  ogg: "audio",
-  oga: "audio",
-  opus: "audio",
-  flac: "audio",
-  mpga: "audio",
-} as const;
-
-function mediaKindFromContentType(type: string): BodyPreviewKind | null {
-  if (type.startsWith("image/")) {
-    return "image";
-  }
-  if (type.startsWith("video/")) {
-    return "video";
-  }
-  if (type.startsWith("audio/")) {
-    return "audio";
-  }
-  return null;
-}
-
-export function classifyChatAttachment(
-  attachment: Pick<ChatAttachmentDescriptor, "filename" | "contentType"> & {
-    readonly url?: string;
-  },
-): ChatAttachmentKind {
-  const type = normalizeType(attachment.contentType);
-  const ext = fileExt(attachment.filename);
-  const mediaKind = mediaKindFromContentType(type);
-
-  if (mediaKind) {
-    return mediaKind;
-  }
-
-  return (
-    CHAT_KIND_BY_CONTENT_TYPE[type] ?? CHAT_KIND_BY_EXTENSION[ext] ?? "file"
-  );
-}
-
-function isAuthenticatedFileUrl(url: URL): boolean {
-  return (
-    url.pathname === "/api/web/file-url" &&
-    url.username === "" &&
-    url.password === "" &&
-    Boolean(url.searchParams.get("file_id")) &&
-    browserHost() !== null &&
-    url.origin === new URL(resolveApiBase()).origin
-  );
-}
-
 function filenameFromUrl(url: string): string {
-  const parsed = tryParseUrl(url);
-  if (parsed && isAuthenticatedFileUrl(parsed)) {
-    const filename = parsed.searchParams.get("filename");
-    if (filename) {
-      return filename;
-    }
+  const file = authenticatedWebFile(url);
+  if (file?.filename) {
+    return file.filename;
   }
   const path = url.split("?")[0].split("#")[0];
   const last = path.split("/").pop();
@@ -525,7 +360,7 @@ function isPlatformFileUrl(url: string): boolean {
   if (!parsed) {
     return false;
   }
-  if (isAuthenticatedFileUrl(parsed)) {
+  if (authenticatedWebFile(url)) {
     return true;
   }
   const isLegacyPath = LEGACY_PLATFORM_FILE_PATH_PATTERN.test(parsed.pathname);

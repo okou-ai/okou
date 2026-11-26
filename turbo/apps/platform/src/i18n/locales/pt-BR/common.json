@@ -2644,6 +2644,7 @@
       "number": "número"
     },
     "sidebar": {
+      "all": "Todas",
       "archive": "Arquivar",
       "archived": "Arquivadas",
       "chatsWith": "Conversas com {{assistantName}}",
@@ -2663,6 +2664,7 @@
       "newChatWith": "Nova conversa com {{assistantName}}",
       "noArchived": "Nenhuma conversa arquivada",
       "noMuted": "Nenhuma conversa silenciada",
+      "noUnarchived": "Nenhuma conversa não arquivada",
       "noUnread": "Nenhuma conversa não lida",
       "openChatMenu": "Abrir menu da conversa",
       "openListMenu": "Abrir menu da lista de conversas",
@@ -2674,6 +2676,7 @@
       "showArchivedChats": "Mostrar conversas arquivadas",
       "titlePlaceholder": "Título da conversa",
       "unarchive": "Desarquivar",
+      "unarchived": "Não arquivadas",
       "unmute": "Reativar notificações",
       "unpin": "Desafixar",
       "unread": "Não lida",
@@ -2940,6 +2943,7 @@
     "toasts": {
       "archived": "Conversa arquivada.",
       "archivedMuted": "Conversa arquivada. Ela está silenciada, então novas respostas não a trarão de volta.",
+      "chatUnarchived": "Conversa desarquivada",
       "copied": "Copiado",
       "deleted": "Conversa excluída",
       "muted": "Conversa silenciada. Novas respostas não aparecerão como não lidas nem enviarão notificações push.",

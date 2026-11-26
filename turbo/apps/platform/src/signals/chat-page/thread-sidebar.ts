@@ -20,7 +20,6 @@ import {
   createCatalogPreviewSessionsRefresh$,
 } from "../artifacts-page/artifact-catalog-preview.ts";
 import { selectArtifactPreviewSessions$ } from "../artifact-preview-sessions.ts";
-import type { ArtifactDeletionIdentity } from "../artifact-deletion.ts";
 import {
   createZipArtifactPreviewScope,
   type ZipArtifactPreviewScope,
@@ -34,10 +33,9 @@ import {
 import { detach, Reason, resetSignal } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { refreshWorkspaceLayout$ } from "./workspace-layout.ts";
-import {
-  createCrossChatArtifactPreview,
-  createChatArtifactDeletionIdentity,
-  type CrossChatArtifactPreviewSignals,
+import type {
+  createMessageArtifactDetails,
+  MessageArtifactReads,
 } from "./chat-artifact-preview.ts";
 import {
   prepareNarrowSidebarScroll$,
@@ -97,6 +95,8 @@ export type ArtifactPreviewKind =
   | "file";
 
 export type ArtifactRef = {
+  readonly artifactReads?: MessageArtifactReads;
+  readonly groupId?: string;
   readonly resourceUrl$: Computed<Promise<string | null>>;
   readonly imageUrl$: Computed<Promise<string | null>>;
   readonly shareUrl$: Computed<Promise<string | null>>;
@@ -122,6 +122,7 @@ export type ArtifactFileRef = {
 };
 
 export type ArtifactMetadataRef = {
+  readonly groupId?: string;
   readonly url: string;
   readonly filename: string;
   readonly contentType?: string;
@@ -200,6 +201,7 @@ function materializeArtifactRef(
     return withContentPreview(
       {
         url: input.url,
+        groupId: input.groupId,
         ...attachmentPreviewSignalsFor({
           ...input,
           refreshOnArtifactChange: shouldRefreshArtifactPreview(kind),
@@ -274,7 +276,7 @@ interface ThreadAutomationEditor {
 
 export interface ThreadSidebarSignals {
   readonly readArtifactOwner$: Command<AbortSignal | undefined, []>;
-  readonly crossChatArtifact: CrossChatArtifactPreviewSignals;
+  readonly artifactDetails: ReturnType<typeof createMessageArtifactDetails>;
   readonly target$: Computed<ThreadSidebarTarget | null>;
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
   readonly openCatalogArtifact$: Command<Promise<void>, [string, AbortSignal]>;
@@ -353,12 +355,20 @@ function createOpenAttachmentCommand(
   startSession$: Command<AbortSignal, [AbortSignal]>,
   publishTarget$: Command<void, [NonMailThreadSidebarTarget]>,
   previewContext: ThreadArtifactPreviewContext,
-  deletionIdentity$: Computed<Promise<ArtifactDeletionIdentity | null>>,
+  artifactDetails: ReturnType<typeof createMessageArtifactDetails>,
 ) {
   return command(
     ({ set }, input: ArtifactRefInput, signal: AbortSignal): void => {
       const sessionSignal = set(startSession$, signal);
-      const ref = materializeArtifactRef(input, previewContext, sessionSignal);
+      const source = materializeArtifactRef(
+        input,
+        previewContext,
+        sessionSignal,
+      );
+      const ref = {
+        ...source,
+        artifactReads: set(artifactDetails.register$, source.url),
+      };
       set(publishTarget$, {
         type: "artifact",
         source: {
@@ -374,7 +384,11 @@ function createOpenAttachmentCommand(
           url: ref.url,
           shareAvailable: ref.shareAvailable,
           artifactShareIdentity$: ref.artifactShareIdentity$,
-          deletionIdentity: deletionIdentity$,
+          deletionIdentity: computed(async (get) => {
+            const id = (await get(ref.artifactReads.detail$))?.owner
+              ?.artifactId;
+            return id ? { artifactId: id } : null;
+          }),
         },
         sessionSignal,
       );
@@ -442,14 +456,6 @@ function createThreadSidebarTargetSignals(
     }
     return get(internalTarget$);
   });
-  const crossChatArtifact = createCrossChatArtifactPreview(
-    computed((get) => {
-      const target = get(target$);
-      return target?.type === "artifact" && target.source.kind === "attachment"
-        ? { threadId, url: target.source.ref.url }
-        : undefined;
-    }),
-  );
   return {
     readArtifactOwner$: command(({ get }) => {
       const target = get(internalTarget$);
@@ -458,7 +464,6 @@ function createThreadSidebarTargetSignals(
         : undefined;
     }),
     target$,
-    crossChatArtifact,
   };
 }
 
@@ -512,6 +517,7 @@ export function createThreadSidebarSignals(
   threadId: string,
   mailRegistry: MailDraftCardSignalsRegistry,
   artifactCatalog: ArtifactCatalogViewSignals,
+  artifactDetails: ReturnType<typeof createMessageArtifactDetails>,
 ): ThreadSidebarSignals {
   const internalTarget$ = state<NonMailThreadSidebarTarget | null>(null);
   const targets = createThreadSidebarTargetSignals(
@@ -580,16 +586,7 @@ export function createThreadSidebarSignals(
     startSession$,
     publishTarget$,
     previewContext,
-    createChatArtifactDeletionIdentity(
-      computed((get) => {
-        const target = get(internalTarget$);
-        return target?.type === "artifact" &&
-          target.source.kind === "attachment"
-          ? { url: target.source.ref.url, threadId }
-          : undefined;
-      }),
-      targets.crossChatArtifact,
-    ),
+    artifactDetails,
   );
 
   const dismiss$ = command(({ get, set }) => {
@@ -604,6 +601,7 @@ export function createThreadSidebarSignals(
 
   return {
     ...targets,
+    artifactDetails,
     open$,
     openCatalogArtifact$,
     openAttachment$,

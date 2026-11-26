@@ -25,7 +25,7 @@ final class MessageArtifactPreviewRead: Identifiable {
   let id = UUID()
   let artifact: ChatArtifact
   let images: [ChatArtifact]
-  let imageSources: [String]
+  let group: MessageArtifactGroup?
   let thumbnail: Data?
   let loadsMetadata: Bool
   let renewedHTMLSignature: Bool
@@ -44,13 +44,13 @@ final class MessageArtifactPreviewRead: Identifiable {
   private var closed = false
 
   init(
-    artifact: ChatArtifact, images: [ChatArtifact], imageSources: [String], thumbnail: Data?,
+    artifact: ChatArtifact, images: [ChatArtifact], group: MessageArtifactGroup?, thumbnail: Data?,
     renewedHTMLSignature: Bool, reads: MessageArtifactResources, service: ChatArtifacts,
     markdown: MessageMarkdownCache, webURL: URL, didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.artifact = artifact
     self.images = images
-    self.imageSources = imageSources
+    self.group = group
     self.thumbnail = thumbnail
     self.renewedHTMLSignature = renewedHTMLSignature
     self.reads = reads
@@ -60,7 +60,7 @@ final class MessageArtifactPreviewRead: Identifiable {
     self.didFail = didFail
     store = reads.store
     uploadedFile = service.uploadedFile(artifact)
-    loadsMetadata = uploadedFile == nil || artifact.kind != .image || !imageSources.isEmpty
+    loadsMetadata = uploadedFile == nil || artifact.kind != .image || group != nil
     let downloadRevision = downloadRevision
     requestDownload = Command { context in
       try context.set(downloadRevision, update: { $0 + 1 })
@@ -120,7 +120,7 @@ final class MessageArtifactPreviewRead: Identifiable {
         artifact: artifact, images: images.map(reads.metadata).filter { $0.kind == .image },
         file: uploadedFile)
     }
-    try await reads.prepareMetadata()
+    try await reads.prepareMetadata(artifact)
     try Task.checkCancellation()
     do {
       return try await loadAuthorizedContent()
@@ -135,19 +135,23 @@ final class MessageArtifactPreviewRead: Identifiable {
     let resolved = try await service.resolve(reads.metadata(artifact))
     try Task.checkCancellation()
     var group = images.map(reads.metadata).filter { $0.kind == .image }
-    if resolved.artifact.kind == .image, !imageSources.isEmpty {
+    if resolved.artifact.kind == .image, let sources = self.group?.sources, !sources.isEmpty {
       group = []
       var seen = Set<ChatArtifact.Source>()
-      for source in imageSources {
+      for source in sources {
         let content = await markdown.content(for: source)
         try Task.checkCancellation()
-        for image in MessageArtifactBody.resources(
-          content,
-          resolve: {
-            ChatArtifactReference.parse($0, webURL: webURL, apiURL: service.apiURL)
+        let resources = MessageArtifactBody.resources(content) {
+          ChatArtifactReference.parse($0, webURL: webURL, apiURL: service.apiURL)
+        }
+        for resource in resources where seen.insert(resource.id).inserted {
+          if reads.metadata(resource).kind == .file {
+            try await reads.prepareMetadata(resource)
+            try Task.checkCancellation()
           }
-        ).map(reads.metadata)
-        where image.kind == .image && seen.insert(image.id).inserted { group.append(image) }
+          let candidate = reads.metadata(resource)
+          if candidate.kind == .image { group.append(candidate) }
+        }
       }
     }
     if resolved.artifact.kind == .html {
