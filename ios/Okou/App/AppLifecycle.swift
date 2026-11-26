@@ -250,6 +250,7 @@ final class WorkspaceLifecycle {
           guard await workspaceStore.openChatLink(.thread(id: threadID, runID: nil)) else {
             throw ChatError.composerUnavailable
           }
+          workspaceStore.sidebarInteraction.setOpen(false)
         }
       })
   }
