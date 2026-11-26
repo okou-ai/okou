@@ -2338,8 +2338,8 @@ account-org	src/signals/routes/__tests__/onboarding-bootstrap.test.ts	onboarding
 account-org	src/signals/routes/__tests__/onboarding-bootstrap.test.ts	onboarding-bootstrap-002	planned				
 account-org	src/signals/routes/__tests__/onboarding-bootstrap.test.ts	onboarding-bootstrap-003	planned				
 account-org	src/signals/routes/__tests__/onboarding-bootstrap.test.ts	onboarding-bootstrap-006	planned				
-account-org	src/signals/routes/__tests__/onboarding-recommendations.test.ts	onboarding-recommendations-001	planned				B05
-account-org	src/signals/routes/__tests__/onboarding-recommendations.test.ts	onboarding-recommendations-002	planned				B05
+account-org	src/signals/routes/__tests__/onboarding-recommendations.test.ts	onboarding-recommendations-001	revisit		revisit: cold-start pending (the first case reaching a code path pays about 100-150 ms; timing rule awaiting a decision); rows written and passing; evidence: 3-run medians onboarding-recommendations-001 68.4 ms; onboarding-recommendations-002 231.8 ms; draft /home/user/pilot-env/wip/r12/onboarding-recommendations.test.ts		B05
+account-org	src/signals/routes/__tests__/onboarding-recommendations.test.ts	onboarding-recommendations-002	revisit		revisit: cold-start pending (the first case reaching a code path pays about 100-150 ms; timing rule awaiting a decision); rows written and passing; evidence: 3-run medians onboarding-recommendations-001 68.4 ms; onboarding-recommendations-002 231.8 ms; draft /home/user/pilot-env/wip/r12/onboarding-recommendations.test.ts		B05
 account-org	src/signals/routes/__tests__/onboarding-sources.test.ts	onboarding-sources-002	planned				B05
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-001	rewritten	83.8	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-002	rewritten	46.7	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
