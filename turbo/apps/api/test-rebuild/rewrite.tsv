@@ -2866,7 +2866,7 @@ billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-
 billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-007	rewritten	109.8		src/signals/routes/__tests__/subscription-controls.test.ts	B05
 billing	src/signals/routes/__tests__/subscription-credit-balances.test.ts	subscription-credit-balances-001	rewritten	107.0		src/signals/routes/__tests__/subscription-credit-balances.test.ts	B02
 billing	src/signals/routes/__tests__/subscription-credit-balances.test.ts	subscription-credit-balances-003	rewritten	192.3		src/signals/routes/__tests__/subscription-credit-balances.test.ts	B02
-billing	src/signals/routes/__tests__/subscription-deletion.test.ts	subscription-deletion-001	planned				B05
+billing	src/signals/routes/__tests__/subscription-deletion.test.ts	subscription-deletion-001	revisit		revisit: cold-start pending (the first case reaching a code path pays about 100-150 ms; timing rule awaiting a decision); rows written and passing; evidence: 3-run medians subscription-deletion-001 270.2 ms; draft /home/user/pilot-env/wip/r12/subscription-deletion.test.ts		B05
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-001	planned				
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-002	planned				
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-003	planned				
