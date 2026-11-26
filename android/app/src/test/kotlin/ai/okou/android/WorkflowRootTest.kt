@@ -1763,7 +1763,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
-    fun searchWorkflowDraftFailureAndRetryKeepTheActionsInPlace() {
+    fun searchWorkflowDraftFailureKeepsTheActionsInPlaceAndRestoresFocus() = withHardwareKeyboard {
         app.gate.countDown()
         compose.onNodeWithContentDescription("Search workspace").performClick()
         val scope = compose.onNodeWithTag("search_type_Workflows")
@@ -1794,7 +1794,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
                 firstRead.countDown()
                 check(releaseFailure.await(10, TimeUnit.SECONDS))
             }
-            use.assertIsEnabled().performClick()
+            use.assertIsEnabled().pressEnter()
             opening.assertIsNotEnabled()
             compose.waitUntil(5_000) { compose.runOnIdle { firstRead.count == 0L } }
             assertEquals(useBounds, opening.assertIsNotEnabled().getUnclippedBoundsInRoot())
@@ -1803,7 +1803,10 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
 
             waitFor(error)
             assertTrue(failure.getUnclippedBoundsInRoot().bottom < useBounds.top)
-            assertEquals(useBounds, use.assertIsEnabled().getUnclippedBoundsInRoot())
+            assertEquals(
+                useBounds,
+                use.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot(),
+            )
             assertEquals(detailsBounds, details.assertIsEnabled().getUnclippedBoundsInRoot())
             assertEquals("Keep my existing draft", app.fixture.previousDraft)
 
@@ -1812,7 +1815,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
                 retryRead.countDown()
                 check(releaseRetry.await(10, TimeUnit.SECONDS))
             }
-            use.performClick()
+            use.performKeyInput { pressKey(Key.Enter) }
             opening.assertIsNotEnabled()
             compose.waitUntil(5_000) { compose.runOnIdle { retryRead.count == 0L } }
             failure.assertDoesNotExist()

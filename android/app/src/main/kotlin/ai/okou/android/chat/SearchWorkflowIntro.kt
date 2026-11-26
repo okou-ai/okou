@@ -4,6 +4,7 @@ import ai.okou.android.R
 import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSheetScroll
 import ai.okou.android.WithButtonFocusOutline
+import ai.okou.android.workflows.rememberWorkflowReturnFocus
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Button
@@ -11,6 +12,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -37,7 +42,13 @@ internal fun SearchWorkflowIntro(
     val action = Modifier.heightIn(min = 48.dp)
     val hidden = Modifier.clearAndSetSemantics {}.alpha(0f)
     val live = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+    val useEnabled = workflow.canUse && canStartDraft && !pending
+    var restoreUseFocus by remember(workflow.id) { mutableStateOf(false) }
     SettingsSheet(title = workflow.title, onDismiss = onClose, scroll = SettingsSheetScroll.Panel) {
+        val useFocus =
+            rememberWorkflowReturnFocus(restoreUseFocus && failed, useEnabled) {
+                restoreUseFocus = false
+            }
         workflow.description
             ?.takeIf { it.isNotBlank() }
             ?.let {
@@ -63,9 +74,12 @@ internal fun SearchWorkflowIntro(
         )
         WithButtonFocusOutline(colors.onPrimary) {
             Button(
-                onClick = onUse,
-                enabled = workflow.canUse && canStartDraft && !pending,
-                modifier = if (pending) action.then(live) else action,
+                onClick = {
+                    restoreUseFocus = useFocus.keyboardFocused
+                    onUse()
+                },
+                enabled = useEnabled,
+                modifier = action.then(useFocus.modifier).then(if (pending) live else Modifier),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
