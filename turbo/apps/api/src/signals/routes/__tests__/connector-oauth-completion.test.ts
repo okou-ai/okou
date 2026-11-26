@@ -113,6 +113,74 @@ async function connectGithub(actor: ApiTestUser) {
   return started.oauthAttemptId;
 }
 
+async function startDeniedReconnect() {
+  mockGitHubConnectorOAuth();
+  const owner = bdd.user();
+  const addAttemptId = await connectGithub(owner);
+  const added = await readReceipt(owner, addAttemptId, githubTarget);
+  if (!("connectionId" in added.body)) {
+    throw new Error("Expected the GitHub add receipt");
+  }
+  const connectionId = added.body.connectionId;
+  const reconnect = { intent: "reconnect", connectionId } as const;
+  const denied = await connectors.startOauth(
+    owner,
+    "github",
+    "oauth",
+    reconnect,
+  );
+  return {
+    owner,
+    connectionId,
+    reconnect,
+    deniedAttemptId: denied.oauthAttemptId,
+    deniedState: stateOf(denied.authorizationUrl),
+  };
+}
+
+type DeniedReconnect = Awaited<ReturnType<typeof startDeniedReconnect>>;
+
+async function renameAndSelectDefault(attempt: DeniedReconnect) {
+  await renameAccount(
+    attempt.owner,
+    attempt.connectionId,
+    githubTarget,
+    "Work GitHub",
+  );
+  await connectors.setDefaultBuiltinConnectorAccount(
+    attempt.owner,
+    "github",
+    attempt.connectionId,
+  );
+}
+
+async function denyReconnectAfterAccountEdits() {
+  const attempt = await startDeniedReconnect();
+  await renameAndSelectDefault(attempt);
+  const denied = await connectors.completeOauthCallbackResult("github", {
+    state: attempt.deniedState,
+    error: "access_denied",
+  });
+  if (denied.body.status !== "error") {
+    throw new Error("Expected the provider denial to fail the reconnect");
+  }
+  return attempt;
+}
+
+async function completeRetry(attempt: DeniedReconnect) {
+  const retry = await connectors.startOauth(
+    attempt.owner,
+    "github",
+    "oauth",
+    attempt.reconnect,
+  );
+  const result = await connectors.completeOauthCallbackResult("github", {
+    state: stateOf(retry.authorizationUrl),
+    code: `code-${randomUUID()}`,
+  });
+  return { retryAttemptId: retry.oauthAttemptId, status: result.body.status };
+}
+
 async function startCustomOAuth(
   actor: ApiTestUser,
   connectorId: string,
@@ -131,64 +199,64 @@ async function startCustomOAuth(
 }
 
 describe("connector OAuth completion receipts", () => {
-  it("connector-oauth-completion-002 keeps a denied reconnect without a receipt after account edits and a later retry", async () => {
-    mockGitHubConnectorOAuth();
-    const owner = bdd.user();
-    await connectGithub(owner);
-    const account = await connectors.readDefaultBuiltinAccount(owner, "github");
-    const reconnect = {
-      intent: "reconnect",
-      connectionId: account.id,
-    } as const;
+  it("connector-oauth-completion-002 (1/3) reports a denied reconnect as an error without a receipt after a rename and default change", async () => {
+    const attempt = await startDeniedReconnect();
 
-    const denied = await connectors.startOauth(
-      owner,
-      "github",
-      "oauth",
-      reconnect,
+    await renameAndSelectDefault(attempt);
+    await expectMissingReceipt(
+      attempt.owner,
+      attempt.deniedAttemptId,
+      githubTarget,
     );
-    const deniedState = stateOf(denied.authorizationUrl);
-    await renameAccount(owner, account.id, githubTarget, "Work GitHub");
-    await connectors.setDefaultBuiltinConnectorAccount(
-      owner,
-      "github",
-      account.id,
-    );
-    await expectMissingReceipt(owner, denied.oauthAttemptId, githubTarget);
 
-    const deniedResult = await connectors.completeOauthCallbackResult(
-      "github",
-      { state: deniedState, error: "access_denied" },
-    );
-    expect(deniedResult.body.status).toBe("error");
-    await expectMissingReceipt(owner, denied.oauthAttemptId, githubTarget);
-
-    const retry = await connectors.startOauth(
-      owner,
-      "github",
-      "oauth",
-      reconnect,
-    );
-    const retryResult = await connectors.completeOauthCallbackResult("github", {
-      state: stateOf(retry.authorizationUrl),
-      code: `code-${randomUUID()}`,
+    const denied = await connectors.completeOauthCallbackResult("github", {
+      state: attempt.deniedState,
+      error: "access_denied",
     });
-    expect(retryResult.body.status).toBe("success");
+    expect(denied.body.status).toBe("error");
+    await expectMissingReceipt(
+      attempt.owner,
+      attempt.deniedAttemptId,
+      githubTarget,
+    );
+  });
+
+  it("connector-oauth-completion-002 (2/3) returns the separate retry's receipt while the denied attempt stays missing", async () => {
+    const attempt = await denyReconnectAfterAccountEdits();
+
+    const retry = await completeRetry(attempt);
+    expect(retry.status).toBe("success");
     const retried = await readReceipt(
-      owner,
-      retry.oauthAttemptId,
+      attempt.owner,
+      retry.retryAttemptId,
       githubTarget,
     );
     expect(retried.status).toBe(200);
-    expect(retried.body).toStrictEqual({ connectionId: account.id });
-    await expectMissingReceipt(owner, denied.oauthAttemptId, githubTarget);
+    expect(retried.body).toStrictEqual({ connectionId: attempt.connectionId });
+    await expectMissingReceipt(
+      attempt.owner,
+      attempt.deniedAttemptId,
+      githubTarget,
+    );
+  });
+
+  it("connector-oauth-completion-002 (3/3) rejects a successful callback replayed with the denied attempt's state", async () => {
+    const attempt = await denyReconnectAfterAccountEdits();
+    const retry = await completeRetry(attempt);
+    if (retry.status !== "success") {
+      throw new Error("Expected the separate retry to succeed");
+    }
 
     const replay = await connectors.completeOauthCallbackResult("github", {
-      state: deniedState,
+      state: attempt.deniedState,
       code: `code-${randomUUID()}`,
     });
     expect(replay.body.status).toBe("error");
-    await expectMissingReceipt(owner, denied.oauthAttemptId, githubTarget);
+    await expectMissingReceipt(
+      attempt.owner,
+      attempt.deniedAttemptId,
+      githubTarget,
+    );
   });
 
   it("connector-oauth-completion-005 tracks a custom OAuth add and a cancelled reconnect independently", async () => {
