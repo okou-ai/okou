@@ -751,11 +751,9 @@ test("Later records a request to revisit the suggestion and Undo targets that fe
     name: "How is this suggestion?",
   });
   expect(
-    within(feedback)
-      .getAllByRole("button")
-      .map((control) => {
-        return control.textContent;
-      }),
+    queryAllByRoleFast("button", feedback).map((control) => {
+      return control.textContent;
+    }),
   ).toStrictEqual(["Done", "Won't do", "Later", "Less like this"]);
   click(button("Later", "button", feedback));
   await activeForYouCard(items[1].content.title);
