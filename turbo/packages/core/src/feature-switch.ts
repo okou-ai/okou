@@ -309,6 +309,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.FeishuArtifactChannelSharing]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Feishu and Lark artifact sharing",
+    description:
+      "Preview artifacts per authorized reader and privately help owners share access with current chat members.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.HostedSiteCustomDomains]: {
     maintainer: "yuma@okou.ai",
     displayName: "Custom domains",

@@ -10,6 +10,7 @@ export const LARK_OFFICIAL_TENANT_SCOPES = [
   "im:message:readonly",
   "im:message:send_as_bot",
   "im:resource",
+  "im:url_preview.update",
 ] as const;
 
 export const LARK_OFFICIAL_OAUTH_SCOPES = [
