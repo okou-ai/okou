@@ -210,12 +210,13 @@ class MainActivity : AppCompatActivity() {
                         },
                         updateToolbarAction =
                             updateToolbarAction(
-                                updateState,
-                                { updateInstall.download(it) },
-                                ::installUpdate,
-                                installProgress,
-                                openUpdates,
-                            ),
+                                    updateState,
+                                    { updateInstall.download(it) },
+                                    ::installUpdate,
+                                    installProgress,
+                                    openUpdates,
+                                )
+                                ?.copy(detailsOpen = updateDetails.value),
                     )
                 }
                 val explanation = updateInstall.attempt as? UpdateInstallAttempt.Explain

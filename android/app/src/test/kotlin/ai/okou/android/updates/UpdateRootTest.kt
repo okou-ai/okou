@@ -199,6 +199,46 @@ class UpdateRootTest {
     }
 
     @Test
+    fun updateToolbarRestoresKeyboardFocusAfterClosingDetails() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            compose.runOnIdle {
+                (app.authentication as TestAuthentication).state.value = testAuthenticationState()
+                app.fixture.response =
+                    AndroidUpdates(
+                        null,
+                        updateRelease("99.0.0").copy(minimumSdk = Build.VERSION.SDK_INT + 1),
+                    )
+            }
+            checkNotNull(app.fixture.heldCheck).complete(Unit)
+            compose.waitUntil(10_000) { app.updates.state.value.available }
+
+            val toolbar =
+                compose.onNodeWithContentDescription(
+                    app.getString(R.string.updates_android_unsupported),
+                )
+            assertEquals(
+                app.getString(R.string.updates_title),
+                toolbar.fetchSemanticsNode().config[SemanticsActions.OnClick].label,
+            )
+            toolbar
+                .performSemanticsAction(SemanticsActions.RequestFocus)
+                .assertIsFocused()
+                .performKeyInput { pressKey(Key.Enter) }
+            updateDetailsHeading().assertIsDisplayed()
+            updateDetailText("Close")
+                .performSemanticsAction(SemanticsActions.RequestFocus)
+                .performKeyInput { pressKey(Key.Enter) }
+            updateDetailsHeading().assertDoesNotExist()
+            toolbar.assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w240dp-h450dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun detailsKeepTheSameActionBoundsWithLargeTextThroughDownloadAndReady() {
