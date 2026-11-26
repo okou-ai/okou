@@ -1179,10 +1179,10 @@ connectors	src/signals/routes/__tests__/connector-runtime-wakeups.test.ts	connec
 connectors	src/signals/routes/__tests__/connector-runtime-wakeups.test.ts	connector-runtime-wakeups-002	planned				
 connectors	src/signals/routes/__tests__/connector-skill-bundles.test.ts	connector-skill-bundles-001	planned				
 connectors	src/signals/routes/__tests__/connector-skill-bundles.test.ts	connector-skill-bundles-002	planned				
-connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-001	planned				B04
-connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-002	planned				B04
-connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-005	planned				B04
-connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-006	planned				B04
+connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-001	revisit		revisit: full DCR OAuth flow (start, callback, completion receipt) across three connects needs a split per BRIEF7; evidence: not reached within first-pass budget, mockAutomaticMcpOAuthProvider supports authorizationCodeErrors [null, temporarily_unavailable, null] and registrationBodies; resume: drive builtinConnectorAutomaticContract start/callback (responseMode json) and the oauth-completions receipt, split per connect		B04
+connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-002	revisit		revisit: two DCR accounts plus a foreign account and an invalid_client callback need a split per BRIEF7; evidence: not reached within first-pass budget; resume: same flow as 001 with authorizationCodeErrors invalid_client and a second workspace owner		B04
+connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-005	revisit		revisit: expiring DCR registration needs mockNow advance and the start/callback flow; evidence: not reached within first-pass budget, dcrClientSecretExpiresAt is supported by the provider mock; resume: connect with secret expiring at now+60, mockNow(+61s), reconnect, read account, complete callback		B04
+connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-006	rewritten	150.8		src/signals/routes/__tests__/connectors-automatic-security.test.ts	B04
 connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-001	planned				
 connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-002	planned				
 connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-003	planned				
