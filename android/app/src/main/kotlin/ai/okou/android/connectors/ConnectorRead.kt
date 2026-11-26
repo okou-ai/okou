@@ -20,12 +20,14 @@ internal data class ConnectorRead<T>(
     val data: T? = null,
     val failure: ConnectorReadFailure? = null,
     val expiresAt: TimeMark? = null,
+    val failureRound: Long? = null,
 ) {
     val isConfirmed: Boolean
         get() = data != null || failure == ConnectorReadFailure.Unavailable
 
     fun confirmed(): ConnectorRead<T> =
-        if (failure == ConnectorReadFailure.Unavailable) this else copy(failure = null)
+        if (failure == ConnectorReadFailure.Unavailable) this
+        else copy(failure = null, failureRound = null)
 
     fun forEntry(): ConnectorRead<T> =
         if (expiresAt?.hasPassedNow() == false) confirmed() else ConnectorRead()

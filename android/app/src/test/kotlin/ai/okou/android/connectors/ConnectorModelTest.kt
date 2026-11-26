@@ -348,9 +348,17 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
     fun refreshKeepsTheLastResultsAndClearsTheErrorWhenItSucceeds() {
         withModel(CONNECTOR_CALENDAR) { fixture, model ->
             val cached = model.await { it.browse.data != null }.browse.data
+            fixture.discoveryRetryAfterSeconds = 0
             fixture.failDiscovery = true
+            model.pause()
             model.resume()
-            val failed = model.await { it.browse.failure != null }.browse.failure
+            val first = model.await { it.browse.failureRound != null }.browse
+            model.pause()
+            model.resume()
+            val second = model.await { it.browse.failureRound != first.failureRound }.browse
+            assertEquals(first.failure, second.failure)
+            assertTrue(checkNotNull(second.failureRound) > checkNotNull(first.failureRound))
+            assertEquals(cached, second.data)
             model.pause()
 
             val requested = CountDownLatch(1)
@@ -363,13 +371,41 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
                 withContext(Dispatchers.IO) { assertTrue(requested.await(10, TimeUnit.SECONDS)) }
                 val refreshing = model.uiState.value
                 assertEquals(cached, refreshing.browse.data)
-                assertEquals(failed, refreshing.browse.failure)
+                assertEquals(second.failureRound, refreshing.browse.failureRound)
             } finally {
                 release.countDown()
             }
-            assertEquals(cached, model.await { it.browse.failure == null }.browse.data)
+            assertEquals(cached, model.await { it.browse.failureRound == null }.browse.data)
         }
     }
+
+    @Test
+    fun aNewColdReadClearsThePreviousFailureWhileItsResponseIsPending() =
+        withModel(
+            CONNECTOR_CALENDAR,
+            configure = {
+                it.discoveryRetryAfterSeconds = 0
+                it.failDiscovery = true
+            },
+        ) { fixture, model ->
+            assertNull(model.await { it.browse.failureRound != null }.browse.data)
+            model.pause()
+            val requested = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            fixture.discoveryRequested = requested
+            fixture.discoveryGate = release
+            fixture.failDiscovery = false
+            try {
+                model.resume()
+                withContext(Dispatchers.IO) { assertTrue(requested.await(10, TimeUnit.SECONDS)) }
+                val pending = model.uiState.value.browse
+                assertNull(pending.failure)
+                assertNull(pending.data)
+            } finally {
+                release.countDown()
+            }
+            assertNull(model.await { it.browse.data != null }.browse.failureRound)
+        }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
