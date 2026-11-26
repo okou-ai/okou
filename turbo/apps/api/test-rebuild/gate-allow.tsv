@@ -45,3 +45,5 @@ chat-events-pi-codex-credentials-006	rejected personal codex auth_json paste: sh
 voice-google-auth-retry-018	Google Cloud LLM authentication rejected	Given: Google STS answers HTTP 400
 billing-usage-pack-subscriptions-052	organizationInvitation.accepted activation failed	When: two concurrent acceptance deliveries; the losing delivery is rejected because the invitation purchase changed
 connectors-oauth-start-091	Connector runtime capability is unavailable	Given: no GitHub OAuth client ID is configured
+cron-connector-catalog-v4-006	Connector catalog candidate rejected	Given: the catalog source has no objects (source-unavailable)
+computer-use-host-presence-004	Unable to publish computer-use command wakeup	Given: every realtime publication fails
