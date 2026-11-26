@@ -122,10 +122,7 @@ const sharingEnabled$ = command(
       resource.userId,
       signal,
     );
-    return (
-      isFeatureEnabled(FeatureSwitchKey.SlackArtifactChannelSharing, context) &&
-      isFeatureEnabled(FeatureSwitchKey.HostedSiteEmailSharing, context)
-    );
+    return isFeatureEnabled(FeatureSwitchKey.HostedSiteEmailSharing, context);
   },
 );
 
