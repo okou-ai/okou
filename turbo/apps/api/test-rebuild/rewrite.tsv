@@ -2187,16 +2187,16 @@ messaging	src/signals/routes/__tests__/mail.test.ts	mail-064	planned
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-066	planned				
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-067	planned				
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-075	planned				
-billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-003	planned				B03
-billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-007	planned				B03
-billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-008	planned				B03
-billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-010	planned				B03
-billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-011	planned				B03
-billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-012	planned				B03
-billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-015	planned				B03
-billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-016	planned				B03
-billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-017	planned				B03
-billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-019	planned				B03
+billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-003	rewritten	42.1		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
+billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-007	rewritten	32.7		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
+billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-008	rewritten	19.4		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
+billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-010	rewritten	48.8		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
+billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-011	rewritten	28.2		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
+billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-012	rewritten	62.3		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
+billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-015	rewritten	40.2		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
+billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-016	rewritten	11.9		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
+billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-017	rewritten	86.4		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
+billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-019	rewritten	15.1		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
 billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-002	planned				
 billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-003	planned				
 billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-004	planned				
