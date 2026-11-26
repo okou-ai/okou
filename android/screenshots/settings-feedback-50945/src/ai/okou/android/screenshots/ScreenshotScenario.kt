@@ -222,8 +222,8 @@ class ScreenshotScenario {
         val target = label(app.getString(id))
         if (!device.hasObject(target)) {
             val visible =
-                object : Condition<UiDevice, Boolean> {
-                    override fun apply(device: UiDevice) = device.hasObject(target)
+                object : Condition<UiObject2, Boolean> {
+                    override fun apply(container: UiObject2) = device.hasObject(target)
                 }
             val scroll = await(By.pkg(app.packageName).scrollable(true))
             if (scroll.scrollUntil(Direction.UP, visible) != true) {
