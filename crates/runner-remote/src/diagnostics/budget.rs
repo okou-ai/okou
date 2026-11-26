@@ -39,10 +39,7 @@ impl Report {
                             | V::Retirement
                     )
                 });
-                for carrier in [&mut vnc.rfb_carrier, &mut vnc.kdc_carrier]
-                    .into_iter()
-                    .flatten()
-                {
+                for carrier in vnc.carriers_mut() {
                     if let Some(access) = &mut carrier.access {
                         access.stages.retain(|step| {
                             !matches!(step.status, Progress::Passed | Progress::Reused)
