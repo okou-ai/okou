@@ -335,9 +335,11 @@ private struct WorkspaceRootView: View {
     .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
     .overlay {
       if let submission = store.newChatSubmission, submission.isPresenting {
-        NewChatSubmissionView(submission: submission, webURL: store.webURL)
-          .id(submission.message.id)
-          .background { OkouColor.background.ignoresSafeArea() }
+        NewChatSubmissionView(
+          submission: submission, conversation: store.selectedConversation, webURL: store.webURL
+        )
+        .id(submission.message.id)
+        .background { OkouColor.background.ignoresSafeArea() }
       }
     }
     .safeAreaBar(edge: .top, spacing: 0) {
