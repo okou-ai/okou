@@ -27,20 +27,25 @@ private struct ChatFeedbackBannerContent: View {
   let store: WorkspaceStore
   let selected: ConversationStore?
   @LoadableValue private var listRead: Loadable<Void>
-  /// The selected chat's synchronization, kept in the workspace session's Store.
+  /// The selected chat's synchronization and the chat list's status, kept in the workspace
+  /// session's Store.
   @ResolvedValue private var selectedSync: ConversationPresentation.SyncStatus?
+  @ResolvedValue private var listStatus: ThreadListStore.Status?
 
   init(store: WorkspaceStore, selected: ConversationStore?) {
     self.store = store
     self.selected = selected
     _listRead = LoadableValue(task: store.list.listValue)
     _selectedSync = ResolvedValue(selected?.syncStatus ?? ConversationPresentation.idleSync)
+    _listStatus = ResolvedValue(store.list.statusValue)
   }
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var workspaceSynchronization: ChatSynchronizationState? {
-    store.synchronizationState(selected: selected.map { selectedSync ?? $0.currentSyncStatus })
+    store.synchronizationState(
+      selected: selected.map { selectedSync ?? $0.currentSyncStatus },
+      listSyncError: (listStatus ?? store.list.status).syncError)
   }
 
   private var synchronizationState: ChatSynchronizationState? {
