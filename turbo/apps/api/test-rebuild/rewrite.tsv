@@ -810,7 +810,7 @@ chat	src/signals/routes/__tests__/chat-events-pi-handoff.test.ts	chat-events-pi-
 chat	src/signals/routes/__tests__/chat-events-pi-handoff.test.ts	chat-events-pi-handoff-005	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-pi-preparation.test.ts	chat-events-pi-preparation-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-pi-responses.test.ts	chat-events-pi-responses-001	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-pi-session.test.ts	chat-events-pi-session-002	planned				B07	d-other
+chat	src/signals/routes/__tests__/chat-events-pi-session.test.ts	chat-events-pi-session-002	skipped		slow-setup: Given+first When/Then 358 ms and 357 ms (warm lower bound up to the first Luna dispatch, before completing the turn: entitled Pro actor with personal Claude model 120/113 ms, ChatGPT device-auth connect for Luna 69/78 ms, Luna send dispatching the Run plus its execution input 169/166 ms)		B07	d-other
 chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-004	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-005	planned					a-run
