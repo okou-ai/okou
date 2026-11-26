@@ -3,9 +3,12 @@ import UIKit
 
 final class ComposerVoiceAttachmentProvider: NSTextAttachmentViewProvider {
   override func loadView() {
-    guard let attachment = textAttachment as? ComposerReferenceAttachment else { return }
-    view = ComposerVoiceClipControl(
-      fileIDs: attachment.voiceFileIDs, font: attachment.referenceFont)
+    // TextKit measures attachments off the UI actor, but loads their UIKit views on main.
+    MainActor.assumeIsolated {
+      guard let attachment = textAttachment as? ComposerReferenceAttachment else { return }
+      view = ComposerVoiceClipControl(
+        fileIDs: attachment.voiceFileIDs, font: attachment.referenceFont)
+    }
   }
 
   override func attachmentBounds(
@@ -35,7 +38,9 @@ final class ComposerVoiceClipControl: UIControl {
   var duration: TimeInterval?
   private var progress = 0.0
 
-  static func preferredWidth(font: UIFont) -> CGFloat { max(104, ceil(font.pointSize * 6)) }
+  nonisolated static func preferredWidth(font: UIFont) -> CGFloat {
+    max(104, ceil(font.pointSize * 6))
+  }
 
   init(fileIDs: [String], font: UIFont) {
     self.fileIDs = fileIDs
