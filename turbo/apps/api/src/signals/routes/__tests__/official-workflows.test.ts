@@ -8,7 +8,6 @@ import { billingStatusRoutes } from "../billing-status";
 import { webhooksAgentDataRequestRoutes } from "../webhooks-agent-data-request";
 import { notificationsContract } from "@okouai/api-contracts/contracts/notifications";
 import { notificationsRoutes } from "../notifications";
-import type { output } from "zod";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import {
   cronCleanupSandboxesContract,
@@ -290,196 +289,6 @@ describe("Daily profile learning through Suggestions", () => {
       status: "paused",
       unavailableReason: null,
     });
-  });
-});
-
-function shadowReport(
-  body: output<(typeof cronProactiveContract.compare.responses)[200]>,
-) {
-  if ("phase" in body) {
-    throw new Error("Expected the pre-handoff forecast");
-  }
-  return body;
-}
-
-describe("Proactive cron comparison", () => {
-  const cronHeaders = { authorization: "Bearer test-cron-secret" };
-
-  it("requires the cron secret", async () => {
-    const client = setupApp({ context, routes: cronProactiveRoutes })(
-      cronProactiveContract,
-    );
-    const rejected = await accept(client.compare({ headers: {} }), [401]);
-    expect(rejected.body.error.code).toBe("UNAUTHORIZED");
-  });
-
-  it.each([
-    { timezone: "Asia/Kathmandu", from: "2030-01-02T00:00:00Z" },
-    { timezone: "Europe/Berlin", from: "2030-03-30T23:30:00Z" },
-    { timezone: "Europe/Berlin", from: "2030-10-26T22:30:00Z" },
-  ])(
-    "forecasts all three slots from $from in $timezone without consuming their anchors or appending to conversations",
-    async ({ timezone, from }) => {
-      const app = await setupApp({
-        context,
-        isolatePg: true,
-        routes: [
-          ...cronProactiveRoutes,
-          ...proactiveSuggestionsRoutes,
-          ...morningBriefPreferenceRoutes,
-        ],
-      });
-      mockNow(new Date(from));
-      const { actor } = await prepareBriefMember();
-      await bdd.completeOnboarding(actor, { timezone });
-      const headers = authHeaders(actor);
-      await accept(
-        app(morningBriefPreferenceContract).update({
-          headers,
-          body: { enabled: true },
-        }),
-        [200],
-      );
-      await accept(
-        app(proactiveSuggestionsContract).update({
-          headers,
-          body: { enabled: true },
-        }),
-        [200],
-      );
-      const workflows = await accept(
-        workflowCollectionClient().list({ headers, query: {} }),
-        [200],
-      );
-      const client = app(cronProactiveContract);
-      const kinds = [
-        ["morning-brief", "morning-brief"],
-        ["agent-suggestions", "suggestions"],
-        ["proactive-learning", "learning"],
-      ] as const;
-      for (const [definition, task] of kinds) {
-        const workflow = workflows.body.find((w) => {
-          return w.official?.definitionName === definition;
-        });
-        if (!workflow) {
-          throw new Error(`Missing ${definition} installation`);
-        }
-        const list = () => {
-          return accept(
-            automationClient().list({
-              headers,
-              params: { workflowId: workflow.id },
-            }),
-            [200],
-          );
-        };
-        const [original] = (await list()).body;
-        if (!original?.nextRunAt) {
-          throw new Error(`Missing ${definition} anchor`);
-        }
-        const events = original.chatThreadId
-          ? await allThreadEventRows(actor, original.chatThreadId)
-          : [];
-        mockNow(Date.parse(original.nextRunAt) - 5000);
-        const first = await accept(
-          client.compare({ headers: cronHeaders }),
-          [200],
-        );
-        expect(first.body.minute).toBe(original.nextRunAt);
-        expect(shadowReport(first.body).tasks[task]).toMatchObject({
-          bothDue: 1,
-          proactiveOnly: 0,
-          automationOnly: 0,
-        });
-        expect(shadowReport(first.body).differences).toStrictEqual([]);
-        const replay = await accept(
-          client.compare({ headers: cronHeaders }),
-          [200],
-        );
-        expect(replay.body).toStrictEqual(first.body);
-        if (task === "morning-brief") {
-          // A poll one minute before each forecast observes the same unclaimed anchor.
-          mockNow(Date.parse(original.nextRunAt) + 29 * 60_000);
-          const withinGrace = await accept(
-            client.compare({ headers: cronHeaders }),
-            [200],
-          );
-          expect(shadowReport(withinGrace.body).tasks[task]).toMatchObject({
-            overdue: 1,
-            expired: 0,
-          });
-          mockNow(Date.parse(original.nextRunAt) + 30 * 60_000);
-          const expired = await accept(
-            client.compare({ headers: cronHeaders }),
-            [200],
-          );
-          expect(shadowReport(expired.body).tasks[task]).toMatchObject({
-            overdue: 0,
-            expired: 1,
-          });
-        }
-        expect((await list()).body).toStrictEqual([original]);
-        if (original.chatThreadId) {
-          await expect(
-            allThreadEventRows(actor, original.chatThreadId),
-          ).resolves.toStrictEqual(events);
-        }
-      }
-    },
-  );
-
-  it("reports the owner of a missing hourly installation, observes an opt-out, and waits for a timezone for Learning", async () => {
-    const app = await setupApp({
-      context,
-      isolatePg: true,
-      routes: [...cronProactiveRoutes, ...proactiveSuggestionsRoutes],
-    });
-    mockNow(new Date("2030-01-02T00:00:00Z"));
-    const { actor } = await prepareBriefMember();
-    await bdd.completeOnboarding(actor);
-    const headers = authHeaders(actor);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValueOnce(
-      new Error("Membership temporarily unavailable"),
-    );
-    const preference = app(proactiveSuggestionsContract);
-    await accept(
-      preference.update({ headers, body: { enabled: true } }),
-      [200],
-    );
-    const shard =
-      createHash("sha256")
-        .update(`${actor.orgId}/${actor.userId}`)
-        .digest()
-        .readUInt32BE() % 60;
-    const anchor = Date.UTC(2030, 0, 2, 12, shard);
-    mockNow(anchor - 5000);
-    const client = app(cronProactiveContract);
-    const report = await accept(
-      client.compare({ headers: cronHeaders }),
-      [200],
-    );
-    expect(shadowReport(report.body).tasks.suggestions).toMatchObject({
-      bothDue: 0,
-      proactiveOnly: 1,
-    });
-    expect(shadowReport(report.body).tasks.learning.missingTimezone).toBe(1);
-    expect(shadowReport(report.body).differences).toContainEqual({
-      orgId: actor.orgId,
-      userId: actor.userId,
-      task: "suggestions",
-      source: "proactive",
-      scheduledAt: new Date(anchor).toISOString(),
-    });
-    await accept(
-      preference.update({ headers, body: { enabled: false } }),
-      [200],
-    );
-    const stopped = await accept(
-      client.compare({ headers: cronHeaders }),
-      [200],
-    );
-    expect(shadowReport(stopped.body).tasks.suggestions.proactiveOnly).toBe(0);
-    expect(shadowReport(stopped.body).differences).toStrictEqual([]);
   });
 });
 
@@ -943,6 +752,7 @@ describe("Standalone proactive dispatch", () => {
       client.handoff({ headers: {}, body: { action: "drain", apply: true } }),
       [401],
     );
+    await accept(client.compare({ headers: {} }), [401]);
     const preview = await accept(
       client.handoff({
         headers: cron,
@@ -973,36 +783,22 @@ describe("Standalone proactive dispatch", () => {
       [200],
     );
     expect(early.body).toMatchObject({ phase: "draining", ready: false });
-    mockNow(start + 65 * 60_000);
+    mockNow(start + 5 * 60_000 - 1);
     expect(
       (await accept(client.compare({ headers: cron }), [200])).body,
     ).toMatchObject({ phase: "draining" });
+    mockNow(start + 65 * 60_000);
     await accept(
       app(cronExecuteWorkflowAutomationsContract).execute({ headers: cron }),
       [200],
     );
-    const activated = await accept(
-      client.handoff({
-        headers: cron,
-        body: { action: "activate", apply: true },
-      }),
-      [200],
-    );
-    expect(activated.body).toMatchObject({
-      phase: "standalone",
-      changed: true,
-      queued: 0,
-      claims: 0,
-      running: 0,
-      callbacks: 0,
-    });
+    expect(
+      (await accept(client.compare({ headers: cron }), [200])).body,
+    ).toMatchObject({ phase: "standalone", inactive: 1, enqueued: 0 });
     expect((await accept(brief.get({ headers }), [200])).body).toMatchObject({
       enabled: false,
       status: "paused",
     });
-    expect(
-      (await accept(client.compare({ headers: cron }), [200])).body,
-    ).toMatchObject({ phase: "standalone", inactive: 1, enqueued: 0 });
     expect(
       (await accept(client.compare({ headers: cron }), [200])).body,
     ).toMatchObject({ phase: "standalone", inactive: 0, enqueued: 0 });
@@ -1089,24 +885,14 @@ describe("Standalone proactive dispatch", () => {
       throw new Error("Missing active legacy Morning Brief");
     }
     const client = app(cronProactiveContract);
-    await accept(
-      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
-      [200],
-    );
+    const tick = () => accept(client.compare({ headers: cron }), [200]);
+    const firstTicks = await Promise.all([tick(), tick()]);
+    for (const response of firstTicks) {
+      expect(response.body).toMatchObject({ phase: "draining" });
+    }
     clockTime += 5 * 60_000;
     mockNow(clockTime);
-    const blocked = await accept(
-      client.handoff({
-        headers: cron,
-        body: { action: "activate", apply: true },
-      }),
-      [200],
-    );
-    expect(blocked.body).toMatchObject({
-      phase: "draining",
-      ready: false,
-      running: 1,
-    });
+    expect((await tick()).body).toMatchObject({ phase: "draining" });
     const earlier = await owned.runExecution(first);
     await webhooks.requestAgentComplete(
       { runId: first, exitCode: 0 },
@@ -1118,17 +904,10 @@ describe("Standalone proactive dispatch", () => {
     if (!finished.nextRunAt) {
       throw new Error("Legacy completion must establish the final cursor");
     }
-    const activated = await accept(
-      client.handoff({
-        headers: cron,
-        body: { action: "activate", apply: true },
-      }),
-      [200],
-    );
-    expect(activated.body).toMatchObject({
-      phase: "standalone",
-      changed: true,
-    });
+    const activationTicks = await Promise.all([tick(), tick()]);
+    for (const response of activationTicks) {
+      expect(response.body).toMatchObject({ phase: "standalone", enqueued: 0 });
+    }
     clockTime = Date.parse(finished.nextRunAt) - 60_000;
     mockNow(clockTime);
     await accept(
@@ -1143,8 +922,8 @@ describe("Standalone proactive dispatch", () => {
     await owned.run(() => {
       return runs.registerDirectRunner(owned.runnerGroup);
     });
-    const tick = await accept(client.compare({ headers: cron }), [200]);
-    expect(tick.body).toMatchObject({ enqueued: 1 });
+    const nextSlot = await tick();
+    expect(nextSlot.body).toMatchObject({ enqueued: 1 });
     await accept(
       app(cronCleanupSandboxesContract).cleanup({ headers: cron }),
       [200],
