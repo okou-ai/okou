@@ -2989,12 +2989,12 @@ messaging	src/signals/routes/__tests__/test-teams-state.test.ts	test-teams-state
 account-org	src/signals/routes/__tests__/transcribe.test.ts	transcribe-001	skipped		slow-setup: the Given alone, measured only up to the Run token (before the MCP credentials, the two private recording uploads and the first When), took 472 ms and 465 ms in two runs (rows 483 ms and 474 ms). Given steps: onboarding with workspace provisioning 80/80 ms; Pro entitlement, personal subscription model, Runner group heartbeat and chat send through dispatch to the execution envelope carrying the Run token 392/385 ms.		B06	
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-001	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a chat-thread Run in progress and an Okou agent token with `file:write` for that Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-004	planned					a-run
-artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-005	planned					d-other
+artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-005	rewritten	90.4		src/signals/routes/__tests__/uploads-complete.test.ts		d-other
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-007	planned					a-run
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-011	planned					a-run
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-012	planned					a-run
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-014	planned					a-run
-artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-015	planned					d-other
+artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-015	rewritten	71.7		src/signals/routes/__tests__/uploads-complete.test.ts		d-other
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-017	planned					a-run
 artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-003	rewritten	12.8	extension after sandbox reset	src/signals/routes/__tests__/uploads-multipart.test.ts	pilot	
 artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-004	rewritten	48.5	extension after sandbox reset	src/signals/routes/__tests__/uploads-multipart.test.ts	pilot	
