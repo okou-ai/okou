@@ -2574,7 +2574,7 @@ runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-l
 runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-013	planned				
 runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-018	planned				
 runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-020	planned				
-runs	src/signals/routes/__tests__/run-model-invalidation.test.ts	run-model-invalidation-001	planned				B03
+runs	src/signals/routes/__tests__/run-model-invalidation.test.ts	run-model-invalidation-001	rewritten	87.9		src/signals/routes/__tests__/run-model-invalidation.test.ts	B03
 runs	src/signals/routes/__tests__/run-models.test.ts	run-models-001	rewritten	40.5		src/signals/routes/__tests__/run-models.test.ts	pilot
 runs	src/signals/routes/__tests__/run-models.test.ts	run-models-002	rewritten	66.7		src/signals/routes/__tests__/run-models.test.ts	pilot
 runs	src/signals/routes/__tests__/run-models.test.ts	run-models-004	rewritten	78.3		src/signals/routes/__tests__/run-models.test.ts	pilot
