@@ -158,7 +158,7 @@ private struct FailureBillingCard: View {
 
 struct AssistantFailureCard: View {
   let state: AssistantFailureState
-  @Bindable var conversation: ConversationStore
+  let conversation: ConversationStore
   /// The provider's own error line from the same run.
   var providerMessage: String?
   /// A subscription write's phase, resolved by the card's host from the session graph.
