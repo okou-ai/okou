@@ -3489,9 +3489,9 @@ workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency
 workflows	src/signals/routes/__tests__/workflow-webhook-lock.test.ts	workflow-webhook-lock-001	planned				B02
 workflows	src/signals/routes/__tests__/workflow-webhook-lock.test.ts	workflow-webhook-lock-002	planned				B02
 workflows	src/signals/routes/__tests__/workflow-webhook-lock.test.ts	workflow-webhook-lock-007	planned				B02
-workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-001	planned				B02
-workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-002	planned				B02
-workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-005	planned				B02
+workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-001	rewritten	54.9		src/signals/routes/__tests__/workflows-creation.test.ts	B02
+workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-002	rewritten	52.0		src/signals/routes/__tests__/workflows-creation.test.ts	B02
+workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-005	rewritten	88.2		src/signals/routes/__tests__/workflows-creation.test.ts	B02
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-001	planned				
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-002	planned				
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-004	planned				
