@@ -3021,8 +3021,8 @@ billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	u
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-021	rewritten	86.0		src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	B03
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-024	rewritten	137.4		src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	B03
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-026	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup) to spend the organization into -5000 credits after the ZERO100 credits expire		B03
-account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-002	planned				B06
-account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-003	planned				B06
+account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-002	rewritten	7.6		src/signals/routes/__tests__/usage-record.test.ts	B06
+account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-003	rewritten	35.3		src/signals/routes/__tests__/usage-record.test.ts	B06
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-002	planned				
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-004	planned				
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-005	planned				
