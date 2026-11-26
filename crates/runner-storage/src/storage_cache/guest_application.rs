@@ -324,6 +324,7 @@ pub async fn populate_cache_for_guest(
             fresh_delivery: Some(&mut prepared.delivery),
             decoded: Some(decoded),
             application: Some(&mut application),
+            pending_archives: None,
         },
     )
     .await;

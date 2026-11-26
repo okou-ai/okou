@@ -48,7 +48,7 @@ pub(crate) mod rooted;
 /// accepted entry, or a gzip validation failure terminates extraction. Files
 /// written before an error remain in the target directory.
 pub(crate) fn extract_tar_gz(
-    source: ArchiveSource,
+    source: ArchiveSource<'_>,
     target: &Path,
     concurrency: usize,
 ) -> Result<(), DownloadError> {
@@ -58,7 +58,7 @@ pub(crate) fn extract_tar_gz(
 /// Reuse Storage extraction with an additional package contract before each write.
 /// Validation runs before each write; extraction retains the non-atomic semantics above.
 pub(crate) fn extract_tar_gz_checked(
-    source: ArchiveSource,
+    source: ArchiveSource<'_>,
     target: &Path,
     concurrency: usize,
     max_unpacked_bytes: u64,
