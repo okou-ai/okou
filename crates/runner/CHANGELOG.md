@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.251.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.11...runner-rs-v0.251.12) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** share native qualification source inventories ([#50927](https://github.com/okou-ai/okou/issues/50927)) ([e291570](https://github.com/okou-ai/okou/commit/e291570314f7d776590d8c23bd865cdd3f2836ac))
+
 ## [0.251.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.10...runner-rs-v0.251.11) (2026-11-26)
 
 
