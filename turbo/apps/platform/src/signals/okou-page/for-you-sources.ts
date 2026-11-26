@@ -49,9 +49,7 @@ export const forYouEntryVisible$ = computed(async (get) => {
     // An unavailable feed has no row to show or stop on during navigation.
     return false;
   }
-  const { firstItem, hasUnread } = result.value;
-  // Older summaries only identify unread cards.
-  return firstItem === undefined ? hasUnread : firstItem !== null;
+  return Boolean(result.value.firstItem);
 });
 
 export const reloadForYouSources$ = command(({ get, set }) => {
