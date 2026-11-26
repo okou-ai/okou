@@ -224,7 +224,7 @@ final class ComposerReferenceAttachment: NSTextAttachment {
 
   func voiceBounds(availableWidth: CGFloat) -> CGRect {
     let font = referenceFont
-    let height = max(ComposerVoiceClipControl.visualHeight, ceil(font.lineHeight))
+    let height = max(OkouControl.minimumTarget, ceil(font.lineHeight))
     let width = min(ComposerVoiceClipControl.preferredWidth(font: font), availableWidth)
     return CGRect(
       x: 0, y: (font.ascender + font.descender - height) / 2, width: width, height: height)
