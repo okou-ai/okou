@@ -150,6 +150,63 @@ test.each(EXPORTS)(
   },
 );
 
+test.each([
+  {
+    name: "dollar-delimited display formulas",
+    source: String.raw`$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$`,
+    centered: true,
+    inset: 0,
+  },
+  {
+    name: "bracket-delimited display matrices",
+    source: String.raw`\[
+\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}
+\]`,
+    centered: true,
+    inset: 0,
+  },
+  {
+    name: "display formulas inside blockquotes",
+    source: "> $$\n> x = 1\n> $$",
+    centered: true,
+    inset: 18,
+  },
+  {
+    name: "inline formulas at the paragraph start",
+    source: String.raw`\(x + 1\) stays at the paragraph start.`,
+    centered: false,
+    inset: 0,
+  },
+])(
+  "Markdown artifact PDF exports position $name within their container",
+  async ({ source, centered, inset }) => {
+    const browser = pdfServices(context, "summary");
+    const menu = await openExportMenu(
+      "pro",
+      SOURCE_URL,
+      `# Summary report\n\n${source}`,
+    );
+    click(await findNamedMenuItem("Download as PDF", menu));
+    await waitFor(() => {
+      expect(browser.downloads).toHaveLength(1);
+    });
+    const download = browser.downloads[0];
+    if (!download?.blob) {
+      throw new Error("Expected a downloaded PDF");
+    }
+    const pages = await readSavedPdf(download.blob);
+    expect(pages).toHaveLength(1);
+    const page = pages[0]!;
+    const { left, right } = page.vectorBounds;
+    expect(right).toBeGreaterThan(left);
+    const actualPosition = centered ? (left + right) / 2 : left;
+    const expectedPosition = centered ? (page.width + inset) / 2 : 48;
+    expect(Math.abs(actualPosition - expectedPosition)).toBeLessThan(1);
+  },
+);
+
 test("Markdown artifact PDF exports preserve Unicode subscripts and superscripts", async () => {
   const browser = pdfServices(context, "summary");
   const menu = await openExportMenu(

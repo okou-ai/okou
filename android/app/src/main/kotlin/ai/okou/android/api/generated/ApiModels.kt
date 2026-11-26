@@ -5192,6 +5192,312 @@ data class ArtifactSitePreview(
 )
 
 @Serializable
+enum class ArtifactShareStatusAudience {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
+
+@Serializable
+data class ArtifactShareStatusOrganization(
+    val `id`: String,
+    val `name`: String,
+)
+
+@Serializable(with = ArtifactShareStatusSelectedTargetSerializer::class)
+sealed interface ArtifactShareStatusSelectedTarget
+
+@Serializable
+enum class ArtifactShareStatusSelectedTargetVariant1Kind {
+    @SerialName("file") FILE,
+}
+
+@Serializable
+data class ArtifactShareStatusSelectedTargetVariant1(
+    val `kind`: ArtifactShareStatusSelectedTargetVariant1Kind,
+    val `id`: String,
+) : ArtifactShareStatusSelectedTarget
+
+@Serializable
+enum class ArtifactShareStatusSelectedTargetVariant2Kind {
+    @SerialName("html") HTML,
+}
+
+@Serializable
+data class ArtifactShareStatusSelectedTargetVariant2(
+    val `kind`: ArtifactShareStatusSelectedTargetVariant2Kind,
+    val `id`: String,
+) : ArtifactShareStatusSelectedTarget
+
+object ArtifactShareStatusSelectedTargetSerializer :
+    KSerializer<ArtifactShareStatusSelectedTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ArtifactShareStatusSelectedTarget",
+        )
+
+    override fun deserialize(decoder: Decoder): ArtifactShareStatusSelectedTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ArtifactShareStatusSelectedTarget",
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ArtifactShareStatusSelectedTarget",
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("file")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("html")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ArtifactShareStatusSelectedTarget variant",
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ArtifactShareStatusSelectedTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ArtifactShareStatusSelectedTargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown ArtifactShareStatusSelectedTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ArtifactShareStatusSelectedTarget) {
+        when (value) {
+            is ArtifactShareStatusSelectedTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ArtifactShareStatusSelectedTargetVariant1.serializer(),
+                    value,
+                )
+            is ArtifactShareStatusSelectedTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ArtifactShareStatusSelectedTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ArtifactShareStatus(
+    val `ownerUrl`: String,
+    val `shareId`: String?,
+    val `audience`: ArtifactShareStatusAudience,
+    val `organization`: ArtifactShareStatusOrganization,
+    val `selectedTarget`: ArtifactShareStatusSelectedTarget?,
+    val `selectedVersion`: Double?,
+    val `candidateVersion`: Double?,
+    val `url`: String?,
+    val `shortUrl`: String?,
+)
+
+@Serializable(with = ArtifactShareTargetSerializer::class) sealed interface ArtifactShareTarget
+
+@Serializable
+enum class ArtifactShareTargetVariant1Kind {
+    @SerialName("file") FILE,
+}
+
+@Serializable
+data class ArtifactShareTargetVariant1(
+    val `kind`: ArtifactShareTargetVariant1Kind,
+    val `id`: String,
+) : ArtifactShareTarget
+
+@Serializable
+enum class ArtifactShareTargetVariant2Kind {
+    @SerialName("html") HTML,
+}
+
+@Serializable
+data class ArtifactShareTargetVariant2(
+    val `kind`: ArtifactShareTargetVariant2Kind,
+    val `id`: String,
+) : ArtifactShareTarget
+
+object ArtifactShareTargetSerializer : KSerializer<ArtifactShareTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ArtifactShareTarget")
+
+    override fun deserialize(decoder: Decoder): ArtifactShareTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ArtifactShareTarget")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ArtifactShareTarget")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("file")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("html")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ArtifactShareTarget variant")
+        return when (matches.indexOf(true)) {
+            0 -> input.json.decodeFromJsonElement(ArtifactShareTargetVariant1.serializer(), value)
+            1 -> input.json.decodeFromJsonElement(ArtifactShareTargetVariant2.serializer(), value)
+            else -> throw SerializationException("Unknown ArtifactShareTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ArtifactShareTarget) {
+        when (value) {
+            is ArtifactShareTargetVariant1 ->
+                encoder.encodeSerializableValue(ArtifactShareTargetVariant1.serializer(), value)
+            is ArtifactShareTargetVariant2 ->
+                encoder.encodeSerializableValue(ArtifactShareTargetVariant2.serializer(), value)
+        }
+    }
+}
+
+@Serializable(with = ArtifactShareUpdateTargetSerializer::class)
+sealed interface ArtifactShareUpdateTarget
+
+@Serializable
+enum class ArtifactShareUpdateTargetVariant1Kind {
+    @SerialName("file") FILE,
+}
+
+@Serializable
+data class ArtifactShareUpdateTargetVariant1(
+    val `kind`: ArtifactShareUpdateTargetVariant1Kind,
+    val `id`: String,
+) : ArtifactShareUpdateTarget
+
+@Serializable
+enum class ArtifactShareUpdateTargetVariant2Kind {
+    @SerialName("html") HTML,
+}
+
+@Serializable
+data class ArtifactShareUpdateTargetVariant2(
+    val `kind`: ArtifactShareUpdateTargetVariant2Kind,
+    val `id`: String,
+) : ArtifactShareUpdateTarget
+
+object ArtifactShareUpdateTargetSerializer : KSerializer<ArtifactShareUpdateTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ArtifactShareUpdateTarget")
+
+    override fun deserialize(decoder: Decoder): ArtifactShareUpdateTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ArtifactShareUpdateTarget",
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ArtifactShareUpdateTarget")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("file")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("html")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ArtifactShareUpdateTarget variant")
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ArtifactShareUpdateTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ArtifactShareUpdateTargetVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ArtifactShareUpdateTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ArtifactShareUpdateTarget) {
+        when (value) {
+            is ArtifactShareUpdateTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ArtifactShareUpdateTargetVariant1.serializer(),
+                    value,
+                )
+            is ArtifactShareUpdateTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ArtifactShareUpdateTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+enum class ArtifactShareUpdateAudience {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
+
+@Serializable
+data class ArtifactShareUpdate(
+    val `target`: ArtifactShareUpdateTarget,
+    val `audience`: ArtifactShareUpdateAudience,
+)
+
+@Serializable
+data class ArtifactSiteUrl(
+    val `siteId`: String,
+    val `publicSlug`: String,
+    val `url`: String,
+    val `isActive`: Boolean,
+    val `effectiveUrl`: String? = null,
+)
+
+@Serializable
+enum class ArtifactSiteVisibilityVisibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
+
+@Serializable
+data class ArtifactSiteVisibility(
+    val `siteId`: String,
+    val `visibility`: ArtifactSiteVisibilityVisibility,
+    val `revision`: String?,
+)
+
+@Serializable
+enum class ArtifactSiteVisibilityUpdateVisibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
+
+@Serializable
+data class ArtifactSiteVisibilityUpdate(
+    val `visibility`: ArtifactSiteVisibilityUpdateVisibility,
+    val `expectedRevision`: String?,
+)
+
+@Serializable
 data class ConnectedConnectorsBuiltinConnectorsItemIcon(
     val `url`: String,
     val `invertInDarkMode`: Boolean,

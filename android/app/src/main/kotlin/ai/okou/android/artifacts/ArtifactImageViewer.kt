@@ -3,7 +3,7 @@ package ai.okou.android.artifacts
 import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.R
-import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.state.ArtifactImageViewerState
 import ai.okou.android.state.rememberArtifactImageViewerState
@@ -41,7 +41,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -59,6 +58,7 @@ internal fun ArtifactImageViewer(
     onShare: (() -> Unit)?,
     sharing: Boolean,
     shareSnackbar: SnackbarHostState,
+    links: ArtifactLinkActions?,
     onSource: (() -> Unit)?,
     restoreSourceFocus: Boolean,
     onSourceFocusRestored: () -> Unit,
@@ -111,6 +111,7 @@ internal fun ArtifactImageViewer(
                 onShare,
                 sharing,
                 onSource,
+                links,
                 restoreSourceFocus,
                 onSourceFocusRestored,
             )
@@ -158,12 +159,12 @@ private fun ImageViewerToolbar(
     onShare: (() -> Unit)?,
     sharing: Boolean,
     onSource: (() -> Unit)?,
+    links: ArtifactLinkActions?,
     restoreSourceFocus: Boolean,
     onSourceFocusRestored: () -> Unit,
 ) {
-    var menu by remember { mutableStateOf(false) }
     val actionsFocus = remember { FocusRequester() }
-    val hasActions = onSave != null || onSource != null
+    val hasActions = onSave != null || onSource != null || links != null
     LaunchedEffect(restoreSourceFocus, hasActions) {
         if (restoreSourceFocus && hasActions) {
             actionsFocus.requestFocus()
@@ -199,71 +200,45 @@ private fun ImageViewerToolbar(
                 onExpand,
             )
         }
-        Box {
-            if (hasActions) {
-                ImageViewerButton(
-                    R.drawable.ic_more_vert,
-                    R.string.artifact_image_actions,
-                    { menu = true },
-                    Modifier.focusRequester(actionsFocus),
-                )
-                val menuWidth = (currentWindowSizeDp().width - 24).coerceIn(0, 244).dp
-                DropdownMenu(
-                    expanded = menu,
-                    onDismissRequest = { menu = false },
-                    modifier = Modifier.width(menuWidth),
-                    offset = DpOffset(0.dp, 4.dp),
-                ) {
-                    if (onShare != null) {
-                        ImageViewerMenuItem(
-                            R.string.artifact_share_image,
+        if (hasActions) {
+            val previewItems = buildList {
+                if (onShare != null)
+                    add(
+                        WorkspaceMenuItem(
+                            stringResource(R.string.artifact_share_image),
                             R.drawable.ic_share,
                             enabled = saveEnabled,
-                        ) {
-                            menu = false
-                            onShare()
-                        }
-                    }
-                    if (onSave != null) {
-                        ImageViewerMenuItem(
-                            R.string.artifact_save_image,
+                            onClick = onShare,
+                        ),
+                    )
+                if (onSave != null)
+                    add(
+                        WorkspaceMenuItem(
+                            stringResource(R.string.artifact_save_image),
                             R.drawable.ic_download,
                             enabled = saveEnabled,
-                        ) {
-                            menu = false
-                            onSave()
-                        }
-                    }
-                    if (onSource != null) {
-                        ImageViewerMenuItem(
-                            R.string.artifact_view_source,
+                            onClick = onSave,
+                        ),
+                    )
+                if (onSource != null)
+                    add(
+                        WorkspaceMenuItem(
+                            stringResource(R.string.artifact_view_source),
                             R.drawable.ic_chevron_right,
-                        ) {
-                            menu = false
-                            onSource()
-                        }
-                    }
-                }
-            } else {
-                Spacer(Modifier.size(48.dp))
+                            onClick = onSource,
+                        ),
+                    )
             }
+            ArtifactOverflowMenu(
+                R.string.artifact_image_actions,
+                links,
+                focus = actionsFocus,
+                previewItems = previewItems,
+            )
+        } else {
+            Spacer(Modifier.size(48.dp))
         }
     }
-}
-
-@Composable
-private fun ImageViewerMenuItem(
-    @StringRes label: Int,
-    @DrawableRes icon: Int,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    DropdownMenuItem(
-        text = { Text(stringResource(label), style = MaterialTheme.typography.labelLarge) },
-        leadingIcon = { Icon(painterResource(icon), null, Modifier.size(24.dp)) },
-        enabled = enabled,
-        onClick = onClick,
-    )
 }
 
 @Composable

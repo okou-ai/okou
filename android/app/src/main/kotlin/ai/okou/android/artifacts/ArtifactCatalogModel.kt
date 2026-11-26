@@ -44,6 +44,9 @@ internal data class ArtifactPreviewState(
     val content: ArtifactContent? = null,
     val problem: ArtifactProblem? = null,
 ) {
+    val linkSource: ArtifactLinkSource?
+        get() = access?.linkSource ?: info?.linkSource
+
     val isImage: Boolean
         get() = item?.kind == ArtifactKind.Image || id.startsWith(ExternalImagePreviewPrefix)
 
@@ -887,6 +890,9 @@ internal constructor(
         if (error is ApiFailure.Unauthenticated || error is ApiFailure.UpdateRequired)
             sessionFailure(error)
     }
+
+    internal fun linkEditor(source: ArtifactLinkSource) =
+        ArtifactLinkEditor(source, service.links, viewModelScope, ::handleSessionFailure)
 }
 
 private fun artifactProblem(error: Exception): ArtifactProblem =
@@ -911,7 +917,7 @@ internal fun artifactHttpProblem(status: Int): ArtifactProblem =
         else -> ArtifactProblem.Unavailable
     }
 
-private suspend fun <T> retryArtifactOperation(
+internal suspend fun <T> retryArtifactOperation(
     canRetry: () -> Boolean = { true },
     operation: suspend (remainingRetries: Int) -> T,
 ): T {

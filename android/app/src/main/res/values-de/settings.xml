@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">Das Modellkonto konnte nicht gewechselt werden.</string>
     <string name="settings_quota">Kontingent</string>
     <string name="settings_hour_quota">%1$d-Stunden-Kontingent</string>
+    <string name="settings_minute_quota">%1$d-Minuten-Kontingent</string>
     <string name="settings_day_quota">%1$d-Tage-Kontingent</string>
     <string name="settings_weekly_quota">Wochenkontingent</string>
     <string name="settings_quota_unavailable">Kontingent vorübergehend nicht verfügbar</string>

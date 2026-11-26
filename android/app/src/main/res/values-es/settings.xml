@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">No se pudo cambiar de cuenta de modelo.</string>
     <string name="settings_quota">Cuota</string>
     <string name="settings_hour_quota">Cuota de %1$d h</string>
+    <string name="settings_minute_quota">Cuota de %1$d min</string>
     <string name="settings_day_quota">Cuota de %1$d días</string>
     <string name="settings_weekly_quota">Cuota semanal</string>
     <string name="settings_quota_unavailable">Cuota temporalmente no disponible</string>

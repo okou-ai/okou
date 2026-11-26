@@ -85,6 +85,7 @@ internal data class ArtifactInfo(
     val resource: ArtifactResource,
     val browserUrl: HttpUrl? = null,
     val resolvedAccess: ArtifactAccess? = null,
+    val linkSource: ArtifactLinkSource? = null,
 )
 
 internal sealed interface ArtifactResource {
@@ -116,6 +117,7 @@ internal data class ArtifactAccess(
     val name: String,
     val save: ArtifactSave? = null,
     val previewOnly: Boolean = false,
+    val linkSource: ArtifactLinkSource.File? = null,
 )
 
 class ArtifactService
@@ -124,6 +126,8 @@ internal constructor(
     private val transfers: SignedTransferClient,
     apiOrigin: String,
 ) {
+    internal val links = ArtifactLinkAccess(api)
+
     private val referenceOrigins =
         setOfNotNull(apiOrigin.toHttpUrlOrNull(), BuildConfig.WEB_ORIGIN.toHttpUrlOrNull())
 
@@ -253,6 +257,10 @@ internal constructor(
                         ArtifactItem(id, resolved.filename, ArtifactKind.Website, null),
                         null,
                         ArtifactResource.ResolvedHtml(url),
+                        linkSource =
+                            if (resolved.sharedThreadSnapshot == null)
+                                ArtifactLinkSource.LegacyDeployment(resolved.target.id)
+                            else null,
                     )
                 }
                 val kind =
@@ -309,6 +317,10 @@ internal constructor(
                 if (resolved.downloadAllowed == false) null
                 else ArtifactSave(reference, resolved.filename, resolved.contentType),
             previewOnly = resolved.downloadAllowed == false,
+            linkSource =
+                if (resolved.sharedThreadSnapshot == null)
+                    ArtifactLinkSource.File(resolved.target.id)
+                else null,
         )
     }
 
@@ -565,6 +577,7 @@ private fun messageSiteInfo(id: String, site: HttpUrl): ArtifactInfo =
         ArtifactItem(id, site.host, ArtifactKind.Website, null),
         null,
         ArtifactResource.Site(site),
+        linkSource = ArtifactLinkSource.Website(site),
     )
 
 private const val MAX_IMAGE_BYTES = 16L * 1024 * 1024
@@ -615,6 +628,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
         source: String?,
         resource: ArtifactResource,
         browser: HttpUrl? = null,
+        linkSource: ArtifactLinkSource? = null,
     ) =
         ArtifactInfo(
             ArtifactItem(
@@ -626,6 +640,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
             source,
             resource,
             browser,
+            linkSource = linkSource,
         )
 
     fun site(
@@ -635,6 +650,8 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
         created: String,
         source: String?,
         url: String,
+        siteId: String,
+        version: Double?,
     ): ArtifactInfo {
         val browser = artifactHttpsUrl(url)
         return entry(
@@ -645,6 +662,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
             source,
             browser?.let { ArtifactResource.Site(it) } ?: ArtifactResource.Unsupported,
             browser,
+            browser?.let { ArtifactLinkSource.Website(it, siteId, version?.toInt()) },
         )
     }
 
@@ -707,9 +725,27 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
                 ),
             )
         is ArtifactDetailVariant5 ->
-            site(id, title, ArtifactKind.Website, createdAt, sourceChatThreadId, site.url)
+            site(
+                id,
+                title,
+                ArtifactKind.Website,
+                createdAt,
+                sourceChatThreadId,
+                site.url,
+                site.id,
+                site.deploymentVersion,
+            )
         is ArtifactDetailVariant6 ->
-            site(id, title, ArtifactKind.Presentation, createdAt, sourceChatThreadId, site.url)
+            site(
+                id,
+                title,
+                ArtifactKind.Presentation,
+                createdAt,
+                sourceChatThreadId,
+                site.url,
+                site.id,
+                site.deploymentVersion,
+            )
         is ArtifactDetailVariant7 ->
             entry(
                 id,

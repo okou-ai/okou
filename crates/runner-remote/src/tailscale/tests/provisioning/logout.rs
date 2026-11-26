@@ -1,10 +1,15 @@
 //! Run teardown sends one authenticated logout; remote failure cannot strand
 //! the worker, its owned sockets or the already-consumed OAuth auth key.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use futures_util::FutureExt;
+use raw_http_test_support::clock::advance_timer_phase;
 use runner_types::ids::RunId;
+use tokio::{runtime::Handle, sync::oneshot};
 use tracing_subscriber::prelude::*;
 
 use super::{
@@ -38,15 +43,23 @@ async fn logout_timeout_keeps_the_control_owner_until_physical_cleanup_then_rele
     let cache = Cache::new();
     let run = cache.register(RunId::new_v4());
     let dial = api.secure.as_ref().unwrap().clone();
+    let provision = control.provisioned_root_factory(
+        dial.clone(),
+        Relay::new(&relay, Arc::clone(&gate), Arc::clone(&descriptors)),
+    );
+    let (worker_tx, worker_rx) = oneshot::channel();
     let node = run
         .lookup(uuid::Uuid::new_v4())
         .unwrap()
         .native_configured(
             configuration(uuid::Uuid::new_v4()),
-            control.provisioned_root_factory(
-                dial.clone(),
-                Relay::new(&relay, Arc::clone(&gate), Arc::clone(&descriptors)),
-            ),
+            move |config, journal| {
+                let work = provision(config, journal);
+                Box::new(move |control| {
+                    let _ = worker_tx.send(Handle::current());
+                    work(control)
+                })
+            },
         )
         .unwrap();
     control.allow_all();
@@ -57,6 +70,16 @@ async fn logout_timeout_keeps_the_control_owner_until_physical_cleanup_then_rele
     control.logout_requested().await;
     control.assert_control_open();
     assert!(node.physical().now_or_never().is_none());
+    // The peer received the request while the native worker's logout timer
+    // was running. Advance that private runtime before awaiting socket cleanup.
+    let advance = bounded(worker_rx)
+        .await
+        .unwrap()
+        .spawn(advance_timer_phase(Duration::from_secs(2)));
+    if let Err(error) = bounded(advance).await {
+        // The worker can retire before the timer task's final yield returns.
+        assert!(error.is_cancelled(), "advance the logout timer: {error}");
+    }
     bounded(node.physical()).await.unwrap();
     bounded(run.shutdown_native()).await.unwrap();
     bounded(gate.destroyed()).await;

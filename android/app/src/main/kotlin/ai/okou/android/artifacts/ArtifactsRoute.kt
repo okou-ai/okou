@@ -1,5 +1,6 @@
 package ai.okou.android.artifacts
 
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.committedSearchText
@@ -73,6 +74,7 @@ internal fun ArtifactsRoute(
     val keyboard = LocalSoftwareKeyboardController.current
     val input = rememberTextFieldState()
     val page = rememberArtifactPageState()
+    val returnFocus = remember(model, searchArtifactId) { DirectoryReturnFocus() }
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val selectedId = searchArtifactId ?: page.selectedId
 
@@ -102,7 +104,7 @@ internal fun ArtifactsRoute(
             .collect { keyword ->
                 val query = ArtifactQuery(page.filter, keyword)
                 if (query != model.state.value.query) {
-                    page.restoreRow = null
+                    returnFocus.cancel()
                     position.requestScrollToItem(0)
                     model.query(
                         query,
@@ -119,7 +121,7 @@ internal fun ArtifactsRoute(
         if (current == null || searchArtifactId != null) {
             onClose()
         } else {
-            page.restoreRow = current
+            returnFocus.returningFrom(current, inputMode.inputMode)
             page.selectedId = null
             model.select(null)
         }
@@ -138,7 +140,7 @@ internal fun ArtifactsRoute(
                 onFilter = { next ->
                     if (page.filter != next) {
                         page.filter = next
-                        page.restoreRow = null
+                        returnFocus.cancel()
                         position.requestScrollToItem(0)
                         model.query(
                             catalogQuery(next, model.state.value.query.keyword),
@@ -148,9 +150,9 @@ internal fun ArtifactsRoute(
                 },
                 position = position,
                 selectedId = selectedId,
-                restoreRow = page.restoreRow,
-                onFocusRestored = { page.restoreRow = null },
+                returnFocus = returnFocus,
                 onSelect = { item ->
+                    returnFocus.cancel()
                     if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     page.selectedId = item.id
@@ -328,41 +330,50 @@ internal fun ArtifactSelectionPreview(
                 }
             }
         }
-        if (generated && preview?.isImage == true) {
-            val save = preview.access?.save
-            ArtifactImageViewer(
-                preview = preview,
-                model = model,
-                wide = wide,
-                backLabel = backLabel,
-                onBack = onBack,
-                saveEnabled = saveEnabled,
-                onSave = save?.let { { saveArtifact(it) } },
-                saveResult = saveResult,
-                onShare = onShare,
-                sharing = sharing,
-                shareSnackbar = shareSnackbar,
-                onSource = source?.let { { openSource(it) } },
-                restoreSourceFocus = page.restoreSource,
-                onSourceFocusRestored = { page.restoreSource = false },
-            )
-        } else {
-            toolbar()
-            ArtifactPreview(
-                preview,
-                rememberScrollState(),
-                wide,
-                source,
-                restoreSourceFocus = page.restoreSource,
-                onSourceFocusRestored = { page.restoreSource = false },
-                onSource = openSource,
-                saveEnabled = saveEnabled,
-                onSave = saveArtifact,
-                saveResult = saveResult,
-                onShare = onShare,
-                sharing = sharing,
-                shareSnackbar = shareSnackbar,
-            )
+        ArtifactLinkControls(
+            preview?.linkSource,
+            preview?.item?.title.orEmpty(),
+            model,
+            shareSnackbar,
+        ) { links ->
+            if (generated && preview?.isImage == true) {
+                val save = preview.access?.save
+                ArtifactImageViewer(
+                    preview = preview,
+                    model = model,
+                    wide = wide,
+                    backLabel = backLabel,
+                    onBack = onBack,
+                    saveEnabled = saveEnabled,
+                    onSave = save?.let { { saveArtifact(it) } },
+                    saveResult = saveResult,
+                    onShare = onShare,
+                    sharing = sharing,
+                    shareSnackbar = shareSnackbar,
+                    links = links,
+                    onSource = source?.let { { openSource(it) } },
+                    restoreSourceFocus = page.restoreSource,
+                    onSourceFocusRestored = { page.restoreSource = false },
+                )
+            } else {
+                toolbar()
+                ArtifactPreview(
+                    preview,
+                    rememberScrollState(),
+                    wide,
+                    source,
+                    restoreSourceFocus = page.restoreSource,
+                    onSourceFocusRestored = { page.restoreSource = false },
+                    onSource = openSource,
+                    saveEnabled = saveEnabled,
+                    onSave = saveArtifact,
+                    saveResult = saveResult,
+                    onShare = onShare,
+                    sharing = sharing,
+                    shareSnackbar = shareSnackbar,
+                    links = links,
+                )
+            }
         }
     }
 }

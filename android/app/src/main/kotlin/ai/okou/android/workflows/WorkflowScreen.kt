@@ -1,6 +1,7 @@
 package ai.okou.android.workflows
 
 import ai.okou.android.ContentReadFailure
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
@@ -16,6 +17,7 @@ import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
 import ai.okou.android.state.ChatSearchState
@@ -148,8 +150,7 @@ internal fun WorkflowScreen(
     connectionReturn: WorkflowConnectorVisit?,
     onConnectionFocusRestored: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
-    restoreHistoryRunId: String?,
-    onHistoryFocusRestored: () -> Unit,
+    historyReturnFocus: DirectoryReturnFocus,
     onOpenChat: (runId: String, threadId: String) -> Unit,
     directEntry: Boolean = false,
 ) {
@@ -196,7 +197,7 @@ internal fun WorkflowScreen(
     }
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
     var discard by rememberWorkflowDiscardConfirmation(route.id, editing != null)
-    var restoreRow by remember { mutableStateOf<String?>(null) }
+    val returnFocus = remember(query, query.keyword, route.scope) { DirectoryReturnFocus() }
     val draftFocusAction = route.draftReturn?.action
     val canNavigate = editing == null && !state.writing
     fun exitEditor() {
@@ -209,7 +210,7 @@ internal fun WorkflowScreen(
             editing != null -> exitEditor()
             state.writing -> Unit
             route.id != null && !wide && !directEntry && !handoffPending -> {
-                restoreRow = route.id
+                returnFocus.returningFrom(route.id, inputMode.inputMode)
                 changeRoute(route.copy(id = null, tab = WorkflowTab.Instructions))
             }
             else -> onClose()
@@ -269,13 +270,13 @@ internal fun WorkflowScreen(
                     }
                 },
                 onSelect = {
+                    returnFocus.cancel()
                     if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     if (it != route.id)
                         changeRoute(route.copy(id = it, tab = WorkflowTab.Instructions))
                 },
-                restoreRow = restoreRow,
-                onRowRestored = { restoreRow = null },
+                returnFocus = returnFocus,
             )
         }
         if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -339,8 +340,7 @@ internal fun WorkflowScreen(
                                 handoffPending && draftFocusAction == WorkflowDraftAction.Use,
                             onUseFocusRestored = onDraftFocusRestored,
                             sourceChatAvailable = sourceChatAvailable,
-                            restoreHistoryRunId = restoreHistoryRunId,
-                            onHistoryFocusRestored = onHistoryFocusRestored,
+                            historyReturnFocus = historyReturnFocus,
                             onOpenChat = onOpenChat,
                             onEarlierRuns = model::loadEarlierRuns,
                         )
@@ -360,8 +360,10 @@ private fun WorkflowToolbar(
     title: String,
     onBack: () -> Unit,
     backEnabled: Boolean,
+    backFocus: FocusRequester? = null,
     action: (@Composable () -> Unit)? = null,
 ) {
+    val backModifier = if (backFocus == null) Modifier else Modifier.focusRequester(backFocus)
     Column {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp),
@@ -370,7 +372,7 @@ private fun WorkflowToolbar(
         ) {
             IconButton(
                 onClick = onBack,
-                modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
+                modifier = backModifier.workspaceSearchFocusOutline(CircleShape),
                 enabled = backEnabled,
             ) {
                 Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back))
@@ -407,11 +409,11 @@ private fun WorkflowDirectory(
     onCreateFocusRestored: () -> Unit,
     onScope: (WorkflowScope) -> Unit,
     onSelect: (String) -> Unit,
-    restoreRow: String?,
-    onRowRestored: () -> Unit,
+    returnFocus: DirectoryReturnFocus,
 ) {
     val text = query.keyword
     val inputEnabled = state.editing == null
+    val restoreRow = returnFocus.pending?.rowKey
     val searchFocus = remember { FocusRequester() }
     val clearQuery = searchClearAction(searchFocus, query::clearQuery)
     val displayedState =
@@ -469,14 +471,32 @@ private fun WorkflowDirectory(
             )
         }
     }
+    val rowFocus = remember { FocusRequester() }
+    val backFocus = remember { FocusRequester() }
+    // The first layout can still show the top of the list before the saved anchor is applied.
+    val readyToRestoreFocus = if (catalog == null) state.catalogFailure != null else anchor == null
     Column(
-        modifier.testTag("workflow_directory"),
+        modifier
+            .restoreDirectoryFocus(
+                returnFocus,
+                readyToRestoreFocus,
+                query.position,
+                rowFocus,
+                backFocus,
+                rowEnabled =
+                    restoreRow != null &&
+                        canNavigate &&
+                        state.catalogFailure != WorkflowReadFailure.Unavailable &&
+                        rows.any { it.id == restoreRow },
+            )
+            .testTag("workflow_directory"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         WorkflowToolbar(
             stringResource(R.string.workspace_workflows),
             onBack,
             backEnabled = inputEnabled && !state.writing,
+            backFocus = backFocus,
         ) {
             val enabled =
                 (canNavigate || keepCreateFocus) &&
@@ -577,8 +597,9 @@ private fun WorkflowDirectory(
                                 connections,
                                 row.id == route.id,
                                 canNavigate,
-                                row.id == restoreRow,
-                                onRowRestored,
+                                modifier =
+                                    if (row.id == restoreRow) Modifier.focusRequester(rowFocus)
+                                    else Modifier,
                                 onSelect = { onSelect(row.id) },
                             )
                         }
@@ -665,8 +686,7 @@ private fun WorkflowRow(
     connections: Set<String>?,
     selected: Boolean,
     enabled: Boolean,
-    restoreFocus: Boolean,
-    onRestored: () -> Unit,
+    modifier: Modifier,
     onSelect: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -683,18 +703,11 @@ private fun WorkflowRow(
             sources.isEmpty() -> stringResource(R.string.workflow_manual)
             else -> sources.map { stringResource(it.label) }.joinToString(" · ")
         }
-    val requester = remember { FocusRequester() }
-    LaunchedEffect(restoreFocus, enabled) {
-        if (restoreFocus && enabled) {
-            requester.requestFocus()
-            onRestored()
-        }
-    }
     WorkspaceToolDirectoryRow(
         title = item.displayName ?: item.name,
         selected = selected,
         onClick = onSelect,
-        modifier = Modifier.focusRequester(requester).testTag("workflow_row_${item.id}"),
+        modifier = modifier.testTag("workflow_row_${item.id}"),
         enabled = enabled,
         leading = {
             Icon(painterResource(glyph), null, Modifier.size(20.dp), tint = colors.onBackground)
@@ -771,8 +784,7 @@ private fun WorkflowDetailPane(
     keepUseFocus: Boolean,
     onUseFocusRestored: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
-    restoreHistoryRunId: String?,
-    onHistoryFocusRestored: () -> Unit,
+    historyReturnFocus: DirectoryReturnFocus,
     onOpenChat: (runId: String, threadId: String) -> Unit,
     onEarlierRuns: () -> Unit,
 ) {
@@ -784,8 +796,27 @@ private fun WorkflowDetailPane(
     val historyLayout =
         if (pendingHistory) remember(listPadding) { WorkflowHistoryLayout(listPadding) } else null
     val editEnabled = !state.writing && !handoffPending
+    val historyRowFocus = remember { FocusRequester() }
+    val historyTabFocus = remember { FocusRequester() }
+    val historyRow = historyReturnFocus.pending?.rowKey
+    val returnModifier =
+        if (tab == WorkflowTab.History)
+            Modifier.restoreDirectoryFocus(
+                historyReturnFocus,
+                ready = state.history != null || state.historyFailure != null,
+                position = listState,
+                row = historyRowFocus,
+                fallback = historyTabFocus,
+                rowEnabled =
+                    historyRow != null &&
+                        !handoffPending &&
+                        state.history?.runs?.any {
+                            it.id == historyRow && it.chatThreadId?.let(sourceChatAvailable) == true
+                        } == true,
+            )
+        else Modifier
     Column(
-        Modifier.fillMaxSize().testTag("workflow_detail"),
+        Modifier.fillMaxSize().then(returnModifier).testTag("workflow_detail"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(contentWidth.weight(1f)) {
@@ -798,7 +829,7 @@ private fun WorkflowDetailPane(
                     WorkflowDetailHeader(detail, historyLayout?.detail ?: Modifier)
                 }
                 stickyHeader(key = "tabs") {
-                    WorkflowTabs(tab, onTab, historyLayout?.tabs ?: Modifier)
+                    WorkflowTabs(tab, onTab, historyLayout?.tabs ?: Modifier, historyTabFocus)
                 }
                 when (tab) {
                     WorkflowTab.Instructions ->
@@ -899,9 +930,11 @@ private fun WorkflowDetailPane(
                                 timezone = timezone,
                                 sourceChatAvailable = sourceChatAvailable,
                                 sourceNavigationEnabled = !handoffPending,
-                                restoreFocus = run.id == restoreHistoryRunId,
-                                onFocusRestored = onHistoryFocusRestored,
                                 onOpenChat = onOpenChat,
+                                modifier =
+                                    if (run.id == historyRow)
+                                        Modifier.focusRequester(historyRowFocus)
+                                    else Modifier,
                             )
                         }
                         if (history?.nextCursor != null) {
@@ -1067,10 +1100,16 @@ private fun WorkflowTabs(
     current: WorkflowTab,
     pick: (WorkflowTab) -> Unit,
     modifier: Modifier = Modifier,
+    historyFocus: FocusRequester,
 ) {
     val colors = MaterialTheme.colorScheme
     val tabs = WorkflowTab.entries
-    val tabFocus = remember { List(WorkflowTab.entries.size) { FocusRequester() } }
+    val tabFocus =
+        remember(historyFocus) {
+            WorkflowTab.entries.map {
+                if (it == WorkflowTab.History) historyFocus else FocusRequester()
+            }
+        }
     val stepRight = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
     Column(modifier.fillMaxWidth().background(colors.background)) {
         PrimaryTabRow(
