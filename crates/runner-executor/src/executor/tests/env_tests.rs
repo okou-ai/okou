@@ -525,6 +525,17 @@ fn build_env_json_claude_code_gets_only_claude_framework_env() {
 }
 
 #[test]
+fn antigravity_run_payload_carries_disallowed_tools() {
+    let mut ctx = minimal_context();
+    ctx.cli_agent_type = "antigravity".into();
+    ctx.disallowed_tools = Some(vec!["CronCreate".into(), "AskUserQuestion".into()]);
+
+    let payload = build_run_payload_for_run(&ctx).unwrap();
+
+    assert_eq!(payload.disallowed_tools, "CronCreate,AskUserQuestion");
+}
+
+#[test]
 fn build_env_json_codex_gets_only_codex_framework_env() {
     let mut ctx = minimal_context();
     ctx.cli_agent_type = "codex".into();
