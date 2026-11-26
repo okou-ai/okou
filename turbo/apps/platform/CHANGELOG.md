@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1188.0](https://github.com/okou-ai/okou/compare/app-v0.1187.0...app-v0.1188.0) (2026-11-26)
+
+
+### Features
+
+* **app:** hide empty for you entries and prefetch the feed summary ([#50950](https://github.com/okou-ai/okou/issues/50950)) ([4139476](https://github.com/okou-ai/okou/commit/4139476cc27e777a8e284f73ae732b584feb4392))
+* **platform:** render formulas in markdown artifact previews ([#50934](https://github.com/okou-ai/okou/issues/50934)) ([3911eb6](https://github.com/okou-ai/okou/commit/3911eb69a5e3258a8e44f2a6918fb6acbeea418e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.882.0
+    * @okouai/ui bumped to 1.22.27
+
 ## [0.1187.0](https://github.com/okou-ai/okou/compare/app-v0.1186.3...app-v0.1187.0) (2026-11-26)
 
 
