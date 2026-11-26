@@ -117,7 +117,8 @@ final class ChatArtifactTests: XCTestCase {
       "https://sh-token.okou.app/", "/artifacts/abcdefgh12.pdf",
       "https://cdn.okou.io/artifacts/user/id/index.html"
     ] {
-      let artifact = try XCTUnwrap(ChatArtifactReference.parse(address, webURL: webURL, apiURL: api))
+      let artifact = try XCTUnwrap(
+        ChatArtifactReference.parse(address, webURL: webURL, apiURL: api))
       XCTAssertNil(artifact.source.websiteShareURL, address)
     }
   }
