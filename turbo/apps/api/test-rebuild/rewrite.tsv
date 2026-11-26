@@ -2427,15 +2427,15 @@ account-org	src/signals/routes/__tests__/preview-connector-catalog.catalog-gener
 artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-001	planned				
 artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-003	planned				
 artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-004	planned				
-artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-002	rewritten	159.4	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
-artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-003	rewritten	43.0	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
-artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-005	rewritten	98.0	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
-artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-006	planned		extension after sandbox reset		B01
-artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-008	rewritten	17.6	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
-artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-009	planned		extension after sandbox reset		B01
-artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-010	rewritten	75.4	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
-artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-015	rewritten	23.6	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
-artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-016	rewritten	13.0	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
+artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-002	rewritten	167.7	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
+artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-003	rewritten	45.7	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
+artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-005	rewritten	32.2	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
+artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-006	rewritten	17.9	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	B01
+artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-008	rewritten	16.5	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
+artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-009	rewritten	49.8	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	B01
+artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-010	rewritten	80.1	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
+artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-015	rewritten	24.1	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
+artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-016	rewritten	14.5	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
 account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-001	planned				
 account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-003	planned				
 account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-005	planned				

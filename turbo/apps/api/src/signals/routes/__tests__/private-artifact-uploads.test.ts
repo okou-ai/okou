@@ -8,6 +8,7 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
+import { mockNow } from "../../../lib/time";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -189,6 +190,22 @@ function installStorage(options: { readonly multipartParts?: number } = {}) {
         });
         return Promise.resolve({});
       }
+      case "ListObjectsV2Command": {
+        const prefix = `${String(input.Bucket)}/${String(input.Prefix)}`;
+        return Promise.resolve({
+          Contents: [...objects]
+            .filter(([stored]) => {
+              return stored.startsWith(prefix);
+            })
+            .map(([stored, object]) => {
+              return {
+                Key: stored.slice(String(input.Bucket).length + 1),
+                Size: object.body.byteLength,
+                LastModified: new Date("2026-01-01T00:00:00.000Z"),
+              };
+            }),
+        });
+      }
       default: {
         return Promise.resolve({});
       }
@@ -199,14 +216,28 @@ function installStorage(options: { readonly multipartParts?: number } = {}) {
     operations,
     signed,
     /** The browser PUTs bytes to a presigned upload URL. */
-    upload(uploadUrl: string, body: Buffer, contentType: string) {
+    upload(
+      uploadUrl: string,
+      body: Buffer,
+      contentType: string,
+      uploadHeaders: Readonly<Record<string, string>> = {},
+    ) {
       const target = signed.find((entry) => {
         return entry.url === uploadUrl;
       });
       if (!target) {
         throw new Error(`Unknown upload URL ${uploadUrl}`);
       }
-      objects.set(objectKey(target.bucket, target.key), { body, contentType });
+      const metadata = Object.fromEntries(
+        Object.entries(uploadHeaders).map(([name, value]) => {
+          return [name.replace(/^x-amz-meta-/, ""), value];
+        }),
+      );
+      objects.set(objectKey(target.bucket, target.key), {
+        body,
+        contentType,
+        metadata,
+      });
     },
   };
 }
@@ -242,7 +273,12 @@ async function uploadedReport(
   options: { readonly purpose?: "artifact" } = {},
 ) {
   const prepared = await prepareReport(api, options);
-  storage.upload(prepared.uploadUrl, reportBytes, "text/html");
+  storage.upload(
+    prepared.uploadUrl,
+    reportBytes,
+    "text/html",
+    prepared.uploadHeaders,
+  );
   return prepared;
 }
 
@@ -566,5 +602,116 @@ describe("private artifact uploads", () => {
         return operation.name === "AbortMultipartUploadCommand";
       }),
     ).toHaveLength(1);
+  });
+
+  it("private-artifact-uploads-006 keeps an organization-less upload publicly readable", async () => {
+    const storage = installStorage();
+    const api = as(member(null));
+    const prepared = await uploadedReport(api, storage);
+
+    await accept(
+      api.uploads.complete({ headers, body: { id: prepared.id } }),
+      [200],
+    );
+    const fileUrl = await accept(
+      api.files.fileUrl({ headers, query: { file_id: prepared.id } }),
+      [200],
+    );
+
+    expect(fileUrl.body.publicUrl).toBe(prepared.url);
+  });
+
+  it("private-artifact-uploads-009 returns stable owner references and refreshes signed private download URLs", async () => {
+    const storage = installStorage();
+    const api = as(member());
+    const twoDaysMs = 172_800 * 1000;
+    const issuedAt = Date.UTC(2026, 0, 2, 3, 4, 5, 678);
+    const issuedSecond = Math.floor(issuedAt / 1000) * 1000;
+    mockNow(issuedAt);
+    const prepared = await accept(
+      api.uploads.prepare({
+        headers,
+        extraHeaders: { origin: env("APP_URL") },
+        body: {
+          filename: "report.html",
+          contentType: "text/html",
+          size: reportBytes.byteLength,
+        },
+      }),
+      [200],
+    );
+    if ("multipart" in prepared.body) {
+      throw new Error("Expected a single-part upload");
+    }
+    const { id, uploadUrl, url } = prepared.body;
+    expect(
+      storage.signed.find((entry) => {
+        return entry.url === uploadUrl;
+      }),
+    ).toMatchObject({
+      bucket: env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME"),
+      key: `private-artifacts/${id}/report.html`,
+      expiresIn: 172_800,
+    });
+    storage.upload(uploadUrl, reportBytes, "text/html");
+
+    const completed = await accept(
+      api.uploads.complete({ headers, body: { id } }),
+      [200],
+    );
+    expect(completed.body).toStrictEqual({
+      id,
+      url,
+      filename: "report.html",
+      contentType: "text/html",
+      size: 13,
+    });
+
+    const first = await accept(
+      api.files.fileUrl({ headers, query: { file_id: id } }),
+      [200],
+    );
+    expect(first.headers.get("cache-control")).toBe("private, no-store");
+    expect(first.body).toMatchObject({
+      publicUrl: null,
+      previewImageUrl: null,
+      expiresAt: new Date(issuedSecond + twoDaysMs).toISOString(),
+    });
+    expect(first.body.url).toMatch(/^https:\/\//);
+    expect(
+      storage.signed.find((entry) => {
+        return entry.url === first.body.url;
+      }),
+    ).toMatchObject({
+      bucket: env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME"),
+      key: `private-artifacts/${id}/report.html`,
+      cacheControl: "private, max-age=31536000, must-revalidate",
+    });
+
+    const reference = new URL(url).pathname.split("/").at(-1) ?? "";
+    const resolved = await accept(
+      api.references.read({ headers, params: { reference } }),
+      [200],
+    );
+    expect(resolved.body.url).toBe(first.body.url);
+
+    const repeat = await accept(
+      api.files.fileUrl({ headers, query: { file_id: id } }),
+      [200],
+    );
+    expect(repeat.body.url).toBe(first.body.url);
+    expect(repeat.body.expiresAt).toBe(first.body.expiresAt);
+    expect(repeat.body.downloadUrl).not.toBe(first.body.downloadUrl);
+
+    const nearExpiry = issuedSecond + twoDaysMs - 30 * 60 * 1000 + 250;
+    mockNow(nearExpiry);
+    const refreshed = await accept(
+      api.files.fileUrl({ headers, query: { file_id: id } }),
+      [200],
+    );
+    expect(refreshed.body.url).not.toBe(first.body.url);
+    expect(refreshed.body.expiresAt).toBe(
+      new Date(Math.floor(nearExpiry / 1000) * 1000 + twoDaysMs).toISOString(),
+    );
   });
 });
