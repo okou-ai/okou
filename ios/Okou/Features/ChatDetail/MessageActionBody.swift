@@ -113,10 +113,9 @@ enum MessageActionBody {
     -> Block?
   {
     if let approval = approvalBlock(value, webURL: webURL) { return approval }
-    if let action = ChatRemoteDeviceApprovalAction.parse(value, webURL: webURL, threadID: threadID)
-    {
-      return .remoteDeviceApproval(action)
-    }
+    let deviceApproval = ChatRemoteDeviceApprovalAction.parse(
+      value, webURL: webURL, threadID: threadID)
+    if let deviceApproval { return .remoteDeviceApproval(deviceApproval) }
     if let action = ChatSSHAuthorizationAction.parse(value, webURL: webURL, threadID: threadID) {
       return .sshAuthorization(action)
     }

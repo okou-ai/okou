@@ -22,6 +22,7 @@ final class RemoteDeviceApprovalStore {
   private let commands: ChatCommands
   private let didContinue: @MainActor () async -> Void
   private let didFail: @MainActor (Error) -> Void
+  private let didInteract: @MainActor (RemoteDeviceApprovalStore) -> Void
   private let state = CCState.State(Presentation())
   private var task: Task<Void, Never>?
   private var active = false
@@ -30,7 +31,8 @@ final class RemoteDeviceApprovalStore {
     action: ChatRemoteDeviceApprovalAction, resources: RemoteDeviceResources,
     graph: CCState.Store, thread: ChatThread, commands: ChatCommands,
     didContinue: @escaping @MainActor () async -> Void,
-    didFail: @escaping @MainActor (Error) -> Void
+    didFail: @escaping @MainActor (Error) -> Void,
+    didInteract: @escaping @MainActor (RemoteDeviceApprovalStore) -> Void
   ) {
     self.action = action
     self.resources = resources
@@ -39,6 +41,7 @@ final class RemoteDeviceApprovalStore {
     self.commands = commands
     self.didContinue = didContinue
     self.didFail = didFail
+    self.didInteract = didInteract
     let state = state
     presentation = Computed { try $0(state) }
   }
@@ -52,11 +55,13 @@ final class RemoteDeviceApprovalStore {
 
   func cancel() {
     guard active, task == nil, (try? graph.get(state).outcome) == .requested else { return }
+    didInteract(self)
     update { $0.outcome = .cancelled }
   }
 
   func confirm() async {
     guard active, task == nil, (try? graph.get(resources.enabled)) == true else { return }
+    didInteract(self)
     let task = Task { @MainActor [weak self] in
       guard let self else { return }
       await performConfirmation()

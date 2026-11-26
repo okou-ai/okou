@@ -36,7 +36,7 @@ export const channelTables = Object.freeze({
   vnc: vncConnections,
 });
 
-export function ownedDevices(owner: RemoteDeviceOwner) {
+function ownedDevices(owner: RemoteDeviceOwner) {
   return and(
     eq(remoteDevices.orgId, owner.orgId),
     eq(remoteDevices.userId, owner.userId),

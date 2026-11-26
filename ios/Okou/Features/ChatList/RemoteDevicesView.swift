@@ -30,19 +30,16 @@ struct RemoteDevicesView: View {
   let resources: RemoteDeviceResources
   let webURL: URL
   @State private var showsCreate = false
-  @ResolvedValue private var write: RemoteDeviceResources.WriteState?
   @Environment(\.scenePhase) private var scenePhase
 
   init(resources: RemoteDeviceResources, webURL: URL) {
     self.resources = resources
     self.webURL = webURL
-    _write = ResolvedValue(resources.writeState)
   }
 
   var body: some View {
     List {
       RemoteDeviceRows(resources: resources, webURL: webURL)
-      if let error = write?.error { Text(error).foregroundStyle(OkouColor.destructive) }
       Section {
         Button("Create device", okouSymbol: "plus") { showsCreate = true }
         Link("Set up a channel on Web", destination: setupURL())
@@ -69,11 +66,13 @@ struct RemoteDeviceRows: View {
   let resources: RemoteDeviceResources
   let webURL: URL
   @LoadableValue private var directory: Loadable<[ChatRemoteDevice]>
+  @ResolvedValue private var write: RemoteDeviceResources.WriteState?
 
   init(resources: RemoteDeviceResources, webURL: URL) {
     self.resources = resources
     self.webURL = webURL
     _directory = LoadableValue(task: resources.directory, keepLast: true)
+    _write = ResolvedValue(resources.writeState)
   }
 
   var body: some View {
@@ -88,7 +87,9 @@ struct RemoteDeviceRows: View {
             NavigationLink {
               RemoteDeviceDetailView(deviceID: device.id, resources: resources, webURL: webURL)
             } label: {
-              OkouRowLabel(Text(verbatim: device.displayName), okouSymbol: "monitor")
+              OkouRowLabel(Text(verbatim: device.displayName)) {
+                OkouIcon("monitor", size: OkouIconSize.standard)
+              }
             }
             RemoteDevicePolicyMenu(device: device, resources: resources)
           }
@@ -97,6 +98,7 @@ struct RemoteDeviceRows: View {
           Text("No remote devices yet.").foregroundStyle(OkouColor.mutedForeground)
         }
       }
+      if let error = write?.error { Text(error).foregroundStyle(OkouColor.destructive) }
     } header: {
       Text("Remote devices").okouSectionHeader()
     }
