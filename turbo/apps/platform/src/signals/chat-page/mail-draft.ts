@@ -13,6 +13,7 @@ import type {
   MailDraftStatus,
   MailInlineImage,
 } from "@okouai/api-contracts/contracts/mail";
+import { mailDraftChangedEvent } from "@okouai/api-contracts/validators/realtime";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -27,7 +28,7 @@ import {
 } from "../text-preview.ts";
 import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
 import { isConnectorChangedPayloadFor } from "../connector-change.ts";
-import { setAblyPayloadLoop$ } from "../realtime.ts";
+import { setAblyInvalidationLoop$, setAblyPayloadLoop$ } from "../realtime.ts";
 
 export interface MailDraftDescriptor {
   readonly mailDraftId: string;
@@ -72,11 +73,8 @@ export interface MailDraftSignals extends MailDraftDescriptor {
     [HTMLDivElement | null]
   >;
   readonly reloadDraft$: Command<void, []>;
-  /**
-   * Re-reads the draft whenever a mail connector changes, for example after
-   * the member reconnects the account a draft was waiting for.
-   */
-  readonly subscribeConnectorChanges$: Command<void, [AbortSignal]>;
+  /** Re-read this draft after provider edits or mail connector changes. */
+  readonly subscribeChanges$: Command<void, [AbortSignal]>;
   readonly delete$: Command<Promise<void>, [AbortSignal]>;
   readonly send$: Command<Promise<MailDraftStatus>, [AbortSignal]>;
 }
@@ -99,7 +97,7 @@ export function parseMailDraftUrl(value: string): MailDraftDescriptor | null {
     return null;
   }
   return {
-    mailDraftId,
+    mailDraftId: mailDraftId.toLowerCase(),
     originalUrl: value,
     href: `/mail/drafts/${mailDraftId}`,
   };
@@ -155,6 +153,13 @@ function createAttachmentPreviews(
               params: {
                 mailDraftId: descriptor.mailDraftId,
                 partId,
+              },
+              // A replacement Gmail message can reuse the previous MIME part ID.
+              fetchOptions: {
+                cache:
+                  draft?.provider === "gmail" && draft.status === "draft"
+                    ? "no-cache"
+                    : "default",
               },
             }),
             [200, 404],
@@ -219,7 +224,7 @@ function createAttachmentPreviews(
 
 interface MailDraftResourceSignals extends Pick<
   MailDraftSignals,
-  "draft$" | "sidebarDraft$" | "reloadDraft$" | "subscribeConnectorChanges$"
+  "draft$" | "sidebarDraft$" | "reloadDraft$" | "subscribeChanges$"
 > {
   readonly draftOverride$: State<MailDraft | null | undefined>;
 }
@@ -266,7 +271,18 @@ function createMailDraftResourceSignals(
     set(reloadDraft$);
     return false;
   });
-  const subscribeConnectorChanges$ = command(({ set }, signal: AbortSignal) => {
+  const subscribeChanges$ = command(({ set }, signal: AbortSignal) => {
+    set(
+      setAblyInvalidationLoop$,
+      {
+        scope: "credential",
+        topic: mailDraftChangedEvent(descriptor.mailDraftId),
+        invalidations: [reloadDraft$],
+        // Catch a revision made between the first read and channel attachment.
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
     set(
       setAblyPayloadLoop$,
       {
@@ -285,7 +301,7 @@ function createMailDraftResourceSignals(
     draft$,
     sidebarDraft$,
     reloadDraft$,
-    subscribeConnectorChanges$,
+    subscribeChanges$,
   };
 }
 
@@ -340,7 +356,7 @@ export function createMailDraftSignals(
     sidebarDraft$: resources.sidebarDraft$,
     ...attachmentPreviews,
     reloadDraft$: resources.reloadDraft$,
-    subscribeConnectorChanges$: resources.subscribeConnectorChanges$,
+    subscribeChanges$: resources.subscribeChanges$,
     delete$: mutations.delete$,
     send$: mutations.send$,
   };
@@ -357,7 +373,7 @@ export function createMailDraftCardSignalsRegistry(
       return createMailDraftSignals(descriptor, threadId);
     },
     (signals) => {
-      return signals.subscribeConnectorChanges$;
+      return signals.subscribeChanges$;
     },
   );
 }
