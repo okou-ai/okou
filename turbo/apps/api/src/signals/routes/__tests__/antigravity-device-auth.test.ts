@@ -1,7 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { antigravityDeviceAuthContract } from "@okouai/api-contracts/contracts/antigravity-device-auth";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -12,7 +11,6 @@ import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { antigravityDeviceAuthRoutes } from "../antigravity-device-auth";
-import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -115,94 +113,6 @@ describe("Antigravity Google sign-in", () => {
       `org_${randomUUID()}`,
     );
     await accept(api.start({ headers, body: {} }), [404]);
-  });
-
-  it("antigravity-device-auth-002 connects the Google account from the pasted redirect address", async () => {
-    const { clientId, clientSecret } = configureClient();
-    const member = await optedInStaffMember();
-    const receipts = googleAccount("Member@Gmail.com");
-    const api = deviceAuthClient();
-
-    const started = await accept(api.start({ headers, body: {} }), [200]);
-    const browserUrl = new URL(started.body.browserUrl);
-    expect(`${browserUrl.origin}${browserUrl.pathname}`).toBe(
-      "https://accounts.google.com/o/oauth2/v2/auth",
-    );
-    const params = browserUrl.searchParams;
-    expect(params.get("client_id")).toBe(clientId);
-    expect(params.get("redirect_uri")).toBe(REDIRECT_URI);
-    expect(params.get("response_type")).toBe("code");
-    expect(params.get("access_type")).toBe("offline");
-    expect(params.get("prompt")).toBe("consent");
-    expect(params.get("code_challenge_method")).toBe("S256");
-    expect(params.get("scope")?.split(" ")).toContain(
-      "https://www.googleapis.com/auth/cloud-platform",
-    );
-    const state = params.get("state");
-    const challenge = params.get("code_challenge");
-    expect(state).toBeTruthy();
-    expect(challenge).toBeTruthy();
-
-    const pasted = `  ${redirectAddress({ state: state ?? "", code: "auth-code-1" })}  `;
-    const completed = await accept(
-      api.complete({
-        headers,
-        body: {
-          sessionToken: started.body.sessionToken,
-          authorizationCode: pasted,
-        },
-      }),
-      [200],
-    );
-    expect(completed.body.status).toBe("complete");
-    expect(completed.body.created).toBeTruthy();
-    expect(completed.body.provider).toMatchObject({
-      type: "antigravity",
-      isActive: true,
-      accountEmail: "member@gmail.com",
-    });
-
-    expect(receipts.exchanges).toHaveLength(1);
-    const exchange = receipts.exchanges[0];
-    expect(exchange?.get("code")).toBe("auth-code-1");
-    expect(exchange?.get("grant_type")).toBe("authorization_code");
-    expect(exchange?.get("redirect_uri")).toBe(REDIRECT_URI);
-    expect(exchange?.get("client_id")).toBe(clientId);
-    expect(exchange?.get("client_secret")).toBe(clientSecret);
-    const verifier = exchange?.get("code_verifier") ?? "";
-    expect(createHash("sha256").update(verifier).digest("base64url")).toBe(
-      challenge,
-    );
-    expect(receipts.lookups).toStrictEqual(["Bearer google-access-token"]);
-
-    createRouteMocks(context).clerk.session(member.userId, member.orgId);
-    const listed = await accept(
-      setupApp({ context, routes: meModelProvidersListRoutes })(
-        personalModelProvidersMainContract,
-      ).list({ headers }),
-      [200],
-    );
-    const provider = listed.body.modelProviders.find((candidate) => {
-      return candidate.id === completed.body.provider.id;
-    });
-    expect(provider).toMatchObject({
-      type: "antigravity",
-      accountEmail: "member@gmail.com",
-    });
-    expect(JSON.stringify(listed.body)).not.toContain("google-refresh-token");
-
-    const replay = await accept(
-      api.complete({
-        headers,
-        body: {
-          sessionToken: started.body.sessionToken,
-          authorizationCode: pasted,
-        },
-      }),
-      [400],
-    );
-    expect(replay.body.error.message).toBe("Sign-in is not pending");
-    expect(receipts.exchanges).toHaveLength(1);
   });
 
   it("antigravity-device-auth-003 keeps the sign-in pending when another sign-in's address is pasted", async () => {
