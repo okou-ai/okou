@@ -30,9 +30,7 @@ struct UserMessageView<SendingIndicator: View>: View {
                 attachment: attachment, viewer: viewer, loadsThumbnail: loadsAttachments)
             }
           }
-          .overlay(alignment: .topLeading) {
-            if !hasBody { leadingIndicator() }
-          }
+          if !hasBody { sendingIndicator() }
         }
       }
       if hasBody {
@@ -58,53 +56,53 @@ struct UserMessageView<SendingIndicator: View>: View {
             SendMotionBubbleAnchor(messageID: message.id, transition: sendTransition)
           }
           .opacity(sendTransition?.hidesBubbleID == message.id ? 0 : 1)
-          .overlay(alignment: .topLeading) { leadingIndicator(topInset: bubbleInset) }
+          sendingIndicator().padding(.top, bubbleInset)
         }
       }
     }
     .frame(maxWidth: .infinity, alignment: .trailing)
   }
 
-  private func leadingIndicator(topInset: CGFloat = 0) -> some View {
-    sendingIndicator()
-      .fixedSize()
-      .padding(.top, topInset)
-      .alignmentGuide(.leading) { $0[.trailing] + OkouSpace.sm }
-      .allowsHitTesting(false)
-  }
 }
 
 struct UserMessageSendingIndicator: View {
   let sentAt: Date
   @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 20
+  @State private var isVisible = false
 
   var body: some View {
-    let deadline = sentAt.addingTimeInterval(2)
-    TimelineView(.explicit([deadline])) { _ in
-      if Date.now >= deadline {
-        ProgressView()
-          .controlSize(.mini)
-          .tint(OkouColor.mutedForeground)
-          .frame(height: lineHeight)
-          .accessibilityLabel("Sending…")
+    ProgressView()
+      .controlSize(.mini)
+      .tint(OkouColor.mutedForeground)
+      .frame(height: lineHeight)
+      .opacity(isVisible ? 1 : 0)
+      .accessibilityLabel("Sending…")
+      .accessibilityHidden(!isVisible)
+      .task {
+        let remaining = sentAt.addingTimeInterval(2).timeIntervalSinceNow
+        if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
+        if !Task.isCancelled { isVisible = true }
       }
-    }
   }
 }
 
 /// The mounted indicator observes confirmation even while scrolling defers a new row snapshot.
 struct ConversationSendingIndicator: View {
   let messageID: String
-  @ResolvedValue private var transcript: ConversationProjection.Value?
+  let conversation: ConversationStore
+  @ResolvedValue private var pending: [ConversationStore.PendingMessage]?
 
   init(messageID: String, conversation: ConversationStore) {
     self.messageID = messageID
-    _transcript = ResolvedValue(conversation.transcript)
+    self.conversation = conversation
+    _pending = ResolvedValue(conversation.pendingMessages)
   }
 
   var body: some View {
-    if let pending = transcript?.pending.first(where: { $0.id == messageID }), !pending.needsRetry {
-      UserMessageSendingIndicator(sentAt: pending.createdAt)
+    if let message = (pending ?? conversation.pending).first(where: { $0.id == messageID }),
+      !message.needsRetry
+    {
+      UserMessageSendingIndicator(sentAt: message.createdAt)
     }
   }
 }

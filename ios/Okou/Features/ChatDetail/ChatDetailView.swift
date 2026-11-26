@@ -400,7 +400,7 @@ struct ChatDetailView: View {
             viewer: conversation.attachmentViewer, loadsAttachments: presentation.loadsAttachments,
             sendTransition: presentation.loadsAttachments ? scrolling.sendTransition : nil
           ) {
-            if pendingRetry == false, presentation.loadsAttachments {
+            if presentation.loadsAttachments, !conversation.sharing.isSelecting {
               StoreProvider(conversation.graph) {
                 ConversationSendingIndicator(messageID: message.id, conversation: conversation)
               }
