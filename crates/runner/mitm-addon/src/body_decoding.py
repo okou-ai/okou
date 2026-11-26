@@ -684,42 +684,60 @@ def _decompress_zlib_json_usage_body(
 
 
 def _decode_zstd_prefix(data: bytes, max_output: int) -> tuple[bytes, str | None]:
-    """Read a bounded cross-frame prefix, allowing incomplete final input.
-
-    Strict consumers separately verify complete frames. Feed bounded views so
-    each unused-data copy stays small, and drain retained output before feeding
-    another chunk. A complete frame needs a fresh decoder in this public API;
-    all consumers bound those constructions, including best-effort capture.
-    """
-    input_cursor = CompressedInputCursor(data, chunk_size=_ZSTD_PREFIX_INPUT_CHUNK_SIZE)
+    """Read a bounded cross-frame prefix, allowing incomplete final input."""
     output = bytearray()
+    error = _walk_zstd_frames(
+        data, max_output, chunk_size=_ZSTD_PREFIX_INPUT_CHUNK_SIZE, output=output
+    )
+    return bytes(output), error
+
+
+def _walk_zstd_frames(
+    data: bytes, remaining: int, *, chunk_size: int, output: bytearray | None
+) -> str | None:
+    """Traverse frames within the output allowance for either decoding pass.
+
+    A prefix accumulator accepts partial final input and stops at the limit.
+    Validation counts output without retaining it and reserves an overflow byte.
+    """
+    input_cursor = CompressedInputCursor(data, chunk_size=chunk_size)
+    if output is None and not input_cursor:
+        return None
     decoder = zstd.ZstdDecompressor()
     frames = 1
-    while len(output) < max_output:
+    while remaining > 0:
         if input_cursor.has_pending:
             chunk = input_cursor.take()
         elif decoder.needs_input:
             if not input_cursor:
-                break
+                return INCOMPLETE_COMPRESSED_BODY if output is None else None
             chunk = input_cursor.take()
         else:
             chunk = b""
-        output.extend(
-            decoder.decompress(
-                chunk, max_length=min(max_output - len(output), STREAM_DECODE_CHUNK_LIMIT)
+        try:
+            decoded = decoder.decompress(
+                chunk, max_length=min(remaining, STREAM_DECODE_CHUNK_LIMIT)
             )
-        )
-        if len(output) >= max_output:
-            break
+        except zstd.ZstdError:
+            if output is None:
+                return INVALID_COMPRESSED_BODY
+            raise
+
+        if output is not None:
+            output.extend(decoded)
+        remaining -= len(decoded)
+        del decoded
+        if remaining <= 0:
+            return DECODED_BODY_LIMIT_EXCEEDED if output is None else None
         if decoder.eof:
             input_cursor.carry(decoder.unused_data)
             if not input_cursor:
                 break
             if frames >= _ZSTD_MAX_FRAMES:
-                return bytes(output), COMPRESSED_FRAME_LIMIT_EXCEEDED
+                return COMPRESSED_FRAME_LIMIT_EXCEEDED
             decoder = zstd.ZstdDecompressor()
             frames += 1
-    return bytes(output), None
+    return None
 
 
 def _validate_complete_zstd_frames(data: bytes, max_output: int) -> str | None:
@@ -728,34 +746,9 @@ def _validate_complete_zstd_frames(data: bytes, max_output: int) -> str | None:
     if max_output <= 0:
         return DECODED_BODY_LIMIT_EXCEEDED if data else None
 
-    input_cursor = CompressedInputCursor(data, chunk_size=_ZSTD_VALIDATE_INPUT_CHUNK_SIZE)
-    decoded_size = 0
-    validated_frames = 0
-    while input_cursor:
-        if validated_frames >= _ZSTD_MAX_FRAMES:
-            return COMPRESSED_FRAME_LIMIT_EXCEEDED
-        validated_frames += 1
-        obj = zstd.ZstdDecompressor()
-
-        while input_cursor or not obj.needs_input:
-            chunk = input_cursor.take() if input_cursor.has_pending or obj.needs_input else b""
-            try:
-                decoded = obj.decompress(
-                    chunk,
-                    max_length=min(max_output - decoded_size + 1, STREAM_DECODE_CHUNK_LIMIT),
-                )
-            except zstd.ZstdError:
-                return INVALID_COMPRESSED_BODY
-
-            decoded_size += len(decoded)
-            if decoded_size > max_output:
-                return DECODED_BODY_LIMIT_EXCEEDED
-            if obj.eof:
-                input_cursor.carry(obj.unused_data)
-                break
-        else:
-            return INCOMPLETE_COMPRESSED_BODY
-    return None
+    return _walk_zstd_frames(
+        data, max_output + 1, chunk_size=_ZSTD_VALIDATE_INPUT_CHUNK_SIZE, output=None
+    )
 
 
 def _decompress_zstd_json_usage_body(
