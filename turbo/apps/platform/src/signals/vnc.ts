@@ -63,6 +63,7 @@ import {
 } from "./remote-access-refresh.ts";
 import { invalidateCloudflareAccess$ } from "./cloudflare-access.ts";
 import { invalidateTailscale$ } from "./tailscale.ts";
+import { invalidateRemoteDeviceDirectory$ } from "./remote-devices.ts";
 import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 
 export const vncIdentity$ = computed(async (get) => {
@@ -1502,13 +1503,18 @@ function connectionRequest(
   clients: VncClients,
   dialog: VncDialogState,
   form: HTMLFormElement,
-  editor: Editor,
+  selection: {
+    readonly editor: Editor;
+    readonly remoteDeviceId: string | undefined;
+  },
   signal: AbortSignal,
 ) {
+  const { editor, remoteDeviceId } = selection;
   if (dialog.kind === "create") {
     const body = createVncConnectionRequestSchema.safeParse({
       ...connectionFields(form, editor),
       id: dialog.creationId,
+      remoteDeviceId,
     });
     return body.success
       ? () => {
@@ -1648,7 +1654,12 @@ function vncLoginPatch(
 }
 
 const prepareVncFormSave$ = command(
-  async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
+  async (
+    { get, set },
+    form: HTMLFormElement,
+    remoteDeviceId: string | undefined,
+    signal: AbortSignal,
+  ) => {
     const dialog = await get(vncDialog$);
     signal.throwIfAborted();
     if (!dialog || get(conflict$)) {
@@ -1682,7 +1693,13 @@ const prepareVncFormSave$ = command(
     }
     const request = dialog.kind.endsWith("-credential")
       ? credentialRequest(clients, dialog, form, editor, signal)
-      : connectionRequest(clients, dialog, form, editor, signal);
+      : connectionRequest(
+          clients,
+          dialog,
+          form,
+          { editor, remoteDeviceId },
+          signal,
+        );
     if (!request) {
       set(notice$, { code: VNC_ERROR_CODES.INVALID_INPUT, source: "save" });
       return;
@@ -1708,13 +1725,31 @@ const handleVncSaveFailure$ = command(
   },
 );
 
-export const saveVnc$ = command(
-  async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
+const finishVncSave$ = command(({ set }, kind: VncDialogState["kind"]) => {
+  set(closeVncDialog$);
+  set(invalidateVnc$);
+  if (!kind.endsWith("-credential")) {
+    set(invalidateRemoteDeviceDirectory$);
+  }
+});
+
+export const saveVncForDevice$ = command(
+  async (
+    { get, set },
+    form: HTMLFormElement,
+    remoteDeviceId: string | undefined,
+    parentSignal: AbortSignal,
+  ) => {
     if (get(uncertain$)) {
       return;
     }
     const signal = set(resetSave$, parentSignal);
-    const prepared = await set(prepareVncFormSave$, form, signal);
+    const prepared = await set(
+      prepareVncFormSave$,
+      form,
+      remoteDeviceId,
+      signal,
+    );
     signal.throwIfAborted();
     if (!prepared) {
       return;
@@ -1775,13 +1810,18 @@ export const saveVnc$ = command(
       result.status === 201 ||
       result.status === 204
     ) {
-      set(closeVncDialog$);
-      set(invalidateVnc$);
+      set(finishVncSave$, dialog.kind);
       return savedConnectionId;
     }
     return set(handleVncSaveFailure$, {
       status: result.status,
       code: result.body.error.code,
     });
+  },
+);
+
+export const saveVnc$ = command(
+  ({ set }, form: HTMLFormElement, signal: AbortSignal) => {
+    return set(saveVncForDevice$, form, undefined, signal);
   },
 );

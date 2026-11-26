@@ -8,6 +8,7 @@ enum ChatInvalidation: Hashable, Sendable {
   case realtimeResume
   case realtimeGap
   case computerAccess
+  case remoteDevices
   case runModels
   case modelPreference
   case threadList
@@ -38,6 +39,7 @@ enum ChatInvalidation: Hashable, Sendable {
       "ssh:changed", "connectorPermissionUpdated", "connector:changed":
       self = .computerAccess
     case "runModelsChanged": self = .runModels
+    case "remoteDevicesChanged": self = .remoteDevices
     case "userPreferenceChanged": self = .modelPreference
     case "agentSuggestionsChanged": self = .forYou
     case "threadListChanged": self = .threadList

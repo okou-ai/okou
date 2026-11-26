@@ -2,11 +2,14 @@ import {
   array,
   boolean,
   discriminatedUnion,
+  enum as zEnum,
   iso,
   literal,
   object,
   string,
+  union,
   uuid,
+  type infer as Infer,
 } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -15,6 +18,10 @@ const access = discriminatedUnion("mode", [
   object({ mode: literal("denied") }),
   object({ mode: literal("always") }),
   object({ mode: literal("until"), expiresAt: iso.datetime() }),
+  object({
+    mode: literal("for"),
+    hours: union([literal(1), literal(24), literal(168)]),
+  }),
 ]);
 
 const device = object({
@@ -23,6 +30,25 @@ const device = object({
   accessAllowed: boolean(),
   accessExpiresAt: iso.datetime().nullable(),
 });
+export const remoteDeviceChannelKindSchema = zEnum([
+  "desktop",
+  "ios",
+  "ssh",
+  "vnc",
+]);
+const channel = object({
+  id: uuid(),
+  kind: remoteDeviceChannelKindSchema,
+  displayName: string(),
+  lastSeenAt: iso.datetime().nullable(),
+  sshDependencyIds: array(uuid()),
+});
+const directoryDevice = device.extend({ channels: array(channel) });
+const directory = object({ devices: array(directoryDevice) });
+const createDevice = object({
+  id: uuid(),
+  displayName: string().trim().min(1).max(120),
+}).strict();
 const devicePath = object({ deviceId: uuid() });
 const errors = {
   400: apiErrorSchema,
@@ -37,7 +63,31 @@ export const remoteDevicesContract = c.router({
     method: "GET",
     path: "/api/remote-devices",
     headers: authHeadersSchema,
-    responses: { ...errors, 200: object({ devices: array(device) }) },
+    responses: { ...errors, 200: directory },
+  },
+  listForRun: {
+    method: "GET",
+    path: "/api/run/remote-devices",
+    headers: authHeadersSchema,
+    responses: { ...errors, 200: directory.extend({ chatThreadId: uuid() }) },
+  },
+  create: {
+    method: "POST",
+    path: "/api/remote-devices",
+    headers: authHeadersSchema,
+    body: createDevice,
+    responses: { ...errors, 200: device, 201: device },
+  },
+  moveChannel: {
+    method: "PUT",
+    path: "/api/remote-devices/:deviceId/channels/:kind/:channelId",
+    pathParams: devicePath.extend({
+      kind: remoteDeviceChannelKindSchema,
+      channelId: uuid(),
+    }),
+    headers: authHeadersSchema,
+    body: c.noBody(),
+    responses: { ...errors, 204: c.noBody() },
   },
   setAccess: {
     method: "PUT",
@@ -56,3 +106,11 @@ export const remoteDevicesContract = c.router({
     responses: { ...errors, 200: device },
   },
 });
+
+export type RemoteDevice = Infer<typeof device>;
+export type RemoteDeviceChannel = Infer<typeof channel>;
+export type RemoteDeviceChannelKind = Infer<
+  typeof remoteDeviceChannelKindSchema
+>;
+export type RemoteDeviceDirectoryItem = Infer<typeof directoryDevice>;
+export type RemoteDeviceAccess = Infer<typeof access>;

@@ -1,5 +1,9 @@
 import { openRemoteNetworkGuide$ } from "./remote-network-guide.ts";
 import {
+  remoteDevicesEnabled$,
+  selectedRemoteDeviceId$,
+} from "./remote-devices.ts";
+import {
   remoteNetworkLocation$,
   openRemoteNetworkEditor$,
   closeRemoteNetworkEditor$,
@@ -23,7 +27,7 @@ import {
   chooseSshAccessConfig$,
   closeSshDialog$,
   openSshDialog$,
-  saveSsh$,
+  saveSshForDevice$,
   sshDialog$,
   sshConnections$,
 } from "./ssh.ts";
@@ -31,7 +35,7 @@ import {
   clearVncSaveMessage$,
   closeVncDialog$,
   openVncDialog$,
-  saveVnc$,
+  saveVncForDevice$,
   vncDialog$,
   chooseVncTransport$,
   chooseVncNetworkConfig$,
@@ -401,6 +405,9 @@ export const enterRemoteSetup$ = command(
     const params = new URLSearchParams(get(searchParams$));
     clearRemoteSetupParams(params);
     params.set("setup", "add");
+    if (sourceNetwork || fromComputer) {
+      params.delete("remoteDevice");
+    }
     if (sourceNetwork) {
       params.set("setupNetwork", `${sourceNetwork.route}:${sourceNetwork.id}`);
     }
@@ -662,7 +669,11 @@ export const saveRemoteSsh$ = command(
       current.address.trim().slice(0, SSH_DISPLAY_NAME_MAX_LENGTH),
     );
     nameRemoteCredential(form, name);
-    const savedId = await set(saveSsh$, form, signal);
+    const selected = get(selectedRemoteDeviceId$);
+    const deviceId =
+      selected && (await get(remoteDevicesEnabled$)) ? selected : undefined;
+    signal.throwIfAborted();
+    const savedId = await set(saveSshForDevice$, form, deviceId, signal);
     signal.throwIfAborted();
     if (
       !(await get(sshDialog$)) &&
@@ -694,7 +705,11 @@ export const saveRemoteVnc$ = command(
         : undefined,
     );
     nameRemoteCredential(form, name);
-    const savedId = await set(saveVnc$, form, signal);
+    const selected = get(selectedRemoteDeviceId$);
+    const deviceId =
+      selected && (await get(remoteDevicesEnabled$)) ? selected : undefined;
+    signal.throwIfAborted();
+    const savedId = await set(saveVncForDevice$, form, deviceId, signal);
     signal.throwIfAborted();
     if (
       !(await get(vncDialog$)) &&

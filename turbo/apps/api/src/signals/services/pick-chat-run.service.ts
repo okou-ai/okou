@@ -25,6 +25,7 @@ import {
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
+import { publishDesktopShellAuthorizationChangedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import type { EnqueuedChatInputFacts } from "./chat-run-preparation-facts";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
@@ -126,6 +127,7 @@ interface PickInput {
   readonly context?: AgentRunContextSignals;
   readonly requestInput?: EnqueuedChatInputFacts;
   readonly publishedLease?: PublishedChatThreadLease;
+  readonly computerUseHostChangedForUserId?: string;
 }
 
 export interface PickIteration {
@@ -471,7 +473,7 @@ function createPickObjects() {
   );
 
   const deliverPickedRun$ = command(
-    (
+    async (
       { set },
       preparation: Awaited<
         ReturnType<(typeof prepareDirectRunDispatch$)["write"]>
@@ -479,95 +481,44 @@ function createPickObjects() {
       resolveFirstPostHandoff: (() => void) | undefined,
       signal: AbortSignal,
     ) => {
-      if (preparation.kind === "failed") {
-        return preparation.result;
+      const dispatched = await (async () => {
+        if (preparation.kind === "failed") {
+          return preparation.result;
+        }
+        // Signed URLs are already in the payload. Persisting reusable URLs can
+        // proceed independently of ownership and delivery.
+        waitUntil(
+          set(publishDirectRunCache$, preparation.cachePublication, signal),
+        );
+        return await set(
+          dispatchPreparedRun$,
+          { ...preparation.delivery, resolveFirstPostHandoff },
+          signal,
+        );
+      })();
+      signal.throwIfAborted();
+      // Schedule the released slots before the caller runs terminal callbacks.
+      if (dispatched.terminal !== null) {
+        set(
+          scheduleReleasedSlotPicks$,
+          dispatched.terminal.releasedSlots,
+          signal,
+        );
       }
-      // Signed URLs are already in the payload. Persisting reusable URLs can
-      // proceed independently of ownership and delivery.
-      waitUntil(
-        set(publishDirectRunCache$, preparation.cachePublication, signal),
-      );
-      return set(
-        dispatchPreparedRun$,
-        { ...preparation.delivery, resolveFirstPostHandoff },
-        signal,
-      );
+      return dispatched;
     },
   );
 
-  /** The Thread child exclusively owns creation, rejection and startup. */
-  const pickClaim$ = command(
-    async (
-      { get, set },
+  const scheduleClaimEffects$ = command(
+    (
+      { set },
       claim: LeasedThreadClaim,
-      resolveFirstPostHandoff: (() => void) | undefined,
+      searchAtDispatch: boolean,
+      marketingRewardEventId: string | null | undefined,
       signal: AbortSignal,
-    ): Promise<PickResult> => {
-      signal.throwIfAborted();
-      const captured = get(capturedClaims$).get(claim.claimId);
-      if (!captured) {
-        throw new Error("Successful queue claim has no captured run graph");
-      }
-      const claimed = await get(captured);
-      signal.throwIfAborted();
-      const availability = Promise.all([
-        get(claimed.threadHasActiveRun$),
-        get(claimed.orgHasCapacity$),
-        get(claimed.hasFirstPickableChatEvent$),
-      ]);
-      const [threadHasActiveRun, hasCapacity, hasInput] = await availability;
-      signal.throwIfAborted();
-      // Publication can wait for a launch whose active row was not visible in
-      // its earlier snapshot. Reobserve before reporting full/deleting empty
-      // work so the send still notifies that running Run about pending input.
-      if (threadHasActiveRun) {
-        // Run completion may have skipped this live lease before its release.
-        await set(releaseClaimAndSchedulePick$, claim, signal);
-        return { kind: "none" };
-      }
-      if (!hasCapacity) {
-        if (await set(releaseClaim$, claim, signal)) {
-          const freed = await get(claimed.orgHasCapacityAfterRelease$);
-          signal.throwIfAborted();
-          if (freed) {
-            set(scheduleThreadPick$, claim, signal);
-          }
-        }
-        return { kind: "org-full" };
-      }
-      if (!hasInput) {
-        await set(deleteEmptyQueue$, claim, signal);
-        return { kind: "none" };
-      }
-      // Load the run context only when this claim has work and capacity.
-      set(preloadAgentRunContext$, claimed.context, signal);
-      waitUntil(settle(get(claimed.inputResources$)));
-      signal.throwIfAborted();
-      const preparation = set(claimed.prepareRunAdmission$, signal);
-      const bundleUrls = set(
-        prepareExecutionBundleUrls$,
-        get(claimed.executionBundleCache$),
-        signal,
-      );
-      // The pick owns preparation even if admission loses.
-      waitUntil(settle(bundleUrls));
-      waitUntil(settle(preparation.resources.memoryArchive));
-      waitUntil(settle(preparation.resources.networkPolicyInputs));
-      const prepared = await preparation.context;
-      signal.throwIfAborted();
-      const admitted = prepared
-        ? set(
-            claimed.admitRun$,
-            prepared,
-            preparation.resources,
-            bundleUrls,
-            signal,
-          )
-        : null;
-      const pending = await awaitPendingAdmission(admitted);
-      signal.throwIfAborted();
+    ) => {
       // A standalone pick publishes its own committed claim or rejection.
-      if (!resolveFirstPostHandoff) {
+      if (!searchAtDispatch) {
         waitUntil(
           set(
             projectCommittedChatThreadSearch$,
@@ -580,66 +531,169 @@ function createPickObjects() {
           ),
         );
       }
-      if (!admitted || !pending) {
-        await set(releaseClaim$, claim, signal);
-        return { kind: "none" };
-      }
-      if (pending.marketingRewardEventId) {
+      if (marketingRewardEventId) {
         waitUntil(
           set(
             deliverMarketingRewardEvents$,
-            {
-              jobId: pending.marketingRewardEventId,
-              handlerVersion: 4,
-            },
+            { jobId: marketingRewardEventId, handlerVersion: 4 },
             signal,
           ),
         );
       }
-      // Activation is outside the admission-failure boundary. Slot scheduling
-      // precedes terminal callbacks so they cannot delay the next queued input.
-      const [, dispatchPreparation] = await joinAllInOrder(
-        [
-          set(claimed.publishPendingRun$, pending, signal),
-          set(
-            prepareDirectRunDispatch$,
-            pending.admittedLaunch,
-            { bundleUrls, resources: admitted.resources },
-            admitted.early,
-            signal,
-          ),
-        ],
-        signal,
-      );
-      const dispatched = await set(
-        deliverPickedRun$,
-        dispatchPreparation,
-        resolveFirstPostHandoff,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (dispatched.terminal !== null) {
-        set(
-          scheduleReleasedSlotPicks$,
-          dispatched.terminal.releasedSlots,
+    },
+  );
+
+  const pickOnce$ = command(
+    (
+      { get, set },
+      input: PickInput,
+      resolveFirstPostHandoff: (() => void) | undefined,
+      signal: AbortSignal,
+    ): Promise<PickIteration> => {
+      let hostChangeUserId = input.computerUseHostChangedForUserId;
+      const picked = (async (): Promise<PickIteration> => {
+        signal.throwIfAborted();
+        const { claim, cursor } = await set(claim$, input, signal);
+        if (!claim) {
+          return { result: { kind: "none" }, cursor };
+        }
+        const captured = get(capturedClaims$).get(claim.claimId);
+        if (!captured) {
+          throw new Error("Successful queue claim has no captured run graph");
+        }
+        const claimed = await get(captured);
+        signal.throwIfAborted();
+        const [threadHasActiveRun, hasCapacity, hasInput] = await Promise.all([
+          get(claimed.threadHasActiveRun$),
+          get(claimed.orgHasCapacity$),
+          get(claimed.hasFirstPickableChatEvent$),
+        ]);
+        signal.throwIfAborted();
+        // Publication can wait for a launch whose active row was not visible in
+        // its earlier snapshot. Reobserve before reporting full/deleting empty
+        // work so the send still notifies that running Run about pending input.
+        if (threadHasActiveRun) {
+          // Run completion may have skipped this live lease before its release.
+          await set(releaseClaimAndSchedulePick$, claim, signal);
+          return { result: { kind: "none" }, cursor };
+        }
+        if (!hasCapacity) {
+          if (await set(releaseClaim$, claim, signal)) {
+            const freed = await get(claimed.orgHasCapacityAfterRelease$);
+            signal.throwIfAborted();
+            if (freed) {
+              set(scheduleThreadPick$, claim, signal);
+            }
+          }
+          return { result: { kind: "org-full" }, cursor };
+        }
+        if (!hasInput) {
+          await set(deleteEmptyQueue$, claim, signal);
+          return { result: { kind: "none" }, cursor };
+        }
+        // Load the run context only when this claim has work and capacity.
+        set(preloadAgentRunContext$, claimed.context, signal);
+        waitUntil(settle(get(claimed.inputResources$)));
+        signal.throwIfAborted();
+        const preparation = set(claimed.prepareRunAdmission$, signal);
+        const bundleUrls = set(
+          prepareExecutionBundleUrls$,
+          get(claimed.executionBundleCache$),
           signal,
         );
-      }
-      await set(claimed.finishPendingRun$, pending, dispatched, signal);
-      return { kind: "launched", runId: pending.admittedLaunch.run.id };
+        // The pick owns preparation even if admission loses.
+        waitUntil(settle(bundleUrls));
+        waitUntil(settle(preparation.resources.memoryArchive));
+        waitUntil(settle(preparation.resources.networkPolicyInputs));
+        const prepared = await preparation.context;
+        signal.throwIfAborted();
+        const admitted = prepared
+          ? set(
+              claimed.admitRun$,
+              prepared,
+              preparation.resources,
+              bundleUrls,
+              signal,
+            )
+          : null;
+        const pending = await awaitPendingAdmission(admitted);
+        signal.throwIfAborted();
+        set(
+          scheduleClaimEffects$,
+          claim,
+          resolveFirstPostHandoff !== undefined,
+          pending?.marketingRewardEventId,
+          signal,
+        );
+        if (!admitted || !pending) {
+          await set(releaseClaim$, claim, signal);
+          return { result: { kind: "none" }, cursor };
+        }
+        // The pending slot has committed. Its refresh also covers an earlier
+        // host change for the same user, even if Runner delivery fails.
+        const activation = (async () => {
+          const pendingUserId = pending.head.userId;
+          await publishDesktopShellAuthorizationChangedSafely(pendingUserId);
+          if (hostChangeUserId === pendingUserId) {
+            hostChangeUserId = undefined;
+          }
+          signal.throwIfAborted();
+          await set(claimed.publishPendingRun$, pending, signal);
+        })();
+        // Activation is outside the admission-failure boundary. Slot scheduling
+        // precedes terminal callbacks so they cannot delay the next queued input.
+        const [, dispatchPreparation] = await joinAllInOrder(
+          [
+            activation,
+            set(
+              prepareDirectRunDispatch$,
+              pending.admittedLaunch,
+              { bundleUrls, resources: admitted.resources },
+              admitted.early,
+              signal,
+            ),
+          ],
+          signal,
+        );
+        const dispatched = await set(
+          deliverPickedRun$,
+          dispatchPreparation,
+          resolveFirstPostHandoff,
+          signal,
+        );
+        await set(claimed.finishPendingRun$, pending, dispatched, signal);
+        return {
+          result: { kind: "launched", runId: pending.admittedLaunch.run.id },
+          cursor,
+        };
+      })();
+      return hostChangeUserId === undefined
+        ? picked
+        : (async () => {
+            const outcome = await settleIncludingAbort(picked);
+            if (hostChangeUserId !== undefined) {
+              // Enqueue committed the host change even if picking failed.
+              await publishDesktopShellAuthorizationChangedSafely(
+                hostChangeUserId,
+              );
+            }
+            if (!outcome.ok) {
+              throw outcome.error;
+            }
+            return outcome.value;
+          })();
     },
   );
 
   const pick$ = command(
-    async (
+    (
       { set },
       input: PickInput,
       signal: AbortSignal,
     ): Promise<PickIteration> => {
-      signal.throwIfAborted();
       const enqueued = input.requestInput;
       const resolveFirstPostHandoff = (() => {
-        if (!enqueued) {
+        if (!enqueued || signal.aborted) {
           return undefined;
         }
         // This pick can publish both its initiating enqueue and the claim.
@@ -665,19 +719,11 @@ function createPickObjects() {
           }
         };
       })();
-      const picked = (async (): Promise<PickIteration> => {
-        const { claim, cursor } = await set(claim$, input, signal);
-        return {
-          result: claim
-            ? await set(pickClaim$, claim, resolveFirstPostHandoff, signal)
-            : { kind: "none" },
-          cursor,
-        };
-      })();
+      const picked = set(pickOnce$, input, resolveFirstPostHandoff, signal);
       // Release the same job when the pick exits before a POST.
       return resolveFirstPostHandoff
-        ? await picked.finally(resolveFirstPostHandoff)
-        : await picked;
+        ? picked.finally(resolveFirstPostHandoff)
+        : picked;
     },
   );
   return { pick$ };

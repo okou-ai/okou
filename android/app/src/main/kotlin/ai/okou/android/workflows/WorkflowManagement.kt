@@ -559,7 +559,7 @@ internal fun WorkflowEditor(
                         Modifier.focusRequester(saveFocus)
                             .onFocusChanged { saveFocused = it.isFocused }
                             .updateFocusOutline(
-                                MaterialTheme.shapes.medium,
+                                ButtonDefaults.shape,
                                 MaterialTheme.colorScheme.onPrimary,
                             )
                             .testTag("workflow_save")

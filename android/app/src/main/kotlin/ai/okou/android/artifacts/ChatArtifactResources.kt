@@ -45,6 +45,7 @@ internal fun ChatArtifactLinkPreview(
     model: ArtifactCatalogModel,
     link: String,
     wide: Boolean,
+    inlineImage: Boolean,
     onClose: () -> Unit,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
@@ -57,13 +58,24 @@ internal fun ChatArtifactLinkPreview(
     }
     BackHandler(onBack = onClose)
     Column(Modifier.fillMaxSize()) {
-        ArtifactToolbar(
-            R.string.chat_search_artifact_preview,
-            R.string.back,
+        ArtifactSelectionPreview(
+            model,
+            state,
+            page,
+            link,
+            wide,
+            saveLauncher,
             onClose,
-            if (wide) 28.dp else 12.dp,
-        )
-        ArtifactSelectionPreview(model, state, page, link, wide, saveLauncher)
+            R.string.back,
+            showArtifactImageViewer = !inlineImage,
+        ) {
+            ArtifactToolbar(
+                R.string.chat_search_artifact_preview,
+                R.string.back,
+                onClose,
+                if (wide) 28.dp else 12.dp,
+            )
+        }
     }
 }
 
@@ -136,13 +148,23 @@ internal fun ChatArtifactResources(
     }
     if (selected != null) {
         Column(Modifier.fillMaxSize()) {
-            ArtifactToolbar(
-                R.string.chat_search_artifact_preview,
-                R.string.chat_resources_back,
+            ArtifactSelectionPreview(
+                model,
+                state,
+                page,
+                selected,
+                wide,
+                saveLauncher,
                 ::back,
-                toolbarPadding,
-            )
-            ArtifactSelectionPreview(model, state, page, selected, wide, saveLauncher)
+                R.string.chat_resources_back,
+            ) {
+                ArtifactToolbar(
+                    R.string.chat_search_artifact_preview,
+                    R.string.chat_resources_back,
+                    ::back,
+                    toolbarPadding,
+                )
+            }
         }
         return
     }
@@ -288,16 +310,14 @@ internal fun ChatArtifactResources(
                         model.select(item.id, item)
                     }
                 }
-                if (failure == ArtifactCatalogFailure.More) {
-                    item(key = "resource-page-failure") {
-                        ArtifactReadNotice(
-                            failure.label(chatResources = true),
-                            Modifier.padding(top = 12.dp),
+                if (failure == ArtifactCatalogFailure.More || reading == ArtifactCatalogRead.More) {
+                    item(key = "resource-page-feedback") {
+                        ArtifactPageFeedback(
+                            failed = failure == ArtifactCatalogFailure.More,
+                            skeletonHeight = 72.dp,
+                            skeletonHorizontalPadding = 16.dp,
                         )
                     }
-                }
-                if (reading == ArtifactCatalogRead.More) {
-                    item { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
                 }
                 if (external != null && externalTitle != null) {
                     item(key = "origin-heading") {

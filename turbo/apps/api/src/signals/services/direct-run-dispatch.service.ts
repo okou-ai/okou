@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import {
   RUNNER_DISPATCH_MAX_BODY_BYTES,
   type runnerDispatchEnvelopeSchema,
@@ -14,6 +15,7 @@ import { env } from "../../lib/env";
 import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget";
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { apiStartTime$ } from "../context/hono";
+import { waitUntil } from "../context/wait-until";
 import {
   gzipRunnerDispatchBody,
   postRunnerDispatch,
@@ -483,6 +485,34 @@ interface RunDelivery extends PreparedRunDelivery {
   readonly resolveFirstPostHandoff: (() => void) | undefined;
 }
 
+function firstOwnerSnapshotScheduler({
+  contextSnapshot,
+  resolveFirstPostHandoff,
+}: RunDelivery) {
+  let pendingRecordedAt: Date | undefined = nowDate();
+  const schedule = () => {
+    const recordedAt = pendingRecordedAt;
+    if (recordedAt === undefined) {
+      return;
+    }
+    pendingRecordedAt = undefined;
+    waitUntil(
+      (async () => {
+        // Let the transport advance before building the diagnostic payload.
+        await setImmediate();
+        recordRunContextSnapshot({ ...contextSnapshot, recordedAt });
+      })(),
+    );
+  };
+  return {
+    schedule,
+    onPostHandoff() {
+      resolveFirstPostHandoff?.();
+      schedule();
+    },
+  };
+}
+
 const rejectRestrictedAntigravityRun$ = command(
   async (
     { set },
@@ -564,15 +594,10 @@ export const dispatchPreparedRun$ = command(
         }
         const ownerWriteMs = monotonicNow() - ownerWriteStartedAt;
         owner = target;
-        if (firstOwner) {
-          recordRunContextSnapshot({
-            ...args.contextSnapshot,
-            recordedAt: nowDate(),
-          });
-        }
+        const snapshot = firstOwner ? firstOwnerSnapshotScheduler(args) : null;
         // An exception after entering this command cannot prove non-acceptance.
         uncertain = true;
-        const delivery = await set(
+        const offering = set(
           offerToProcess$,
           {
             target,
@@ -585,10 +610,15 @@ export const dispatchPreparedRun$ = command(
             preparationTiming: firstOwner
               ? { ...args.preparationTiming, ownerWriteMs }
               : undefined,
-            resolveFirstPostHandoff: args.resolveFirstPostHandoff,
+            resolveFirstPostHandoff:
+              snapshot?.onPostHandoff ?? args.resolveFirstPostHandoff,
           },
           signal,
         );
+        // Preserve the first owner's diagnostic if its offer exits before POST.
+        const delivery = await (snapshot
+          ? offering.finally(snapshot.schedule)
+          : offering);
         uncertain = delivery === "uncertain";
         if (delivery === "accepted" || delivery === "uncertain") {
           return {

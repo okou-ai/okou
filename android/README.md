@@ -149,8 +149,12 @@ Failures keep the available list or skeleton in place. With a confirmed list,
 the progress bar appears during an active read once the last confirmation is
 more than ten minutes old, or immediately after three consecutive read
 failures. It stays visible through retry gaps until success or a terminal
-failure. If a write stays unconfirmed, Refresh chats reads back the list and
-clears the unresolved projection once that read succeeds.
+failure. The independent running and unread indicator read follows the same
+foreground backoff across all filters. Switching filters preserves its retry
+schedule. Indicator-only retries show loading feedback in Unread and refresh
+row badges silently in Inbox, Archived, and Muted. If a write stays unconfirmed,
+Refresh chats reads back the list and clears the unresolved projection once
+that read succeeds.
 
 A definitively failed Undo keeps the confirmed row state and closes its offer.
 An uncertain Undo keeps its receipt check available.

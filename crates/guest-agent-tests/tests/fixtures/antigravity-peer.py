@@ -28,9 +28,11 @@ assert Path.cwd() == Path("/home/user/workspace")
 assert arg("--model") == model
 assert arg("--input-format") == arg("--output-format") == "stream-json"
 assert arg("--mode") == "accept-edits"
-assert "/home/user/workspace" in args and "--dangerously-skip-permissions" not in args
+assert "/home/user/workspace" in args and "--dangerously-skip-permissions" in args
 settings = json.loads(arg("--settings"))
 assert settings["modelProvider"] == "" and settings["useG1Credits"] is False
+assert settings["enableTerminalSandbox"] is False
+assert settings["toolPermission"] == "always-proceed"
 assert "GEMINI_API_KEY" not in os.environ
 assert "AGY_ADC_AUTH" not in os.environ
 assert os.environ["AGY_CLI_DISABLE_AUTO_UPDATE"] == "true"

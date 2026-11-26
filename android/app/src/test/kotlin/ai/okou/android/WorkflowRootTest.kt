@@ -52,6 +52,7 @@ import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
@@ -190,6 +191,15 @@ internal abstract class WorkflowRootTestFixture {
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
         }
+
+    protected fun SemanticsNodeInteraction.assertLabelLarge() {
+        val layouts = mutableListOf<TextLayoutResult>()
+        performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val style = layouts.single().layoutInput.style
+        assertEquals(14.sp, style.fontSize)
+        assertEquals(20.sp, style.lineHeight)
+        assertEquals(FontWeight.Medium, style.fontWeight)
+    }
 
     protected fun back() = compose.runOnIdle {
         compose.activity.onBackPressedDispatcher.onBackPressed()
@@ -685,6 +695,9 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         val fieldsBounds = fields.getUnclippedBoundsInRoot()
         val cancel = compose.onNodeWithText("Cancel")
         val cancelBounds = cancel.getUnclippedBoundsInRoot()
+        for (label in listOf("Save", "Cancel")) {
+            compose.onNodeWithText(label, useUnmergedTree = true).assertLabelLarge()
+        }
         save.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         val selection =
             instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
@@ -780,6 +793,9 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         val automations = compose.onNodeWithTag("workflow_tab_automations")
         val history = compose.onNodeWithTag("workflow_tab_history")
 
+        for (label in listOf("Instructions", "Automations", "Run history", "Use in chat")) {
+            compose.onNodeWithText(label, useUnmergedTree = true).assertLabelLarge()
+        }
         instructions.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         instructions.performKeyInput { pressKey(Key.DirectionRight) }
         automations.assertIsSelected().assertIsFocused()
@@ -833,6 +849,12 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val daily = compose.onNode(hasText("Daily") and inMenu)
 
         weekdays.pressEnter()
+        compose.onNode(hasText("Weekdays") and inMenu, useUnmergedTree = true).assertLabelLarge()
+        val popup = compose.onNodeWithTag("workspace_popup").getUnclippedBoundsInRoot()
+        val row = selected.getUnclippedBoundsInRoot()
+        assertEquals(244.dp, popup.right - popup.left)
+        assertEquals(popup.right - popup.left, row.right - row.left)
+        assertTrue(row.bottom - row.top >= 48.dp)
         selected.assertIsSelected().assertIsFocused().performKeyInput { pressKey(Key.Tab) }
         weekdays.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
         selected.assertIsSelected().assertIsFocused().performKeyInput { pressKey(Key.Escape) }

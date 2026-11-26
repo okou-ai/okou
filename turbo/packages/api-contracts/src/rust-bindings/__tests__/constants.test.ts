@@ -48,9 +48,12 @@ import {
   BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION,
   BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
   CANONICAL_CLAUDE_CONFIG_DIR,
+  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
+  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_SESSIONS_DIR,
   CANONICAL_GUEST_HOME_DIR,
+  CANONICAL_PI_MEMORY_MOUNT_PATH,
   CANONICAL_PI_SESSION_DIR,
   PI_AGENT_DIR,
   CANONICAL_WORKING_DIR,
@@ -576,6 +579,23 @@ const expectedBindings = [
     value: rustString(CANONICAL_PI_SESSION_DIR),
     rustDoc: canonicalPiSessionDirDoc,
   },
+  ...(
+    [
+      [
+        "CANONICAL_CLAUDE_MEMORY_MOUNT_PATH",
+        CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+      ],
+      ["CANONICAL_CODEX_MEMORY_MOUNT_PATH", CANONICAL_CODEX_MEMORY_MOUNT_PATH],
+      ["CANONICAL_PI_MEMORY_MOUNT_PATH", CANONICAL_PI_MEMORY_MOUNT_PATH],
+    ] as const
+  ).map(([rustConstName, mountPath]) => {
+    return {
+      rustModulePath: ["runners", "paths"],
+      rustConstName,
+      value: rustString(mountPath),
+      rustDoc: ["Canonical member Memory mount for this Guest framework."],
+    };
+  }),
   {
     rustModulePath: ["storages"],
     rustConstName: "STORAGE_MANIFEST_MAX_FILES",

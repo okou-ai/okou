@@ -112,6 +112,8 @@ struct ChatSettingsView: View {
         }
         SettingsConnectorsSection(open: openConnectors)
         StoreProvider(store.settingsResources.store) {
+          SettingsRemoteDevicesSection(
+            resources: store.settingsResources.remoteDevices, webURL: store.webURL)
           SettingsModelsSection(models: store.modelStore)
         }
         Section {

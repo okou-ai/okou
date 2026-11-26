@@ -32,7 +32,7 @@
     <string name="artifact_show_all">Show all</string>
     <string name="artifact_catalog_load_failed">Temporarily unable to load artifacts</string>
     <string name="artifact_catalog_refresh_failed">Temporarily unable to update. Showing loaded artifacts.</string>
-    <string name="artifact_catalog_page_failed">Temporarily unable to load more artifacts</string>
+    <string name="artifact_catalog_page_failed">Temporarily unable to load more</string>
     <string name="chat_resources_load_failed">Temporarily unable to load chat resources</string>
     <string name="chat_resources_syncing">Syncing chat resources</string>
     <string name="artifact_access_denied">You don’t have access to this artifact</string>
@@ -64,4 +64,12 @@
     <string name="chat_resources_messages">Messages</string>
     <string name="artifact_preview_loading">Loading preview…</string>
     <string name="artifact_image_unavailable">Image unavailable</string>
+    <string name="artifact_image_actions">Image actions</string>
+    <string name="artifact_image_expand">Expand image viewer</string>
+    <string name="artifact_image_collapse">Collapse image viewer</string>
+    <string name="artifact_image_loading">Loading image…</string>
+    <string name="artifact_image_load_failed">Temporarily unable to load image</string>
+    <string name="artifact_image_zoom_in">Zoom in</string>
+    <string name="artifact_image_zoom_out">Zoom out</string>
+    <string name="artifact_image_fit">Fit image</string>
 </resources>

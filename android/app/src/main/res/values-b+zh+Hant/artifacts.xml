@@ -32,7 +32,7 @@
     <string name="artifact_show_all">查看全部</string>
     <string name="artifact_catalog_load_failed">暫時無法載入成果</string>
     <string name="artifact_catalog_refresh_failed">暫時無法更新，顯示已載入的成果</string>
-    <string name="artifact_catalog_page_failed">暫時無法載入更多成果</string>
+    <string name="artifact_catalog_page_failed">暫時無法載入更多</string>
     <string name="chat_resources_load_failed">暫時無法載入對話資料</string>
     <string name="chat_resources_syncing">正在同步對話資料</string>
     <string name="artifact_access_denied">你無權存取此成果</string>
@@ -64,4 +64,12 @@
     <string name="chat_resources_messages">訊息</string>
     <string name="artifact_preview_loading">正在載入預覽</string>
     <string name="artifact_image_unavailable">圖片無法使用</string>
+    <string name="artifact_image_actions">圖片操作</string>
+    <string name="artifact_image_expand">展開圖片檢視器</string>
+    <string name="artifact_image_collapse">收合圖片檢視器</string>
+    <string name="artifact_image_loading">正在載入圖片</string>
+    <string name="artifact_image_load_failed">暫時無法載入圖片</string>
+    <string name="artifact_image_zoom_in">放大</string>
+    <string name="artifact_image_zoom_out">縮小</string>
+    <string name="artifact_image_fit">符合螢幕</string>
 </resources>

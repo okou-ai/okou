@@ -32,7 +32,7 @@
     <string name="artifact_show_all">すべて表示</string>
     <string name="artifact_catalog_load_failed">現在は成果物を読み込めません</string>
     <string name="artifact_catalog_refresh_failed">現在は更新できません。読み込み済みの成果物を表示しています。</string>
-    <string name="artifact_catalog_page_failed">現在はこれ以上成果物を読み込めません</string>
+    <string name="artifact_catalog_page_failed">現在はこれ以上読み込めません</string>
     <string name="chat_resources_load_failed">現在はチャットの資料を読み込めません</string>
     <string name="chat_resources_syncing">チャットの資料を同期中</string>
     <string name="artifact_access_denied">この成果物へのアクセス権がありません</string>
@@ -64,4 +64,12 @@
     <string name="chat_resources_messages">メッセージ</string>
     <string name="artifact_preview_loading">プレビューを読み込み中…</string>
     <string name="artifact_image_unavailable">画像を利用できません</string>
+    <string name="artifact_image_actions">画像の操作</string>
+    <string name="artifact_image_expand">画像ビューアを拡大</string>
+    <string name="artifact_image_collapse">画像ビューアを縮小</string>
+    <string name="artifact_image_loading">画像を読み込み中…</string>
+    <string name="artifact_image_load_failed">現在は画像を読み込めません</string>
+    <string name="artifact_image_zoom_in">拡大</string>
+    <string name="artifact_image_zoom_out">縮小</string>
+    <string name="artifact_image_fit">画面に合わせる</string>
 </resources>

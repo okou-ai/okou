@@ -79,7 +79,6 @@ import { recordTemplateUsage } from "../../lib/template-usage-log";
 import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import {
   publishChatIndicatorsChangedSafely,
-  publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 
@@ -1818,13 +1817,11 @@ export function createThreadClaimRunObjects(
         });
         return usageError === null ? runtime : providerUnavailable(usageError);
       })();
-      const [route, connector, runtimeResult, selectedImageModel] =
-        await Promise.all([
-          get(authorizedRunRoute$),
-          get(connectorAdmission$),
-          settle(usage),
-          get(bootstrap.selectedImageModel$),
-        ]);
+      const [route, connector, runtimeResult] = await Promise.all([
+        get(authorizedRunRoute$),
+        get(connectorAdmission$),
+        settle(usage),
+      ]);
       // Preserve the existing rejection order when both branches reject admission.
       if (isRouteError(route)) {
         return route;
@@ -1869,7 +1866,7 @@ export function createThreadClaimRunObjects(
         persisted: {
           inputEvent: event,
           content,
-          selectedImageModel,
+          selectedImageModel: runPrompt.selectedImageModel,
           launchSnapshot,
           officialWorkflowProvenance: officialWorkflowRun?.provenance,
           modelProvider: persistedModelProvider(modelProvider),
@@ -2612,10 +2609,6 @@ export function createThreadClaimRunObjects(
   const publishPendingRun$ = command(
     async (_context, pending: PendingClaimRun, signal: AbortSignal) => {
       signal.throwIfAborted();
-      // Immediate and queued picks have committed their active-run slot here.
-      // Pending shell approvals must re-read chat_busy before the runner starts.
-      await publishDesktopShellAuthorizationChangedSafely(pending.head.userId);
-      signal.throwIfAborted();
       // The committed pending Run is the active indicator's only start edge.
       await publishChatIndicatorsChangedSafely({
         userId: pending.head.userId,
@@ -2714,7 +2707,13 @@ export function createThreadClaimRunObjects(
         }
         signal.throwIfAborted();
       }
-      await set(publishChatQueueHeadConsumed$, pending.head, signal);
+      // The initiating send publishes both invalidations after its sort touch.
+      if (
+        dispatched.kind !== "accepted" ||
+        pending.head.id !== requestInput?.id
+      ) {
+        await set(publishChatQueueHeadConsumed$, pending.head, signal);
+      }
     },
   );
 
@@ -2943,7 +2942,7 @@ interface ThreadRunPersistenceContext {
       readonly userMessage: ChatEventUserMessage;
     };
   readonly content: ThreadRunContent;
-  readonly selectedImageModel: ImageModel;
+  readonly selectedImageModel: ImageModel | null;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly officialWorkflowProvenance:
     OfficialWorkflowObservation["provenance"] | undefined;
@@ -2974,7 +2973,7 @@ interface LaunchRunRowsArgs {
   readonly memoryMount: PersistedStorageMount;
   readonly modelProvider: ThreadRunPersistenceContext["modelProvider"];
   readonly modelSelection: ModelFirstPin;
-  readonly selectedImageModel: ImageModel;
+  readonly selectedImageModel: ImageModel | null;
   readonly callbacks: readonly PreparedLaunchCallback[];
   readonly chatThreadId: string;
   readonly agentRunMetadata: AgentRunMetadata;

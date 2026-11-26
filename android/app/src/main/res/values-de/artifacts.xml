@@ -32,7 +32,7 @@
     <string name="artifact_show_all">Alle anzeigen</string>
     <string name="artifact_catalog_load_failed">Artefakte können vorübergehend nicht geladen werden</string>
     <string name="artifact_catalog_refresh_failed">Aktualisierung vorübergehend nicht möglich. Geladene Artefakte werden angezeigt.</string>
-    <string name="artifact_catalog_page_failed">Weitere Artefakte können vorübergehend nicht geladen werden</string>
+    <string name="artifact_catalog_page_failed">Weitere Inhalte können vorübergehend nicht geladen werden</string>
     <string name="chat_resources_load_failed">Chat-Ressourcen können vorübergehend nicht geladen werden</string>
     <string name="chat_resources_syncing">Chat-Ressourcen werden synchronisiert</string>
     <string name="artifact_access_denied">Du hast keinen Zugriff auf dieses Artefakt</string>
@@ -64,4 +64,12 @@
     <string name="chat_resources_messages">Nachrichten</string>
     <string name="artifact_preview_loading">Vorschau wird geladen…</string>
     <string name="artifact_image_unavailable">Bild nicht verfügbar</string>
+    <string name="artifact_image_actions">Bildaktionen</string>
+    <string name="artifact_image_expand">Bildanzeige erweitern</string>
+    <string name="artifact_image_collapse">Bildanzeige verkleinern</string>
+    <string name="artifact_image_loading">Bild wird geladen…</string>
+    <string name="artifact_image_load_failed">Bild kann vorübergehend nicht geladen werden</string>
+    <string name="artifact_image_zoom_in">Vergrößern</string>
+    <string name="artifact_image_zoom_out">Verkleinern</string>
+    <string name="artifact_image_fit">Bild einpassen</string>
 </resources>

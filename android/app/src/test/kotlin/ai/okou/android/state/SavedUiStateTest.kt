@@ -578,6 +578,64 @@ class SavedUiStateTest {
     }
 
     @Test
+    fun searchRechecksMissingChatAfterCompositionHidesAnIntermediateSnapshot() {
+        val search = ChatSearchState(TextFieldValue("Release"))
+        val known = searchResult("known", "Release brief")
+        val indexed = searchResult("indexed", "Design review")
+        val hit = SearchMessageHit(indexed.id, 1L, "Check the release brief", listOf(10..16))
+        val firstRead = CompletableDeferred<Set<String>>()
+        var list by
+            mutableStateOf(
+                ChatListUiState(
+                    confirmedAt = 1,
+                    listPhase = ChatReadPhase.Ready,
+                    threadsByRecency = listOf(known),
+                ),
+            )
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = list,
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    resolveMessageChats = { ids ->
+                        if (firstRead.isCompleted) ids else firstRead.await()
+                    },
+                    remote =
+                        WorkspaceSearchResults("Release", messages = SearchRead.Ready(listOf(hit))),
+                )
+            }
+        }
+        val progress = compose.onNode(searchProgress)
+        compose.mainClock.advanceTimeBy(280)
+        progress.assertIsDisplayed()
+        compose.runOnIdle {
+            search.edit(TextFieldValue("Releasebu", composition = TextRange(7, 9)))
+        }
+        compose.runOnIdle {
+            list = list.copy(confirmedAt = 2, threadsByRecency = listOf(known, indexed))
+        }
+        compose.onNodeWithText(hit.content).assertDoesNotExist()
+        compose.runOnIdle { firstRead.complete(emptySet()) }
+        compose.runOnIdle {
+            list = list.copy(confirmedAt = 3, threadsByRecency = listOf(known))
+        }
+        progress.assertIsDisplayed()
+        compose.runOnIdle { search.edit(TextFieldValue("Release")) }
+
+        progress.assertDoesNotExist()
+        compose
+            .onNodeWithText("Some search results are temporarily unavailable")
+            .assertIsDisplayed()
+        compose.onNodeWithText(known.title!!).assertIsDisplayed()
+    }
+
+    @Test
     fun connectorSearchOnlyAppliesCommittedInput() {
         val committed = TextFieldValue("Calendar", TextRange(8))
         val composing = TextFieldValue("Calendar ri", TextRange(11), TextRange(9, 11))

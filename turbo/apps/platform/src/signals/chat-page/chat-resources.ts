@@ -1,5 +1,7 @@
 import { command, computed, state, type Computed } from "ccstate";
 import type { ArtifactCatalogViewSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
+import { artifactDetailPreview } from "../artifacts-page/artifact-catalog-preview.ts";
+import { isAuthenticatedAttachmentUrl } from "../attachment-resource-url.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
@@ -19,14 +21,23 @@ export const copyChatResourceArtifact$ = command(
     signal: AbortSignal,
   ) => {
     set(catalog.selectArtifact$, artifactId);
-    const preview = await set(
-      catalog.ensureSelectedArtifactPreview$,
-      artifactId,
-      signal,
-    );
+    const detailRequest = get(catalog.selectedArtifactDetail$);
+    const detail = await detailRequest;
     signal.throwIfAborted();
-    const url = preview ? await get(preview.shareUrl$) : null;
-    signal.throwIfAborted();
+    let url = detail ? artifactDetailPreview(detail).url : null;
+    if (url && isAuthenticatedAttachmentUrl(url)) {
+      const preview = await set(
+        catalog.ensureSelectedArtifactPreview$,
+        artifactId,
+        signal,
+      );
+      signal.throwIfAborted();
+      url = preview ? await get(preview.shareUrl$) : null;
+      signal.throwIfAborted();
+    }
+    if (get(catalog.selectedArtifactDetail$) !== detailRequest) {
+      return;
+    }
     if (url === null) {
       toast.error(
         i18n.t(($) => {
@@ -35,7 +46,10 @@ export const copyChatResourceArtifact$ = command(
       );
       return;
     }
-    const currentUrl = currentHostedSiteUrl(url, get(hostedSiteUrlChanges$));
+    const currentUrl = currentHostedSiteUrl(
+      url.startsWith("/") ? new URL(url, window.location.origin).href : url,
+      get(hostedSiteUrlChanges$),
+    );
     const copied = await writeToClipboard(publicAttachmentUrl(currentUrl));
     signal.throwIfAborted();
     if (copied) {

@@ -51,6 +51,7 @@ export const setConnectorsScope$ = command(
     // means nothing among the connectors you already have, and an agent means
     // nothing in a catalog of four thousand.
     params.delete("setup");
+    params.delete("remoteDevice");
     params.delete("remoteResource");
     params.delete("remoteView");
     params.delete("networkConnections");

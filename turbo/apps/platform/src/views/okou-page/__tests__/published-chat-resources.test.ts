@@ -1,3 +1,4 @@
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { resolveApiBase } from "../../../signals/api-base.ts";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -115,6 +116,50 @@ test.each([
     expect(document.querySelector('iframe[title="report.pdf"]')).toBeNull();
   },
 );
+
+test("Copying a private ZIP from chat resources keeps its canonical artifact link", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const artifact = artifactSummary(
+    RESOURCE_ARTIFACT_ID,
+    "file",
+    "script-output.zip",
+  );
+  const reference = "/artifacts/abcdef1234.zip#bundle";
+  mockArtifactConversation(context, {
+    catalog: [artifact],
+    details: new Map([
+      [
+        artifact.id,
+        fileArtifactDetail(artifact, {
+          fileId: videoId,
+          filename: artifact.title,
+          contentType: "application/zip",
+          url: reference,
+        }),
+      ],
+    ]),
+  });
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: "https://files.example.test/private-preview?signature=temporary",
+      downloadUrl:
+        "https://files.example.test/private-download?signature=temporary",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      filename: artifact.title,
+      contentType: "application/zip",
+      target: { kind: "file", id: videoId },
+    });
+  });
+  await setupPage({ context, path: "/chats/" + thread });
+  const panel = await openResources();
+  await within(panel).findByText(artifact.title);
+  click(await findFastControl("button", "Copy link", panel));
+  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([
+    new URL(reference, window.location.origin).href,
+  ]);
+  expect(panel).toBeInTheDocument();
+});
 
 test("chat-resources-realtime-003 opening resources after a publication shows the latest video in this chat", async () => {
   const old = artifactSummary(crypto.randomUUID(), "video", "First cut.mp4");
