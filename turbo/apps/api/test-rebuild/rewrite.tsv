@@ -44,10 +44,10 @@ non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-br
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-009	skipped		adapter-runtime: library predicate with no public API path in this round		pilot	
 non-route	src/lib/__tests__/run-activity.test.ts	run-activity-002	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup); excerpts are produced only from Runner agent events/activity summary of an active Run		B02	
 non-route	src/lib/__tests__/run-activity.test.ts	run-activity-006	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup); tool-use events reach mergeActivity only via Runner agent webhook events		B02	
-non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-001	planned				B07	d-other
-non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-005	planned				B07	d-other
-non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-006	planned				B07	d-other
-non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-009	planned				B07	d-other
+non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-001	revisit		revisit: needs a complete downloaded export ZIP (paged source manifests with SHA-256, chat snapshot and tail, guest-writer binary memory manifest) as input to the embedded Python recovery CLI; evidence: user-export-restore.ts USER_EXPORT_RESTORE_SCRIPT verifies export-manifest.json, manifest/files-*.jsonl pages and memory manifests; no branch fixture builds such an archive; resume: produce the archive through the public export pipeline or a test-local builder of the documented layout, then spawn python3 with the script		B07	d-other
+non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-005	revisit		revisit: same blocker as user-export-restore-001; evidence: see user-export-restore-001; resume: see user-export-restore-001		B07	d-other
+non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-006	revisit		revisit: same blocker as user-export-restore-001; evidence: see user-export-restore-001; resume: see user-export-restore-001		B07	d-other
+non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-009	revisit		revisit: same blocker as user-export-restore-001; evidence: see user-export-restore-001; resume: see user-export-restore-001		B07	d-other
 non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-001	rewritten	8.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/user-export-zip.test.ts	B06	
 non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-002	rewritten	8.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/user-export-zip.test.ts	B06	
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-001	planned					a-run
