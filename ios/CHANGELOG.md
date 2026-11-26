@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.67.1](https://github.com/okou-ai/okou/compare/ios-v0.67.0...ios-v0.67.1) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** keep the workspace status and chat row mutations in the session graph ([#51053](https://github.com/okou-ai/okou/issues/51053)) ([fce69c7](https://github.com/okou-ai/okou/commit/fce69c7005f6edbb6ea110eb1e9e8477c53cfe6d))
+
 ## [0.67.0](https://github.com/okou-ai/okou/compare/ios-v0.66.10...ios-v0.67.0) (2026-11-26)
 
 
