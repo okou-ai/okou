@@ -2386,12 +2386,12 @@ account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-003	p
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-010	planned				
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-011	planned				
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-012	planned				
-billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-001	planned				B04
-billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-002	planned				B04
-billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-008	planned				B04
-billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-010	planned				B04
-billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-011	planned				B04
-billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-012	planned				B04
+billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-001	rewritten	59.6		src/signals/routes/__tests__/paid-tools.test.ts	B04
+billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-002	rewritten	18.6		src/signals/routes/__tests__/paid-tools.test.ts	B04
+billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-008	rewritten	25.1		src/signals/routes/__tests__/paid-tools.test.ts	B04
+billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-010	rewritten	12.6		src/signals/routes/__tests__/paid-tools.test.ts	B04
+billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-011	revisit		revisit: needs run-scoped Okou and sandbox tokens from a dispatched Run (must come from the real issuing flow); evidence: not measured within first-pass time box; resume: obtain run tokens via the public run dispatch helpers and measure Given+first When/Then per the slow-setup rule		B04
+billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-012	rewritten	86.6		src/signals/routes/__tests__/paid-tools.test.ts	B04
 account-org	src/signals/routes/__tests__/personal-subscription-run-identity.test.ts	personal-subscription-run-identity-002	planned				
 account-org	src/signals/routes/__tests__/personal-subscription-run-identity.test.ts	personal-subscription-run-identity-004	planned				
 account-org	src/signals/routes/__tests__/personal-subscription-run-identity.test.ts	personal-subscription-run-identity-005	planned				
