@@ -1646,10 +1646,10 @@ account-org	src/signals/routes/__tests__/hooks-ops.bdd.test.ts	hooks-ops.bdd-005
 artifacts	src/signals/routes/__tests__/host-delete.bdd.test.ts	host-delete.bdd-001	skipped		slow-setup: 335-396 ms in-file even after a lighter case ran first (deployment, delivery and storage deletion flow)		B01
 artifacts	src/signals/routes/__tests__/host-delete.bdd.test.ts	host-delete.bdd-002	revisit		revisit: the only test in its file and 236 ms run alone, all of it first-test warm-up (115-131 ms when not first); resume: merge it into host.bdd.test.ts behind a lighter first case		B01
 artifacts	src/signals/routes/__tests__/host-delivery-authorization.test.ts	host-delivery-authorization-004	rewritten	147.2	split n=5: 1/5=100.0; 2/5=96.9; 3/5=102.3; 4/5=114.2; 5/5=147.2	src/signals/routes/__tests__/host-delivery-authorization.test.ts	B03
-artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-001	planned				B04
-artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-003	planned				B04
-artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-005	planned				B04
-artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-008	planned				B04
+artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-001	rewritten	131.4		src/signals/routes/__tests__/host-preview.test.ts	B04
+artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-003	rewritten	113.9		src/signals/routes/__tests__/host-preview.test.ts	B04
+artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-005	rewritten	107.7	split n=2: 1/2=79.5; 2/2=107.7	src/signals/routes/__tests__/host-preview.test.ts	B04
+artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-008	rewritten	86.9		src/signals/routes/__tests__/host-preview.test.ts	B04
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-002	rewritten	111.8		src/signals/routes/__tests__/host.bdd.test.ts	pilot
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-004	rewritten	116.3		src/signals/routes/__tests__/host.bdd.test.ts	pilot
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-006	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup)		B01
