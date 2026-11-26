@@ -132,10 +132,15 @@ internal data class WorkspaceSearchResults(
     val artifactPaging: ArtifactSearchPaging = ArtifactSearchPaging.Idle,
 )
 
-internal enum class ArtifactSearchPaging {
+internal enum class ArtifactSearchPaging(
+    val isLoading: Boolean = false,
+    val hasFailure: Boolean = false,
+) {
     Idle,
-    Loading,
-    Failed,
+    Loading(isLoading = true),
+    Failed(hasFailure = true),
+    RetryAvailable(hasFailure = true),
+    Retrying(isLoading = true, hasFailure = true),
 }
 
 class WorkspaceSearchModel
@@ -210,7 +215,8 @@ internal constructor(
                     previousType != type &&
                     mutable.value.artifactPaging == ArtifactSearchPaging.Failed
             ) {
-                mutable.value = mutable.value.copy(artifactPaging = ArtifactSearchPaging.Idle)
+                mutable.value =
+                    mutable.value.copy(artifactPaging = ArtifactSearchPaging.RetryAvailable)
             }
             // A type change or preview return still uses the same query and its loaded pages.
             val retry =
@@ -248,9 +254,14 @@ internal constructor(
             return
         artifactPageJob = viewModelScope.launch {
             searches[WorkspaceSearchType.Artifacts]?.join()
-            val currentPage = mutable.value.artifacts as? SearchRead.Ready ?: return@launch
+            val state = mutable.value
+            val currentPage = state.artifacts as? SearchRead.Ready ?: return@launch
             if (currentPage.nextCursor != cursor || currentPage.refreshFailed) return@launch
-            mutable.value = mutable.value.copy(artifactPaging = ArtifactSearchPaging.Loading)
+            val paging =
+                if (state.artifactPaging == ArtifactSearchPaging.RetryAvailable)
+                    ArtifactSearchPaging.Retrying
+                else ArtifactSearchPaging.Loading
+            mutable.value = state.copy(artifactPaging = paging)
             readSearch(
                 { it == WorkspaceSearchType.Artifacts },
                 { artifactPage(keyword, cursor) },

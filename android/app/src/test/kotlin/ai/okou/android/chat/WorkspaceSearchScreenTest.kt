@@ -20,6 +20,7 @@ import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -40,6 +41,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Density
@@ -98,6 +100,89 @@ class WorkspaceSearchScreenTest {
         field.assertIsFocused()
         assertEquals(bounds, field.getUnclippedBoundsInRoot())
         assertSurface()
+    }
+
+    @Test
+    fun artifactPageFailureScrollsWithTheResultsAndDoesNotMoveRowsDuringRetry() {
+        val search =
+            ChatSearchState(TextFieldValue("Release"), type = WorkspaceSearchType.Artifacts)
+        val firstPage =
+            (1..8).map {
+                SearchArtifactHit("artifact-$it", "Release brief $it", ArtifactKind.File)
+            }
+        var remote by
+            mutableStateOf(
+                WorkspaceSearchResults(
+                    "Release",
+                    artifacts = SearchRead.Ready(firstPage, "next"),
+                    artifactPaging = ArtifactSearchPaging.Loading,
+                ),
+            )
+        compose.setContent {
+            OkouTheme(false) {
+                Box(Modifier.width(400.dp).height(320.dp)) {
+                    WorkspaceSearchScreen(
+                        state = ChatListUiState(confirmedAt = 1),
+                        search = search,
+                        widthDp = 400,
+                        listWidth = null,
+                        focusOnEntry = false,
+                        onFocused = {},
+                        onClose = {},
+                        onOpen = {},
+                        remote = remote,
+                        onOpenArtifact = {},
+                    )
+                }
+            }
+        }
+
+        val results = compose.onNodeWithTag("chat_search_results")
+        val lastResult = compose.onNodeWithText(firstPage.last().title)
+        val lastResultIndex = firstPage.size // Results follow the group heading.
+        val tailIndex = lastResultIndex + 1
+        results.performScrollToIndex(lastResultIndex)
+        val originalBounds = lastResult.getUnclippedBoundsInRoot()
+        compose.runOnIdle { remote = remote.copy(artifactPaging = ArtifactSearchPaging.Failed) }
+        assertEquals(originalBounds, lastResult.getUnclippedBoundsInRoot())
+        compose
+            .onNodeWithText("Some search results are temporarily unavailable")
+            .assertDoesNotExist()
+
+        val failureLabel = "Temporarily unable to load more"
+        val footer = compose.onNodeWithText(failureLabel)
+        results.performScrollToIndex(tailIndex)
+        footer.assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+        )
+        assertEquals(
+            12.dp,
+            footer.getUnclippedBoundsInRoot().top - lastResult.getUnclippedBoundsInRoot().bottom,
+        )
+
+        results.performScrollToIndex(0)
+        footer.assertDoesNotExist()
+        results.performScrollToIndex(tailIndex)
+        val lastResultAtTail = lastResult.getUnclippedBoundsInRoot()
+        val footerAtTail = footer.getUnclippedBoundsInRoot()
+        for (paging in listOf(ArtifactSearchPaging.RetryAvailable, ArtifactSearchPaging.Retrying)) {
+            compose.runOnIdle { remote = remote.copy(artifactPaging = paging) }
+            assertEquals(lastResultAtTail, lastResult.getUnclippedBoundsInRoot())
+            assertEquals(footerAtTail, footer.getUnclippedBoundsInRoot())
+        }
+
+        val newRow = SearchArtifactHit("next-artifact", "Release notes", ArtifactKind.File)
+        compose.runOnIdle {
+            remote =
+                remote.copy(
+                    artifacts = SearchRead.Ready(firstPage + newRow),
+                    artifactPaging = ArtifactSearchPaging.Idle,
+                )
+        }
+        footer.assertDoesNotExist()
+        assertEquals(lastResultAtTail, lastResult.getUnclippedBoundsInRoot())
+        results.performScrollToIndex(tailIndex)
+        compose.onNodeWithText(newRow.title).assertIsDisplayed()
     }
 
     @Test
