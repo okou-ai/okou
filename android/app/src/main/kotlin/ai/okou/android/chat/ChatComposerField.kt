@@ -12,7 +12,6 @@ import ai.okou.android.workspaceListPaneWidth
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -32,11 +31,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -59,7 +59,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -298,38 +297,28 @@ internal fun ChatComposerField(
                             LaunchedEffect(editorFocus) { editorFocus.requestFocus() }
                         }
                     }
-                    val canSend = state.canSend(target)
-                    Box(
-                        modifier =
-                            Modifier.size(48.dp)
-                                .clickable(
-                                    interactionSource = null,
-                                    indication = ripple(bounded = false, radius = 20.dp),
-                                    enabled = canSend,
-                                    role = Role.Button,
-                                ) {
-                                    focus.clearFocus()
-                                    beforeSend()
-                                    model.send(target, defaultModel?.state?.value?.options)
-                                }
-                                .semantics { contentDescription = sendLabel },
-                        contentAlignment = Alignment.Center,
+                    FilledIconButton(
+                        onClick = {
+                            focus.clearFocus()
+                            beforeSend()
+                            model.send(target, defaultModel?.state?.value?.options)
+                        },
+                        modifier = Modifier.semantics { contentDescription = sendLabel },
+                        enabled = state.canSend(target),
+                        shape = CircleShape,
+                        colors =
+                            IconButtonDefaults.filledIconButtonColors(
+                                containerColor = colors.primary,
+                                contentColor = colors.onPrimary,
+                                disabledContainerColor = colors.surfaceVariant,
+                                disabledContentColor = colors.onSurfaceVariant,
+                            ),
                     ) {
-                        Box(
-                            Modifier.size(40.dp)
-                                .background(
-                                    if (canSend) colors.primary else colors.surfaceVariant,
-                                    CircleShape,
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                painterResource(R.drawable.ic_arrow_upward),
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
-                            )
-                        }
+                        Icon(
+                            painterResource(R.drawable.ic_arrow_upward),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
                     }
                 }
             }
