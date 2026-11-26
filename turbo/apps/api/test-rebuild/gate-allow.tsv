@@ -65,3 +65,13 @@ integrations.bdd-066	Rejected AgentPhone webhook	Given: webhook receives missing
 agentphone.bdd-063	AgentPhone send message failed	Given: AgentPhone rejects plain-text greeting with HTTP 422 INBOUND_ONLY
 agentphone.bdd-144	AgentPhone conversation lookup failed	Given: AgentPhone roster lookup returns HTTP 404, 503, and network errors
 agentphone.bdd-145	AgentPhone verification text send failed	Given: AgentPhone send fails with network error; the Then expects HTTP 503 PROVIDER_UNAVAILABLE
+webhooks-callbacks.bdd-041	Unhandled request error: Subscription credit lots changed during trial shortening	Given: two overlapping customer.subscription.updated redeliveries during trial shortening (BDD retries any HTTP 500)
+webhooks-callbacks.bdd-049	subscription binding rejected tier replacement	Given: same-tier checkout for another subscription
+webhooks-callbacks.bdd-049	stripe customer has no org metadata	Given: dashboard subscription for an unknown customer
+webhooks-callbacks.bdd-049	stripe customer metadata could not bind org	Given: dashboard subscription for another customer whose metadata names the same org
+webhooks-callbacks.bdd-051	billing restore checkout completed with unexpected mode	Given: mismatched setup checkout with payment mode
+webhooks-callbacks.bdd-051	billing restore checkout completed without customer	Given: mismatched setup checkout without customer
+webhooks-callbacks.bdd-051	billing restore checkout no longer matches org billing state	Given: mismatched setup checkout for another subscription
+webhooks-callbacks.bdd-051	billing downgrade checkout missing metadata	Given: mismatched setup checkout targeting team downgrade
+webhooks-callbacks.bdd-051	checkout\.session\.completed without subscription ID	Given: mismatched payment-mode checkout without subscription ID
+webhooks-callbacks.bdd-066	atom grant invoice missing configured grant price	Given: Atom custom-credit invoice on an untrusted price
