@@ -2145,10 +2145,10 @@ account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notificat
 account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notifications-007	skipped		slow-setup: Given alone 565 ms and 561 ms for a single chat whose Run ended, so Given+first When/Then exceeds 200 ms (funded Pro member with personal subscription 233/234 ms + dispatched thread Run 189/198 ms + Sandbox events and completion 143/129 ms); the case needs at least one ended chat Run, most need two or more		B04	
 account-org	src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-001	rewritten	67.1		src/signals/routes/__tests__/ios-push-registrations.test.ts	B02	
 account-org	src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-002	rewritten	35.2		src/signals/routes/__tests__/ios-push-registrations.test.ts	B02	
-messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-001	planned					b-install
-messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-004	planned					b-install
+messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-001	rewritten	129.5	split n=2: 1/2=108.4; 2/2=129.5	src/signals/routes/__tests__/lark-integration.test.ts		b-install
+messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-004	rewritten	166.2		src/signals/routes/__tests__/lark-integration.test.ts		b-install
 messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-006	planned					a-run
-messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-007	planned					b-install
+messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-007	rewritten	94.9		src/signals/routes/__tests__/lark-integration.test.ts		b-install
 messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-002	rewritten	161.1	split n=4: 1/4=74.8; 2/4=132.7; 3/4=133.4; 4/4=161.1; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/lark-official.test.ts	B02	
 messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-004	rewritten	153.8	split n=2: 1/2=125.1; 2/2=153.8; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/lark-official.test.ts	B02	
 messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-006	rewritten	147.0	split n=3: 1/3=116.7; 2/3=147.0; 3/3=114.1; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/lark-official.test.ts	B02	
