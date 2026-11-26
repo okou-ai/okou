@@ -109,19 +109,26 @@ _VALUE_PRESERVING_CAPTURE_HEADER_PATTERNS: dict[str, re.Pattern[str]] = {
 }
 
 
-def _is_text_content(content_type: str) -> bool:
-    """Check if content-type indicates text-like content worth capturing."""
-    if not content_type:
-        return True  # assume text when unspecified
-    media_type = content_type.partition(";")[0].strip()
+def _parse_capture_media_type(media_type: str) -> tuple[str, str] | None:
+    """Parse the names of an already-trimmed media type without parameters."""
     type_name, separator, subtype_name = media_type.partition("/")
     if (
         separator != "/"
         or _MEDIA_TYPE_NAME_PATTERN.fullmatch(type_name) is None
         or _MEDIA_TYPE_NAME_PATTERN.fullmatch(subtype_name) is None
     ):
-        return False
+        return None
+    return type_name, subtype_name
 
+
+def _is_text_content(content_type: str) -> bool:
+    """Check if content-type indicates text-like content worth capturing."""
+    if not content_type:
+        return True  # assume text when unspecified
+    media_type = _parse_capture_media_type(content_type.partition(";")[0].strip())
+    if media_type is None:
+        return False
+    type_name, subtype_name = media_type
     normalized_type = type_name.lower()
     normalized_subtype = subtype_name.lower()
     return (
@@ -267,12 +274,7 @@ def _has_valid_body_capture_content_type(headers: http.Headers) -> bool:
     if http_header_syntax.has_forbidden_header_value_control(value):
         return False
     media_type = value.partition(";")[0].strip(_HTTP_OPTIONAL_WHITESPACE)
-    type_name, separator, subtype_name = media_type.partition("/")
-    return (
-        separator == "/"
-        and _MEDIA_TYPE_NAME_PATTERN.fullmatch(type_name) is not None
-        and _MEDIA_TYPE_NAME_PATTERN.fullmatch(subtype_name) is not None
-    )
+    return _parse_capture_media_type(media_type) is not None
 
 
 def _has_valid_body_capture_content_encoding(headers: http.Headers) -> bool:
