@@ -59,7 +59,10 @@ const present = new Set(documents);
 // A frozen file is settled once every selected ID in rewrite.tsv is rewritten or
 // skipped. Its temporary BDD is then removed; the frozen text stays in history.
 const pilotStatuses = new Map();
-const [, ...pilotLines] = readFileSync(resolve(directory, "rewrite.tsv"), "utf8")
+const [, ...pilotLines] = readFileSync(
+  resolve(directory, "rewrite.tsv"),
+  "utf8",
+)
   .split("\n")
   .filter(Boolean);
 for (const line of pilotLines) {
