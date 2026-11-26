@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.67.2](https://github.com/okou-ai/okou/compare/ios-v0.67.1...ios-v0.67.2) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** remove connector management feature switch ([#51077](https://github.com/okou-ai/okou/issues/51077)) ([79c9d56](https://github.com/okou-ai/okou/commit/79c9d5630289c1fc7058fa7984c18593943ce31a))
+
 ## [0.67.1](https://github.com/okou-ai/okou/compare/ios-v0.67.0...ios-v0.67.1) (2026-11-26)
 
 
