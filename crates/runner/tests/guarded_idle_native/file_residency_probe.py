@@ -22,7 +22,6 @@ from file_residency import (
     require,
 )
 
-SOURCES = ("file_residency.py", "file_residency_probe.py", "file_residency_report.py")
 BOUNDS = {
     "max_extent_bytes": MAX_EXTENT_BYTES,
     "max_locked_bytes": 65536,
@@ -116,6 +115,8 @@ def qualify(output):
     owner = None
     mappings = []
     try:
+        from file_residency_report import SOURCES
+
         sources = {}
         for name in SOURCES:
             raw = (Path(__file__).resolve().parent / name).read_bytes()
