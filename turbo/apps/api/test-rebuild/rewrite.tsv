@@ -2215,7 +2215,7 @@ billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketi
 billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketing-reward-settlement-005	planned				
 billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketing-reward-settlement-007	planned				
 billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketing-reward-settlement-008	planned				
-billing	src/signals/routes/__tests__/marketing-reward-workflow-progress.test.ts	marketing-reward-workflow-progress-001	planned				B06
+billing	src/signals/routes/__tests__/marketing-reward-workflow-progress.test.ts	marketing-reward-workflow-progress-001	skipped		slow-setup: Given needs a dispatched Workflow Run; its prefix (team creator entitlement + member personal model, Workflow create, member launch to retained run-created) measured 483 ms and 250 ms (cold and warm) before the Run failure and Workflow deletion steps; dominant: team entitlement via Stripe invoice webhook + member model 252/132 ms, member Workflow run 181/102 ms		B06
 billing	src/signals/routes/__tests__/marketing-reward-workflows.test.ts	marketing-reward-workflows-001	planned				B06
 billing	src/signals/routes/__tests__/marketing-reward-workflows.test.ts	marketing-reward-workflows-002	planned				B06
 connectors	src/signals/routes/__tests__/mcp-connectors.test.ts	mcp-connectors-001	revisit		revisit: Given needs a dispatched Run whose token carries chat-thread account selections; evidence: in the mcp-connectors-002 probe the Run launch through helpers/run-execution-credentials.ts alone took 434 ms (Given+first list 580 ms and 618 ms); resume: coordinator decision on a lighter Run fixture, then split per BRIEF7		B04
