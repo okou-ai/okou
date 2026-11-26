@@ -424,7 +424,7 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
         }
 
     @Test
-    fun legacyProjectCandidatesSurviveMigrationUntilExplicitRestore() = check { _, store, create ->
+    fun legacyProjectDraftRestoresOnlyForItsOwnEmptyComposer() = check { service, store, create ->
         val a = ComposerTarget(projectId = "a")
         val b = ComposerTarget(projectId = "b")
         store
@@ -441,16 +441,83 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
             .await()
         val model = create(false, identity)
         model.open(a)
-        runCurrent()
-        assertEquals(setOf("A", "B"), model.uiState.value.journal!!.retainedDrafts.values.toSet())
-        assertEquals("", model.uiState.value.entry(a).text)
-        model.restoreDraft(a, a.key)
-        runCurrent()
+        advanceUntilIdle()
         assertEquals("A", model.uiState.value.entry(b).text)
         assertEquals(listOf("B"), store.load(identity).journal.retainedDrafts.values.toList())
-        model.restoreDraft(b, b.key)
+        assertTrue(store.load(identity).journal.manualDrafts(a).isEmpty())
+        model.open(b)
+        advanceUntilIdle()
         assertEquals("A", model.uiState.value.entry(b).text)
+        assertEquals("B", store.load(identity).journal.retainedDrafts.getValue(b.key))
+        assertTrue(service.requests.isEmpty())
     }
+
+    @Test
+    fun canonicalDraftWinsOverCompatibleLegacyText() = check { service, store, create ->
+        val target = ServerDraftTarget(existing.threadId)
+        service.drafts[target] = plainDraftDocument("Current Web draft")
+        store
+            .persist(
+                identity,
+                ComposerJournal(entries = mapOf(existing.key to ComposerEntry(text = "Old draft"))),
+            )
+            .await()
+        val model = create(false, identity)
+        model.open(existing)
+        advanceUntilIdle()
+        assertEquals("Current Web draft", model.uiState.value.entry(existing).text)
+        assertEquals(
+            "Old draft",
+            store.load(identity).journal.retainedDrafts.getValue(existing.key),
+        )
+        assertTrue(service.saves.isEmpty())
+    }
+
+    @Test
+    fun newerEditSupersedesAThrottledCanonicalDraftWrite() = check { service, _, create ->
+        val target = ServerDraftTarget(existing.threadId)
+        service.draftWrite = { key, text ->
+            if (text == "Earlier edit") throw ApiFailure.Http(429, null, null, 10)
+            service.drafts[key] = plainDraftDocument(text)
+        }
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        model.edit(existing, "Earlier edit")
+        advanceTimeBy(500)
+        runCurrent()
+        assertEquals(listOf(target to "Earlier edit"), service.saves)
+        model.edit(existing, "Current edit")
+        advanceTimeBy(500)
+        runCurrent()
+        assertEquals(listOf(target to "Earlier edit", target to "Current edit"), service.saves)
+        assertEquals("Current edit", service.drafts.getValue(target).plainText())
+    }
+
+    @Test
+    fun canonicalDraftWritesUseTheServerDelayAndStopAfterTwoRetries() =
+        check { service, _, create ->
+            service.draftWrite = { _, _ -> throw ApiFailure.Http(503, null, null, 1) }
+            val model = create(false, identity)
+            model.open(existing)
+            runCurrent()
+            model.edit(existing, "Keep this draft")
+            advanceTimeBy(500)
+            runCurrent()
+            assertEquals(1, service.saves.size)
+            repeat(2) { retry ->
+                advanceTimeBy(999)
+                runCurrent()
+                assertEquals(1 + retry, service.saves.size)
+                advanceTimeBy(1)
+                runCurrent()
+                assertEquals(2 + retry, service.saves.size)
+            }
+            advanceUntilIdle()
+            assertEquals(3, service.saves.size)
+            assertEquals(ComposerSync.Failed, model.uiState.value.sync(existing))
+            assertEquals("Keep this draft", model.uiState.value.entry(existing).text)
+        }
 
     @Test
     fun retiringHydrationCannotPublishOrSaveIntoAnotherWorkspace() =

@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -96,6 +97,47 @@ class ComposerJournalRecoveryTest {
                 fixture.close()
             } finally {
                 Dispatchers.resetMain()
+            }
+        }
+    }
+
+    @Test
+    fun localDraftWriteRetriesAndDoesNotBlockSendAfterExhaustion() = check { fixture ->
+        val model = fixture.model()
+        model.open(target)
+        model.uiState.first { it.sync(target) == ComposerSync.Saved }
+        val backup = File(fixture.root.parentFile, "journal-backup")
+        assertTrue(fixture.root.renameTo(backup))
+        fixture.root.writeText("Test fixture blocks writes")
+        try {
+            model.edit(target, "Recoverable local write")
+            runCurrent()
+            assertEquals(ComposerPersistence.Pending, model.uiState.value.persistence)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(ComposerPersistence.Pending, model.uiState.value.persistence)
+            assertTrue(fixture.root.delete())
+            assertTrue(backup.renameTo(fixture.root))
+            advanceTimeBy(3_000)
+            model.uiState.first { it.persistence == ComposerPersistence.Durable }
+            assertEquals(
+                "Recoverable local write",
+                fixture.store.load(fixture.api.identity).journal.drafts[target.key]?.text,
+            )
+
+            assertTrue(fixture.root.renameTo(backup))
+            fixture.root.writeText("Test fixture blocks writes")
+            model.edit(target, "Send after local write failure")
+            model.uiState.first { it.persistence == ComposerPersistence.Failed }
+            assertTrue(model.uiState.value.canSend(target))
+            assertEquals("Send after local write failure", model.uiState.value.entry(target).text)
+            model.send(target)
+            model.uiState.first { it.entry(target).receipt != null }
+            assertEquals(1, fixture.posts())
+        } finally {
+            if (backup.isDirectory) {
+                assertTrue(fixture.root.delete())
+                assertTrue(backup.renameTo(fixture.root))
             }
         }
     }
@@ -236,7 +278,6 @@ class ComposerJournalRecoveryTest {
                 model.send(target)
                 model.retry(target)
                 model.observe(target)
-                model.retryLocal()
                 model.open(target)
                 model.uiState.first { it.persistence != ComposerPersistence.Loading }
                 runCurrent()
