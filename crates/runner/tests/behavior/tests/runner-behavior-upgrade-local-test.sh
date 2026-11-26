@@ -28,7 +28,6 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
-import time
 
 root = Path(os.environ['UPGRADE_CASE'])
 scenario = os.environ['UPGRADE_SCENARIO']
@@ -78,10 +77,6 @@ def stop_guest(pid):
     except FileNotFoundError:
         pass
 
-if command == 'sleep':
-    # Polling remains bounded, without spending real 1s intervals per fault case.
-    time.sleep(0.02)
-    sys.exit(0)
 if command == 'seq':
     start, end = map(int, args)
     # Shorten only a loop deliberately missing its completion condition. The
@@ -376,8 +371,12 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
     helper = binary / 'fake-command'
     helper.write_text(fixture)
     helper.chmod(0o755)
-    for name in ('sudo', 'systemctl', 'journalctl', 'sleep', 'seq', 'rm'):
+    for name in ('sudo', 'systemctl', 'journalctl', 'seq', 'rm'):
         (binary / name).symlink_to(helper)
+    # Keep the fixture's short poll delay without starting the Python dispatcher.
+    sleep_command = binary / 'sleep'
+    sleep_command.write_text('#!/bin/sh\nexec /bin/sleep 0.02\n')
+    sleep_command.chmod(0o755)
     cases = {
         'job2-a': None,
         'job2-b': None,
