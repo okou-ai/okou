@@ -7,23 +7,28 @@ struct ChatThreadMoreButton: View {
   let store: WorkspaceStore
   let threadID: String
   @State private var membershipThread: ChatThread?
-  /// The confirmed chats and the list status, kept in the workspace session's Store.
+  /// The confirmed chats, the list status and the workspace's status, kept in the workspace
+  /// session's Store.
   @ResolvedValue private var threads: [ChatThread]?
   @ResolvedValue private var status: ThreadListStore.Status?
+  @ResolvedValue private var shell: WorkspaceStore.Shell?
 
   init(store: WorkspaceStore, threadID: String) {
     self.store = store
     self.threadID = threadID
     _threads = ResolvedValue(store.list.threadsValue)
     _status = ResolvedValue(store.list.statusValue)
+    _shell = ResolvedValue(store.shellValue)
   }
 
   var body: some View {
     if let thread = (threads ?? store.list.threads).first(where: { $0.id == threadID }) {
-      // A changed chat or list status rebuilds the menu, since the control receives them as
-      // values.
+      // A changed chat, list status or workspace status rebuilds the menu, since the control
+      // receives them as values.
+      let workspace = shell ?? store.shell
       ChatThreadMoreControl(
         store: store, thread: thread, status: status ?? store.list.status,
+        needsUpgrade: workspace.needsUpgrade, isCreating: workspace.isCreating,
         moveToProject: { membershipThread = $0 }
       )
       .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
@@ -37,6 +42,10 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
   let thread: ChatThread
   /// The menu's items depend on mark-all-read and rename saving; the menu reads them when built.
   let status: ThreadListStore.Status
+  /// The entry and the menu's items depend on the update requirement and a new chat being
+  /// created; the menu reads them when built.
+  let needsUpgrade: Bool
+  let isCreating: Bool
   let moveToProject: (ChatThread) -> Void
 
   func makeUIView(context: Context) -> UIButton {
@@ -62,7 +71,7 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
     button.contextMenuInteraction?.updateVisibleMenu { _ in menu }
     button.tintColor = UIColor(OkouColor.foreground)
     // A pending action only disables the relevant menu items, never the entry.
-    button.isEnabled = !store.needsUpgrade
+    button.isEnabled = !needsUpgrade
     button.accessibilityValue =
       [
         pinned ? String(localized: "Pinned") : String(localized: "Not pinned"),

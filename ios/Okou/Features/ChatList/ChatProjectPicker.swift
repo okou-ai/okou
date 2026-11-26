@@ -80,6 +80,8 @@ struct ChatProjectPicker: View {
   @LoadableValue private var projectRead: Loadable<[ChatProject]>
   /// Confirmed Projects and the last action error, kept in the workspace session's Store.
   @ResolvedValue private var resolvedProjects: ChatProjectStore.Presentation?
+  /// The workspace's status, for an update requirement, kept in the same Store.
+  @ResolvedValue private var shell: WorkspaceStore.Shell?
 
   init(workspace: WorkspaceStore, thread: ChatThread, create: @escaping () -> Void) {
     self.workspace = workspace
@@ -87,7 +89,10 @@ struct ChatProjectPicker: View {
     self.create = create
     _projectRead = LoadableValue(task: workspace.projects.listValue, keepLast: true)
     _resolvedProjects = ResolvedValue(workspace.projects.presentation)
+    _shell = ResolvedValue(workspace.shellValue)
   }
+
+  private var needsUpgrade: Bool { (shell ?? workspace.shell).needsUpgrade }
 
   private var projectState: ChatProjectStore.Presentation {
     resolvedProjects ?? workspace.projects.currentPresentation
@@ -123,7 +128,7 @@ struct ChatProjectPicker: View {
               }
             }
           }
-          .disabled(moving || project.id == thread.projectId || workspace.needsUpgrade)
+          .disabled(moving || project.id == thread.projectId || needsUpgrade)
         }
         Section {
           Button("New project", okouSymbol: "folder-plus", action: create)
@@ -137,7 +142,7 @@ struct ChatProjectPicker: View {
       }
       .font(.okou(.body))
       .foregroundStyle(OkouColor.foreground)
-      .disabled(moving || workspace.needsUpgrade)
+      .disabled(moving || needsUpgrade)
       .searchable(text: $query, prompt: "Search projects")
       .navigationTitle("Move to project")
       .navigationBarTitleDisplayMode(.inline)

@@ -4,7 +4,7 @@ import ChatDomain
 import SwiftUI
 
 struct ChatSidebarView: View {
-  @Bindable var store: WorkspaceStore
+  let store: WorkspaceStore
   let authentication: AuthenticationService
   let workspaceID: String
   let notifications: NotificationService
@@ -30,6 +30,9 @@ struct ChatSidebarView: View {
   @ResolvedValue private var resolvedSelection: String??
   /// Mark-all-read and the indicators failure, kept in the workspace session's Store.
   @ResolvedValue private var resolvedListStatus: ThreadListStore.Status?
+  /// The update requirement, a new chat being created and the workspace's last failure, kept in
+  /// the workspace session's Store.
+  @ResolvedValue private var resolvedShell: WorkspaceStore.Shell?
 
   init(
     store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
@@ -55,6 +58,7 @@ struct ChatSidebarView: View {
     _resolvedUnread = ResolvedValue(store.list.unreadThreadIDsValue)
     _resolvedSelection = ResolvedValue(store.selectedThreadValue)
     _resolvedListStatus = ResolvedValue(store.list.statusValue)
+    _resolvedShell = ResolvedValue(store.shellValue)
   }
 
   private struct ProjectEditor {
@@ -91,6 +95,8 @@ struct ChatSidebarView: View {
   private var hasLoadedThreads: Bool { resolvedLoaded ?? store.list.hasLoadedThreads }
 
   private var listStatus: ThreadListStore.Status { resolvedListStatus ?? store.list.status }
+
+  private var shell: WorkspaceStore.Shell { resolvedShell ?? store.shell }
 
   private var listError: String? {
     listRead.error?.localizedDescription ?? store.list.actionError ?? listStatus.syncError
@@ -130,7 +136,7 @@ struct ChatSidebarView: View {
         threadSection(presentation)
         // The inbox explains itself inside the section, below its projects.
         if !presentation.isInbox && presentation.isEmpty && listError == nil
-          && store.error == nil
+          && shell.error == nil
         {
           Text(emptyMessage(presentation.filter))
             .font(.okou(.subheadline))
@@ -253,8 +259,8 @@ struct ChatSidebarView: View {
       hasUnreadChats: !(resolvedUnread ?? store.list.unreadThreadIDs).isEmpty
         || (resolvedThreads ?? store.list.threads).contains {
           !$0.isMuted && $0.indicator == .unread
-        }, markingAllRead: listStatus.markingAllRead, close: close,
-      newProject: { showEditor(creationEditor) })
+        }, markingAllRead: listStatus.markingAllRead, needsUpgrade: shell.needsUpgrade,
+      close: close, newProject: { showEditor(creationEditor) })
   }
 
   /// For you is always the list's first row, whatever the chats below it are doing.
@@ -308,7 +314,7 @@ struct ChatSidebarView: View {
         }
       }
       let inboxEmpty =
-        contents.isInbox && chats.isEmpty && listError == nil && store.error == nil
+        contents.isInbox && chats.isEmpty && listError == nil && shell.error == nil
       if !contents.projects.isEmpty && (!chats.isEmpty || inboxEmpty) {
         // A hairline closes the projects, so their chats never run into the list below.
         OkouListDivider()
@@ -399,7 +405,8 @@ struct ChatSidebarView: View {
   private func projectRow(_ group: ChatSidebarPresentation.ProjectGroup) -> some View {
     ChatSidebarProjectRow(
       group: group, store: store, expanded: projectState.isExpanded(group.id),
-      isPending: projectState.pending.contains(group.id), rowInset: rowInset,
+      isPending: projectState.pending.contains(group.id), needsUpgrade: shell.needsUpgrade,
+      isCreating: shell.isCreating, rowInset: rowInset,
       statusColumn: statusColumn, close: close,
       rename: { showEditor(editor(project: group.project)) },
       delete: { deletingProject = group.project })
@@ -510,11 +517,11 @@ struct ChatSidebarView: View {
       }
       .labelStyle(.iconOnly)
       .tint(OkouSwipeTint.neutral)
-      .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      .disabled(!store.list.canUpdate(thread.id) || shell.needsUpgrade)
       Button("Delete chat", okouSymbol: "trash-2") { deletingThreadID = thread.id }
         .labelStyle(.iconOnly)
         .tint(OkouSwipeTint.destructive)
-        .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+        .disabled(!store.list.canUpdate(thread.id) || shell.needsUpgrade)
     }
   }
 
@@ -565,6 +572,10 @@ private struct ChatSidebarProjectRow: View {
   /// Disclosure and a mutation in flight, from the Project state the sidebar resolves.
   let expanded: Bool
   let isPending: Bool
+  /// The update requirement and a new chat being created, from the workspace state the sidebar
+  /// resolves.
+  let needsUpgrade: Bool
+  let isCreating: Bool
   let rowInset: CGFloat
   let statusColumn: CGFloat
   let close: () -> Void
@@ -627,14 +638,14 @@ private struct ChatSidebarProjectRow: View {
         store.startNewChat(projectID: project.id)
         close()
       }
-      .disabled(store.isCreating || store.needsUpgrade)
+      .disabled(isCreating || needsUpgrade)
       Button(project.isArchived ? "Restore project" : "Archive project", okouSymbol: "archive") {
         Task { await store.projects.setArchived(project.id, archived: !project.isArchived) }
       }
       Button("Rename", okouSymbol: "pencil", action: rename)
       Button("Delete project", okouSymbol: "trash-2", role: .destructive, action: delete)
     }
-    .disabled(store.needsUpgrade || isPending)
+    .disabled(needsUpgrade || isPending)
   }
 }
 

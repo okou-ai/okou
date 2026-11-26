@@ -31,6 +31,8 @@ struct ChatListFilterMenu: UIViewRepresentable {
   let hasUnreadChats: Bool
   /// Whether Mark all as read is in flight, so a changed state rebuilds the menu.
   let markingAllRead: Bool
+  /// Whether the workspace requires an update, so a changed requirement rebuilds the menu.
+  let needsUpgrade: Bool
   /// Names a new Project; the sidebar owns its name dialog.
   let newProject: () -> Void
 
@@ -93,7 +95,7 @@ struct ChatListFilterMenu: UIViewRepresentable {
         children: [
           UIAction(
             title: String(localized: "New project"), image: OkouIcon.uiImage("folder-plus"),
-            attributes: store.needsUpgrade ? .disabled : []
+            attributes: needsUpgrade ? .disabled : []
           ) { _ in newProject() }
         ]))
     let menu = UIMenu(children: groups)

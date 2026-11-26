@@ -76,7 +76,7 @@ private struct ChatSearchContent: View {
     }
   }
 
-  @Bindable var workspace: WorkspaceStore
+  let workspace: WorkspaceStore
   var showsArchived = false
   let didOpen: () -> Void
   let openWorkflow: (ChatSearchWorkflow) -> Void

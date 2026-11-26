@@ -199,7 +199,9 @@ final class ChatThreadPinTests: XCTestCase {
     queueToggle(in: store, fixture: fixture)
     try await waitForBusinessResult { !self.isPinned(store) }
     fixture.gates[0].open()
-    try await waitForBusinessResult { store.needsUpgrade && !store.list.canPin(PinFixture.target) }
+    try await waitForBusinessResult(watching: store) {
+      store.needsUpgrade && !store.list.canPin(PinFixture.target)
+    }
     fixture.releaseAll()
     await store.list.togglePinned(PinFixture.target)
     XCTAssertEqual(fixture.writes.count, 1)

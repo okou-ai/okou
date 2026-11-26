@@ -3,16 +3,15 @@ import ChatData
 import ChatDomain
 import Foundation
 import OSLog
-import Observation
 import SwiftUI
 
 /// One immutable network/cache scope, with independently observed feature state.
-@MainActor @Observable
+@MainActor
 final class WorkspaceStore {
   var navigationActions: WorkspaceChatActions { navigation }
   var residentConversations: WorkspaceConversations { conversations }
 
-  @ObservationIgnored private lazy var synchronization = WorkspaceSynchronization(
+  private lazy var synchronization = WorkspaceSynchronization(
     workspace: self, client: client, resources: resources,
     list: list, projects: projects, modelStore: modelStore, conversations: conversations,
     modelBootstrap: modelBootstrap, projectBootstrap: projectBootstrap,
@@ -24,7 +23,7 @@ final class WorkspaceStore {
     didFail: { [weak self] in self?.handle($0) })
 
   private let lifecycleTasks: LifecycleTasks
-  @ObservationIgnored private lazy var conversations = WorkspaceConversations(
+  private lazy var conversations = WorkspaceConversations(
     sync: sync, limit: conversationLimit, lifecycleTasks: lifecycleTasks, markdown: messageMarkdown,
     sleep: historyWarmingSleep, threads: { [weak self] in self?.list.threads ?? [] },
     isProtected: { [weak self] in self?.selectedThreadID == $0 || self?.chatLinkThreadID == $0 },
@@ -34,7 +33,7 @@ final class WorkspaceStore {
     }, generation: { [weak self] in self?.refreshGeneration },
     didRelease: { [weak self] in self?.sidebarDrafts.noteReleased($0, hasDraft: $1) },
     didFail: { [weak self] in self?.handle($0) })
-  @ObservationIgnored private lazy var navigation = WorkspaceChatActions(
+  private lazy var navigation = WorkspaceChatActions(
     workspace: self, client: client, sync: sync, commands: commands, lifecycleTasks: lifecycleTasks,
     didSelect: { [weak self] in self?.presentChat($0) },
     didFinishOpening: { [weak self] in self?.conversations.requestPrune() },
@@ -54,32 +53,30 @@ final class WorkspaceStore {
   private let historyWarmingSleep: @Sendable (Duration) async throws -> Void
   private let didRefreshReadState: @MainActor () -> Void
   // Change detection for synchronization, not presentation.
-  @ObservationIgnored private var notificationReadState: [String: WorkspaceNotificationReadState]?
-  @ObservationIgnored private var notificationReadRevision = 0
+  private var notificationReadState: [String: WorkspaceNotificationReadState]?
+  private var notificationReadRevision = 0
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
-  @ObservationIgnored lazy var forYou = ForYouStore(
+  lazy var forYou = ForYouStore(
     workspace: self, resources: resources, feed: ForYouFeed(client: client), commands: commands)
   var settingsResources: WorkspaceResources { resources }
   /// The session's graph. The workspace root provides it to every workspace view.
   var graph: CCState.Store { resources.store }
-  private(set) var needsUpgrade = false
-  private(set) var isCreating = false
-  private(set) var newChatSubmission: NewChatSubmission?
-  var error: String?
+  /// The workspace's own status, kept in the workspace session's Store. Views resolve it; the
+  /// accessors serve owner logic, actions and tests.
+  let shellValue: Computed<Shell>
+  private let shellState: CCState.State<Shell>
   let sidebarInteraction = SidebarInteraction()
-  /// Mount the sidebar with its cached chats, Projects and disclosure restored together.
-  private(set) var hasRestoredSidebar = false
   private var chatLinkThreadID: String? { navigation.openingThreadID }
-  @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
-  @ObservationIgnored private let selectThread: Command<Void, String?>
+  private let selectedThread = CCState.State<String?>(nil)
+  private let selectThread: Command<Void, String?>
   /// The selected chat's ID, kept in the workspace session's Store. Views read it through
   /// CCStateSwiftUI; `selectedThreadID` serves owner logic, actions and tests.
-  @ObservationIgnored let selectedThreadValue: Computed<String?>
+  let selectedThreadValue: Computed<String?>
   /// The selected chat's resident owner, kept next to the selection. Views resolve it;
   /// `selectedConversation` serves owner logic and tests.
-  @ObservationIgnored let selectedConversationValue: Computed<ConversationStore?>
-  @ObservationIgnored private let selectedConversationState = CCState.State<ConversationStore?>(
+  let selectedConversationValue: Computed<ConversationStore?>
+  private let selectedConversationState = CCState.State<ConversationStore?>(
     nil, equals: { $0 === $1 })
   var selectedThreadID: String? {
     get {
@@ -97,8 +94,6 @@ final class WorkspaceStore {
       selectedConversation?.reconcileVisibility()
     }
   }
-  private(set) var newChatProjectID: String?
-  private(set) var newComposer: ComposerDraftStore
   private let draftStorage: ChatDraftStorage?
   private let voiceCapture: (@MainActor (ChatDraftTarget) -> any VoiceAudioCapture)?
   private let measurementScope: ChatCacheScope?
@@ -106,7 +101,7 @@ final class WorkspaceStore {
   private var workspaceComposerReady = false
   private var composerSyncTask: Task<Void, Never>?
   private var unverifiedDraftThreads = Set<String>()
-  @ObservationIgnored private lazy var sidebarDrafts = SidebarDraftStore(
+  private lazy var sidebarDrafts = SidebarDraftStore(
     resources: resources, lifecycleTasks: lifecycleTasks,
     didFail: { [weak self] in self?.handle($0) })
   var connectionStatus: RealtimeConnectionStatus { synchronization.connectionStatus }
@@ -143,21 +138,21 @@ final class WorkspaceStore {
     await drafts
   }
 
-  @ObservationIgnored lazy var modelStore = ChatModelStore(
+  lazy var modelStore = ChatModelStore(
     client: client, webURL: webURL, resources: resources, readRetrySleep: readRetrySleep,
     didFail: { [weak self] in self?.handle($0) })
-  @ObservationIgnored lazy var composerWorkflows = ComposerWorkflowSource(
+  lazy var composerWorkflows = ComposerWorkflowSource(
     client: client, storage: draftStorage, didFail: { [weak self] in self?.handle($0) })
-  @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(
+  lazy var newModelSelection = ChatModelSelectionStore(
     models: modelStore, lifecycleTasks: lifecycleTasks)
-  @ObservationIgnored lazy var search = ChatSearchStore(
+  lazy var search = ChatSearchStore(
     sync: sync, graph: resources.store, didFail: { [weak self] in self?.handle($0) })
   /// Previews of results opened from workspace search, which belong to no chat.
-  @ObservationIgnored lazy var searchArtifacts = MessageArtifactStore(
+  lazy var searchArtifacts = MessageArtifactStore(
     service: commands.artifacts, threadID: nil, webURL: webURL, markdown: messageMarkdown,
     graph: resources.store, didFail: { [weak self] in self?.handle($0) })
 
-  @ObservationIgnored lazy var list = ThreadListStore(
+  lazy var list = ThreadListStore(
     client: client, sync: sync, commands: commands, resources: resources,
     didRefresh: { [weak self] in self?.applyThreads($0) },
     didFail: { [weak self] in self?.handle($0) },
@@ -166,12 +161,12 @@ final class WorkspaceStore {
     didChangeReadState: { [weak self] in self?.notificationReadStateChanged() },
     readRetrySleep: readRetrySleep, indicatorsBootstrap: indicatorsBootstrap,
     lifecycleTasks: lifecycleTasks)
-  @ObservationIgnored lazy var projects = ChatProjectStore(
+  lazy var projects = ChatProjectStore(
     client: client, resources: resources, sync: sync, disclosure: projectDisclosure,
     didFail: { [weak self] in self?.handle($0) },
     didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) },
     lifecycleTasks: lifecycleTasks)
-  @ObservationIgnored lazy var sidebar = ChatSidebarStore(
+  lazy var sidebar = ChatSidebarStore(
     store: resources.store, threads: list.threadsValue,
     projects: projects.confirmedValue)
   private var realtime: RealtimeService? { synchronization.realtime }
@@ -241,10 +236,13 @@ final class WorkspaceStore {
     self.webURL = webURL
     self.messageMarkdown = MessageMarkdownCache(baseURL: webURL)
     self.conversationLimit = max(0, conversationLimit)
-    newComposer = ComposerDraftStore(
+    let composer = ComposerDraftStore(
       target: .unassigned, commands: commands, graph: resources.store, storage: draftStorage,
       didFail: { _ in }, lifecycleTasks: lifecycleTasks)
-    newComposer.setScenePhase(.inactive)
+    let shellState = CCState.State(Shell(newComposer: composer))
+    self.shellState = shellState
+    shellValue = Computed { try $0(shellState) }
+    composer.setScenePhase(.inactive)
     resources.featureSnapshot.didRequireUpgrade = { [weak self] in self?.handle($0) }
   }
 
@@ -546,6 +544,71 @@ final class WorkspaceStore {
 }
 
 extension WorkspaceStore {
+  /// The workspace's own status: a required update, sidebar restoration, and the new chat's
+  /// creation, submission, Project, failure and composer. References compare by identity.
+  struct Shell: Equatable {
+    var needsUpgrade = false
+    /// Mount the sidebar with its cached chats, Projects and disclosure restored together.
+    var hasRestoredSidebar = false
+    var isCreating = false
+    var newChatSubmission: NewChatSubmission?
+    var newChatProjectID: String?
+    var error: String?
+    var newComposer: ComposerDraftStore
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.needsUpgrade == rhs.needsUpgrade && lhs.hasRestoredSidebar == rhs.hasRestoredSidebar
+        && lhs.isCreating == rhs.isCreating && lhs.newChatSubmission === rhs.newChatSubmission
+        && lhs.newChatProjectID == rhs.newChatProjectID && lhs.error == rhs.error
+        && lhs.newComposer === rhs.newComposer
+    }
+  }
+
+  /// The current value of `shellValue`.
+  var shell: Shell {
+    // A synchronous local business value, not a network or persistence boundary.
+    do { return try resources.store.get(shellValue) } catch {
+      preconditionFailure("Cannot read the workspace status: \(error)")
+    }
+  }
+  private(set) var needsUpgrade: Bool {
+    get { shell.needsUpgrade }
+    set { updateShell { $0.needsUpgrade = newValue } }
+  }
+  private(set) var hasRestoredSidebar: Bool {
+    get { shell.hasRestoredSidebar }
+    set { updateShell { $0.hasRestoredSidebar = newValue } }
+  }
+  private(set) var isCreating: Bool {
+    get { shell.isCreating }
+    set { updateShell { $0.isCreating = newValue } }
+  }
+  private(set) var newChatSubmission: NewChatSubmission? {
+    get { shell.newChatSubmission }
+    set { updateShell { $0.newChatSubmission = newValue } }
+  }
+  private(set) var newChatProjectID: String? {
+    get { shell.newChatProjectID }
+    set { updateShell { $0.newChatProjectID = newValue } }
+  }
+  var error: String? {
+    get { shell.error }
+    set { updateShell { $0.error = newValue } }
+  }
+  private(set) var newComposer: ComposerDraftStore {
+    get { shell.newComposer }
+    set { updateShell { $0.newComposer = newValue } }
+  }
+
+  private func updateShell(_ change: (inout Shell) -> Void) {
+    var next = shell
+    change(&next)
+    guard next != shell else { return }
+    do { try resources.store.set(shellState, next) } catch {
+      preconditionFailure("Cannot publish the workspace status: \(error)")
+    }
+  }
+
   private(set) var selectedConversation: ConversationStore? {
     get {
       do { return try resources.store.get(selectedConversationValue) } catch {
