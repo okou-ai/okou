@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okio.Buffer
@@ -17,15 +18,20 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
     val readyAlt = "Release readiness chart"
     val earlierAlt = "Staging baseline chart"
     val deniedAlt = "Restricted source image"
-    val filename = "release-readiness.png"
+    @Volatile var filename = "release-readiness.png"
     val readyReference = "image00001.png"
     val earlierReference = "older00001.png"
     val deniedReference = "hidden0001.png"
     val references = CopyOnWriteArrayList<String>()
     val thumbnails = CopyOnWriteArrayList<String>()
     val originals = CopyOnWriteArrayList<String>()
+    val previewUrls = CopyOnWriteArrayList<String>()
+    private val signatures = AtomicInteger()
+    var rotatePreviewUrls = false
     var missingThumbnail = false
     @Volatile var readyReferenceDenied = false
+    @Volatile var readyFileId = "10000000-1000-4000-8000-000000000007"
+    @Volatile var beforeReadyReference: () -> Unit = {}
     @Volatile var deniedExternalFilename: String? = null
 
     fun install(
@@ -44,6 +50,7 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
                     name in listOf(readyReference, earlierReference, deniedReference) -> {
                     assertEquals("Bearer fixture-token", request.getHeader("Authorization"))
                     references.add(name)
+                    if (name == readyReference) beforeReadyReference()
                     if (name == readyReference && readyReferenceDenied)
                         jsonResponse("""{"error":{"code":"FORBIDDEN","message":"Unavailable"}}""")
                             .setResponseCode(403)
@@ -52,13 +59,16 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
                             .setResponseCode(404)
                     else {
                         val file = if (name == readyReference) filename else "staging-baseline.png"
-                        val original = api.server.url("/inline-original/$name")
+                        val signature =
+                            if (rotatePreviewUrls) "?signature=${signatures.incrementAndGet()}"
+                            else ""
+                        val original = api.server.url("/inline-original/$name$signature")
+                        val thumbnail = api.server.url("/inline-thumbnail/$name$signature")
+                        if (name == readyReference) previewUrls.add(thumbnail.toString())
                         val poster =
-                            if (missingThumbnail) ""
-                            else
-                                ""","previewImageUrl":"${api.server.url("/inline-thumbnail/$name")}""""
+                            if (missingThumbnail) "" else ""","previewImageUrl":"$thumbnail""""
                         jsonResponse(
-                            """{"url":"$original","expiresAt":"2099-01-01T00:00:00.000Z","downloadUrl":"$original","filename":"$file","contentType":"image/png","downloadAllowed":false,"target":{"kind":"file","id":"10000000-1000-4000-8000-000000000007"}$poster}""",
+                            """{"url":"$original","expiresAt":"2099-01-01T00:00:00.000Z","downloadUrl":"$original","filename":"$file","contentType":"image/png","downloadAllowed":false,"target":{"kind":"file","id":"$readyFileId"}$poster}""",
                         )
                     }
                 }

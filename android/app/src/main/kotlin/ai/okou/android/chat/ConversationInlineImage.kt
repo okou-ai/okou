@@ -130,7 +130,7 @@ internal fun ConversationInlineImage(
             animateFloatAsState(
                 if (bitmap != null) 1f else 0f,
                 animationSpec =
-                    if (state?.visible == true && bitmap != null)
+                    if (state?.visible == true && state.result?.newlyLoaded == true)
                         tween(durationMillis = 150, easing = LinearOutSlowInEasing)
                     else snap(),
                 label = "Inline image opacity",
