@@ -194,7 +194,7 @@ test("agent-suggestions-042 dragging across an option's text selects it instead 
   if (!prepare) {
     throw new Error("The proposal fixture has an option");
   }
-  const item: Suggestion = {
+  const item: SuggestionCard = {
     ...base,
     content: {
       ...base.content,
@@ -242,7 +242,7 @@ test("agent-suggestions-043 each option says whether it sends to a new chat or d
     throw new Error("The proposal fixture has an option");
   }
   const threadId = crypto.randomUUID();
-  const item: Suggestion = {
+  const item: SuggestionCard = {
     ...base,
     content: {
       ...base.content,
