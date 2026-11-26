@@ -97,7 +97,7 @@ export function parseMailDraftUrl(value: string): MailDraftDescriptor | null {
     return null;
   }
   return {
-    mailDraftId,
+    mailDraftId: mailDraftId.toLowerCase(),
     originalUrl: value,
     href: `/mail/drafts/${mailDraftId}`,
   };

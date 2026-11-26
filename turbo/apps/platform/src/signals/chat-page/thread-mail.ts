@@ -269,17 +269,24 @@ export function createThreadMailSignals(
       return version + 1;
     });
   });
-  const prepareLocation$ = command(({ get, set }) => {
+  const prepareDraft$ = command(
+    ({ set }, mailDraftId: string, signal: AbortSignal) => {
+      const href = `/mail/drafts/${mailDraftId}`;
+      set(registry.register$, {
+        mailDraftId,
+        href,
+        originalUrl: new URL(href, window.location.origin).href,
+      });
+      // A draft opened from the list may be outside the prepared transcript.
+      set(registry.subscribe$, signal);
+    },
+  );
+  const prepareLocation$ = command(({ get, set }, signal: AbortSignal) => {
     const location = get(threadMailLocation$);
     if (location?.threadId !== threadId || location.view !== "detail") {
       return;
     }
-    const href = `/mail/drafts/${location.mailDraftId}`;
-    set(registry.register$, {
-      mailDraftId: location.mailDraftId,
-      href,
-      originalUrl: new URL(href, window.location.origin).href,
-    });
+    set(prepareDraft$, location.mailDraftId, signal);
   });
   const selection = createMailSelectionSignals(
     mails$,
@@ -315,6 +322,7 @@ export function createThreadMailSignals(
       }),
     ),
 
+    prepareDraft$,
     prepareLocation$,
     refresh$,
     mails$,
@@ -333,7 +341,6 @@ export function createThreadMailSignals(
         element.focus({ preventScroll: true });
       }),
     ),
-    register$: registry.register$,
   };
 }
 

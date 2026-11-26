@@ -196,7 +196,7 @@ const setupPaneThread$ = command(
       threadId,
       draftOwner: set(ensureThreadDraft$, threadId),
     });
-    set(thread.mail.prepareLocation$);
+    set(thread.mail.prepareLocation$, parentSignal);
     // A send from the start page ends here, in a composer that has never been
     // told what it is making. The selection it sent with follows it in.
     set(adoptComposerTaskHandoff$, threadId, thread.composer);
