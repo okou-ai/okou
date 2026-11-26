@@ -232,10 +232,10 @@ artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-0
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-055	planned				
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-056	planned				
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-057	planned				
-artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-001	planned				B04
-artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-003	planned				B04
-artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-004	planned				B04
-artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-005	planned				B04
+artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-001	rewritten	144.6	split n=3: 1/3=59.7; 2/3=144.6; 3/3=126.1	src/signals/routes/__tests__/artifact-sharing.test.ts	B04
+artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-003	rewritten	78.1		src/signals/routes/__tests__/artifact-sharing.test.ts	B04
+artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-004	rewritten	73.8		src/signals/routes/__tests__/artifact-sharing.test.ts	B04
+artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-005	rewritten	155.5		src/signals/routes/__tests__/artifact-sharing.test.ts	B04
 artifacts	src/signals/routes/__tests__/artifacts.bdd.test.ts	artifacts.bdd-002	planned				
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-001	rewritten	25.4		src/signals/routes/__tests__/atom-subscription-grants.test.ts	pilot
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-008	rewritten	33.5		src/signals/routes/__tests__/atom-subscription-grants.test.ts	pilot
