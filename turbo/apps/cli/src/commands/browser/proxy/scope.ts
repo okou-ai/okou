@@ -4,6 +4,7 @@ import {
   type CdpEvent,
 } from "@okouai/browser-extension-client";
 import { ControlWire, ProtocolError, record, scopedError } from "./wire";
+import type { ProxyExit } from "./diagnostic";
 
 export interface TargetInfo extends Record<string, unknown> {
   readonly targetId: string;
@@ -54,28 +55,31 @@ export class WindowScope {
     readonly wire: ControlWire,
     readonly native: OkouBrowserClient,
     readonly windowId: number,
-    readonly stop: () => void,
+    readonly stop: (reason: ProxyExit["reason"]) => void,
     private readonly runtimeId: string,
     nativeSignal: AbortSignal,
   ) {
-    const lost = () => {
-      return stop();
+    const nativeAborted = () => {
+      stop("native-client-aborted");
     };
-    nativeSignal.addEventListener("abort", lost, { once: true });
-    wire.socket.addEventListener("close", lost, { once: true });
+    const upstreamClosed = () => {
+      stop("upstream-socket-closed");
+    };
+    nativeSignal.addEventListener("abort", nativeAborted, { once: true });
+    wire.socket.addEventListener("close", upstreamClosed, { once: true });
     this.off = [
       () => {
-        return nativeSignal.removeEventListener("abort", lost);
+        return nativeSignal.removeEventListener("abort", nativeAborted);
       },
       () => {
-        return wire.socket.removeEventListener("close", lost);
+        return wire.socket.removeEventListener("close", upstreamClosed);
       },
       wire.onEvent((event) => {
         return this.event(event);
       }),
       native.onEvent((event) => {
         if (event.kind === "window-removed" && event.windowId === windowId)
-          return stop();
+          return stop("window-removed");
         if (
           [
             "tab-attached",
@@ -134,7 +138,9 @@ export class WindowScope {
         this.refreshQueued = false;
         await this.refresh();
       })
-      .catch(this.stop);
+      .catch(() => {
+        this.stop("window-refresh-failed");
+      });
   }
 
   async stable(): Promise<void> {
@@ -581,7 +587,7 @@ export class WindowScope {
             targetId: createdId,
           });
         } catch {
-          this.stop();
+          this.stop("window-cleanup-failed");
         }
       }
       throw error;

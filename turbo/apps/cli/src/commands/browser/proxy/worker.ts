@@ -1,10 +1,12 @@
-import { object, string, number, url } from "zod";
+import { object, string, number, url, uuid } from "zod";
+import { writeProxyDiagnostic, type TimedProxyExit } from "./diagnostic";
 import { startWindowProxy } from "./server";
 
 const configuration = object({
   cdpUrl: url(),
   runtimeId: string().regex(/^[a-p]{32}$/u),
   windowId: number().int().nonnegative().safe(),
+  instanceId: uuid(),
 }).strict();
 
 type WorkerMessage = { ready: true } | { endpoint: string } | { error: string };
@@ -60,18 +62,20 @@ export async function runBrowserProxyWorker(): Promise<void> {
   process.once("SIGINT", abort);
   process.once("disconnect", disconnected);
   let proxy: Awaited<ReturnType<typeof startWindowProxy>> | undefined;
+  let instanceId: string | undefined;
+  let setupFailed = false;
   try {
     const input = await receiveConfiguration(owner.signal);
     configured = true;
     const config = configuration.parse(input);
+    instanceId = config.instanceId;
     // The canonical CLI entry configures the global network proxy before loading us.
     proxy = await startWindowProxy(config, owner.signal);
     await send({ endpoint: proxy.endpoint });
     await proxy.closed;
   } catch {
+    setupFailed = true;
     process.exitCode = 1;
-    if (process.connected)
-      await send({ error: "Scoped Browser setup failed" }).catch(() => {});
   } finally {
     owner.abort();
     try {
@@ -79,6 +83,14 @@ export async function runBrowserProxyWorker(): Promise<void> {
     } catch {
       process.exitCode = 1;
     }
+    if (instanceId) {
+      const exit: TimedProxyExit = proxy
+        ? await proxy.closed
+        : { reason: "startup-failed", closedAt: new Date().toISOString() };
+      await writeProxyDiagnostic(instanceId, exit);
+    }
+    if (setupFailed && process.connected)
+      await send({ error: "Scoped Browser setup failed" }).catch(() => {});
     process.removeListener("SIGTERM", abort);
     process.removeListener("SIGINT", abort);
     process.removeListener("disconnect", disconnected);

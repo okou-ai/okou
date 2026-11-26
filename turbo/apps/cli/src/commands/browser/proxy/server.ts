@@ -4,6 +4,7 @@ import { WebSocketServer } from "ws";
 import { ControlWire, record } from "./wire";
 import { WindowScope } from "./scope";
 import { ProxyPeer } from "./peer";
+import type { ProxyExit, TimedProxyExit } from "./diagnostic";
 
 export interface ProxyConfiguration {
   readonly cdpUrl: string;
@@ -38,8 +39,8 @@ export async function startWindowProxy(
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 0 });
   const peers = new Set<ProxyPeer>();
   const path = "/devtools/browser";
-  let finished!: () => void;
-  const closed = new Promise<void>((resolve) => {
+  let finished!: (exit: TimedProxyExit) => void;
+  const closed = new Promise<TimedProxyExit>((resolve) => {
     finished = resolve;
   });
   let native: OkouBrowserClient | undefined;
@@ -48,29 +49,33 @@ export async function startWindowProxy(
   let closing: Promise<void> | undefined;
   let claimed = false;
   let unclaimed: ReturnType<typeof setTimeout> | undefined;
-  const abort = () => {
-    close().catch(() => {
+  const stop = (reason: ProxyExit["reason"]) => {
+    close(control?.exit ?? { reason }).catch(() => {
       process.exitCode = 1;
     });
   };
+  const abort = () => {
+    stop("owner-cancelled");
+  };
 
-  function close(): Promise<void> {
+  function close(exit: ProxyExit): Promise<void> {
     if (closing) return closing;
+    const closedAt = new Date().toISOString();
     closing = Promise.resolve().then(async () => {
-      clearTimeout(unclaimed);
-      signal.removeEventListener("abort", abort);
-      scope?.close();
-      control?.close();
-      sockets.close();
-      server.close();
-      server.closeAllConnections();
       try {
+        clearTimeout(unclaimed);
+        signal.removeEventListener("abort", abort);
+        scope?.close();
+        control?.close();
+        sockets.close();
+        server.close();
+        server.closeAllConnections();
         await native?.close();
       } catch (error) {
         process.exitCode = 1;
         throw error;
       } finally {
-        finished();
+        finished({ ...exit, closedAt });
       }
     });
     return closing;
@@ -88,7 +93,7 @@ export async function startWindowProxy(
       control,
       native,
       config.windowId,
-      abort,
+      stop,
       config.runtimeId,
       native.signal,
     );
@@ -123,7 +128,7 @@ export async function startWindowProxy(
             clearTimeout(unclaimed);
             const peer = new ProxyPeer(downstream, channel, activeScope, () => {
               peers.delete(peer);
-              if (claimed && !peers.size) abort();
+              if (claimed && !peers.size) stop("last-client-disconnected");
             });
             peers.add(peer);
           });
@@ -140,10 +145,18 @@ export async function startWindowProxy(
     if (!address || typeof address === "string")
       throw new Error("Scoped Browser listener unavailable");
     // Startup bound only: an established CDP connection has no additional lease.
-    unclaimed = setTimeout(abort, 30_000);
-    return { endpoint: `ws://127.0.0.1:${address.port}${path}`, close, closed };
+    unclaimed = setTimeout(() => {
+      stop("unclaimed-listener-timeout");
+    }, 30_000);
+    return {
+      endpoint: `ws://127.0.0.1:${address.port}${path}`,
+      close: () => {
+        return close({ reason: "closed" });
+      },
+      closed,
+    };
   } catch (error) {
-    await close();
+    await close(control?.exit ?? { reason: "startup-failed" });
     throw error;
   }
 }

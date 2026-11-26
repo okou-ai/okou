@@ -905,6 +905,10 @@ export async function browserCdpProvider() {
         return target.type === "page" && target.window === windowId;
       });
     },
+    disconnectClients(code: number, reason: string) {
+      for (const connection of connections)
+        connection.socket.close(code, reason);
+    },
     async close() {
       heldReply?.respond?.();
       heldReply = undefined;
