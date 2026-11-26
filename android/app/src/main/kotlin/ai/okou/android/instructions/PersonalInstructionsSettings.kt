@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
@@ -368,14 +369,20 @@ internal fun PersonalInstructionsSettings(
 @Composable
 private fun InstructionsReadFailure(modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
-    val art =
-        if (colors.surface.luminance() < colors.onSurface.luminance())
-            R.drawable.okou_load_failed_dark
-        else R.drawable.okou_load_failed
     Layout(
         modifier = modifier,
         content = {
-            Image(painterResource(art), contentDescription = null)
+            Box {
+                if (colors.surface.luminance() < colors.onSurface.luminance()) {
+                    Image(
+                        painterResource(R.drawable.okou_load_failed_outline),
+                        contentDescription = null,
+                        modifier = Modifier.matchParentSize(),
+                        colorFilter = ColorFilter.tint(colors.onSurface.copy(alpha = 0.38f)),
+                    )
+                }
+                Image(painterResource(R.drawable.okou_load_failed), contentDescription = null)
+            }
             Text(
                 stringResource(R.string.instructions_load_failed),
                 Modifier.testTag("instructions_read_failure").semantics {
