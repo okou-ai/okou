@@ -1508,7 +1508,7 @@ messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-inte
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-003	rewritten	21.9		src/signals/routes/__tests__/discord-interactions.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-004	rewritten	12.6		src/signals/routes/__tests__/discord-interactions.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-005	rewritten	11.3		src/signals/routes/__tests__/discord-interactions.test.ts	B04
-messaging	src/signals/routes/__tests__/discord-lifecycle.test.ts	discord-lifecycle-001	planned				B06
+messaging	src/signals/routes/__tests__/discord-lifecycle.test.ts	discord-lifecycle-001	skipped		slow-setup: Given+first When/Then (three real Discord OAuth bindings, DM selection, verified organizationMembership.deleted webhook with its pending cleanup) measured 334.3 ms and 316.7 ms in two runs, the Given alone 265.1 ms and 246.3 ms; dominant Given steps are the three bindings via helpers/discord createPublicDiscordBinding (first 138.9/131.5 ms including the file cold start, then 60.5/55.6 ms and 57.3/50.4 ms), the webhook plus cleanup took 69.2/70.4 ms; the complete test passed at 349-387 ms (draft kept at /tmp/b06-2-drafts/discord-lifecycle.test.ts)		B06
 messaging	src/signals/routes/__tests__/discord-oauth-export.test.ts	discord-oauth-export-001	planned				B06
 messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-001	planned				
 messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-002	planned				
