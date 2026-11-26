@@ -36,8 +36,8 @@ non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-noti
 non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-004	planned				
 non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-005	planned				
 non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-006	planned				
-non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-001	planned				B02
-non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-002	planned				B02
+non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-001	rewritten	35.6		src/lib/__tests__/billing-redirect.test.ts	B02
+non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-002	rewritten	26.9		src/lib/__tests__/billing-redirect.test.ts	B02
 non-route	src/lib/__tests__/log-axiom-transport.test.ts	log-axiom-transport-026	planned				
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-001	skipped		adapter-runtime: library predicate with no public API path in this round		pilot
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-005	skipped		adapter-runtime: library predicate with no public API path in this round		pilot
@@ -704,6 +704,7 @@ chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-anno
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-003	skipped		slow-setup: real Teams install + account connect + channel activity via createPublicAnnotationIngress measured 426-465 ms		B01
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-005	skipped		slow-setup: real Telegram account link + supergroup webhook via createPublicAnnotationIngress (runner/entitlement setup and run launch) measured 327-358 ms		B01
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-008	rewritten	152.3		src/signals/routes/__tests__/chat-event-annotations.test.ts	pilot
+chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-009	planned		selected in rewrite review		B01
 chat	src/signals/routes/__tests__/chat-event-snapshot.test.ts	chat-event-snapshot-001	planned				
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-001	planned				pilot
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-004	planned				pilot
@@ -1862,12 +1863,14 @@ messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integ
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-004	planned		unfinished: out of time		B01
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-005	planned		unfinished: out of time		B01
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-007	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-009	planned		selected in rewrite review		B01
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-010	planned		unfinished: out of time		B01
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-013	planned		unfinished: out of time		B01
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-014	planned		unfinished: out of time		B01
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-017	planned		unfinished: out of time		B01
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-019	planned		unfinished: out of time		B01
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-021	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-023	planned		selected in rewrite review		B01
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-025	planned		unfinished: out of time		B01
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-001	rewritten	41.4		src/signals/routes/__tests__/integrations-github-files.test.ts	pilot
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-003	rewritten	7.6		src/signals/routes/__tests__/integrations-github-files.test.ts	pilot
