@@ -159,7 +159,7 @@ internal fun ChatArtifactResources(
                 R.string.back,
                 ::back,
                 toolbarPadding,
-                Modifier.focusRequester(backFocus),
+                backFocus = backFocus,
             )
             ArtifactInitialReadFailure(unavailable, Modifier.widthIn(max = 768.dp).weight(1f))
         }
@@ -292,7 +292,7 @@ internal fun ChatArtifactResources(
             R.string.back,
             ::back,
             toolbarPadding,
-            Modifier.focusRequester(backFocus),
+            backFocus = backFocus,
         )
         if (
             result == null &&

@@ -288,8 +288,9 @@ internal fun ArtifactToolbar(
     @StringRes back: Int,
     onBack: () -> Unit,
     horizontalPadding: Dp = 12.dp,
-    backFocusModifier: Modifier = Modifier,
+    backFocus: FocusRequester? = null,
 ) {
+    val backModifier = if (backFocus == null) Modifier else Modifier.focusRequester(backFocus)
     val minimum = with(LocalDensity.current) { maxOf(64.dp, 28.sp.toDp() + 16.dp) }
     Row(
         Modifier.fillMaxWidth().heightIn(min = minimum).padding(horizontal = horizontalPadding),
@@ -298,7 +299,7 @@ internal fun ArtifactToolbar(
     ) {
         IconButton(
             onClick = onBack,
-            modifier = backFocusModifier.size(48.dp).workspaceSearchFocusOutline(CircleShape),
+            modifier = backModifier.size(48.dp).workspaceSearchFocusOutline(CircleShape),
         ) {
             Icon(painterResource(R.drawable.ic_arrow_back), stringResource(back))
         }

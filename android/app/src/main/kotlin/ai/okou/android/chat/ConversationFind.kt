@@ -436,7 +436,6 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                 }
                 items(results, key = { it.message.id }) { result ->
                     val message = result.message
-                    val restoreFocus = returnRow == message.id
                     var rowFocused by remember { mutableStateOf(false) }
                     Column(
                         Modifier.fillMaxWidth()
@@ -449,9 +448,12 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                             )
                             .onFocusChanged { rowFocused = it.isFocused }
                             .then(
-                                if (restoreFocus)
+                                if (visit.focusedResult == message.id)
                                     Modifier.focusProperties { canFocus = true }
-                                        .focusRequester(resultFocus)
+                                else Modifier,
+                            )
+                            .then(
+                                if (returnRow == message.id) Modifier.focusRequester(resultFocus)
                                 else Modifier,
                             )
                             .clickable(role = Role.Button) {
