@@ -474,6 +474,118 @@ function headerInkVars(cover: (typeof forYouCovers)[number]): CSSProperties {
   } as CSSProperties;
 }
 
+function ForYouProgress({
+  steps,
+  firstStep,
+  position,
+  total,
+}: {
+  readonly steps: readonly string[];
+  readonly firstStep: number;
+  readonly position: number;
+  readonly total: number | undefined;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="progressbar"
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.forYou.title;
+      })}
+      aria-valuemin={1}
+      aria-valuemax={total}
+      aria-valuenow={position + 1}
+      className="flex min-w-0 flex-1 items-center"
+    >
+      {steps.map((id, offset) => {
+        const index = firstStep + offset;
+        return (
+          <span
+            key={id}
+            aria-hidden
+            className="flex h-11 min-w-0 flex-1 items-center px-1.5 sm:px-2"
+          >
+            <span
+              className={cn(
+                "h-1 w-full rounded-full transition-colors",
+                index === position
+                  ? "bg-[rgb(var(--for-you-bar))]"
+                  : "bg-[rgb(var(--for-you-track))]",
+              )}
+            />
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function ForYouStepLinks({
+  steps,
+  firstStep,
+  position,
+  total,
+}: {
+  readonly steps: readonly string[];
+  readonly firstStep: number;
+  readonly position: number;
+  readonly total: number | undefined;
+}) {
+  const { t } = useTranslation();
+  const browse = useSet(browseForYou$);
+  const signal = useGet(pageSignal$);
+  return (
+    <nav
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.homeCard.navigation;
+      })}
+      className="flex min-w-0 flex-1 items-center"
+    >
+      {steps.map((id, offset) => {
+        const index = firstStep + offset;
+        return (
+          <Link
+            key={id}
+            pathname={ROUTES.forYou}
+            options={{
+              searchParams: new URLSearchParams({
+                suggestion: id,
+              }),
+            }}
+            aria-current={index === position ? "step" : undefined}
+            aria-label={t(
+              ($) => {
+                return $.chat.agentSuggestions.homeCard.show;
+              },
+              {
+                index: index + 1,
+                total,
+              },
+            )}
+            onClick={(event) => {
+              if (shouldHandleLinkClick(event)) {
+                event.preventDefault();
+                browse(id, index < position ? "previous" : "next", signal);
+              }
+            }}
+            className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-2"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "h-1 w-full rounded-full transition-colors",
+                index === position
+                  ? "bg-[rgb(var(--for-you-bar))]"
+                  : "bg-[rgb(var(--for-you-track))]",
+              )}
+            />
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 function ForYouHeader({
   ids,
   position,
@@ -487,8 +599,6 @@ function ForYouHeader({
   const firstStep = Math.max(0, Math.min(position - 3, (total ?? 0) - 7));
   const steps = ids?.slice(firstStep, firstStep + 7);
   const simplified = useForYouSimplifiedDeck();
-  const browse = useSet(browseForYou$);
-  const signal = useGet(pageSignal$);
   const cover = useLastResolved(forYouPaintedCover$);
   if (!cover) {
     return null;
@@ -515,89 +625,19 @@ function ForYouHeader({
         {steps &&
           steps.length > 0 &&
           (simplified ? (
-            <div
-              role="progressbar"
-              aria-label={t(($) => {
-                return $.chat.agentSuggestions.forYou.title;
-              })}
-              aria-valuemin={1}
-              aria-valuemax={total}
-              aria-valuenow={position + 1}
-              className="flex min-w-0 flex-1 items-center"
-            >
-              {steps.map((id, offset) => {
-                const index = firstStep + offset;
-                return (
-                  <span
-                    key={id}
-                    aria-hidden
-                    className="flex h-11 min-w-0 flex-1 items-center px-1.5 sm:px-2"
-                  >
-                    <span
-                      className={cn(
-                        "h-1 w-full rounded-full transition-colors",
-                        index === position
-                          ? "bg-[rgb(var(--for-you-bar))]"
-                          : "bg-[rgb(var(--for-you-track))]",
-                      )}
-                    />
-                  </span>
-                );
-              })}
-            </div>
+            <ForYouProgress
+              steps={steps}
+              firstStep={firstStep}
+              position={position}
+              total={total}
+            />
           ) : (
-            <nav
-              aria-label={t(($) => {
-                return $.chat.agentSuggestions.homeCard.navigation;
-              })}
-              className="flex min-w-0 flex-1 items-center"
-            >
-              {steps.map((id, offset) => {
-                const index = firstStep + offset;
-                return (
-                  <Link
-                    key={id}
-                    pathname={ROUTES.forYou}
-                    options={{
-                      searchParams: new URLSearchParams({
-                        suggestion: id,
-                      }),
-                    }}
-                    aria-current={index === position ? "step" : undefined}
-                    aria-label={t(
-                      ($) => {
-                        return $.chat.agentSuggestions.homeCard.show;
-                      },
-                      {
-                        index: index + 1,
-                        total,
-                      },
-                    )}
-                    onClick={(event) => {
-                      if (shouldHandleLinkClick(event)) {
-                        event.preventDefault();
-                        browse(
-                          id,
-                          index < position ? "previous" : "next",
-                          signal,
-                        );
-                      }
-                    }}
-                    className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-2"
-                  >
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "h-1 w-full rounded-full transition-colors",
-                        index === position
-                          ? "bg-[rgb(var(--for-you-bar))]"
-                          : "bg-[rgb(var(--for-you-track))]",
-                      )}
-                    />
-                  </Link>
-                );
-              })}
-            </nav>
+            <ForYouStepLinks
+              steps={steps}
+              firstStep={firstStep}
+              position={position}
+              total={total}
+            />
           ))}
         {position >= 0 && (
           <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[rgb(var(--for-you-ink)/0.85)]">
