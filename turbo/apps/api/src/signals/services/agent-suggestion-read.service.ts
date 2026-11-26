@@ -1,6 +1,7 @@
 import {
   suggestionStatus,
   liveSuggestion,
+  cardState,
   suggestionRow,
 } from "./agent-suggestions-lifecycle";
 import { Buffer } from "node:buffer";
@@ -194,10 +195,11 @@ export const readActiveFeedCards$ = command(
           expiresAt: row.expiresAt?.toISOString() ?? null,
         });
       }
-      return withSuggestionConsumeToken(
+      const item = withSuggestionConsumeToken(
         owner,
         suggestionSchema.parse(suggestionRow(row)),
       );
+      return { ...item, state: cardState(item.state) };
     });
     const descriptions = await set(
       feedAutomationDescriptions$,
@@ -257,7 +259,15 @@ export const readFeedItems$ = command(
         : set(recentSuggestionReceipts$, owner, signal),
     ]);
     signal.throwIfAborted();
-    return { status: 200 as const, body: { ...page, receipts } };
+    return {
+      status: 200 as const,
+      body: {
+        ...page,
+        receipts: receipts.map((receipt) => {
+          return { ...receipt, state: cardState(receipt.state) };
+        }),
+      },
+    };
   },
 );
 export const readSuggestionManagement$ = command(

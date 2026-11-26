@@ -1,6 +1,7 @@
 import { and, eq, gt, not, or, sql } from "drizzle-orm";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import {
+  type SuggestionState,
   suggestionSchema,
   suggestionReceiptSchema,
   suggestionStateSchema,
@@ -45,4 +46,24 @@ export function suggestionRow(row: typeof feedItems.$inferSelect) {
   return row.content === null
     ? suggestionReceiptSchema.parse(value)
     : suggestionSchema.parse(value);
+}
+
+/** Project member receipts after signing. Snapshot input restores the canonical kind. */
+export function cardState<Status extends SuggestionState["status"]>(
+  state: SuggestionState & { status: Status },
+) {
+  return {
+    status: state.status,
+    selectedOptionId: state.selectedOptionId,
+    feedbacks: state.feedbacks.map(({ kind, ...feedback }) => {
+      if (kind === "later") {
+        return {
+          ...feedback,
+          kind: "dismissed" as const,
+          deferred: true as const,
+        };
+      }
+      return { ...feedback, kind };
+    }),
+  };
 }

@@ -401,8 +401,24 @@ class NativeUpdateTest {
             assertTrue(errorBounds.top >= targetBounds.bottom)
             captureState("details-download-failed")
             assertEquals(initialDetailsBounds, detailsBounds())
+            candidate.set(release.copy(version = "99.1.0", minimumSdk = 36))
+            instrumentation.runOnMainSync { owner.check() }
+            exists(R.string.updates_android_unsupported)
+            assertNotNull(text(app.getString(R.string.updates_version, "99.1.0")))
+            val downloadError =
+                By.pkg(app.packageName).text(app.getString(R.string.updates_error_download))
+            assertFalse(device.hasObject(downloadError))
+            assertEquals(initialDetailsBounds, detailsBounds())
+            captureState("details-replacement-incompatible")
+            candidate.set(release)
+            click(R.string.updates_check_compatible)
+            exists(R.string.updates_download)
+            assertNotNull(text(updateTarget))
+            assertFalse(device.hasObject(downloadError))
+            captureState("details-replacement-download")
+
             download.set(CompletableDeferred())
-            click(R.string.updates_retry_download)
+            click(R.string.updates_download)
             assertNotNull(text(progressLabel))
             val rateLimited = download.getAndSet(CompletableDeferred())
             rateLimited.completeExceptionally(ApiFailure.Http(429, null, null, 60))
@@ -443,6 +459,14 @@ class NativeUpdateTest {
                 captureState("install-permission-short")
             }
             click(R.string.updates_later)
+            assertTrue(
+                device.wait(
+                    Until.gone(
+                        By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install)),
+                    ),
+                    10_000,
+                ),
+            )
             assertNotNull(text(searchQuery))
             button(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
             device.awaitChatList(app)

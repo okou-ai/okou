@@ -155,7 +155,8 @@ class AppUpdatesTest {
                         assertNull(owner.installationFile(updateRelease("0.14.0")))
                         assertEquals(File("verified.apk"), owner.installationFile(updateRelease()))
                     } else {
-                        assertEquals(UpdateTransfer.Interrupted, owner.state.value.transfer)
+                        assertEquals(UpdateTransfer.Idle, owner.state.value.transfer)
+                        assertNull(owner.state.value.problem)
                         assertTrue(owner.state.value.canDownload)
                         assertEquals("0.14.0", owner.state.value.displayedRelease!!.version)
                         owner.download(updateRelease("0.14.0"))
@@ -427,7 +428,8 @@ class AppUpdatesTest {
                 assertEquals(UpdateTransfer.Waiting(selected), owner.state.value.transfer)
                 assertTrue(owner.download(selected, advanceRetry = true))
                 runCurrent()
-                assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
+                assertEquals(UpdateTransfer.Idle, owner.state.value.transfer)
+                assertNull(owner.state.value.problem)
                 advanceTimeBy(6_000)
                 runCurrent()
                 assertEquals(List(3) { selected }, service.downloadedReleases)
@@ -440,7 +442,7 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun invalidRecoveredPackageFinishesPreparationAndRetainsRequiredPolicy() = runTest {
+    fun invalidSupersededPackageFinishesPreparationAndRetainsRequiredPolicy() = runTest {
         val selected = updateRelease()
         val latest = updateRelease("0.14.0")
         val recovery =
@@ -467,7 +469,8 @@ class AppUpdatesTest {
             advanceUntilIdle()
             assertFalse(owner.state.value.preparing)
             assertTrue(owner.state.value.required)
-            assertEquals(UpdateProblem.Integrity, owner.state.value.problem)
+            assertEquals(UpdateTransfer.Idle, owner.state.value.transfer)
+            assertNull(owner.state.value.problem)
             assertTrue(owner.state.value.canDownload)
             assertFalse(owner.state.value.canInstall)
             owner.download(latest)
@@ -508,7 +511,7 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun discoveryRetainsActiveTransfersAndRetriesTheLatestReleaseAfterFailure() = runTest {
+    fun discoveryRetainsActiveTransfersAndOffersTheLatestReleaseAfterFailure() = runTest {
         val service = ControlledUpdates()
         val owner =
             AppUpdates(
@@ -530,7 +533,8 @@ class AppUpdatesTest {
             assertTrue(owner.state.value.transfer is UpdateTransfer.Downloading)
             service.transfer.completeExceptionally(IOException("The old download is unavailable"))
             advanceUntilIdle()
-            assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
+            assertEquals(UpdateTransfer.Idle, owner.state.value.transfer)
+            assertNull(owner.state.value.problem)
             assertEquals("0.14.0", owner.state.value.displayedRelease!!.version)
             service.transfer = CompletableDeferred()
             owner.download(updateRelease("0.14.0"))
