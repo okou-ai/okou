@@ -6,14 +6,16 @@ import {
   type Suggestion,
   type PlatformEvent,
 } from "@okouai/api-contracts/contracts/feed";
-import { act, screen, within, waitFor, cleanup } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
 import {
-  setupPage,
-  click,
-  fill,
-  queryAllByRoleFast,
-} from "../../../__tests__/page-helper.ts";
+  act,
+  screen,
+  within,
+  waitFor,
+  cleanup,
+  fireEvent,
+} from "@testing-library/react";
+import { expect, test, vi } from "vitest";
+import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
 import {
   createTestRuntime,
   testContext,
@@ -122,6 +124,23 @@ function activeCard(item: Suggestion) {
   return screen.findByRole("article", { name: item.content.title });
 }
 
+function swipeCard(card: HTMLElement, direction: "next" | "previous") {
+  fireEvent.pointerDown(card, {
+    pointerId: 1,
+    pointerType: "touch",
+    button: 0,
+    clientX: 150,
+    clientY: 100,
+  });
+  fireEvent.pointerUp(card, {
+    pointerId: 1,
+    pointerType: "touch",
+    button: 0,
+    clientX: direction === "next" ? 50 : 250,
+    clientY: 100,
+  });
+}
+
 test("agent-suggestions-001 a removed feed item sends the choice with its original consume token", async () => {
   const item = proposal("Vendor renewals");
   const items = [item];
@@ -181,7 +200,7 @@ test("agent-suggestions-020 changing cards discards the first inline direction",
   const edit = await within(first).findByRole("textbox", { name: /message/i });
   await appendDirection(edit, "Expedite shipping");
   expect(edit).toHaveTextContent("Expedite shipping");
-  click(await findFastControl("link", "Show suggestion 2 of 2"));
+  swipeCard(await activeCard(one), "next");
   await activeCard(two);
   expect(first).not.toBeInTheDocument();
   click(
@@ -210,7 +229,7 @@ test("agent-suggestions-023 undo restores the second suggestion after Not planne
   });
   await openDeck();
   await activeCard(first);
-  click(await findFastControl("link", "Show suggestion 2 of 3"));
+  swipeCard(await activeCard(first), "next");
   click(
     await findFastControl("button", "Not planned", await activeCard(second)),
   );
@@ -524,11 +543,11 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
     await refresh.promise;
     await expect(activeCard(three)).resolves.toBeVisible();
     expect(screen.getByText("2 to go")).toBeInTheDocument();
-    click(await findFastControl("link", "Show suggestion 2 of 2"));
+    swipeCard(await activeCard(three), "next");
     await expect(activeCard(four)).resolves.toBeVisible();
-    await expect(
-      findFastControl("link", "Show suggestion 2 of 2"),
-    ).resolves.toHaveAttribute("aria-current", "step");
+    expect(
+      screen.getByRole("progressbar", { name: "For you" }),
+    ).toHaveAttribute("aria-valuenow", "2");
   } finally {
     release.resolve();
   }
@@ -537,7 +556,7 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
   );
   const alert = await screen.findByRole("alert");
   expect(screen.getByText("2 to go")).toBeInTheDocument();
-  click(await findFastControl("link", "Show suggestion 1 of 2"));
+  swipeCard(await activeCard(four), "previous");
   await expect(activeCard(three)).resolves.toBeVisible();
   click(await findFastControl("button", "Try again", alert));
   await expect(activeCard(offer)).resolves.toBeVisible();
@@ -1327,9 +1346,9 @@ test("For you keeps the first and second cards in order when the model list is e
   click(choose);
   await screen.findByText("The selected model is not available");
   await activeCard(first);
-  click(await findFastControl("link", "Show suggestion 2 of 2"));
+  swipeCard(await activeCard(first), "next");
   await activeCard(second);
-  click(await findFastControl("link", "Show suggestion 1 of 2"));
+  swipeCard(await activeCard(second), "previous");
   await expect(activeCard(first)).resolves.toBeInTheDocument();
 });
 
@@ -1413,7 +1432,7 @@ test("Opening For you shows the summary card and keeps its draft and read receip
     await appendDirection(editor, "Check the tide");
     expect(listReads).toBe(1);
     expect(screen.queryByText(/\d+ to go/u)).toBeNull();
-    expect(queryFastControl("link", /Show suggestion/u)).toBeNull();
+    expect(screen.queryByRole("progressbar", { name: "For you" })).toBeNull();
     expect(queryFastControl("link", "Next suggestion")).toBeNull();
     expect(
       document.querySelector('[data-slot="suggestion-stack-layer"]'),
@@ -1422,14 +1441,11 @@ test("Opening For you shows the summary card and keeps its draft and read receip
   } finally {
     release.resolve();
   }
-  await expect(
-    findFastControl("link", "Show suggestion 2 of 2"),
-  ).resolves.toHaveAttribute("aria-current", "step");
+  const progress = await screen.findByRole("progressbar", { name: "For you" });
+  expect(progress).toHaveAttribute("aria-valuenow", "2");
+  expect(progress).toHaveAttribute("aria-valuemax", "2");
   expect(screen.getByText("2 to go")).toBeInTheDocument();
-  expect(queryFastControl("link", "Show suggestion 1 of 2")).toHaveAttribute(
-    "href",
-    "/for-you?suggestion=" + second.id,
-  );
+
   expect(
     document.querySelectorAll('[data-slot="suggestion-stack-layer"]'),
   ).toHaveLength(1);
@@ -1538,7 +1554,7 @@ test("A direct link reads its card on the next page without displaying the summa
     await openDeck("/for-you?suggestion=" + target.id);
     await nextPage.promise;
     expect(reads).toHaveLength(0);
-    expect(queryFastControl("link", /Show suggestion/u)).toBeNull();
+    expect(screen.queryByRole("progressbar", { name: "For you" })).toBeNull();
     expect(
       screen.queryByRole("article", { name: preview.content.title }),
     ).toBeNull();
@@ -1546,14 +1562,9 @@ test("A direct link reads its card on the next page without displaying the summa
     release.resolve();
   }
   await expect(activeCard(target)).resolves.toBeVisible();
-  await expect(
-    findFastControl("link", "Show suggestion 11 of 11"),
-  ).resolves.toHaveAttribute("aria-current", "step");
-  expect(
-    queryAllByRoleFast("link").filter((link) => {
-      return link.getAttribute("aria-label")?.startsWith("Show suggestion ");
-    }),
-  ).toHaveLength(7);
+  const progress = await screen.findByRole("progressbar", { name: "For you" });
+  expect(progress).toHaveAttribute("aria-valuenow", "11");
+  expect(progress).toHaveAttribute("aria-valuemax", "11");
   expect(
     document.querySelectorAll('[data-slot="suggestion-stack-layer"]'),
   ).toHaveLength(2);
@@ -1570,6 +1581,13 @@ test("Arrow keys page the deck without arrow controls, except while a direction 
   await openDeck();
   await activeCard(one);
   const user = userEvent.setup({ delay: null });
+  const progress = await screen.findByRole("progressbar", { name: "For you" });
+  expect(progress).toHaveAttribute("aria-valuenow", "1");
+  expect(progress).toHaveAttribute("aria-valuemax", "3");
+  expect(queryFastControl("link", /Show suggestion/u)).toBeNull();
+  click(progress);
+  expect(progress).toHaveAttribute("aria-valuenow", "1");
+  await expect(activeCard(one)).resolves.toBeInTheDocument();
 
   await user.keyboard("{ArrowRight}");
   await activeCard(two);
@@ -1599,7 +1617,8 @@ test("Arrow keys page the deck without arrow controls, except while a direction 
 
   expect(edit).toHaveTextContent("Expedite shipping today");
   await expect(activeCard(three)).resolves.toBeInTheDocument();
-  await expect(
-    findFastControl("link", "Show suggestion 3 of 3"),
-  ).resolves.toHaveAttribute("aria-current", "step");
+  expect(screen.getByRole("progressbar", { name: "For you" })).toHaveAttribute(
+    "aria-valuenow",
+    "3",
+  );
 });

@@ -26,7 +26,6 @@ import {
   reloadSuggestionSession$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
-  browseForYou$,
   finishForYouPaginationOnRef$,
   type ForYouDeck,
   forYouCardMinHeight$,
@@ -37,10 +36,7 @@ import {
   swipeForYouOnRef$,
 } from "../../signals/okou-page/for-you.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { Link } from "../router/link.tsx";
-import { shouldHandleLinkClick } from "../router/link-click.ts";
 import {
   AgentSuggestionCard,
   SuggestionSaveErrors,
@@ -133,7 +129,7 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
     ...settled,
   ];
   return (
-    <div className="pointer-events-none relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-29">
+    <div className="pointer-events-none relative mx-auto -mt-22 w-full max-w-176 pb-6 sm:-mt-25">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
@@ -384,12 +380,10 @@ function ForYouHeader({
   readonly position: number;
 }) {
   const { t } = useTranslation();
-  // Keep a navigable window around the current card, even for a large feed.
+  // Keep the progress window centered around the current card, even for a large feed.
   const total = ids?.length;
   const firstStep = Math.max(0, Math.min(position - 3, (total ?? 0) - 7));
   const steps = ids?.slice(firstStep, firstStep + 7);
-  const browse = useSet(browseForYou$);
-  const signal = useGet(pageSignal$);
   const cover = useLastResolved(forYouPaintedCover$);
   if (!cover) {
     return null;
@@ -414,47 +408,25 @@ function ForYouHeader({
       </div>
       <div className="flex min-w-0 items-center gap-2 sm:gap-5">
         {steps && steps.length > 0 && (
-          <nav
+          <div
+            role="progressbar"
             aria-label={t(($) => {
-              return $.chat.agentSuggestions.homeCard.navigation;
+              return $.chat.agentSuggestions.forYou.title;
             })}
+            aria-valuemin={1}
+            aria-valuemax={total}
+            aria-valuenow={position + 1}
             className="flex min-w-0 flex-1 items-center"
           >
             {steps.map((id, offset) => {
               const index = firstStep + offset;
               return (
-                <Link
+                <span
                   key={id}
-                  pathname={ROUTES.forYou}
-                  options={{
-                    searchParams: new URLSearchParams({
-                      suggestion: id,
-                    }),
-                  }}
-                  aria-current={index === position ? "step" : undefined}
-                  aria-label={t(
-                    ($) => {
-                      return $.chat.agentSuggestions.homeCard.show;
-                    },
-                    {
-                      index: index + 1,
-                      total,
-                    },
-                  )}
-                  onClick={(event) => {
-                    if (shouldHandleLinkClick(event)) {
-                      event.preventDefault();
-                      browse(
-                        id,
-                        index < position ? "previous" : "next",
-                        signal,
-                      );
-                    }
-                  }}
-                  className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-2"
+                  aria-hidden
+                  className="flex h-11 min-w-0 flex-1 items-center px-1.5 sm:px-2"
                 >
                   <span
-                    aria-hidden
                     className={cn(
                       "h-1 w-full rounded-full transition-colors",
                       index === position
@@ -462,10 +434,10 @@ function ForYouHeader({
                         : "bg-[rgb(var(--for-you-track))]",
                     )}
                   />
-                </Link>
+                </span>
               );
             })}
-          </nav>
+          </div>
         )}
         {position >= 0 && (
           <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[rgb(var(--for-you-ink)/0.85)]">
