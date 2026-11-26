@@ -41,3 +41,7 @@ org-delete-billing-019	Unhandled request error: Stripe is temporarily unavailabl
 org-delete-billing-022	organization.deleted billing cleanup failed	Then: the first organization.deleted delivery returns 503
 voice-io-polish-007	Google voice request rejected	Given: the provider rejects the request
 voice-io-polish-010	Google voice request rejected	Given: the provider rejects the request
+chat-events-pi-codex-credentials-006	rejected personal codex auth_json paste: shape	Given: auth.json whose id_token omits the workspace account ID; Then: HTTP 400 CODEX_AUTH_JSON_SHAPE_INVALID
+voice-google-auth-retry-018	Google Cloud LLM authentication rejected	Given: Google STS answers HTTP 400
+billing-usage-pack-subscriptions-052	organizationInvitation.accepted activation failed	When: two concurrent acceptance deliveries; the losing delivery is rejected because the invitation purchase changed
+connectors-oauth-start-091	Connector runtime capability is unavailable	Given: no GitHub OAuth client ID is configured

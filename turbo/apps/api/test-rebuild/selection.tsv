@@ -5142,7 +5142,7 @@ src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-014	s
 src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-015	selected	business-rule
 src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-016	selected	business-rule
 src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-017	selected	business-rule
-src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-018	not-selected	
+src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-018	selected	business-rule
 src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-019	selected	business-rule
 src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-020	not-selected	
 src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-021	not-selected	
@@ -5313,7 +5313,7 @@ src/signals/routes/__tests__/projects.test.ts	projects-007	selected	visible-resu
 src/signals/routes/__tests__/projects.test.ts	projects-008	selected	access-isolation
 src/signals/routes/__tests__/projects.test.ts	projects-009	selected	core-path
 src/signals/routes/__tests__/projects.test.ts	projects-010	selected	core-path
-src/signals/routes/__tests__/projects.test.ts	projects-011	not-selected	
+src/signals/routes/__tests__/projects.test.ts	projects-011	selected	access-isolation
 src/signals/routes/__tests__/projects.test.ts	projects-012	not-selected	
 src/signals/routes/__tests__/projects.test.ts	projects-013	not-selected	
 src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-001	selected	visible-result

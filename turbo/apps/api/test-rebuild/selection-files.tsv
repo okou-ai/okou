@@ -431,7 +431,7 @@ src/signals/routes/__tests__/onboarding-sources.test.ts	2	1	1	none
 src/signals/routes/__tests__/onboarding.test.ts	17	9	10	more	Spot check of unselected cases added onboarding-012 (a failed onboarding completion can be retried).
 src/signals/routes/__tests__/ops-logs.bdd.test.ts	4	2	2	none	
 src/signals/routes/__tests__/org-cache.test.ts	10	5	5	none	
-src/signals/routes/__tests__/org-delete-billing.test.ts	22	11	11	none	
+src/signals/routes/__tests__/org-delete-billing.test.ts	22	11	12	more	Rewrite review added org-delete-billing-018 (a retried organization deletion must reuse the credit note it already issued instead of refunding twice; the selected case covers only reusing the deletion marker)
 src/signals/routes/__tests__/org-invitation-purchase.test.ts	2	1	1	none	
 src/signals/routes/__tests__/org-member-cleanup-automations.bdd.test.ts	3	2	2	none	
 src/signals/routes/__tests__/org-member-directory.test.ts	14	7	7	none	
@@ -450,7 +450,7 @@ src/signals/routes/__tests__/private-integration-uploads.test.ts	5	3	3	none
 src/signals/routes/__tests__/proactive-preferences.test.ts	2	1	1	none	
 src/signals/routes/__tests__/project-reference-validation.test.ts	12	6	6	none	
 src/signals/routes/__tests__/project-run-context.test.ts	1	1	1	none	
-src/signals/routes/__tests__/projects.test.ts	13	7	7	none	
+src/signals/routes/__tests__/projects.test.ts	13	7	8	more	Rewrite review added projects-011 (a Project created from a missing or foreign source conversation must be rejected without creating it; no selected case covers this)
 src/signals/routes/__tests__/provider-console-paths.test.ts	4	2	2	none	
 src/signals/routes/__tests__/public-run-lifecycle.test.ts	10	5	0	fewer	All 10 are Intent: review checks of the test-fixture lifecycle helper (finish/teardown/restore ordering), with no user-reachable scenario
 src/signals/routes/__tests__/registry-resources-download.test.ts	5	3	3	none	

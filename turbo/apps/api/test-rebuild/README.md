@@ -507,3 +507,13 @@ A case whose Given requires a paid member with a dispatched Run includes at leas
 **Calendar.** `webhooks-google-calendar-005` is split. Row (1/2) still misses the shuffled median because whichever of the file's three rows runs first pays about 150 ms of cold start. `-006` left the committed file, which had omitted its reconnect-and-delete Then.
 
 **Pre-classification check.** A probe check confirmed all three sampled `b-install` cases as install flows. All three sampled `c-timer` cases were keyword false positives: an admin re-confirming, a `mockNow` timeout comparison and an early device poll. So `c-timer` is not reliable.
+
+### Round 16: non-first median, timer reclassification and B10
+
+**Timing rule (Manager decision).** Each file runs in several shuffled orders with one worker. A reporter records the execution order (`order-reporter`). For each row, only the runs where it was not the first test of its file count, and there must be at least three. The row passes when the median of those runs is at most 200 ms. Under this rule all committed `webhooks-google-calendar` rows pass: 005 (1/2) 157.0, (2/2) 168.8 and 017 125.9 ms. `-006` stays a revisit because row (3/3) is 205.1 ms even when not first, while its Given plus the first When/Then is only about 122 ms.
+
+**Telegram callback page.** The four committed cases run the callback page's inline script in `node:vm`, which is what the user's browser runs after Telegram login: it scrubs the URL, notifies the opener and navigates. The recording window's `setTimeout` and `setInterval` only record IDs and never run callbacks, so no timer is advanced.
+
+**Timer reclassification.** The 63 planned `c-timer` cases were traced through production code. Four wait on a production timer and are recorded as `timer`: the Clerk read retry and the voice provider backoff. One is unsure, because the S3 client's internal retry depends on how the failure is injected. The other 58 are `d-other`.
+
+**`a-run`.** These cases stay planned until Ethan decides whether to relax the rule for them.
