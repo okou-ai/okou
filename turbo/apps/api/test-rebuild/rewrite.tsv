@@ -799,9 +799,9 @@ chat	src/signals/routes/__tests__/chat-events-model-source-context.test.ts	chat-
 chat	src/signals/routes/__tests__/chat-events-native-routes.test.ts	chat-events-native-routes-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-native-routes.test.ts	chat-events-native-routes-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-pi-activity.test.ts	chat-events-pi-activity-001	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	chat-events-pi-codex-credentials-001	planned				B07	d-other
-chat	src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	chat-events-pi-codex-credentials-002	planned				B07	d-other
-chat	src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	chat-events-pi-codex-credentials-006	planned				B07	d-other
+chat	src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	chat-events-pi-codex-credentials-001	skipped		slow-setup: Given+first When/Then 355 ms and 375 ms (warm, after a warm-up test; the Given alone is 219 ms and 210 ms: entitled Pro actor 133/121 ms, Codex device-auth connect 70/73 ms, account delete 16/16 ms; send, background admission and event read 136/164 ms; the written test passed at 519 ms as the file's first test)		B07	d-other
+chat	src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	chat-events-pi-codex-credentials-002	skipped		slow-setup: Given+first When/Then 404 ms and 271 ms (lower bound without the decryption-outage boundary: entitled Pro actor 155/110 ms, ChatGPT device-auth connect 72/43 ms, Luna send dispatching the Run 177/118 ms)		B07	d-other
+chat	src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	chat-events-pi-codex-credentials-006	revisit		revisit: not measured in time; evidence: the malformed auth.json store logs `[WARN] rejected personal codex auth_json paste: shape` from the case's own When, so the gate needs a coordinator allowlist entry, and the entitled actor alone costs 110-155 ms; resume: write (1/2) malformed store -> 400 CODEX_AUTH_JSON_SHAPE_INVALID and (2/2) Astra send -> 201 with a KMS decrypt recorder, after the allowlist decision		B07	d-other
 chat	src/signals/routes/__tests__/chat-events-pi-delegation.test.ts	chat-events-pi-delegation-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-pi-failed-history.test.ts	chat-events-pi-failed-history-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-pi-failures.test.ts	chat-events-pi-failures-002	planned					a-run
