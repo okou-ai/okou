@@ -295,7 +295,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     await installTeamsForTest(context.signal, fixture);
     const sent = recordTeamsDeliveries(fixture);
     const shared = {
-      timestamp: "2026-06-30T09:15:00.000Z",
+      timestamp: "2026-07-14T08:30:00.000Z",
       serviceUrl: fixture.serviceUrl,
       channelId: "msteams",
       conversation: {
@@ -357,7 +357,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       type: "installationUpdate",
       id: `activity-personal-install-${fixture.fixtureId}`,
       action: "add",
-      timestamp: "2026-06-30T09:15:00.000Z",
+      timestamp: "2026-07-14T08:30:00.000Z",
       serviceUrl: fixture.serviceUrl,
       channelId: "msteams",
       conversation: {
