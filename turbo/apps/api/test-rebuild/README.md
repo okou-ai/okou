@@ -456,3 +456,13 @@ The first case of a file took 1,171 ms. Dispatch itself took 5 ms. In the normal
 **Credentials.** Tests must not build Okou credentials themselves. Drafts that hand-signed agent or unsubscribe tokens with the production derivation were removed and recorded as revisits.
 
 **Cold start.** New files whose only row over 200 ms is the first row to reach a code path are held in their drafts with `revisit: cold-start pending`, like the round 10 drafts, until the timing rule is decided.
+
+### Round 12: live remote device access, remeasurement and B05
+
+**#50892.** Main enforces live remote device access behind the `remoteDevices` switch. The switch is off by default, and members can opt in. After the merge, the 76 rewritten remote-access rows in 16 files pass the gate unchanged, so no GWT changed. Their selected scenarios describe the default behaviour, which is unchanged. The upstream intent for the five overlapping tests is in `upstream-changes.tsv`. The 216 remaining planned and skipped SSH, VNC, Tailscale, remote-control, Computer Use, Desktop Shell, Phone Use and Runner SSH/VNC cases are marked to be rewritten against the new behaviour.
+
+**Remeasurement.** Twenty slow-setup cases that had cited another case's numbers now carry their own Given plus first When/Then measurements. All twenty exceeded 200 ms in two runs.
+
+**Selection review.** Of eleven writer candidates, four were user-reachable and uncovered and were selected: `subscription-controls-007`, `mcp-connectors-011`, `agentphone-connect.bdd-006` and `ssh-connections-010`.
+
+**`skill-import.bdd-003`.** It passed ten shuffled runs on four workers alongside five neighbouring files. The single earlier failure came from a whole-suite run during which main was merged and a migration applied.
