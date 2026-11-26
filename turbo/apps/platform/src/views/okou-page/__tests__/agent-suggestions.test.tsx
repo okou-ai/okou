@@ -6,7 +6,14 @@ import {
   type Suggestion,
   type PlatformEvent,
 } from "@okouai/api-contracts/contracts/feed";
-import { act, screen, within, waitFor, cleanup } from "@testing-library/react";
+import {
+  act,
+  screen,
+  within,
+  waitFor,
+  cleanup,
+  fireEvent,
+} from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import {
   setupPage,
@@ -111,15 +118,33 @@ function feed(items: Suggestion[]) {
   });
 }
 
-function openDeck(path = "/for-you") {
+function openDeck(path = "/for-you", simplified = true) {
   return setupPage({
     context,
     path,
+    featureSwitches: { [FeatureSwitchKey.ForYouSimplifiedDeck]: simplified },
   });
 }
 
 function activeCard(item: Suggestion) {
   return screen.findByRole("article", { name: item.content.title });
+}
+
+function swipeCard(card: HTMLElement, direction: "next" | "previous") {
+  fireEvent.pointerDown(card, {
+    pointerId: 1,
+    pointerType: "touch",
+    button: 0,
+    clientX: 150,
+    clientY: 100,
+  });
+  fireEvent.pointerUp(card, {
+    pointerId: 1,
+    pointerType: "touch",
+    button: 0,
+    clientX: direction === "next" ? 50 : 250,
+    clientY: 100,
+  });
 }
 
 test("agent-suggestions-001 a removed feed item sends the choice with its original consume token", async () => {
@@ -181,7 +206,7 @@ test("agent-suggestions-020 changing cards discards the first inline direction",
   const edit = await within(first).findByRole("textbox", { name: /message/i });
   await appendDirection(edit, "Expedite shipping");
   expect(edit).toHaveTextContent("Expedite shipping");
-  click(await findFastControl("link", "Show suggestion 2 of 2"));
+  swipeCard(await activeCard(one), "next");
   await activeCard(two);
   expect(first).not.toBeInTheDocument();
   click(
@@ -210,7 +235,7 @@ test("agent-suggestions-023 undo restores the second suggestion after Not planne
   });
   await openDeck();
   await activeCard(first);
-  click(await findFastControl("link", "Show suggestion 2 of 3"));
+  swipeCard(await activeCard(first), "next");
   click(
     await findFastControl("button", "Not planned", await activeCard(second)),
   );
@@ -524,11 +549,11 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
     await refresh.promise;
     await expect(activeCard(three)).resolves.toBeVisible();
     expect(screen.getByText("2 to go")).toBeInTheDocument();
-    click(await findFastControl("link", "Next suggestion"));
+    swipeCard(await activeCard(three), "next");
     await expect(activeCard(four)).resolves.toBeVisible();
-    await expect(
-      findFastControl("link", "Show suggestion 2 of 2"),
-    ).resolves.toHaveAttribute("aria-current", "step");
+    expect(
+      screen.getByRole("progressbar", { name: "For you" }),
+    ).toHaveAttribute("aria-valuenow", "2");
   } finally {
     release.resolve();
   }
@@ -537,12 +562,11 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
   );
   const alert = await screen.findByRole("alert");
   expect(screen.getByText("2 to go")).toBeInTheDocument();
-  click(await findFastControl("link", "Previous suggestion"));
+  swipeCard(await activeCard(four), "previous");
   await expect(activeCard(three)).resolves.toBeVisible();
   click(await findFastControl("button", "Try again", alert));
   await expect(activeCard(offer)).resolves.toBeVisible();
   expect(screen.getByText("1 to go")).toBeInTheDocument();
-  expect(queryFastControl("link", "Next suggestion")).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByText(staleMessage)).toBeNull();
   click(await findFastControl("button", "Undo"));
@@ -1327,9 +1351,9 @@ test("For you keeps the first and second cards in order when the model list is e
   click(choose);
   await screen.findByText("The selected model is not available");
   await activeCard(first);
-  click(await findFastControl("link", "Show suggestion 2 of 2"));
+  swipeCard(await activeCard(first), "next");
   await activeCard(second);
-  click(await findFastControl("link", "Show suggestion 1 of 2"));
+  swipeCard(await activeCard(second), "previous");
   await expect(activeCard(first)).resolves.toBeInTheDocument();
 });
 
@@ -1413,8 +1437,7 @@ test("Opening For you shows the summary card and keeps its draft and read receip
     await appendDirection(editor, "Check the tide");
     expect(listReads).toBe(1);
     expect(screen.queryByText(/\d+ to go/u)).toBeNull();
-    expect(queryFastControl("link", /Show suggestion/u)).toBeNull();
-    expect(queryFastControl("link", "Next suggestion")).toBeNull();
+    expect(screen.queryByRole("progressbar", { name: "For you" })).toBeNull();
     expect(
       document.querySelector('[data-slot="suggestion-stack-layer"]'),
     ).toBeNull();
@@ -1422,14 +1445,11 @@ test("Opening For you shows the summary card and keeps its draft and read receip
   } finally {
     release.resolve();
   }
-  await expect(
-    findFastControl("link", "Show suggestion 2 of 2"),
-  ).resolves.toHaveAttribute("aria-current", "step");
+  const progress = await screen.findByRole("progressbar", { name: "For you" });
+  expect(progress).toHaveAttribute("aria-valuenow", "2");
+  expect(progress).toHaveAttribute("aria-valuemax", "2");
   expect(screen.getByText("2 to go")).toBeInTheDocument();
-  expect(queryFastControl("link", "Previous suggestion")).toHaveAttribute(
-    "href",
-    "/for-you?suggestion=" + second.id,
-  );
+
   expect(
     document.querySelectorAll('[data-slot="suggestion-stack-layer"]'),
   ).toHaveLength(1);
@@ -1507,7 +1527,7 @@ test("Retrying a failed list preserves feedback and Undo from the preview", asyn
   expect(attempts).toBe(2);
 });
 
-test("A direct link reads its card on the next page without displaying the summary card", async () => {
+async function openDirectLinkPastFirstPage(simplified: boolean) {
   const preview = proposal("Review the eastern breakwater");
   const target = proposal("Review the western breakwater", 1);
   const firstPage = [
@@ -1535,9 +1555,10 @@ test("A direct link reads its card on the next page without displaying the summa
     return respond(200, { readAt: nowDate().toISOString() });
   });
   try {
-    await openDeck("/for-you?suggestion=" + target.id);
+    await openDeck("/for-you?suggestion=" + target.id, simplified);
     await nextPage.promise;
     expect(reads).toHaveLength(0);
+    expect(screen.queryByRole("progressbar", { name: "For you" })).toBeNull();
     expect(queryFastControl("link", /Show suggestion/u)).toBeNull();
     expect(
       screen.queryByRole("article", { name: preview.content.title }),
@@ -1546,6 +1567,28 @@ test("A direct link reads its card on the next page without displaying the summa
     release.resolve();
   }
   await expect(activeCard(target)).resolves.toBeVisible();
+  return { reads, target };
+}
+
+test("A direct link reads its card on the next page without displaying the summary card", async () => {
+  const { reads, target } = await openDirectLinkPastFirstPage(true);
+  const progress = await screen.findByRole("progressbar", {
+    name: "For you",
+  });
+  expect(progress).toHaveAttribute("aria-valuenow", "11");
+  expect(progress).toHaveAttribute("aria-valuemax", "11");
+  // The bar draws the same seven-step window as the linked steps.
+  expect(progress.children).toHaveLength(7);
+  expect(
+    document.querySelectorAll('[data-slot="suggestion-stack-layer"]'),
+  ).toHaveLength(2);
+  await waitFor(() => {
+    expect(reads).toStrictEqual([target.id]);
+  });
+});
+
+test("Without the simplified deck, a direct link marks its step among seven linked steps", async () => {
+  const { reads, target } = await openDirectLinkPastFirstPage(false);
   await expect(
     findFastControl("link", "Show suggestion 11 of 11"),
   ).resolves.toHaveAttribute("aria-current", "step");
@@ -1562,12 +1605,62 @@ test("A direct link reads its card on the next page without displaying the summa
   });
 });
 
-test("Arrow keys page the deck like its arrows, except while a direction is written", async () => {
+test("Arrow keys page the deck without arrow controls, except while a direction is written", async () => {
   const one = proposal("Supply forecast");
   const two = proposal("Packing list", 1);
   const three = proposal("Freight quote", 0);
   feed([one, two, three]);
   await openDeck();
+  await activeCard(one);
+  const user = userEvent.setup({ delay: null });
+  const progress = await screen.findByRole("progressbar", { name: "For you" });
+  expect(progress).toHaveAttribute("aria-valuenow", "1");
+  expect(progress).toHaveAttribute("aria-valuemax", "3");
+  expect(queryFastControl("link", /Show suggestion/u)).toBeNull();
+  click(progress);
+  expect(progress).toHaveAttribute("aria-valuenow", "1");
+  await expect(activeCard(one)).resolves.toBeInTheDocument();
+
+  await user.keyboard("{ArrowRight}");
+  await activeCard(two);
+  await user.keyboard("{ArrowLeft}");
+  await activeCard(one);
+  // Paging wraps round at either end.
+  await user.keyboard("{ArrowLeft}");
+  const card = await activeCard(three);
+  expect(queryFastControl("link", "Previous suggestion")).toBeNull();
+  expect(queryFastControl("link", "Next suggestion")).toBeNull();
+
+  click(await findFastControl("button", "What do you have in mind?", card));
+  const region = await screen.findByRole("region", {
+    name: "What do you have in mind?",
+  });
+  const edit = await within(region).findByRole("textbox", { name: /message/i });
+  await appendDirection(edit, "Expedite shipping");
+  await user.keyboard("{ArrowLeft}");
+  // Focus on another control keeps the direction open, so the keys still wait.
+  const dismiss = await findFastControl("button", "Dismiss", card);
+  act(() => {
+    dismiss.focus();
+  });
+  expect(dismiss).toHaveFocus();
+  await user.keyboard("{ArrowRight}");
+  await appendDirection(edit, " today");
+
+  expect(edit).toHaveTextContent("Expedite shipping today");
+  await expect(activeCard(three)).resolves.toBeInTheDocument();
+  expect(screen.getByRole("progressbar", { name: "For you" })).toHaveAttribute(
+    "aria-valuenow",
+    "3",
+  );
+});
+
+test("Without the simplified deck, the arrows and progress steps page the deck", async () => {
+  const one = proposal("Supply forecast");
+  const two = proposal("Packing list", 1);
+  const three = proposal("Freight quote", 0);
+  feed([one, two, three]);
+  await openDeck("/for-you", false);
   await activeCard(one);
   const user = userEvent.setup({ delay: null });
 
@@ -1577,10 +1670,22 @@ test("Arrow keys page the deck like its arrows, except while a direction is writ
   await activeCard(one);
   // Paging wraps round at either end, as the arrows do.
   await user.keyboard("{ArrowLeft}");
-  const card = await activeCard(three);
+  await activeCard(three);
   await expect(
     findFastControl("link", "Previous suggestion"),
   ).resolves.toHaveAttribute("aria-keyshortcuts", "ArrowLeft");
+  expect(queryFastControl("link", "Previous suggestion")).toHaveAttribute(
+    "href",
+    "/for-you?suggestion=" + two.id,
+  );
+  expect(queryFastControl("link", "Next suggestion")).toHaveAttribute(
+    "href",
+    "/for-you?suggestion=" + one.id,
+  );
+  click(await findFastControl("link", "Next suggestion"));
+  await activeCard(one);
+  click(await findFastControl("link", "Show suggestion 3 of 3"));
+  const card = await activeCard(three);
 
   click(await findFastControl("button", "What do you have in mind?", card));
   const region = await screen.findByRole("region", {
