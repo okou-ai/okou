@@ -475,11 +475,13 @@ private fun WorkflowDirectory(
     }
     val rowFocus = remember { FocusRequester() }
     val backFocus = remember { FocusRequester() }
+    // The first layout can still show the top of the list before the saved anchor is applied.
+    val readyToRestoreFocus = if (catalog == null) state.catalogFailure != null else anchor == null
     Column(
         modifier
             .restoreDirectoryFocus(
                 restoreRow,
-                catalog != null || state.catalogFailure != null,
+                readyToRestoreFocus,
                 query.position,
                 rowFocus,
                 backFocus,
