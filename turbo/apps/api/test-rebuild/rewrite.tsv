@@ -2353,8 +2353,8 @@ account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-011	rewri
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-012	rewritten	41.6	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-013	rewritten	66.2	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-016	rewritten	20.6	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
-account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-002	planned				B06
-account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-003	planned				B06
+account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-002	skipped		slow-setup: Given+first When/Then 221 ms and 245 ms (writer runs; 224-317 ms across six runs). Given steps (two members, memberships, storage mocks) take under 6 ms; the export job started by the first POST dominates, 165-178 ms of background work drained before the peer read. A warm second run of the same scenario in one file took 154 ms, so the excess is the export path cold start that only this case reaches.		B06
+account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-003	skipped		slow-setup: Given alone 243 ms and 246 ms, Given+first When/Then 294 ms and 305 ms. Given steps: member onboarding with workspace provisioning 72-76 ms, Pro plan Stripe lifecycle 62-63 ms, personal instructions plus workflow 45-48 ms, member thread create plus pin 25-28 ms, peer thread 16-20 ms, peer onboarding 10-11 ms.		B06
 account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-001	rewritten	47.1		src/signals/routes/__tests__/org-cache.test.ts	B03
 account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-003	rewritten	66.8		src/signals/routes/__tests__/org-cache.test.ts	B03
 account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-005	rewritten	49.6		src/signals/routes/__tests__/org-cache.test.ts	B03
