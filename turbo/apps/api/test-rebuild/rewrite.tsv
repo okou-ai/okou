@@ -1741,10 +1741,10 @@ artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-respo
 artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-011	planned				
 artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-013	planned				
 artifacts	src/signals/routes/__tests__/image-io-run-lifetime.test.ts	image-io-run-lifetime-001	planned				
-account-org	src/signals/routes/__tests__/instructions.test.ts	instructions-001	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/instructions.test.ts	instructions-002	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/instructions.test.ts	instructions-004	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/instructions.test.ts	instructions-007	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
+account-org	src/signals/routes/__tests__/instructions.test.ts	instructions-001	rewritten	48.6	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/instructions.test.ts	B03
+account-org	src/signals/routes/__tests__/instructions.test.ts	instructions-002	rewritten	57.6	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/instructions.test.ts	B03
+account-org	src/signals/routes/__tests__/instructions.test.ts	instructions-004	rewritten	22.8	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/instructions.test.ts	B03
+account-org	src/signals/routes/__tests__/instructions.test.ts	instructions-007	rewritten	82.5	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/instructions.test.ts	B03
 account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.ts	integration-model-recovery-slack-001	planned				
 account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.ts	integration-model-recovery-slack-003	planned				
 account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.ts	integration-model-recovery-slack-004	planned				
