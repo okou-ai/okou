@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import type {
   CreateCustomConnectorBody,
@@ -8,7 +10,13 @@ import type {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
+import { connectorCatalogRoutes } from "../connector-catalog";
 import {
   createBddApi,
   expectApiError,
@@ -18,12 +26,159 @@ import {
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
   mockAutomaticMcpOAuthProvider,
+  mockBase44OAuthProvider,
+  mockCustomConnectorOAuth2Provider,
+  mockDatadogConnectorOAuth,
+  mockGitHubConnectorOAuth,
+  mockSlockOAuthProvider,
+  mockStripeCliDashboardAuth,
+  mockTestOAuthAuthCodeProvider,
   mockTestOAuthDeviceConnectorProvider,
 } from "./helpers/api-bdd-connectors";
+import {
+  marketingRewardConsumer,
+  settleMarketingRequest,
+} from "./helpers/marketing-reward-consumer";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
+const routeMocks = createRouteMocks(context);
+
+const DATADOG_READ_SCOPES = Object.freeze([
+  "dashboards_read",
+  "events_read",
+  "incident_read",
+  "logs_read_index_data",
+  "metrics_read",
+  "monitors_read",
+  "slos_read",
+]);
+
+function oauthStateFromUrl(authorizationUrl: string): string {
+  const state = new URL(authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error(`Expected state parameter in ${authorizationUrl}`);
+  }
+  return state;
+}
+
+function redirectLocationUrl(headers: Headers): URL {
+  const location = headers.get("location");
+  if (!location) {
+    throw new Error("Expected Location redirect header");
+  }
+  return new URL(location, "https://www.okou.ai");
+}
+
+function expectClearedOAuthCookies(headers: Headers): void {
+  const setCookies = headers.getSetCookie();
+  for (const name of [
+    "connector_oauth_state",
+    "connector_oauth_pkce",
+    "connector_oauth_context",
+  ]) {
+    expect(
+      setCookies.some((cookie) => {
+        return cookie.startsWith(`${name}=;`) && cookie.includes("Max-Age=0");
+      }),
+    ).toBeTruthy();
+  }
+}
+
+async function readConnectorCatalogStatus(actor: ApiTestUser) {
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const client = setupApp({ context, routes: connectorCatalogRoutes })(
+    connectorCatalogContract,
+  );
+  const response = await accept(
+    client.status({ headers: { authorization: "Bearer clerk-session" } }),
+    [200],
+  );
+  return response.body;
+}
+
+async function readUsagePackCredits(actor: ApiTestUser) {
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const client = setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+    billingUsagePackCreditsContract,
+  );
+  const response = await accept(
+    client.get({ headers: { authorization: "Bearer clerk-session" } }),
+    [200],
+  );
+  return response.body;
+}
+
+function oauthHttpBody(args: {
+  readonly displayName: string;
+  readonly prefix: string;
+  readonly authorizationUrl: string;
+  readonly tokenUrl: string;
+  readonly scopes: readonly string[];
+  readonly clientSecret?: string;
+}): HttpCreateBody {
+  return {
+    displayName: args.displayName,
+    prefixTemplates: [args.prefix],
+    authMode: "oauth",
+    oauthConfig: {
+      providerAdapter: "standard",
+      clientId: "branded-oauth-client-id",
+      authorizationUrl: args.authorizationUrl,
+      tokenUrl: args.tokenUrl,
+      tokenEndpointAuthMethod: "client_secret_post",
+      pkceMethod: "S256",
+      scopes: [...args.scopes],
+      authorizationParams: {},
+      ...(args.clientSecret === undefined
+        ? {}
+        : { clientSecret: args.clientSecret }),
+    },
+    fields: [],
+    headerInjections: [
+      { name: "Authorization", valueTemplate: "Bearer {{oauth.access_token}}" },
+    ],
+    queryInjections: [],
+  };
+}
+
+function oauthMcpBody(args: {
+  readonly displayName: string;
+  readonly endpoint: string;
+  readonly authorizationUrl: string;
+  readonly tokenUrl: string;
+  readonly scopes: readonly string[];
+  readonly clientSecret?: string;
+}): McpCreateBody {
+  return {
+    kind: "mcp",
+    displayName: args.displayName,
+    endpoint: args.endpoint,
+    transport: "streamable-http",
+    authMode: "oauth",
+    oauthConfig: {
+      providerAdapter: "standard",
+      clientId: "branded-mcp-client-id",
+      authorizationUrl: args.authorizationUrl,
+      tokenUrl: args.tokenUrl,
+      tokenEndpointAuthMethod: "client_secret_post",
+      pkceMethod: "S256",
+      scopes: [...args.scopes],
+      authorizationParams: {},
+      ...(args.clientSecret === undefined
+        ? {}
+        : { clientSecret: args.clientSecret }),
+    },
+    fields: [],
+    headerInjections: [
+      { name: "Authorization", valueTemplate: "Bearer {{oauth.access_token}}" },
+    ],
+    queryInjections: [],
+  };
+}
 
 const LITERAL_ONLY_MESSAGE =
   "Manual custom connector injections must reference a declared secret or variable field";
@@ -1573,5 +1728,2290 @@ describe("connectors BDD", () => {
       status: "complete",
       connectionId: sibling.connectionId,
     });
+  });
+
+  it("connectors.bdd-003 uses App callbacks for enabled connectors while returning structured callback results", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    mockGitHubConnectorOAuth();
+    const firstMember = bdd.user({ orgRole: "org:member" });
+    const secondMember = bdd.user({ orgRole: "org:member" });
+
+    const firstStart = await connectors.requestOauthStart(
+      firstMember,
+      "github",
+      "oauth",
+      { statuses: [200], callbackTarget: "app" },
+    );
+    if (!("authorizationUrl" in firstStart.body)) {
+      throw new Error("Expected authorizationUrl for first member");
+    }
+    const firstAuthUrl = new URL(firstStart.body.authorizationUrl);
+    const redirectUri = firstAuthUrl.searchParams.get("redirect_uri");
+    if (!redirectUri) {
+      throw new Error("Expected redirect_uri in authorization URL");
+    }
+    expect(new URL(redirectUri).pathname).toBe("/connectors/github/callback");
+
+    const successCallback = await connectors.completeOauthCallbackResult(
+      "github",
+      {
+        code: "gh-success-code",
+        state: oauthStateFromUrl(firstStart.body.authorizationUrl),
+      },
+    );
+    expect(successCallback.body).toStrictEqual({
+      status: "success",
+      username: "bdd-github-user",
+    });
+    expect(successCallback.headers.get("cache-control")).toBe("no-store");
+    expectClearedOAuthCookies(successCallback.headers);
+
+    const firstAccount = await connectors.readDefaultBuiltinAccount(
+      firstMember,
+      "github",
+    );
+    expect(firstAccount).toMatchObject({
+      connectionStatus: "connected",
+      externalUsername: "bdd-github-user",
+    });
+
+    const secondStart = await connectors.requestOauthStart(
+      secondMember,
+      "github",
+      "oauth",
+      { statuses: [200], callbackTarget: "app" },
+    );
+    if (!("authorizationUrl" in secondStart.body)) {
+      throw new Error("Expected authorizationUrl for second member");
+    }
+    const deniedCallback = await connectors.completeOauthCallbackResult(
+      "github",
+      {
+        state: oauthStateFromUrl(secondStart.body.authorizationUrl),
+        error: "access_denied",
+        error_description: "Provider denied access",
+      },
+    );
+    expect(deniedCallback.body).toStrictEqual({
+      status: "error",
+      message: "Provider denied access",
+    });
+    await expect(
+      connectors.listBuiltinConnectorAccounts(secondMember, "github"),
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("connectors.bdd-004 starts GitHub OAuth, completes the callback, rejects replay visibly, and keeps safe connector state", async () => {
+    mockGitHubConnectorOAuth();
+    const firstMember = bdd.user({ orgRole: "org:member" });
+    const secondMember = bdd.user({ orgRole: "org:member" });
+
+    const started = await connectors.startOauth(firstMember, "github", "oauth");
+    const authUrl = new URL(started.authorizationUrl);
+    expect(`${authUrl.origin}${authUrl.pathname}`).toBe(
+      "https://github.com/login/oauth/authorize",
+    );
+    expect(authUrl.searchParams.get("client_id")).toBe("github-client-id");
+
+    const state = oauthStateFromUrl(started.authorizationUrl);
+    const completed = await connectors.completeOauthCallback("github", {
+      code: "gh-code-1",
+      state,
+    });
+    expect(redirectLocationUrl(completed.headers).pathname).toBe(
+      "/connector/success",
+    );
+
+    const account = await connectors.readDefaultBuiltinAccount(
+      firstMember,
+      "github",
+    );
+    expect(account).toMatchObject({
+      authMethod: "oauth",
+      connectionStatus: "connected",
+      externalId: "42",
+      externalUsername: "bdd-github-user",
+      externalEmail: "bdd-github@example.test",
+    });
+    expect(account.oauthScopes).toStrictEqual(
+      expect.arrayContaining(["repo", "project", "workflow"]),
+    );
+    expect(JSON.stringify(account)).not.toContain("github-access-gh-code-1");
+
+    const scopeDiff = await connectors.readDefaultBuiltinScopeDiff(
+      firstMember,
+      "github",
+    );
+    expect(scopeDiff.addedScopes).toStrictEqual([]);
+    expect(scopeDiff.removedScopes).toStrictEqual([]);
+
+    const replay = await connectors.completeOauthCallback("github", {
+      code: "gh-code-2",
+      state,
+    });
+    expect(redirectLocationUrl(replay.headers).pathname).toBe(
+      "/connector/error",
+    );
+    const afterReplay = await connectors.readDefaultBuiltinAccount(
+      firstMember,
+      "github",
+    );
+    expect(afterReplay).toMatchObject({
+      id: account.id,
+      externalUsername: "bdd-github-user",
+    });
+
+    const secondStart = await connectors.startOauth(
+      secondMember,
+      "github",
+      "oauth",
+    );
+    const denied = await connectors.completeOauthCallback("github", {
+      state: oauthStateFromUrl(secondStart.authorizationUrl),
+      error: "access_denied",
+    });
+    expect(redirectLocationUrl(denied.headers).pathname).toBe(
+      "/connector/error",
+    );
+    await expect(
+      connectors.listBuiltinConnectorAccounts(secondMember, "github"),
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("connectors.bdd-005 (1/2) reconnects the exact GitHub account and rejects mismatched identities", async () => {
+    mockGitHubConnectorOAuth({ userId: 42, login: "bdd-github-user" });
+    const member = bdd.user({ orgRole: "org:member" });
+
+    const initialStart = await connectors.startOauth(member, "github", "oauth");
+    await connectors.completeOauthCallback("github", {
+      code: "gh-initial",
+      state: oauthStateFromUrl(initialStart.authorizationUrl),
+    });
+    const original = await connectors.readDefaultBuiltinAccount(
+      member,
+      "github",
+    );
+
+    const sameReconnect = await connectors.startOauth(
+      member,
+      "github",
+      "oauth",
+      { intent: "reconnect", connectionId: original.id },
+    );
+    const sameCallback = await connectors.completeOauthCallback("github", {
+      code: "gh-same-reconnect",
+      state: oauthStateFromUrl(sameReconnect.authorizationUrl),
+    });
+    expect(redirectLocationUrl(sameCallback.headers).pathname).toBe(
+      "/connector/success",
+    );
+    const afterSameReconnect = await connectors.readDefaultBuiltinAccount(
+      member,
+      "github",
+    );
+    expect(afterSameReconnect.id).toBe(original.id);
+
+    mockGitHubConnectorOAuth({ userId: 99, login: "other-github-user" });
+    const mismatchedReconnect = await connectors.startOauth(
+      member,
+      "github",
+      "oauth",
+      { intent: "reconnect", connectionId: original.id },
+    );
+    const mismatchCallback = await connectors.completeOauthCallback("github", {
+      code: "gh-mismatch",
+      state: oauthStateFromUrl(mismatchedReconnect.authorizationUrl),
+    });
+    const mismatchUrl = redirectLocationUrl(mismatchCallback.headers);
+    expect(mismatchUrl.pathname).toBe("/connector/error");
+    expect(mismatchUrl.searchParams.get("connectorSlug")).toBe("github");
+    expect(mismatchUrl.searchParams.get("message")).toContain(
+      "Authorized account does not match the connector account",
+    );
+
+    const afterMismatch = await connectors.readDefaultBuiltinAccount(
+      member,
+      "github",
+    );
+    expect(afterMismatch).toMatchObject({
+      id: original.id,
+      externalId: "42",
+    });
+  });
+
+  it("connectors.bdd-005 (2/2) adds a non-default sibling GitHub account through OAuth", async () => {
+    mockGitHubConnectorOAuth({ userId: 42, login: "bdd-github-user" });
+    const member = bdd.user({ orgRole: "org:member" });
+
+    const initialStart = await connectors.startOauth(member, "github", "oauth");
+    await connectors.completeOauthCallback("github", {
+      code: "gh-initial",
+      state: oauthStateFromUrl(initialStart.authorizationUrl),
+    });
+
+    mockGitHubConnectorOAuth({ userId: 99, login: "other-github-user" });
+    const siblingStart = await connectors.startOauth(
+      member,
+      "github",
+      "oauth",
+      { intent: "add", displayName: "Personal" },
+    );
+    const siblingCallback = await connectors.completeOauthCallback("github", {
+      code: "gh-sibling",
+      state: oauthStateFromUrl(siblingStart.authorizationUrl),
+    });
+    expect(redirectLocationUrl(siblingCallback.headers).pathname).toBe(
+      "/connector/success",
+    );
+
+    const accounts = await connectors.listBuiltinConnectorAccounts(
+      member,
+      "github",
+    );
+    expect(accounts).toHaveLength(2);
+    expect(
+      accounts.find((candidate) => {
+        return candidate.displayName === "Personal";
+      }),
+    ).toMatchObject({
+      isDefault: false,
+      displayName: "Personal",
+    });
+  });
+
+  it("connectors.bdd-006 persists the callback-selected Datadog site through the public OAuth flow", async () => {
+    const provider = mockDatadogConnectorOAuth();
+    const member = bdd.user({ orgRole: "org:member" });
+
+    const started = await connectors.startOauth(member, "datadog", "oauth");
+    const authUrl = new URL(started.authorizationUrl);
+    expect(authUrl.searchParams.get("code_challenge_method")).toBe("S256");
+
+    const callback = await connectors.completeOauthCallback("datadog", {
+      code: "dd-auth-code",
+      state: oauthStateFromUrl(started.authorizationUrl),
+      domain: "us3.datadoghq.com",
+    });
+    expect(redirectLocationUrl(callback.headers).pathname).toBe(
+      "/connector/success",
+    );
+
+    const [tokenBody] = provider.tokenBodies;
+    if (!tokenBody) {
+      throw new Error("Expected Datadog token exchange body");
+    }
+    expect(tokenBody.get("code")).toBe("dd-auth-code");
+    expect(
+      (tokenBody.get("code_verifier") ?? "").length,
+    ).toBeGreaterThanOrEqual(43);
+
+    const account = await connectors.readDefaultBuiltinAccount(
+      member,
+      "datadog",
+    );
+    expect(account).toMatchObject({
+      authMethod: "oauth",
+      connectionStatus: "connected",
+      externalId: "us3.datadoghq.com",
+      externalUsername: "us3.datadoghq.com",
+    });
+    expect(account.oauthScopes).toStrictEqual(
+      expect.arrayContaining(["dashboards_read", "logs_read_index_data"]),
+    );
+    expect(JSON.stringify(account)).not.toContain("bdd-datadog-access-token");
+    expect(JSON.stringify(account)).not.toContain("bdd-datadog-refresh-token");
+
+    const scopeDiff = await connectors.readDefaultBuiltinScopeDiff(
+      member,
+      "datadog",
+    );
+    expect(scopeDiff.currentScopes).toStrictEqual(
+      expect.arrayContaining([...DATADOG_READ_SCOPES]),
+    );
+    expect(scopeDiff.storedScopes).toStrictEqual(
+      expect.arrayContaining([...DATADOG_READ_SCOPES]),
+    );
+    expect(scopeDiff.currentScopes).toHaveLength(7);
+    expect(scopeDiff.storedScopes).toHaveLength(7);
+    expect(scopeDiff.addedScopes).toStrictEqual([]);
+    expect(scopeDiff.removedScopes).toStrictEqual([]);
+
+    const catalogStatus = await readConnectorCatalogStatus(member);
+    expect(
+      catalogStatus.connectors.some((entry) => {
+        return entry.slug === "datadog";
+      }),
+    ).toBeTruthy();
+  });
+
+  it("connectors.bdd-007 starts and completes a device authorization session, with state visible through connector APIs", async () => {
+    const member = bdd.user({ orgRole: "org:member" });
+    const peer = bdd.user({ orgId: member.orgId, orgRole: "org:member" });
+    await connectors.updateFeatureSwitches(member, {
+      [FeatureSwitchKey.TestOauthConnector]: true,
+    });
+
+    const search = await connectors.searchConnectors(
+      member,
+      "test-oauth-device",
+    );
+    const listed = search.connectors.find((entry) => {
+      return entry.slug === "test-oauth-device";
+    });
+    expect(listed?.authMethods).toStrictEqual(
+      expect.arrayContaining(["oauth", "api"]),
+    );
+
+    const firstProvider = mockTestOAuthDeviceConnectorProvider({
+      tokenScope: "read provider-added",
+    });
+    const started = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "oauth",
+      undefined,
+      { intent: "add" },
+    );
+    expect(started).toMatchObject({
+      status: "pending",
+      userCode: "TEST-DEVICE",
+      verificationUri: "https://oauth-device.test/device",
+    });
+    expect(firstProvider.deviceCodeBodies[0]?.get("scope")).toBe("read");
+
+    const peerPoll = await connectors.requestDeviceAuthPoll(
+      peer,
+      "test-oauth-device",
+      started.sessionId,
+      started.sessionToken,
+      [404],
+    );
+    expect(errorCode(peerPoll.body)).toBe("NOT_FOUND");
+
+    const completed = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      started.sessionId,
+      started.sessionToken,
+    );
+    if (completed.status !== "complete") {
+      throw new Error(`Expected complete poll, got ${completed.status}`);
+    }
+    expect(completed.account).toMatchObject({
+      authMethod: "oauth",
+      connectionStatus: "connected",
+      oauthScopes: ["read", "provider-added"],
+    });
+    await expect(
+      connectors.readDefaultBuiltinAccount(member, "test-oauth-device"),
+    ).resolves.toMatchObject({ id: completed.connectionId });
+    const builtinList = await connectors.listBuiltinConnectors(member);
+    expect(
+      builtinList.connectors.map((entry) => {
+        return entry.id;
+      }),
+    ).toContain(completed.connectionId);
+
+    mockTestOAuthDeviceConnectorProvider({ tokenScope: "" });
+    const reconnect = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "oauth",
+      undefined,
+      { intent: "reconnect", connectionId: completed.connectionId },
+    );
+    const reconnected = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      reconnect.sessionId,
+      reconnect.sessionToken,
+    );
+    if (reconnected.status !== "complete") {
+      throw new Error(`Expected reconnect complete, got ${reconnected.status}`);
+    }
+    expect(reconnected.connectionId).toBe(completed.connectionId);
+    expect(reconnected.account.oauthScopes).toStrictEqual([]);
+
+    const deletedReconnect = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "oauth",
+      undefined,
+      { intent: "reconnect", connectionId: completed.connectionId },
+    );
+    await connectors.deleteBuiltinConnectorAccount(
+      member,
+      "test-oauth-device",
+      completed.connectionId,
+    );
+    const afterDeletePoll = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      deletedReconnect.sessionId,
+      deletedReconnect.sessionToken,
+    );
+    expect(afterDeletePoll).toMatchObject({
+      status: "error",
+      errorCode: "connector_account_rejected",
+      errorMessage: "Connector account not found",
+    });
+  });
+
+  it("connectors.bdd-009 starts and completes the Stripe CLI device authorization method", async () => {
+    const startedAt = now();
+    mockNow(startedAt);
+    const stripe = mockStripeCliDashboardAuth();
+    const member = bdd.user({ orgRole: "org:member" });
+
+    const session = await connectors.startDeviceAuth(member, "stripe", "cli", {
+      mode: "live",
+    });
+    expect(session).toMatchObject({
+      status: "pending",
+      userCode: "STRIPE-CLI",
+      verificationUri:
+        "https://dashboard.stripe.com/stripecli/confirm_auth?code=STRIPE-CLI",
+      verificationUriComplete:
+        "https://dashboard.stripe.com/stripecli/confirm_auth?code=STRIPE-CLI",
+      expiresIn: 600,
+      interval: 1,
+    });
+    expect(stripe.startBodies[0]?.get("client_version")).toBe("1.42.1");
+    expect(stripe.startBodies[0]?.get("device_name")).toBe(
+      "vm0-stripe-connector",
+    );
+
+    mockNow(startedAt + 2000);
+    const polled = await connectors.pollDeviceAuth(
+      member,
+      "stripe",
+      session.sessionId,
+      session.sessionToken,
+    );
+    if (polled.status !== "complete") {
+      throw new Error(
+        `Expected complete Stripe CLI poll, got ${polled.status}`,
+      );
+    }
+    expect(polled.account).toMatchObject({
+      authMethod: "cli",
+      connectionStatus: "connected",
+      externalId: "acct_bdd",
+      externalUsername: "BDD Stripe",
+      externalEmail: null,
+      oauthScopes: [],
+    });
+    expect(JSON.stringify(polled.account)).not.toContain("rk_live_api456");
+    expect(JSON.stringify(polled.account)).not.toContain("rk_test_api123");
+
+    const listed = await connectors.listBuiltinConnectors(member);
+    expect(
+      listed.connectors.map((entry) => {
+        return entry.id;
+      }),
+    ).toContain(polled.connectionId);
+  });
+
+  it("connectors.bdd-011 supersedes, completes, and idempotently re-reads device authorization sessions per auth method", async () => {
+    const member = bdd.user({ orgRole: "org:member" });
+    await connectors.updateFeatureSwitches(member, {
+      [FeatureSwitchKey.TestOauthConnector]: true,
+    });
+    const provider = mockTestOAuthDeviceConnectorProvider({
+      tokenScope: "read granted",
+    });
+
+    await connectors.startDeviceAuth(member, "test-oauth-device", "api", {
+      environment: "live",
+    });
+    const apiDefault = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "api",
+    );
+    expect(provider.deviceCodeBodies[0]?.get("mode")).toBe("live");
+    expect(provider.deviceCodeBodies[1]?.get("mode")).toBe("test");
+    expect(provider.deviceCodeBodies[0]?.get("client_id")).toBeTruthy();
+    expect(provider.deviceCodeBodies[1]?.get("client_id")).toBe(
+      provider.deviceCodeBodies[0]?.get("client_id"),
+    );
+
+    const firstOauth = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "oauth",
+    );
+    expect(firstOauth).toMatchObject({
+      status: "pending",
+      userCode: "TEST-DEVICE",
+      verificationUri: "https://oauth-device.test/device",
+      verificationUriComplete:
+        "https://oauth-device.test/device?user_code=TEST-DEVICE",
+      expiresIn: 600,
+      interval: 0,
+    });
+    expect(JSON.stringify(firstOauth)).not.toContain("test-device:");
+
+    const secondOauth = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "oauth",
+    );
+
+    const superseded = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      firstOauth.sessionId,
+      firstOauth.sessionToken,
+    );
+    expect(superseded).toMatchObject({
+      status: "error",
+      errorCode: "session_superseded",
+    });
+
+    const apiComplete = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      apiDefault.sessionId,
+      apiDefault.sessionToken,
+    );
+    if (apiComplete.status !== "complete") {
+      throw new Error(`Expected api complete, got ${apiComplete.status}`);
+    }
+    expect(apiComplete.account.authMethod).toBe("api");
+    expect(provider.tokenBodies.at(-1)?.get("device_code")).toContain(":test");
+
+    await connectors.deleteDefaultBuiltinConnectorAccount(
+      member,
+      "test-oauth-device",
+    );
+
+    const oauthComplete = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      secondOauth.sessionId,
+      secondOauth.sessionToken,
+    );
+    if (oauthComplete.status !== "complete") {
+      throw new Error(`Expected oauth complete, got ${oauthComplete.status}`);
+    }
+    expect(oauthComplete.account).toMatchObject({
+      authMethod: "oauth",
+      connectionStatus: "connected",
+      oauthScopes: ["read", "granted"],
+    });
+    expect(JSON.stringify(oauthComplete.account)).not.toContain(
+      "test-device-access:",
+    );
+    await expect(
+      connectors.readDefaultBuiltinAccount(member, "test-oauth-device"),
+    ).resolves.toMatchObject({ id: oauthComplete.connectionId });
+    const listed = await connectors.listBuiltinConnectors(member);
+    expect(
+      listed.connectors.map((entry) => {
+        return entry.id;
+      }),
+    ).toContain(oauthComplete.connectionId);
+
+    const repollProvider = mockTestOAuthDeviceConnectorProvider({
+      tokenScope: "read granted",
+    });
+    const repolled = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      secondOauth.sessionId,
+      secondOauth.sessionToken,
+    );
+    if (repolled.status !== "complete") {
+      throw new Error(`Expected repoll complete, got ${repolled.status}`);
+    }
+    expect(repolled.connectionId).toBe(oauthComplete.connectionId);
+    expect(repollProvider.tokenBodies).toStrictEqual([]);
+  });
+
+  it("connectors.bdd-012 (1/2) walks interval-gated, pending, slow-down, and denied device poll states", async () => {
+    const member = bdd.user({ orgRole: "org:member" });
+    await connectors.updateFeatureSwitches(member, {
+      [FeatureSwitchKey.TestOauthConnector]: true,
+    });
+
+    const intervalProvider = mockTestOAuthDeviceConnectorProvider({
+      interval: 5,
+    });
+    const intervalSession = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "oauth",
+    );
+    const intervalPoll1 = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      intervalSession.sessionId,
+      intervalSession.sessionToken,
+    );
+    const intervalPoll2 = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      intervalSession.sessionId,
+      intervalSession.sessionToken,
+    );
+    expect(intervalPoll1).toStrictEqual({ status: "pending", interval: 5 });
+    expect(intervalPoll2).toStrictEqual({ status: "pending", interval: 5 });
+    expect(intervalProvider.tokenBodies).toStrictEqual([]);
+
+    mockTestOAuthDeviceConnectorProvider({ deviceCode: "pending" });
+    const pendingSession = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "oauth",
+    );
+    await expect(
+      connectors.pollDeviceAuth(
+        member,
+        "test-oauth-device",
+        pendingSession.sessionId,
+        pendingSession.sessionToken,
+      ),
+    ).resolves.toStrictEqual({ status: "pending", interval: 0 });
+    await expect(
+      connectors.pollDeviceAuth(
+        member,
+        "test-oauth-device",
+        pendingSession.sessionId,
+        pendingSession.sessionToken,
+      ),
+    ).resolves.toStrictEqual({ status: "pending", interval: 0 });
+
+    mockTestOAuthDeviceConnectorProvider({ deviceCode: "slow-down" });
+    const slowSession = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "oauth",
+    );
+    await expect(
+      connectors.pollDeviceAuth(
+        member,
+        "test-oauth-device",
+        slowSession.sessionId,
+        slowSession.sessionToken,
+      ),
+    ).resolves.toStrictEqual({ status: "pending", interval: 5 });
+    const afterSlowProvider = mockTestOAuthDeviceConnectorProvider({
+      deviceCode: "slow-down",
+    });
+    await expect(
+      connectors.pollDeviceAuth(
+        member,
+        "test-oauth-device",
+        slowSession.sessionId,
+        slowSession.sessionToken,
+      ),
+    ).resolves.toStrictEqual({ status: "pending", interval: 5 });
+    expect(afterSlowProvider.tokenBodies).toStrictEqual([]);
+
+    mockTestOAuthDeviceConnectorProvider({ deviceCode: "denied" });
+    const deniedSession = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "oauth",
+    );
+    const denied1 = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      deniedSession.sessionId,
+      deniedSession.sessionToken,
+    );
+    expect(denied1).toMatchObject({
+      status: "denied",
+      errorCode: "access_denied",
+    });
+    const afterDeniedProvider = mockTestOAuthDeviceConnectorProvider({
+      deviceCode: "denied",
+    });
+    const denied2 = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      deniedSession.sessionId,
+      deniedSession.sessionToken,
+    );
+    expect(denied2).toStrictEqual(denied1);
+    expect(afterDeniedProvider.tokenBodies).toStrictEqual([]);
+  });
+
+  it("connectors.bdd-012 (2/2) walks expired, error, unrecognized-code, and locally expired device poll states", async () => {
+    const member = bdd.user({ orgRole: "org:member" });
+    await connectors.updateFeatureSwitches(member, {
+      [FeatureSwitchKey.TestOauthConnector]: true,
+    });
+
+    for (const arm of [
+      {
+        deviceCode: "expired",
+        status: "expired",
+        error: "expired_token",
+      },
+      {
+        deviceCode: "error",
+        status: "error",
+        error: "invalid_request",
+      },
+      {
+        deviceCode: "unrecognized-code",
+        status: "error",
+        error: "invalid_grant",
+      },
+    ]) {
+      mockTestOAuthDeviceConnectorProvider({ deviceCode: arm.deviceCode });
+      const session = await connectors.startDeviceAuth(
+        member,
+        "test-oauth-device",
+        "oauth",
+      );
+      const first = await connectors.pollDeviceAuth(
+        member,
+        "test-oauth-device",
+        session.sessionId,
+        session.sessionToken,
+      );
+      expect(first).toMatchObject({
+        status: arm.status,
+        errorCode: arm.error,
+      });
+      const repollProvider = mockTestOAuthDeviceConnectorProvider({
+        deviceCode: arm.deviceCode,
+      });
+      const second = await connectors.pollDeviceAuth(
+        member,
+        "test-oauth-device",
+        session.sessionId,
+        session.sessionToken,
+      );
+      expect(second).toStrictEqual(first);
+      expect(repollProvider.tokenBodies).toStrictEqual([]);
+    }
+
+    const startedAt = now();
+    mockNow(startedAt);
+    mockTestOAuthDeviceConnectorProvider({ expiresIn: 1 });
+    const expiringSession = await connectors.startDeviceAuth(
+      member,
+      "test-oauth-device",
+      "oauth",
+    );
+    mockNow(startedAt + 2000);
+    const localExpired1 = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      expiringSession.sessionId,
+      expiringSession.sessionToken,
+    );
+    const localExpired2 = await connectors.pollDeviceAuth(
+      member,
+      "test-oauth-device",
+      expiringSession.sessionId,
+      expiringSession.sessionToken,
+    );
+    expect(localExpired1).toMatchObject({
+      status: "expired",
+      errorCode: "expired_token",
+      errorMessage: "OAuth device authorization session expired",
+    });
+    expect(localExpired2).toStrictEqual(localExpired1);
+  });
+
+  it("connectors.bdd-017 settles device connector facts once across concurrent connections and reconnects", async () => {
+    const consumer = marketingRewardConsumer();
+    mockBase44OAuthProvider();
+    mockSlockOAuthProvider();
+    const member = bdd.user({ orgRole: "org:member" });
+
+    const [base44Start, slockStart] = await Promise.all([
+      connectors.startDeviceAuth(member, "base44", "oauth"),
+      connectors.startDeviceAuth(member, "slock", "oauth"),
+    ]);
+    const [base44InitialResp, slockInitialResp] = await Promise.all([
+      connectors.requestDeviceAuthPoll(
+        member,
+        "base44",
+        base44Start.sessionId,
+        base44Start.sessionToken,
+        [200],
+      ),
+      connectors.requestDeviceAuthPoll(
+        member,
+        "slock",
+        slockStart.sessionId,
+        slockStart.sessionToken,
+        [200],
+      ),
+    ]);
+    const base44Initial = base44InitialResp.body;
+    const slockInitial = slockInitialResp.body;
+    if (
+      !("status" in base44Initial) ||
+      base44Initial.status !== "complete" ||
+      !("status" in slockInitial) ||
+      slockInitial.status !== "complete"
+    ) {
+      throw new Error("Expected initial Base44 and Slock sessions to complete");
+    }
+
+    const [base44ReStart, slockReStart] = await Promise.all([
+      connectors.startDeviceAuth(member, "base44", "oauth", undefined, {
+        intent: "reconnect",
+        connectionId: base44Initial.connectionId,
+      }),
+      connectors.startDeviceAuth(member, "slock", "oauth", undefined, {
+        intent: "reconnect",
+        connectionId: slockInitial.connectionId,
+      }),
+    ]);
+    const [base44ReResp, slockReResp] = await Promise.all([
+      connectors.requestDeviceAuthPoll(
+        member,
+        "base44",
+        base44ReStart.sessionId,
+        base44ReStart.sessionToken,
+        [200],
+      ),
+      connectors.requestDeviceAuthPoll(
+        member,
+        "slock",
+        slockReStart.sessionId,
+        slockReStart.sessionToken,
+        [200],
+      ),
+    ]);
+    const base44Re = base44ReResp.body;
+    const slockRe = slockReResp.body;
+    if (
+      !("status" in base44Re) ||
+      base44Re.status !== "complete" ||
+      !("status" in slockRe) ||
+      slockRe.status !== "complete"
+    ) {
+      throw new Error("Expected Base44 and Slock reconnects to complete");
+    }
+    expect(base44Re.connectionId).toBe(base44Initial.connectionId);
+    expect(slockRe.connectionId).toBe(slockInitial.connectionId);
+
+    await flushWaitUntilForTest();
+    const oauthFacts = consumer.received.filter((event) => {
+      return event.type === "connector.oauth-authorized";
+    });
+    expect(oauthFacts).toHaveLength(4);
+
+    await Promise.all(
+      oauthFacts.map(async (fact) => {
+        if (fact.type !== "connector.oauth-authorized") {
+          return;
+        }
+        const sourceKey =
+          fact.connector.kind === "custom"
+            ? "custom"
+            : `builtin:${fact.connector.connectorSlug}`;
+        await settleMarketingRequest(context, {
+          version: 1,
+          environment: fact.environment,
+          policy: "get-started-v1",
+          sourceEventId: fact.id,
+          questKey: "connector",
+          sourceKey,
+          rewardKey: `connector:${fact.userId}:${sourceKey}`,
+          orgId: fact.orgId,
+          actorUserId: fact.userId,
+          beneficiaryUserId: fact.userId,
+          rewardTarget: "user",
+          rewardAmount: 100,
+          completedAt: fact.occurredAt,
+        });
+      }),
+    );
+
+    const credits = await readUsagePackCredits(member);
+    expect(credits.bonusCredits).toBe(200);
+    const bonusGrants = credits.creditGrants.filter((grant) => {
+      return grant.grantType === "bonus";
+    });
+    expect(bonusGrants).toHaveLength(2);
+    for (const grant of bonusGrants) {
+      expect(grant).toMatchObject({
+        amount: 100,
+        remaining: 100,
+      });
+    }
+  });
+
+  it("connectors.bdd-018 (1/2) completes a Base44 device session with provider metadata visible through connector reads", async () => {
+    const base44Provider = mockBase44OAuthProvider();
+    const member = bdd.user({ orgRole: "org:member" });
+
+    const base44Start = await connectors.startDeviceAuth(
+      member,
+      "base44",
+      "oauth",
+    );
+    expect(base44Start).toMatchObject({
+      status: "pending",
+      userCode: "BASE-44",
+      verificationUri: "https://app.base44.com/device",
+      verificationUriComplete:
+        "https://app.base44.com/device?user_code=BASE-44",
+      expiresIn: 600,
+      interval: 0,
+    });
+    expect(JSON.stringify(base44Start)).not.toContain("base44-device-code");
+    expect(base44Provider.deviceCodeBodies[0]).toMatchObject({
+      client_id: "base44_cli",
+      scope: "apps:read apps:write offline",
+    });
+
+    const base44Poll = await connectors.pollDeviceAuth(
+      member,
+      "base44",
+      base44Start.sessionId,
+      base44Start.sessionToken,
+    );
+    if (base44Poll.status !== "complete") {
+      throw new Error(`Expected Base44 complete, got ${base44Poll.status}`);
+    }
+    expect(base44Provider.tokenBodies[0]?.get("device_code")).toBe(
+      "base44-device-code",
+    );
+    expect(base44Provider.userinfoAuthorizations[0]).toBe(
+      "Bearer base44-access-token",
+    );
+
+    const base44Account = await connectors.readDefaultBuiltinAccount(
+      member,
+      "base44",
+    );
+    expect(base44Account).toMatchObject({
+      connectionStatus: "connected",
+      externalId: "base44-user-id",
+      externalUsername: "Base44 User",
+      externalEmail: "base44@example.com",
+      oauthScopes: ["apps:read", "apps:write", "offline"],
+    });
+    expect(JSON.stringify(base44Account)).not.toContain("base44-access-token");
+    expect(JSON.stringify(base44Account)).not.toContain("base44-refresh-token");
+    await connectors.deleteDefaultBuiltinConnectorAccount(member, "base44");
+  });
+
+  it("connectors.bdd-018 (2/2) completes Slock device sessions and surfaces post-token metadata lookup failures", async () => {
+    mockSlockOAuthProvider();
+    const member = bdd.user({ orgRole: "org:member" });
+
+    const beforeSlockMs = now();
+    const slockStart = await connectors.startDeviceAuth(
+      member,
+      "slock",
+      "oauth",
+    );
+    expect(slockStart).toMatchObject({
+      status: "pending",
+      userCode: "SLOCK-1",
+    });
+    const slockPoll = await connectors.pollDeviceAuth(
+      member,
+      "slock",
+      slockStart.sessionId,
+      slockStart.sessionToken,
+    );
+    if (slockPoll.status !== "complete") {
+      throw new Error(`Expected Slock complete, got ${slockPoll.status}`);
+    }
+    const slockAccount = await connectors.readDefaultBuiltinAccount(
+      member,
+      "slock",
+    );
+    if (!slockAccount.tokenExpiresAt) {
+      throw new Error("Expected Slock account with tokenExpiresAt");
+    }
+    expect(slockAccount).toMatchObject({
+      connectionStatus: "connected",
+      externalId: "slock-user-id",
+      externalUsername: "Slock User",
+      externalEmail: "slock@example.com",
+      oauthScopes: [],
+    });
+    const secondsAhead =
+      (Date.parse(slockAccount.tokenExpiresAt) - beforeSlockMs) / 1000;
+    expect(secondsAhead).toBeGreaterThanOrEqual(850);
+    expect(secondsAhead).toBeLessThanOrEqual(905);
+    expect(JSON.stringify(slockAccount)).not.toContain("slock-refresh-token");
+    await connectors.deleteDefaultBuiltinConnectorAccount(member, "slock");
+
+    mockSlockOAuthProvider({ deviceCode: "userinfo-error" });
+    const failingSlock = await connectors.startDeviceAuth(
+      member,
+      "slock",
+      "oauth",
+    );
+    const fail1 = await connectors.pollDeviceAuth(
+      member,
+      "slock",
+      failingSlock.sessionId,
+      failingSlock.sessionToken,
+    );
+    const fail2 = await connectors.pollDeviceAuth(
+      member,
+      "slock",
+      failingSlock.sessionId,
+      failingSlock.sessionToken,
+    );
+    expect(fail1).toMatchObject({
+      status: "error",
+      errorCode: "post_token_lookup_failed",
+      errorMessage:
+        "Unable to load Slock account metadata after authorization.",
+    });
+    expect(fail2).toStrictEqual(fail1);
+  });
+
+  it("connectors.bdd-025 stores an OAuth app config and lets members authorize", async () => {
+    mockEnv("APP_URL", "https://app.okou.test");
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const member = memberOf(admin);
+    const provider = mockCustomConnectorOAuth2Provider(context);
+    const prefixBase = `https://oauth-app.${randomUUID()}.example.test`;
+
+    const missingSecret = await connectors.requestCreateCustomConnector(
+      admin,
+      oauthHttpBody({
+        displayName: "Custom OAuth API",
+        prefix: `${prefixBase}/v1/`,
+        authorizationUrl: provider.authorizationUrl,
+        tokenUrl: provider.tokenUrl,
+        scopes: ["read", "write"],
+      }),
+      [400],
+    );
+    expect(errorMessage(missingSecret.body).toLowerCase()).toContain(
+      "client secret is required",
+    );
+
+    const createdBody = oauthHttpBody({
+      displayName: "Custom OAuth API",
+      prefix: `${prefixBase}/v1/`,
+      authorizationUrl: provider.authorizationUrl,
+      tokenUrl: provider.tokenUrl,
+      scopes: ["read", "write"],
+      clientSecret: "custom-oauth-app-secret",
+    });
+    const created = await connectors.createCustomConnector(admin, createdBody);
+    expect(created).toMatchObject({
+      authMode: "oauth",
+      storageVersion: 1,
+      oauthConfig: expect.objectContaining({
+        clientId: "branded-oauth-client-id",
+        scopes: ["read", "write"],
+      }),
+    });
+    expect(JSON.stringify(created)).not.toContain("custom-oauth-app-secret");
+
+    const authUrlString = await connectors.startCustomConnectorOAuth2(
+      member,
+      created.id,
+      { intent: "add" },
+    );
+    const authUrl = new URL(authUrlString);
+    expect(`${authUrl.origin}${authUrl.pathname}`).toBe(
+      provider.authorizationUrl,
+    );
+    expect(authUrl.searchParams.get("response_type")).toBe("code");
+    expect(authUrl.searchParams.get("client_id")).toBe(
+      "branded-oauth-client-id",
+    );
+    expect(authUrl.searchParams.get("scope")).toBe("read write");
+    expect(authUrl.searchParams.get("redirect_uri")).toBe(
+      "https://app.okou.test/connectors/custom/callback",
+    );
+
+    await connectors.updateCustomConnector(admin, created.id, {
+      ...oauthHttpBody({
+        displayName: "Custom OAuth API",
+        prefix: `${prefixBase}/v2/`,
+        authorizationUrl: provider.authorizationUrl,
+        tokenUrl: provider.tokenUrl,
+        scopes: ["read", "write"],
+      }),
+    });
+
+    const firstCallback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "custom-code-1",
+        state: oauthStateFromUrl(authUrlString),
+      });
+    expect(firstCallback.body).toStrictEqual({
+      status: "success",
+      username: null,
+    });
+    expect(firstCallback.headers.get("cache-control")).toBe("no-store");
+    expect(provider.tokenBodies[0]?.get("grant_type")).toBe(
+      "authorization_code",
+    );
+    expect(provider.tokenBodies[0]?.get("client_secret")).toBe(
+      "custom-oauth-app-secret",
+    );
+
+    const accountsAfterFirst = await connectors.listCustomConnectorAccounts(
+      member,
+      created.id,
+    );
+    const firstAccount = accountsAfterFirst[0];
+    if (!firstAccount) {
+      throw new Error("Expected connected custom OAuth account");
+    }
+    expect(firstAccount.connectionStatus).toBe("connected");
+    expect(JSON.stringify(accountsAfterFirst)).not.toContain(
+      "custom-oauth-app-secret",
+    );
+    expect(JSON.stringify(accountsAfterFirst)).not.toContain(
+      "custom-oauth-initial-access-token",
+    );
+
+    const reconnectUrl = await connectors.startCustomConnectorOAuth2(
+      member,
+      created.id,
+      { intent: "reconnect", connectionId: firstAccount.id },
+    );
+    const reconnectCallback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "custom-code-2",
+        state: oauthStateFromUrl(reconnectUrl),
+      });
+    expect(reconnectCallback.body).toStrictEqual({
+      status: "success",
+      username: null,
+    });
+    const accountsAfterReconnect = await connectors.listCustomConnectorAccounts(
+      member,
+      created.id,
+    );
+    expect(accountsAfterReconnect[0]?.id).toBe(firstAccount.id);
+
+    const deletedReconnectUrl = await connectors.startCustomConnectorOAuth2(
+      member,
+      created.id,
+      { intent: "reconnect", connectionId: firstAccount.id },
+    );
+    await connectors.deleteCustomConnectorAccount(
+      member,
+      created.id,
+      firstAccount.id,
+    );
+    const deletedCallback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "custom-code-3",
+        state: oauthStateFromUrl(deletedReconnectUrl),
+      });
+    expect(deletedCallback.body).toStrictEqual({
+      status: "error",
+      message: "Connector account not found",
+    });
+    await expect(
+      connectors.listCustomConnectorAccounts(member, created.id),
+    ).resolves.toStrictEqual([]);
+
+    const freshUrl = await connectors.startCustomConnectorOAuth2(
+      member,
+      created.id,
+      { intent: "add" },
+    );
+    const freshCallback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "custom-code-4",
+        state: oauthStateFromUrl(freshUrl),
+      });
+    expect(freshCallback.body).toStrictEqual({
+      status: "success",
+      username: null,
+    });
+    await expect(
+      connectors.listCustomConnectorAccounts(member, created.id),
+    ).resolves.toMatchObject([{ connectionStatus: "connected" }]);
+  });
+
+  it("connectors.bdd-030 keeps OAuth state target-scoped and aligns Custom lifecycle with Builtin", async () => {
+    mockGitHubConnectorOAuth();
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const owner = memberOf(admin);
+    const peer = memberOf(admin);
+    const provider = mockCustomConnectorOAuth2Provider(context);
+    const custom = await connectors.createCustomConnector(
+      admin,
+      oauthHttpBody({
+        displayName: "Scoped Custom OAuth",
+        prefix: `https://scoped.${randomUUID()}.example.test/v1/`,
+        authorizationUrl: provider.authorizationUrl,
+        tokenUrl: provider.tokenUrl,
+        scopes: ["read"],
+        clientSecret: "scoped-secret",
+      }),
+    );
+
+    const ownerAuthUrl = await connectors.startCustomConnectorOAuth2(
+      owner,
+      custom.id,
+    );
+    const ownerState = oauthStateFromUrl(ownerAuthUrl);
+
+    const wrongTargetGithub = await connectors.completeOauthCallback("github", {
+      code: "gh-cross",
+      state: ownerState,
+    });
+    const wrongTargetUrl = redirectLocationUrl(wrongTargetGithub.headers);
+    expect(wrongTargetUrl.pathname).toBe("/connector/error");
+    expect(wrongTargetUrl.searchParams.get("message")).toBe(
+      "Invalid state - please try again",
+    );
+
+    const missingCode =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        state: ownerState,
+      });
+    expect(missingCode.body).toStrictEqual({
+      status: "error",
+      message: "Missing authorization code",
+    });
+    expect(provider.tokenBodies).toStrictEqual([]);
+
+    const succeeded =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "owner-code",
+        state: ownerState,
+      });
+    expect(succeeded.body).toStrictEqual({
+      status: "success",
+      username: null,
+    });
+    await expect(
+      connectors.listCustomConnectorAccounts(owner, custom.id),
+    ).resolves.toMatchObject([{ connectionStatus: "connected" }]);
+    await expect(
+      connectors.listCustomConnectorAccounts(peer, custom.id),
+    ).resolves.toStrictEqual([]);
+
+    const replayed =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "owner-replay",
+        state: ownerState,
+      });
+    expect(replayed.body).toStrictEqual({
+      status: "error",
+      message: "Invalid OAuth state - please try again",
+    });
+
+    const deniedStart = await connectors.startCustomConnectorOAuth2(
+      owner,
+      custom.id,
+    );
+    const deniedState = oauthStateFromUrl(deniedStart);
+    const denied = await connectors.completeCustomConnectorOAuth2CallbackResult(
+      {
+        state: deniedState,
+        error: "access_denied",
+        error_description: "Provider denied access",
+      },
+    );
+    expect(denied.body).toStrictEqual({
+      status: "error",
+      message: "Provider denied access",
+    });
+    const deniedReplay =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "after-deny",
+        state: deniedState,
+      });
+    expect(deniedReplay.body).toStrictEqual({
+      status: "error",
+      message: "Invalid OAuth state - please try again",
+    });
+
+    const peerGithubStart = await connectors.startOauth(
+      peer,
+      "github",
+      "oauth",
+    );
+    const peerGithubState = oauthStateFromUrl(peerGithubStart.authorizationUrl);
+    const wrongTargetCustom =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "gh-on-custom",
+        state: peerGithubState,
+      });
+    expect(wrongTargetCustom.body).toStrictEqual({
+      status: "error",
+      message: "Invalid OAuth state - please try again",
+    });
+    const peerGithubComplete = await connectors.completeOauthCallback(
+      "github",
+      {
+        code: "peer-gh-code",
+        state: peerGithubState,
+      },
+    );
+    expect(redirectLocationUrl(peerGithubComplete.headers).pathname).toBe(
+      "/connector/success",
+    );
+    await expect(
+      connectors.readDefaultBuiltinAccount(peer, "github"),
+    ).resolves.toMatchObject({ connectionStatus: "connected" });
+
+    const startedAt = now();
+    mockNow(startedAt);
+    const expiringCustomStart = await connectors.startCustomConnectorOAuth2(
+      peer,
+      custom.id,
+    );
+    const expiringState = oauthStateFromUrl(expiringCustomStart);
+    mockNow(startedAt + 16 * 60_000);
+    const expired1 =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "late-code",
+        state: expiringState,
+      });
+    const expired2 =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        state: expiringState,
+      });
+    expect(expired1.body).toStrictEqual({
+      status: "error",
+      message: "Invalid OAuth state - please try again",
+    });
+    expect(expired2.body).toStrictEqual({
+      status: "error",
+      message: "Invalid OAuth state - please try again",
+    });
+    await expect(
+      connectors.listCustomConnectorAccounts(peer, custom.id),
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("connectors.bdd-031 reuses confidential OAuth for MCP and connects the agent", async () => {
+    bdd.acceptStorageWrites();
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const member = memberOf(admin);
+    const provider = mockCustomConnectorOAuth2Provider(context);
+    const endpointBase = `https://mcp-oauth-${randomUUID()}.example.test`;
+
+    const missingSecret = await connectors.requestCreateCustomConnector(
+      admin,
+      oauthMcpBody({
+        displayName: "OAuth MCP",
+        endpoint: `${endpointBase}/v1/server`,
+        authorizationUrl: provider.authorizationUrl,
+        tokenUrl: provider.tokenUrl,
+        scopes: ["read"],
+      }),
+      [400],
+    );
+    expect(errorMessage(missingSecret.body).toLowerCase()).toContain(
+      "client secret is required",
+    );
+
+    const created = await connectors.createCustomConnector(
+      admin,
+      oauthMcpBody({
+        displayName: "OAuth MCP",
+        endpoint: `${endpointBase}/v1/server`,
+        authorizationUrl: provider.authorizationUrl,
+        tokenUrl: provider.tokenUrl,
+        scopes: ["read"],
+        clientSecret: "mcp-confidential-secret",
+      }),
+    );
+    expect(created).toMatchObject({
+      kind: "mcp",
+      authMode: "oauth",
+      storageVersion: 1,
+    });
+    await expect(
+      connectors.listCustomConnectorAccounts(member, created.id),
+    ).resolves.toStrictEqual([]);
+    expect(JSON.stringify(created)).not.toContain("mcp-confidential-secret");
+
+    const authUrl = await connectors.startCustomConnectorOAuth2(
+      member,
+      created.id,
+    );
+    const moved = await connectors.updateCustomConnector(
+      admin,
+      created.id,
+      oauthMcpBody({
+        displayName: "OAuth MCP",
+        endpoint: `${endpointBase}/v2/server`,
+        authorizationUrl: provider.authorizationUrl,
+        tokenUrl: provider.tokenUrl,
+        scopes: ["read"],
+      }),
+    );
+    expect(moved.id).toBe(created.id);
+    expect(moved.storageVersion).toBe(1);
+
+    const callback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "mcp-code",
+        state: oauthStateFromUrl(authUrl),
+      });
+    expect(callback.body).toStrictEqual({
+      status: "success",
+      username: null,
+    });
+    expect(provider.tokenBodies[0]?.get("client_secret")).toBe(
+      "mcp-confidential-secret",
+    );
+
+    const readBack = await connectors.readCustomConnector(member, created.id);
+    expect(JSON.stringify(readBack)).not.toContain("mcp-confidential-secret");
+    await expect(
+      connectors.listCustomConnectorAccounts(member, created.id),
+    ).resolves.toMatchObject([{ connectionStatus: "connected" }]);
+  });
+
+  it("connectors.bdd-032 connects an Automatic MCP OAuth account through Okou CIMD", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const provider = automaticProvider({
+      registration: "cimd",
+      authentication: "oauth",
+      challengeScope: "read write",
+      identity: {
+        subject: "cimd-sub-1",
+        userInfoUsername: "cimd-user",
+        userInfoEmail: "cimd@example.test",
+      },
+    });
+    const connector = await createAutomaticConnector(admin, provider.endpoint);
+
+    const authUrlString = await connectors.startCustomConnectorOAuth2(
+      admin,
+      connector.id,
+    );
+    const authUrl = new URL(authUrlString);
+    expect(`${authUrl.origin}${authUrl.pathname}`).toBe(
+      `${provider.issuer}/authorize`,
+    );
+    expect(authUrl.searchParams.get("client_id")).toBe(
+      "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json",
+    );
+    expect(authUrl.searchParams.get("redirect_uri")).toBe(
+      "https://app.okou.ai/connectors/custom/callback",
+    );
+    expect(authUrl.searchParams.get("resource")).toBe(provider.endpoint);
+    expect(authUrl.searchParams.get("scope")).toBe("read write");
+    expect(authUrl.searchParams.get("code_challenge_method")).toBe("S256");
+
+    const callback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "cimd-code",
+        state: oauthStateFromUrl(authUrlString),
+        iss: provider.issuer,
+      });
+    expect(callback.body).toStrictEqual({
+      status: "success",
+      username: null,
+    });
+    expect(provider.registrationBodies).toStrictEqual([]);
+    expect(provider.tokenBodies[0]?.get("resource")).toBe(provider.endpoint);
+    expect(provider.tokenBodies[0]?.get("client_id")).toBe(
+      "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json",
+    );
+
+    const readBack = await connectors.readCustomConnector(admin, connector.id);
+    expect(readBack).toMatchObject({
+      authMode: "automatic",
+    });
+    const accounts = await connectors.listCustomConnectorAccounts(
+      admin,
+      connector.id,
+    );
+    expect(accounts).toStrictEqual([
+      expect.objectContaining({
+        connectionStatus: "connected",
+        externalId: "cimd-sub-1",
+        externalUsername: "cimd-user",
+        externalEmail: "cimd@example.test",
+        oauthScopes: ["read", "write"],
+      }),
+    ]);
+  });
+
+  it("connectors.bdd-034 resolves Automatic MCP auth and reconnects the exact account across none and OAuth", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const endpoint = `https://switch-mcp-${randomUUID()}.example.test/server`;
+    const issuer = `https://switch-issuer-${randomUUID()}.example.test`;
+    mockAutomaticMcpOAuthProvider(context, {
+      endpoint,
+      issuer,
+      registration: "none",
+      authentication: "none",
+    });
+    const connector = await createAutomaticConnector(admin, endpoint);
+
+    const firstStart = await connectors.requestStartCustomConnectorOAuth2(
+      admin,
+      connector.id,
+      [200],
+    );
+    expect(firstStart.body).toMatchObject({ result: "connected" });
+    await expect(
+      connectors.readCustomConnector(admin, connector.id),
+    ).resolves.toMatchObject({
+      authMode: "automatic",
+    });
+    const [initialAccount] = await connectors.listCustomConnectorAccounts(
+      admin,
+      connector.id,
+    );
+    if (!initialAccount) {
+      throw new Error("Expected initial no-auth account");
+    }
+    expect(initialAccount).toMatchObject({
+      authMethod: "none",
+      connectionStatus: "connected",
+    });
+
+    mockAutomaticMcpOAuthProvider(context, {
+      endpoint,
+      issuer,
+      registration: "cimd",
+      authentication: "oauth",
+    });
+    const oauthReconnectStart =
+      await connectors.requestStartCustomConnectorOAuth2(
+        admin,
+        connector.id,
+        [200],
+        { intent: "reconnect", connectionId: initialAccount.id },
+      );
+    if (
+      !("result" in oauthReconnectStart.body) ||
+      oauthReconnectStart.body.result !== "authorization"
+    ) {
+      throw new Error("Expected authorization handoff for OAuth reconnect");
+    }
+    expect(
+      (await connectors.listCustomConnectorAccounts(admin, connector.id))[0]
+        ?.authMethod,
+    ).toBe("none");
+
+    await connectors.completeCustomConnectorOAuth2CallbackResult({
+      code: "switch-oauth-code",
+      state: oauthStateFromUrl(oauthReconnectStart.body.authorizationUrl),
+      iss: issuer,
+    });
+    const [afterOauthAccount] = await connectors.listCustomConnectorAccounts(
+      admin,
+      connector.id,
+    );
+    expect(afterOauthAccount).toMatchObject({
+      id: initialAccount.id,
+      authMethod: "oauth",
+      connectionStatus: "connected",
+      externalId: null,
+      externalUsername: null,
+      externalEmail: null,
+    });
+
+    mockAutomaticMcpOAuthProvider(context, {
+      endpoint,
+      issuer,
+      registration: "none",
+      authentication: "none",
+    });
+    const noAuthReconnect = await connectors.requestStartCustomConnectorOAuth2(
+      admin,
+      connector.id,
+      [200],
+      { intent: "reconnect", connectionId: initialAccount.id },
+    );
+    expect(noAuthReconnect.body).toMatchObject({ result: "connected" });
+    const [afterNoAuthReconnect] = await connectors.listCustomConnectorAccounts(
+      admin,
+      connector.id,
+    );
+    expect(afterNoAuthReconnect).toMatchObject({
+      id: initialAccount.id,
+      authMethod: "none",
+    });
+
+    const siblingStart = await connectors.requestStartCustomConnectorOAuth2(
+      admin,
+      connector.id,
+      [200],
+      { intent: "add", displayName: "No-auth sibling" },
+    );
+    expect(siblingStart.body).toMatchObject({ result: "connected" });
+    const finalAccounts = await connectors.listCustomConnectorAccounts(
+      admin,
+      connector.id,
+    );
+    expect(finalAccounts).toHaveLength(2);
+    expect(
+      finalAccounts.some((account) => {
+        return account.id !== initialAccount.id;
+      }),
+    ).toBeTruthy();
+  });
+
+  it("connectors.bdd-036 reuses one DCR client across Automatic MCP OAuth accounts", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const provider = automaticProvider({
+      registration: "dcr",
+      authentication: "oauth",
+      challengeScope: "read write",
+    });
+    const connector = await createAutomaticConnector(admin, provider.endpoint);
+
+    const firstUrl = await connectors.startCustomConnectorOAuth2(
+      admin,
+      connector.id,
+    );
+    expect(new URL(firstUrl).searchParams.get("client_id")).toBe(
+      "automatic-dcr-client",
+    );
+    await connectors.completeCustomConnectorOAuth2CallbackResult({
+      code: "dcr-code-1",
+      state: oauthStateFromUrl(firstUrl),
+      iss: provider.issuer,
+    });
+
+    const secondUrl = await connectors.startCustomConnectorOAuth2(
+      admin,
+      connector.id,
+      { intent: "add", displayName: "Second" },
+    );
+    await connectors.completeCustomConnectorOAuth2CallbackResult({
+      code: "dcr-code-2",
+      state: oauthStateFromUrl(secondUrl),
+      iss: provider.issuer,
+    });
+
+    expect(provider.registrationBodies).toStrictEqual([
+      expect.objectContaining({
+        redirect_uris: ["https://app.okou.ai/connectors/custom/callback"],
+        scope: "read write",
+      }),
+    ]);
+    const expectedBasic = `Basic ${Buffer.from(
+      "automatic-dcr-client:automatic-dcr-secret",
+    ).toString("base64")}`;
+    expect(provider.tokenAuthorizationHeaders).toStrictEqual([
+      expectedBasic,
+      expectedBasic,
+    ]);
+    await expect(
+      connectors.listCustomConnectorAccounts(admin, connector.id),
+    ).resolves.toHaveLength(2);
+  });
+
+  it("connectors.bdd-060 authorizes Automatic OAuth through DCR and CIMD and requires reauthorization after definition changes", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const dcrProvider = automaticProvider({
+      registration: "dcr",
+      authentication: "oauth",
+      authorizationCodeErrors: [null, "invalid_grant"],
+    });
+    const cimdProvider = automaticProvider({
+      registration: "cimd",
+      authentication: "oauth",
+    });
+
+    const dcrConnector = await createAutomaticConnector(
+      admin,
+      dcrProvider.endpoint,
+    );
+    const dcrStart1 = await connectors.startCustomConnectorOAuth2(
+      admin,
+      dcrConnector.id,
+    );
+    await connectors.completeCustomConnectorOAuth2CallbackResult({
+      code: "dcr-ok",
+      state: oauthStateFromUrl(dcrStart1),
+      iss: dcrProvider.issuer,
+    });
+    expect(dcrProvider.registrationBodies).toHaveLength(1);
+    const dcrRead = await connectors.readCustomConnector(
+      admin,
+      dcrConnector.id,
+    );
+    expect("oauthConfig" in dcrRead && dcrRead.oauthConfig).toBeFalsy();
+    expect(JSON.stringify(dcrRead)).not.toContain("automatic-dcr-secret");
+    const [dcrAccount] = await connectors.listCustomConnectorAccounts(
+      admin,
+      dcrConnector.id,
+    );
+    if (!dcrAccount) {
+      throw new Error("Expected connected DCR account");
+    }
+    expect(dcrAccount).toMatchObject({
+      authMethod: "oauth",
+      connectionStatus: "connected",
+    });
+
+    const dcrReconnect = await connectors.startCustomConnectorOAuth2(
+      admin,
+      dcrConnector.id,
+      { intent: "reconnect", connectionId: dcrAccount.id },
+    );
+    const failingCallback =
+      await connectors.completeCustomConnectorOAuth2CallbackResult({
+        code: "dcr-fail",
+        state: oauthStateFromUrl(dcrReconnect),
+        iss: dcrProvider.issuer,
+      });
+    expect(failingCallback.body).toStrictEqual({
+      status: "error",
+      message: "OAuth token exchange failed - please try again",
+    });
+
+    const cimdConnector = await createAutomaticConnector(
+      admin,
+      cimdProvider.endpoint,
+    );
+    const cimdStart = await connectors.startCustomConnectorOAuth2(
+      admin,
+      cimdConnector.id,
+    );
+    await connectors.completeCustomConnectorOAuth2CallbackResult({
+      code: "cimd-ok",
+      state: oauthStateFromUrl(cimdStart),
+      iss: cimdProvider.issuer,
+    });
+    expect(cimdProvider.registrationBodies).toStrictEqual([]);
+    await expect(
+      connectors.listCustomConnectorAccounts(admin, cimdConnector.id),
+    ).resolves.toMatchObject([
+      { authMethod: "oauth", connectionStatus: "connected" },
+    ]);
+
+    const staticProvider = mockCustomConnectorOAuth2Provider(context);
+    const switchedToStatic = await connectors.updateCustomConnector(
+      admin,
+      dcrConnector.id,
+      oauthMcpBody({
+        displayName: "Automatic MCP",
+        endpoint: dcrProvider.endpoint,
+        authorizationUrl: staticProvider.authorizationUrl,
+        tokenUrl: staticProvider.tokenUrl,
+        scopes: ["read"],
+        clientSecret: "switched-static-secret",
+      }),
+    );
+    expect(switchedToStatic.storageVersion).toBe(2);
+    await expect(
+      connectedAccounts(admin, dcrConnector.id),
+    ).resolves.toStrictEqual([]);
+
+    const switchedBack = await connectors.updateCustomConnector(
+      admin,
+      dcrConnector.id,
+      {
+        kind: "mcp",
+        displayName: "Automatic MCP",
+        endpoint: dcrProvider.endpoint,
+        transport: "streamable-http",
+        authMode: "automatic",
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+      },
+    );
+    expect(switchedBack).toMatchObject({
+      authMode: "automatic",
+      storageVersion: 3,
+    });
+  });
+
+  it("connectors.bdd-061 requires member reauthorization after incompatible OAuth settings changes", async () => {
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const member = memberOf(admin);
+    const provider = mockCustomConnectorOAuth2Provider(context);
+    const prefixBase = `https://incompat.${randomUUID()}.example.test`;
+
+    const created = await connectors.createCustomConnector(
+      admin,
+      oauthHttpBody({
+        displayName: "Scoped API",
+        prefix: `${prefixBase}/v1/`,
+        authorizationUrl: provider.authorizationUrl,
+        tokenUrl: provider.tokenUrl,
+        scopes: ["read"],
+        clientSecret: "incompat-oauth-secret",
+      }),
+    );
+    const firstAuthUrl = await connectors.startCustomConnectorOAuth2(
+      member,
+      created.id,
+    );
+    await connectors.completeCustomConnectorOAuth2CallbackResult({
+      code: "incompat-code-1",
+      state: oauthStateFromUrl(firstAuthUrl),
+    });
+    const [memberAccount] = await connectors.listCustomConnectorAccounts(
+      member,
+      created.id,
+    );
+    if (!memberAccount) {
+      throw new Error("Expected connected member account");
+    }
+
+    const updatedBody = oauthHttpBody({
+      displayName: "Scoped API v2",
+      prefix: `${prefixBase}/v2/`,
+      authorizationUrl: provider.authorizationUrl,
+      tokenUrl: provider.tokenUrl,
+      scopes: ["read", "write"],
+    });
+    const memberUpdate = await connectors.requestUpdateCustomConnector(
+      member,
+      created.id,
+      updatedBody,
+      [403],
+    );
+    expect(errorMessage(memberUpdate.body)).toContain("Only org admins");
+
+    const adminUpdated = await connectors.updateCustomConnector(
+      admin,
+      created.id,
+      updatedBody,
+    );
+    expect(adminUpdated).toMatchObject({
+      displayName: "Scoped API v2",
+      prefixTemplates: [`${prefixBase}/v2/`],
+      storageVersion: 2,
+      oauthConfig: expect.objectContaining({
+        clientId: "branded-oauth-client-id",
+        scopes: ["read", "write"],
+      }),
+    });
+    expect(JSON.stringify(adminUpdated)).not.toContain("incompat-oauth-secret");
+
+    const [invalidatedAccount] = await connectors.listCustomConnectorAccounts(
+      member,
+      created.id,
+    );
+    expect(invalidatedAccount).toMatchObject({
+      connectionStatus: "reconnect-required",
+      reconnectReason: "configuration_invalid",
+      missingRequiredFields: [],
+    });
+
+    const reconnectUrlString = await connectors.startCustomConnectorOAuth2(
+      member,
+      created.id,
+      { intent: "reconnect", connectionId: memberAccount.id },
+    );
+    const reconnectUrl = new URL(reconnectUrlString);
+    expect(reconnectUrl.searchParams.get("client_id")).toBe(
+      "branded-oauth-client-id",
+    );
+    expect(reconnectUrl.searchParams.get("scope")).toBe("read write");
+
+    await connectors.completeCustomConnectorOAuth2CallbackResult({
+      code: "incompat-code-2",
+      state: oauthStateFromUrl(reconnectUrlString),
+    });
+    await expect(
+      connectors.readCustomConnector(member, created.id),
+    ).resolves.toMatchObject({
+      storageVersion: 2,
+    });
+    await expect(
+      connectors.listCustomConnectorAccounts(member, created.id),
+    ).resolves.toMatchObject([{ connectionStatus: "connected" }]);
+  });
+
+  it("connectors.bdd-092 rejects malformed and unclaimable callbacks through visible redirects", async () => {
+    mockGitHubConnectorOAuth();
+    const member = bdd.user({ orgRole: "org:member" });
+
+    const unknown = await connectors.completeOauthCallback("does-not-exist", {
+      state: "any-state",
+    });
+    const unknownUrl = redirectLocationUrl(unknown.headers);
+    expect(unknownUrl.pathname).toBe("/connector/error");
+    expect(unknownUrl.searchParams.get("connectorSlug")).toBe("does-not-exist");
+    expect(unknownUrl.searchParams.get("message")).toBe(
+      "Unknown connector slug",
+    );
+
+    for (const slug of ["cloudinary", "test-oauth-device"]) {
+      const nonAuthCode = await connectors.completeOauthCallback(slug, {
+        state: "any-state",
+      });
+      const nonAuthCodeUrl = redirectLocationUrl(nonAuthCode.headers);
+      expect(nonAuthCodeUrl.pathname).toBe("/connector/error");
+      expect(nonAuthCodeUrl.searchParams.get("connectorSlug")).toBe(slug);
+      expect(nonAuthCodeUrl.searchParams.get("message")).toContain(
+        "does not use an auth-code grant",
+      );
+    }
+
+    const neverStored = await connectors.completeOauthCallback("github", {
+      code: "orphan-code",
+      state: "never-stored-state",
+    });
+    const neverStoredUrl = redirectLocationUrl(neverStored.headers);
+    expect(neverStoredUrl.pathname).toBe("/connector/error");
+    expect(neverStoredUrl.searchParams.get("connectorSlug")).toBe("github");
+    expect(neverStoredUrl.searchParams.get("message")).toBe(
+      "Invalid state - please try again",
+    );
+    expectClearedOAuthCookies(neverStored.headers);
+
+    const missingState = await connectors.completeOauthCallback("github", {
+      code: "orphan-code",
+    });
+    const missingStateUrl = redirectLocationUrl(missingState.headers);
+    expect(missingStateUrl.pathname).toBe("/connector/error");
+    expect(missingStateUrl.searchParams.get("connectorSlug")).toBe("github");
+    expect(missingStateUrl.searchParams.get("message")).toBe(
+      "Missing state parameter",
+    );
+
+    const ghStart = await connectors.startOauth(member, "github", "oauth");
+    const ghState = oauthStateFromUrl(ghStart.authorizationUrl);
+
+    const crossSlug = await connectors.completeOauthCallback("linear", {
+      code: "cross-code",
+      state: ghState,
+    });
+    const crossSlugUrl = redirectLocationUrl(crossSlug.headers);
+    expect(crossSlugUrl.pathname).toBe("/connector/error");
+    expect(crossSlugUrl.searchParams.get("connectorSlug")).toBe("linear");
+    expect(crossSlugUrl.searchParams.get("message")).toBe(
+      "Invalid state - please try again",
+    );
+
+    const validGithub = await connectors.completeOauthCallback("github", {
+      code: "valid-gh-code",
+      state: ghState,
+    });
+    const validGithubUrl = redirectLocationUrl(validGithub.headers);
+    expect(validGithubUrl.pathname).toBe("/connector/success");
+    expect(validGithubUrl.searchParams.get("connectorSlug")).toBe("github");
+    expect(validGithubUrl.searchParams.get("username")).toBe("bdd-github-user");
+
+    await expect(
+      connectors.readDefaultBuiltinAccount(member, "github"),
+    ).resolves.toMatchObject({
+      authMethod: "oauth",
+      connectionStatus: "connected",
+    });
+    await expect(
+      connectors.listBuiltinConnectorAccounts(member, "linear"),
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("connectors.bdd-093 claims, preserves, and invalidates stored OAuth state across code-less, error, and expired callbacks", async () => {
+    mockGitHubConnectorOAuth();
+    const member = bdd.user({ orgRole: "org:member" });
+
+    const firstStart = await connectors.startOauth(member, "github", "oauth");
+    const firstState = oauthStateFromUrl(firstStart.authorizationUrl);
+
+    const codeless1 = await connectors.completeOauthCallback("github", {
+      state: firstState,
+    });
+    const codeless1Url = redirectLocationUrl(codeless1.headers);
+    expect(codeless1Url.pathname).toBe("/connector/error");
+    expect(codeless1Url.searchParams.get("message")).toBe(
+      "Missing authorization code",
+    );
+    expectClearedOAuthCookies(codeless1.headers);
+
+    const completed = await connectors.completeOauthCallback("github", {
+      code: "gh-first-code",
+      state: firstState,
+    });
+    const completedUrl = redirectLocationUrl(completed.headers);
+    expect(completedUrl.pathname).toBe("/connector/success");
+    expect(completedUrl.searchParams.get("username")).toBe("bdd-github-user");
+
+    const firstAccount = await connectors.readDefaultBuiltinAccount(
+      member,
+      "github",
+    );
+    if (!firstAccount) {
+      throw new Error("Expected connected GitHub account");
+    }
+
+    const secondStart = await connectors.startOauth(member, "github", "oauth");
+    const codeless2 = await connectors.completeOauthCallback("github", {
+      state: oauthStateFromUrl(secondStart.authorizationUrl),
+    });
+    expect(
+      redirectLocationUrl(codeless2.headers).searchParams.get("message"),
+    ).toBe("Missing authorization code");
+
+    const thirdStart = await connectors.startOauth(member, "github", "oauth");
+    const denied = await connectors.completeOauthCallback("github", {
+      state: oauthStateFromUrl(thirdStart.authorizationUrl),
+      error: "access_denied",
+      error_description: "Provider denied access",
+    });
+    expect(
+      redirectLocationUrl(denied.headers).searchParams.get("message"),
+    ).toBe("Provider denied access");
+
+    const replayCodeless = await connectors.completeOauthCallback("github", {
+      state: firstState,
+    });
+    expect(
+      redirectLocationUrl(replayCodeless.headers).searchParams.get("message"),
+    ).toBe("Invalid state - please try again");
+
+    const replayError = await connectors.completeOauthCallback("github", {
+      state: firstState,
+      error: "access_denied",
+    });
+    expect(
+      redirectLocationUrl(replayError.headers).searchParams.get("message"),
+    ).toBe("Invalid state - please try again");
+
+    const startedAt = now();
+    mockNow(startedAt);
+    const expiringStart = await connectors.startOauth(
+      member,
+      "github",
+      "oauth",
+    );
+    mockNow(startedAt + 15 * 60_000 + 1000);
+    const expired = await connectors.completeOauthCallback("github", {
+      code: "late-gh-code",
+      state: oauthStateFromUrl(expiringStart.authorizationUrl),
+    });
+    expect(
+      redirectLocationUrl(expired.headers).searchParams.get("message"),
+    ).toBe("Invalid state - please try again");
+
+    const finalAccount = await connectors.readDefaultBuiltinAccount(
+      member,
+      "github",
+    );
+    expect(finalAccount).toStrictEqual(firstAccount);
+  });
+
+  it("connectors.bdd-095 persists reported and normalized effective scopes through auth-code callbacks", async () => {
+    const admin = bdd.user({ orgRole: "org:admin" });
+    await connectors.updateFeatureSwitches(admin, {
+      [FeatureSwitchKey.TestOauthConnector]: true,
+    });
+
+    mockTestOAuthAuthCodeProvider({ scope: "read provider-added" });
+    const firstStart = await connectors.startOauth(
+      admin,
+      "test-oauth",
+      "oauth",
+    );
+    const firstCallback = await connectors.completeOauthCallback("test-oauth", {
+      code: "to-code-1",
+      state: oauthStateFromUrl(firstStart.authorizationUrl),
+    });
+    expect(redirectLocationUrl(firstCallback.headers).pathname).toBe(
+      "/connector/success",
+    );
+
+    const firstAccount = await connectors.readDefaultBuiltinAccount(
+      admin,
+      "test-oauth",
+    );
+    if (!firstAccount) {
+      throw new Error("Expected connected test-oauth account");
+    }
+    expect(firstAccount).toMatchObject({
+      connectionStatus: "connected",
+      oauthScopes: ["read", "provider-added"],
+    });
+    const scopeDiff = await connectors.readDefaultBuiltinScopeDiff(
+      admin,
+      "test-oauth",
+    );
+    expect(scopeDiff).toStrictEqual({
+      currentScopes: ["read"],
+      storedScopes: ["read"],
+      addedScopes: [],
+      removedScopes: [],
+    });
+
+    mockTestOAuthAuthCodeProvider({ scope: null });
+    const reconnectStart = await connectors.startOauth(
+      admin,
+      "test-oauth",
+      "oauth",
+      { intent: "reconnect", connectionId: firstAccount.id },
+    );
+    expect(
+      new URL(reconnectStart.authorizationUrl).searchParams.get("scope"),
+    ).toBe("read");
+    const reconnectCallback = await connectors.completeOauthCallback(
+      "test-oauth",
+      {
+        code: "to-code-2",
+        state: oauthStateFromUrl(reconnectStart.authorizationUrl),
+      },
+    );
+    expect(redirectLocationUrl(reconnectCallback.headers).pathname).toBe(
+      "/connector/success",
+    );
+
+    const reconnectedAccount = await connectors.readDefaultBuiltinAccount(
+      admin,
+      "test-oauth",
+    );
+    expect(reconnectedAccount).toMatchObject({
+      id: firstAccount.id,
+      connectionStatus: "connected",
+      oauthScopes: ["read"],
+    });
+  });
+
+  it("connectors.bdd-096 replaces a manual-grant connection through the auth-code callback with method-scoped state cleanup", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    const member = bdd.user({ orgRole: "org:member" });
+    await connectors.updateFeatureSwitches(member, {
+      [FeatureSwitchKey.TestOauthConnector]: true,
+    });
+    const manualAccount = await connectors.connectManualGrant(
+      member,
+      "test-oauth",
+      "api-token",
+      {
+        apiToken: "manual-secret-token",
+        inputVariable: "manual-input-var",
+        tenantId: "tenant-1",
+      },
+    );
+
+    const provider = mockTestOAuthAuthCodeProvider({
+      accessToken: "oauth-secret-access",
+    });
+    const oauthStart = await connectors.startOauth(
+      member,
+      "test-oauth",
+      "oauth",
+      { intent: "reconnect", connectionId: manualAccount.id },
+    );
+    const oauthAuthUrl = new URL(oauthStart.authorizationUrl);
+    expect(oauthAuthUrl.pathname).toContain("/authorize");
+    expect(oauthAuthUrl.searchParams.get("client_id")).toBe(
+      "test-oauth-client",
+    );
+
+    const oauthCallback = await connectors.completeOauthCallback("test-oauth", {
+      code: "to-replace-code",
+      state: oauthStateFromUrl(oauthStart.authorizationUrl),
+    });
+    const oauthCallbackUrl = redirectLocationUrl(oauthCallback.headers);
+    expect(oauthCallbackUrl.pathname).toBe("/connector/success");
+    expect(oauthCallbackUrl.searchParams.get("connectorSlug")).toBe(
+      "test-oauth",
+    );
+    expect(oauthCallbackUrl.searchParams.get("username")).toBe(
+      "bdd-test-oauth",
+    );
+
+    const firstTokenBody = provider.tokenBodies[0];
+    expect(firstTokenBody?.get("grant_type")).toBe("authorization_code");
+    expect(firstTokenBody?.get("client_id")).toBe("test-oauth-client");
+    expect(firstTokenBody?.get("client_secret")).toBeTruthy();
+    expect(firstTokenBody?.get("code")).toBe("to-replace-code");
+    expect(firstTokenBody?.get("redirect_uri")).toBe(
+      "https://api.okou.ai/api/connectors/test-oauth/callback",
+    );
+
+    const afterOauth = await connectors.readDefaultBuiltinAccount(
+      member,
+      "test-oauth",
+    );
+    expect(afterOauth).toMatchObject({
+      id: manualAccount.id,
+      authMethod: "oauth",
+      externalId: "bdd-test-oauth-user",
+      externalUsername: "bdd-test-oauth",
+      externalEmail: "bdd-test-oauth@example.test",
+      oauthScopes: ["read"],
+    });
+    expect(JSON.stringify(afterOauth)).not.toContain("manual-secret-token");
+    expect(JSON.stringify(afterOauth)).not.toContain("oauth-secret-access");
+    await expect(
+      connectors.readDefaultBuiltinScopeDiff(member, "test-oauth"),
+    ).resolves.toStrictEqual({
+      currentScopes: ["read"],
+      storedScopes: ["read"],
+      addedScopes: [],
+      removedScopes: [],
+    });
+
+    mockTestOAuthAuthCodeProvider({ accessToken: "api-secret-access" });
+    const apiStart = await connectors.startOauth(member, "test-oauth", "api", {
+      intent: "reconnect",
+      connectionId: manualAccount.id,
+    });
+    const apiCallback = await connectors.completeOauthCallback("test-oauth", {
+      code: "to-api-code",
+      state: oauthStateFromUrl(apiStart.authorizationUrl),
+    });
+    expect(redirectLocationUrl(apiCallback.headers).pathname).toBe(
+      "/connector/success",
+    );
+
+    const afterApi = await connectors.readDefaultBuiltinAccount(
+      member,
+      "test-oauth",
+    );
+    expect(afterApi).toMatchObject({
+      id: manualAccount.id,
+      authMethod: "api",
+    });
+    expect(JSON.stringify(afterApi)).not.toContain("api-secret-access");
+  });
+
+  it("connectors.bdd-100 links the org GitHub installation when the GitHub connector completes OAuth", async () => {
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const installationId = String(
+      Number.parseInt(randomUUID().replace(/-/g, "").slice(0, 8), 16),
+    );
+    await connectors.installGithubAppViaApi(admin, installationId);
+    mockGitHubConnectorOAuth({ userId: 42, login: "bdd-github-user" });
+
+    const before = await connectors.readGithubIntegration(admin);
+    expect(before).toMatchObject({
+      installation: {
+        status: "active",
+        targetName: "bdd-github-org",
+        isAdmin: true,
+      },
+      isConnected: false,
+    });
+
+    const started = await connectors.startOauth(admin, "github", "oauth");
+    const callback = await connectors.completeOauthCallback("github", {
+      code: "gh-link-code",
+      state: oauthStateFromUrl(started.authorizationUrl),
+    });
+    expect(redirectLocationUrl(callback.headers).pathname).toBe(
+      "/connector/success",
+    );
+
+    await flushWaitUntilForTest();
+    const after = await connectors.readGithubIntegration(admin);
+    expect(after).toMatchObject({
+      isConnected: true,
+      connectedGithubUserId: "42",
+      connectedGithubUsername: "bdd-github-user",
+    });
+    expect(channelsPublishedTo(context.mocks, "github:changed")).toContain(
+      `user:${admin.userId}`,
+    );
   });
 });
