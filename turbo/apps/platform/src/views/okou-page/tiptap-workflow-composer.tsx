@@ -198,14 +198,12 @@ function WorkflowComposerPlaceholder({
  * The follow-up placeholder's accept action. It sits inline after the
  * suggestion text, so it takes the inline reference chip's 13px label and
  * `rounded-md` radius on the `xs` neutral button's 28px height. On keyboard
- * devices the label is followed by the shared `Kbd`, inset evenly by `pr-1`;
- * the Kbd takes `bg-gray-200` because `bg-muted` (gray-100) does not read on
- * the gray-50 control surface, and medium `font-mono` so the key name reads as
- * a key. A monospace face carries asymmetric ascent and descent, so the label
- * is trimmed to its cap height before the Kbd centres it. The border takes the
- * template pill's translucent `border-state-pressed` hairline instead of the
- * control's gray-400. Touch devices have no Tab key, so they keep the plain
- * label.
+ * devices the label is followed by the shared `Kbd`, inset evenly by `pr-1`.
+ * The Kbd sits inside a control that takes hover and pressed overlays, so its
+ * fill is `bg-nested-fill` rather than `bg-muted`, which does not read on the
+ * gray-50 control surface. The border takes the template pill's translucent
+ * `border-state-pressed` hairline instead of the control's gray-400. Touch
+ * devices have no Tab key, so they keep the plain label.
  */
 function FollowupAcceptButton({
   onAccept,
@@ -237,12 +235,10 @@ function FollowupAcceptButton({
           {t(($) => {
             return $.chat.composer.followupAcceptLabel;
           })}
-          <Kbd aria-hidden="true" className="bg-gray-200 font-mono font-medium">
-            <span className="[text-box:trim-both_cap_alphabetic]">
-              {t(($) => {
-                return $.chat.composer.followupTabLabel;
-              })}
-            </span>
+          <Kbd aria-hidden="true" className="bg-nested-fill">
+            {t(($) => {
+              return $.chat.composer.followupTabLabel;
+            })}
           </Kbd>
         </>
       )}
