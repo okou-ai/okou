@@ -361,7 +361,8 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                 position = visit.position,
                 row = resultFocus,
                 fallback = inputFocus,
-                rowEnabled = returnRow != null && results?.any { it.message.id == returnRow } == true,
+                rowEnabled =
+                    returnRow != null && results?.any { it.message.id == returnRow } == true,
             )
             .testTag("conversation_find"),
         horizontalAlignment = Alignment.CenterHorizontally,

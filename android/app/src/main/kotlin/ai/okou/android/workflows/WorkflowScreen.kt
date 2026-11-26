@@ -808,7 +808,8 @@ private fun WorkflowDetailPane(
                 row = historyRowFocus,
                 fallback = historyTabFocus,
                 rowEnabled =
-                    historyRow != null && !handoffPending &&
+                    historyRow != null &&
+                        !handoffPending &&
                         state.history?.runs?.any {
                             it.id == historyRow && it.chatThreadId?.let(sourceChatAvailable) == true
                         } == true,
