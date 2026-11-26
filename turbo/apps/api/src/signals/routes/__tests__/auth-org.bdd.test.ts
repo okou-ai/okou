@@ -75,5 +75,3 @@ describe("ORG-01 and ORG-02", () => {
     );
   });
 });
-
-describe("ORG-03 onboarding status mapping", () => {});

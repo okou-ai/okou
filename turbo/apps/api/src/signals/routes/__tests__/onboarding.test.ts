@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createStore } from "ccstate";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -20,6 +21,7 @@ import { onboardingStatusRoutes } from "../onboarding-status";
 import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { runModelsRoutes } from "../run-models";
 import { mockClerkUsers } from "./helpers/clerk-users";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -275,6 +277,11 @@ describe("POST /api/onboarding/complete", () => {
 
   it("onboarding-012 can retry onboarding after Clerk temporarily fails to return the account", async () => {
     const { orgId, adminId } = newWorkspace();
+    await createStore().set(
+      seedOrgMembership$,
+      { userId: adminId, orgId, role: "admin" },
+      context.signal,
+    );
     signIn(adminId, orgId, "org:admin");
     context.mocks.clerk.users.getUser.mockRejectedValueOnce(
       new Error("Clerk is unavailable"),
