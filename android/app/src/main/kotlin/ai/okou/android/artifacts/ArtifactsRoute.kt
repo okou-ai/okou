@@ -53,6 +53,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
@@ -254,7 +255,7 @@ internal fun ArtifactSelectionPreview(
         val preview = state.preview?.takeIf { it.id == id }
         val context = LocalContext.current
         val resources = LocalResources.current
-        val scope = rememberCoroutineScope()
+        val shareScope = rememberCoroutineScope()
         val shareSnackbar = remember { SnackbarHostState() }
         var sharing by remember { mutableStateOf(false) }
         val original = preview?.access?.save
@@ -276,7 +277,7 @@ internal fun ArtifactSelectionPreview(
                             !sharing && page.pickerArtifactId == null && !model.state.value.saving
                         ) {
                             sharing = true
-                            scope.launch {
+                            shareScope.launch {
                                 val result =
                                     try {
                                         shareArtifactOriginal(context, model, id, file)
@@ -303,6 +304,7 @@ internal fun ArtifactSelectionPreview(
             if (pickerFailed) ArtifactSaveResult.Failed
             else state.saveResult?.takeIf { it.first == id }?.second
         val openSource: (ConfirmedChat) -> Unit = {
+            shareScope.coroutineContext.cancelChildren()
             page.restoreSource = true
             onSource(it)
         }

@@ -2,10 +2,14 @@ package ai.okou.android
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.core.content.IntentCompat
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -112,6 +116,56 @@ internal class ArtifactSharingRootTest : ArtifactCatalogRootTestFixture() {
         }
         compose.waitUntil(10_000) { cache.list()?.toSet().orEmpty() == prior }
         assertNull(shadowOf(compose.activity).nextStartedActivity)
+    }
+
+    @Test
+    fun openingSourceCancelsSharingBeforeThePreviewIsDisposed() {
+        val fixture = ArtifactApiFixture(app.fixture, summaryDownloadAllowed = true)
+        fixture.install()
+        val requested = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val priorResponse = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (
+                request.requestUrl?.encodedPath == "/api/artifact-references/artifacts2.md/download"
+            ) {
+                requested.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+                val url = app.fixture.server.url("/artifact-bytes/summary")
+                jsonResponse(
+                    """{"kind":"file","filename":"summary.md","contentType":"text/markdown","url":"$url"}""",
+                )
+            } else priorResponse(request)
+        }
+        openFile(fixture.summary.title)
+        awaitText("View source conversation")
+        awaitText("Share file")
+        val activity = compose.activity
+        val cache = File(activity.cacheDir, "artifact-shares")
+        val priorCopies = cache.list()?.toSet().orEmpty()
+        try {
+            compose.onNodeWithText("Share file").performClick()
+            compose.waitUntil(10_000) { requested.count == 0L }
+            // Run the source action while the clock holds the old preview in composition.
+            compose.mainClock.autoAdvance = false
+            compose
+                .onNodeWithText("View source conversation")
+                .performSemanticsAction(SemanticsActions.OnClick)
+            release.countDown()
+            var launched: Intent? = null
+            compose.waitUntil(10_000) {
+                compose.runOnUiThread { compose.mainClock.scheduler.runCurrent() }
+                launched = shadowOf(activity).nextStartedActivity
+                launched != null || cache.list()?.toSet().orEmpty() == priorCopies
+            }
+            assertNull(launched)
+        } finally {
+            release.countDown()
+            compose.mainClock.autoAdvance = true
+        }
+        compose.onNodeWithTag("conversation").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back to artifact preview").performClick()
+        awaitText(fixture.summary.title)
     }
 
     private fun openFile(title: String) {
