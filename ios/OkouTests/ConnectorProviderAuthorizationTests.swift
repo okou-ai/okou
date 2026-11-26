@@ -10,29 +10,63 @@ private typealias FixtureData = ConnectorHTTPFixtures
 
 @MainActor
 private final class ProviderApplication: ConnectorProviderApplication {
+  let dropboxAppKey: String? = "42"
   let opens: Bool
   var openedURL: URL?
+  var request: ConnectorProviderRequest?
   init(opens: Bool) { self.opens = opens }
-  func open(_ url: URL) async -> Bool {
-    openedURL = url
-    return opens
+  func supports(_ target: ChatConnectorTarget) -> Bool { true }
+  func receive(_ url: URL) -> Bool { false }
+  func authorize(_ request: ConnectorProviderRequest) async throws -> ConnectorProviderLaunch {
+    self.request = request
+    openedURL = request.appURLs.first
+    if request.provider == "spotify" { return .code("provider-code") }
+    return opens ? .opened : .unavailable
   }
 }
 
 private final class ProviderAuthorizationFixture: Sendable {
   let completed = Mutex(false)
   let starts = Mutex(0)
+  let callbacks = Mutex(0)
   let slug: String
   let authorizationURL: String
 
   init(slug: String = "strava") {
     self.slug = slug
-    let endpoint =
-      slug == "strava"
-      ? "https://www.strava.com/oauth/mobile/authorize"
-      : "https://accounts.google.com/o/oauth2/v2/auth"
+    let endpoints = [
+      "strava": "https://www.strava.com/oauth/mobile/authorize",
+      "tiktok": "https://www.tiktok.com/v2/auth/authorize/",
+      "dropbox": "https://www.dropbox.com/oauth2/authorize",
+      "spotify": "https://accounts.spotify.com/authorize"
+    ]
+    let endpoint = endpoints[slug] ?? "https://accounts.google.com/o/oauth2/v2/auth"
+    let callback =
+      Self.callback(slug)
+      ?? "https://app.example.invalid/connectors/\(slug)/callback"
+    var components = URLComponents(string: endpoint)!
+    components.queryItems = [
+      URLQueryItem(name: "client_id", value: "42"),
+      URLQueryItem(name: "client_key", value: "42"),
+      URLQueryItem(name: "state", value: "server-state"),
+      URLQueryItem(name: "response_type", value: "code"),
+      URLQueryItem(name: "scope", value: "read"),
+      URLQueryItem(name: "redirect_uri", value: callback),
+      URLQueryItem(name: "code_challenge", value: "server-challenge"),
+      URLQueryItem(name: "code_challenge_method", value: "S256"),
+      URLQueryItem(name: "token_access_type", value: "offline")
+    ]
     authorizationURL =
-      "\(endpoint)?client_id=42&state=server-state&response_type=code&scope=read&redirect_uri=https%3A%2F%2Fapp.example.invalid%2Fconnectors%2F\(slug)%2Fcallback"
+      components.url!.absoluteString
+  }
+
+  static func callback(_ slug: String) -> String? {
+    switch slug {
+    case "tiktok": "https://app.okou.ai/connectors/tiktok/callback"
+    case "dropbox": "db-42://2/token"
+    case "spotify": "ai.okou.ios://connector-provider/spotify"
+    default: nil
+    }
   }
 
   func response(_ request: URLRequest) throws -> ChatHTTPResponse {
@@ -42,21 +76,42 @@ private final class ProviderAuthorizationFixture: Sendable {
         struct Account: Decodable { let intent: String }
         let account: Account
         let nativeAppAuthorization: String?
+        let nativeAppClientId: String?
         let callbackTarget: String
       }
       let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
       XCTAssertEqual(body.account.intent, "add")
-      XCTAssertEqual(body.nativeAppAuthorization, slug == "strava" ? "ios" : nil)
+      let nativeProvider = ["strava", "tiktok", "dropbox", "spotify"].contains(slug)
+      XCTAssertEqual(body.nativeAppAuthorization, nativeProvider ? "ios" : nil)
+      XCTAssertEqual(body.nativeAppClientId, slug == "dropbox" ? "42" : nil)
       XCTAssertEqual(body.callbackTarget, "app")
       starts.withLock { $0 += 1 }
-      let native =
-        slug == "strava"
-        ? "\"nativeAppAuthorization\":{\"provider\":\"strava\"}"
-        : "\"nativeCallbackUrl\":\"https://app.okou.ai/native/connector-authorization?attemptId=\(FixtureData.attemptID)\""
+      let native: String
+      if let callback = Self.callback(slug) {
+        native =
+          "\"nativeAppAuthorization\":{\"provider\":\"\(slug)\",\"callbackUrl\":\"\(callback)\",\"exchangeUrl\":\"https://app.okou.ai/connectors/\(slug)/callback\"}"
+      } else {
+        native =
+          slug == "strava"
+          ? "\"nativeAppAuthorization\":{\"provider\":\"strava\"}"
+          : "\"nativeCallbackUrl\":\"https://app.okou.ai/native/connector-authorization?attemptId=\(FixtureData.attemptID)\""
+      }
       return ChatHTTPResponse(
         body: """
           {"authorizationUrl":"\(authorizationURL)","oauthAttemptId":"\(FixtureData.attemptID)",\(native)}
           """)
+    }
+    if path == "/api/connectors/\(slug)/callback" {
+      let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+      XCTAssertEqual(items.first { $0.name == "state" }?.value, "server-state")
+      XCTAssertEqual(items.first { $0.name == "responseMode" }?.value, "json")
+      callbacks.withLock { $0 += 1 }
+      if items.contains(where: { $0.name == "error" }) {
+        return ChatHTTPResponse(body: "{\"status\":\"error\",\"message\":\"Access denied\"}")
+      }
+      XCTAssertEqual(items.first { $0.name == "code" }?.value, "provider-code")
+      completed.withLock { $0 = true }
+      return ChatHTTPResponse(body: "{\"status\":\"success\",\"username\":\"Native user\"}")
     }
     if path.contains("oauth-completions") {
       XCTAssertEqual(
@@ -80,6 +135,169 @@ private final class ProviderAuthorizationFixture: Sendable {
 
 @MainActor
 final class ConnectorProviderAuthorizationTests: XCTestCase {
+  func testNativeProvidersExchangeCodesBeforeConfirmingTheExactAccount() async throws {
+    for slug in ["tiktok", "dropbox", "spotify"] {
+      let initial = expectation(description: "\(slug) launched")
+      let callback = slug == "spotify" ? nil : expectation(description: "\(slug) exchanged")
+      let schedules = Mutex(0)
+      let clock = ConnectorPollingClock(didSchedule: { _ in
+        let count = schedules.withLock { value in
+          value += 1
+          return value
+        }
+        if count == 1 { initial.fulfill() } else { callback?.fulfill() }
+      })
+      let provider = ProviderApplication(opens: true)
+      let responses = ProviderAuthorizationFixture(slug: slug)
+      let fixture = ChatHTTPFixture { try responses.response($0) }
+      let continued = Mutex(false)
+      let store = ConnectorActionStore(
+        service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+        didContinue: { continued.withLock { $0 = true } },
+        didFail: { _ in XCTFail("Unexpected error") },
+        providerApplication: provider, pollSleep: clock.sleep)
+      defer { store.close() }
+      store.activate(.configuration(target: .builtin(slug), threadID: nil))
+      try await waitForBusinessResult { store.active != nil }
+      store.submit()
+      await fulfillment(of: [initial], timeout: 3)
+      XCTAssertEqual(provider.request?.provider, slug)
+      XCTAssertFalse(continued.withLock { $0 })
+      if slug == "tiktok" {
+        XCTAssertEqual(provider.openedURL?.host, "www.tiktok.com")
+        XCTAssertEqual(provider.openedURL?.path, "/opensdk/oauth/")
+      } else if slug == "dropbox" {
+        XCTAssertEqual(
+          provider.openedURL?.absoluteString.components(separatedBy: "?").first,
+          "dbapi-2://1/connect")
+      }
+      if slug != "spotify" {
+        let base =
+          slug == "dropbox" ? "db-42://1/connect" : "https://app.okou.ai/connectors/tiktok/callback"
+        store.receiveProviderReturn(URL(string: "\(base)?state=unrelated&code=provider-code")!)
+        store.receiveProviderReturn(URL(string: "\(base)?state=server-state&code=provider-code")!)
+        await fulfillment(of: [try XCTUnwrap(callback)], timeout: 3)
+      }
+      clock.advance(.seconds(2))
+      try await waitForBusinessResult { store.active == nil }
+      XCTAssertTrue(continued.withLock { $0 })
+      XCTAssertEqual(responses.starts.withLock { $0 }, 1)
+      XCTAssertEqual(responses.callbacks.withLock { $0 }, 1)
+    }
+  }
+
+  func testUnavailableNativeAppsUseTheSameAttemptInTheBrowser() async throws {
+    for slug in ["tiktok", "dropbox"] {
+      let scheduled = expectation(description: "\(slug) web fallback")
+      let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
+      let responses = ProviderAuthorizationFixture(slug: slug)
+      let fixture = ChatHTTPFixture { try responses.response($0) }
+      let store = ConnectorActionStore(
+        service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+        didContinue: {}, didFail: { _ in },
+        providerApplication: ProviderApplication(opens: false), pollSleep: clock.sleep)
+      defer { store.close() }
+      store.activate(.configuration(target: .builtin(slug), threadID: nil))
+      try await waitForBusinessResult { store.active != nil }
+      store.submit()
+      await fulfillment(of: [scheduled], timeout: 3)
+      XCTAssertEqual(store.active?.browserURL?.absoluteString, responses.authorizationURL)
+      XCTAssertEqual(responses.starts.withLock { $0 }, 1)
+    }
+  }
+
+  func testNativeProviderDenialLeavesRetryAvailableWithoutOpeningTheBrowser() async throws {
+    let scheduled = expectation(description: "TikTok launched")
+    let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
+    let responses = ProviderAuthorizationFixture(slug: "tiktok")
+    let fixture = ChatHTTPFixture { try responses.response($0) }
+    let store = ConnectorActionStore(
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+      didContinue: { XCTFail("Denial cannot connect") }, didFail: { _ in },
+      providerApplication: ProviderApplication(opens: true), pollSleep: clock.sleep)
+    defer { store.close() }
+    store.activate(.configuration(target: .builtin("tiktok"), threadID: nil))
+    try await waitForBusinessResult { store.active != nil }
+    store.submit()
+    await fulfillment(of: [scheduled], timeout: 3)
+    let flow = try XCTUnwrap(store.active)
+    store.receiveProviderReturn(
+      URL(
+        string:
+          "https://app.okou.ai/connectors/tiktok/callback?state=server-state&error=access_denied")!)
+    try await waitForBusinessResult { flow.error != nil }
+    XCTAssertNil(flow.browserURL)
+    XCTAssertTrue(flow.canSubmit)
+    XCTAssertEqual(responses.starts.withLock { $0 }, 1)
+  }
+
+  func testDropboxBrowserFallbackReturnsItsCodeToTheServer() async throws {
+    let initial = expectation(description: "Dropbox browser opened")
+    let exchanged = expectation(description: "Dropbox browser code exchanged")
+    let schedules = Mutex(0)
+    let clock = ConnectorPollingClock(didSchedule: { _ in
+      let count = schedules.withLock { value in
+        value += 1
+        return value
+      }
+      (count == 1 ? initial : exchanged).fulfill()
+    })
+    let responses = ProviderAuthorizationFixture(slug: "dropbox")
+    let fixture = ChatHTTPFixture { try responses.response($0) }
+    let store = ConnectorActionStore(
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+      didContinue: {}, didFail: { _ in XCTFail("Unexpected error") },
+      providerApplication: ProviderApplication(opens: false), pollSleep: clock.sleep)
+    defer { store.close() }
+    store.activate(.configuration(target: .builtin("dropbox"), threadID: nil))
+    try await waitForBusinessResult { store.active != nil }
+    store.submit()
+    await fulfillment(of: [initial], timeout: 3)
+    let flow = try XCTUnwrap(store.active)
+    XCTAssertNotNil(flow.browserURL)
+    store.receiveProviderReturn(
+      URL(string: "db-42://2/token?state=server-state&code=provider-code")!)
+    await fulfillment(of: [exchanged], timeout: 3)
+    clock.advance(.seconds(2))
+    try await waitForBusinessResult { store.active == nil }
+    XCTAssertEqual(responses.starts.withLock { $0 }, 1)
+    XCTAssertEqual(responses.callbacks.withLock { $0 }, 1)
+  }
+
+  func testDropboxAppCancellationChecksForCompletionBeforeAllowingRetry() async throws {
+    let initial = expectation(description: "Dropbox app opened")
+    let returned = expectation(description: "Dropbox cancellation checked")
+    let schedules = Mutex(0)
+    let clock = ConnectorPollingClock(didSchedule: { _ in
+      let count = schedules.withLock { value in
+        value += 1
+        return value
+      }
+      (count == 1 ? initial : returned).fulfill()
+    })
+    let responses = ProviderAuthorizationFixture(slug: "dropbox")
+    let fixture = ChatHTTPFixture { try responses.response($0) }
+    let store = ConnectorActionStore(
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+      didContinue: { XCTFail("Cancellation cannot connect") }, didFail: { _ in },
+      providerApplication: ProviderApplication(opens: true), pollSleep: clock.sleep)
+    defer { store.close() }
+    store.activate(.configuration(target: .builtin("dropbox"), threadID: nil))
+    try await waitForBusinessResult { store.active != nil }
+    store.submit()
+    await fulfillment(of: [initial], timeout: 3)
+    let flow = try XCTUnwrap(store.active)
+    store.authorizationSceneChanged(isActive: false, isBackground: true)
+    store.receiveProviderReturn(URL(string: "db-42://1/cancel")!)
+    await fulfillment(of: [returned], timeout: 3)
+    clock.advance(.seconds(2))
+    try await waitForBusinessResult { flow.session == nil }
+    XCTAssertNil(flow.browserURL)
+    XCTAssertTrue(flow.canSubmit)
+    XCTAssertEqual(responses.callbacks.withLock { $0 }, 0)
+    XCTAssertEqual(responses.starts.withLock { $0 }, 1)
+  }
+
   func testGoogleExternalBrowserAuthorizationConfirmsTheExactBackendAccount() async throws {
     let scheduled = expectation(description: "Google browser authorization polling")
     let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })

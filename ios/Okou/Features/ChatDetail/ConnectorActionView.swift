@@ -294,6 +294,7 @@ struct ConnectorAuthorizationSheet: View {
               ?? flow.session?.verificationUri
             {
               Button("Open authorization page") { flow.browserURL = url }
+                .disabled(flow.busy)
             }
           } header: {
             Text("Finish authorization").okouSectionHeader()

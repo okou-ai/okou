@@ -18,6 +18,7 @@ final class ConnectorAuthorizationFlow: Identifiable {
   var busy = false
   var browserURL: URL?
   var usesProviderApplication = false
+  var providerCallbackInFlight = false
   var session: ChatConnectorReceipt?
   var expiresAt: Date?
   var checking = false
@@ -39,7 +40,8 @@ final class ConnectorAuthorizationFlow: Identifiable {
     status.builtin?.authMethods.filter { $0.grantKind != "managed" } ?? []
   }
   var supportsProviderApplication: Bool {
-    status.target == .builtin("strava") && method?.id == "oauth"
+    ["strava", "tiktok", "dropbox", "spotify"].contains(status.target.connectorSlug ?? "")
+      && method?.id == "oauth"
       && method?.grantKind == "auth-code"
   }
   var startsWithoutForm: Bool {
@@ -219,10 +221,15 @@ final class ConnectorActionStore {
     _ flow: ConnectorAuthorizationFlow, status current: ChatConnectorStatus
   ) async throws {
     flow.usesProviderApplication = false
-    let nativeAppAuthorization = flow.supportsProviderApplication
+    flow.providerCallbackInFlight = false
+    let nativeAppAuthorization =
+      flow.supportsProviderApplication
+      && providerApplication.supports(current.target)
     let result = try await service.start(
       status: current, method: flow.method, values: flow.values, options: flow.options,
-      nativeAppAuthorization: nativeAppAuthorization)
+      nativeAppAuthorization: nativeAppAuthorization,
+      nativeAppClientID: current.target == .builtin("dropbox")
+        ? providerApplication.dropboxAppKey : nil)
     try check(flow)
     flow.values = [:]
     flow.code = ""
@@ -244,17 +251,34 @@ final class ConnectorActionStore {
       guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
       let webURL = try browserURL(result.authorizationUrl)
       try ConnectorProviderAuthorization.validateCallback(result)
-      let appURL = try ConnectorProviderAuthorization.appURL(
+      let request = try ConnectorProviderAuthorization.request(
         receipt: result, target: current.target, methodID: flow.methodID, webURL: webURL)
       flow.session = result
       flow.expiresAt = Date().addingTimeInterval(600)
-      if let appURL {
+      if let request {
         // A refused/canceled authorization is not a failed launch. Only a
         // definitive OS launch failure permits the same attempt's web fallback.
-        let opened = await providerApplication.open(appURL)
-        try check(flow)
-        flow.usesProviderApplication = opened
-        flow.browserURL = opened ? nil : webURL
+        do {
+          let launch = try await providerApplication.authorize(request)
+          try check(flow)
+          switch launch {
+          case .opened:
+            flow.usesProviderApplication = true
+            flow.browserURL = nil
+          case .unavailable: flow.browserURL = webURL
+          case .code(let code):
+            guard let slug = current.target.connectorSlug,
+              let state = URLComponents(url: webURL, resolvingAgainstBaseURL: false)?.queryItems?
+                .first(where: { $0.name == "state" })?.value
+            else { throw APIClientError.invalidResponse }
+            try await service.completeProviderAuthorization(
+              slug: slug, parameters: ["state": state, "code": code])
+            try check(flow)
+          }
+        } catch {
+          flow.session = nil
+          throw error
+        }
       } else {
         flow.browserURL = webURL
       }
@@ -408,8 +432,43 @@ final class ConnectorActionStore {
   }
 
   func receiveProviderReturn(_ url: URL) {
-    guard !closed, let flow = active,
-      flow.session?.nativeAppAuthorization?.provider == "strava"
+    guard !closed, let flow = active else { return }
+    if providerApplication.receive(url) { return }
+    if let receipt = flow.session,
+      ConnectorProviderAuthorization.isDropboxCancellation(url, receipt: receipt)
+    {
+      flow.browserURL = nil
+      flow.browserClosed = true
+      if task == nil { startPolling(flow) }
+      return
+    }
+    if let receipt = flow.session,
+      let parameters = ConnectorProviderAuthorization.callbackParameters(url, receipt: receipt),
+      !flow.providerCallbackInFlight, let slug = flow.status.target.connectorSlug
+    {
+      flow.providerCallbackInFlight = true
+      flow.browserURL = nil
+      task?.cancel()
+      task = Task { [weak self, weak flow] in
+        guard let self, let flow else { return }
+        do {
+          try await service.completeProviderAuthorization(slug: slug, parameters: parameters)
+          try check(flow)
+          flow.browserClosed = true
+          startPolling(flow)
+        } catch is CancellationError {
+        } catch {
+          guard active === flow, !closed else { return }
+          flow.session = nil
+          flow.error = ChatRequestFailure.message(for: error)
+          flow.presentsForm = true
+          didFail(error)
+        }
+      }
+      return
+    }
+    guard
+      flow.session?.nativeAppAuthorization != nil
         || flow.session?.nativeCallbackUrl != nil,
       let attemptID = ConnectorProviderAuthorization.returnAttemptID(url),
       flow.session?.oauthAttemptId?.lowercased() == attemptID

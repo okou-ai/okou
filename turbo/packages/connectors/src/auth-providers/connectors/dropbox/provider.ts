@@ -27,6 +27,7 @@ export const dropboxProvider: AuthCodeConnectorAuthProvider<"dropbox"> = {
         clientSecret,
         code,
         redirectUri,
+        args.codeVerifier,
       );
       return {
         outputs: {

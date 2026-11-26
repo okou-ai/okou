@@ -43,6 +43,7 @@ import { computerUseAuthorizationRequestsContract } from "../contracts/computer-
 import { connectorAccountsContract } from "../contracts/connector-accounts";
 import { connectorPermissionsContract } from "../contracts/connector-permissions";
 import { connectorCatalogContract } from "../contracts/connector-catalog";
+import { builtinConnectorsSlugCallbackContract } from "../contracts/connectors-slug-callback";
 import {
   builtinConnectorAutomaticContract,
   builtinConnectorExternalCodeSessionContract,
@@ -441,6 +442,10 @@ export const iosClientContracts: readonly {
   {
     id: "ios.builtinConnectorOauthStartContract.start",
     route: builtinConnectorOauthStartContract.start,
+  },
+  {
+    id: "ios.builtinConnectorsSlugCallbackContract.callback",
+    route: builtinConnectorsSlugCallbackContract.callback,
   },
   {
     id: "ios.builtinConnectorOpenIdStartContract.start",

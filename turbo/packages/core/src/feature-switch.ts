@@ -68,6 +68,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.IosConnectorAppAuthorization]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iOS connector app authorization",
+    description:
+      "Authorize TikTok, Dropbox and Spotify through their iOS apps with browser recovery.",
+    enabled: false,
+    staffOptInOnly: true,
+  },
   [FeatureSwitchKey.ComposerVoiceMessages]: {
     maintainer: "ethan@okou.ai",
     displayName: "Voice recordings in the composer",

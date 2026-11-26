@@ -1836,11 +1836,16 @@ data class ConnectorOauthCompletion(
 @Serializable
 enum class ConnectorOauthStartNativeAppAuthorizationProvider {
     @SerialName("strava") STRAVA,
+    @SerialName("tiktok") TIKTOK,
+    @SerialName("dropbox") DROPBOX,
+    @SerialName("spotify") SPOTIFY,
 }
 
 @Serializable
 data class ConnectorOauthStartNativeAppAuthorization(
     val `provider`: ConnectorOauthStartNativeAppAuthorizationProvider,
+    val `callbackUrl`: String? = null,
+    val `exchangeUrl`: String? = null,
 )
 
 @Serializable
@@ -1961,6 +1966,7 @@ data class ConnectorOauthStartRequest(
     val `callbackTarget`: ConnectorOauthStartRequestCallbackTarget? = null,
     val `nativeCallback`: ConnectorOauthStartRequestNativeCallback? = null,
     val `nativeAppAuthorization`: ConnectorOauthStartRequestNativeAppAuthorization? = null,
+    val `nativeAppClientId`: String? = null,
     val `account`: ConnectorOauthStartRequestAccount,
 )
 
