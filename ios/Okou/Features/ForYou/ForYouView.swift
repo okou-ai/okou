@@ -40,10 +40,10 @@ struct ForYouView: View {
   private static let layerDrop: CGFloat = 8
   private static let layerCount = 2
   /// A layer is this much narrower than the card above it.
-  private static let layerInset: CGFloat = 0.03
-  /// Each deeper layer of the deck is shaded by this much more, so the stack recedes while every
-  /// layer stays a solid card on the scene.
-  private static let layerShade: Double = 0.06
+  private static let layerInset: CGFloat = 0.04
+  /// Each deeper layer shows this much less of itself, so the stack recedes into the ground, lighter
+  /// rather than darker, as a stack of notifications or passes does.
+  private static let layerFade: Double = 0.14
   /// The big card's ground: white by day, as a grouped sheet's rows are on their grouped ground,
   /// so the card stands clear of the page. At night it is a step darker than the directions.
   static let ground = Color(
@@ -145,7 +145,7 @@ struct ForYouView: View {
     if layers > 0, !isComposing, let room = cardRoom(asContext: false) {
       ForYouDeckLayers(
         count: layers, ground: Self.ground, drop: Self.layerDrop, inset: Self.layerInset,
-        shade: Self.layerShade
+        fade: Self.layerFade
       )
       .frame(height: room + Self.cardPadding)
       .frame(maxWidth: OkouControl.readableWidth)
@@ -261,8 +261,11 @@ struct ForYouView: View {
       .padding(.bottom, deckFoot(asContext: asContext))
     }
     .defaultScrollAnchor(.bottom, for: .initialOffset)
-    .defaultScrollAnchor(.bottom, for: .alignment)
-    .defaultScrollAnchor(.bottom, for: .sizeChanges)
+    // The card hangs from its top edge, just under the header: when the room changes, as the
+    // input grows out of its pill or the keyboard rises, only its foot moves, up and back down,
+    // and its top never jumps.
+    .defaultScrollAnchor(.top, for: .alignment)
+    .defaultScrollAnchor(.top, for: .sizeChanges)
     .scrollIndicators(.hidden)
     // A card that fits stays put: only one taller than the room (large text, the keyboard up)
     // scrolls, so a vertical drag never pulls the card down off the deck.
