@@ -72,4 +72,10 @@
     <string name="artifact_image_zoom_in">Ampliar</string>
     <string name="artifact_image_zoom_out">Reduzir</string>
     <string name="artifact_image_fit">Ajustar imagem</string>
+    <string name="artifact_share_file">Compartilhar arquivo</string>
+    <string name="artifact_share_image">Compartilhar imagem</string>
+    <string name="artifact_save_image">Salvar imagem</string>
+    <string name="artifact_share_preparing">Preparando compartilhamento…</string>
+    <string name="artifact_share_denied">Não é possível compartilhar este arquivo</string>
+    <string name="artifact_share_failed">Não foi possível preparar o arquivo para compartilhar</string>
 </resources>

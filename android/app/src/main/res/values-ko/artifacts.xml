@@ -72,4 +72,10 @@
     <string name="artifact_image_zoom_in">확대</string>
     <string name="artifact_image_zoom_out">축소</string>
     <string name="artifact_image_fit">화면에 맞추기</string>
+    <string name="artifact_share_file">파일 공유</string>
+    <string name="artifact_share_image">이미지 공유</string>
+    <string name="artifact_save_image">이미지 저장</string>
+    <string name="artifact_share_preparing">공유 준비 중…</string>
+    <string name="artifact_share_denied">이 파일을 공유할 수 없습니다</string>
+    <string name="artifact_share_failed">공유할 파일을 준비할 수 없습니다</string>
 </resources>

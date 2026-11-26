@@ -1627,7 +1627,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithText(fixture.image.title).performClick()
         awaitText("Temporarily unable to load image")
         compose.onNodeWithContentDescription("Image actions").performClick()
-        compose.onNodeWithText("Save file").assertIsEnabled()
+        compose.onNodeWithText("Save image").assertIsEnabled()
         val frame = compose.onNodeWithTag("artifact_preview_surface").getUnclippedBoundsInRoot()
         val status =
             compose.onNodeWithText("Temporarily unable to load image").getUnclippedBoundsInRoot()
@@ -1671,7 +1671,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
                 compose.mainClock.autoAdvance = true
                 compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
                 compose.onNodeWithContentDescription("Image actions").performClick()
-                compose.onNodeWithText("Save file").assertIsEnabled()
+                compose.onNodeWithText("Save image").assertIsEnabled()
                 pending
             } finally {
                 releaseImage.countDown()
@@ -1680,7 +1680,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         awaitText("Image unavailable")
         assertEquals(pendingFrame, surface.getUnclippedBoundsInRoot())
         loading.assertDoesNotExist()
-        compose.onNodeWithText("Save file").assertDoesNotExist()
+        compose.onNodeWithText("Save image").assertDoesNotExist()
         compose.onNodeWithContentDescription("Image actions").assertDoesNotExist()
     }
 

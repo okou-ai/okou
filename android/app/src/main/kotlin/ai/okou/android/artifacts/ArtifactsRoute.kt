@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -49,7 +51,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun ArtifactsRoute(
@@ -247,11 +251,52 @@ internal fun ArtifactSelectionPreview(
     key(selectedId) {
         val id = selectedId
         val preview = state.preview?.takeIf { it.id == id }
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val shareSnackbar = remember { SnackbarHostState() }
+        var sharing by remember { mutableStateOf(false) }
+        val original = preview?.access?.save
+        val generated =
+            showArtifactImageViewer &&
+                !id.startsWith(ExternalImagePreviewPrefix) &&
+                chatAttachment(id) == null
         val source =
             preview?.info?.sourceChatId?.let { sourceId ->
                 threads.firstOrNull { it.id == sourceId && it.hidden != true }
             }
-        val saveEnabled = !state.saving && page.pickerArtifactId == null
+        val saveEnabled = !state.saving && page.pickerArtifactId == null && !sharing
+        val onShare: (() -> Unit)? =
+            original
+                ?.takeIf { generated }
+                ?.let { file ->
+                    {
+                        if (
+                            !sharing && page.pickerArtifactId == null && !model.state.value.saving
+                        ) {
+                            sharing = true
+                            scope.launch {
+                                val result =
+                                    try {
+                                        shareArtifactOriginal(context, model, id, file)
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (_: Exception) {
+                                        ArtifactSaveResult.Failed
+                                    } finally {
+                                        sharing = false
+                                    }
+                                val message =
+                                    when (result) {
+                                        ArtifactSaveResult.Denied -> R.string.artifact_share_denied
+                                        ArtifactSaveResult.Failed -> R.string.artifact_share_failed
+                                        else -> null
+                                    }
+                                if (message != null)
+                                    shareSnackbar.showSnackbar(context.getString(message))
+                            }
+                        }
+                    }
+                }
         val saveResult =
             if (pickerFailed) ArtifactSaveResult.Failed
             else state.saveResult?.takeIf { it.first == id }?.second
@@ -260,7 +305,7 @@ internal fun ArtifactSelectionPreview(
             onSource(it)
         }
         val saveArtifact: (ArtifactSave) -> Unit = { file ->
-            if (page.pickerArtifactId == null && !model.state.value.saving) {
+            if (page.pickerArtifactId == null && !model.state.value.saving && !sharing) {
                 page.pickerArtifactId = id
                 pickerFailed = false
                 try {
@@ -279,12 +324,7 @@ internal fun ArtifactSelectionPreview(
                 }
             }
         }
-        if (
-            showArtifactImageViewer &&
-                preview?.isImage == true &&
-                !id.startsWith(ExternalImagePreviewPrefix) &&
-                chatAttachment(id) == null
-        ) {
+        if (generated && preview?.isImage == true) {
             val save = preview.access?.save
             ArtifactImageViewer(
                 preview = preview,
@@ -295,6 +335,9 @@ internal fun ArtifactSelectionPreview(
                 saveEnabled = saveEnabled,
                 onSave = save?.let { { saveArtifact(it) } },
                 saveResult = saveResult,
+                onShare = onShare,
+                sharing = sharing,
+                shareSnackbar = shareSnackbar,
                 onSource = source?.let { { openSource(it) } },
                 restoreSourceFocus = page.restoreSource,
                 onSourceFocusRestored = { page.restoreSource = false },
@@ -312,6 +355,9 @@ internal fun ArtifactSelectionPreview(
                 saveEnabled = saveEnabled,
                 onSave = saveArtifact,
                 saveResult = saveResult,
+                onShare = onShare,
+                sharing = sharing,
+                shareSnackbar = shareSnackbar,
             )
         }
     }

@@ -72,4 +72,10 @@
     <string name="artifact_image_zoom_in">Perbesar</string>
     <string name="artifact_image_zoom_out">Perkecil</string>
     <string name="artifact_image_fit">Sesuaikan gambar</string>
+    <string name="artifact_share_file">Bagikan file</string>
+    <string name="artifact_share_image">Bagikan gambar</string>
+    <string name="artifact_save_image">Simpan gambar</string>
+    <string name="artifact_share_preparing">Menyiapkan untuk dibagikan…</string>
+    <string name="artifact_share_denied">File ini tidak dapat dibagikan</string>
+    <string name="artifact_share_failed">Gagal menyiapkan file untuk dibagikan</string>
 </resources>
