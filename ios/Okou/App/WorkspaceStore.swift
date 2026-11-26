@@ -262,7 +262,7 @@ final class WorkspaceStore {
         messageMarkdown: messageMarkdown,
         isVisible: { [weak self] in
           self?.isForeground == true && self?.selectedThreadID == id
-            && self?.sidebarInteraction.isOpen == false
+            && self?.sidebarInteraction.showsChat == true
         },
         didMarkRead: { [weak self] watermark in self?.list.markRead(id, through: watermark) },
         didSend: { [weak self] in self?.requestRefresh(.threadList) },
