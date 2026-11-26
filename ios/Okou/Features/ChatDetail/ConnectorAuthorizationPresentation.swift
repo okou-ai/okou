@@ -21,31 +21,26 @@ private struct ConnectorAuthorizationPresentation: ViewModifier {
           .okouSheetBackground()
       }
       .background {
-        ConnectorAuthenticationHost(store: store)
+        ConnectorBrowserHost(store: store)
           .frame(width: 0, height: 0)
           .accessibilityHidden(true)
       }
       .onOpenURL { store.receiveProviderReturn($0) }
       .onChange(of: scenePhase) { _, phase in
-        store.providerSceneActive(phase == .active)
+        store.authorizationSceneChanged(
+          isActive: phase == .active, isBackground: phase == .background)
       }
   }
 }
 
-/// Mount before an attempt starts so navigation and forms keep the same scene anchor.
-private struct ConnectorAuthenticationHost: View {
+/// Keep browser launches scoped to the active authorization attempt.
+private struct ConnectorBrowserHost: View {
   let store: ConnectorActionStore
 
   var body: some View {
     let flow = store.active
-    ConnectorAuthenticationSessionView(
-      ownerID: flow?.id,
-      url: flow?.usesSystemAuthenticationSession == true ? flow?.browserURL : nil,
-      callbackURL: flow?.session?.nativeCallbackUrl
-    ) { url, callbackURL, error in
-      if let flow {
-        store.authenticationFinished(flow: flow, url: url, callbackURL: callbackURL, error: error)
-      }
+    ConnectorBrowserView(ownerID: flow?.id, url: flow?.browserURL) { url in
+      if let flow { store.browserOpenFailed(flow: flow, url: url) }
     }
   }
 }

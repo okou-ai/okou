@@ -341,10 +341,10 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     store.activate(action)
     await fulfillment(of: [scheduled], timeout: 3)
     let flow = try XCTUnwrap(store.active)
-    let url = try XCTUnwrap(flow.browserURL)
-    XCTAssertTrue(flow.usesSystemAuthenticationSession)
+    XCTAssertNotNil(flow.browserURL)
     XCTAssertEqual(callbacks.withLock { $0 }, 0)
-    store.authenticationFinished(flow: flow, url: url, error: CancellationError())
+    store.authorizationSceneChanged(isActive: false, isBackground: true)
+    store.authorizationSceneChanged(isActive: true, isBackground: false)
     clock.advance(.seconds(2))
     try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)

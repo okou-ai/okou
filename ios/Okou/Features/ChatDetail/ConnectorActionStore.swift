@@ -22,6 +22,7 @@ final class ConnectorAuthorizationFlow: Identifiable {
   var expiresAt: Date?
   var checking = false
   var browserClosed = false
+  var browserLeftApp = false
   var pollInterval: Double = 2
   var operatedID: String?
   // Once recovery opens the form, keep it mounted through a retry.
@@ -46,7 +47,6 @@ final class ConnectorAuthorizationFlow: Identifiable {
       && method?.manualFields.isEmpty == true && method?.startOptions.isEmpty == true
       && status.builtin?.connectNotice == nil && !supportsProviderApplication
   }
-  var usesSystemAuthenticationSession: Bool { session?.oauthAttemptId != nil }
   var waiting: Bool { session != nil }
   var isExternalCode: Bool { method?.grantKind == "external-code" && waiting }
   var needsConnection: Bool {
@@ -227,6 +227,7 @@ final class ConnectorActionStore {
     flow.values = [:]
     flow.code = ""
     flow.browserClosed = false
+    flow.browserLeftApp = false
     if let sessionID = result.sessionId {
       guard UUID(uuidString: sessionID) != nil, result.sessionToken != nil,
         let expires = result.expiresIn, expires > 0
@@ -420,39 +421,35 @@ final class ConnectorActionStore {
     if task == nil { startPolling(flow) }
   }
 
-  func providerSceneActive(_ isActive: Bool) {
-    guard !closed, let flow = active, flow.usesProviderApplication, flow.session != nil else {
-      return
-    }
-    if isActive {
-      if task == nil { startPolling(flow) }
-    } else {
-      task?.cancel()
-      task = nil
+  func authorizationSceneChanged(isActive: Bool, isBackground: Bool) {
+    guard !closed, let flow = active, flow.session != nil else { return }
+    if flow.usesProviderApplication {
+      if isActive {
+        if task == nil { startPolling(flow) }
+      } else {
+        task?.cancel()
+        task = nil
+      }
+    } else if flow.browserURL != nil {
+      if isBackground {
+        flow.browserLeftApp = true
+      } else if isActive, flow.browserLeftApp {
+        flow.browserLeftApp = false
+        // Returning without a callback may mean cancellation. Check the backend
+        // receipt before clearing this attempt or allowing another authorization.
+        browserDismissed()
+      }
     }
   }
 
-  func authenticationFinished(
-    flow: ConnectorAuthorizationFlow, url: URL, callbackURL: URL? = nil, error: Error?
-  ) {
+  func browserOpenFailed(flow: ConnectorAuthorizationFlow, url: URL) {
     guard !closed, active === flow, flow.browserURL == url else { return }
-    let failure: Error? =
-      error == nil && flow.session?.nativeCallbackUrl != nil
-        && callbackURL != flow.session?.nativeCallbackUrl
-      ? APIClientError.invalidResponse : error
-    if let error = failure, !(error is CancellationError) {
-      task?.cancel()
-      task = nil
-      flow.session = nil
-      flow.browserURL = nil
-      flow.error = String(localized: "Could not open connector")
-      flow.presentsForm = true
-      didFail(error)
-      return
-    }
-    // Closing the system session does not establish whether the API committed.
-    // The existing completion check resolves that race before allowing a retry.
-    browserDismissed()
+    task?.cancel()
+    task = nil
+    flow.session = nil
+    flow.browserURL = nil
+    flow.error = String(localized: "Could not open connector")
+    flow.presentsForm = true
   }
 
   func cancel() {
