@@ -3140,13 +3140,13 @@ artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-au
 artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-007	rewritten	90.7		src/signals/routes/__tests__/voice-google-auth.test.ts	B04	
 artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-009	rewritten	88.0		src/signals/routes/__tests__/voice-google-auth.test.ts	B04	
 artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-029	rewritten	105.3		src/signals/routes/__tests__/voice-google-auth.test.ts	B04	
-artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-006	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-007	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-010	planned				B09	c-timer
-artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-011	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-012	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-013	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-014	planned				B09	d-other
+artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-006	skipped		timer: the first Google 503 is retried after the signal-timers backoff delay in voice-provider-request.ts before the second call succeeds		B09	d-other
+artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-007	rewritten	20.4		src/signals/routes/__tests__/voice-io-polish.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-010	rewritten	49.1		src/signals/routes/__tests__/voice-io-polish.test.ts	B09	c-timer
+artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-011	rewritten	21.4		src/signals/routes/__tests__/voice-io-polish.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-012	rewritten	102.9		src/signals/routes/__tests__/voice-io-polish.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-013	rewritten	16.2		src/signals/routes/__tests__/voice-io-polish.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-014	rewritten	3.8		src/signals/routes/__tests__/voice-io-polish.test.ts	B09	d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-001	planned					d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-002	planned					d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-003	planned					d-other
