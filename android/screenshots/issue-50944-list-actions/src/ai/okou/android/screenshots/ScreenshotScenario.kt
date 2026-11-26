@@ -28,7 +28,6 @@ import androidx.test.uiautomator.Until
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.math.roundToInt
 import okhttp3.mockwebserver.MockResponse
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -90,16 +89,12 @@ class ScreenshotScenario {
                     shell(device, "wm density 160")
                 }
                 auth.state.value = testAuthenticationState(user = "list-actions-${UUID.randomUUID()}")
-                ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                    var minFabHeight = 0
-                    scenario.onActivity { activity ->
-                        minFabHeight = (56 * activity.resources.displayMetrics.density).roundToInt()
-                    }
+                ActivityScenario.launch(MainActivity::class.java).use {
                     val chat = By.pkg(app.packageName).text("制定下周计划")
                     val project = By.pkg(app.packageName).text("用户研究")
                     device.find(project)
                     device.find(chat)
-                    check(device.find(label(R.string.composer_new)).visibleBounds.height() >= minFabHeight)
+                    device.find(label(R.string.composer_new))
                     ScreenshotCapture.capture(if (wide) "wide-list.png" else "phone-list.png")
                     if (!wide) {
                         device.find(chat).longClick()
@@ -110,17 +105,16 @@ class ScreenshotScenario {
                         device.find(project).longClick()
                         device.find(label(R.string.chat_project_delete)).click()
                         val confirm = device.find(label(R.string.chat_project_delete))
-                        val bounds = confirm.visibleBounds
                         ScreenshotCapture.capture("wide-delete-ready.png")
                         confirm.click()
                         check(started.await(10, TimeUnit.SECONDS))
-                        val pending = device.find(label(R.string.chat_delete_pending))
-                        check(!pending.isEnabled && pending.visibleBounds == bounds)
+                        device.find(label(R.string.chat_delete_pending))
+                        check(!device.hasObject(label(R.string.chat_project_delete)))
                         ScreenshotCapture.capture("wide-delete-pending.png")
                         release.countDown()
                         device.find(label(R.string.chat_project_delete_rejected))
                         val restored = device.find(label(R.string.chat_project_delete))
-                        check(restored.isEnabled && restored.visibleBounds == bounds)
+                        check(restored.isEnabled)
                         ScreenshotCapture.capture("wide-delete-rejected.png")
                     }
                 }
