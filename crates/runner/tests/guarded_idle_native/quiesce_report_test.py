@@ -10,10 +10,8 @@ import sys
 import unittest
 import uuid
 
-import fixed_restore_report_test as original
+import guest_preparation_report_fixture as fixture
 import quiesce_report as quiesce
-import report
-import report_test
 
 
 def frame(kind, payload=b"", sequence=2):
@@ -24,7 +22,7 @@ def frame(kind, payload=b"", sequence=2):
 
 class QuiesceReportTests(unittest.TestCase):
     def setUp(self):
-        original.FixedRestoreReportTests.setUp(self)
+        fixture.prepare(self)
         raw = self.collector["metadata"].pop("native_fixed_restore_policy_json")
         self.collector["metadata"]["native_quiesce_policy_json"] = raw
         for value, old, new in (
@@ -47,28 +45,10 @@ class QuiesceReportTests(unittest.TestCase):
         self.select("Quiesce-capture-drop-fresh")
 
     def select(self, case):
-        if case.startswith("FixedRestore-"):
-            original.FixedRestoreReportTests.select(self, case)
-        else:
-            for event in [*self.events, *self.witnesses, self.continuation]:
-                event["case"] = case
-            terminal = case.startswith("Quiesce-terminal-")
-            self.values[3].update(boundary="terminal" if terminal else "capture",
-                                  response=self.response if terminal else None)
-            self.values[4]["observer_unwound"] = "-observer-unwind-" in case
-            unwind = "-producer-unwind-" in case
-            self.values[6].update(exchange_joined=not unwind, transport_producer_unwound=unwind,
-                                  connection_retained_pending=not unwind)
+        fixture.select_case(self, case, terminal=case.startswith("Quiesce-terminal-"))
 
     def write(self):
-        report_test.write_report_fixture(self.root, self.collector, self.samples, [
-            (report.PREFIX, [self.events[0]]),
-            ("NATIVE_CONTINUATION_WITNESS ", [self.continuation]),
-            (quiesce.PREFIX, self.witnesses[:2]),
-            (report.PREFIX, [self.events[1]]),
-            (quiesce.PREFIX, self.witnesses[2:]),
-        ], stdout_suffix="\ntest result: FAILED\n")
-        (self.root/"stderr.log").write_text("Error: QuiesceUncertain\n")
+        fixture.write_report(self, prefix=quiesce.PREFIX, uncertainty="QuiesceUncertain")
 
     def validate(self):
         self.write()

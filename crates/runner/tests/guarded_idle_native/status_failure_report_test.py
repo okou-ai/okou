@@ -19,7 +19,7 @@ from progress_report_fixture import foreground_heartbeat, joined_observer
 
 class StatusFailureReportTests(unittest.TestCase):
     def setUp(self):
-        report_test.NativeReportTests.setUp(self)
+        report_test.prepare_native_report_fixture(self)
         self.policy = report_test.pressure_policy_fixture()
         raw = json.dumps(self.policy)
         self.artifacts["policy_sha256"] = hashlib.sha256(raw.encode()).hexdigest()
