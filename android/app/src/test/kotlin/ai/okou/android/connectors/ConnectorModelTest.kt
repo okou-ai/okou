@@ -350,6 +350,7 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
             val cached = model.await { it.browse.data != null }.browse.data
             fixture.discoveryRetryAfterSeconds = 0
             fixture.failDiscovery = true
+            model.pause()
             model.resume()
             val first = model.await { it.browse.failureRound != null }.browse
             model.pause()
