@@ -757,12 +757,6 @@ class ScreenshotScenario {
             find(signOut)
             find(R.string.auth_check_workspace)
             ScreenshotCapture.capture("compact-dark.png")
-            find(signOut).click()
-            verifyConfirmationSpacing(8, 12)
-            find(signOut)
-            ScreenshotCapture.capture("compact-dark-sign-out.png")
-            find(R.string.settings_cancel).click()
-            check(device.wait(Until.gone(By.text(app.getString(R.string.settings_sign_out_title))), 5_000) == true)
 
             val entryState = auth.state.value
             instrumentation.runOnMainSync { ClerkAuthentication(app).initialize() }
@@ -790,6 +784,24 @@ class ScreenshotScenario {
                 auth.available = emptyList()
                 auth.state.value = entryState
             }
+
+            // The dialog uses a font-scaled threshold below the 480dp entry breakpoint.
+            device.executeShellCommand("wm size 320x700")
+            awaitConfiguration(scenario, "compact confirmation window at 200% text") {
+                it.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+                    it.screenHeightDp in 1..320 && it.fontScale == 2f
+            }
+            find(R.string.auth_no_workspace)
+            if (!device.hasObject(signOut)) {
+                find(By.scrollable(true)).scroll(Direction.DOWN, 0.8f)
+            }
+            find(signOut).click()
+            verifyConfirmationSpacing(8, 12)
+            find(signOut)
+            ScreenshotCapture.capture("compact-dark-sign-out.png")
+            find(R.string.settings_cancel).click()
+            val dialogTitle = By.text(app.getString(R.string.settings_sign_out_title))
+            check(device.wait(Until.gone(dialogTitle), 5_000) == true)
         } finally {
             try {
                 if (originalFont == "null")
