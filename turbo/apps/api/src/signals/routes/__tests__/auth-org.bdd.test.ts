@@ -40,6 +40,67 @@ describe("AUTH-01 and ORG-03", () => {
       onboardingPaymentPending: false,
     });
   });
+
+  it("auth-org.bdd-007 maps onboarding status across setup, completion and a Pro plan", async () => {
+    const homeless = api.user({ orgId: null });
+    const admin = api.user();
+    const member = api.user({ orgId: admin.orgId, orgRole: "org:member" });
+    api.acceptStorageWrites();
+    api.mockClerkOrg(admin, {
+      members: [{ actor: admin }, { actor: member }],
+    });
+
+    await expect(api.readOnboardingStatus(homeless)).resolves.toStrictEqual({
+      needsOnboarding: false,
+      onboardingComplete: false,
+      isAdmin: false,
+      hasOrg: false,
+    });
+    await expect(api.readOnboardingStatus(member)).resolves.toMatchObject({
+      needsOnboarding: true,
+      hasOrg: true,
+      isAdmin: false,
+    });
+    await expect(api.readOnboardingStatus(admin)).resolves.toMatchObject({
+      needsOnboarding: true,
+      isAdmin: true,
+    });
+
+    await api.provisionWorkspace(admin);
+    await expect(runs.readBillingStatus(admin)).resolves.toMatchObject({
+      credits: 0,
+      creditGrants: [],
+      tier: "limited-free-1",
+      onboardingPaymentPending: false,
+    });
+    await expect(runs.readUsagePackCredits(admin)).resolves.toMatchObject({
+      totalCredits: 1000,
+      bonusCredits: 1000,
+    });
+
+    await api.completeOnboarding(member);
+    await expect(api.readOnboardingStatus(admin)).resolves.toMatchObject({
+      needsOnboarding: true,
+    });
+    const completed = await api.completeOnboarding(admin);
+    expect(completed.body).toStrictEqual({
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+    await expect(api.readOnboardingStatus(admin)).resolves.toMatchObject({
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+
+    await publicPlanLifecycle(context, admin, "pro").update("active");
+    await expect(api.readOnboardingStatus(admin)).resolves.toMatchObject({
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+    await expect(runs.readBillingStatus(admin)).resolves.toMatchObject({
+      tier: "pro",
+    });
+  });
 });
 
 describe("ORG-01 and ORG-02", () => {
