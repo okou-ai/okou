@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.api.generated.WorkflowRunHistory
 import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
+import ai.okou.android.api.generated.Workflows
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
 import android.app.TimePickerDialog
@@ -227,6 +228,52 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         back()
 
         row.assertIsDisplayed().assertIsFocused()
+    }
+
+    @Test
+    fun workflowBackRestoresTheScrolledRowAfterWindowRecreation() = withHardwareKeyboard {
+        val service = app.fixture.chats
+        val respond = service.commandResponse
+        service.commandResponse = { request ->
+            val response = respond(request)
+            if (request.requestUrl?.encodedPath == "/api/workflows") {
+                checkNotNull(response)
+                val catalog =
+                    Json.decodeFromString<Workflows>(checkNotNull(response.getBody()).readUtf8())
+                val leadingRows =
+                    List(16) { index ->
+                        catalog
+                            .first()
+                            .copy(
+                                id = UUID(0, index.toLong()).toString(),
+                                name = "directory-item-$index",
+                                displayName = "Directory item $index",
+                            )
+                    }
+                response.setBody(Json.encodeToString(leadingRows + catalog))
+            } else response
+        }
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        try {
+            app.gate.countDown()
+            compose.onNodeWithContentDescription("Workflows").performClick()
+            waitFor("Directory item 0")
+            val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE")
+            row.assertDoesNotExist()
+            compose.onNode(hasScrollToIndexAction()).performScrollToKey(WORKFLOW_RELEASE)
+            row.pressEnter()
+            waitForTag("workflow_detail_title")
+
+            RuntimeEnvironment.setQualifiers("en-rUS-w520dp-h800dp")
+            compose.activityRule.scenario.recreate()
+            waitForTag("workflow_detail_title")
+            compose.onNodeWithTag("workflow_directory").assertDoesNotExist()
+            back()
+
+            row.assertIsDisplayed().assertIsFocused()
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+        }
     }
 
     @Test
