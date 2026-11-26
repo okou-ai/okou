@@ -1570,7 +1570,7 @@ messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-017	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-023	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-026	planned				pilot
-messaging	src/signals/routes/__tests__/feishu-browser-connect.test.ts	feishu-browser-connect-001	planned				B06
+messaging	src/signals/routes/__tests__/feishu-browser-connect.test.ts	feishu-browser-connect-001	rewritten	20.7		src/signals/routes/__tests__/feishu-browser-connect.test.ts	B06
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-001	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-002	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-003	planned				pilot
