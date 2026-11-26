@@ -80,6 +80,7 @@ final class ConversationFailureRecovery {
 
   func failureState(
     _ failure: ChatFailure, models: ChatModelSelectionStore.Presentation? = nil,
+    subscriptionsBusy: Bool? = nil,
     context: FailureRecoveryResources? = nil, accounts: [PersonalSubscription]? = nil,
     accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
   ) -> AssistantFailureState {
@@ -93,7 +94,8 @@ final class ConversationFailureRecovery {
         && conversation.pending.isEmpty
         && conversation.history?.latestFailureID == failure.id
         && (context == nil || failureContext === context),
-      selection: conversation.modelSelection, models: models, accounts: accounts,
+      selection: conversation.modelSelection, models: models,
+      subscriptionsBusy: subscriptionsBusy, accounts: accounts,
       busy: isRecoveringFailure || conversation.isSending,
       accountsError: accountsError.map(ChatRequestFailure.message(for:)))
     if state.isCurrent {
@@ -256,12 +258,14 @@ extension ConversationStore {
   /// Views pass the model selection's graph value they resolved for this render.
   func failureState(
     _ failure: ChatFailure, models: ChatModelSelectionStore.Presentation? = nil,
+    subscriptionsBusy: Bool? = nil,
     context: FailureRecoveryResources? = nil, accounts: [PersonalSubscription]? = nil,
     accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
   ) -> AssistantFailureState {
     failureRecoveryActions.failureState(
-      failure, models: models, context: context, accounts: accounts, accountsError: accountsError,
-      billing: billing, billingError: billingError)
+      failure, models: models, subscriptionsBusy: subscriptionsBusy, context: context,
+      accounts: accounts, accountsError: accountsError, billing: billing,
+      billingError: billingError)
   }
   func readFailureState(_ failure: ChatFailure) async -> AssistantFailureState {
     await failureRecoveryActions.readFailureState(failure)
