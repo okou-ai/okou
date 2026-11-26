@@ -703,8 +703,8 @@ chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-anno
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-002	skipped		slow-setup: real Feishu setup + browser-connect OAuth + encrypted event via createPublicAnnotationIngress measured 630-681 ms		B01
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-003	skipped		slow-setup: real Teams install + account connect + channel activity via createPublicAnnotationIngress measured 426-465 ms		B01
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-005	skipped		slow-setup: real Telegram account link + supergroup webhook via createPublicAnnotationIngress (runner/entitlement setup and run launch) measured 327-358 ms		B01
-chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-008	rewritten	149.9		src/signals/routes/__tests__/chat-event-annotations.test.ts	pilot
-chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-009	rewritten	64.9	selected in rewrite review	src/signals/routes/__tests__/chat-event-annotations.test.ts	B01
+chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-008	rewritten	194.1		src/signals/routes/__tests__/chat-event-annotations.test.ts	pilot
+chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-009	rewritten	122.6	selected in rewrite review	src/signals/routes/__tests__/chat-event-annotations.test.ts	B01
 chat	src/signals/routes/__tests__/chat-event-snapshot.test.ts	chat-event-snapshot-001	planned				
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-001	planned				pilot
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-004	planned				pilot

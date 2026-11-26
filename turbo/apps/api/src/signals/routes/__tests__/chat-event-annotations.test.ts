@@ -53,4 +53,32 @@ describe("chat event source annotations", () => {
       href,
     });
   });
+  it("chat-event-annotations-009 keeps a GitHub pull request source link", async () => {
+    const actor = createBddApi(context).user({ orgRole: "org:admin" });
+    const chat = createChatFilesBddApi(context);
+    const href = "https://github.com/okou-ai/okou/pull/4242";
+
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        prompt: "review this pull request",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "review this pull request" },
+            { type: "source", kind: "github", href },
+          ],
+        },
+      },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the prompt to be accepted");
+    }
+    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+
+    expect(sourcesOf(events)).toStrictEqual([
+      { type: "source", kind: "github", href },
+    ]);
+  });
 });
