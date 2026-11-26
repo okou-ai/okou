@@ -104,14 +104,25 @@ internal data class ConnectorUiState(
     val canChangeAccounts: Boolean
         get() = accounts.data != null && action?.blocksOtherActions != true
 
-    fun accountsFor(slug: String): List<ConnectorSavedAccount> {
-        if (this.slug == slug && accounts.data != null) return accounts.data
-        if (this.slug == slug && accounts.failure == ConnectorReadFailure.Unavailable)
-            return emptyList()
-        val overview = connected.data
-        if (overview != null) return overview[slug]?.accounts.orEmpty()
-        return cachedAccounts.takeIf { this.slug == slug }?.data.orEmpty()
-    }
+    val selectedAccountContent: List<ConnectorSavedAccount>?
+        get() {
+            val selected = slug ?: return null
+            accounts.data?.let {
+                return it
+            }
+            if (accounts.failure == ConnectorReadFailure.Unavailable) return null
+            val overview = connected.data
+            overview?.get(selected)?.accounts?.let {
+                return it
+            }
+            val cached = cachedAccounts?.data ?: return null
+            // A confirmed overview takes precedence over an earlier detail snapshot.
+            return if (overview != null) emptyList() else cached
+        }
+
+    fun accountsFor(slug: String): List<ConnectorSavedAccount> =
+        if (this.slug == slug) selectedAccountContent.orEmpty()
+        else connected.data?.get(slug)?.accounts.orEmpty()
 }
 
 private data class ServiceReadSnapshot(
@@ -408,8 +419,9 @@ class ConnectorModel(
             }
         }
         if (accountsJob?.isActive != true) {
-            clearColdReadFailure(mutableState.value.accounts) {
-                it.copy(accounts = it.accounts.confirmed())
+            val state = mutableState.value
+            if (state.selectedAccountContent == null) {
+                clearColdReadFailure(state.accounts) { it.copy(accounts = it.accounts.confirmed()) }
             }
             accountsJob = viewModelScope.launch {
                 load({ service.accounts(slug) }) { read ->

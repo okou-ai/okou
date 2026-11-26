@@ -106,9 +106,9 @@ internal fun ConnectorDetails(
         }
         return
     }
-    val accounts = entry?.slug?.let(state::accountsFor).orEmpty()
-    val hasAccountContent =
-        state.accounts.data != null || state.cachedAccounts != null || accounts.isNotEmpty()
+    val accountContent = state.selectedAccountContent
+    val accounts = accountContent.orEmpty()
+    val hasAccountContent = accountContent != null
     val showsAddAccount = hasAccountContent && detail?.methods?.isNotEmpty() == true
     var panel by remember { mutableStateOf<ConnectorPanel?>(null) }
     var accountId by remember { mutableStateOf<String?>(null) }
@@ -174,6 +174,19 @@ internal fun ConnectorDetails(
     }
 
     val confirmingDisconnect = disconnectImpact != null
+    val accountNotice = state.accounts.notice().takeIf { hasAccountContent }
+    val detailNotice =
+        state.detail
+            .notice(
+                if (detail == null) R.string.connector_load_failed
+                else R.string.connector_refresh_failed,
+            )
+            .takeUnless { detailUnavailable }
+    val serviceNotice =
+        listOfNotNull(detailNotice, accountNotice).maxByOrNull(ConnectorReadNotice::round)
+    val accountFeedback: @Composable () -> Unit = {
+        ConnectorReadFeedbackHost(accountNotice, announcements)
+    }
 
     val authorization = action?.authorization
     LaunchedEffect(authorization) {
@@ -357,13 +370,6 @@ internal fun ConnectorDetails(
                         model.showPermissions()
                     }
                 }
-                if (
-                    !detailUnavailable &&
-                        hasAccountContent &&
-                        state.accounts.failure == ConnectorReadFailure.Unavailable
-                ) {
-                    ContentReadFeedback(R.string.connector_accounts_failed)
-                }
                 if (panel == null) ConnectorActionFeedback(action)
             } else if (rememberContentReadSkeleton()) {
                 val label = stringResource(R.string.connector_loading)
@@ -376,18 +382,9 @@ internal fun ConnectorDetails(
                 }
             }
         }
-        if (panel == null && entry != null && !detailUnavailable) {
-            val notice =
-                listOfNotNull(
-                        state.detail.notice(
-                            if (detail == null) R.string.connector_load_failed
-                            else R.string.connector_refresh_failed,
-                        ),
-                        state.accounts.notice().takeIf { hasAccountContent },
-                    )
-                    .maxByOrNull(ConnectorReadNotice::round)
+        if (panel == null && entry != null) {
             ConnectorReadFeedbackHost(
-                notice,
+                serviceNotice,
                 announcements,
                 Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
             )
@@ -421,6 +418,7 @@ internal fun ConnectorDetails(
                             ::dismissPanel,
                             dismissible = !busy,
                             back = if (account.id == initialAccountId) ::dismissPanel else null,
+                            feedback = accountFeedback.takeUnless { confirmingDisconnect },
                         ) {
                             ConnectorAccountActions(
                                 account,
@@ -468,6 +466,7 @@ internal fun ConnectorDetails(
                             action,
                             save = { model.rename(account.id, it) },
                             cancel = ::dismissPanel,
+                            readFeedback = accountFeedback,
                         )
                     }
                 ConnectorPanel.Authorize ->
@@ -480,6 +479,12 @@ internal fun ConnectorDetails(
                         canModify = canModify,
                         action = action,
                         cancel = ::dismissPanel,
+                        readFeedback = {
+                            ConnectorReadFeedbackHost(
+                                if (detail == null) accountNotice else serviceNotice,
+                                announcements,
+                            )
+                        },
                     )
                 null -> Unit
             }

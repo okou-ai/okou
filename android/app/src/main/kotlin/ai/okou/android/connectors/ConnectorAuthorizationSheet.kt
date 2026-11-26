@@ -76,6 +76,7 @@ internal fun ConnectorRenameSheet(
     action: ConnectorAction?,
     save: (String) -> Unit,
     cancel: () -> Unit,
+    readFeedback: (@Composable () -> Unit)?,
 ) {
     val currentLabel = account.label()
     val draft = remember(account.id) { RenameDraft(currentLabel) }
@@ -107,6 +108,7 @@ internal fun ConnectorRenameSheet(
         stringResource(R.string.connector_rename_title),
         cancel,
         dismissible = action?.busy != true,
+        feedback = readFeedback,
         actions = {
             OkouFormActions(
                 cancelLabel = stringResource(R.string.settings_cancel),
@@ -148,6 +150,7 @@ internal fun ConnectorAuthorizationSheet(
     canModify: Boolean,
     action: ConnectorAction?,
     cancel: () -> Unit,
+    readFeedback: (@Composable () -> Unit)?,
 ) {
     val actionLabel =
         remember(account?.id) {
@@ -249,6 +252,7 @@ internal fun ConnectorAuthorizationSheet(
         cancel,
         dismissible = canDismiss,
         expandInShortWindow = true,
+        feedback = readFeedback,
         actions = {
             OkouFormActions(
                 cancelLabel = stringResource(R.string.settings_cancel),
