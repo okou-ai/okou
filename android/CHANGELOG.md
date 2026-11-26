@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.60.1](https://github.com/okou-ai/okou/compare/android-v0.60.0...android-v0.60.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** align connector directory and read feedback ([#51029](https://github.com/okou-ai/okou/issues/51029)) ([d7eba2b](https://github.com/okou-ai/okou/commit/d7eba2bbfac929fcd60ad80d8e02d5bb2161077b))
+
+
+### Refactoring
+
+* **android:** share terminal read feedback lifecycle ([#51097](https://github.com/okou-ai/okou/issues/51097)) ([f3efe59](https://github.com/okou-ai/okou/commit/f3efe5923a192a4979206c0746ba0a9d705d45d8))
+
 ## [0.60.0](https://github.com/okou-ai/okou/compare/android-v0.59.0...android-v0.60.0) (2026-11-26)
 
 
