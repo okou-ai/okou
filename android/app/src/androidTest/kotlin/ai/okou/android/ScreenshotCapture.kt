@@ -10,14 +10,14 @@ import org.json.JSONObject
 
 /** Shared device-only output support; feature scenarios live outside ordinary test sources. */
 object ScreenshotCapture {
-    fun capture(name: String) {
+    fun capture(name: String, frame: Bitmap? = null) {
         require(Regex("[A-Za-z0-9][A-Za-z0-9._-]*\\.png").matches(name))
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val run =
             checkNotNull(InstrumentationRegistry.getArguments().getString("okouScreenshotRun"))
         val context = instrumentation.targetContext
         val configuration = context.resources.configuration
-        val bitmap = takeScreenshot()
+        val bitmap = frame ?: takeScreenshot()
         try {
             TestStorage().openOutputFile(name).use {
                 check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
