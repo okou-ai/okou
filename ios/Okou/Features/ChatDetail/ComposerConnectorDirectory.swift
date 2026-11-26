@@ -39,7 +39,11 @@ private struct ComposerConnectorDirectoryContent: View {
   var body: some View {
     switch selection {
     case .hasData(let value): content(value)
-    case .loading: OkouLoadingRow("Loading connectors…")
+    case .loading:
+      ScrollView {
+        ComposerConnectorDirectorySkeleton()
+      }
+      .okouGroupedBackground(OkouColor.background)
     case .hasError(let error):
       ConnectorLoadError(error: ChatRequestFailure.message(for: error)) {
         await resources.refresh()
@@ -97,7 +101,7 @@ private struct ComposerConnectorDirectoryContent: View {
   ) -> some View {
     switch value {
     case .loading:
-      ProgressView().frame(maxWidth: .infinity).padding(.top, OkouSpace.xxl)
+      ComposerConnectorDirectorySkeleton()
     case .hasError(let error):
       ConnectorLoadError(error: ChatRequestFailure.message(for: error), isLoading: isLoading) {
         await resources.refresh()

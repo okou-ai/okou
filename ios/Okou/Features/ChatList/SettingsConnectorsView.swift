@@ -69,7 +69,16 @@ private struct SettingsConnectedConnectors: View {
     List {
       ComposerConnectorReadError(store: store) { await store.refresh() }
       switch connected {
-      case .loading: OkouLoadingRow("Loading connectors…")
+      case .loading:
+        Section {
+          ForEach(0..<6, id: \.self) { _ in
+            ComposerConnectorSkeletonRow()
+              .okouShimmer()
+          }
+        } header: {
+          Text("Connected").okouSectionHeader()
+        }
+        .accessibilityRepresentation { ProgressView("Loading connectors…") }
       case .hasError: EmptyView()
       case .hasData(let entries):
         let matches = entries.filter {
