@@ -7,10 +7,19 @@ import SwiftUI
 struct MessagePreviewSheet<Content: View, Actions: View>: View {
   let title: String
   let dismiss: () -> Void
+  let isImage: Bool
   @ViewBuilder var content: () -> Content
   @ViewBuilder var actions: () -> Actions
 
   var body: some View {
+    if isImage {
+      ImagePreviewSwipeDismiss(dismiss: dismiss) { navigation }
+    } else {
+      navigation
+    }
+  }
+
+  private var navigation: some View {
     NavigationStack {
       content()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -72,13 +81,14 @@ struct MessageFilePreview: View {
   }
 }
 
-private struct MessageImagePreview: View {
-  let file: ChatAttachmentFile
+struct MessageImagePreview<File: QuickLookPreviewFile>: View {
+  let file: File
   let thumbnail: UIImage?
-  let imageNavigation: MessageImageNavigation?
+  var imageNavigation: MessageImageNavigation?
   private struct Prepared {
     let url: URL
     let image: UIImage?
+    let document: LocalImageDocument?
   }
   @State private var prepared: Prepared?
 
@@ -91,8 +101,8 @@ private struct MessageImagePreview: View {
           } else {
             MessageZoomableImage(image: image).id(file.url)
           }
-        } else if QLPreviewController.canPreview(file.url as NSURL) {
-          MessageFileQuickLook(file: file)
+        } else if let document = prepared.document {
+          MessageWebImage(document: document).id(file.url)
         } else {
           OkouEmptyState(
             "Preview unavailable", icon: "image",
@@ -105,15 +115,31 @@ private struct MessageImagePreview: View {
       }
     }
     .task(id: file.url) {
-      let data = await AttachmentFileImporter.shared.previewImageData(file.url)
+      let importer = AttachmentFileImporter.shared
+      let data = await importer.previewImageData(file.url)
       guard !Task.isCancelled else { return }
-      prepared = Prepared(url: file.url, image: data.flatMap(UIImage.init(data:)))
+      var image = data.flatMap(UIImage.init(data:))
+      let document = image == nil ? await importer.imageDocument(file.url) : nil
+      if image == nil, document == nil {
+        let cover = await importer.documentCover(
+          file.url, size: CGSize(width: 1_024, height: 1_024))
+        image = cover.flatMap(UIImage.init(data:))
+      }
+      guard !Task.isCancelled else { return }
+      prepared = Prepared(url: file.url, image: image, document: document)
     }
   }
 }
 
-struct MessageFileQuickLook: UIViewControllerRepresentable {
-  let file: ChatAttachmentFile
+protocol QuickLookPreviewFile {
+  var url: URL { get }
+}
+
+extension ChatAttachmentFile: QuickLookPreviewFile {}
+extension ImportedAttachmentFile: QuickLookPreviewFile {}
+
+struct MessageFileQuickLook<File: QuickLookPreviewFile>: UIViewControllerRepresentable {
+  let file: File
 
   func makeCoordinator() -> Coordinator { Coordinator(file) }
   func makeUIViewController(context: Context) -> QLPreviewController {
@@ -127,8 +153,8 @@ struct MessageFileQuickLook: UIViewControllerRepresentable {
     controller.reloadData()
   }
   final class Coordinator: NSObject, QLPreviewControllerDataSource {
-    var file: ChatAttachmentFile
-    init(_ file: ChatAttachmentFile) { self.file = file }
+    var file: File
+    init(_ file: File) { self.file = file }
     func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
     func previewController(_ controller: QLPreviewController, previewItemAt index: Int)
       -> any QLPreviewItem
