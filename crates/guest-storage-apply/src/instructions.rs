@@ -13,6 +13,7 @@ pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> 
         "claude-code" => (".claude", InstructionFilename::Claude),
         "codex" => (".codex", InstructionFilename::Agents),
         "pi" => (".pi/agent", InstructionFilename::Agents),
+        "antigravity" => (".gemini", InstructionFilename::Gemini),
         _ => return false,
     };
     // Storage delivered the source into the current Run's staging directory.
@@ -53,6 +54,7 @@ impl InstructionCleanup {
 pub(crate) enum InstructionFilename {
     Claude,
     Agents,
+    Gemini,
 }
 
 enum InstructionPathState {
@@ -65,12 +67,13 @@ enum InstructionPathState {
 }
 
 impl InstructionFilename {
-    pub(crate) const ALL: [Self; 2] = [Self::Claude, Self::Agents];
+    pub(crate) const ALL: [Self; 3] = [Self::Claude, Self::Agents, Self::Gemini];
 
     fn parse(filename: &str) -> Option<Self> {
         match filename {
             "CLAUDE.md" => Some(Self::Claude),
             "AGENTS.md" => Some(Self::Agents),
+            "GEMINI.md" => Some(Self::Gemini),
             _ => None,
         }
     }
@@ -79,6 +82,7 @@ impl InstructionFilename {
         match self {
             Self::Claude => "CLAUDE.md",
             Self::Agents => "AGENTS.md",
+            Self::Gemini => "GEMINI.md",
         }
     }
 }

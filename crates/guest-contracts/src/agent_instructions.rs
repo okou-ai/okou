@@ -51,6 +51,8 @@ pub fn instruction_paths(home: &Path, framework: &str) -> Option<InstructionPath
         "claude-code" => ".claude/CLAUDE.md",
         "codex" => ".codex/AGENTS.md",
         "pi" => ".pi/agent/AGENTS.md",
+        // agy loads this file as its global rules for every workspace.
+        "antigravity" => ".gemini/GEMINI.md",
         _ => return None,
     };
     Some(InstructionPaths {
