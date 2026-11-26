@@ -98,10 +98,9 @@ class NativeUpdateTest {
                 )
                 .click()
             find(text(R.string.updates_preparing))
-            val close = text(R.string.updates_close)
             instrumentation.setInTouchMode(false)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
-            device.awaitKeyboardFocus(close)
+            device.awaitKeyboardFocus(text(R.string.updates_close))
 
             // Exercise the paused, still visible window without another Activity covering it.
             activity.onActivity {
@@ -116,9 +115,9 @@ class NativeUpdateTest {
                 )
             }
             assertNoWaitAction(find(waiting))
-            device.awaitKeyboardFocus(close)
+            device.awaitKeyboardFocus(text(R.string.updates_close))
             captureUpdate(device, "details-waiting-to-install")
-            device.enabledUpdateControl(close).click()
+            assertTrue(device.pressDPadCenter())
             val toolbar =
                 find(
                     By.pkg(app.packageName)
