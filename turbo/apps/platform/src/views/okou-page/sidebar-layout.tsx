@@ -450,8 +450,8 @@ function SidebarWorkspace({
 
 /**
  * The workspace sheet: one framed card holding the chat list and the
- * workspace pane, in the shape of shadcn's inset sidebar. Its desktop inset
- * stays fixed while the chat list expands or collapses. Descendants
+ * workspace pane, in the shape of shadcn's inset sidebar. Its left edge stays
+ * against the desktop nav rail as the chat list expands or collapses. Descendants
  * read the list's state from `data-chat-list` through the `workspace-sheet`
  * group rather than a prop.
  *
@@ -472,7 +472,7 @@ function WorkspaceSheet({
     <div
       data-slot="workspace-sheet"
       data-chat-list={chatList && !chatListHidden ? "expanded" : "collapsed"}
-      className="group/workspace-sheet flex min-h-0 min-w-0 flex-1 md:m-2 md:rounded-2xl md:border md:border-border"
+      className="group/workspace-sheet flex min-h-0 min-w-0 flex-1 md:my-2 md:mr-2 md:rounded-2xl md:border md:border-border"
     >
       {chatList}
       {children}
