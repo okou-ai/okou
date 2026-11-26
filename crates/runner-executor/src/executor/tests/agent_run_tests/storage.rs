@@ -519,7 +519,7 @@ async fn run_in_sandbox_drops_deferred_cache_fill_when_guest_storage_apply_fails
 }
 
 #[tokio::test]
-async fn run_in_sandbox_records_storage_manifest_no_work_timing_without_guest_storage_apply() {
+async fn run_in_sandbox_checks_unchanged_storage_without_downloading_it() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let sandbox = sandbox_mock::MockSandbox::new("test");
@@ -559,7 +559,16 @@ async fn run_in_sandbox_records_storage_manifest_no_work_timing_without_guest_st
     .await
     .unwrap();
 
-    assert!(sandbox.storage_manifest_calls().is_empty());
+    let calls = sandbox.storage_manifest_calls();
+    let [call] = calls.as_slice() else {
+        panic!("expected one validation request for the reused target");
+    };
+    let input: serde_json::Value = serde_json::from_slice(&call.manifest_json).unwrap();
+    assert_eq!(
+        input["startupTargets"]["additionalMounts"],
+        serde_json::json!(["/home/user/.codex"])
+    );
+    assert_eq!(input["storageMounts"], serde_json::json!([]));
     let ops = telemetry.pending_ops_snapshot();
     assert_successful_action_once(&ops, "runner_storage_manifest_fingerprint_reuse");
     assert_successful_action_once(&ops, "runner_storage_manifest_has_work");

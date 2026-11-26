@@ -13,6 +13,8 @@ mod quarantine;
 mod readiness;
 mod rooted_extraction;
 mod scheduling;
+#[cfg(target_os = "linux")]
+mod startup_targets;
 
 mod agent_instructions;
 

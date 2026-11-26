@@ -72,14 +72,14 @@ fn publication_rejects_unsafe_template_owners_references_and_duplicate_mounts() 
 }
 
 #[test]
-fn publication_preserves_template_anchor_order() {
+fn publication_accepts_templates_from_both_writer_versions() {
     let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     let target = "/home/user/.codex/skills/fixture-skill";
     let mut first = template("user-template");
     let mut second = template("presentation-template");
-    // Optional unresolved mounts can be absent from the final storage manifest.
+    // The preceding writer includes ordering metadata.
     first["beforeMountPaths"] = serde_json::json!(["/missing-optional-volume", target]);
-    second["beforeMountPaths"] = serde_json::json!([target]);
+    second.as_object_mut().unwrap().remove("beforeMountPaths");
     body["startupInputs"]["contentBundles"]["templates"] = serde_json::json!([first, second]);
     let response = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
     let entries = response.storage_manifest.unwrap().storages;
@@ -101,5 +101,5 @@ fn publication_preserves_template_anchor_order() {
         .iter()
         .position(|entry| entry.mount_path == target)
         .unwrap();
-    assert!(first_index < second_index && second_index < overlay_index);
+    assert!(overlay_index < first_index && first_index < second_index);
 }

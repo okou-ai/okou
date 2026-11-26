@@ -1463,6 +1463,7 @@ async fn apply_prepared_storage(
                     &initial.files,
                     guest_telemetry,
                     &cancel,
+                    false,
                 )
                 .await?;
                 if let Some(tail) = decoded_tail {
@@ -1479,6 +1480,7 @@ async fn apply_prepared_storage(
                         &tail.files,
                         guest_telemetry,
                         &cancel,
+                        true,
                     )
                     .await?;
                 }
@@ -1628,8 +1630,12 @@ async fn prepare_guest_storage(
             );
             if !has_work {
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
+                let has_targets = prepared.plan.entry_count() > 0;
                 prepared.delivery.cancel_and_drain(telemetry).await;
                 let _ = prepared_storage.take();
+                if has_targets {
+                    super::storage::validate_reused_storage(sandbox, context, telemetry).await?;
+                }
                 Ok(None)
             } else {
                 let cache_started = Instant::now();
@@ -1686,6 +1692,9 @@ async fn prepare_guest_storage(
             );
             if !has_work {
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
+                if plan.entry_count() > 0 {
+                    super::storage::validate_reused_storage(sandbox, context, telemetry).await?;
+                }
                 Ok(None)
             } else {
                 let (mut deferred, pending_archives) = populate_storage_plan(

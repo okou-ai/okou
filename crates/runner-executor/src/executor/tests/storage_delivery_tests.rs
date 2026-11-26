@@ -913,6 +913,40 @@ async fn split_decoded_delivery_stops_after_the_first_failed_helper() {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn first_split_application_checks_later_targets_before_cleaning() {
+    let fixture = DeliveryFixture::new(2, 2, 604).await;
+    let sandbox = MockSandbox::new("split-startup-targets");
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    pad_versions_for_split(&mut manifest);
+    let first = std::path::Path::new(&files[0].0);
+    let second = std::path::Path::new(&files[1].0);
+    std::fs::create_dir_all(first).unwrap();
+    std::os::unix::fs::symlink(first, second).unwrap();
+    let stale = first.with_file_name("stale");
+    std::fs::create_dir(&stale).unwrap();
+    std::fs::write(stale.join("keep-until-validation"), b"old content").unwrap();
+    manifest.cleanup_paths.push(stale.to_str().unwrap().into());
+
+    let mut context = minimal_context();
+    context.storage_manifest = Some(fixture.manifest.clone());
+    let mut telemetry = test_telemetry(&fixture.config, &context);
+    download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
+        .await
+        .unwrap();
+    let calls = sandbox.storage_manifest_calls();
+    assert!(calls.len() > 1);
+    assert!(!guest_storage_apply::run_manifest_bytes(
+        &calls[0].manifest_json
+    ));
+    assert_eq!(
+        std::fs::read(stale.join("keep-until-validation")).unwrap(),
+        b"old content"
+    );
+    fixture.shutdown().await;
+}
+
 #[tokio::test]
 async fn split_delivery_rejects_cross_batch_ownership_conflicts_before_guest_work() {
     let fixture = DeliveryFixture::new(2, 2, 35_000).await;

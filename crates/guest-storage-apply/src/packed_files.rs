@@ -25,6 +25,7 @@ pub(super) fn apply(
     manifest: Manifest,
     files: Vec<StorageFiles<&[u8]>>,
     runtime_dir: Option<&Path>,
+    independent: bool,
 ) -> bool {
     let Some(sizes) = batch_sizes(&manifest, &files) else {
         log_error!(LOG_TAG, "Invalid packed storage batch order");
@@ -48,6 +49,7 @@ pub(super) fn apply(
             files.by_ref().take(size).collect(),
             None,
             runtime_dir,
+            independent,
         )
     })
 }

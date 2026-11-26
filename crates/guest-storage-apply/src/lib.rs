@@ -13,6 +13,10 @@
 //! downloads. A failure stops later phases; a later failure does not restore
 //! completed filesystem changes.
 //!
+//! Startup input checks disjoint filesystem targets before any managed
+//! mutation, including cached mounts and later batches. The Runner sends
+//! continuations only after the checked application succeeds.
+//!
 //! The explicit runtime entry points may isolate discarded input directories
 //! under the existing private runtime parent. Active paths are cleared
 //! before replacement; existing post-Run preparation owns physical deletion
@@ -74,12 +78,13 @@ mod plan;
 mod quarantine;
 mod readiness;
 mod source;
+mod startup_targets;
 mod tar_metadata;
 mod telemetry;
 mod template_guidance;
 mod workflow_document;
 
-use guest_contracts::storage_manifest::Manifest;
+use guest_contracts::storage_manifest::{Manifest, StartupTargets};
 use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};
 use manifest::ManifestLoadError;
 use plan::{EmptyArtifactPreparation, RunPlan};
@@ -120,7 +125,7 @@ fn run_path_in_runtime(manifest_path: &str, runtime_dir: Option<&Path>) -> bool 
         }
     };
 
-    run_manifest_with_files_in_runtime(manifest, Vec::new(), None, runtime_dir)
+    apply_parsed_manifest(manifest, Vec::new(), None, runtime_dir)
 }
 
 /// Apply a manifest supplied as JSON bytes.
@@ -149,7 +154,7 @@ fn run_manifest_bytes_in_context(manifest_json: &[u8], runtime_dir: Option<&Path
         }
     };
 
-    run_manifest_with_files_in_runtime(manifest, Vec::new(), None, runtime_dir)
+    apply_parsed_manifest(manifest, Vec::new(), None, runtime_dir)
 }
 
 /// Apply bounded binary storage input after validating all mount bindings and files.
@@ -189,7 +194,7 @@ fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> boo
         })?;
         measure_phase(InputPhase::Bindings, || {
             guest_contracts::storage_files::validate_bindings(
-                &manifest,
+                &manifest.0,
                 files.iter().map(|group| group.mount_path.as_str()),
             )
         })?;
@@ -197,11 +202,7 @@ fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> boo
     })();
     match parsed {
         Ok((manifest, files, archives)) => {
-            if archives.is_none() && packed_files::is_packed(&manifest) {
-                packed_files::apply(manifest, files, runtime_dir)
-            } else {
-                run_manifest_with_files_in_runtime(manifest, files, archives, runtime_dir)
-            }
+            apply_parsed_manifest(manifest, files, archives, runtime_dir)
         }
         Err(error) => {
             log_error!(LOG_TAG, "Invalid binary storage input: {error}");
@@ -210,11 +211,39 @@ fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> boo
     }
 }
 
+fn apply_parsed_manifest(
+    (manifest, targets): manifest::ParsedManifest,
+    files: Vec<guest_contracts::storage_files::StorageFiles<&[u8]>>,
+    archives: Option<std::collections::HashMap<&str, &[u8]>>,
+    runtime_dir: Option<&Path>,
+) -> bool {
+    if let Some(StartupTargets::Check {
+        additional_mounts,
+        instruction_file,
+    }) = &targets
+        && let Err(error) =
+            startup_targets::check(&manifest, additional_mounts, instruction_file.as_deref())
+    {
+        log_error!(
+            LOG_TAG,
+            "Startup Storage targets are not independent: {error}"
+        );
+        return false;
+    }
+    let independent = targets.is_some();
+    if archives.is_none() && packed_files::is_packed(&manifest) {
+        packed_files::apply(manifest, files, runtime_dir, independent)
+    } else {
+        run_manifest_with_files_in_runtime(manifest, files, archives, runtime_dir, independent)
+    }
+}
+
 fn run_manifest_with_files_in_runtime(
     manifest: Manifest,
     files: Vec<guest_contracts::storage_files::StorageFiles<&[u8]>>,
     archives: Option<std::collections::HashMap<&str, &[u8]>>,
     runtime_dir: Option<&Path>,
+    independent: bool,
 ) -> bool {
     if archives.is_some() && manifest.archive_readiness.is_some() {
         log_error!(LOG_TAG, "Inline Storage archives cannot use readiness");
@@ -338,7 +367,7 @@ fn run_manifest_with_files_in_runtime(
     // Resolve all logical and physical target identities before downloads.
     // The scheduler uses both identities to serialize overlapping extraction.
     let target_prepare_start = Instant::now();
-    let download_tasks = match download::prepare_download_tasks(download_tasks) {
+    let download_tasks = match download::prepare_download_tasks(download_tasks, independent) {
         Ok(download_tasks) => {
             record_sandbox_op(
                 "guest_storage_apply_target_prepare",
@@ -364,7 +393,7 @@ fn run_manifest_with_files_in_runtime(
     }
 
     let scheduler_start = Instant::now();
-    let success = download::download_all_parallel(download_tasks, readiness);
+    let success = download::download_all_parallel(download_tasks, readiness, independent);
     record_sandbox_op(
         "guest_storage_apply_archive_scheduler",
         scheduler_start.elapsed(),
