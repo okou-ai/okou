@@ -978,11 +978,11 @@ chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-107	
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-110	planned				
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-111	planned				
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-112	planned				
-account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-001	planned				B04
-account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-002	planned				B04
-account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-004	planned				B04
-account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-005	planned				B04
-account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-007	planned				B04
+account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-001	rewritten	41.7		src/signals/routes/__tests__/cli-auth.bdd.test.ts	B04
+account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-002	rewritten	128.5		src/signals/routes/__tests__/cli-auth.bdd.test.ts	B04
+account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-004	skipped		slow-setup: Given+first When/Then 506 ms and 482 ms (split row "(2/2) sandbox bearer approval"; the Given needs the sandbox token of a dispatched chat Run via createRunExecutionCredentials: Pro entitlement, thread + Run creation, Runner heartbeat dispatch; the PAT row (1/2) alone took 38-45 ms, so the ID cannot be fully split under 200 ms)		B04
+account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-005	rewritten	159.5		src/signals/routes/__tests__/cli-auth.bdd.test.ts	B04
+account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-007	rewritten	113.3		src/signals/routes/__tests__/cli-auth.bdd.test.ts	B04
 remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-001	planned				
 remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-002	planned				
 remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-004	planned				
