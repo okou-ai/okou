@@ -202,9 +202,10 @@ class ScreenshotScenario {
                     device.openChatListSettings(labels)
                     find(text(R.string.settings))
                     check(device.wait(Until.gone(chatListRegion(labels)), 5_000))
+                    val back = find(desc(R.string.back))
                     val backAt = SystemClock.elapsedRealtime()
                     phase.set(Phase.Returning)
-                    check(device.pressBack())
+                    back.click()
                     check(returnRequest.await(10, TimeUnit.SECONDS)) { "No new request on list return" }
                     val readAt = returnReadAt.get()
                     check(readAt >= backAt)
