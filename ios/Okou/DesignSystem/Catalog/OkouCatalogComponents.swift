@@ -429,6 +429,14 @@
             }
           }
         }
+        OkouCatalogSection("First-task illustration") {
+          Image(OkouBrand.firstTaskIllustration)
+            .renderingMode(.original)
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: OkouControl.readableWidth)
+            .accessibilityHidden(true)
+        }
         OkouCatalogSection("People") {
           HStack(spacing: OkouSpace.md) {
             OkouProfileAvatar(

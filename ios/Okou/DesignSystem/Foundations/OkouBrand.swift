@@ -6,6 +6,7 @@ enum OkouBrand {
   /// drawn edge to edge, divide its frame by this to show the artwork at the same size.
   static let symbolArtworkRatio: CGFloat = 418.43 / 512
   static let wordmark = "SignInWordmark"
+  static let firstTaskIllustration = "OnboardingReadyCelebration"
 }
 
 struct OkouWordmark: View {

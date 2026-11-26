@@ -215,6 +215,15 @@ struct OnboardingView: View {
             .accessibilityAddTraits(.isHeader)
           Text(state.step.detail).font(.okou(.subheadline))
             .foregroundStyle(OkouColor.mutedForeground)
+          if state.step == .ready {
+            Image(OkouBrand.firstTaskIllustration)
+              .renderingMode(.original)
+              .resizable()
+              .scaledToFit()
+              .frame(maxWidth: OkouControl.readableWidth)
+              .frame(maxWidth: .infinity)
+              .accessibilityHidden(true)
+          }
         }
         .padding(.vertical, OkouSpace.md)
         .listRowBackground(Color.clear)
