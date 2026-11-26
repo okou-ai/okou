@@ -605,6 +605,67 @@ function deletionMarker(params: unknown): Record<string, string> {
   );
 }
 
+test("org-delete-billing-018 reuses a prior deletion marker and issued credit note on retry", async () => {
+  const workspace = await adminWorkspace();
+  const { customerId, subscription } = await workspace.subscribePlan();
+  const deletionAt = String(nowSeconds());
+  const marked = stripeSubscription({
+    id: subscription.id,
+    customer: customerId,
+    status: "canceled",
+    metadata: {
+      vm0_org_delete_org_id: workspace.orgId,
+      vm0_org_delete_at: deletionAt,
+    },
+  });
+  const historical = stripeSubscription({
+    customer: customerId,
+    status: "canceled",
+  });
+  const invoice = paidInvoice([{ amount: 1000, period: billingPeriod(50) }]);
+  stripeAtDeletion({
+    subscriptionPages: [[marked, historical]],
+    invoices: { [marked.id]: [invoice] },
+  });
+  const stripe = context.mocks.stripe;
+  stripe.creditNotes.list.mockResolvedValue({
+    data: [
+      {
+        id: stripeId("cn"),
+        status: "issued",
+        post_payment_amount: 500,
+        metadata: {
+          purpose: "org_deletion_prorated_refund",
+          orgId: workspace.orgId,
+          subscriptionId: marked.id,
+          deletionAt,
+        },
+        refunds: [
+          {
+            amount_refunded: 500,
+            refund: { id: stripeId("re"), status: "succeeded" },
+          },
+        ],
+      },
+    ],
+    has_more: false,
+  });
+
+  const response = await workspace.deleteOrg();
+
+  expect(response.body).toStrictEqual({ message: "Organization deleted" });
+  expect(stripe.subscriptions.update).not.toHaveBeenCalled();
+  expect(stripe.subscriptions.cancel).not.toHaveBeenCalled();
+  expect(stripe.invoices.list.mock.calls).toStrictEqual([
+    [{ subscription: marked.id, status: "paid", limit: 100 }],
+  ]);
+  expect(stripe.creditNotes.preview).not.toHaveBeenCalled();
+  expect(stripe.creditNotes.create).not.toHaveBeenCalled();
+  expect(
+    context.mocks.clerk.organizations.deleteOrganization,
+  ).toHaveBeenCalledWith(workspace.orgId);
+});
+
 test("org-delete-billing-022 retries a failed Clerk-deletion refund on redelivery with the same idempotency key", async () => {
   const workspace = await adminWorkspace();
   const { customerId, subscription } = await workspace.subscribePlan();
