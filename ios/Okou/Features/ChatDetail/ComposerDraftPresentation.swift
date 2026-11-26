@@ -19,6 +19,7 @@ struct ComposerDraftPresentation: Equatable {
   let status: ComposerDraftStatus
   let attachments: AttachmentDraftStore.Content
   let voicePhase: ComposerVoiceInputStore.Phase?
+  let audioUpload: ComposerVoiceInputStore.AudioUpload?
   let voiceHasError: Bool
   let hasContent: Bool
   let canSend: Bool
@@ -28,6 +29,16 @@ struct ComposerDraftPresentation: Equatable {
   var error: String? { status.localError ?? status.syncError }
   var hasLocalFailure: Bool { status.localError != nil }
   var canRetryLocalSave: Bool { !status.localReadFailed }
+
+  /// The send action inserts its clip before it finishes. Keep that clip in the voice tray.
+  var containsOnlyFinishingRecording: Bool {
+    guard case .uploaded(let fileID) = audioUpload, !attachments.hasAttachments else { return false }
+    let parts = draft.document.trimmingWhitespace().parts
+    guard parts.count == 1, let part = parts.first, part["type"]?.string == "voice",
+      case .array(let clips) = part["clips"], clips.count == 1
+    else { return false }
+    return clips.first?["fileId"]?.string == fileID
+  }
 }
 
 /// Rules derived from one draft's content, sync status, uploads and voice input. The composer
