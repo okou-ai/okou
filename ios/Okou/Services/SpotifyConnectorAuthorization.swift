@@ -43,8 +43,9 @@ final class SpotifyConnectorAuthorization: NSObject, @preconcurrency SPTSessionM
     return manager?.application(UIApplication.shared, open: url, options: [:]) == true
   }
 
-  func sessionManager(manager: SPTSessionManager, shouldRequestAccessTokenWith code: String) -> Bool
-  {
+  func sessionManager(
+    manager: SPTSessionManager, shouldRequestAccessTokenWith code: String
+  ) -> Bool {
     guard self.manager === manager else { return false }
     finish(code.isEmpty ? .failure(APIClientError.invalidResponse) : .success(code))
     return false

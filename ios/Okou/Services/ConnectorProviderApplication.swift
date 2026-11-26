@@ -150,8 +150,8 @@ enum ConnectorProviderAuthorization {
       provider: provider, webURL: webURL, appURLs: urls, callbackURL: callback, exchangeURL: nil)
   }
 
-  @MainActor private static func tiktokParameters(_ items: [URLQueryItem]) throws -> [URLQueryItem]
-  {
+  @MainActor
+  private static func tiktokParameters(_ items: [URLQueryItem]) throws -> [URLQueryItem] {
     guard let client = items.first(where: { $0.name == "client_key" })?.value,
       let scope = items.first(where: { $0.name == "scope" })?.value,
       let bundleID = Bundle.main.bundleIdentifier
@@ -201,8 +201,8 @@ enum ConnectorProviderAuthorization {
     else { return nil }
     func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
     if let error = value("error") { return ["state": state, "error": error] }
-    if auth.provider == "tiktok", let error = value("error_code") ?? value("errCode"), error != "0"
-    {
+    let errorCode = value("error_code") ?? value("errCode")
+    if auth.provider == "tiktok", let errorCode, errorCode != "0" {
       return ["state": state, "error": "access_denied"]
     }
     if url.path == "/cancel" { return ["state": state, "error": "access_denied"] }
