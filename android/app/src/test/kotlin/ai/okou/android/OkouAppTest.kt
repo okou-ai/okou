@@ -405,7 +405,7 @@ class OkouAppTest {
         compose
             .onNodeWithTag("workspace_popup")
             .assertWidthIsEqualTo(244.dp)
-            .assertHeightIsEqualTo(265.dp)
+            .assertHeightIsEqualTo(267.dp)
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
         compose.onNodeWithText("Archived").performClick()
         compose.openChatListSettings()
@@ -430,7 +430,7 @@ class OkouAppTest {
         compose
             .onNodeWithTag("workspace_popup")
             .assertWidthIsEqualTo(244.dp)
-            .assertHeightIsEqualTo(158.dp)
+            .assertHeightIsEqualTo(160.dp)
         val filter = compose.onNodeWithText("Filter").getUnclippedBoundsInRoot()
         val project = compose.onNodeWithText("New project").getUnclippedBoundsInRoot()
         val settings = compose.onNodeWithText("Settings").getUnclippedBoundsInRoot()

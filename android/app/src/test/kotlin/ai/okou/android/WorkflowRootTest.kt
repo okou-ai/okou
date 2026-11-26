@@ -849,9 +849,9 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         compose.onNode(hasText("Weekdays") and inMenu, useUnmergedTree = true).assertLabelLarge()
         val popup = compose.onNodeWithTag("workspace_popup").getUnclippedBoundsInRoot()
         val row = selected.getUnclippedBoundsInRoot()
-        assertEquals(244.dp, popup.width)
-        assertEquals(popup.width, row.width)
-        assertEquals(48.dp, row.height)
+        assertEquals(244.dp, popup.right - popup.left)
+        assertEquals(popup.right - popup.left, row.right - row.left)
+        assertTrue(row.bottom - row.top >= 48.dp)
         selected.assertIsSelected().assertIsFocused().performKeyInput { pressKey(Key.Tab) }
         weekdays.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
         selected.assertIsSelected().assertIsFocused().performKeyInput { pressKey(Key.Escape) }

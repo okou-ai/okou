@@ -55,7 +55,7 @@ class ScreenshotScenario {
 
                 action(fixture.releaseTitle).click()
                 text("工作流说明")
-                val tabs = listOf("说明", "自动化", "运行记录").map { action(it).visibleBounds }
+                val tabs = listOf("说明", "自动化", "运行记录").map { tab(it).visibleBounds }
                 assertTrue(tabs.all { it.height() >= 48 })
                 assertTrue(tabs.maxOf { it.width() } - tabs.minOf { it.width() } <= 1)
                 assertTrue(action("在聊天中使用").visibleBounds.height() >= 48)
@@ -64,7 +64,7 @@ class ScreenshotScenario {
             withWindow(1180, 820, UserPreferencesTheme.DARK) { fixture ->
                 openDirectory()
                 action(fixture.releaseTitle).click()
-                action("自动化").click()
+                tab("自动化").click()
                 action("添加自动化").click()
                 val frequency = action("工作日")
                 text("执行频率")
@@ -85,7 +85,7 @@ class ScreenshotScenario {
             withWindow(760, 440, UserPreferencesTheme.LIGHT) { fixture ->
                 openDirectory()
                 action(fixture.releaseTitle).click()
-                action("自动化").click()
+                tab("自动化").click()
                 text("触发规则")
                 assertTrue(action("在聊天中使用").visibleBounds.height() >= 48)
                 ScreenshotCapture.capture("compact-automations.png")
@@ -209,6 +209,11 @@ class ScreenshotScenario {
     private fun text(label: String): UiObject2 =
         checkNotNull(device.wait(Until.findObject(By.pkg(app.packageName).text(label)), 15_000)) {
             "Missing native text: $label"
+        }
+
+    private fun tab(label: String): UiObject2 =
+        checkNotNull(generateSequence(text(label)) { it.parent }.firstOrNull { it.isFocusable }) {
+            "Missing native tab: $label"
         }
 
     private fun action(label: String): UiObject2 =
