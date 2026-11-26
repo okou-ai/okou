@@ -8,6 +8,7 @@ import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.hasPendingSearchText
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
 import ai.okou.android.state.ConnectorDirectoryState
@@ -112,10 +113,13 @@ internal fun ConnectorsPage(
     val focus = LocalFocusManager.current
     val inputMode = LocalInputModeManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    var restoreRow by remember { mutableStateOf<String?>(null) }
     val filter =
         if (route.connected) ConnectorBrowseFilter.of("", route.category)
         else ConnectorBrowseFilter.of(route.committedQuery.text, route.category)
+    var restoreRow by
+        remember(route, route.connected, filter, route.committedQuery.text.trim()) {
+            mutableStateOf<String?>(null)
+        }
     val wide = listWidth != null
     val selected = route.slug
     val directoryVisible = wide || selected == null
@@ -145,7 +149,7 @@ internal fun ConnectorsPage(
         focus.clearFocus()
         keyboard?.hide()
         if (initialSlug == null && !wide && selected != null) {
-            restoreRow = selected
+            restoreRow = selected.takeIf { inputMode.inputMode == InputMode.Keyboard }
             route.slug = null
         } else {
             closePage()
@@ -191,6 +195,7 @@ internal fun ConnectorsPage(
                     editQuery = ::setQuery,
                     setCategory = ::setCategory,
                     open = { entry ->
+                        restoreRow = null
                         if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                         keyboard?.hide()
                         route.slug = entry.slug
@@ -377,9 +382,24 @@ private fun ConnectorDirectory(
                     .maxByOrNull(ConnectorReadNotice::round)
             else -> catalogRead.notice()
         }
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+    val restoreFocus = remember { FocusRequester() }
+    val tabFocus = remember { List(2) { FocusRequester() } }
+    val selectedTab = if (route.connected) 1 else 0
+    Column(
+        Modifier.fillMaxSize()
+            .restoreDirectoryFocus(
+                restoreRow?.let { "connector-$it" },
+                entries != null || failure != null,
+                position,
+                restoreFocus,
+                tabFocus[selectedTab],
+                onRestored,
+                rowEnabled = restoreRow != null && entries?.any { it.slug == restoreRow } == true,
+            )
+            .padding(horizontal = 16.dp),
+    ) {
         Spacer(Modifier.height(12.dp))
-        ConnectorTabs(route.connected) { route.connected = it }
+        ConnectorTabs(selectedTab, tabFocus) { route.connected = it }
         Spacer(Modifier.height(8.dp))
         ConnectorFilters(
             route,
@@ -399,7 +419,6 @@ private fun ConnectorDirectory(
             )
             return@Column
         }
-        val restoreFocus = remember { FocusRequester() }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().testTag("connector-directory"),
@@ -459,11 +478,6 @@ private fun ConnectorDirectory(
                         ) {
                             open(entry)
                         }
-                        if (restoring)
-                            LaunchedEffect(entry.slug) {
-                                restoreFocus.requestFocus()
-                                onRestored()
-                            }
                     }
                 }
             }
@@ -480,9 +494,7 @@ private fun ConnectorDirectory(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
-    val selected = if (connected) 1 else 0
-    val focus = remember { List(2) { FocusRequester() } }
+private fun ConnectorTabs(selected: Int, focus: List<FocusRequester>, select: (Boolean) -> Unit) {
     val accent = MaterialTheme.colorScheme.primary
     PrimaryTabRow(
         selectedTabIndex = selected,

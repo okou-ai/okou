@@ -8,6 +8,7 @@ import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.hasPendingSearchText
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
 import ai.okou.android.workspaceSearchFocusOutline
@@ -70,7 +71,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -158,7 +158,18 @@ internal fun ArtifactCatalogList(
         }
     }
     Column(
-        modifier.fillMaxHeight().testTag("artifact_catalog"),
+        modifier
+            .fillMaxHeight()
+            .restoreDirectoryFocus(
+                restoreRow,
+                page != null || failure != null,
+                position,
+                rowFocus,
+                searchFocus,
+                onFocusRestored,
+                rowEnabled = restoreRow != null && page?.items?.any { it.id == restoreRow } == true,
+            )
+            .testTag("artifact_catalog"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ArtifactToolbar(R.string.artifact_title, R.string.artifact_return_workspace, onClose)
@@ -197,15 +208,6 @@ internal fun ArtifactCatalogList(
             return@Column
         }
         val showSkeleton = rememberContentReadSkeleton(hasContent = page != null)
-        val restoreAfterLayout =
-            if (restoreRow != null && page != null) {
-                Modifier.onGloballyPositioned {
-                    val rowVisible =
-                        position.layoutInfo.visibleItemsInfo.any { it.key == restoreRow }
-                    if (rowVisible) rowFocus.requestFocus() else searchFocus.requestFocus()
-                    onFocusRestored()
-                }
-            } else Modifier
         Box(Modifier.fillMaxWidth().weight(1f)) {
             LazyColumn(
                 modifier =
@@ -213,7 +215,6 @@ internal fun ArtifactCatalogList(
                         .fillMaxWidth()
                         .fillMaxHeight()
                         .align(Alignment.TopCenter)
-                        .then(restoreAfterLayout)
                         .testTag("artifact_list"),
                 state = position,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
