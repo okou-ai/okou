@@ -39,9 +39,7 @@ final class ChatModelEntryTests: XCTestCase {
     let selection = NSRange(location: 5, length: 4)
     input.selectedRange = selection
     response.yield()
-    try await waitForBusinessResult(
-      watching: workspace.modelStore.snapshotValue, in: workspace.modelStore.stateStore
-    ) {
+    try await waitForBusinessResult(watching: workspace.newModelSelection) {
       workspace.modelStore.configuration?.defaultSelection.model == "codex-model"
     }
     await fulfillment(of: [loaded], timeout: 3)
