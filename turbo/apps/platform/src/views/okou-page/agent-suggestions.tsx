@@ -478,7 +478,7 @@ export function AgentSuggestionCard({
         aria-label={t(($) => {
           return $.chat.agentSuggestions.dismiss;
         })}
-        className="absolute top-5.5 right-5 sm:top-8.5 sm:right-8"
+        className="absolute top-5.5 right-5 @min-[32rem]/for-you:top-8.5 @min-[32rem]/for-you:right-8"
         onClick={() => {
           detach(
             submitFeedback(item.id, "dismissed", signal),
@@ -537,7 +537,7 @@ function SuggestionFeedback({
       aria-label={t(($) => {
         return $.chat.agentSuggestions.feedbackPrompt;
       })}
-      className="-mx-4 mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4"
+      className="-mx-4 mt-auto grid grid-cols-2 gap-2 @min-[42rem]/for-you:grid-cols-4"
     >
       {feedbackActions.map(({ kind, label, Icon }) => {
         return (
