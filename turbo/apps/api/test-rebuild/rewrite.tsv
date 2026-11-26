@@ -1537,15 +1537,15 @@ messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscrip
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-008	planned				
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-014	planned				
 messaging	src/signals/routes/__tests__/email.test.ts	email-001	planned				
-account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-001	planned				B03
-account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-002	planned				B03
-account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-004	planned				B03
-account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-005	planned				B03
-account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-006	planned				B03
-account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-007	planned				B03
-account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-012	planned				B03
-account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-013	planned				B03
-account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-014	planned				B03
+account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-001	rewritten	54.2		src/signals/routes/__tests__/feature-guides.test.ts	B03
+account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-002	rewritten	82.9		src/signals/routes/__tests__/feature-guides.test.ts	B03
+account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-004	rewritten	70.9		src/signals/routes/__tests__/feature-guides.test.ts	B03
+account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-005	rewritten	40.2		src/signals/routes/__tests__/feature-guides.test.ts	B03
+account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-006	rewritten	63.7		src/signals/routes/__tests__/feature-guides.test.ts	B03
+account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-007	rewritten	67.2		src/signals/routes/__tests__/feature-guides.test.ts	B03
+account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-012	rewritten	36.7		src/signals/routes/__tests__/feature-guides.test.ts	B03
+account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-013	rewritten	21.8		src/signals/routes/__tests__/feature-guides.test.ts	B03
+account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-014	rewritten	19.7		src/signals/routes/__tests__/feature-guides.test.ts	B03
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-001	rewritten	177.6	extension after sandbox reset	src/signals/routes/__tests__/feature-switches.test.ts	pilot
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-002	rewritten	10.1	extension after sandbox reset	src/signals/routes/__tests__/feature-switches.test.ts	pilot
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-003	rewritten	109.3	extension after sandbox reset	src/signals/routes/__tests__/feature-switches.test.ts	pilot
