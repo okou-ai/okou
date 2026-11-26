@@ -754,7 +754,8 @@ private fun WorkflowDetailPane(
     // An empty loading layout must not clamp the saved position of a long history.
     val pendingHistory = tab == WorkflowTab.History && state.history == null
     val listState = if (pendingHistory) rememberLazyListState() else position
-    val historyLayout = if (pendingHistory) remember { WorkflowHistoryLayout() } else null
+    val historyLayout =
+        if (pendingHistory) remember(listPadding) { WorkflowHistoryLayout(listPadding) } else null
     val editEnabled = !state.writing && !handoffPending
     Column(
         Modifier.fillMaxSize().testTag("workflow_detail"),
@@ -857,7 +858,7 @@ private fun WorkflowDetailPane(
                             item(key = "history_pending") {
                                 WorkflowHistoryPending(
                                     state.historyFailure,
-                                    historyLayout?.body(listPadding) ?: Modifier,
+                                    historyLayout?.body ?: Modifier,
                                 )
                             }
                         } else if (history.runs.isEmpty()) {

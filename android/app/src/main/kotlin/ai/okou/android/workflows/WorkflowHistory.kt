@@ -48,7 +48,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-internal class WorkflowHistoryLayout {
+internal class WorkflowHistoryLayout(padding: PaddingValues) {
     private var listHeight by mutableIntStateOf(0)
     private var detailHeight by mutableIntStateOf(0)
     private var tabsHeight by mutableIntStateOf(0)
@@ -59,7 +59,7 @@ internal class WorkflowHistoryLayout {
     val tabs = Modifier.onSizeChanged { tabsHeight = it.height }
     val heading = Modifier.onSizeChanged { headingHeight = it.height }
 
-    fun body(padding: PaddingValues): Modifier = Modifier.layout { measurable, constraints ->
+    val body = Modifier.layout { measurable, constraints ->
         val insets =
             padding.calculateTopPadding().roundToPx() + padding.calculateBottomPadding().roundToPx()
         val available = listHeight - detailHeight - tabsHeight - headingHeight - insets
