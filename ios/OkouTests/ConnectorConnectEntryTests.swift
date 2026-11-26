@@ -10,7 +10,6 @@ private typealias FixtureData = ConnectorHTTPFixtures
 private struct UnavailableProviderApplication: ConnectorProviderApplication {
   let dropboxAppKey: String? = nil
   func supports(_ target: ChatConnectorTarget) -> Bool { false }
-  func receive(_ url: URL) -> Bool { false }
   func authorize(_ request: ConnectorProviderRequest) async throws -> ConnectorProviderLaunch {
     .unavailable
   }
