@@ -214,6 +214,7 @@ pub(crate) struct DownloadRunTelemetry {
 impl DownloadRunTelemetry {
     pub(crate) fn start<'a>(
         tasks: impl IntoIterator<Item = (DownloadTaskTelemetry, &'a Path)>,
+        independent: bool,
     ) -> Self {
         let mut task_count = 0;
         let mut remote_url_count = 0;
@@ -237,8 +238,10 @@ impl DownloadRunTelemetry {
                 DownloadTaskKind::FrameworkSkillChild => skill_child_task_count += 1,
                 DownloadTaskKind::Other => {}
             }
-            mount_paths.push(mount_path);
-            task_kinds.push(task.task_kind);
+            if !independent {
+                mount_paths.push(mount_path);
+                task_kinds.push(task.task_kind);
+            }
         }
 
         record_count_metric(CountMetric::Task, task_count);

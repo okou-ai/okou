@@ -105,12 +105,15 @@ fn scheduler_limits_parallel_inflate_to_a_single_artifact_with_a_small_companion
             }
         }
         let pending = VecDeque::from([other, artifact]);
-        let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
-            (
-                download.task.task.telemetry,
-                download.task.logical_mount_path(),
-            )
-        }));
+        let mut telemetry = DownloadRunTelemetry::start(
+            pending.iter().map(|download| {
+                (
+                    download.task.task.telemetry,
+                    download.task.logical_mount_path(),
+                )
+            }),
+            true,
+        );
         let mut scheduler = DownloadScheduler::new(pending, 2, local_ready, true);
         let (send, receive) = mpsc::sync_channel(2);
         assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
@@ -159,12 +162,15 @@ fn scheduler_limits_wide_read_ahead_to_the_first_promoted_local_artifact() {
                 download
             })
             .collect();
-        let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
-            (
-                download.task.task.telemetry,
-                download.task.logical_mount_path(),
-            )
-        }));
+        let mut telemetry = DownloadRunTelemetry::start(
+            pending.iter().map(|download| {
+                (
+                    download.task.task.telemetry,
+                    download.task.logical_mount_path(),
+                )
+            }),
+            true,
+        );
         let mut scheduler = DownloadScheduler::new(pending, LOCAL_CONCURRENT, local_ready, true);
         let (send, receive) = mpsc::sync_channel(LOCAL_CONCURRENT);
         let mut inflaters = Vec::new();
@@ -198,12 +204,15 @@ fn scheduler_front_loads_one_archive_then_dispatches_original_order() {
             download
         })
         .collect::<VecDeque<_>>();
-    let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
-        (
-            download.task.task.telemetry,
-            download.task.logical_mount_path(),
-        )
-    }));
+    let mut telemetry = DownloadRunTelemetry::start(
+        pending.iter().map(|download| {
+            (
+                download.task.task.telemetry,
+                download.task.logical_mount_path(),
+            )
+        }),
+        true,
+    );
     let mut scheduler = DownloadScheduler::new(pending, 4, true, true);
     let (send, receive) = mpsc::sync_channel(4);
     assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
@@ -253,12 +262,15 @@ fn local_scheduler_starts_one_ready_artifact_alongside_the_largest_archive() {
         );
         artifact.estimated_work = artifact_bytes;
         pending.push_back(artifact);
-        let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
-            (
-                download.task.task.telemetry,
-                download.task.logical_mount_path(),
-            )
-        }));
+        let mut telemetry = DownloadRunTelemetry::start(
+            pending.iter().map(|download| {
+                (
+                    download.task.task.telemetry,
+                    download.task.logical_mount_path(),
+                )
+            }),
+            false,
+        );
         let mut scheduler = DownloadScheduler::new(pending, 4, allow_priority, false);
         let (send, receive) = mpsc::sync_channel(4);
 

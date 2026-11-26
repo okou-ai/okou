@@ -569,12 +569,15 @@ fn download_with_readiness(
             pending
         })
         .collect::<VecDeque<_>>();
-    let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
-        (
-            download.task.task.telemetry,
-            download.task.logical_mount_path(),
-        )
-    }));
+    let mut telemetry = DownloadRunTelemetry::start(
+        pending.iter().map(|download| {
+            (
+                download.task.task.telemetry,
+                download.task.logical_mount_path(),
+            )
+        }),
+        independent,
+    );
     if pending.is_empty() {
         telemetry.finish();
         return true;
