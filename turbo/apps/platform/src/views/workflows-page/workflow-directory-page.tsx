@@ -78,7 +78,7 @@ function WorkflowRow({
 }) {
   const title = workflowTitle(workflow);
   return (
-    <article className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-3 text-left text-foreground transition-colors hover:bg-state-hover sm:flex-nowrap">
+    <article className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 text-left text-foreground transition-colors hover:bg-state-hover sm:flex-nowrap">
       <WorkflowTooltip workflow={workflow}>
         <Link
           pathname={ROUTES.workflowDetailAutomations}
@@ -184,6 +184,10 @@ function applyWorkflowFilters(
   });
 }
 
+function WorkflowRowDivider() {
+  return <div className="mx-5 h-px bg-divider/50" />;
+}
+
 function WorkflowRowList({
   workflows,
   entriesByWorkflowId,
@@ -193,27 +197,20 @@ function WorkflowRowList({
   readonly entriesByWorkflowId: WorkflowAutomationEntryMap;
   readonly displayTimezone: string;
 }) {
-  const rows = (
-    <>
-      {workflows.map((workflow) => {
+  return (
+    <div className={surfaceVariants({ className: "overflow-hidden" })}>
+      {workflows.map((workflow, index) => {
         return (
-          <WorkflowRow
-            key={workflow.id}
-            workflow={workflow}
-            entries={entriesByWorkflowId.get(workflow.id) ?? []}
-            displayTimezone={displayTimezone}
-          />
+          <div key={workflow.id}>
+            {index > 0 ? <WorkflowRowDivider /> : null}
+            <WorkflowRow
+              workflow={workflow}
+              entries={entriesByWorkflowId.get(workflow.id) ?? []}
+              displayTimezone={displayTimezone}
+            />
+          </div>
         );
       })}
-    </>
-  );
-  return (
-    <div
-      className={surfaceVariants({
-        className: "flex flex-col gap-1 overflow-hidden p-2",
-      })}
-    >
-      {rows}
     </div>
   );
 }
@@ -731,22 +728,23 @@ export function WorkflowDirectoryPage() {
 function WorkflowIndexSkeleton() {
   return (
     <div
-      className={surfaceVariants({
-        className: "flex flex-col gap-1 overflow-hidden p-2",
-      })}
+      className={surfaceVariants({ className: "overflow-hidden" })}
       data-testid="workflows-loading"
     >
       {[0, 1, 2, 3].map((rowIndex) => {
         return (
-          <div key={rowIndex} className="flex items-center gap-3 px-3 py-3">
-            <div className="h-8 w-8 shrink-0 rounded-lg bg-muted/40" />
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <div className="h-4 w-40 max-w-full rounded bg-muted/50" />
-              <div className="h-3 w-56 max-w-full rounded bg-muted/40" />
+          <div key={rowIndex}>
+            {rowIndex > 0 ? <WorkflowRowDivider /> : null}
+            <div className="flex items-center gap-3 px-5 py-3">
+              <div className="h-8 w-8 shrink-0 rounded-lg bg-muted/40" />
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <div className="h-4 w-40 max-w-full rounded bg-muted/50" />
+                <div className="h-3 w-56 max-w-full rounded bg-muted/40" />
+              </div>
+              <div className="ml-auto h-8 w-32 rounded-full bg-muted/40" />
+              <div className="h-5 w-5 rounded-full bg-muted/40" />
+              <div className="h-6 w-6 rounded-md bg-muted/40" />
             </div>
-            <div className="ml-auto h-8 w-32 rounded-full bg-muted/40" />
-            <div className="h-5 w-5 rounded-full bg-muted/40" />
-            <div className="h-6 w-6 rounded-md bg-muted/40" />
           </div>
         );
       })}
