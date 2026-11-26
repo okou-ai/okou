@@ -70,11 +70,11 @@ non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-007	p
 non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-010	planned				
 non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-011	planned				
 account-org	src/signals/routes/__tests__/agent-custom-connectors.test.ts	agent-custom-connectors-001	planned				
-messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-001	planned				B04
-messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-002	planned				B04
-messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-003	planned				B04
-messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-005	planned				B04
-messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-007	planned				B04
+messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-001	rewritten	91.2		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
+messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-002	rewritten	91.4		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
+messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-003	rewritten	67.5		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
+messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-005	rewritten	46.5		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
+messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-007	rewritten	32.8		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
 messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-001	planned				
 messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-007	planned				
 messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-008	planned				
