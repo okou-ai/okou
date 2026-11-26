@@ -66,7 +66,20 @@ internal data class ConversationContent(
     val completion: ConversationCompletion?,
 )
 
-private data class QueueFocus(val id: String, val index: Int)
+private data class QueueFocus(
+    val id: String,
+    val index: Int,
+    val entries: List<ConversationMessage>,
+) {
+    fun adjacentIndexIn(remaining: List<ConversationMessage>): Int {
+        val indexById = remaining.withIndex().associate { it.value.message.id to it.index }
+        return (index + 1..entries.lastIndex).firstNotNullOfOrNull {
+            indexById[entries[it].message.id]
+        }
+            ?: (index - 1 downTo 0).firstNotNullOfOrNull { indexById[entries[it].message.id] }
+            ?: index.coerceAtMost(remaining.lastIndex)
+    }
+}
 
 internal fun conversationContent(
     transcript: HistoryTranscript?,
@@ -261,7 +274,7 @@ private fun ConversationQueue(
         val previous = focused ?: return@LaunchedEffect
         val currentIndex = entries.indexOfFirst { it.message.id == previous.id }
         if (currentIndex >= 0) {
-            focused = previous.copy(index = currentIndex)
+            focused = previous.copy(index = currentIndex, entries = entries)
             return@LaunchedEffect
         }
         if (entries.isEmpty()) {
@@ -269,7 +282,7 @@ private fun ConversationQueue(
             titleFocus.requestFocus()
             return@LaunchedEffect
         }
-        val nextIndex = previous.index.coerceAtMost(entries.lastIndex)
+        val nextIndex = previous.adjacentIndexIn(entries)
         val nextId = entries[nextIndex].message.id
         if (position.layoutInfo.visibleItemsInfo.none { it.key == nextId }) {
             position.scrollToItem(nextIndex)
@@ -302,7 +315,7 @@ private fun ConversationQueue(
                 modifier =
                     Modifier.focusRequester(focus)
                         .onFocusChanged { state ->
-                            if (state.hasFocus) focused = QueueFocus(id, index)
+                            if (state.hasFocus) focused = QueueFocus(id, index, entries)
                             else if (focused?.id == id && latestEntries.any { it.message.id == id })
                                 focused = null
                         }
