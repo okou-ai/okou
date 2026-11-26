@@ -56,6 +56,9 @@ class ScreenshotScenario {
         val originalSize = Regex("Override size: (\\d+x\\d+)").find(device.executeShellCommand("wm size"))?.groupValues?.get(1)
         val originalDensity = Regex("Override density: (\\d+)").find(device.executeShellCommand("wm density"))?.groupValues?.get(1)
         val fontScale = device.executeShellCommand("settings get system font_scale").trim()
+        val nightMode =
+            device.executeShellCommand("cmd uimode night").substringAfter("Night mode:").trim()
+        check(nightMode in setOf("yes", "no", "auto", "custom")) { "Unexpected night mode: $nightMode" }
         val fixture = ChatListApiFixture()
         val projectTitle = "用户研究"
         val chatTitle = "制定下周计划"
@@ -97,9 +100,10 @@ class ScreenshotScenario {
 
         try {
             device.executeShellCommand("settings put system font_scale 1.0")
+            device.executeShellCommand("cmd uimode night yes")
             app.initialPreferences = testPreferences().copy(
                 locale = UserPreferencesLocale.ZH_HANS,
-                theme = UserPreferencesTheme.LIGHT,
+                theme = UserPreferencesTheme.DARK,
             )
             instrumentation.runOnMainSync { localeManager.applicationLocales = locale }
             fixture.projects = {
@@ -155,7 +159,10 @@ class ScreenshotScenario {
                             requestListFocus(projectTitle)
                             press(KeyEvent.KEYCODE_ENTER)
                             val newProjectChat = label(R.string.composer_new_project)
-                            requestListFocus(newProjectChat)
+                            find(text(newProjectChat))
+                            check(focused(projectTitle) != null) { "Expanding the Project lost its keyboard focus" }
+                            press(KeyEvent.KEYCODE_DPAD_DOWN)
+                            check(focused(newProjectChat) != null) { "Down from the Project did not focus its new-chat button" }
                             capture("wide-project-focus.png", newProjectChat)
                             press(KeyEvent.KEYCODE_ENTER)
                             device.waitForIdle()
@@ -185,6 +192,7 @@ class ScreenshotScenario {
             device.executeShellCommand("wm size ${originalSize ?: "reset"}")
             device.executeShellCommand("wm density ${originalDensity ?: "reset"}")
             device.executeShellCommand(if (fontScale == "null") "settings delete system font_scale" else "settings put system font_scale $fontScale")
+            device.executeShellCommand("cmd uimode night $nightMode")
             cache.restore()
         }
     }
