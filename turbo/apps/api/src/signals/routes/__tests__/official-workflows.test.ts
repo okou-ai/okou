@@ -1500,6 +1500,157 @@ describe("Standalone proactive dispatch", () => {
     );
     expect(setting.body).toMatchObject({ enabled: false, status: "paused" });
   });
+  it("recovers calendar tasks when onboarding supplies a timezone after the member opted in", async () => {
+    const app = await setupApp({
+      context,
+      isolatePg: true,
+      routes: [
+        ...cronProactiveRoutes,
+        ...morningBriefPreferenceRoutes,
+        ...proactiveSuggestionsRoutes,
+      ],
+    });
+    const client = app(cronProactiveContract);
+    const start = Date.UTC(2030, 0, 2, 3);
+    mockNow(start);
+    const { actor } = await prepareBriefMember();
+    await accept(
+      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
+      [200],
+    );
+    mockNow(start + 5 * 60_000);
+    await accept(
+      client.handoff({
+        headers: cron,
+        body: { action: "activate", apply: true },
+      }),
+      [200],
+    );
+    const brief = app(morningBriefPreferenceContract);
+    const suggestions = app(proactiveSuggestionsContract);
+    const headers = authHeaders(actor);
+    const enable = { headers, body: { enabled: true } };
+    const choices = await Promise.all([
+      accept(brief.update(enable), [200]),
+      accept(suggestions.update(enable), [200]),
+    ]);
+    for (const choice of choices) {
+      expect(choice.body.unavailableReason).toBe("missing-timezone");
+    }
+    await bdd.completeOnboarding(actor, { timezone: "UTC" });
+    await accept(client.compare({ headers: cron }), [200]);
+    const preferences = await Promise.all([
+      accept(brief.get({ headers }), [200]),
+      accept(suggestions.get({ headers }), [200]),
+    ]);
+    for (const preference of preferences) {
+      expect(preference.body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+        unavailableReason: null,
+      });
+    }
+  });
+
+  it("waits until the next regular hour after a third failed Run spans another scheduled slot", async () => {
+    const app = await setupApp({
+      context,
+      isolatePg: true,
+      routes: [
+        ...cronProactiveRoutes,
+        ...cronCleanupSandboxesRoutes,
+        ...proactiveSuggestionsRoutes,
+      ],
+    });
+    const client = app(cronProactiveContract);
+    const start = Date.UTC(2030, 0, 2, 9);
+    let clockTime = start;
+    function at(time: number) {
+      clockTime = time;
+      mockNow(time);
+    }
+    at(start);
+    // This member's hourly Suggestions are scheduled at :48.
+    const actor = bdd.user({
+      orgId: "org_proactive_balance",
+      userId: "user_proactive_learning3",
+    });
+    const owned = await publicChatActor(context, {
+      actor,
+      clockTime: () => {
+        return clockTime;
+      },
+    });
+    const manual = await owned.sendChatRun(actor, {
+      prompt: "Review today's work.",
+    });
+    await launchBudgetRun(context, owned, manual);
+    await accept(
+      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
+      [200],
+    );
+    at(start + 5 * 60_000);
+    await accept(
+      client.handoff({
+        headers: cron,
+        body: { action: "activate", apply: true },
+      }),
+      [200],
+    );
+    const settings = app(proactiveSuggestionsContract);
+    await accept(
+      settings.update({ headers: authHeaders(actor), body: { enabled: true } }),
+      [200],
+    );
+    const reads = createRunReadsApi(context);
+    for (let failure = 0; failure < 3; failure++) {
+      at(start + (48 + failure * 60) * 60_000);
+      await owned.run(() => {
+        return runs.registerDirectRunner(owned.runnerGroup);
+      });
+      expect(
+        (await accept(client.compare({ headers: cron }), [200])).body,
+      ).toMatchObject({ enqueued: 1 });
+      await accept(
+        app(cronCleanupSandboxesContract).cleanup({ headers: cron }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const history = await reads.requestListLogs(
+        actor,
+        { triggerSource: "proactive" },
+        [200],
+      );
+      expect(history.body.data).toHaveLength(failure + 1);
+      const latest = history.body.data[0];
+      if (!latest) {
+        throw new Error("Expected the queued Suggestions Run");
+      }
+      const { sandboxHeaders } = await owned.runExecution(latest.id);
+      at(clockTime + (failure === 2 ? 65 : 1) * 60_000);
+      await webhooks.requestAgentComplete(
+        {
+          runId: latest.id,
+          exitCode: 1,
+          error: "Managed provider temporarily unavailable",
+        },
+        sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(
+        (await accept(client.compare({ headers: cron }), [200])).body,
+      ).toMatchObject({ enqueued: 0 });
+    }
+    expect(
+      (await accept(settings.get({ headers: authHeaders(actor) }), [200])).body,
+    ).toMatchObject({ enabled: true, status: "error" });
+    at(Date.UTC(2030, 0, 2, 13, 48));
+    expect(
+      (await accept(client.compare({ headers: cron }), [200])).body,
+    ).toMatchObject({ enqueued: 1 });
+  });
+
   it("reschedules an enabled Morning Brief when the member changes timezone and preserves a later opt-out", async () => {
     const app = await setupApp({
       context,

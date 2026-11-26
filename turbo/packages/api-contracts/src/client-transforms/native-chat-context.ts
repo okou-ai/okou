@@ -2,7 +2,11 @@ import { chatThreadEventsContract } from "../contracts/chat-threads";
 import type { ChatEventRow } from "../contracts/chat-event-rows";
 import type { ClientResponseTransform } from "./types";
 
-/** Retire the projections once the enforced native versions accept these contexts (#46063, #50929). */
+/**
+ * Bound each history projection when a released native reader accepts the context.
+ * Remove it once the enforced floor excludes the older readers (proactive: #50929).
+ * The iOS Email projection was introduced in #46081.
+ */
 function forClient(client: "ios" | "android") {
   const common = {
     client,

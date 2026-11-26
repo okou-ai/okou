@@ -1,13 +1,32 @@
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { revokeStaleProactiveInputs$ } from "./proactive-queued-input.service";
-import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { randomUUID } from "node:crypto";
-import type { ProactiveTask } from "@okouai/api-contracts/contracts/proactive";
-import { proactiveSchedules } from "@okouai/db/schema/proactive-schedule";
+import {
+  proactiveTasks,
+  type ProactiveTask,
+} from "@okouai/api-contracts/contracts/proactive";
+import {
+  proactiveOccurrences,
+  proactiveSchedules,
+} from "@okouai/db/schema/proactive-schedule";
 import { command } from "ccstate";
-import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { object, uuid } from "zod";
+import { object, string, uuid, enum as zEnum } from "zod";
 import { recordApiOperationTimings } from "../external/sandbox-op-log";
 import { nowDate, monotonicNow } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -235,20 +254,94 @@ const dispatchSlot$ = command(
 /** Release the slot and retain its Run in history. Only failures under the current choice can pause the schedule. */
 const settleProactiveOccurrences$ = command(
   async ({ set }, at: Date, signal: AbortSignal) => {
-    await set(writeDb$).execute(sql`WITH terminal AS (
-    SELECT o.id,CASE WHEN o.run_id IS NULL AND EXISTS (SELECT 1 FROM chat_events rejection WHERE rejection.revokes_event_id=o.id AND rejection.event_type='input.rejected')
-      THEN 'failed' ELSE r.status END AS status, o.run_id FROM proactive_occurrences o LEFT JOIN agent_runs r ON r.id=o.run_id
-    WHERE o.settled_at IS NULL AND (
-      (o.run_id IS NOT NULL AND (r.id IS NULL OR r.status IN ('completed','failed','cancelled','timeout'))) OR
-      (o.run_id IS NULL AND (EXISTS (SELECT 1 FROM chat_events e WHERE e.revokes_event_id=o.id) OR NOT EXISTS (SELECT 1 FROM chat_events e WHERE e.id=o.id))))
-    ORDER BY o.scheduled_at LIMIT 200
-  ), settled AS (UPDATE proactive_occurrences o SET settled_at=${at.toISOString()}::timestamp FROM terminal t
-    WHERE o.id=t.id AND o.settled_at IS NULL RETURNING o.*, t.status)
-  UPDATE proactive_schedules s SET last_run_id=coalesce(t.run_id,s.last_run_id),
-    consecutive_failures=CASE WHEN s.preference_revision<>t.preference_revision THEN s.consecutive_failures
-      WHEN t.status='completed' THEN 0 WHEN t.status IN ('failed','timeout') THEN s.consecutive_failures+1 ELSE s.consecutive_failures END,
-    enabled=CASE WHEN s.preference_revision=t.preference_revision AND t.status IN ('failed','timeout') AND s.consecutive_failures>=2 THEN false ELSE s.enabled END
-    FROM settled t WHERE (s.org_id,s.user_id,s.task,s.chat_thread_id)=(t.org_id,t.user_id,t.task,t.chat_thread_id)`);
+    const db = set(writeDb$);
+    const occurrences = proactiveOccurrences;
+    const replacement = alias(chatEvents, "replacement");
+    const terminal = await db
+      .select({
+        id: occurrences.id,
+        orgId: occurrences.orgId,
+        userId: occurrences.userId,
+        task: occurrences.task,
+        runId: occurrences.runId,
+        timezone: proactiveSchedules.timezone,
+        runStatus: agentRuns.status,
+        completedAt: agentRuns.completedAt,
+        replacementType: replacement.eventType,
+        replacedAt: replacement.createdAt,
+      })
+      .from(occurrences)
+      .leftJoin(agentRuns, eq(agentRuns.id, occurrences.runId))
+      .leftJoin(replacement, eq(replacement.revokesEventId, occurrences.id))
+      .leftJoin(
+        proactiveSchedules,
+        and(
+          eq(proactiveSchedules.orgId, occurrences.orgId),
+          eq(proactiveSchedules.userId, occurrences.userId),
+          eq(proactiveSchedules.task, occurrences.task),
+        ),
+      )
+      .where(
+        and(
+          isNull(occurrences.settledAt),
+          or(
+            and(
+              isNotNull(occurrences.runId),
+              or(
+                isNull(agentRuns.id),
+                inArray(agentRuns.status, [
+                  "completed",
+                  "failed",
+                  "cancelled",
+                  "timeout",
+                ]),
+              ),
+            ),
+            and(
+              isNull(occurrences.runId),
+              or(
+                isNotNull(replacement.id),
+                notExists(
+                  db
+                    .select({ id: chatEvents.id })
+                    .from(chatEvents)
+                    .where(eq(chatEvents.id, occurrences.id)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      )
+      .orderBy(asc(occurrences.scheduledAt))
+      .limit(200);
+    signal.throwIfAborted();
+    if (terminal.length === 0) {
+      return;
+    }
+    const results = terminal.map((row) => {
+      const rejected = row.replacementType === "input.rejected";
+      const status = row.runId ? row.runStatus : rejected ? "failed" : null;
+      const finished = row.runId
+        ? row.completedAt
+        : rejected
+          ? row.replacedAt
+          : null;
+      // A busy slot belongs to the preceding Run. Resume at the first slot after completion.
+      const next = finished
+        ? nextProactiveSlot(row, row.task, row.timezone, finished)
+        : null;
+      return sql`(${row.id}::uuid,${row.runId}::uuid,${status}::text,${next?.toISOString() ?? null}::timestamp)`;
+    });
+    await db.execute(sql`WITH terminal(id,run_id,status,next_run_at) AS (VALUES ${sql.join(results, sql`,`)}),
+      settled AS (UPDATE proactive_occurrences o SET settled_at=${at.toISOString()}::timestamp FROM terminal t
+        WHERE o.id=t.id AND o.settled_at IS NULL AND o.run_id IS NOT DISTINCT FROM t.run_id
+        RETURNING o.*, t.status,t.next_run_at)
+      UPDATE proactive_schedules s SET last_run_id=coalesce(t.run_id,s.last_run_id),
+        next_run_at=CASE WHEN s.preference_revision=t.preference_revision AND s.next_run_at<t.next_run_at THEN t.next_run_at ELSE s.next_run_at END,
+        consecutive_failures=CASE WHEN s.preference_revision<>t.preference_revision THEN s.consecutive_failures
+          WHEN t.status='completed' THEN 0 WHEN t.status IN ('failed','timeout') THEN s.consecutive_failures+1 ELSE s.consecutive_failures END,
+        enabled=CASE WHEN s.preference_revision=t.preference_revision AND t.status IN ('failed','timeout') AND s.consecutive_failures>=2 THEN false ELSE s.enabled END
+        FROM settled t WHERE (s.org_id,s.user_id,s.task,s.chat_thread_id)=(t.org_id,t.user_id,t.task,t.chat_thread_id)`);
     signal.throwIfAborted();
   },
 );
@@ -256,40 +349,41 @@ const settleProactiveOccurrences$ = command(
 const recoverProactiveSchedules$ = command(
   async ({ set }, at: Date, signal: AbortSignal) => {
     const db = set(writeDb$);
-    // The legacy projection also contains opted-in members awaiting their first installation.
-    // A cleared cursor on an installed, reconciled schedule is a different state.
-    const uninstalled = await db
-      .select({
-        schedule: proactiveSchedules,
-        memberTimezone: orgMembersMetadata.timezone,
-      })
-      .from(proactiveSchedules)
-      .leftJoin(
-        orgMembersMetadata,
-        and(
-          eq(orgMembersMetadata.orgId, proactiveSchedules.orgId),
-          eq(orgMembersMetadata.userId, proactiveSchedules.userId),
-        ),
+    // Onboarding commits the preference before its best-effort setup. Start with the
+    // saved choice so a missing schedule or a timezone supplied later can be repaired.
+    const missing = parseRawRows(
+      object({
+        orgId: string(),
+        userId: string(),
+        timezone: string().nullable(),
+        task: zEnum(proactiveTasks),
+      }),
+      await db.execute(sql`WITH intended AS (
+        SELECT s.org_id,s.user_id,s.task,m.timezone
+        FROM proactive_schedules s JOIN org_members_metadata m USING (org_id,user_id)
+        WHERE s.task='morning-brief' AND s.intended_enabled AND m.timezone IS NOT NULL
+        UNION ALL
+        SELECT m.org_id,m.user_id,t.task,m.timezone FROM org_members_metadata m
+        CROSS JOIN (VALUES ('suggestions'),('learning')) t(task)
+        WHERE m.proactive_suggestions_enabled AND (t.task='suggestions' OR m.timezone IS NOT NULL)
       )
-      .where(
-        and(
-          eq(proactiveSchedules.intendedEnabled, true),
-          isNull(proactiveSchedules.reconciliationStatus),
-          currentMember,
-          sql`(${proactiveSchedules.task}='suggestions' OR ${orgMembersMetadata.timezone} IS NOT NULL)`,
-        ),
-      )
-      .limit(100);
+      SELECT i.org_id AS "orgId",i.user_id AS "userId",i.task,i.timezone
+      FROM intended i JOIN org_members_cache member USING (org_id,user_id)
+      LEFT JOIN proactive_schedules s USING (org_id,user_id,task)
+      WHERE s.task IS NULL OR (s.intended_enabled AND (s.reconciliation_status IS NULL OR
+        (s.reconciliation_status='current' AND s.task<>'suggestions' AND s.timezone IS NULL AND i.timezone IS NOT NULL)))
+      ORDER BY i.org_id,i.user_id,i.task LIMIT 100`),
+    );
     signal.throwIfAborted();
-    for (const { schedule, memberTimezone } of uninstalled) {
+    for (const row of missing) {
       signal.throwIfAborted();
       await set(
         setStandalonePreferences$,
         {
-          owner: schedule,
-          tasks: [schedule.task],
+          owner: row,
+          tasks: [row.task],
           enabled: true,
-          timezone: memberTimezone,
+          timezone: row.timezone,
           preserveChoice: true,
         },
         signal,
@@ -322,6 +416,9 @@ const recoverProactiveSchedules$ = command(
             eq(proactiveSchedules.task, row.task),
             eq(proactiveSchedules.preferenceRevision, row.preferenceRevision),
             eq(proactiveSchedules.enabled, false),
+            row.nextRunAt
+              ? eq(proactiveSchedules.nextRunAt, row.nextRunAt)
+              : isNull(proactiveSchedules.nextRunAt),
             standalone,
           ),
         );

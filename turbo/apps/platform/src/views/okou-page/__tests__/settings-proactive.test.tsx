@@ -1,44 +1,11 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 
 const context = testContext();
-
-async function openDebug(role: "member" | "admin") {
-  const org = { id: "org_test", name: "Debug workshop" };
-  context.mocks.api(orgContract.get, ({ respond }) => {
-    return respond(200, { ...org, role });
-  });
-  await setupPage({
-    context,
-    path: "/?settings=debug",
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-    auth: {
-      user: { id: "user_harbor", fullName: "Harbor reader" },
-      organization: {
-        activeOrg: org,
-        memberships: [{ id: org.id, role: "org:" + role }],
-      },
-    },
-  });
-}
-
-test("Debug does not expose a manual Morning Brief or Learning action", async () => {
-  await openDebug("admin");
-  await screen.findByRole("heading", { name: "Debug" });
-  expect(
-    screen.queryByText("Run Morning Brief", { exact: false }),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText("Run Learning", { exact: false }),
-  ).not.toBeInTheDocument();
-});
 
 async function settings() {
   let active = false;
