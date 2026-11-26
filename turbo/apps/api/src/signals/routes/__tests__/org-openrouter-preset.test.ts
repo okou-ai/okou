@@ -107,6 +107,36 @@ test("org-openrouter-preset-003 denies preset reads and writes to a Debug-enable
   await expect(readPreset(admin)).resolves.toBe("@preset/okou-1-0");
 });
 
+test("org-openrouter-preset-004 denies preset reads and writes to an administrator without Debug", async () => {
+  const orgId = `org_${randomUUID()}`;
+  const admin = await debugActor(orgId);
+  await savePreset(admin, "@preset/okou-1-0");
+  const plainAdmin: Actor = {
+    userId: `user_${randomUUID()}`,
+    orgId,
+    orgRole: "org:admin",
+  };
+  await updateFeatureSwitchesForUser(context, plainAdmin, {
+    [FeatureSwitchKey.OkouDebug]: false,
+  });
+
+  as(plainAdmin);
+  const read = await presets.get({ headers });
+  const experimental = await presets.update({
+    headers,
+    body: { openrouterPreset: "@preset/okou-experimental" },
+  });
+  const cleared = await presets.update({
+    headers,
+    body: { openrouterPreset: null },
+  });
+
+  expect([read.status, experimental.status, cleared.status]).toStrictEqual([
+    403, 403, 403,
+  ]);
+  await expect(readPreset(admin)).resolves.toBe("@preset/okou-1-0");
+});
+
 test("org-openrouter-preset-005 rejects unlisted presets and caller-selected organizations", async () => {
   const admin = await debugActor(`org_${randomUUID()}`);
   await savePreset(admin, "@preset/okou-1-0");

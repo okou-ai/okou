@@ -2381,10 +2381,10 @@ account-org	src/signals/routes/__tests__/org-member-directory.test.ts	org-member
 account-org	src/signals/routes/__tests__/org-member-directory.test.ts	org-member-directory-006	rewritten	18.4		src/signals/routes/__tests__/org-member-directory.test.ts	B03
 account-org	src/signals/routes/__tests__/org-member-directory.test.ts	org-member-directory-007	rewritten	14.1		src/signals/routes/__tests__/org-member-directory.test.ts	B03
 account-org	src/signals/routes/__tests__/org-member-directory.test.ts	org-member-directory-008	rewritten	15.5		src/signals/routes/__tests__/org-member-directory.test.ts	B03
-account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-001	rewritten	82.3		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
-account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-003	rewritten	24.3		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
-account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-005	rewritten	31.8		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
-account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-004	planned				B06
+account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-001	rewritten	54.2		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
+account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-003	rewritten	26.2		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
+account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-005	rewritten	61.1		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
+account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-004	rewritten	36.9		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B06
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-001	planned				
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-002	planned				
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-003	planned				
