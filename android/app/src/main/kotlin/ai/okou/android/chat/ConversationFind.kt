@@ -156,7 +156,7 @@ internal class ConversationFindVisit(
         target =
             ConversationFindTarget(
                 message.id,
-                result.passage?.index.takeIf { message.role == HistoryRole.Assistant },
+                result.passage?.index?.toString().takeIf { message.role == HistoryRole.Assistant },
                 bodyIndex = result.passage?.bodyIndex,
                 markdownImage = result.passage?.imagePath,
             )
@@ -170,7 +170,7 @@ internal class ConversationFindVisit(
 
 internal class ConversationFindTarget(
     val id: String,
-    val markdownBlock: Int?,
+    val markdownBlockPath: String?,
     val isRun: Boolean = false,
     val bodyIndex: Int? = null,
     val markdownImage: String? = null,

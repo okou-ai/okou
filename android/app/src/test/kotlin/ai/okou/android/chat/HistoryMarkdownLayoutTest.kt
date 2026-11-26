@@ -6,8 +6,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -31,13 +36,13 @@ class HistoryMarkdownLayoutTest {
         val start = indexed.lastIndexOf(word)
         val target =
             reply.workspaceSearchTarget(start until start + word.length, inlineImages = true)
-        assertEquals(1, target.markdownBlock)
+        assertEquals("1", target.markdownBlockPath)
         assertEquals(0, target.bodyIndex)
         assertNull(target.markdownImage)
 
         val messageOnly = reply.workspaceSearchTarget(null, inlineImages = true)
         assertEquals(reply.id, messageOnly.id)
-        assertNull(messageOnly.markdownBlock)
+        assertNull(messageOnly.markdownBlockPath)
     }
 
     @Test
@@ -49,9 +54,34 @@ class HistoryMarkdownLayoutTest {
         val reply = reply(source)
 
         val target = reply.workspaceSearchTarget(range, inlineImages = true)
-        assertEquals(1, target.markdownBlock)
+        assertEquals("1", target.markdownBlockPath)
         assertEquals("1/1", target.markdownImage)
         assertNull(reply.workspaceSearchTarget(range, inlineImages = false).markdownImage)
+    }
+
+    @Test
+    fun workspaceSearchFocusesOnlyTheMatchedParagraphOfANestedListItem() {
+        val sibling = "Build passed"
+        val match = "Confirm the release owner."
+        val source = "1. Review the rollout\n   - $sibling\n   - $match\n2. Notify the team"
+        val start = source.indexOf(match)
+        val target = reply(source).workspaceSearchTarget(start until start + match.length, false)
+        compose.setContent {
+            MaterialTheme {
+                HistoryMarkdown(
+                    source,
+                    MaterialTheme.typography.bodyLarge,
+                    artifacts = null,
+                    messageId = "reply",
+                    artifactTurnKey = "reply",
+                    highlight = ConversationFindHighlight(target, reveal = {}),
+                )
+            }
+        }
+        val focused = hasTestTag("conversation_find_hit") and isFocused()
+        compose.waitUntilExactlyOneExists(focused, 5_000)
+        compose.onNode(focused).assertIsDisplayed().assertTextEquals(match)
+        compose.onNodeWithText(sibling).assertIsDisplayed()
     }
 
     private fun reply(source: String) =

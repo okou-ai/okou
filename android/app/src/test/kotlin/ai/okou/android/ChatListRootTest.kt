@@ -86,6 +86,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
@@ -2141,6 +2142,46 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         val list = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
         assertTrue(compose.onNode(focused).getUnclippedBoundsInRoot().left > list.right)
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun workspaceMessageSearchRevealsTheMatchedCellOutsideTheHorizontalViewport() {
+        val app = compose.activity.application as ChatListApplication
+        val query = "approval"
+        val text = "Launch approval"
+        val body =
+            "| Phase | Build | Tests | Assets | Owner |\n" +
+                "| --- | --- | --- | --- | --- |\n" +
+                "| Release | Ready | Passed | Ready | $text |"
+        val start = body.indexOf(query)
+        app.fixture.historyReply = body
+        app.fixture.searchMessages = { request ->
+            assertEquals(query, request.requestUrl?.queryParameter("keyword"))
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_PERSONAL",
+                  "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
+                    "content":${JsonPrimitive(body)},"createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":$start,"end":${start + query.length}}]}]}
+                """,
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput(query)
+        val result =
+            hasText(text, substring = true) and hasAnyAncestor(hasTestTag("chat_search_results"))
+        compose.waitUntilExactlyOneExists(result, 5_000)
+        compose.onNode(result).performClick()
+
+        val focused = hasTestTag("conversation_find_hit") and isFocused() and hasText(text)
+        compose.waitUntilExactlyOneExists(focused, 5_000)
+        val cell = compose.onNode(focused).assertIsDisplayed().assertTextEquals(text)
+        val conversation = compose.onNodeWithTag("conversation").getUnclippedBoundsInRoot()
+        assertTrue(cell.getUnclippedBoundsInRoot().right <= conversation.right - 24.dp)
     }
 
     @Test
