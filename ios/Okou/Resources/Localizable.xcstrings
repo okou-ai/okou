@@ -782,10 +782,10 @@
         }
       }
     },
-    "Show suggestion %lld of %lld": {
+    "%@ left": {
       "localizations": {
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "查看第 %1$lld 条建议（共 %2$lld 条）" }
+          "stringUnit": { "state": "translated", "value": "还剩 %@ 个" }
         }
       }
     },

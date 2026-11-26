@@ -223,8 +223,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 ### Materials and surfaces
 
 - **Page** canvas is `background`, pure white (`#FFFFFF`) as on the web, where the canvas
-  carries no tint; cards and sheets in the page are white too. For you is the one page whose
-  ground continues its cover picture instead ([For you](#for-you)). The **sidebar** is
+  carries no tint; cards and sheets in the page are white too. For you is the one page with a
+  ground of its own, for its white card to stand on ([For you](#for-you)). The **sidebar** is
   `sidebar` (gray-50), the web's warm chrome.
 - **Fills on white are neutral.** The warm `muted` and `control-surface` read pink on `card`
   and `background`; tiles, placeholders, media backdrops, zebra rows and tracks use the
@@ -936,70 +936,74 @@ feature; the catalog shows each one.
 
 ### For you
 
-- **One scene, not a header on a white page.** For you is the one page whose ground is not the
-  white canvas: its cover picture runs across the top at one fixed scale (`ForYouCover`) and the
-  rest of the page continues in the picture's own sea colour, read from the asset rather than
-  written as a colour, so the cards, the deck and the dock stand on the same scene as the header.
-  The picture never resizes as the cards change, so it keeps one size and one sharpness. At night the whole scene dims, so the light header and status bar
-  read on it.
-- **Cards** stand on a ground a step back from white (`background-50`, a step darker than the
-  directions at night) at sheet radius, with a hairline and 24 pt above the heading and 20 pt
-  elsewhere, so the white directions on it show their outline. A direction is a white button
-  with a hairline (`state-pressed` and `control-border` while pressed, scaled to 98%), 16 pt
-  around its text and 8 pt from the next. It carries no mark: a short Caption line above its
-  label says what choosing it does, in uppercase with a 6 pt dot, amber (`primary-700`, or
-  `primary-200` at night) for "Send to a new chat" and `muted-foreground` for "Draft in" the
-  chat it drafts in; so the label and description keep the button's whole width (at most two
-  lines of description; VoiceOver hears the line as the button's hint). While a choice is under
-  way that line shows progress and "Sending…" or "Opening draft…", a 2 pt line runs along the
-  button's foot (amber or `control-border`; still under Reduce Motion), and the other directions
-  fade. A card that ends in text, as a direction's context does, keeps as much room below the
-  text as above it. A card is a reading surface ([Type roles](#type-roles)): a Title 3 title over
-  Body for the reason and each direction's label, with Subheadline for a direction's description
-  and the source; the action line is its one Caption label.
+- **A warm ground, not a picture.** For you is the one page whose ground is not the white
+  canvas (`ForYouCover`): the system grouped ground, so the white card stands on it as a sheet's
+  rows do, warmed at the top by a wash of `brand-subtle` that fades out down the page. The
+  thinking mark's brush, the brand's line texture, lies faintly in amber across the four corners:
+  the brush itself, unrepeated, each turned a quarter from the last, faded at its own edges and
+  towards the middle, where the card is, so its lines frame the header, the dock and the card's
+  sides without a seam. At night the wash is a warm brown and the lines quieter.
+- **The header** is back, the title over "Okou's picks to handle", and on the right how many
+  cards are left, counting the one in front ("5 left"): a chip as tall as the back button, the
+  number and the word in Subheadline with the number semibold, on a part-white fill (`card` at
+  60%) with a hairline. It has no glass and no shadow, because glass marks a control and the
+  count is not one, and it says what is left rather than a place ("1 of 5"), since there is no
+  place to move to. Its digits roll as a card is handled or comes back.
+- **Cards** stand on the ground in white by day (`background-50` at night) at sheet radius, lifted
+  by the floating panel's shadow, with a hairline and 24 pt above the heading and 20 pt
+  elsewhere. A direction is a step back from the white card (`background-50` by day, `card` at
+  night, a step up from the card) with a hairline (`state-pressed` and `control-border` while
+  pressed, scaled to 98%), 16 pt around its text and 8 pt from the next, so it reads as a button
+  on the card in both schemes. It carries no mark: a short Caption line above its label says what
+  choosing it does, in uppercase with a 6 pt dot, amber (`primary-700`, or `primary-200` at night)
+  for "Send to a new chat" and `muted-foreground` for "Draft in" the chat it drafts in; so the
+  label and description keep the button's whole width (at most two lines of description;
+  VoiceOver hears the line as the button's hint). While a choice is under way that line shows
+  progress and "Sending…" or "Opening draft…", a 2 pt line runs along the button's foot (amber or
+  `control-border`; still under Reduce Motion), and the other directions fade. A card that ends in
+  text, as a direction's context does, keeps as much room below the text as above it. A card is a
+  reading surface ([Type roles](#type-roles)): a Title 3 title over Body for the reason and each
+  direction's label, with Subheadline for a direction's description and the source; the action
+  line is its one Caption label.
 - **Dense text scrolls in place.** A reason shows whole. When the heading runs past the card's
   room it scrolls above the directions, which stay at the card's bottom (`ForYouCardLayout`): it
   fades out at the edge where more lies with the cut line peeking under the fade, and its scroll
   indicator flashes as the card appears and whenever the text comes to run past the room, so the
-  reader can tell there is more. There is no Show more: the card keeps one height, so opening
-  one could only make it scroll, one tap later. Scrolling text runs out to the card's own edges
-  rather than stopping at its inset, with the scroll indicator along the card's side; above the
-  actions it stops a gap short of them. When the actions would leave the heading less than a third of the card, as at the
-  largest text sizes, heading and actions scroll together from the title.
-- **The deck pages round, the same both ways.** A sideways swipe either way throws the top card
-  off that side with the finger; it settles back a little but never tilts, since paging throws
-  nothing away. The card it pages to, next or previous, rises straight out of the deck beneath
-  it, centred where the deck's first layer lies, solid within the first third of the swipe; no
-  card ever slides in from the side. Tapping a progress segment throws the top card off the same
-  way. Past the last card the deck carries on to the first, and back from the first to the last,
-  as the web's stack turns. The counter rolls
-  and the lit progress segment follows the finger. A handled card sinks away while the next one
-  rises into its place. Under Reduce Motion the cards page side by side and the cover holds still.
-  Every card fills the room from just under the train's lower edge (the rails and sea may be
-  covered, the train never is) down to the dock, on every phone, so the page keeps one
-  composition whatever the screen or the deck's text, and the deck one shape as it pages. Room
-  the text doesn't need lies between the heading and the actions, so the actions stay at the
-  bottom; the dock's room is held on a paused automation too, so the deck's top edge never moves.
-  A card that fits never moves vertically; only one taller than the room scrolls, and only the
-  caught-up panel pulls to refresh. The layers under the front card are solid cards, each a little
-  more shaded than the one above it.
-- **Haptics**: selection when a new card comes to rest in front, success when a card is
-  handled, error on a failure; nothing while the finger moves.
-- **The dock** is an `OkouGlassPrompt` that grows into the composer, and Dismiss with its
-  reasons menu.
+  reader can tell there is more. There is no Show more: the card keeps one height, so opening one
+  could only make it scroll, one tap later. Scrolling text runs out to the card's own edges rather
+  than stopping at its inset, with the scroll indicator along the card's side; above the actions
+  it stops a gap short of them. When the actions would leave the heading less than a third of the
+  card, as at the largest text sizes, heading and actions scroll together from the title.
+- **One card at a time.** Only the card in front can be read, and it stays until it is handled:
+  by a direction, the member's own direction, or Dismiss. Nothing pages to another card; a
+  sideways swipe does nothing, so the reader settles each card in turn. A handled card sinks away
+  while the next one rises out of the deck into its place. Every card fills the room from 24 pt
+  under the header down to the dock, on every phone, so the page keeps one composition whatever
+  the screen or the deck's text. Room the text doesn't need lies between the heading and the
+  actions, so the actions stay at the bottom; the dock's room is held on a paused automation and
+  while the first cards load, so the deck's top edge never moves. A card that fits never moves
+  vertically; only one taller than the room scrolls, and only the caught-up panel pulls to
+  refresh. The layers under the front card are solid cards, each a little more shaded than the
+  one above it, so the deck runs out as the cards do. While the first cards load, a skeleton
+  stands in the card's exact place and height, drawn as the card it stands for: two lines of
+  title, four of reason, and two directions at the foot.
+- **Haptics**: success when a card is handled, error on a failure.
+- **The dock** is the sidebar footer's pair: "What do you have in mind?" in the placeholder grey
+  on a glass capsule, as New Message is, which grows into the composer, and a round glass ✕, as
+  Search is, that opens Dismiss with its reasons menu.
 - **Confirmations are the chat's feedback surface, under the header.** A finished action
   ("Noted — this is not planned · Undo", "Sent to the chat · Open chat") drops in as
-  `ChatFeedbackSurface`: one line with its action on the right and a ✕, floating over the scene
+  `ChatFeedbackSurface`: one line with its action on the right and a ✕, floating over the ground
   so the deck never moves and the card's directions are never covered. It lifts away after six
   idle seconds or a sideways swipe; Undo stays in the caught-up recap. A failure floats in the
   same place and stays until it is dismissed.
-- **Writing a direction focuses the page.** The scene recedes under the page's ground, so the
-  composer's glass and the keyboard read plain instead of taking the sea's colour, and the counter
-  and segments step aside while keeping their room. The card stays above the input as its
-  context: its heading only, as tall as it is up to the room under the header, scrolling and
-  fading there like a dense card, with its directions and source set aside so the draft is never
-  left behind. The card already says what the direction answers, so the input carries no quote of
-  it. A tap around the card puts the input away; the card itself stays readable.
+- **Writing a direction focuses the page.** The ground recedes under the page's canvas, so the
+  composer's glass and the keyboard read plain. The card stays above the input as its context:
+  its heading only, as tall as it is up to the room under the header, held still while the member
+  types and fading at its foot, without its shadow, with its directions and source set aside so
+  the draft is never left behind. The card already says what the direction answers, so the input
+  carries no quote of it. A tap around the card puts the input away; the card itself stays
+  readable.
 
 ### Sign-in and account
 

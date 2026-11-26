@@ -3,13 +3,12 @@ import ChatData
 import SwiftUI
 
 /// The card, its directions and the dock stay in reach at the bottom, as a chat's latest turn
-/// and its composer do, all standing on one scene: the cover across the top and its sea below.
+/// and its composer do, all standing on one plain ground with the brand texture across the top.
 ///
-/// The cards lie in a deck. A sideways swipe anywhere on the page carries the front card with
-/// the finger, the next one rises out of the deck behind it, and the cover drifts far more
-/// slowly than either, so the page reads in depth. The front card only travels: it never tilts,
-/// because nothing is thrown away by paging. Under Reduce Motion the cards simply page side by
-/// side and the cover holds still.
+/// The cards lie in a deck, and only the one in front can be read: it stays until it is
+/// handled, by a direction, the member's own direction or Dismiss, and the next one rises out of
+/// the deck into its place. Nothing pages to another card, so the reader settles each one in
+/// turn.
 struct ForYouView: View {
   let workspace: WorkspaceStore
   let showChat: () -> Void
@@ -32,8 +31,6 @@ struct ForYouView: View {
   /// Whether the pager has been put on the card in front since it appeared. Until then it rests
   /// on its first page, the copy of the last card, and what it reports is not the reader's.
   @State private var pagerPlaced = false
-  /// The train's lower edge on screen; a card never rises above it.
-  @State private var horizon: CGFloat = 0
   /// The card on top of the deck while the pager moves: the one it rested on when the move began.
   /// It is thrown off the deck whichever way it goes, and every other card waits under it.
   @State private var topPageID: String?
@@ -66,16 +63,24 @@ struct ForYouView: View {
   /// Each deeper layer of the deck is shaded by this much more, so the stack recedes while every
   /// layer stays a solid card on the scene.
   private static let layerShade: Double = 0.06
-  /// The big card's ground, a step back from white, so the white directions on it show their
-  /// outline and the mark on each corner reads as part of its button's shape. At night it is a
-  /// step darker than the directions, for the same reason.
-  static let ground = OkouColor.background50
+  /// The big card's ground: white by day, as a grouped sheet's rows are on their grouped ground,
+  /// so the card stands clear of the page. At night it is a step darker than the directions.
+  static let ground = Color(
+    uiColor: UIColor { traits in
+      UIColor(traits.userInterfaceStyle == .dark ? OkouColor.background50 : OkouColor.card)
+        .resolvedColor(with: traits)
+    })
+  /// A direction's fill: a step back from the white card by day (`background-50`), and a step
+  /// up from the card at night, so each direction reads as a button on it in both schemes.
+  static let directionFill = Color(
+    uiColor: UIColor { traits in
+      UIColor(traits.userInterfaceStyle == .dark ? OkouColor.card : OkouColor.background50)
+        .resolvedColor(with: traits)
+    })
   /// The card's padding above and below its content (`surface`).
   private static let cardPadding = ForYouCardInset.top + ForYouCardInset.bottom
   /// However low the ground lies, a card may always take this much of the page.
   private static let minimumRoomShare: CGFloat = 0.6
-  /// How far the cover drifts for each card, so it moves well behind the cards.
-  private static let coverDrift: CGFloat = 36
   /// How long a confirmation stays while left alone, as the chat's finished-action feedback.
   private static let confirmationLife: Duration = .seconds(6)
 
@@ -98,10 +103,7 @@ struct ForYouView: View {
 
   private var layout: some View {
     VStack(spacing: 0) {
-      ForYouHeader(
-        count: visit.cards.count, live: livePosition, position: pagePosition,
-        isBusy: visit.busy, canPage: !visit.busy && !isComposing, showsPlace: !isComposing,
-        back: goBack, show: show)
+      ForYouHeader(remaining: visit.cards.map(\.id), isBusy: visit.busy, back: goBack)
       content
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay { if isComposing { aroundCard } }
@@ -112,11 +114,8 @@ struct ForYouView: View {
     // spring instead of jumping it.
     .animation(dockMotion, value: layoutKey)
     .background {
-      ForYouCover(
-        drift: reduceMotion ? 0 : loop.unwrapped(pagePosition) * Self.coverDrift,
-        veiled: isComposing, onHorizon: noteHorizon
-      )
-      .animation(dockMotion, value: isComposing)
+      ForYouCover(veiled: isComposing)
+        .animation(dockMotion, value: isComposing)
     }
     .background(OkouColor.background)
     .composerSuggestionOverlay()
@@ -164,9 +163,6 @@ struct ForYouView: View {
   }
 
   private var loop: ForYouLoop { ForYouLoop(visit.cards) }
-
-  /// The card the pager is closest to while it moves, counting round the deck.
-  private var livePosition: Int { loop.index(nearest: pagePosition) }
 
   // MARK: Cover and deck
 
@@ -269,8 +265,8 @@ struct ForYouView: View {
       }
       .transition(panelTransition)
     } else {
-      standalone {
-        ForYouLoadingCard()
+      standalone(foot: deckFoot(asContext: false)) {
+        ForYouLoadingCard(height: cardRoom(asContext: false))
       }
       .transition(.opacity)
     }
@@ -313,7 +309,8 @@ struct ForYouView: View {
           id: Binding(get: { pageID ?? visit.current?.id }, set: { if pagerPlaced { pageID = $0 } })
         )
         .scrollIndicators(.hidden)
-        .scrollDisabled(isComposing || visit.busy)
+        // The card in front stays until it is handled: a sideways swipe never pages away from it.
+        .scrollDisabled(true)
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
           geometry.containerSize.width > 0
             ? geometry.contentOffset.x / geometry.containerSize.width : 0
@@ -404,6 +401,9 @@ struct ForYouView: View {
     // A card that fits stays put: only one taller than the room (large text, the keyboard up)
     // scrolls, so a vertical drag never pulls the card down off the deck.
     .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+    // The card a direction is written for stays where it is while the member types; tapping
+    // around it puts the input away.
+    .scrollDisabled(visit.direction?.cardID == page.card.id)
     .scrollDismissesKeyboard(.interactively)
     .visualEffect { content, proxy in
       let width = max(proxy.size.width, 1)
@@ -441,16 +441,24 @@ struct ForYouView: View {
   private static let exitDuration: Double = 0.14
 
   /// A standalone panel: the caught-up card, or loading and its failure.
-  private func standalone<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+  /// It measures the same room the pager does, so a skeleton can take a card's exact height.
+  private func standalone<Content: View>(
+    foot: CGFloat = OkouSpace.sm, @ViewBuilder _ content: () -> Content
+  ) -> some View {
     ScrollView {
       surface(placementOf: nil, content)
         .padding(.top, OkouSpace.xxl)
-        .padding(.bottom, OkouSpace.sm)
+        .padding(.bottom, foot)
     }
     .defaultScrollAnchor(.bottom, for: .initialOffset)
     .defaultScrollAnchor(.bottom, for: .alignment)
     .scrollIndicators(.hidden)
     .refreshable { await store.load() }
+    .onGeometryChange(for: CGRect.self) {
+      $0.frame(in: .global)
+    } action: {
+      pagerFrame = $0
+    }
   }
 
   /// The one surface of the page. It reports where it sits, for the cover and the deck: a
@@ -471,6 +479,12 @@ struct ForYouView: View {
             RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
               .strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline)
           }
+          // Lifted off the ground as a floating panel is, so the card reads as one object on it.
+          // Not as the context of a direction: the page is veiled then, and the pager's foot,
+          // just under the card, would cut its shadow into a grey band.
+          .shadow(
+            color: .black.opacity(asContext ? 0 : OkouElevation.floatingOpacity),
+            radius: OkouElevation.floatingRadius, y: OkouElevation.floatingY)
       }
       .onGeometryChange(for: ForYouCardPlacement.self) { proxy in
         ForYouCardPlacement(proxy.frame(in: .global))
@@ -485,10 +499,8 @@ struct ForYouView: View {
       .padding(.horizontal, OkouSpace.lg)
   }
 
-  /// The content height a card may take, down to the deck's place above the dock. Paging, it runs
-  /// from the train's lower edge, so the train stays in view (the rails and the sea may be
-  /// covered), and is never less than most of the page. As the context of a direction being
-  /// written, with the scene veiled, it runs from just under the header.
+  /// The content height a card may take: from just under the header down to the deck's place
+  /// above the dock, or above the input as the context of a direction being written.
   private func cardRoom(asContext: Bool) -> CGFloat? {
     guard pagerFrame.height > 0 else { return nil }
     let bottom = pagerFrame.maxY - deckFoot(asContext: asContext)
@@ -497,7 +509,7 @@ struct ForYouView: View {
       let padding = ForYouCardInset.top + ForYouCardInset.textBottom
       return max(bottom - top - padding, OkouControl.minimumTarget)
     }
-    let room = max(bottom - max(top, horizon), pagerFrame.height * Self.minimumRoomShare)
+    let room = max(bottom - top, pagerFrame.height * Self.minimumRoomShare)
     return room - Self.cardPadding
   }
 
@@ -507,17 +519,13 @@ struct ForYouView: View {
     asContext ? OkouSpace.sm : Self.layerDrop * CGFloat(Self.layerCount) + OkouSpace.sm
   }
 
-  /// Every card fills the room from just under the train down to the deck's place above the
+  /// Every card fills the room from just under the header down to the deck's place above the
   /// dock, on every phone, so the page keeps one composition and the deck one shape as it pages.
   /// A card longer than the room scrolls its heading while its actions stay at the bottom. The
   /// card a direction is written for keeps only its heading, as tall as it is within the room
   /// above the input.
   private func cardHeight(for cardID: String) -> CGFloat? {
     cardRoom(asContext: visit.direction?.cardID == cardID)
-  }
-
-  private func noteHorizon(_ line: CGFloat) {
-    if abs(horizon - line) > OkouSpace.hairline { horizon = line }
   }
 
   @ViewBuilder private func cardView(_ card: ForYouCard, height: CGFloat?) -> some View {
@@ -569,8 +577,9 @@ struct ForYouView: View {
       .disabled(visit.busy)
       // A paused automation has no dock: it sinks away, and comes back with the next suggestion.
       .transition(reduceMotion ? .opacity : .offset(y: OkouSpace.lg).combined(with: .opacity))
-    } else if visit.current != nil {
-      // Its room stays, so the deck keeps one place and the card's top edge never moves.
+    } else if visit.current != nil || (!visit.loaded && visit.error == nil) {
+      // Its room stays, so the deck keeps one place and the card's top edge never moves; while
+      // the first cards load it is kept too, so the skeleton stands where the card will.
       Color.clear
         .frame(height: OkouControl.minimumTarget + OkouSpace.md)
         .padding(.bottom, OkouSpace.sm)
@@ -578,6 +587,9 @@ struct ForYouView: View {
     }
   }
 
+  /// The sidebar footer's pair, so the page's bar reads as the app's: a prompt in the placeholder
+  /// grey on a glass capsule, as New Message is, to write a direction, and a round glass glyph, as
+  /// Search is, to turn the suggestion down.
   private func restingDock(_ card: ForYouCard) -> some View {
     HStack(spacing: OkouSpace.sm) {
       Button {
@@ -586,7 +598,13 @@ struct ForYouView: View {
           run { await store.openDirection(card) }
         }
       } label: {
-        OkouGlassPrompt("What do you have in mind?", on: .scene)
+        Label("What do you have in mind?", okouSymbol: "square-pen")
+          .font(.okou(.body))
+          .foregroundStyle(OkouColor.placeholder)
+          .lineLimit(1)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, OkouSpace.lg)
+          .modifier(OkouGlassControl(shape: .capsule))
       }
       .accessibilityHint("Ask a question or describe what you’d like to do.")
       .accessibilityIdentifier("for-you-direction")
@@ -603,12 +621,10 @@ struct ForYouView: View {
           run { await store.respond(card, reason: nil) }
         }
       } label: {
-        Label("Dismiss", okouSymbol: "x", iconSize: OkouIconSize.inline)
-          .font(.okou(.subheadline)).foregroundStyle(OkouColor.foreground).lineLimit(1)
-          .padding(.horizontal, OkouSpace.lg)
-          .modifier(OkouGlassControl(shape: .capsule, surface: .scene))
+        OkouToolbarIcon("x").modifier(OkouGlassControl(shape: .circle))
       }
       .menuOrder(.fixed)
+      .accessibilityLabel("Dismiss")
       .accessibilityIdentifier("for-you-dismiss")
     }
     .buttonStyle(.plain)
@@ -636,51 +652,24 @@ struct ForYouView: View {
     reduceMotion ? .opacity : .offset(y: -OkouSpace.lg).combined(with: .opacity)
   }
 
-  private func show(_ index: Int) {
-    guard visit.cards.indices.contains(index) else { return }
-    // The card in front stays on top and is thrown off as the pager moves to the one chosen.
-    if !reduceMotion { isPaging = true }
-    withAnimation(reduceMotion ? nil : .smooth) { pageID = visit.cards[index].id }
-  }
-
   private func run(_ operation: @escaping @MainActor () async -> Void) {
     guard !store.busy else { return }
     action = Task { await operation() }
   }
 }
 
-/// A haptic marks what was committed: a new card coming to rest in front, a card handled, a
-/// failure. Nothing plays while the finger moves, and a card leaving the deck or coming back to
-/// it is not paging.
+/// A haptic marks what was committed: a card handled, or a failure.
 private struct ForYouHaptics: ViewModifier {
   let deck: ForYouStore.Deck
 
   func body(content: Content) -> some View {
     content
-      .sensoryFeedback(.selection, trigger: ForYouPageMark(deck), condition: ForYouPageMark.paged)
       .sensoryFeedback(.success, trigger: deck.handled.count, condition: Self.grew)
       .sensoryFeedback(.error, trigger: deck.error, condition: Self.appeared)
   }
 
   private static func grew(_ old: Int, _ new: Int) -> Bool { new > old }
   private static func appeared(_ old: String?, _ new: String?) -> Bool { new != nil }
-}
-
-/// Which card is in front out of how many, so paging can be told apart from a card leaving the
-/// deck or coming back to it.
-private struct ForYouPageMark: Equatable {
-  let id: String?
-  let count: Int
-
-  init(_ deck: ForYouStore.Deck) {
-    id = deck.current?.id
-    count = deck.cards.count
-  }
-
-  static func paged(_ old: Self, _ new: Self) -> Bool {
-    guard old.count == new.count, let previous = old.id else { return false }
-    return previous != new.id
-  }
 }
 
 /// A card's place on screen without its sideways position, which changes on every frame of a

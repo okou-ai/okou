@@ -310,6 +310,9 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     .defaultScrollAnchor(.top, for: .alignment)
     .defaultScrollAnchor(.top, for: .sizeChanges)
     .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+    // As the context of a direction being written the card holds still: its text stays where
+    // it was while the member types, and what runs past its foot fades there.
+    .scrollDisabled(!showsActions)
     .scrollIndicatorsFlash(onAppear: true)
     // A heading that comes to run past its room (a direction opening, the text size changing)
     // flashes the indicator too, so it reads as something to scroll rather than as cut text.
@@ -463,7 +466,7 @@ private struct ForYouOptionButtonStyle: ButtonStyle {
     // corner covers the border instead of letting it run through.
     configuration.label
       .background {
-        shape.fill(OkouColor.card)
+        shape.fill(ForYouView.directionFill)
           .overlay { shape.fill(pressed ? OkouColor.statePressed : .clear) }
           .overlay {
             shape.strokeBorder(

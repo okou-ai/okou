@@ -1,94 +1,62 @@
 import ChatData
 import SwiftUI
 
-/// The page's header on the cover: back, the title, and where the reader is in the deck. Its
-/// text and glass follow the theme, as the cover dims at night.
+/// The page's header on the ground: back, the title over what the page is, and how many cards are
+/// left to handle, counting the one in front, in a quiet chip as tall as the back button. The chip
+/// is a part-white fill with a hairline, without glass or shadow, so it reads as information beside
+/// a control.
 struct ForYouHeader: View {
-  let count: Int
-  /// The card the pager is closest to, and its exact place while it moves (-1 to the count,
-  /// as it wraps round the deck).
-  let live: Int
-  let position: CGFloat
+  /// The cards still to handle, the one in front first.
+  let remaining: [String]
   let isBusy: Bool
-  let canPage: Bool
-  /// Whether the count and the segments show. While a direction is written they step aside,
-  /// keeping their room, so only the card and the input hold the eye.
-  var showsPlace = true
   let back: () -> Void
-  let show: (Int) -> Void
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  /// The header's second line, a step behind the title on the picture.
+  /// The header's second line, a step behind the title.
   private static let secondary: Double = 0.72
-  private static let segmentRest: Double = 0.22
-  private static let segmentLit: Double = 0.78
+  /// The chip's fill: the card's own white (its dark grey at night), part way, with a hairline, so
+  /// it stands on the warm ground as a quiet panel rather than as glass.
+  private static let chipFill: Double = 0.6
 
   var body: some View {
-    VStack(spacing: 0) {
-      HStack(spacing: OkouSpace.ten) {
-        Button(action: back) {
-          OkouToolbarIcon("chevron-left").modifier(OkouGlassControl(shape: .circle))
-        }
-        .buttonStyle(.plain).accessibilityLabel("Back").accessibilityIdentifier("for-you-back")
-        .disabled(isBusy)
-        VStack(alignment: .leading, spacing: OkouSpace.two) {
-          Text("For you").font(.okou(.title2).weight(.semibold))
-          Text("Okou’s picks to handle").font(.okou(.footnote))
-            .foregroundStyle(OkouColor.foreground.opacity(Self.secondary))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        if count > 1 {
-          // The count sits in the same clear glass as the back button beside it, and its digits
-          // roll as the cards page.
-          Text(verbatim: "\(live + 1) / \(count)")
-            .font(.okou(.footnote).weight(.semibold)).monospacedDigit()
-            .contentTransition(.numericText(value: Double(live)))
-            .animation(reduceMotion ? nil : OkouMotion.transition, value: live)
-            .padding(.horizontal, OkouSpace.md)
-            .frame(minHeight: OkouSpace.xxxl)
-            .glassEffect(.regular, in: Capsule())
-            .opacity(showsPlace ? 1 : 0)
-            .accessibilityHidden(!showsPlace)
-        }
+    HStack(spacing: OkouSpace.ten) {
+      Button(action: back) {
+        OkouToolbarIcon("chevron-left").modifier(OkouGlassControl(shape: .circle))
       }
-      if count > 1 {
-        progress.opacity(showsPlace ? 1 : 0).accessibilityHidden(!showsPlace)
+      .buttonStyle(.plain).accessibilityLabel("Back").accessibilityIdentifier("for-you-back")
+      .disabled(isBusy)
+      VStack(alignment: .leading, spacing: OkouSpace.two) {
+        Text("For you").font(.okou(.title2).weight(.semibold))
+        Text("Okou’s picks to handle").font(.okou(.footnote))
+          .foregroundStyle(OkouColor.foreground.opacity(Self.secondary))
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      if !remaining.isEmpty {
+        remainingChip
       }
     }
-    .animation(reduceMotion ? nil : OkouMotion.transition, value: showsPlace)
     .foregroundStyle(OkouColor.foreground)
     .padding(.horizontal, OkouSpace.lg).padding(.top, OkouSpace.sm)
   }
 
-  /// One segment per card, as stories mark their place. The lit segment follows the finger:
-  /// it hands its light to the next one in proportion to the swipe instead of jumping at the
-  /// halfway point.
-  private var progress: some View {
-    let start = max(0, min(live - 2, count - 5))
-    return HStack(spacing: OkouSpace.xs) {
-      ForEach(start..<min(start + 5, count), id: \.self) { index in
-        // Distance round the deck, so the first segment lights as the last card wraps to it.
-        let distance = abs(position - CGFloat(index))
-        let lit = max(0, 1 - min(distance, CGFloat(count) - distance))
-        Button {
-          show(index)
-        } label: {
-          Capsule()
-            .fill(OkouColor.foreground.opacity(Self.segmentRest))
-            .overlay {
-              Capsule().fill(OkouColor.foreground.opacity(Self.segmentLit * Double(lit)))
-            }
-            .frame(height: OkouSpace.three).frame(
-              maxWidth: .infinity, minHeight: OkouControl.minimumTarget
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Show suggestion \(index + 1) of \(count)")
-        .accessibilityAddTraits(index == live ? .isSelected : [])
+  /// "5 left": the number and the word at one size, the number in the heavier weight, and its
+  /// digits rolling as a card is handled or comes back.
+  private var remainingChip: some View {
+    let count = Text(remaining.count, format: .number).fontWeight(.semibold)
+      .foregroundStyle(OkouColor.foreground)
+    return Text("\(count) left")
+      .font(.okou(.subheadline)).monospacedDigit()
+      .foregroundStyle(OkouColor.foreground.opacity(Self.secondary))
+      .contentTransition(.numericText(value: Double(remaining.count)))
+      .animation(reduceMotion ? nil : OkouMotion.transition, value: remaining.count)
+      .padding(.horizontal, OkouSpace.md)
+      .frame(height: OkouControl.minimumTarget)
+      .background {
+        let shape = RoundedRectangle(cornerRadius: OkouRadius.control, style: .continuous)
+        shape.fill(OkouColor.card.opacity(Self.chipFill))
+          .overlay { shape.strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline) }
       }
-    }
-    .disabled(!canPage)
+      .accessibilityElement(children: .combine)
   }
 }
 
@@ -148,27 +116,49 @@ struct ForYouCaughtUp: View {
 /// The first load draws a card's outline in skeleton grey, shimmering as one, where the card
 /// will appear: its source, title, reason and two directions.
 struct ForYouLoadingCard: View {
-  private static let chip: CGFloat = 140
-  private static let titleEnd: CGFloat = 180
-  /// A direction's height: its action line, a Body label and two Subheadline lines.
-  private static let option: CGFloat = 120
+  /// The content height a card takes in the deck, so the skeleton stands exactly where the card
+  /// will; without it the skeleton takes its own.
+  var height: CGFloat?
+
+  /// The skeleton draws the card it stands for: two lines of title, four of reason, and two
+  /// directions at the foot, each a white button with its action line, label and description.
+  private static let titleLine: CGFloat = 18
+  private static let textLine: CGFloat = 12
+  private static let shortEnd: CGFloat = 96
+  private static let actionLine: CGFloat = 88
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.xl) {
-      VStack(alignment: .leading, spacing: OkouSpace.sm) {
-        OkouSkeletonBlock(width: Self.chip, height: OkouControl.inlineActionHeight)
-        OkouSkeletonBlock(height: OkouSpace.xxl)
-        OkouSkeletonBlock(width: Self.titleEnd, height: OkouSpace.xxl)
-        OkouSkeletonBlock(height: OkouSpace.xl).padding(.top, OkouSpace.xs)
-      }
-      VStack(spacing: OkouSpace.sm) {
-        ForEach(0..<2, id: \.self) { _ in
-          OkouSkeletonBlock(height: Self.option, radius: OkouRadius.control)
+      VStack(alignment: .leading, spacing: OkouSpace.md) {
+        OkouSkeletonBlock(height: Self.titleLine)
+        OkouSkeletonBlock(height: Self.titleLine).padding(.trailing, Self.shortEnd)
+        VStack(alignment: .leading, spacing: OkouSpace.ten) {
+          ForEach(0..<3, id: \.self) { _ in OkouSkeletonBlock(height: Self.textLine) }
+          OkouSkeletonBlock(height: Self.textLine).padding(.trailing, Self.shortEnd * 1.5)
         }
+        .padding(.top, OkouSpace.sm)
+      }
+      if height != nil { Spacer(minLength: 0) }
+      VStack(spacing: OkouSpace.sm) {
+        ForEach(0..<2, id: \.self) { _ in direction }
       }
     }
+    .frame(height: height, alignment: .top)
     .okouShimmer()
     .accessibilityRepresentation { ProgressView() }
+  }
+
+  private var direction: some View {
+    let shape = RoundedRectangle(cornerRadius: OkouRadius.control, style: .continuous)
+    return VStack(alignment: .leading, spacing: OkouSpace.ten) {
+      OkouSkeletonBlock(width: Self.actionLine, height: Self.textLine * 0.75)
+      OkouSkeletonBlock(height: Self.textLine).padding(.trailing, Self.shortEnd)
+      OkouSkeletonBlock(height: Self.textLine).padding(.trailing, Self.shortEnd / 2)
+    }
+    .padding(OkouSpace.lg)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(ForYouView.directionFill, in: shape)
+    .overlay { shape.strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline) }
   }
 }
 
@@ -214,7 +204,6 @@ struct ForYouLoop {
   }
 
   let pages: [Page]
-  let count: Int
   /// How many pages come before the first card.
   let lead: Int
 
@@ -222,7 +211,6 @@ struct ForYouLoop {
   private static let after = "#after"
 
   init(_ cards: [ForYouCard]) {
-    count = cards.count
     let own = cards.map { Page(id: $0.id, card: $0) }
     guard cards.count > 1, let first = cards.first, let last = cards.last else {
       pages = own
@@ -242,21 +230,5 @@ struct ForYouLoop {
       return String(pageID.dropLast(suffix.count))
     }
     return pageID
-  }
-
-  /// The card nearest a position, counting round the deck: -1 is the last card, `count` the
-  /// first.
-  func index(nearest position: CGFloat) -> Int {
-    guard count > 0 else { return 0 }
-    return (Int(position.rounded()) % count + count) % count
-  }
-
-  /// A position that runs from the first card to the last and back over the wrap, for what
-  /// moves with the deck as a whole, such as the cover's drift.
-  func unwrapped(_ position: CGFloat) -> CGFloat {
-    let last = CGFloat(max(count - 1, 0))
-    if position > last { return last * (CGFloat(count) - position) }
-    if position < 0 { return last * -position }
-    return position
   }
 }
