@@ -48,8 +48,8 @@ non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-001	
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-005	planned				
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-006	planned				
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-009	planned				
-non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-001	planned				B06
-non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-002	planned				B06
+non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-001	rewritten	8.7		src/lib/__tests__/user-export-zip.test.ts	B06
+non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-002	rewritten	8.3		src/lib/__tests__/user-export-zip.test.ts	B06
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-001	planned				
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-002	planned				
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-004	planned				
