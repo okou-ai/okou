@@ -7,6 +7,7 @@ struct ChatAttachmentChips: View {
   let isDisabled: Bool
   @ScaledMetric(relativeTo: .caption2) private var chipWidth: CGFloat = 240
   @State private var previewURL: URL?
+  @State private var previewImage: AttachmentDraftStore.Item?
 
   var body: some View {
     ScrollView(.horizontal) {
@@ -24,6 +25,15 @@ struct ChatAttachmentChips: View {
     }
     .scrollIndicators(.hidden)
     .quickLookPreview($previewURL)
+    .sheet(item: $previewImage) { item in
+      MessagePreviewSheet(title: item.file.filename, dismiss: { previewImage = nil }, isImage: true)
+      {
+        MessageFileQuickLook(file: item.file)
+      } actions: {
+        ShareLink(item: item.file.url) { OkouToolbarIcon("share") }
+          .accessibilityLabel("Share or save to Files")
+      }
+    }
   }
 
   private func chip<Content: View>(@ViewBuilder _ body: () -> Content) -> some View {
@@ -51,7 +61,12 @@ struct ChatAttachmentChips: View {
     return VStack(alignment: .leading, spacing: OkouSpace.six) {
       HStack(spacing: OkouSpace.sm) {
         Button {
-          if item.file.url.isFileURL { previewURL = item.file.url }
+          guard item.file.url.isFileURL else { return }
+          if item.file.contentType.hasPrefix("image/") {
+            previewImage = item
+          } else {
+            previewURL = item.file.url
+          }
         } label: {
           label(
             Text(verbatim: item.file.filename), detail: detail, thumbnail: item.file.thumbnail,

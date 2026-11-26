@@ -7,10 +7,19 @@ import SwiftUI
 struct MessagePreviewSheet<Content: View, Actions: View>: View {
   let title: String
   let dismiss: () -> Void
+  let isImage: Bool
   @ViewBuilder var content: () -> Content
   @ViewBuilder var actions: () -> Actions
 
   var body: some View {
+    if isImage {
+      ImagePreviewSwipeDismiss(dismiss: dismiss) { navigation }
+    } else {
+      navigation
+    }
+  }
+
+  private var navigation: some View {
     NavigationStack {
       content()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -112,8 +121,15 @@ private struct MessageImagePreview: View {
   }
 }
 
-struct MessageFileQuickLook: UIViewControllerRepresentable {
-  let file: ChatAttachmentFile
+protocol QuickLookPreviewFile {
+  var url: URL { get }
+}
+
+extension ChatAttachmentFile: QuickLookPreviewFile {}
+extension ImportedAttachmentFile: QuickLookPreviewFile {}
+
+struct MessageFileQuickLook<File: QuickLookPreviewFile>: UIViewControllerRepresentable {
+  let file: File
 
   func makeCoordinator() -> Coordinator { Coordinator(file) }
   func makeUIViewController(context: Context) -> QLPreviewController {
@@ -127,8 +143,8 @@ struct MessageFileQuickLook: UIViewControllerRepresentable {
     controller.reloadData()
   }
   final class Coordinator: NSObject, QLPreviewControllerDataSource {
-    var file: ChatAttachmentFile
-    init(_ file: ChatAttachmentFile) { self.file = file }
+    var file: File
+    init(_ file: File) { self.file = file }
     func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
     func previewController(_ controller: QLPreviewController, previewItemAt index: Int)
       -> any QLPreviewItem

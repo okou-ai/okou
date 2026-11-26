@@ -189,7 +189,9 @@ private struct MessageAttachmentPreviewValue: View {
       contentType: preview.attachment.contentType, size: preview.attachment.size)
     let file = download.data ?? nil
     let failure = download.error
-    MessagePreviewSheet(title: artifact.filename, dismiss: dismiss) {
+    MessagePreviewSheet(
+      title: artifact.filename, dismiss: dismiss, isImage: artifact.kind == .image
+    ) {
       MessageFilePreview(
         kind: artifact.kind, symbol: artifact.symbol, file: file,
         thumbnail: preview.thumbnail, error: failure.map(MessageAttachmentStore.message(for:)),
