@@ -52,6 +52,7 @@
     <string name="conversation_skip_failed">自動化をスキップできませんでした</string>
     <string name="conversation_find">メッセージを検索</string>
     <string name="conversation_find_turns">やり取りを表示</string>
+    <string name="conversation_find_loaded_scope">読み込み済みのメッセージのみを検索</string>
     <string name="conversation_find_empty">検索できるメッセージがありません</string>
     <string name="conversation_find_no_match">一致するメッセージがありません</string>
     <string name="conversation_find_you">あなたのメッセージ</string>

@@ -54,6 +54,7 @@
     <string name="conversation_skip_failed">Die Automatisierung konnte nicht übersprungen werden.</string>
     <string name="conversation_find">Nachrichten suchen</string>
     <string name="conversation_find_turns">Unterhaltungsrunden durchsuchen</string>
+    <string name="conversation_find_loaded_scope">Durchsucht nur geladene Nachrichten</string>
     <string name="conversation_find_empty">Keine Nachrichten zum Durchsuchen</string>
     <string name="conversation_find_no_match">Keine passenden Nachrichten</string>
     <string name="conversation_find_you">Deine Nachricht</string>

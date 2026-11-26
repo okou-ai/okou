@@ -52,6 +52,7 @@
     <string name="conversation_skip_failed">자동화를 건너뛰지 못했습니다</string>
     <string name="conversation_find">메시지 찾기</string>
     <string name="conversation_find_turns">대화 차례별로 보기</string>
+    <string name="conversation_find_loaded_scope">로드된 메시지만 검색</string>
     <string name="conversation_find_empty">검색할 메시지가 없습니다</string>
     <string name="conversation_find_no_match">일치하는 메시지가 없습니다</string>
     <string name="conversation_find_you">내 메시지</string>
