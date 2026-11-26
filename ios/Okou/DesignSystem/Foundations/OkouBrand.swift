@@ -6,6 +6,13 @@ enum OkouBrand {
   /// drawn edge to edge, divide its frame by this to show the artwork at the same size.
   static let symbolArtworkRatio: CGFloat = 418.43 / 512
   static let wordmark = "SignInWordmark"
+
+  /// A literal sRGB fill from brand artwork.
+  static func color(_ rgb: UInt32) -> Color {
+    Color(
+      .sRGB, red: Double((rgb >> 16) & 0xFF) / 255, green: Double((rgb >> 8) & 0xFF) / 255,
+      blue: Double(rgb & 0xFF) / 255)
+  }
 }
 
 struct OkouWordmark: View {
