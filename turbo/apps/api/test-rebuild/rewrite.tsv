@@ -3507,30 +3507,30 @@ workflows	src/signals/routes/__tests__/workflow-webhook-lock.test.ts	workflow-we
 workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-001	rewritten	52.7		src/signals/routes/__tests__/workflows-creation.test.ts	B02	
 workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-002	rewritten	52.0		src/signals/routes/__tests__/workflows-creation.test.ts	B02	
 workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-005	rewritten	89.2		src/signals/routes/__tests__/workflows-creation.test.ts	B02	
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-001	planned				B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-001	rewritten	20.8		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-002	planned					a-run
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-004	planned					a-run
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-005	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-006	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-007	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-008	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-010	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-011	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-012	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-018	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-019	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-020	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-026	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-027	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-029	planned				B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-005	rewritten	51.6		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-006	rewritten	47.4		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-007	rewritten	27.1		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-008	rewritten	77.0		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-010	rewritten	36.7		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-011	rewritten	37.0		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-012	rewritten	28.7		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-018	rewritten	68.7		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-019	rewritten	26.8		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-020	rewritten	26.6		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-026	rewritten	42.4		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-027	rewritten	29.9		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-029	rewritten	26.7		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-030	planned					a-run
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-031	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-032	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-034	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-036	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-038	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-040	planned				B12	d-other
-workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-041	planned				B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-031	rewritten	67.8		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-032	skipped		slow-setup: Given+first When/Then 456 ms and 616 ms (Team-tier setupWorkflowOrg 161/173 ms, first Gmail OAuth connect plus second Gmail add 123/137 ms, account list plus workflow and Gmail automation with first watch 71/94 ms, thread selection rewatch 34/142 ms; the copy itself 66/69 ms); the full draft passed, so splitting cannot help because every row repeats the Given		B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-034	skipped		slow-setup: Given+first When/Then over 200 ms; only the first three Given steps measured 273 ms and 285 ms (Team-tier setupWorkflowOrg 159/166 ms, default Notion OAuth connect 64/67 ms, second Notion account add plus account list 50/52 ms), before the Notion page lookup, Automation creation, thread selection and the copy		B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-036	rewritten	90.4		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-038	rewritten	65.5		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-040	rewritten	28.6		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
+workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-041	rewritten	24.6		src/signals/routes/__tests__/workflows.test.ts	B12	d-other
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-050	planned					a-run
 workflows	src/signals/routes/__tests__/workspace-workflow-permissions.test.ts	workspace-workflow-permissions-001	rewritten	127.1	split n=4: 1/4=123.4; 2/4=72.3; 3/4=77.6; 4/4=127.1	src/signals/routes/__tests__/workspace-workflow-permissions.test.ts	B02	
 workflows	src/signals/routes/__tests__/workspace-workflow-permissions.test.ts	workspace-workflow-permissions-002	rewritten	132.5		src/signals/routes/__tests__/workspace-workflow-permissions.test.ts	B02	
