@@ -255,6 +255,32 @@ function welcomeRecipients(): string[] {
     });
 }
 
+type InstalledSlackAdmin = Awaited<
+  ReturnType<typeof installedAdminWithoutChat>
+>;
+
+/** A Slack-origin connect from channel C_ORIGIN thread 42.0. */
+async function startSlackOriginConnect(org: InstalledSlackAdmin) {
+  return await startAccountConnect(org.actor, {
+    workspaceId: org.slackWorkspaceId,
+    slackUserId: org.slackUserId,
+    channelId: "C_ORIGIN",
+    threadTs: "42.0",
+  });
+}
+
+/** Slack completes the consent as another Slack user, U_DIFFERENT. */
+async function completeAsDifferentSlackUser(
+  org: InstalledSlackAdmin,
+  authorization: URL,
+) {
+  return await completeAtSlack(
+    authorization,
+    { teamId: org.slackWorkspaceId, slackUserId: "U_DIFFERENT" },
+    org.actor,
+  );
+}
+
 /** An admin whose org installed Slack and whose chat account is disconnected. */
 async function installedAdminWithoutChat() {
   const org = await createPublicSlackOrgApi(context).installOrg({
@@ -418,6 +444,51 @@ describe("Slack account connection with an installed bot", () => {
     });
     expect(welcome?.channel).toBe(org.slackUserId);
     expect(welcome?.blocks).toBeDefined();
+  });
+
+  it("slack-connector-oauth-016 (1/2) requests OAuth before binding and rejects another Slack identity", async () => {
+    const org = await installedAdminWithoutChat();
+    const before = await listAccounts(org.actor);
+
+    const { pending, authorization } = await startSlackOriginConnect(org);
+    expect(pending.status).toBe(202);
+    await expect(readStatus(org.actor)).resolves.toMatchObject({
+      isConnected: false,
+    });
+    const mismatched = await completeAsDifferentSlackUser(org, authorization);
+
+    expect(mismatched.searchParams.get("error")).toContain("Slack account");
+    await expect(readStatus(org.actor)).resolves.toMatchObject({
+      isConnected: false,
+    });
+    const after = await listAccounts(org.actor);
+    expect(
+      after.map((account) => {
+        return [account.id, account.externalId];
+      }),
+    ).toStrictEqual(
+      before.map((account) => {
+        return [account.id, org.slackUserId];
+      }),
+    );
+  });
+
+  it("slack-connector-oauth-016 (2/2) completes a plain retry as the correct Slack user", async () => {
+    const org = await installedAdminWithoutChat();
+    const { authorization } = await startSlackOriginConnect(org);
+    await completeAsDifferentSlackUser(org, authorization);
+
+    const retry = await startAccountConnect(org.actor, {
+      workspaceId: org.slackWorkspaceId,
+      slackUserId: org.slackUserId,
+    });
+    const completed = await completeAtSlack(
+      retry.authorization,
+      { teamId: org.slackWorkspaceId, slackUserId: org.slackUserId },
+      org.actor,
+    );
+
+    expect(completed.searchParams.get("status")).toBe("connected");
   });
 
   it("slack-connector-oauth-023 confirms a Slack-origin connection in the originating thread", async () => {
