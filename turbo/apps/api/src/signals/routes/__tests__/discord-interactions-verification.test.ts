@@ -94,4 +94,21 @@ describe("POST /api/discord/interactions signature and protocol validation", () 
     });
     expect(response.status).toBe(401);
   });
+
+  it("discord-interactions-verification-017 rejects a correctly signed PING for a different application", async () => {
+    const { privateKey } = configureDiscordInteractionKey();
+    const body = pingBody(uniqueDiscordSnowflake());
+    const timestamp = String(Math.floor(now() / 1000));
+    const signature = sign(
+      null,
+      Buffer.from(`${timestamp}${body}`, "utf8"),
+      privateKey,
+    ).toString("hex");
+
+    const response = await postInteraction(body, {
+      "x-signature-ed25519": signature,
+      "x-signature-timestamp": timestamp,
+    });
+    expect(response.status).toBe(401);
+  });
 });
