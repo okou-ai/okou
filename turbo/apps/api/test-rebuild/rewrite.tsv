@@ -2860,8 +2860,8 @@ billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-
 billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-006	planned				
 billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-009	planned				
 billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-010	planned				
-billing	src/signals/routes/__tests__/subscription-credit-balances.test.ts	subscription-credit-balances-001	planned				B02
-billing	src/signals/routes/__tests__/subscription-credit-balances.test.ts	subscription-credit-balances-003	planned				B02
+billing	src/signals/routes/__tests__/subscription-credit-balances.test.ts	subscription-credit-balances-001	rewritten	103.4		src/signals/routes/__tests__/subscription-credit-balances.test.ts	B02
+billing	src/signals/routes/__tests__/subscription-credit-balances.test.ts	subscription-credit-balances-003	rewritten	192.3		src/signals/routes/__tests__/subscription-credit-balances.test.ts	B02
 billing	src/signals/routes/__tests__/subscription-deletion.test.ts	subscription-deletion-001	planned				
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-001	planned				
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-002	planned				
