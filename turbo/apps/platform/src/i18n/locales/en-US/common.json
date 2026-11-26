@@ -649,18 +649,35 @@
     "library": {
       "allArtifacts": "All artifacts",
       "allTypes": "All types",
+      "categories": {
+        "all": "All",
+        "audio": "Audio",
+        "document": "Documents & PDF",
+        "image": "Images",
+        "other": "Other",
+        "presentation": "Presentations",
+        "spreadsheet": "Spreadsheets",
+        "video": "Videos",
+        "website": "Websites"
+      },
       "clearFilters": "Clear filters",
       "clearSearch": "Clear search",
       "created": "Created",
       "emptyDescription": "Try another name or type.",
       "emptyTitle": "No artifacts found",
+      "gridView": "Grid view",
+      "listView": "List view",
       "loadMore": "Load more",
       "name": "Name",
+      "openSourceChat": "Open source chat: {{title}}",
       "retry": "Try again",
       "search": "Search artifacts",
       "sortAscending": "Sort ascending",
       "sortDescending": "Sort descending",
-      "type": "Type"
+      "today": "Today",
+      "type": "Type",
+      "view": "View",
+      "yesterday": "Yesterday"
     },
     "metadata": {
       "generated": "Generated {{date}}",

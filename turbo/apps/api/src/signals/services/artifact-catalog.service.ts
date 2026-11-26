@@ -28,8 +28,10 @@ import {
   type SQL,
 } from "drizzle-orm";
 import {
+  ARTIFACT_CATALOG_CATEGORIES,
   ARTIFACT_CATALOG_KINDS,
   chatArtifactCatalogChangedEvent,
+  type ArtifactCatalogCategory,
   type ArtifactCatalogDirection,
   type ArtifactCatalogKind,
   type ArtifactDetail,
@@ -241,6 +243,51 @@ function artifactCatalogEffectiveKind() {
 
 function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
   return eq(artifactCatalogEffectiveKind(), kind);
+}
+
+/** One read-time category projection, also used before Library pagination. */
+function artifactCatalogCategory() {
+  const kind = artifactCatalogEffectiveKind();
+  const contentType = sql`lower(trim(split_part(coalesce(${runUploadedFiles.contentType}, ''), ';', 1)))`;
+  const filename = sql`lower(coalesce(${runUploadedFiles.filename}, ${runUploadedFiles.externalId}, ''))`;
+  return sql`case
+    when ${kind} in ('avatar', 'shared-thread') then 'other'
+    when ${kind} = 'presentation' then 'presentation'
+    when ${kind} = 'hosted-site' then 'website'
+    when ${kind} = 'image' then 'image'
+    when ${kind} = 'video' then 'video'
+    when ${contentType} like 'image/%'
+      or ${filename} ~ '[.](avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$'
+      then 'image'
+    when ${contentType} like 'video/%'
+      or ${filename} ~ '[.](avi|m4v|mkv|mov|mp4|mpeg|mpg|ogv|webm)$'
+      then 'video'
+    when ${contentType} like 'audio/%'
+      or ${filename} ~ '[.](aac|aiff?|flac|m4a|mp3|mpga|oga|ogg|opus|wav|wma)$'
+      then 'audio'
+    when ${contentType} like 'application/vnd.ms-powerpoint%'
+      or ${contentType} like 'application/vnd.openxmlformats-officedocument.presentationml.%'
+      or ${contentType} like 'application/vnd.oasis.opendocument.presentation%'
+      or ${filename} ~ '[.](odp|pot|potm|potx|pps|ppsm|ppsx|ppt|pptm|pptx)$'
+      then 'presentation'
+    when ${contentType} in ('text/csv', 'text/tab-separated-values')
+      or ${contentType} like 'application/vnd.ms-excel%'
+      or ${contentType} like 'application/vnd.openxmlformats-officedocument.spreadsheetml.%'
+      or ${contentType} like 'application/vnd.oasis.opendocument.spreadsheet%'
+      or ${filename} ~ '[.](csv|numbers|ods|tsv|xls|xlsb|xlsm|xlsx|xlt|xltm|xltx)$'
+      then 'spreadsheet'
+    when ${contentType} in ('text/html', 'application/xhtml+xml')
+      or ${filename} ~ '[.](html?|xhtml)$'
+      then 'website'
+    when ${contentType} like 'text/%'
+      or ${contentType} in ('application/pdf', 'application/msword', 'application/rtf', 'application/json', 'application/xml', 'application/yaml', 'application/x-yaml')
+      or ${contentType} like 'application/vnd.ms-word%'
+      or ${contentType} like 'application/vnd.openxmlformats-officedocument.wordprocessingml.%'
+      or ${contentType} like 'application/vnd.oasis.opendocument.text%'
+      or ${filename} ~ '[.](doc|docm|docx|dot|dotm|dotx|json|markdown|md|odt|pdf|rtf|txt|xml|ya?ml)$'
+      then 'document'
+    else 'other'
+  end`.mapWith(zodEnumDriverValueDecoder(zEnum(ARTIFACT_CATALOG_CATEGORIES)));
 }
 
 function hostedArtifactKind(
@@ -1249,6 +1296,7 @@ interface ListArtifactCatalogArgs {
   readonly limit?: number;
   readonly cursor?: string;
   readonly kind?: ArtifactCatalogKind;
+  readonly category?: ArtifactCatalogCategory;
   readonly chatThreadId?: string;
   readonly keyword?: string;
   readonly direction?: ArtifactCatalogDirection;
@@ -1349,6 +1397,15 @@ function toArtifactSummary(row: {
     : { ...summary, kind };
 }
 
+type ArtifactCatalogListRow = Parameters<typeof toArtifactSummary>[0] & {
+  readonly cursorCreatedAt: string;
+  readonly category?: ArtifactCatalogCategory;
+  readonly sourceChatThread?: {
+    readonly id: string;
+    readonly title: string | null;
+  } | null;
+};
+
 function artifactCatalogOwnerFilter(userId: string): SQL {
   return inArray(artifacts.authorUserId, [
     userId,
@@ -1369,6 +1426,7 @@ function artifactCatalogQueryHash(
         args.chatThreadId ?? null,
         args.keyword ?? null,
         direction,
+        ...(args.category === undefined ? [] : [args.category]),
       ]),
     )
     .digest("hex");
@@ -1458,7 +1516,9 @@ export const listArtifactCatalog$ = command(
   ): Promise<ListArtifactCatalogResult | null> => {
     const db = get(db$);
     const limit = args.limit ?? ARTIFACT_CATALOG_DEFAULT_LIMIT;
-    const libraryQuery = args.direction !== undefined;
+    const libraryQuery =
+      args.direction !== undefined || args.category !== undefined;
+    const includeLibraryMetadata = args.direction !== undefined;
     const direction = args.direction ?? "desc";
     const queryHash = artifactCatalogQueryHash(args, direction);
     const cursor = args.cursor ? decodeArtifactCursor(args.cursor) : null;
@@ -1473,34 +1533,63 @@ export const listArtifactCatalog$ = command(
       args.keyword,
       libraryQuery,
     );
-    const rows = await db
-      .select({
-        id: artifacts.id,
-        entityId: artifacts.entityId,
-        kind: artifacts.kind,
-        logicalKey: artifacts.logicalKey,
-        displayKind: artifactCatalogEffectiveKind(),
-        aliasUrl: artifacts.aliasUrl,
-        sourceUrl: artifacts.sourceUrl,
-        videoSourceUrl: artifacts.videoSourceUrl,
-        title: artifacts.title,
-        thumbnail: artifacts.thumbnail,
-        createdAt: artifacts.createdAt,
-        updatedAt: artifacts.updatedAt,
-        // Preserve PostgreSQL microseconds in new keyset cursors; Date truncates
-        // them and can skip records sharing a millisecond at a page boundary.
-        cursorCreatedAt:
-          sql`to_char(${artifacts.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
-            pgTextDecoder,
-          ),
-      })
-      .from(artifacts)
+    const selection = {
+      id: artifacts.id,
+      entityId: artifacts.entityId,
+      kind: artifacts.kind,
+      logicalKey: artifacts.logicalKey,
+      displayKind: artifactCatalogEffectiveKind(),
+      aliasUrl: artifacts.aliasUrl,
+      sourceUrl: artifacts.sourceUrl,
+      videoSourceUrl: artifacts.videoSourceUrl,
+      title: artifacts.title,
+      thumbnail: artifacts.thumbnail,
+      createdAt: artifacts.createdAt,
+      updatedAt: artifacts.updatedAt,
+      // Preserve PostgreSQL microseconds in new keyset cursors; Date truncates
+      // them and can skip records sharing a millisecond at a page boundary.
+      cursorCreatedAt:
+        sql`to_char(${artifacts.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
+          pgTextDecoder,
+        ),
+    };
+    const category = artifactCatalogCategory();
+    const catalog = libraryQuery
+      ? db
+          .select({
+            ...selection,
+            category,
+            sourceChatThread: {
+              id: chatThreads.id,
+              title: chatThreads.title,
+            },
+          })
+          .from(artifacts)
+          .leftJoin(
+            runUploadedFiles,
+            and(
+              eq(runUploadedFiles.id, artifacts.projectionFileId),
+              eq(runUploadedFiles.orgId, args.orgId),
+            ),
+          )
+          .leftJoin(
+            chatThreads,
+            and(
+              eq(chatThreads.id, artifacts.chatThreadId),
+              eq(chatThreads.orgId, args.orgId),
+              eq(chatThreads.userId, args.userId),
+              eq(chatThreads.hidden, false),
+            ),
+          )
+      : db.select(selection).from(artifacts);
+    const rows: readonly ArtifactCatalogListRow[] = await catalog
       .where(
         and(
           eq(artifacts.orgId, args.orgId),
           artifactCatalogOwnerFilter(args.userId),
           isNull(artifacts.deletedAt),
           args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
+          args.category ? eq(category, args.category) : undefined,
           args.chatThreadId
             ? eq(artifacts.chatThreadId, args.chatThreadId)
             : undefined,
@@ -1516,7 +1605,24 @@ export const listArtifactCatalog$ = command(
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const lastRow = pageRows.at(-1);
     return {
-      artifacts: pageRows.map(toArtifactSummary),
+      artifacts: pageRows.map((row) => {
+        const summary = toArtifactSummary(row);
+        if (!includeLibraryMetadata || row.category === undefined) {
+          return summary;
+        }
+        return {
+          ...summary,
+          category: row.category,
+          ...(row.sourceChatThread && row.sourceChatThread.title !== null
+            ? {
+                sourceChatThread: {
+                  id: row.sourceChatThread.id,
+                  title: row.sourceChatThread.title,
+                },
+              }
+            : {}),
+        };
+      }),
       nextCursor:
         hasMore && lastRow
           ? encodeArtifactCursor(

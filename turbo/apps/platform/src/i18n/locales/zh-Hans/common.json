@@ -648,18 +648,35 @@
     "library": {
       "allArtifacts": "全部成果",
       "allTypes": "全部类型",
+      "categories": {
+        "all": "全部",
+        "audio": "音频",
+        "document": "文档与 PDF",
+        "image": "图片",
+        "other": "其他",
+        "presentation": "演示文稿",
+        "spreadsheet": "电子表格",
+        "video": "视频",
+        "website": "网站"
+      },
       "clearFilters": "清除筛选",
       "clearSearch": "清除搜索",
       "created": "创建时间",
       "emptyDescription": "尝试其他名称或类型。",
       "emptyTitle": "没有找到成果",
+      "gridView": "网格视图",
+      "listView": "列表视图",
       "loadMore": "加载更多",
       "name": "名称",
+      "openSourceChat": "打开来源对话：{{title}}",
       "retry": "重试",
       "search": "搜索成果",
       "sortAscending": "升序排列",
       "sortDescending": "降序排列",
-      "type": "类型"
+      "today": "今天",
+      "type": "类型",
+      "view": "视图",
+      "yesterday": "昨天"
     },
     "metadata": {
       "generated": "生成于 {{date}}",

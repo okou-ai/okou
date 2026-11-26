@@ -648,18 +648,35 @@
     "library": {
       "allArtifacts": "すべてのアーティファクト",
       "allTypes": "すべての種類",
+      "categories": {
+        "all": "すべて",
+        "audio": "音声",
+        "document": "ドキュメント・PDF",
+        "image": "画像",
+        "other": "その他",
+        "presentation": "プレゼンテーション",
+        "spreadsheet": "スプレッドシート",
+        "video": "動画",
+        "website": "ウェブサイト"
+      },
       "clearFilters": "フィルターをクリア",
       "clearSearch": "検索をクリア",
       "created": "作成日",
       "emptyDescription": "別の名前や種類で検索してください。",
       "emptyTitle": "アーティファクトは見つかりませんでした",
+      "gridView": "グリッド表示",
+      "listView": "リスト表示",
       "loadMore": "さらに読み込む",
       "name": "名前",
+      "openSourceChat": "元のチャットを開く：{{title}}",
       "retry": "再試行",
       "search": "アーティファクトを検索",
       "sortAscending": "昇順で並べ替え",
       "sortDescending": "降順で並べ替え",
-      "type": "種類"
+      "today": "今日",
+      "type": "種類",
+      "view": "表示",
+      "yesterday": "昨日"
     },
     "metadata": {
       "generated": "{{date}} が生成されました",

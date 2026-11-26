@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   artifactCatalogContract,
+  ARTIFACT_CATALOG_CATEGORIES,
+  type ArtifactCatalogCategory,
   type ArtifactCatalogListQuery,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -42,14 +44,17 @@ async function enableLibrary(enabled = true) {
   );
 }
 
-async function upload(filename: string) {
+async function upload(
+  filename: string,
+  contentType = "application/octet-stream",
+) {
   const content = "library content";
   const prepared = await accept(
     client()(uploadsContract).prepare({
       headers,
       body: {
         filename,
-        contentType: "application/octet-stream",
+        contentType,
         size: Buffer.byteLength(content),
         purpose: "artifact",
       },
@@ -116,6 +121,14 @@ describe("artifact library list queries", () => {
       [403],
     );
 
+    await accept(
+      client()(artifactCatalogContract).list({
+        headers,
+        query: { category: "document" },
+      }),
+      [403],
+    );
+
     await enableLibrary();
     const library = await list({ direction: "asc" });
     expect(
@@ -128,6 +141,13 @@ describe("artifact library list queries", () => {
       client()(artifactCatalogContract).list({
         headers,
         query: { direction: "desc" },
+      }),
+      [403],
+    );
+    await accept(
+      client()(artifactCatalogContract).list({
+        headers,
+        query: { category: "document", direction: "desc" },
       }),
       [403],
     );
@@ -176,6 +196,95 @@ describe("artifact library list queries", () => {
     expect(deck.nextCursor).toBeNull();
   });
 
+  it("filters semantic categories before paging without changing file-backed kinds", async () => {
+    const files: readonly (readonly [
+      string,
+      string,
+      ArtifactCatalogCategory,
+    ])[] = [
+      ["Readme.MD", "application/octet-stream", "document"],
+      ["brief.pdf", "application/pdf", "document"],
+      [
+        "contract.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "document",
+      ],
+      ["Deck.PPTX", "application/octet-stream", "presentation"],
+      ["notes.html", "text/html", "website"],
+      [
+        "budget.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "spreadsheet",
+      ],
+      ["metrics.csv", "text/csv", "spreadsheet"],
+      ["export", "text/tab-separated-values", "spreadsheet"],
+      ["portrait.PNG", "application/octet-stream", "image"],
+      ["download", "image/jpeg", "image"],
+      ["clip.mp4", "video/mp4", "video"],
+      ["interview.mp3", "audio/mpeg", "audio"],
+      ["archive.zip", "application/zip", "other"],
+    ];
+    for (const [filename, contentType] of files) {
+      await upload(filename, contentType);
+    }
+    await enableLibrary();
+    for (const direction of ["asc", "desc"] as const) {
+      for (const category of ARTIFACT_CATALOG_CATEGORIES) {
+        const expected = files.filter((file) => {
+          return file[2] === category;
+        });
+        if (direction === "desc") {
+          expected.reverse();
+        }
+        const matches = await collect({ direction, category });
+        expect(
+          matches.map(({ title, category: actualCategory, kind }) => {
+            return { title, category: actualCategory, kind };
+          }),
+        ).toStrictEqual(
+          expected.map(([title]) => {
+            return {
+              title,
+              category,
+              kind: category === "presentation" ? "presentation" : "file",
+            };
+          }),
+        );
+      }
+    }
+    const documents = await list({
+      direction: "asc",
+      category: "document",
+      limit: 1,
+    });
+    expect(documents.nextCursor).toStrictEqual(expect.any(String));
+    await accept(
+      client()(artifactCatalogContract).list({
+        headers,
+        query: {
+          direction: "asc",
+          category: "image",
+          cursor: documents.nextCursor!,
+        },
+      }),
+      [403],
+    );
+    expect(
+      (await list({ direction: "asc", category: "image", kind: "video" }))
+        .artifacts,
+    ).toStrictEqual([]);
+    const image = (await list({ direction: "asc", category: "image" }))
+      .artifacts[0]!;
+    const detail = await accept(
+      client()(artifactCatalogContract).get({
+        headers,
+        params: { artifactId: image.id },
+      }),
+      [200],
+    );
+    expect(detail.body).toMatchObject({ kind: "file" });
+  });
+
   it("binds library cursors to direction, filters and the authorized owner without widening literal search", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
@@ -192,6 +301,7 @@ describe("artifact library list queries", () => {
     for (const changed of [
       { ...query, direction: "desc" as const },
       { ...query, kind: "file" as const },
+      { ...query, category: "document" as const },
       { ...query, keyword: "Alpha" },
       { ...query, chatThreadId: randomUUID() },
     ]) {

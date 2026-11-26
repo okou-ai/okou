@@ -21,7 +21,7 @@ const listArtifactCatalogInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(queryOf(artifactCatalogContract.list));
-    if (query.direction !== undefined) {
+    if (query.direction !== undefined || query.category !== undefined) {
       const featureContext = await set(
         loadUserFeatureSwitchContext$,
         auth.orgId,
@@ -41,6 +41,7 @@ const listArtifactCatalogInner$ = command(
         limit: query.limit,
         cursor: query.cursor,
         kind: query.kind,
+        category: query.category,
         chatThreadId: query.chatThreadId,
         keyword: query.keyword,
         direction: query.direction,

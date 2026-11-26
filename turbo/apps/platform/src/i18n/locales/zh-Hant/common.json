@@ -648,18 +648,35 @@
     "library": {
       "allArtifacts": "全部成果",
       "allTypes": "全部類型",
+      "categories": {
+        "all": "全部",
+        "audio": "音訊",
+        "document": "文件與 PDF",
+        "image": "圖片",
+        "other": "其他",
+        "presentation": "簡報",
+        "spreadsheet": "試算表",
+        "video": "影片",
+        "website": "網站"
+      },
       "clearFilters": "清除篩選",
       "clearSearch": "清除搜尋",
       "created": "建立時間",
       "emptyDescription": "請嘗試其他名稱或類型。",
       "emptyTitle": "沒有找到成果",
+      "gridView": "網格檢視",
+      "listView": "清單檢視",
       "loadMore": "載入更多",
       "name": "名稱",
+      "openSourceChat": "開啟來源對話：{{title}}",
       "retry": "重試",
       "search": "搜尋成果",
       "sortAscending": "升冪排序",
       "sortDescending": "降冪排序",
-      "type": "類型"
+      "today": "今天",
+      "type": "類型",
+      "view": "檢視方式",
+      "yesterday": "昨天"
     },
     "metadata": {
       "generated": "生成於 {{date}}",

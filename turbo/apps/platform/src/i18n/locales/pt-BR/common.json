@@ -665,18 +665,35 @@
     "library": {
       "allArtifacts": "Todos os artefatos",
       "allTypes": "Todos os tipos",
+      "categories": {
+        "all": "Todos",
+        "audio": "Áudio",
+        "document": "Documentos e PDF",
+        "image": "Imagens",
+        "other": "Outros",
+        "presentation": "Apresentações",
+        "spreadsheet": "Planilhas",
+        "video": "Vídeos",
+        "website": "Sites"
+      },
       "clearFilters": "Limpar filtros",
       "clearSearch": "Limpar busca",
       "created": "Criado",
       "emptyDescription": "Tente outro nome ou tipo.",
       "emptyTitle": "Nenhum artefato encontrado",
+      "gridView": "Visualização em grade",
+      "listView": "Visualização em lista",
       "loadMore": "Carregar mais",
       "name": "Nome",
+      "openSourceChat": "Abrir conversa de origem: {{title}}",
       "retry": "Tentar novamente",
       "search": "Buscar artefatos",
       "sortAscending": "Ordenar em ordem crescente",
       "sortDescending": "Ordenar em ordem decrescente",
-      "type": "Tipo"
+      "today": "Hoje",
+      "type": "Tipo",
+      "view": "Visualização",
+      "yesterday": "Ontem"
     },
     "metadata": {
       "generated": "Gerado em {{date}}",
