@@ -51,3 +51,6 @@ computer-use-screenshot-completion-001	Unhandled request error: Object storage i
 discord-ingress-022	Discord ingress processing deferred to recovery	Given: the sender or bot lost the permission to create public threads; Then: no canonical input
 discord-ingress-023	Discord ingress processing deferred to recovery	Given: the sender or bot lost the permission to create public threads; Then: no canonical input
 discord-ingress-031	Discord ingress processing deferred to recovery	Given: the sender or bot lost the permission to create public threads; Then: no canonical input
+feishu-branding-connection-013	Failed to send Feishu connect welcome	Given: Feishu rejects the first connect welcome message
+feishu-branding-connection-026	Failed to send Feishu connect welcome	Given: Feishu rejects the first connect welcome message
+integrations-telegram-007	Failed to send Telegram connect success message	Given: Telegram rejects the welcome DM with HTTP 403 "Bot was blocked"
