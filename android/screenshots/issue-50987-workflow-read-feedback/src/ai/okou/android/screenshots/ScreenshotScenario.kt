@@ -67,8 +67,17 @@ class ScreenshotScenario {
                 text("工作流说明")
                 action("运行记录").click()
                 val historyStatus = text(failureLabel).visibleBounds
-                assertTrue(text("最近自动化运行").visibleBounds.bottom < historyStatus.top)
-                assertTrue(action("在聊天中使用").isEnabled)
+                val use = action("在聊天中使用")
+                val contentTop = text("最近自动化运行").visibleBounds.bottom + 8
+                val contentBottom = use.visibleBounds.top - 33
+                val artworkAndGap = 130 + 16
+                val free = contentBottom - contentTop - 32 - artworkAndGap - historyStatus.height()
+                val expectedStatusTop = contentTop + 16 + free * 2 / 5 + artworkAndGap
+                assertTrue(
+                    "History failure label top ${historyStatus.top}, expected $expectedStatusTop",
+                    abs(historyStatus.top - expectedStatusTop) <= 2,
+                )
+                assertTrue(use.isEnabled)
                 ScreenshotCapture.capture("phone-history-failure-light.png")
             }
             withWindow(412, 892, UserPreferencesTheme.DARK) { fixture, fail ->
