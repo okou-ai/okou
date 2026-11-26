@@ -3075,6 +3075,9 @@
       "mercuryDisclosure": "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
       "mercuryDisclosureLabel": "Mercury banking disclosure",
       "mercuryLabel": "Mercury",
+      "nativeConnectedAs": "Terhubung sebagai {{username}}. Kembali ke Okou…",
+      "nativeConnectedDescription": "Akun Anda telah terhubung. Kembali ke Okou…",
+      "nativeErrorDescription": "{{error}} Kembali ke Okou untuk mencoba lagi.",
       "success": "Terhubung"
     },
     "card": {

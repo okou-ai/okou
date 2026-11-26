@@ -9,6 +9,17 @@ import { MercuryDisclosure } from "./components/settings/mercury-disclosure.tsx"
 
 type ConnectorCallbackPageStatus = "loading" | "success" | "error";
 
+interface ConnectorCallbackPageProps {
+  readonly connectorIcon: PublicConnectorCatalogIcon | undefined;
+  readonly iconContent?: ReactNode;
+  readonly connectorSlug: ConnectorSlug | null;
+  readonly connectorLabel: string;
+  readonly status: ConnectorCallbackPageStatus;
+  readonly username: string | null;
+  readonly errorMessage: string | null;
+  readonly nativeReturnUrl?: string;
+}
+
 function linkWalletIcon(label: string) {
   return <WalletCards size={20} role="img" aria-label={label} />;
 }
@@ -22,16 +33,7 @@ export function ConnectorCallbackPage({
   username,
   errorMessage,
   nativeReturnUrl,
-}: {
-  readonly connectorIcon: PublicConnectorCatalogIcon | undefined;
-  readonly iconContent?: ReactNode;
-  readonly connectorSlug: ConnectorSlug | null;
-  readonly connectorLabel: string;
-  readonly status: ConnectorCallbackPageStatus;
-  readonly username: string | null;
-  readonly errorMessage: string | null;
-  readonly nativeReturnUrl?: string;
-}): React.JSX.Element {
+}: ConnectorCallbackPageProps): React.JSX.Element {
   const { t } = useTranslation();
   const title =
     status === "success"
@@ -54,34 +56,6 @@ export function ConnectorCallbackPage({
             },
             { connector: connectorLabel },
           );
-  const description =
-    status === "success"
-      ? username
-        ? t(
-            ($) => {
-              return $.connectors.callback.connectedAs;
-            },
-            { username },
-          )
-        : t(($) => {
-            return $.connectors.callback.connectedDescription;
-          })
-      : status === "error"
-        ? t(
-            ($) => {
-              return $.connectors.callback.errorDescription;
-            },
-            {
-              error:
-                errorMessage ??
-                t(($) => {
-                  return $.connectors.callback.errorFallback;
-                }),
-            },
-          )
-        : t(($) => {
-            return $.connectors.callback.connectingDescription;
-          });
 
   return (
     <ConnectorFlowCard
@@ -90,7 +64,14 @@ export function ConnectorCallbackPage({
         connectorSlug === "link" ? linkWalletIcon(connectorLabel) : iconContent
       }
       title={title}
-      description={description}
+      description={
+        <ConnectorCallbackDescription
+          status={status}
+          username={username}
+          errorMessage={errorMessage}
+          nativeReturnUrl={nativeReturnUrl}
+        />
+      }
     >
       {status === "loading" ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -133,6 +114,65 @@ export function ConnectorCallbackPage({
       ) : null}
     </ConnectorFlowCard>
   );
+}
+
+function ConnectorCallbackDescription({
+  status,
+  username,
+  errorMessage,
+  nativeReturnUrl,
+}: Pick<
+  ConnectorCallbackPageProps,
+  "status" | "username" | "errorMessage" | "nativeReturnUrl"
+>): string {
+  const { t } = useTranslation();
+  if (status === "loading") {
+    return t(($) => {
+      return $.connectors.callback.connectingDescription;
+    });
+  }
+  if (status === "error") {
+    const error =
+      errorMessage ??
+      t(($) => {
+        return $.connectors.callback.errorFallback;
+      });
+    return nativeReturnUrl
+      ? t(
+          ($) => {
+            return $.connectors.callback.nativeErrorDescription;
+          },
+          { error },
+        )
+      : t(
+          ($) => {
+            return $.connectors.callback.errorDescription;
+          },
+          { error },
+        );
+  }
+  if (username) {
+    return nativeReturnUrl
+      ? t(
+          ($) => {
+            return $.connectors.callback.nativeConnectedAs;
+          },
+          { username },
+        )
+      : t(
+          ($) => {
+            return $.connectors.callback.connectedAs;
+          },
+          { username },
+        );
+  }
+  return nativeReturnUrl
+    ? t(($) => {
+        return $.connectors.callback.nativeConnectedDescription;
+      })
+    : t(($) => {
+        return $.connectors.callback.connectedDescription;
+      });
 }
 
 function ConnectorCallbackAction({
