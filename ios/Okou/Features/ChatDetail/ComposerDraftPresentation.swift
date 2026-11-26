@@ -32,7 +32,9 @@ struct ComposerDraftPresentation: Equatable {
 
   /// The send action inserts its clip before it finishes. Keep that clip in the voice tray.
   var containsOnlyFinishingRecording: Bool {
-    guard case .uploaded(let fileID) = audioUpload, !attachments.hasAttachments else { return false }
+    guard case .uploaded(let fileID) = audioUpload, !attachments.hasAttachments else {
+      return false
+    }
     let parts = draft.document.trimmingWhitespace().parts
     guard parts.count == 1, let part = parts.first, part["type"]?.string == "voice",
       case .array(let clips) = part["clips"], clips.count == 1

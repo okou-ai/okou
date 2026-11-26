@@ -7,7 +7,10 @@ import Foundation
 @MainActor
 final class ComposerVoiceInputStore {
   enum Phase: Equatable { case idle, starting, recording, processing, saved }
-  enum AudioUpload: Equatable { case uploading, uploaded(String) }
+  enum AudioUpload: Equatable {
+    case uploading
+    case uploaded(String)
+  }
 
   /// What the voice controls read.
   struct Content: Equatable {
