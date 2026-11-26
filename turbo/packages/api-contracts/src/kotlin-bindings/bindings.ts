@@ -17,6 +17,7 @@ import {
   chatThreadMuteContract,
   chatThreadArchiveContract,
   chatThreadRenameContract,
+  chatThreadModelSelectionContract,
   chatThreadPinContract,
   chatThreadUnpinContract,
   chatThreadPinOrderContract,
@@ -631,6 +632,12 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadRenameContract.rename,
   },
   {
+    name: "setThreadModel",
+    request: "SetThreadModelRequest",
+    response: "Unit",
+    route: chatThreadModelSelectionContract.update,
+  },
+  {
     name: "createProject",
     request: "CreateProjectRequest",
     response: "ProjectRecord",
@@ -859,6 +866,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "RenameThreadRequest",
     schema: chatThreadRenameContract.rename.body,
+    direction: "input",
+  },
+  {
+    name: "SetThreadModelRequest",
+    schema: chatThreadModelSelectionContract.update.body,
     direction: "input",
   },
   {

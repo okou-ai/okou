@@ -65,4 +65,7 @@
     </plurals>
     <string name="conversation_link_unavailable">यह बातचीत लिंक उपलब्ध नहीं है</string>
     <string name="conversation_link_no_browser">कोई ब्राउज़र यह लिंक नहीं खोल सकता</string>
+    <string name="chat_model_check_required">सेव किए गए मॉडल की पुष्टि नहीं हो सकी। भेजने से पहले फिर जाँचें।</string>
+    <string name="chat_model_save_rejected">इस चैट का मॉडल सेव नहीं हो सका।</string>
+    <string name="chat_model_save_unconfirmed">मॉडल में बदलाव की पुष्टि नहीं हो सकी। मौजूदा सेटिंग दिख रही हैं।</string>
 </resources>

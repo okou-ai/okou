@@ -94,6 +94,7 @@ internal fun ChatComposerField(
     connectorOptions: ChatConnectorOptions? = null,
     manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
     defaultModel: DefaultModelSettings? = null,
+    conversationModel: ConversationModelControls? = null,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
@@ -173,6 +174,17 @@ internal fun ChatComposerField(
             minOf(maximumTextHeight, textSpace).coerceAtLeast(minimumTextHeight)
         ComposerScroll(keepEditorAnchored = { inputFocused && textSpace >= minimumTextHeight }) {
             ComposerFeedback(model, target, state, entry)
+            conversationModel
+                ?.save
+                ?.takeIf { it.blocksSend || entry.text.isNotBlank() }
+                ?.let { save ->
+                    Text(
+                        stringResource(save.message),
+                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        style = connectorFeedbackType(),
+                        color = colors.onSurfaceVariant,
+                    )
+                }
             Row(
                 Modifier.fillMaxWidth()
                     .testTag("chat_input_card")
@@ -201,6 +213,7 @@ internal fun ChatComposerField(
                         editorFocus,
                         manageConnectors,
                         defaultModel,
+                        conversationModel,
                     )
                 // Scroll state saved by Compose belongs to this orientation.
                 key(shortWindow) {
@@ -262,7 +275,7 @@ internal fun ChatComposerField(
                         model.send(target, defaultModel?.state?.value?.options)
                     },
                     modifier = Modifier.size(48.dp).semantics { contentDescription = sendLabel },
-                    enabled = state.canSend(target),
+                    enabled = state.canSend(target) && conversationModel?.save?.blocksSend != true,
                     shape = CircleShape,
                     colors =
                         IconButtonDefaults.filledIconButtonColors(

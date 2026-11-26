@@ -7,6 +7,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -223,6 +224,7 @@ internal fun SettingsSwitchRow(
     modifier: Modifier = Modifier,
     supportingText: String? = null,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     val action =
         if (checked == null) {
             Modifier.semantics(mergeDescendants = true) { disabled() }
@@ -231,7 +233,13 @@ internal fun SettingsSwitchRow(
                     RoundedCornerShape(12.dp),
                     MaterialTheme.colorScheme.onSurface,
                 )
-                .toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
+                .toggleable(
+                    checked,
+                    interactionSource = interactionSource,
+                    indication = null,
+                    enabled = onCheckedChange != null,
+                    role = Role.Switch,
+                ) {
                     onCheckedChange?.invoke(it)
                 }
         }
@@ -257,15 +265,25 @@ internal fun SettingsSwitchRow(
         }
         Box(Modifier.width(52.dp)) {
             if (checked != null) {
-                OkouSwitch(checked, enabled = onCheckedChange != null)
+                OkouSwitch(checked, enabled = onCheckedChange != null, interactionSource)
             }
         }
     }
 }
 
 @Composable
-internal fun OkouSwitch(checked: Boolean, enabled: Boolean) {
-    Switch(checked = checked, enabled = enabled, onCheckedChange = null)
+internal fun OkouSwitch(
+    checked: Boolean,
+    enabled: Boolean,
+    interactionSource: MutableInteractionSource,
+) {
+    // The row owns the action. Material's Switch draws the feedback for that same input.
+    Switch(
+        checked = checked,
+        enabled = enabled,
+        onCheckedChange = null,
+        interactionSource = interactionSource,
+    )
 }
 
 @Composable
