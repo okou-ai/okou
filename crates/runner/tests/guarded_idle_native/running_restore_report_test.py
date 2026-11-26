@@ -8,21 +8,19 @@ import subprocess
 import sys
 import unittest
 
-import fixed_restore_report_test as original
+import guest_preparation_report_fixture as fixture
 import running_restore_report as running
 
 
 class RunningRestoreReportTests(unittest.TestCase):
-    select = original.FixedRestoreReportTests.select
-
     def setUp(self):
-        original.FixedRestoreReportTests.setUp(self)
+        fixture.prepare(self)
         raw = self.collector["metadata"].pop("native_fixed_restore_policy_json")
         self.collector["metadata"]["native_running_restore_policy_json"] = raw
         self.choose("RunningRestore-allow-drop-fresh")
 
     def choose(self, case):
-        original.FixedRestoreReportTests.select(self,case)
+        fixture.select_case(self, case, terminal=False)
         allow = "-allow-" in case
         self.values[3].update(boundary="running",running_helper_observed=True)
         self.values[6].update(canonical_helper_exited_zero=allow,running_helper_observed=True)
@@ -67,10 +65,7 @@ class RunningRestoreReportTests(unittest.TestCase):
             self.values[6]["response"]=copy.deepcopy(self.response)
 
     def write(self):
-        original.FixedRestoreReportTests.write(self)
-        stdout=self.root/"stdout.log"
-        stdout.write_text(stdout.read_text().replace("NATIVE_FIXED_RESTORE_WITNESS ",running.PREFIX))
-        (self.root/"stderr.log").write_text("Error: RunningRestoreUncertain\n")
+        fixture.write_report(self, prefix=running.PREFIX, uncertainty="RunningRestoreUncertain")
         files=self.root/"permission-control";files.mkdir(exist_ok=True)
         record=self.values[6]["running_control"]
         for name,raw in record["frames"].items():(files/(name+".bin")).write_bytes(bytes.fromhex(raw))

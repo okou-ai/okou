@@ -150,62 +150,67 @@ def prepare_snapshot_record(root, artifacts):
     artifacts["snapshot_preparation_sha256"] = hashlib.sha256(raw).hexdigest()
 
 
+def prepare_native_report_fixture(test, *, cases=None):
+    """Build terminal-report inputs in a directory owned by the calling test."""
+    test.temporary = tempfile.TemporaryDirectory()
+    test.addCleanup(test.temporary.cleanup)
+    test.root = pathlib.Path(test.temporary.name)
+    test.artifacts = {
+        "source_sha": "a" * 40, "test_binary_sha256": "b" * 64,
+        "firecracker_sha256": "c" * 64, "kernel_sha256": "d" * 64,
+        "snapshot_id": "native-fixture",
+        "rootfs_sha256": "e" * 64, "snapshot_files": {name: "f" * 64 for name in (
+            "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete")},
+        "policy_sha256": "1" * 64,
+        "profile": json.loads(os.environ["OKOU_TEST_NATIVE_PROFILE"])
+        if "OKOU_TEST_NATIVE_PROFILE" in os.environ else dict(report.NATIVE_PROFILE),
+        "required_fixture_tail_bytes": 64 * 1024 * 1024,
+    }
+    prepare_snapshot_record(test.root, test.artifacts)
+    test.collector = {
+        "format": "runner-memory-calibration-v2", "success": True,
+        "cleanup_confirmed": True, "driver_wait_confirmed": True, "driver_exit_code": 0,
+        "remaining_children": [], "errors": [],
+        "metadata": {"native_terminal_artifacts": test.artifacts},
+    }
+    for field in ("cleanup_intervened", "timed_out", "headroom_stop", "logs_truncated",
+                  "calibrated", "native_vm_exit_confirmed"):
+        test.collector[field] = False
+    test.events, test.samples = [], []
+    clock = 10
+    for case in sorted(report.CASES if cases is None else cases):
+        sandbox, backing = str(uuid.uuid4()), str(uuid.uuid4())
+        evidence = [
+            {"artifacts": test.artifacts}, {}, {"positive_owned_wait": True},
+            {"bytes": 64 * 1024 * 1024, "full_logical_lease": [2, 4096, 1]},
+            {"written_and_verified_bytes": 64 * 1024 * 1024},
+            {"original_home_restored": True, "private_runtime_removed": True,
+             "required_cleanup_joined": True, "full_lease_released_after_cleanup": True,
+             "home_payload_bytes": 65536},
+        ]
+        for phase, proof in zip(report.PHASES, evidence):
+            test.events.append(witness_receipt(
+                case, phase,
+                monotonic_ns=clock,
+                unix_ns=clock + 1000,
+                sandbox_id=sandbox,
+                backing_generation=backing,
+                evidence=proof,
+            ))
+            test.samples.append({
+                "monotonic_ns": clock + 1, "mem_available_bytes": 100000,
+                "sample_age_ns": 2, "read_duration_ns": 1,
+                "processes": [{"pid": 123, "start_ticks": 456, "rss_bytes": 4096, "pss_bytes": 2048,
+                               "residency_state": "measured", "residency_reason": "smaps_rollup",
+                               "observed_monotonic_ns": clock + 1,
+                               "exit_observed_monotonic_ns": None}],
+            })
+            clock += 10
+
+
 class NativeReportTests(unittest.TestCase):
-    def setUp(self, *, cases=None):
-        self.temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temporary.cleanup)
-        self.root = pathlib.Path(self.temporary.name)
-        self.artifacts = {
-            "source_sha": "a" * 40, "test_binary_sha256": "b" * 64,
-            "firecracker_sha256": "c" * 64, "kernel_sha256": "d" * 64,
-            "snapshot_id": "native-fixture",
-            "rootfs_sha256": "e" * 64, "snapshot_files": {name: "f" * 64 for name in (
-                "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete")},
-            "policy_sha256": "1" * 64,
-            "profile": json.loads(os.environ["OKOU_TEST_NATIVE_PROFILE"])
-            if "OKOU_TEST_NATIVE_PROFILE" in os.environ else dict(report.NATIVE_PROFILE),
-            "required_fixture_tail_bytes": 64 * 1024 * 1024,
-        }
-        prepare_snapshot_record(self.root, self.artifacts)
-        self.collector = {
-            "format": "runner-memory-calibration-v2", "success": True,
-            "cleanup_confirmed": True, "driver_wait_confirmed": True, "driver_exit_code": 0,
-            "remaining_children": [], "errors": [],
-            "metadata": {"native_terminal_artifacts": self.artifacts},
-        }
-        for field in ("cleanup_intervened", "timed_out", "headroom_stop", "logs_truncated",
-                      "calibrated", "native_vm_exit_confirmed"):
-            self.collector[field] = False
-        self.events, self.samples = [], []
-        clock = 10
-        for case in sorted(report.CASES if cases is None else cases):
-            sandbox, backing = str(uuid.uuid4()), str(uuid.uuid4())
-            evidence = [
-                {"artifacts": self.artifacts}, {}, {"positive_owned_wait": True},
-                {"bytes": 64 * 1024 * 1024, "full_logical_lease": [2, 4096, 1]},
-                {"written_and_verified_bytes": 64 * 1024 * 1024},
-                {"original_home_restored": True, "private_runtime_removed": True,
-                 "required_cleanup_joined": True, "full_lease_released_after_cleanup": True,
-                 "home_payload_bytes": 65536},
-            ]
-            for phase, proof in zip(report.PHASES, evidence):
-                self.events.append(witness_receipt(
-                    case, phase,
-                    monotonic_ns=clock,
-                    unix_ns=clock + 1000,
-                    sandbox_id=sandbox,
-                    backing_generation=backing,
-                    evidence=proof,
-                ))
-                self.samples.append({
-                    "monotonic_ns": clock + 1, "mem_available_bytes": 100000,
-                    "sample_age_ns": 2, "read_duration_ns": 1,
-                    "processes": [{"pid": 123, "start_ticks": 456, "rss_bytes": 4096, "pss_bytes": 2048,
-                                   "residency_state": "measured", "residency_reason": "smaps_rollup",
-                                   "observed_monotonic_ns": clock + 1,
-                                   "exit_observed_monotonic_ns": None}],
-                })
-                clock += 10
+    def setUp(self):
+        prepare_native_report_fixture(self)
 
     def validate(self):
         write_report_fixture(self.root, self.collector, self.samples, [(report.PREFIX, self.events)])
