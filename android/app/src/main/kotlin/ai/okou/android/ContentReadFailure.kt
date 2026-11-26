@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -33,8 +34,9 @@ import kotlin.math.roundToInt
 internal fun ContentReadFailure(
     @StringRes message: Int,
     modifier: Modifier = Modifier,
+    inPanel: Boolean = false,
 ) {
-    val compact = currentWindowSizeDp().height < 480
+    val compact = inPanel || currentWindowSizeDp().height < 480
     val maxArtWidth = if (compact) 112.dp else 160.dp
     val gap = if (compact) 12.dp else 16.dp
     val color = MaterialTheme.colorScheme.onSurface
@@ -54,7 +56,11 @@ internal fun ContentReadFailure(
             Image(
                 illustration,
                 contentDescription = null,
-                modifier = if (dark) Modifier.illustrationEdge(illustration, color) else Modifier,
+                modifier =
+                    Modifier.testTag("content-read-failure-illustration")
+                        .then(
+                            if (dark) Modifier.illustrationEdge(illustration, color) else Modifier,
+                        ),
             )
         },
     ) { (text, image), constraints ->

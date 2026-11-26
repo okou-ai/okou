@@ -672,6 +672,7 @@ private fun ConnectorPermissionSheet(
                             permissions.failure,
                             R.string.connector_permissions_failed,
                             pendingBody,
+                            inPanel = true,
                         )
                     else ->
                         Box(pendingBody) {

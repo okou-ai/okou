@@ -238,6 +238,36 @@ class ConnectorSheetLayoutTest {
     @Test
     @OptIn(ExperimentalTestApi::class)
     @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun permissionFirstReadFailureUsesThePanelIllustrationSize() {
+        ConnectorApiFixture().use { fixture ->
+            fixture.failPermissionReads = true
+            withConnectors(fixture) {
+                compose.waitUntilAtLeastOneExists(hasText("Google Calendar"), 10_000)
+                compose.onNodeWithText("Google Calendar").performClick()
+                val permissions = "Permissions this service can request"
+                compose.waitUntilAtLeastOneExists(hasText(permissions), 10_000)
+                compose.onNodeWithText(permissions).performClick()
+                val failure = "Temporarily unable to load"
+                compose.waitUntilAtLeastOneExists(hasText(failure), 10_000)
+                val label = compose.onNodeWithText(failure).assertIsDisplayed()
+                val illustration =
+                    compose
+                        .onNodeWithTag("content-read-failure-illustration", useUnmergedTree = true)
+                        .assertWidthIsEqualTo(112.dp)
+                assertEquals(
+                    12.dp,
+                    label.getUnclippedBoundsInRoot().top -
+                        illustration.getUnclippedBoundsInRoot().bottom,
+                )
+                compose.onNodeWithText("Close").assertIsEnabled().performClick()
+                compose.onNodeWithText(permissions).assertIsDisplayed()
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
     fun permissionRefreshFeedbackStaysAboveTheCloseAction() {
         ConnectorApiFixture().use { fixture ->
             withConnectors(fixture) { model ->

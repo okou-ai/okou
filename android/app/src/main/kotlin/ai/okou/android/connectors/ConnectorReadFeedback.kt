@@ -55,11 +55,16 @@ internal fun ConnectorReadFailureContent(
     failure: ConnectorReadFailure,
     @StringRes unavailable: Int,
     modifier: Modifier,
+    inPanel: Boolean = false,
 ) {
     if (failure == ConnectorReadFailure.Unavailable) {
         ConnectorReadError(unavailable, modifier)
     } else {
-        ContentReadFailure(R.string.chat_list_first_load_failed, modifier.fillMaxWidth())
+        ContentReadFailure(
+            R.string.chat_list_first_load_failed,
+            modifier.fillMaxWidth(),
+            inPanel = inPanel,
+        )
     }
 }
 
