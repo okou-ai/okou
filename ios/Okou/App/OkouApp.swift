@@ -596,7 +596,7 @@ private struct WorkspaceForkSheet: View {
   }
 }
 
-private struct RequiredUpdateView: View {
+struct RequiredUpdateView: View {
   @State private var distribution: ClientDistribution?
   @State private var attempt = 0
 

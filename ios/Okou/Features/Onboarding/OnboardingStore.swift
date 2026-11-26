@@ -163,7 +163,7 @@ final class OnboardingStore {
   }
 
   func selectIndustry(_ industry: String) {
-    guard snapshot.canEdit, draft.answers.industry != industry else { return }
+    guard !closed, snapshot.canEdit, draft.answers.industry != industry else { return }
     update {
       $0.draft.answers.industry = industry
       $0.draft.answers.startingPromptDraft = ""
@@ -175,7 +175,7 @@ final class OnboardingStore {
   }
 
   func editPrompt(_ value: String) {
-    guard snapshot.canEdit else { return }
+    guard !closed, snapshot.canEdit else { return }
     var trimmed = ""
     for character in value {
       if trimmed.utf16.count + String(character).utf16.count > 1000 { break }
@@ -189,7 +189,7 @@ final class OnboardingStore {
   }
 
   func acceptRecommendation(_ recommendation: OnboardingRecommendation?) {
-    guard snapshot.task == nil, draft.answers.startingPromptKey != "native-edited",
+    guard !closed, snapshot.task == nil, draft.answers.startingPromptKey != "native-edited",
       let recommendation, recommendation.jobId == draft.answers.recommendationJobId,
       let value = recommendation.recommendation
     else { return }
@@ -251,6 +251,7 @@ final class OnboardingStore {
   func report(_ error: Error) { didFail(error) }
 
   func retry(_ resource: OnboardingResources.Resource) {
+    guard !closed else { return }
     do { try resources.retry(resource) } catch {
       update { $0.error = ChatRequestFailure.message(for: error) }
     }

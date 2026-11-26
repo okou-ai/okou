@@ -83,7 +83,6 @@ struct OnboardingReadyContent: View {
       .lineLimit(4...8)
       .focused($isFocused)
       .disabled(!state.canEdit)
-      .disabled(!state.canEdit)
       .accessibilityIdentifier("onboarding-first-task")
       if state.task != nil {
         Text("Retry to confirm this task's result before starting another.")
