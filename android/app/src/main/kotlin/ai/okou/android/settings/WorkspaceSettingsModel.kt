@@ -1,6 +1,7 @@
 package ai.okou.android.settings
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.boundedApiRetryDelayMillis
 import ai.okou.android.api.generated.RecoveryBillingCreditBreakdownItem
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItem
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItemType
@@ -60,13 +61,6 @@ internal fun SettingsRead<*>.isStale(nowMillis: Long): Boolean {
     val confirmedAt = readAt ?: return false
     return confirmedAt > nowMillis || contentReadStaleDelayMillis(confirmedAt, nowMillis) == 0L
 }
-
-internal const val settingsReadAttempts = 3
-internal const val settingsReadRetryDelayMillis = 3_000L
-
-internal fun Exception.retryableSettingsRead(): Boolean =
-    this is ApiFailure.Network ||
-        this is ApiFailure.Http && (status in 500..599 || status == 408 || status == 429)
 
 private val accountsSerializer = ListSerializer(RecoverySubscriptionsSubscriptionsItem.serializer())
 
@@ -463,8 +457,8 @@ internal constructor(
             if (before.initialFailure) publish(SettingsRead())
             showProgress(resource, before.isStale(nowMillis()))
             var checkAccess = beforeFetch
-            for (attempt in 1..settingsReadAttempts) {
-                if (!canRead()) return
+            var retries = 0
+            while (canRead()) {
                 try {
                     if (checkAccess?.invoke() == false) return
                     // A billing retry can reuse the role confirmed for this visible refresh.
@@ -488,8 +482,10 @@ internal constructor(
                     currentCoroutineContext().ensureActive()
                     reportSessionFailure(error)
                     if (!authorized()) return
-                    if (error.retryableSettingsRead() && attempt < settingsReadAttempts) {
-                        delay(settingsReadRetryDelayMillis)
+                    val wait = error.boundedApiRetryDelayMillis(retries++)
+                    if (wait != null) {
+                        delay(wait)
+                        currentCoroutineContext().ensureActive()
                         continue
                     }
                     val current = state()

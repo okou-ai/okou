@@ -1,6 +1,7 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.boundedRetryDelayMillis
 import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequestColorTheme
@@ -449,7 +450,7 @@ class MemberPreferencesModel(
             }
         if (!saving) {
             if (pending) return true
-            val wait = if (recoverable) finiteReadRetryDelays.getOrNull(readFailures++) else null
+            val wait = if (recoverable) boundedRetryDelayMillis(readFailures++, error) else null
             val retry = wait != null
             mutable.value =
                 state.copy(
@@ -475,7 +476,7 @@ class MemberPreferencesModel(
             return settled.status == PreferenceStatus.Ready
         }
         if (sent != null) failedWrite = sent
-        val wait = if (recoverable) finiteReadRetryDelays.getOrNull(saveFailures) else null
+        val wait = if (recoverable) boundedRetryDelayMillis(saveFailures, error) else null
         saveFailures = if (wait != null) saveFailures + 1 else finiteReadRetryDelays.size + 1
         if (wait != null) {
             mutable.value = state.copy(status = PreferenceStatus.SaveFailed, recovering = true)
@@ -525,11 +526,17 @@ class MemberPreferencesModel(
     }
 
     private fun scheduleRecovery(wait: Long) {
-        recovery = viewModelScope.launch {
-            delay(wait)
-            recovery = null
-            synchronize()
-        }
+        val failedRequest = checkNotNull(request)
+        val job =
+            viewModelScope.launch(start = CoroutineStart.LAZY) {
+                delay(wait)
+                // A zero-second delay can finish before the failed request releases its slot.
+                failedRequest.join()
+                recovery = null
+                synchronize()
+            }
+        recovery = job
+        job.start()
     }
 
     override fun onCleared() {

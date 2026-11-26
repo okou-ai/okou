@@ -530,6 +530,7 @@ class DefaultModelSettingsTest {
 
                     override suspend fun defaultModelPreference(): DefaultModelPreference {
                         reads += currentTime
+                        if (reads.size == 2) throw ApiFailure.Http(429, null, null, 1L)
                         return preference
                     }
 
@@ -554,9 +555,12 @@ class DefaultModelSettingsTest {
             assertTrue(model.state.value.pending != null)
             assertNull(model.state.value.selected)
 
-            advanceTimeBy(3_000)
+            advanceTimeBy(999)
             runCurrent()
-            assertEquals(listOf(0L, 3_000L, 6_000L), reads)
+            assertEquals(listOf(0L, 3_000L), reads)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 4_000L), reads)
             assertEquals(listOf(DefaultModelNotice.SaveUnconfirmed), notices)
             assertEquals("gpt-test", store.load(api.identity).confirmed.selectedModel)
 
@@ -564,12 +568,12 @@ class DefaultModelSettingsTest {
             model.foreground(false)
             model.foreground(true)
             runCurrent()
-            assertEquals(7_000L, reads.last())
+            assertEquals(5_000L, reads.last())
             assertTrue(model.state.value.pending != null)
             assertEquals(listOf(DefaultModelNotice.SaveUnconfirmed), notices)
 
             model.showSettings(null)
-            advanceTimeBy(593_000)
+            advanceTimeBy(595_000)
             runCurrent()
             assertEquals(600_000L, reads.last())
             assertTrue(model.state.value.pending != null)

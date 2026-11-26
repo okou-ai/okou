@@ -1,6 +1,8 @@
 package ai.okou.android.settings
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.boundedApiRetryDelayMillis
+import ai.okou.android.api.boundedRetryDelayMillis
 import ai.okou.android.api.generated.EmailSubscription
 import ai.okou.android.api.generated.EmailSubscriptionDeliveryStatus
 import ai.okou.android.auth.WorkspaceIdentity
@@ -177,15 +179,14 @@ internal class EmailSubscriptionSettings(
     }
 
     private suspend fun fetch(): EmailSubscription {
-        var retries = settingsReadAttempts - 1
+        var retries = 0
         while (true) {
             requireOwner()
             try {
                 return service.emailSubscription().also { requireOwner() }
             } catch (error: Exception) {
-                if (!error.retryableSettingsRead() || retries == 0) throw error
-                retries--
-                delay(settingsReadRetryDelayMillis)
+                val wait = error.boundedApiRetryDelayMillis(retries++) ?: throw error
+                delay(wait)
             }
         }
     }
@@ -198,7 +199,8 @@ internal class EmailSubscriptionSettings(
             mutable.value = current.copy(desired = null)
             return
         }
-        repeat(settingsReadAttempts) { attempt ->
+        var retries = 0
+        while (true) {
             requireOwner()
             try {
                 val result = service.updateEmailSubscription(attempted)
@@ -227,9 +229,12 @@ internal class EmailSubscriptionSettings(
                     refresh(attempted)
                     return
                 }
-                if ((undelivered || throttled) && attempt < settingsReadAttempts - 1) {
-                    delay(settingsReadRetryDelayMillis)
-                    return@repeat
+                val wait =
+                    if (undelivered || throttled) boundedRetryDelayMillis(retries++, error)
+                    else null
+                if (wait != null) {
+                    delay(wait)
+                    continue
                 }
                 reject(mutable.value)
                 return

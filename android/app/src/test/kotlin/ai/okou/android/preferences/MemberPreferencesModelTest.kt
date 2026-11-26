@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.resetMain
@@ -150,21 +151,25 @@ class MemberPreferencesModelTest {
     @Test
     fun preferenceRefreshKeepsConfirmedDataThroughTwoRetries() {
         check { model, service, _ ->
+            Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
             val confirmed = model.uiState.value.confirmed
             val attempts = mutableListOf<Long>()
             service.load = {
                 attempts += currentTime
-                throw ApiFailure.Http(503, null, null, null)
+                val retryAfter = if (attempts.size == 1) 0L else null
+                throw ApiFailure.Http(503, null, null, retryAfter)
             }
             val started = currentTime
             model.refresh()
-            advanceTimeBy(6_000)
-            assertEquals(listOf(started, started + 3_000), attempts)
+            runCurrent()
+            assertEquals(listOf(started, started), attempts)
+            advanceTimeBy(3_000)
+            assertEquals(listOf(started, started), attempts)
             assertEquals(PreferenceStatus.Refreshing, model.uiState.value.status)
             assertEquals(confirmed, model.uiState.value.confirmed)
 
             runCurrent()
-            assertEquals(listOf(started, started + 3_000, started + 6_000), attempts)
+            assertEquals(listOf(started, started, started + 3_000), attempts)
             assertEquals(PreferenceStatus.RefreshFailed, model.uiState.value.status)
             assertEquals(confirmed, model.uiState.value.confirmed)
             advanceTimeBy(60_000)
