@@ -495,4 +495,30 @@ describe("private Projects", () => {
     );
     expect(recreated.status).toBe(404);
   });
+
+  it("projects-011 rejects a missing source thread without creating a Project or publishing events", async () => {
+    const member = await onboardedMember();
+    const projectId = operationId();
+
+    const created = await accept(
+      as(member).create({
+        headers,
+        body: {
+          id: projectId,
+          eventId: projectId,
+          name: "Orphan",
+          fromThreadId: operationId(),
+        },
+      }),
+      [404],
+    );
+
+    expect(created.status).toBe(404);
+    await expect(listNames(member)).resolves.toStrictEqual([]);
+    const events = await accept(
+      as(member).events({ headers, query: { sinceSeqId: 0 } }),
+      [200],
+    );
+    expect(events.body.events).toStrictEqual([]);
+  });
 });

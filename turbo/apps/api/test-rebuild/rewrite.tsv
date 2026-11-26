@@ -2455,14 +2455,14 @@ chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-r
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-008	planned					a-run
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-009	planned					a-run
 chat	src/signals/routes/__tests__/project-run-context.test.ts	project-run-context-001	planned					a-run
-chat	src/signals/routes/__tests__/projects.test.ts	projects-001	rewritten	65.5	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
-chat	src/signals/routes/__tests__/projects.test.ts	projects-002	rewritten	86.9	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-001	rewritten	70.1	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-002	rewritten	84.1	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
 chat	src/signals/routes/__tests__/projects.test.ts	projects-006	skipped		slow-setup: Given+first When/Then 364 ms and 365 ms (the dispatched member Run from createRunExecutionCredentials with plan limited-free dominates; it is the only Run row in the file, and the two Project requests themselves stay under 20 ms)		B09	a-run
-chat	src/signals/routes/__tests__/projects.test.ts	projects-007	rewritten	62.3	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
-chat	src/signals/routes/__tests__/projects.test.ts	projects-008	rewritten	26.4	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
-chat	src/signals/routes/__tests__/projects.test.ts	projects-009	rewritten	79.7	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
-chat	src/signals/routes/__tests__/projects.test.ts	projects-010	rewritten	70.2	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
-chat	src/signals/routes/__tests__/projects.test.ts	projects-011	planned				B11	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-007	rewritten	60.0	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-008	rewritten	28.1	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-009	rewritten	87.5	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-010	rewritten	69.1	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-011	rewritten	21.2		src/signals/routes/__tests__/projects.test.ts	B11	d-other
 account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-001	rewritten	12.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/provider-console-paths.test.ts	B06	
 account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-003	rewritten	9.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/provider-console-paths.test.ts	B06	
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-002	rewritten	41.7	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot	
