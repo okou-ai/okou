@@ -59,7 +59,6 @@ fn execution_context_deserializes_pi_sandbox_resources() {
             }]
         },
         "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
         "connectorRuntimeTargets": []
     });
 
@@ -103,7 +102,6 @@ fn execution_context_preserves_optional_first_run_context() {
             "firewallToken": "host-firewall",
             "cliAgentType": "claude-code",
             "platformEnvironment": {},
-            "contentBundles": {"format": "tar-gzip-v1", "skills": []},
             "connectorRuntimeTargets": []
         });
         if let Some(label) = label {
@@ -123,7 +121,6 @@ fn execution_context_rejects_legacy_expanded_firewall_entry() {
         "firewallToken": "host-firewall",
         "cliAgentType": "claude-code",
         "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
         "connectorRuntimeTargets": [],
         "firewalls": [{
             "name": "github",
@@ -151,7 +148,6 @@ fn execution_context_rejects_unknown_firewall_kind() {
         "firewallToken": "host-firewall",
         "cliAgentType": "claude-code",
         "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
         "connectorRuntimeTargets": [],
         "firewalls": [{
             "kind": "unknown",
@@ -528,7 +524,6 @@ fn cli_agent_session_id_returns_none_without_supplied_id() {
         "cliAgentType": "claude_code",
         "billableFirewalls": [],
         "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
         "connectorRuntimeTargets": []
     });
     let ctx: ExecutionContext = serde_json::from_value(json).unwrap();
@@ -546,7 +541,6 @@ fn execution_context_requires_custom_connector_routing_values() {
             "cliAgentType": "claude_code",
             "billableFirewalls": [],
             "platformEnvironment": {},
-            "contentBundles": {"format": "tar-gzip-v1", "skills": []},
             "connectorRuntimeTargets": [target]
         })
     };
@@ -595,7 +589,7 @@ fn execution_context_requires_custom_connector_routing_values() {
 fn cli_agent_session_identity_uses_native_intent_and_local_submission() {
     let mut context: ExecutionContext = serde_json::from_value(json!({
             "runId": "550e8400-e29b-41d4-a716-446655440000", "prompt": "hello", "sandboxToken": "tok", "firewallToken": "host-firewall", "cliAgentType": "claude-code", "platformEnvironment": {},
-            "contentBundles": {"format": "tar-gzip-v1", "skills": []}, "connectorRuntimeTargets": [],
+            "connectorRuntimeTargets": [],
             "nativeContinuation": { "sessionId": "native-session", "generationRunId": "550e8400-e29b-41d4-a716-446655440001", "recoveryPrompt": null }
         })).unwrap();
     assert_eq!(context.cli_agent_session_id(), Some("native-session"));
