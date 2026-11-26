@@ -63,4 +63,5 @@ export enum FeatureSwitchKey {
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",
   ChatShareRefresh = "chatShareRefresh",
   WorkflowListRedesign = "workflowListRedesign",
+  ForYouSimplifiedDeck = "forYouSimplifiedDeck",
 }

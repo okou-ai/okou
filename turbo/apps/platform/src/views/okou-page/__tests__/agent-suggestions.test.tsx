@@ -113,10 +113,11 @@ function feed(items: Suggestion[]) {
   });
 }
 
-function openDeck(path = "/for-you") {
+function openDeck(path = "/for-you", simplified = true) {
   return setupPage({
     context,
     path,
+    featureSwitches: { [FeatureSwitchKey.ForYouSimplifiedDeck]: simplified },
   });
 }
 
@@ -1621,4 +1622,51 @@ test("Arrow keys page the deck without arrow controls, except while a direction 
     "aria-valuenow",
     "3",
   );
+});
+
+test("Without the simplified deck, the arrows and progress steps page the deck", async () => {
+  const one = proposal("Supply forecast");
+  const two = proposal("Packing list", 1);
+  const three = proposal("Freight quote", 0);
+  feed([one, two, three]);
+  await openDeck("/for-you", false);
+  await activeCard(one);
+  const user = userEvent.setup({ delay: null });
+
+  await user.keyboard("{ArrowRight}");
+  await activeCard(two);
+  await user.keyboard("{ArrowLeft}");
+  await activeCard(one);
+  // Paging wraps round at either end, as the arrows do.
+  await user.keyboard("{ArrowLeft}");
+  await activeCard(three);
+  await expect(
+    findFastControl("link", "Previous suggestion"),
+  ).resolves.toHaveAttribute("aria-keyshortcuts", "ArrowLeft");
+  click(await findFastControl("link", "Next suggestion"));
+  await activeCard(one);
+  click(await findFastControl("link", "Show suggestion 3 of 3"));
+  const card = await activeCard(three);
+
+  click(await findFastControl("button", "What do you have in mind?", card));
+  const region = await screen.findByRole("region", {
+    name: "What do you have in mind?",
+  });
+  const edit = await within(region).findByRole("textbox", { name: /message/i });
+  await appendDirection(edit, "Expedite shipping");
+  await user.keyboard("{ArrowLeft}");
+  // Focus on another control keeps the direction open, so the keys still wait.
+  const dismiss = await findFastControl("button", "Dismiss", card);
+  act(() => {
+    dismiss.focus();
+  });
+  expect(dismiss).toHaveFocus();
+  await user.keyboard("{ArrowRight}");
+  await appendDirection(edit, " today");
+
+  expect(edit).toHaveTextContent("Expedite shipping today");
+  await expect(activeCard(three)).resolves.toBeInTheDocument();
+  await expect(
+    findFastControl("link", "Show suggestion 3 of 3"),
+  ).resolves.toHaveAttribute("aria-current", "step");
 });
