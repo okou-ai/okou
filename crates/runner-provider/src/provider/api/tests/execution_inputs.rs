@@ -151,6 +151,17 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
 }
 
 #[test]
+fn publication_stages_antigravity_instructions_for_its_global_rules() {
+    let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
+    body["cliAgentType"] = serde_json::json!("antigravity");
+    let context = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
+    assert_eq!(
+        context.instruction_file.unwrap().storage_mount,
+        "/home/user/.vm0/agent-instructions/antigravity"
+    );
+}
+
+#[test]
 fn publication_normalizes_framework_paths_and_ignores_forged_application_metadata() {
     let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     body["instructionFile"] = serde_json::json!({"storageMount":"/home/user/.ssh"});
