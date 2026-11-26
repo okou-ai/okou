@@ -18,6 +18,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
+  mockSlackConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { createRouteMocks } from "./helpers/route-test";
@@ -251,4 +252,132 @@ describe("member connector permissions", () => {
       (await readThreadAccess(member, thread.id, target)).available,
     ).toBeFalsy();
   });
+
+  it("connector-permissions-002 (1/2) shares the saved Slack rules across Chats while one Chat disables the account", async () => {
+    const { owner, secondChat, saved, overridden } =
+      await slackRulesWithFirstChatDisabled();
+
+    expect(byPermission(saved.grants)).toStrictEqual(INITIAL_SLACK_GRANTS);
+    expect(overridden.available).toBeFalsy();
+    const secondAccess = await readThreadAccess(
+      owner,
+      secondChat.id,
+      slackTarget,
+    );
+    expect(secondAccess.available).toBeTruthy();
+    expect(byPermission(await readGrants(owner, slackTarget))).toStrictEqual(
+      INITIAL_SLACK_GRANTS,
+    );
+  });
+
+  it("connector-permissions-002 (2/2) keeps the read deadline on patch, drops it after expiry and clears every grant", async () => {
+    const { owner } = await slackRulesWithFirstChatDisabled();
+
+    const patched = await patchLaterChatWrite(owner);
+    expect(byPermission(patched.grants)).toStrictEqual(
+      byPermission([
+        { permission: FALLBACK, action: "deny", expiresAt: null },
+        LATER_CHAT_WRITE,
+        READ_ALLOW,
+      ]),
+    );
+
+    mockNow(SLACK_RULES_START + HOUR + 1);
+    expect(byPermission(await readGrants(owner, slackTarget))).toStrictEqual(
+      byPermission([
+        { permission: FALLBACK, action: "deny", expiresAt: null },
+        LATER_CHAT_WRITE,
+      ]),
+    );
+
+    const cleared = await access.applyPermissions(owner, {
+      target: slackTarget,
+      mode: "replace",
+      grants: [],
+    });
+    expect(cleared.grants).toStrictEqual([]);
+    await expect(readGrants(owner, slackTarget)).resolves.toStrictEqual([]);
+  });
 });
+
+const slackTarget: ConnectorAccountTarget = {
+  kind: "builtin",
+  connectorSlug: "slack",
+};
+const HOUR = 60 * 60 * 1000;
+const SLACK_RULES_START = Date.parse("2026-06-01T08:00:00.000Z");
+const PATCHED_AT = SLACK_RULES_START + 10 * 60 * 1000;
+const READ_ALLOW = {
+  permission: "conversations:read",
+  action: "allow",
+  expiresAt: new Date(SLACK_RULES_START + HOUR).toISOString(),
+};
+const LATER_CHAT_WRITE = {
+  permission: "chat:write",
+  action: "allow",
+  expiresAt: new Date(PATCHED_AT + HOUR).toISOString(),
+};
+const INITIAL_SLACK_GRANTS = byPermission([
+  { permission: FALLBACK, action: "deny", expiresAt: null },
+  { permission: "chat:write", action: "deny", expiresAt: null },
+  READ_ALLOW,
+]);
+
+function byPermission<T extends { readonly permission: string }>(
+  grants: readonly T[],
+): T[] {
+  return [...grants].sort((left, right) => {
+    return left.permission.localeCompare(right.permission);
+  });
+}
+
+async function connectSlack(actor: ApiTestUser) {
+  mockSlackConnectorOAuth();
+  const started = await connectors.startOauth(actor, "slack", "oauth");
+  const state = new URL(started.authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected Slack authorization state");
+  }
+  const completed = await connectors.completeOauthCallbackResult("slack", {
+    state,
+    code: `code-${randomUUID()}`,
+  });
+  expect(completed.body.status).toBe("success");
+  return await connectors.readDefaultBuiltinAccount(actor, "slack");
+}
+
+/** A member with two Chats and a Slack account saves rules, then disables it in the first Chat. */
+async function slackRulesWithFirstChatDisabled() {
+  mockNow(SLACK_RULES_START);
+  const owner = bdd.user();
+  const [account, firstChat, secondChat] = await Promise.all([
+    connectSlack(owner),
+    chats.createThread(owner, { model: null }),
+    chats.createThread(owner, { model: null }),
+  ]);
+  const saved = await access.applyPermissions(owner, {
+    target: slackTarget,
+    mode: "replace",
+    grants: [
+      { permission: "conversations:read", action: "allow", expiresIn: "1h" },
+      { permission: "chat:write", action: "deny" },
+      { permission: FALLBACK, action: "deny" },
+    ],
+  });
+  const overridden = await access.setThreadOverride(
+    owner,
+    firstChat.id,
+    { target: slackTarget, connectionId: account.id },
+    false,
+  );
+  return { owner, secondChat, saved, overridden };
+}
+
+async function patchLaterChatWrite(owner: ApiTestUser) {
+  mockNow(PATCHED_AT);
+  return await access.applyPermissions(owner, {
+    target: slackTarget,
+    mode: "patch",
+    grants: [{ permission: "chat:write", action: "allow", expiresIn: "1h" }],
+  });
+}
