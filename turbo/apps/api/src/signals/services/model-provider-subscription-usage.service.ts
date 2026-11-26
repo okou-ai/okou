@@ -12,11 +12,14 @@ import {
   prepareCodexResetCreditExpiryRead,
 } from "./codex-reset-credit-expiry.service";
 import { logger } from "../../lib/log";
+import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { tapError } from "../utils";
 import { resolveCurrentPersonalSubscriptionBundleForApi$ } from "./agent-webhook-firewall-auth.service";
+import { refreshAntigravityAccessToken$ } from "./antigravity-run-credential.service";
+import { fetchAntigravitySubscriptionMetadata } from "./antigravity-usage.service";
 import { fetchClaudeCodeSubscriptionMetadata } from "./claude-code-usage.service";
 import {
   consumeCodexRateLimitResetCredit,
@@ -195,9 +198,40 @@ const refreshCodexProvider$ = command(
   },
 );
 
+/** An exact-account refresh only reads usage for the account it named. */
+const accountMatchesExpectedIdentity$ = command(
+  async (
+    { get },
+    args: RefreshProviderArgs,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    if (!args.expectedAccountIdentity) {
+      return true;
+    }
+    const [account] = await get(db$)
+      .select()
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.id, args.provider.id),
+          personalSubscriptionAccountAccessCondition(),
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return (
+      !!account &&
+      personalSubscriptionAccountIdentity(account) ===
+        args.expectedAccountIdentity
+    );
+  },
+);
+
 const refreshClaudeCodeProvider$ = command(
   async (
-    { get, set },
+    { set },
     args: RefreshProviderArgs,
     signal: AbortSignal,
   ): Promise<ModelProviderResponse> => {
@@ -227,27 +261,8 @@ const refreshClaudeCodeProvider$ = command(
     if (!accessToken) {
       return args.provider;
     }
-    if (args.expectedAccountIdentity) {
-      const [account] = await get(db$)
-        .select()
-        .from(modelProviderAccounts)
-        .where(
-          and(
-            eq(modelProviderAccounts.id, args.provider.id),
-            personalSubscriptionAccountAccessCondition(),
-            eq(modelProviderAccounts.orgId, args.orgId),
-            eq(modelProviderAccounts.userId, args.userId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (
-        !account ||
-        personalSubscriptionAccountIdentity(account) !==
-          args.expectedAccountIdentity
-      ) {
-        return args.provider;
-      }
+    if (!(await set(accountMatchesExpectedIdentity$, args, signal))) {
+      return args.provider;
     }
 
     const metadata = await fetchClaudeCodeSubscriptionMetadata(
@@ -257,6 +272,38 @@ const refreshClaudeCodeProvider$ = command(
       signal,
     );
 
+    return withSubscriptionMetadata(args.provider, metadata);
+  },
+);
+
+const refreshAntigravityProvider$ = command(
+  async (
+    { set },
+    args: RefreshProviderArgs,
+    signal: AbortSignal,
+  ): Promise<ModelProviderResponse> => {
+    // Only a concrete personal account owns the stored Google AI grant.
+    if (!args.provider.modelProviderId) {
+      return args.provider;
+    }
+    if (!(await set(accountMatchesExpectedIdentity$, args, signal))) {
+      return args.provider;
+    }
+    const grant = await set(
+      refreshAntigravityAccessToken$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        accountId: args.provider.id,
+        featureSwitchContext: args.featureSwitchContext,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const metadata = await fetchAntigravitySubscriptionMetadata(
+      { accessToken: grant.accessToken, now: nowDate() },
+      signal,
+    );
     return withSubscriptionMetadata(args.provider, metadata);
   },
 );
@@ -275,6 +322,9 @@ const refreshProvider$ = command(
     }
     if (args.provider.type === "claude-code-oauth-token") {
       return await set(refreshClaudeCodeProvider$, args, signal);
+    }
+    if (args.provider.type === "antigravity") {
+      return await set(refreshAntigravityProvider$, args, signal);
     }
     return args.provider;
   },

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.886.1](https://github.com/okou-ai/okou/compare/core-v8.886.0...core-v8.886.1) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** retire legacy startup dispatch fields ([#51189](https://github.com/okou-ai/okou/issues/51189)) ([ae83fa7](https://github.com/okou-ai/okou/commit/ae83fa732618ccd8d0fa0d1bd3172c7c4c7ecd41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.135.0
+
 ## [8.886.0](https://github.com/okou-ai/okou/compare/core-v8.885.4...core-v8.886.0) (2026-11-26)
 
 
