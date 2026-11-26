@@ -3386,8 +3386,8 @@ webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-01
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-019	planned		unfinished: out of time		B01
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-021	planned		unfinished: out of time		B01
 webhooks	src/signals/routes/__tests__/webhooks-stripe-credit-purchase.test.ts	webhooks-stripe-credit-purchase-001	rewritten	169.4		src/signals/routes/__tests__/webhooks-stripe-credit-purchase.test.ts	B03
-webhooks	src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	webhooks-stripe-worker-001	planned				B04
-webhooks	src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	webhooks-stripe-worker-002	planned				B04
+webhooks	src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	webhooks-stripe-worker-001	rewritten	24.7		src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	B04
+webhooks	src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	webhooks-stripe-worker-002	rewritten	9.9		src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	B04
 webhooks	src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-001	planned				
 webhooks	src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-003	planned				
 webhooks	src/signals/routes/__tests__/webhooks-x-resource-usage.test.ts	webhooks-x-resource-usage-001	planned				B04
