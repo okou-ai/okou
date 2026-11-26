@@ -17,16 +17,22 @@ and the category versions it supports. The endpoint replies with a correlated
 `ready` once it can serve the exact live Run. The `ready` message
 echoes the accepted `schemaVersion` and returns the highest shared version
 for each category in `categories`. It omits categories without a shared
-version. The client matches `requestId` to the hello ID and verifies the schema version and each category selection
-against its offer. An empty selection is valid.
+version. The client matches `requestId` to the hello ID and verifies the
+schema version and each category selection against its offer. An empty
+selection is valid. Category versions are positive safe integers. Each offer
+lists one or more supported versions without duplicates.
 
-Both peers install their local roles before the exchange. The endpoint sends
-one `ready` before any application call or event. The client applies
-the selection before dispatching subsequent messages. The handshake has a
-deadline. Repeated hello or ready, an invalid handshake, or an unsupported common
-schema version ends the connection. The common schema version and category
-selections remain fixed for its lifetime. Subsequent messages use those
-versions from the connection state.
+Both peers install their local roles before the exchange. The endpoint
+installs the selected contracts before it sends `ready` and queues `ready`
+ahead of subsequent application messages. The client installs the selected
+contracts after it validates `ready` and before it sends or dispatches any
+application requests, responses, or events. Each peer accepts only the
+expected handshake message until its side of the handshake completes.
+The handshake has a deadline. Repeated `hello` or `ready`, an invalid
+handshake, or an unsupported common schema version ends the connection.
+The common schema version and category selections remain fixed for the
+connection lifetime. Subsequent messages use those versions from the
+connection state.
 
 ## Messages and ownership
 
