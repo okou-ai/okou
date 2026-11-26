@@ -44,13 +44,9 @@ final class ConversationStore {
 
   let modelSelection: ChatModelSelectionStore?
   let workflowSource: ComposerWorkflowSource?
-  var thread: ChatThread {
-    didSet {
-      if ChatModelSelection(thread: oldValue) != ChatModelSelection(thread: thread) {
-        modelSelection?.apply(thread: thread, replacing: oldValue)
-      }
-    }
-  }
+  /// The chat's last confirmed metadata, kept in the workspace session's Store. The chat list
+  /// confirms it through `WorkspaceStore`; `thread` reads and confirms it.
+  @ObservationIgnored private let threadState: CCState.State<ChatThread>
   var draft: String {
     get { composer.text }
     set { composer.text = newValue }
@@ -233,7 +229,7 @@ final class ConversationStore {
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, graph: graph, didRequireUpgrade: didFail,
       sleep: activitySleep, lifecycleTasks: lifecycleTasks)
-    self.thread = thread
+    threadState = CCState.State(thread)
     measurements = ConversationMeasurementCache(
       namespace: measurementScope.map {
         [$0.apiBaseURL.absoluteString, $0.userID, $0.workspaceID, thread.id]
@@ -608,6 +604,25 @@ extension ConversationStore {
 }
 
 extension ConversationStore {
+  var thread: ChatThread {
+    get {
+      // A synchronous local business value, not a network or persistence boundary.
+      do { return try graph.get(threadState) } catch {
+        preconditionFailure("Cannot read the confirmed chat: \(error)")
+      }
+    }
+    set {
+      let previous = thread
+      guard newValue != previous else { return }
+      do { try graph.set(threadState, newValue) } catch {
+        preconditionFailure("Cannot confirm the chat: \(error)")
+      }
+      if ChatModelSelection(thread: previous) != ChatModelSelection(thread: newValue) {
+        modelSelection?.apply(thread: newValue, replacing: previous)
+      }
+    }
+  }
+
   /// The render window, kept in the workspace session's Store. ChatDetailView reads it,
   /// `navigation` and `loadsEarlier` through CCStateSwiftUI; the synchronous accessors in the
   /// class serve owner logic, the scroll coordinator's actions and tests.
