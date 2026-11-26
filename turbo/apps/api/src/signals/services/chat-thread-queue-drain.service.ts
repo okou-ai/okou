@@ -175,6 +175,7 @@ export const pickEnqueuedChatThread$ = command(
       readonly publishedLease?: PublishedChatThreadLease;
       readonly context?: AgentRunContextSignals;
       readonly requestInput?: EnqueuedChatInputFacts;
+      readonly computerUseHostChangedForUserId?: string;
     },
     signal: AbortSignal,
   ) => {

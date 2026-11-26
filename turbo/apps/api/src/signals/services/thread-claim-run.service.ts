@@ -79,7 +79,6 @@ import { recordTemplateUsage } from "../../lib/template-usage-log";
 import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import {
   publishChatIndicatorsChangedSafely,
-  publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 
@@ -2611,10 +2610,6 @@ export function createThreadClaimRunObjects(
 
   const publishPendingRun$ = command(
     async (_context, pending: PendingClaimRun, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      // Immediate and queued picks have committed their active-run slot here.
-      // Pending shell approvals must re-read chat_busy before the runner starts.
-      await publishDesktopShellAuthorizationChangedSafely(pending.head.userId);
       signal.throwIfAborted();
       // The committed pending Run is the active indicator's only start edge.
       await publishChatIndicatorsChangedSafely({
