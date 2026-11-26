@@ -2,7 +2,7 @@ domain	test_file	case_id	status	duration_ms	note	new_test_file	batch	precheck
 non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-002	planned					d-other
 non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-006	planned					d-other
 non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-008	planned					d-other
-non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-009	planned					c-timer
+non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-009	planned					d-other
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-001	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-003	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-006	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
@@ -26,7 +26,7 @@ non-route	src/__tests__/app-factory.test.ts	app-factory-056	skipped		production-
 non-route	src/__tests__/app-factory.test.ts	app-factory-057	skipped		production-change: the iOS floors are the build-time JSON import lib/ios-client-compatibility.json (App Store null, TestFlight 0.51.12) with no runtime configuration; App Store floor 1.0.0 with TestFlight floor 1.2.0 needs a module mock (forbidden) or a configurable floor seam		B08	d-other
 non-route	src/__tests__/app-factory.test.ts	app-factory-060	skipped		production-change: the iOS floors are the build-time JSON import lib/ios-client-compatibility.json (App Store null, TestFlight 0.51.12) with no runtime configuration; App Store floor 1.0.0 with TestFlight floor 1.2.0 needs a module mock (forbidden) or a configurable floor seam		B08	d-other
 non-route	src/__tests__/app-factory.test.ts	app-factory-064	skipped		production-change: the iOS floors are the build-time JSON import lib/ios-client-compatibility.json (App Store null, TestFlight 0.51.12) with no runtime configuration; App Store floor 1.0.0 with TestFlight floor 1.2.0 needs a module mock (forbidden) or a configurable floor seam		B08	d-other
-non-route	src/__tests__/node-server.test.ts	node-server-003	planned					c-timer
+non-route	src/__tests__/node-server.test.ts	node-server-003	planned					d-other
 non-route	src/__tests__/vercel-build.test.ts	vercel-build-002	skipped		adapter-runtime: the case runs the production Vite build with @hono/vite-build/vercel (vite.config.ts) to generate the Node request listener, a full bundler run per case that cannot fit 200 ms		B07	d-other
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-001	rewritten	76.5	accepted by shuffled 3-run median (provisional cold-start rule)	src/__tests__/worker-lifecycle.test.ts	B07	d-other
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-002	revisit		revisit: through the Worker entrypoint the export job stays pending after its response EOF, the concurrent request and settled Worker background work; evidence: draft with installDurableUserExportStorage(afterWrite holding the first write), POST /api/user/export 202 then GET /api/user/export 200 read job.status "pending" after Promise.allSettled of both hosts' waitUntil work (122 ms); resume: find which owner advances an admitted export (waitUntil in user-export.ts versus a cron or background job claim) and drive that public path before the observer read		B07	d-other
@@ -110,7 +110,7 @@ messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-031
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-048	planned					a-run
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-050	planned					d-other
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-051	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-052	planned					c-timer
+messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-052	planned					d-other
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-053	planned					d-other
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-054	planned					d-other
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-055	planned					d-other
@@ -146,7 +146,7 @@ messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-101
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-102	planned					a-run
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-106	planned					d-other
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-108	planned					a-run
-messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-109	planned					c-timer
+messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-109	planned					d-other
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-126	planned					a-run
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-127	planned					a-run
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-128	planned					d-other
@@ -480,35 +480,35 @@ billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing
 billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-003	rewritten	90.6		src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	B02	
 billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-004	rewritten	153.7		src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	B02	
 billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-005	rewritten	91.1		src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	B02	
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-001	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-002	planned				B10	c-timer
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-004	planned				B10	c-timer
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-007	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-009	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-010	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-011	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-013	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-014	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-015	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-016	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-020	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-022	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-023	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-024	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-025	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-027	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-034	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-035	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-036	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-038	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-039	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-040	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-044	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-048	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-051	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-052	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-054	planned				B10	d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-057	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-001	rewritten	78.0		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-002	rewritten	134.4		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-004	rewritten	57.8		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-007	rewritten	59.4		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-009	revisit		revisit: needs a legacy Team subscription with a pending Clerk invitation, a started migration phase and a paid $200 migration invoice before the invitation revoke refund; not reached within the first-pass time box; evidence: the legacy migration preview/confirm setup in this file works (001, 002, 004, 007), the migration invoice.paid reconciliation and the revoke refund were not explored; resume: extend legacyProWorkspace to a legacy Team price with a pending invitation, deliver the migration invoice.paid, then DELETE /api/org/invite and assert refunds.create and the last subscriptionSchedules.update		B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-010	revisit		revisit: same legacy Team migration setup as 009 with a $0 migration invoice and subscription_schedule.completed before the invoice; not reached within the first-pass time box; evidence: migration preview/confirm works in this file, schedule completion and $0 invoice handling were not explored; resume: reuse the 009 setup, deliver subscription_schedule.completed, read the migration, deliver the $0 invoice.paid twice, then revoke the invitation		B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-011	rewritten	116.4		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-013	rewritten	90.5		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-014	rewritten	136.8		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-015	rewritten	77.5		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-016	rewritten	66.5		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-020	rewritten	92.9		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-022	rewritten	109.4		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-023	rewritten	150.8		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-024	revisit		revisit: row (2/2) has a non-first median of 213.4 ms (272.6/276.8/180.7/237.2/184.1/189.6); draft /home/user/pilot-env/wip/r16/billing-usage-pack-subscriptions.test.ts; resume: split (2/2) further		B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-025	rewritten	177.3		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-027	revisit		revisit: needs a Team plan whose member holds a $100 pack; the shared purchaseUsagePacks helper only builds $20/$50 Stripe items; evidence: helpers/public-usage-pack-checkout.ts maps quantities for 20 and 50 only; resume: buy the $100 plan through billingUsagePackCheckoutContract with an in-file checkout (as done for 002), confirm the deferred Pro downgrade into a schedule, then POST /api/billing/restore and preview the Team $200 change		B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-034	rewritten	137.5		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-035	rewritten	50.4		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-036	rewritten	185.9	split n=2: 1/2=129.7; 2/2=185.9	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-038	revisit		revisit: needs a Team plan whose admin holds a $100 pack with a scheduled downgrade, then a concurrency checkout against the schedule; same $100 helper blocker as 027; evidence: helpers/public-usage-pack-checkout.ts maps quantities for 20 and 50 only; resume: in-file $100 checkout as in 002, schedule the downgrade, then POST /api/billing/concurrency-checkout/preview and /api/billing/concurrency-checkout with schedule update and invoice finalize/pay mocks		B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-039	rewritten	150.9		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-040	rewritten	61.1		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-044	rewritten	70.5		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-048	rewritten	70.9		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-051	rewritten	100.3		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-052	rewritten	155.5		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-054	revisit		revisit: the invited member must consume 5,000 credits through normal usage before removal; evidence: no public usage-charging path is set up in this file and none was identified within the time box; resume: find the public run-usage charging entry used by other billing tests, then chain the 051 saved-card confirm, the 052 acceptance and three organizationMembership.deleted deliveries with refunds failing then succeeding		B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-057	rewritten	137.8		src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	B10	d-other
 billing	src/signals/routes/__tests__/billing-usage-pack-upgrade-invoice.test.ts	billing-usage-pack-upgrade-invoice-001	revisit		revisit: no public helper drives the usage pack change preview/confirm and paid upgrade invoice, and the Stripe shapes the 6.4k-line allocation change service validates exceed the first-pass time box; evidence: usage-pack-allocation-change.service.ts reads subscriptions.retrieve (validateCurrentStripeProjection, usagePackChangePreviewBlock), calls invoices.createPreview twice (recurring + immediate always_invoice at proration_date) and invoices.listLineItems for proration lines; helpers/public-usage-pack-checkout.ts only covers checkout + first invoice.paid; resume: reuse purchaseUsagePacks at 2035-01-16, mockNow 1 s before period end, mock createPreview (1500-cent proration line at the proration date) and subscriptions.update (immediate apply), then deliver the signed upgrade invoice.paid 8 times concurrently plus once and read credits/management		B06	
 billing	src/signals/routes/__tests__/billing-usage-pack-upgrade-invoice.test.ts	billing-usage-pack-upgrade-invoice-004	revisit		revisit: same blocker as billing-usage-pack-upgrade-invoice-001 plus the pending_update path (subscriptions.update returns pending_update with an open invoice, later applied before invoice.paid); evidence: usage-pack-allocation-change.service.ts confirm flow returns pending_payment and fulfils 15,000 purchased + 1,100 bonus credits from the upgrade invoice; resume: build on the 001 fixture with mockNow 1,296,000 s before period end, subscriptions.update returning pending_update + latest_invoice open, then retrieve without pending_update before the 8+1 invoice.paid deliveries		B06	
 browser	src/signals/routes/__tests__/browser-admission.test.ts	browser-admission-001	planned					a-run
@@ -709,7 +709,7 @@ chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admi
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-004	planned				pilot	d-other
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-006	planned				pilot	d-other
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-007	planned				pilot	a-run
-chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-009	planned				pilot	c-timer
+chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-009	planned				pilot	d-other
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-011	planned				pilot	a-run
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-012	planned				pilot	a-run
 chat	src/signals/routes/__tests__/chat-events-attachment-lookups.test.ts	chat-events-attachment-lookups-001	skipped		slow-setup: Given+first When/Then 307 ms and 298 ms (lower bound without the image and annotated uploads or structured file parts: entitled Pro actor 128/117 ms, send dispatching the Run 178/180 ms including the first-send cold start, Runner execution input for the prompt 0/0 ms; the Then reads the Run prompt, so the When must dispatch)		B07	d-other
@@ -738,7 +738,7 @@ chat	src/signals/routes/__tests__/chat-events-attachments.test.ts	chat-events-at
 chat	src/signals/routes/__tests__/chat-events-attachments.test.ts	chat-events-attachments-041	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-attachments.test.ts	chat-events-attachments-042	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-auto-route.test.ts	chat-events-auto-route-001	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-automations.test.ts	chat-events-automations-001	planned				pilot	c-timer
+chat	src/signals/routes/__tests__/chat-events-automations.test.ts	chat-events-automations-001	planned				pilot	d-other
 chat	src/signals/routes/__tests__/chat-events-automations.test.ts	chat-events-automations-002	planned				pilot	a-run
 chat	src/signals/routes/__tests__/chat-events-automations.test.ts	chat-events-automations-004	planned				pilot	a-run
 chat	src/signals/routes/__tests__/chat-events-batched-preload.test.ts	chat-events-batched-preload-002	planned					a-run
@@ -772,7 +772,7 @@ chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-
 chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-003	planned					d-other
 chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-005	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-009	planned					d-other
-chat	src/signals/routes/__tests__/chat-events-history.test.ts	chat-events-history-001	planned					c-timer
+chat	src/signals/routes/__tests__/chat-events-history.test.ts	chat-events-history-001	planned					d-other
 chat	src/signals/routes/__tests__/chat-events-history.test.ts	chat-events-history-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-identity.test.ts	chat-events-identity-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-identity.test.ts	chat-events-identity-003	planned					d-other
@@ -963,7 +963,7 @@ chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-054	
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-056	planned					d-other
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-057	planned					d-other
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-062	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-064	planned					c-timer
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-064	planned					d-other
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-068	planned					d-other
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-073	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-075	planned					a-run
@@ -1013,7 +1013,7 @@ remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-005	planned					a-run
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-006	planned					d-other
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-007	planned					a-run
-remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-011	planned					c-timer
+remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-011	planned					d-other
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-012	planned					d-other
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-014	planned					a-run
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-015	planned					a-run
@@ -1037,9 +1037,9 @@ browser	src/signals/routes/__tests__/computer-use-audit-events.test.ts	computer-
 browser	src/signals/routes/__tests__/computer-use-audit-events.test.ts	computer-use-audit-events-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-command-create.test.ts	computer-use-command-create-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			a-run
 browser	src/signals/routes/__tests__/computer-use-command-get.test.ts	computer-use-command-get-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			a-run
-browser	src/signals/routes/__tests__/computer-use-command-get.test.ts	computer-use-command-get-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
-browser	src/signals/routes/__tests__/computer-use-command-notifications.test.ts	computer-use-command-notifications-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
-browser	src/signals/routes/__tests__/computer-use-command-notifications.test.ts	computer-use-command-notifications-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
+browser	src/signals/routes/__tests__/computer-use-command-get.test.ts	computer-use-command-get-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
+browser	src/signals/routes/__tests__/computer-use-command-notifications.test.ts	computer-use-command-notifications-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
+browser	src/signals/routes/__tests__/computer-use-command-notifications.test.ts	computer-use-command-notifications-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-command-notifications.test.ts	computer-use-command-notifications-005	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-content-get.test.ts	computer-use-content-get-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			a-run
 browser	src/signals/routes/__tests__/computer-use-host-directory.test.ts	computer-use-host-directory-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
@@ -1047,31 +1047,31 @@ browser	src/signals/routes/__tests__/computer-use-host-directory.test.ts	compute
 browser	src/signals/routes/__tests__/computer-use-host-presence.test.ts	computer-use-host-presence-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-host-presence.test.ts	computer-use-host-presence-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-host-presence.test.ts	computer-use-host-presence-004	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-browser	src/signals/routes/__tests__/computer-use-host-presence.test.ts	computer-use-host-presence-006	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
+browser	src/signals/routes/__tests__/computer-use-host-presence.test.ts	computer-use-host-presence-006	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-host-presence.test.ts	computer-use-host-presence-008	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-browser	src/signals/routes/__tests__/computer-use-host-presence.test.ts	computer-use-host-presence-011	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
+browser	src/signals/routes/__tests__/computer-use-host-presence.test.ts	computer-use-host-presence-011	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-host-session-concurrency.test.ts	computer-use-host-session-concurrency-001	revisit		revisit: draft passes but does not type-check (hostId is not part of the current Computer Use command body after #50892); draft /home/user/pilot-env/wip/r14/computer-use-host-session-concurrency.test.ts; resume: build the command target from the current contract		B07	d-other
 browser	src/signals/routes/__tests__/computer-use-host-session-concurrency.test.ts	computer-use-host-session-concurrency-003	revisit		revisit: draft passes but does not type-check (hostId is not part of the current Computer Use command body after #50892); draft /home/user/pilot-env/wip/r14/computer-use-host-session-concurrency.test.ts; resume: build the command target from the current contract		B07	d-other
 browser	src/signals/routes/__tests__/computer-use-host-start.test.ts	computer-use-host-start-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			a-run
 browser	src/signals/routes/__tests__/computer-use-host-start.test.ts	computer-use-host-start-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-browser	src/signals/routes/__tests__/computer-use-result-notifications.test.ts	computer-use-result-notifications-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
+browser	src/signals/routes/__tests__/computer-use-result-notifications.test.ts	computer-use-result-notifications-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-result-notifications.test.ts	computer-use-result-notifications-003	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-browser	src/signals/routes/__tests__/computer-use-result-notifications.test.ts	computer-use-result-notifications-005	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
+browser	src/signals/routes/__tests__/computer-use-result-notifications.test.ts	computer-use-result-notifications-005	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-result-notifications.test.ts	computer-use-result-notifications-008	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			a-run
 browser	src/signals/routes/__tests__/computer-use-screenshot-completion.test.ts	computer-use-screenshot-completion-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
 browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
+browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-003	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-004	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
-browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-006	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
-browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-009	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
+browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-004	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
+browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-006	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
+browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-009	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-010	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-011	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-015	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-016	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-018	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-019	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-024	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
+browser	src/signals/routes/__tests__/computer-use-session-hosts.test.ts	computer-use-session-hosts-024	skipped		timer: waits on a production timer on the case's path (Poll at +31s: resolveComputerUseHost$ (services/computer-use-host-auth.service.ts:57-63) revalidates because sessionValidatedAt is >=30s old -> verifyClerkComputerUseSession -> retryClerkRead; Clerk 503 is retryable (ext)			c-timer
 browser	src/signals/routes/__tests__/computer-use.bdd.test.ts	computer-use.bdd-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			a-run
 browser	src/signals/routes/__tests__/computer-use.bdd.test.ts	computer-use.bdd-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 browser	src/signals/routes/__tests__/computer-use.bdd.test.ts	computer-use.bdd-003	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
@@ -1310,13 +1310,13 @@ connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-00
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-004	planned					d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-005	planned					d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-006	planned					d-other
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-007	planned					c-timer
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-008	planned					c-timer
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-009	planned					c-timer
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-011	planned					c-timer
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-012	planned					c-timer
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-017	planned					c-timer
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-018	planned					c-timer
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-007	planned					d-other
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-008	planned					d-other
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-009	planned					d-other
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-011	planned					d-other
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-012	planned					d-other
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-017	planned					d-other
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-018	planned					d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-020	planned					d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-021	planned					d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-022	planned					d-other
@@ -1354,7 +1354,7 @@ connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-09
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-095	planned					d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-096	planned					d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-098	planned					a-run
-connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-099	planned					c-timer
+connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-099	planned					d-other
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-100	planned					b-install
 chat	src/signals/routes/__tests__/conversation-history-deletion.test.ts	conversation-history-deletion-001	planned					a-run
 billing	src/signals/routes/__tests__/credit-low-balance-alert.test.ts	credit-low-balance-alert-002	skipped		timer: waits on a production retry timer; with live lookup unavailable, retryClerkRead (signals/external/clerk.ts) retries the Clerk read up to 3 attempts with a 1000 ms signal-timers delay plus jitter before returning 503; that wait is the 2.5 s seen in the When (Given 346-354 ms), so it is not slow-setup		B05	
@@ -1386,7 +1386,7 @@ workflows	src/signals/routes/__tests__/cron-sync-skills.test.ts	cron-sync-skills
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-001	planned		extension after sandbox reset		B10	d-other
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-004	planned		extension after sandbox reset		B10	d-other
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-008	planned		extension after sandbox reset		B10	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-010	planned		extension after sandbox reset		B10	c-timer
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-010	planned		extension after sandbox reset		B10	d-other
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-012	planned		extension after sandbox reset		B10	d-other
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-013	planned		extension after sandbox reset		B10	d-other
 connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-014	planned		extension after sandbox reset		B10	d-other
@@ -1465,7 +1465,7 @@ messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gate
 messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-013	rewritten	5.4		src/signals/routes/__tests__/discord-gateway-auth.test.ts	B04	
 messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-014	rewritten	5.4		src/signals/routes/__tests__/discord-gateway-auth.test.ts	B04	
 messaging	src/signals/routes/__tests__/discord-gateway-identity.test.ts	discord-gateway-identity-001	skipped		slow-setup: the Given alone (connected Discord member in a guild plus two concurrent signed deliveries of the same message, accepted and duplicate) measured 393.4 ms and 374.2 ms in two runs, before the changed-author When; dominant step is the connected member via helpers/discord-fixture setupConnectedDiscordActor (366.4 ms and 351.9 ms: Pro entitlement, workspace provisioning, personal subscription model, Discord install binding); settling the accepted message's pending dispatch work added another 206.3 ms and 199.4 ms; a lighter Given (one install binding via helpers/discord createPublicDiscordBinding, 121.9 ms with the file cold start) still needed 225.2 ms to settle the accepted message's pending work before the thread read (376.7 ms to the read), and that work is settled inside the row either way		B06	
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-004	planned					c-timer
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-004	planned					d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-005	planned					d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-006	planned					d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-007	planned					d-other
@@ -1488,8 +1488,8 @@ messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-0
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-048	planned					d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-049	planned					a-run
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-050	planned					d-other
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-051	planned					c-timer
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-052	planned					c-timer
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-051	planned					d-other
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-052	planned					d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-053	planned					d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-054	planned					a-run
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-055	planned					a-run
@@ -1732,7 +1732,7 @@ artifacts	src/signals/routes/__tests__/image-io-generate.test.ts	image-io-genera
 artifacts	src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-076	planned					d-other
 artifacts	src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-077	planned					d-other
 artifacts	src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-078	planned					d-other
-artifacts	src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-079	planned					c-timer
+artifacts	src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-079	planned					d-other
 artifacts	src/signals/routes/__tests__/image-io-responses-recovery.test.ts	image-io-responses-recovery-001	planned					a-run
 artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-002	revisit		revisit: cron reconcile plus realtime publish and private-artifacts upload not reached within first-pass budget; evidence: createDurableImageFixture sets CRON_SECRET and ably/s3 doubles; resume: submit queued, call GET /api/cron/reconcile-image-generations, then complete the retrieval with usage and image bytes, likely split per BRIEF7		B04	
 artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-004	revisit		revisit: over 200 ms (256.5, 258.6, 268.2, 271.4 ms, writer run under load) and splitting cannot help; evidence: every segment after submission needs the completed state (createDurableImageFixture + generate + two owner reconciles), which alone measured 201.8 and 216.4 ms in image-io-responses-005; submission segment alone is about 150 ms; resume: lighten the durable image Given or decide on segment-level slow-setup, then split per BRIEF7 (submission / first reconcile / completion / replay)		B04	
@@ -1768,10 +1768,10 @@ messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integr
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-018	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-024	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-026	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-027	planned					c-timer
+messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-027	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-029	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-030	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has an executing chat Run, and the Run's Okou token is used"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-031	planned					c-timer
+messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-031	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-001	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-002	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-003	planned					b-install
@@ -2041,30 +2041,30 @@ messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-003	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-008	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-009	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-023	planned					c-timer
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-024	planned					c-timer
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-025	planned					c-timer
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-026	planned					c-timer
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-023	planned					d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-024	planned					d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-025	planned					d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-026	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-027	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-029	planned					c-timer
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-029	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-030	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-031	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-032	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-033	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-034	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-038	planned					c-timer
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-040	planned					c-timer
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-038	planned					d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-040	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-041	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-042	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-044	planned					c-timer
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-044	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-046	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-047	planned					c-timer
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-047	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-048	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-049	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-052	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-053	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-054	planned					d-other
-messaging	src/signals/routes/__tests__/integrations.bdd.test.ts	integrations.bdd-001	planned					c-timer
+messaging	src/signals/routes/__tests__/integrations.bdd.test.ts	integrations.bdd-001	planned					d-other
 messaging	src/signals/routes/__tests__/integrations.bdd.test.ts	integrations.bdd-003	planned					b-install
 messaging	src/signals/routes/__tests__/integrations.bdd.test.ts	integrations.bdd-004	planned					b-install
 messaging	src/signals/routes/__tests__/integrations.bdd.test.ts	integrations.bdd-005	planned					b-install
@@ -2163,7 +2163,7 @@ messaging	src/signals/routes/__tests__/mail.test.ts	mail-019	planned					d-other
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-020	planned					d-other
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-022	planned					d-other
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-023	planned					d-other
-messaging	src/signals/routes/__tests__/mail.test.ts	mail-024	planned					c-timer
+messaging	src/signals/routes/__tests__/mail.test.ts	mail-024	planned					d-other
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-025	planned					d-other
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-026	planned					d-other
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-027	planned					d-other
@@ -2370,6 +2370,7 @@ billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billi
 billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-017	rewritten	79.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
 billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-019	revisit		revisit: over 200 ms by shuffled 3-run median (org-delete-billing-019 224.8 ms (238/225/205)); draft /home/user/pilot-env/wip/r15/org-delete-billing.test.ts; resume: split further or record slow-setup with Given+first When/Then		B09	b-install
 billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-022	rewritten	144.0	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-018	planned				B11	d-other
 account-org	src/signals/routes/__tests__/org-invitation-purchase.test.ts	org-invitation-purchase-001	revisit		revisit: needs an active paid usage-pack subscription with a Stripe subscription ID plus Stripe invitation-preview and invoice-payment doubles, no existing branch test exercises /api/org/invite/purchase/*; evidence: org-invite.ts previewPurchase requires STRIPE_SECRET_KEY, invitationPurchasePlanActive$ and usagePackSubscriptions.stripeSubscriptionId before createUsagePackInvitationPreview$ calls Stripe; resume: build the subscription through purchaseUsagePacks (helpers/public-usage-pack-checkout.ts), then stub the Stripe preview/invoice calls used by usage-pack-invitation-purchase.service.ts and Clerk createOrganizationInvitation (reject on replay)		B07	d-other
 account-org	src/signals/routes/__tests__/org-member-cleanup-automations.bdd.test.ts	org-member-cleanup-automations.bdd-002	skipped		slow-setup: Given needs an accepted signed webhook delivery that dispatches a Run (startEventAutomationRun) for each owner plus a second workspace; measured with the smaller Given of org-member-cleanup-automations.bdd-003 (Team workspace via setupWorkflowOrg tier team, one Workflow with an hourly loop schedule, webhook-received automation plus signed delivery): 638 ms and 631 ms before the When, stopping inside the delivery Run dispatch (RUNNER_DEFAULT_GROUP unset); this case adds a peer admin pair and a second-workspace pair, so its Given is strictly larger		B07	d-other
 account-org	src/signals/routes/__tests__/org-member-cleanup-automations.bdd.test.ts	org-member-cleanup-automations.bdd-003	skipped		slow-setup: Given (setupWorkflowOrg tier team, createWorkflow, hourly loop schedule, webhook-received automation with an accepted signed delivery that dispatches a Run) measured 638 ms and 631 ms before the first When, stopping inside the delivery Run dispatch (RUNNER_DEFAULT_GROUP unset), so Given+first When/Then exceeds 200 ms		B07	d-other
@@ -2461,6 +2462,7 @@ chat	src/signals/routes/__tests__/projects.test.ts	projects-007	revisit		revisit
 chat	src/signals/routes/__tests__/projects.test.ts	projects-008	revisit		revisit: draft passes but does not type-check (the draft user message literal does not match the contract's message part types); draft /home/user/pilot-env/wip/r15/projects.test.ts; resume: type the draft with the contract's message type		B09	d-other
 chat	src/signals/routes/__tests__/projects.test.ts	projects-009	revisit		revisit: draft passes but does not type-check (the draft user message literal does not match the contract's message part types); draft /home/user/pilot-env/wip/r15/projects.test.ts; resume: type the draft with the contract's message type		B09	d-other
 chat	src/signals/routes/__tests__/projects.test.ts	projects-010	revisit		revisit: draft passes but does not type-check (the draft user message literal does not match the contract's message part types); draft /home/user/pilot-env/wip/r15/projects.test.ts; resume: type the draft with the contract's message type		B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-011	planned				B11	d-other
 account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-001	rewritten	12.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/provider-console-paths.test.ts	B06	
 account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-003	rewritten	9.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/provider-console-paths.test.ts	B06	
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-002	rewritten	41.7	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot	
@@ -2723,7 +2725,7 @@ chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-013	revi
 chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-014	skipped		slow-setup: Given+first When/Then 184 ms and 203 ms for only the first of the two Pro members' launched Threads (run 2 rows 184.5/202.6 ms: grantProEntitlement 59 ms + send, background run launch and event read 121-141 ms); the Given needs two such members plus a published share (~370+ ms) before the conflicting request.		B01	
 chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-015	planned		unfinished: out of time		B01	d-other
 chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-016	planned		unfinished: out of time		B01	d-other
-chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-017	planned		unfinished: out of time		B01	c-timer
+chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-017	planned		unfinished: out of time		B01	d-other
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-001	rewritten	128.0	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot	
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-002	rewritten	30.1	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot	
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-003	rewritten	6.3	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot	
@@ -2905,7 +2907,7 @@ remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-004	plann
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-005	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-006	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-007	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-008	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
+remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-008	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-009	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-018	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-023	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
@@ -3094,7 +3096,7 @@ remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configu
 remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configuration-037	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configuration-038	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configuration-040	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configuration-042	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
+remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configuration-042	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configuration-043	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configuration-049	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-001	rewritten	195.6	split n=4: 1/4=172.5; 2/4=182.1; 3/4=195.6; 4/4=178.8	src/signals/routes/__tests__/vnc-lifecycle.test.ts	B01	
@@ -3106,12 +3108,12 @@ remote-access	src/signals/routes/__tests__/vnc-native-authority.test.ts	vnc-nati
 remote-access	src/signals/routes/__tests__/vnc-native-authority.test.ts	vnc-native-authority-002	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running chat Run on an authenticated Runner"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 remote-access	src/signals/routes/__tests__/vnc-native-authority.test.ts	vnc-native-authority-003	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running chat Run on an authenticated Runner"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 remote-access	src/signals/routes/__tests__/vnc-native-authority.test.ts	vnc-native-authority-004	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running chat Run on an authenticated Runner"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	c-timer
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
 remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
 remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-003	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
 remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-009	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
 remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-010	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-011	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	c-timer
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-011	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
 remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-012	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
 remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-013	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
 remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-019	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
@@ -3159,15 +3161,15 @@ artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-tran
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-015	planned					d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-019	planned					d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-020	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-021	planned					c-timer
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-021	skipped		timer: waits on a production timer on the case's path (Polish (services/voice-io-polish.service.ts:67 generateVertexVoice, no singleAttempt) -> requestVoiceProvider; 503 is retryable and wait=max(1000*2^n, Retry-After 60s) then delay(wait) at external/voice-provider-request.)			c-timer
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-022	planned					d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-023	planned					d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-024	planned					d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-025	planned					d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-028	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-031	planned					c-timer
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-033	planned					c-timer
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-035	planned					c-timer
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-031	planned					d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-033	skipped		timer: waits on a production timer on the case's path (transcribeVoice (external/voice-completion.ts:81, no singleAttempt) -> requestVoiceProvider; first 429 is retryable -> delay(1000ms) at external/voice-provider-request.ts:102, second identical request succeeds)			c-timer
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-035	skipped		timer: waits on a production timer on the case's path (requestVoiceProvider: 429 x3 with MAX_ATTEMPTS=3 -> two backoff waits delay(1000), delay(2000) at external/voice-provider-request.ts:102 before VoiceProviderUnavailableError -> 503 PROVIDER_UNAVAILABLE after 3 calls)			c-timer
 account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-001	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has an interactive chat Run dispatched to a Runner"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-002	planned					a-run
 account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-003	planned					a-run
@@ -3343,7 +3345,7 @@ webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-
 webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-014	revisit		revisit: Given+first When/Then is borderline and was measured only while other writers loaded the 2-CPU machine; evidence: Given+first When/Then 279 ms and 222 ms (also 197, 200 ms; Pro entitlement via Stripe invoice webhook + personal Claude model (setupWorkflowOrg) 83-172 ms, public GitHub App install flow (shared installGithubApp, incl. a fresh RSA-2048 app key per call ~20-30 ms) 60-122 ms, workflow creation 10-15 ms, automation creation 12-25 ms, signed delivery ~7 ms, owner model claude-fable-5-1); resume: re-measure row (1/n) on an idle machine and split if it is at most 200 ms		B01	
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-006	planned					d-other
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-007	planned					d-other
-webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-009	planned					c-timer
+webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-009	planned					d-other
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-014	planned					a-run
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-015	planned					d-other
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-016	planned					d-other
@@ -3366,7 +3368,7 @@ webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-
 webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-005	planned		unfinished: out of time		B10	d-other
 webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-006	planned		unfinished: out of time		B10	d-other
 webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-007	planned		unfinished: out of time		B10	d-other
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-010	planned		unfinished: out of time		B10	c-timer
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-010	planned		unfinished: out of time		B10	d-other
 webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-013	planned		unfinished: out of time		B10	d-other
 webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-014	planned		unfinished: out of time		B10	d-other
 webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-015	planned		unfinished: out of time		B10	d-other
@@ -3420,7 +3422,7 @@ messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-001	planned				
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-004	planned					d-other
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-005	planned					d-other
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-006	planned					d-other
-messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-007	planned					c-timer
+messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-007	planned					d-other
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-008	planned					d-other
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-009	planned					d-other
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-012	planned					d-other
@@ -3466,7 +3468,7 @@ workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-aut
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-054	planned					b-install
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-055	planned					b-install
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-056	planned					b-install
-workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-057	planned					c-timer
+workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-057	planned					d-other
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-059	planned					d-other
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-060	planned					a-run
 workflows	src/signals/routes/__tests__/workflow-automations.test.ts	workflow-automations-061	planned					a-run
