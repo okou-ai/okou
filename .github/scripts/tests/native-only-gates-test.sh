@@ -29,7 +29,9 @@ ts_jobs = ['lint-eslint', 'lint-eslint-api', 'lint-eslint-app', 'lint-db-depende
            'test-other', 'test-browser-extension-package', 'test-browser-extension']
 artifacts = ['deploy-app']
 
-def context(ios=True, ts=False, event='pull_request', release=False):
+def context(ios=True, ts=False, event='pull_request', release=False, codeql=None):
+    if codeql is None:
+        codeql = not ios
     values = {
         'github.event_name': event,
         'github.actor': 'developer',
@@ -43,6 +45,7 @@ def context(ios=True, ts=False, event='pull_request', release=False):
         'needs.detect-turbo-ts-checks.outputs.ios-only': str(ios).lower(),
         'needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed': str(ts).lower(),
         'needs.detect-native-only.outputs.ios-only': str(ios).lower(),
+        'needs.detect-native-only.outputs.codeql-needed': str(codeql).lower(),
         'needs.prepare.outputs.turbo-runner-consumer-needed': 'false',
         'needs.prepare.outputs.playwright-runner-consumer-needed': 'false',
         'needs.prepare.outputs.cli-e2e-consumer-needed': str(not ios and not release).lower(),
@@ -61,7 +64,7 @@ def condition(job, values, cancelled=False):
         dependencies = [dependencies]
     if not has_status and any(values[f'needs.{name}.result'] != 'success' for name in dependencies):
         return False
-    expression = re.sub(r'\b(?:github|needs)\.[\w.-]+', lambda m: repr(values[m[0]]), expression)
+    expression = re.sub(r'\b(?:github|needs|steps)\.[\w.-]+', lambda m: repr(values[m[0]]), expression)
     expression = expression.replace('cancelled()', str(cancelled)).replace('always()', 'True')
     expression = expression.replace('&&', ' and ').replace('||', ' or ')
     expression = re.sub(r'!(?!=)', 'not ', expression)
@@ -212,11 +215,34 @@ for job in ['detect-release', 'action-pins', 'detect-native-only', 'pr-title', '
 gate(security, 'ci-gate-security', native | {'needs.detect-native-only.result': 'skipped'}, False)
 for ios in ['false', '']:
     gate(security, 'ci-gate-security', native | {'needs.detect-native-only.outputs.ios-only': ios}, False)
+for codeql_needed in ['true', '']:
+    gate(security, 'ci-gate-security', native | {'needs.detect-native-only.outputs.codeql-needed': codeql_needed}, False)
+# Non-iOS native/docs PRs (e.g. android/crates/desktop/docs) skip CodeQL while still running pnpm-audit.
+non_js_native = context(ios=False, ts=False, codeql=False)
+assert not condition(security['codeql'], non_js_native)
+assert condition(security['pnpm-audit'], non_js_native)
+gate(security, 'ci-gate-security', non_js_native | {'needs.codeql.result': 'skipped'}, True)
+gate(security, 'ci-gate-security', non_js_native | {'needs.codeql.result': 'failure'}, False)
+# Native PRs that edit JS/TS scripts under ios/ still run and require CodeQL.
+ios_js_script = context(ios=True, ts=False, codeql=True)
+assert condition(security['codeql'], ios_js_script)
+assert not condition(security['pnpm-audit'], ios_js_script)
+gate(security, 'ci-gate-security', ios_js_script | {'needs.pnpm-audit.result': 'skipped'}, True)
+gate(security, 'ci-gate-security', ios_js_script | {'needs.pnpm-audit.result': 'skipped', 'needs.codeql.result': 'skipped'}, False)
 normal = context(ios=False, ts=True)
 gate(security, 'ci-gate-security', normal, True)
 for job in ['codeql', 'pnpm-audit']:
     assert condition(security[job], normal)
     assert condition(security[job], context(ios=False, ts=True, event='push'))
+
+# Even a requested publication can only run on a push to protected main.
+publish = next(step for step in security['codeql']['steps']
+               if step.get('env', {}).get('CODEQL_PATH'))
+for event, ref, expected in [('pull_request', 'refs/pull/42/merge', False),
+                             ('push', 'refs/heads/topic', False),
+                             ('push', 'refs/heads/main', True)]:
+    assert condition(publish, {'github.event_name': event, 'github.ref': ref,
+                               'steps.overlay-cache.outputs.publish': 'true'}) == expected
 
 queued = context(ios=False, ts=True, event='merge_group')
 assert not condition(security['codeql'], queued)

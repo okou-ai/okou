@@ -956,7 +956,7 @@ private fun highlightedSearchTitle(text: String, keyword: String): AnnotatedStri
 
 private fun messageSnippet(hit: SearchMessageHit): AnnotatedString {
     val text = hit.content
-    val first = hit.ranges.minByOrNull { it.first }
+    val first = hit.firstRange
     var from = ((first?.first ?: 0) - 20).coerceAtLeast(0)
     var to = ((first?.last?.plus(1) ?: from) + 54).coerceAtMost(text.length)
     if (from > 0 && text[from].isLowSurrogate()) from--
@@ -964,7 +964,11 @@ private fun messageSnippet(hit: SearchMessageHit): AnnotatedString {
     return buildAnnotatedString {
         if (from > 0) append('…')
         val leading = length
-        append(text, from, to)
+        // Keep the two-line preview flowing without shifting its match offsets.
+        for (index in from until to) {
+            val character = text[index]
+            append(if (character.isWhitespace()) ' ' else character)
+        }
         for (range in hit.ranges) {
             val start = maxOf(range.first, from)
             val end = minOf(range.last + 1, to)
