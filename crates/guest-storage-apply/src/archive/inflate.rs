@@ -13,6 +13,8 @@ use std::thread;
 use std::time::Duration;
 
 const MIN_COMPRESSED_BYTES: u64 = 256 * 1024;
+const MIN_TWO_WORKER_ARTIFACT_EXPANDED_BYTES: u32 = 8 * 1024 * 1024;
+const TAR_PREFIX_BYTES: u64 = 128 * 1024;
 // Fewer input refills and decoded block handoffs during extraction.
 const COMPRESSED_BUFFER_BYTES: usize = 128 * 1024;
 const BLOCK_BYTES: usize = 256 * 1024;
@@ -54,7 +56,8 @@ impl InflateLoad {
         // fractional CPU quota rounds down in available_parallelism.
         has_expanded_work(&read_exact_at, compressed_bytes, min_expanded_bytes)
             && rustix::thread::sched_getaffinity(None).is_ok_and(|cpus| cpus.count() >= 2)
-            && (matches!(self, Self::Light) || has_small_file_prefix(read_exact_at, 16, 8 * 1024))
+            && (matches!(self, Self::Light)
+                || has_small_file_prefix(read_exact_at, 16, 8 * 1024, None))
     }
 }
 
@@ -161,6 +164,7 @@ pub(crate) fn prefers_two_workers(archive: &[u8]) -> bool {
             |output, offset| read_inline_at(archive, output, offset),
             8,
             16 * 1024,
+            Some(TAR_PREFIX_BYTES),
         )
 }
 
@@ -168,18 +172,26 @@ fn inline_archive_size_is_eligible(archive: &[u8]) -> bool {
     // Use the gzip length hint to stay within the measured Memory size range.
     // Full extraction still owns gzip validation.
     (1024 * 1024..4 * 1024 * 1024).contains(&archive.len())
-        && archive.last_chunk::<4>().is_some_and(|size| {
-            (8 * 1024 * 1024..16 * 1024 * 1024).contains(&u32::from_le_bytes(*size))
+        && inline_expanded_bytes(archive).is_some_and(|size| {
+            (MIN_TWO_WORKER_ARTIFACT_EXPANDED_BYTES..16 * 1024 * 1024).contains(&size)
         })
+}
+
+pub(crate) fn inline_companion_is_small(archive: &[u8]) -> bool {
+    inline_expanded_bytes(archive).is_some_and(|size| size < MIN_TWO_WORKER_ARTIFACT_EXPANDED_BYTES)
+}
+
+fn inline_expanded_bytes(archive: &[u8]) -> Option<u32> {
+    archive.last_chunk::<4>().copied().map(u32::from_le_bytes)
 }
 
 fn has_small_file_prefix(
     read_exact_at: impl Fn(&mut [u8], u64) -> io::Result<()>,
     sample_files: usize,
     max_file_bytes: u64,
+    max_following_entry_bytes: Option<u64>,
 ) -> bool {
     const COMPRESSED_PREFIX_BYTES: usize = 16 * 1024;
-    const TAR_PREFIX_BYTES: u64 = 128 * 1024;
 
     let mut compressed = [0; COMPRESSED_PREFIX_BYTES];
     if read_exact_at(&mut compressed, 0).is_err() {
@@ -190,16 +202,23 @@ fn has_small_file_prefix(
     // Raw entries are enough for the work estimate. Full extraction parses
     // extended metadata and validates the complete gzip stream.
     sample.entries().is_ok_and(|entries| {
-        entries
-            .raw(true)
+        let mut entries = entries.raw(true);
+        let small_files = entries
+            .by_ref()
             .take(sample_files)
             .take_while(|entry| {
                 entry.as_ref().is_ok_and(|entry| {
                     entry.header().entry_type().is_file() && entry.size() <= max_file_bytes
                 })
             })
-            .count()
-            == sample_files
+            .count();
+        small_files == sample_files
+            && max_following_entry_bytes.is_none_or(|limit| {
+                // Only headers readable within the same sample inform this hint.
+                entries
+                    .map_while(Result::ok)
+                    .all(|entry| entry.size() <= limit)
+            })
     })
 }
 

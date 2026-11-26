@@ -551,14 +551,19 @@ fn download_with_readiness(
     let local_only = remote_count == 0;
     let allow_artifact_priority = local_only && readiness.is_none();
     let concurrency = download_concurrency(remote_count, tasks.len());
-    // Two ready archive writers leave fewer threads competing with the dense
-    // Artifact on a two-CPU Guest. Keep the other delivery paths at their
-    // existing budgets, including wider batches that can read ahead.
+    // Two ready writers help an isolated dense Artifact on a two-CPU Guest.
+    // Other substantial writes in the batch benefit from the existing budget.
     #[cfg(target_os = "linux")]
     let concurrency = if allow_artifact_priority
         && (MIN_INLINE_ARTIFACT_BATCH_TASKS..WIDE_LOCAL_INFLATE_TASKS).contains(&tasks.len())
         && single_inline_artifact(&tasks).is_some_and(archive::inflate::prefers_two_workers)
-    {
+        && tasks.iter().all(|prepared| {
+            let task = &prepared.task;
+            task.telemetry.is_artifact()
+                || task
+                    .inline_archive
+                    .is_some_and(archive::inflate::inline_companion_is_small)
+        }) {
         2
     } else {
         concurrency

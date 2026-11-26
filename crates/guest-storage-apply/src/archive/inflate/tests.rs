@@ -47,25 +47,32 @@ fn inline_worker_size_hint_stays_within_the_measured_bands() {
 }
 
 #[test]
+fn inline_companion_size_hint_must_be_below_the_artifact_range() {
+    let limit = 8 * 1024 * 1024u32;
+    assert!(inline_companion_is_small(&(limit - 1).to_le_bytes()));
+    assert!(!inline_companion_is_small(&limit.to_le_bytes()));
+    assert!(!inline_companion_is_small(&[0; 3]));
+}
+
+#[test]
 fn wide_read_ahead_samples_a_prefix_of_small_regular_files() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("archive.tar.gz");
-    let content = [b'a'; 32 * 1024];
+    let content = vec![b'a'; TAR_PREFIX_BYTES as usize + 1];
 
     for (file_count, large_file, wide, inline) in [
         (16, None, true, true),
         (15, None, false, true),
-        (16, Some(4), false, false),
-        (16, Some(10), false, true),
+        (16, Some((4, 32 * 1024)), false, false),
+        (16, Some((10, 32 * 1024)), false, true),
+        (16, Some((10, content.len())), false, false),
     ] {
         let encoder = GzEncoder::new(fs::File::create(&source).unwrap(), Compression::none());
         let mut archive = tar::Builder::new(encoder);
         for index in 0..file_count {
-            let size = if large_file == Some(index) {
-                content.len()
-            } else {
-                128
-            };
+            let size = large_file
+                .filter(|(position, _)| *position == index)
+                .map_or(128, |(_, size)| size);
             let mut header = tar::Header::new_gnu();
             header.set_entry_type(tar::EntryType::Regular);
             header.set_size(size as u64);
@@ -82,6 +89,7 @@ fn wide_read_ahead_samples_a_prefix_of_small_regular_files() {
                 |output, offset| staged.read_exact_at(output, offset),
                 16,
                 8 * 1024,
+                None,
             ),
             wide
         );
@@ -90,7 +98,8 @@ fn wide_read_ahead_samples_a_prefix_of_small_regular_files() {
             has_small_file_prefix(
                 |output, offset| read_inline_at(&bytes, output, offset),
                 8,
-                16 * 1024
+                16 * 1024,
+                Some(TAR_PREFIX_BYTES),
             ),
             inline
         );
