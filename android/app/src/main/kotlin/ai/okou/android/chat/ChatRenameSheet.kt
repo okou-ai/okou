@@ -360,9 +360,7 @@ private fun WorkspaceNameFormBody(
             lineLimits = TextFieldLineLimits.SingleLine,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             onKeyboardAction = submit?.let { action -> { action() } },
-            shape = MaterialTheme.shapes.medium,
-            contentPadding =
-                PaddingValues(horizontal = fieldPadding, vertical = inputVerticalPadding),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = inputVerticalPadding),
         )
         LaunchedEffect(field) {
             focus.requestFocus()
