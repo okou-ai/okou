@@ -2454,13 +2454,13 @@ chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-r
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-008	planned					a-run
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-009	planned					a-run
 chat	src/signals/routes/__tests__/project-run-context.test.ts	project-run-context-001	planned					a-run
-chat	src/signals/routes/__tests__/projects.test.ts	projects-001	planned				B09	d-other
-chat	src/signals/routes/__tests__/projects.test.ts	projects-002	planned				B09	d-other
-chat	src/signals/routes/__tests__/projects.test.ts	projects-006	planned				B09	a-run
-chat	src/signals/routes/__tests__/projects.test.ts	projects-007	planned				B09	d-other
-chat	src/signals/routes/__tests__/projects.test.ts	projects-008	planned				B09	d-other
-chat	src/signals/routes/__tests__/projects.test.ts	projects-009	planned				B09	d-other
-chat	src/signals/routes/__tests__/projects.test.ts	projects-010	planned				B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-001	revisit		revisit: draft passes but does not type-check (the draft user message literal does not match the contract's message part types); draft /home/user/pilot-env/wip/r15/projects.test.ts; resume: type the draft with the contract's message type		B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-002	revisit		revisit: draft passes but does not type-check (the draft user message literal does not match the contract's message part types); draft /home/user/pilot-env/wip/r15/projects.test.ts; resume: type the draft with the contract's message type		B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-006	skipped		slow-setup: Given+first When/Then 364 ms and 365 ms (the dispatched member Run from createRunExecutionCredentials with plan limited-free dominates; it is the only Run row in the file, and the two Project requests themselves stay under 20 ms)		B09	a-run
+chat	src/signals/routes/__tests__/projects.test.ts	projects-007	revisit		revisit: draft passes but does not type-check (the draft user message literal does not match the contract's message part types); draft /home/user/pilot-env/wip/r15/projects.test.ts; resume: type the draft with the contract's message type		B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-008	revisit		revisit: draft passes but does not type-check (the draft user message literal does not match the contract's message part types); draft /home/user/pilot-env/wip/r15/projects.test.ts; resume: type the draft with the contract's message type		B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-009	revisit		revisit: draft passes but does not type-check (the draft user message literal does not match the contract's message part types); draft /home/user/pilot-env/wip/r15/projects.test.ts; resume: type the draft with the contract's message type		B09	d-other
+chat	src/signals/routes/__tests__/projects.test.ts	projects-010	revisit		revisit: draft passes but does not type-check (the draft user message literal does not match the contract's message part types); draft /home/user/pilot-env/wip/r15/projects.test.ts; resume: type the draft with the contract's message type		B09	d-other
 account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-001	rewritten	12.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/provider-console-paths.test.ts	B06	
 account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-003	rewritten	9.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/provider-console-paths.test.ts	B06	
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-002	rewritten	41.7	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot	
