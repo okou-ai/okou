@@ -8,6 +8,7 @@ import ai.okou.android.api.generated.ProjectEventsEventsItem
 import ai.okou.android.artifacts.ArtifactItem
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.artifacts.ArtifactPage
+import ai.okou.android.artifacts.ChatThumbnailStore
 import ai.okou.android.artifacts.ConfirmedArtifactCatalog
 import ai.okou.android.artifacts.ConfirmedRelatedChatRead
 import ai.okou.android.artifacts.ConfirmedRelatedChats
@@ -82,13 +83,19 @@ class ChatCacheStore
 internal constructor(
     private val directory: File,
     private val dispatcher: CoroutineDispatcher,
+    private val thumbnailStore: ChatThumbnailStore? = null,
     private val createDatabase: (File) -> ChatCacheDatabase,
 ) {
     constructor(
         context: Context,
         directory: File = context.noBackupFilesDir.resolve("chat-list"),
         dispatcher: CoroutineDispatcher = Dispatchers.IO,
-    ) : this(directory, dispatcher, chatDatabaseFactory(context.applicationContext, dispatcher))
+    ) : this(
+        directory,
+        dispatcher,
+        ChatThumbnailStore(context.cacheDir.resolve("chat-thumbnails-v1")),
+        chatDatabaseFactory(context.applicationContext, dispatcher),
+    )
 
     private val lock = Mutex()
     private val unreadLock = Mutex()
@@ -197,6 +204,7 @@ internal constructor(
         // Replacing a cached prefix can change its rows without advancing the cursor.
         private var historyRevision = HistoryCacheRevision()
         private val unreadFile = AtomicFile(directory.resolve("$key-unread.json"))
+        internal val inlineThumbnails = thumbnailStore?.open(key, authorization, ::checkCurrent)
 
         private fun current() = !retired && active.get() === this && authorized()
 

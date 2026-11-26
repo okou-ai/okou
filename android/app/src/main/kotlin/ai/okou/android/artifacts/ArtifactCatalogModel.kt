@@ -117,7 +117,7 @@ internal constructor(
     private val previews = LinkedHashMap<String, ArtifactPreviewState>(3, 0.75f, true)
     private val thumbnails = LruCache<String, Bitmap>(40)
     internal val inlineImages =
-        InlineArtifactImages(service, viewModelScope) { error ->
+        InlineArtifactImages(service, viewModelScope, cache?.inlineThumbnails) { error ->
             val failure = problem(error)
             if (error is ApiFailure.Unauthenticated) ArtifactProblem.Denied else failure
         }

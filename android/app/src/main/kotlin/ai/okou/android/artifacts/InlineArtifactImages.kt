@@ -43,6 +43,7 @@ internal data class InlineImageState(
 internal class InlineArtifactImages(
     private val service: ArtifactService,
     private val scope: CoroutineScope,
+    private val disk: ChatThumbnailStore.Workspace?,
     private val onFailure: (Exception) -> ArtifactProblem,
 ) {
     private val entries = MutableStateFlow<Map<InlineImageRequest, InlineImageState>>(emptyMap())
@@ -93,12 +94,27 @@ internal class InlineArtifactImages(
             scope.launch(start = CoroutineStart.LAZY) {
                 val job = currentCoroutineContext()[Job]
                 var grant: InlineImageGrant? = null
+                var cached: CachedInlineThumbnail? = null
                 try {
+                    cached =
+                        if (request.source.startsWith(ExternalImagePreviewPrefix)) null
+                        else disk?.load(request)
+                    currentCoroutineContext().ensureActive()
+                    cached?.let {
+                        put(request, InlineImageState(InlineImageStatus.Ready, it.grant, it.bitmap))
+                    }
                     val bitmap =
-                        service.readInlineImage(request.source, request.width) { authorized ->
+                        service.readInlineImage(request.source, request.width, cached) { authorized
+                            ->
                             job?.ensureActive()
                             grant = authorized
-                            put(request, InlineImageState(InlineImageStatus.Loading, authorized))
+                            if (authorized.fileId != null)
+                                applyGrant(request.source, authorized, reading = request)
+                            if (cached == null || cached.grant.fileId != authorized.fileId)
+                                put(
+                                    request,
+                                    InlineImageState(InlineImageStatus.Loading, authorized),
+                                )
                         }
                     currentCoroutineContext().ensureActive()
                     put(
@@ -110,15 +126,28 @@ internal class InlineArtifactImages(
                             bitmap,
                         ),
                     )
+                    val confirmed = grant
+                    if (
+                        bitmap != null &&
+                            confirmed?.fileId != null &&
+                            (cached == null ||
+                                cached.bitmap !== bitmap ||
+                                cached.grant != confirmed)
+                    ) {
+                        disk?.save(request, confirmed, bitmap)
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
                     currentCoroutineContext().ensureActive()
                     val failure = onFailure(error)
+                    if (grant == null && cached != null && failure == ArtifactProblem.Temporary)
+                        return@launch
                     if (
                         grant == null &&
                             (failure == ArtifactProblem.Denied ||
-                                failure == ArtifactProblem.Missing)
+                                failure == ArtifactProblem.Missing ||
+                                cached != null)
                     ) {
                         revoke(request.source)
                         return@launch
@@ -141,6 +170,7 @@ internal class InlineArtifactImages(
     }
 
     fun revoke(source: String) {
+        disk?.removeSource(source)
         accessChecks.remove(source)?.cancel()
         val current = entries.value
         val matching = current.keys.filter { it.source == source }
@@ -151,6 +181,7 @@ internal class InlineArtifactImages(
     }
 
     fun invalidate(threadIds: Set<String>? = null) {
+        disk?.removeThreads(threadIds)
         val removed = entries.value.keys.filter { threadIds == null || it.threadId in threadIds }
         if (removed.isEmpty()) return
         remove(removed)
@@ -189,11 +220,16 @@ internal class InlineArtifactImages(
         check.start()
     }
 
-    private fun applyGrant(source: String, grant: InlineImageGrant) {
+    private fun applyGrant(
+        source: String,
+        grant: InlineImageGrant,
+        reading: InlineImageRequest? = null,
+    ) {
         val current = entries.value
         val matching = current.filterKeys { it.source == source }
         if (matching.values.any { it.grant != null && it.grant.fileId != grant.fileId }) {
-            remove(matching.keys)
+            disk?.removeSource(source)
+            remove(matching.keys.filter { it != reading })
             return
         }
         entries.value =

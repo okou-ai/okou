@@ -364,6 +364,7 @@ internal constructor(
     internal suspend fun readInlineImage(
         source: String,
         width: Int,
+        cached: CachedInlineThumbnail?,
         onAuthorized: (InlineImageGrant) -> Unit,
     ): Bitmap? {
         if (source.startsWith(ExternalImagePreviewPrefix)) {
@@ -376,7 +377,8 @@ internal constructor(
         }
         val image = authorizeInlineImage(source)
         onAuthorized(image.grant)
-        return image.loadThumbnail(width)
+        return cached?.takeIf { it.grant.fileId == image.grant.fileId }?.bitmap
+            ?: image.loadThumbnail(width)
     }
 
     internal suspend fun revalidateInlineImage(source: String): InlineImageGrant =
