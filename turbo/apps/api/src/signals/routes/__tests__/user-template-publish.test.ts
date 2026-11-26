@@ -208,6 +208,27 @@ describe("POST /api/user-templates", () => {
       source,
     );
   });
+  it("user-template-publish-001 publishes an uploaded deck as a private template", async () => {
+    const fixture = installS3Fixture(context);
+    const admin = bdd.user();
+
+    const published = await publishDeck(admin, fixture);
+
+    expect(published).toMatchObject({
+      title: "Brand system",
+      kind: "presentation",
+      sourceFilename: "brand-system.pptx",
+      pageCount: 2,
+      visibility: "private",
+      ownerUserId: admin.userId,
+      canManage: true,
+    });
+    expect(
+      fixture.keys().filter((key) => {
+        return /^bundles\/v1\/[0-9a-f]{64}\.tar\.gz$/u.test(key);
+      }),
+    ).toHaveLength(1);
+  });
   it("user-template-publish-002 renames a private template while keeping its cover and owner", async () => {
     const fixture = installS3Fixture(context);
     const owner = bdd.user();
