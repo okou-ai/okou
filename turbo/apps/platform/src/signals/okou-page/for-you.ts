@@ -376,6 +376,8 @@ export const pageForYouWithKeysOnRef$ = onRef<HTMLElement>(
         if (id === undefined) {
           return;
         }
+        // The key pages the deck instead of also scrolling whatever has
+        // focus sideways.
         event.preventDefault();
         set(browseForYou$, id, direction, signal);
       },

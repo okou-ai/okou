@@ -293,6 +293,11 @@
     var(--duration-for-you-fold);
   --animate-for-you-fold-clip-shut: for-you-fold-clip-shut
     var(--duration-for-you-fold);
+  /* A card heading's ends fade while more of it lies beyond them. Consumers
+     bind these to the heading's scroll timeline and range with the longhands,
+     which the shorthand here resets. */
+  --animate-for-you-edge-above: for-you-edge-above linear both;
+  --animate-for-you-edge-below: for-you-edge-below linear both;
 
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`

@@ -1498,25 +1498,23 @@ test("Folding the inline direction keeps what was written until it opens again",
 
   click(await findFastControl("button", "Collapse", card));
 
-  // Folded, the editor lies under its entry, out of sight and out of reach.
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "What do you have in mind?" }),
-    ).not.toBeInTheDocument();
-  });
-  expect(region).toHaveAttribute("inert");
+  // Folded, the editor is out of reach and the offered directions are back.
   await expect(
     findFastControl("button", "Prepare Supply forecast", card),
   ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("region", { name: "What do you have in mind?" }),
+  ).toBeNull();
   click(await findFastControl("button", "What do you have in mind?", card));
+  const reopened = await screen.findByRole("region", {
+    name: "What do you have in mind?",
+  });
   await expect(
-    screen.findByRole("region", { name: "What do you have in mind?" }),
-  ).resolves.toBe(region);
-  expect(region).not.toHaveAttribute("inert");
+    within(reopened).findByRole("textbox", { name: /message/i }),
+  ).resolves.toHaveTextContent("Expedite shipping");
   expect(
     queryFastControl("button", "Prepare Supply forecast", card),
   ).not.toBeInTheDocument();
-  expect(edit).toHaveTextContent("Expedite shipping");
 });
 
 test("Escape folds the inline direction and returns focus to its entry", async () => {
@@ -1534,7 +1532,9 @@ test("Escape folds the inline direction and returns focus to its entry", async (
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
 
   await waitFor(() => {
-    expect(region).toHaveAttribute("inert");
+    expect(
+      screen.queryByRole("region", { name: "What do you have in mind?" }),
+    ).toBeNull();
   });
   const entry = await findFastControl(
     "button",
@@ -1612,7 +1612,11 @@ test("Arrow keys page the deck like its arrows, except while a direction is writ
   });
   expect(queryFastControl("button", "Collapse", card)).toHaveFocus();
   await user.keyboard("{ArrowRight}");
+  await appendDirection(edit, " today");
 
-  await expect(activeCard(three)).resolves.toBe(card);
-  expect(edit).toHaveTextContent("Expedite shipping");
+  expect(edit).toHaveTextContent("Expedite shipping today");
+  await expect(activeCard(three)).resolves.toBeInTheDocument();
+  await expect(
+    findFastControl("link", "Show suggestion 3 of 3"),
+  ).resolves.toHaveAttribute("aria-current", "step");
 });

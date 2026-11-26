@@ -20,14 +20,14 @@ const CARD_SCROLL = "[scroll-timeline:--for-you-card_y]";
 const CARD_FOOT_FADE = cn(
   "[timeline-scope:--for-you-card]",
   "after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:z-20 after:h-6 after:bg-linear-to-t after:from-muted after:to-transparent after:opacity-0 dark:after:from-background",
-  "after:[animation-name:for-you-edge-below] after:[animation-fill-mode:both] after:[animation-timing-function:linear] after:[animation-timeline:--for-you-card] after:[animation-range:calc(100%-1.5rem)_100%]",
+  "after:animate-for-you-edge-below after:[animation-timeline:--for-you-card] after:[animation-range:calc(100%-1.5rem)_100%]",
 );
 const EDGE_FADES = cn(
   "[timeline-scope:--for-you-heading]",
   "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-4 before:bg-linear-to-b before:from-muted before:to-transparent before:opacity-0 dark:before:from-background",
-  "before:[animation-name:for-you-edge-above] before:[animation-fill-mode:both] before:[animation-timing-function:linear] before:[animation-timeline:--for-you-heading] before:[animation-range:0_1rem]",
+  "before:animate-for-you-edge-above before:[animation-timeline:--for-you-heading] before:[animation-range:0_1rem]",
   "after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:z-10 after:h-6 after:bg-linear-to-t after:from-muted after:to-transparent after:opacity-0 dark:after:from-background",
-  "after:[animation-name:for-you-edge-below] after:[animation-fill-mode:both] after:[animation-timing-function:linear] after:[animation-timeline:--for-you-heading] after:[animation-range:calc(100%-1.5rem)_100%]",
+  "after:animate-for-you-edge-below after:[animation-timeline:--for-you-heading] after:[animation-range:calc(100%-1.5rem)_100%]",
 );
 
 /**

@@ -3916,9 +3916,9 @@ function containsFiles(dataTransfer: DataTransfer): boolean {
 // frame. The content fades in once the card has started to grow and fades out
 // first on the way back. A first mount already open starts from the fold.
 const CARD_LAYOUT_SURFACE =
-  "grid min-h-11 rounded-xl border-border shadow-none transition-[border-color,grid-template-rows] duration-[220ms,var(--duration-for-you-fold)] ease-[cubic-bezier(0.4,0,0.2,1),var(--ease-capability)] starting:grid-rows-[0fr]";
+  "grid min-h-11 rounded-xl border-border shadow-none motion-safe:transition-[border-color,grid-template-rows] duration-[220ms,var(--duration-for-you-fold)] ease-[cubic-bezier(0.4,0,0.2,1),var(--ease-capability)] starting:grid-rows-[0fr]";
 const CARD_LAYOUT_CONTENT =
-  "min-h-0 overflow-clip transition-opacity ease-out motion-reduce:transition-none starting:opacity-0";
+  "min-h-0 overflow-clip ease-out motion-safe:transition-opacity starting:opacity-0";
 
 function ComposerCard({
   signals,

@@ -54,7 +54,7 @@ const DIRECTION_CARD =
 // their bottom edge and the text above follows every frame. A folded row stays
 // out of sight and out of reach, and it is only clipped while it moves.
 const FOLD =
-  "grid transition-[grid-template-rows,visibility] duration-(--duration-for-you-fold) ease-capability motion-reduce:transition-none";
+  "grid motion-safe:transition-[grid-template-rows,visibility] duration-(--duration-for-you-fold) ease-capability";
 
 function foldRow(open: boolean) {
   return open ? "visible grid-rows-[1fr]" : "invisible grid-rows-[0fr]";
@@ -69,7 +69,7 @@ function foldClip(open: boolean) {
 // What leaves fades first; what returns fades in once its room has opened.
 function foldFade(open: boolean) {
   return cn(
-    "transition-opacity ease-out motion-reduce:transition-none",
+    "ease-out motion-safe:transition-opacity",
     open ? "opacity-100 delay-120 duration-240" : "opacity-0 duration-120",
   );
 }
@@ -282,7 +282,8 @@ export function SuggestionSaveErrors() {
  * The entry rests where the editor opens. Once the editor exists it lies under
  * the entry folded to the entry's own size, so the entry gives up its fill
  * and outline to it and only its words fade, out as the editor grows and back
- * once it has folded.
+ * once it has folded. The fade sits on the contents so the button keeps its
+ * own hover transitions.
  */
 function SuggestionDirectionEntry({
   entry,
@@ -312,12 +313,14 @@ function SuggestionDirectionEntry({
       aria-busy={busy || undefined}
       className={cn(
         DIRECTION_CARD,
-        // Above the folded editor, whose card stacks at z-10.
-        "z-20 col-start-1 row-start-1 h-11 justify-between gap-3 self-start px-4 text-sm font-normal text-muted-foreground",
+        // Above the folded editor in their shared cell; see SuggestionDirection.
+        "z-20 col-start-1 row-start-1 h-11 self-start px-4 text-sm font-normal text-muted-foreground",
         over &&
           "border-transparent bg-transparent hover:bg-transparent [&:hover]:bg-state-hover-overlay",
-        foldFade(shown),
-        !shown && "invisible",
+        !shown && "pointer-events-none",
+        // Without an editor beneath it, as beside a failed one, it has its own
+        // fill to put away.
+        !shown && !over && "invisible",
       )}
       aria-description={t(($) => {
         return $.chat.agentSuggestions.customDirectionDescription;
@@ -326,16 +329,23 @@ function SuggestionDirectionEntry({
         detach(open(entry, signal), Reason.DomCallback);
       }}
     >
-      <span className="min-w-0 flex-1 truncate text-left">
-        {t(($) => {
-          return $.chat.agentSuggestions.customPlaceholder;
-        })}
+      <span
+        className={cn(
+          "flex min-w-0 flex-1 items-center justify-between gap-3",
+          foldFade(shown),
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate text-left">
+          {t(($) => {
+            return $.chat.agentSuggestions.customPlaceholder;
+          })}
+        </span>
+        {busy ? (
+          <Loader2 aria-hidden className="shrink-0 animate-spin" />
+        ) : (
+          <SquarePen aria-hidden className="shrink-0" />
+        )}
       </span>
-      {busy ? (
-        <Loader2 aria-hidden className="shrink-0 animate-spin" />
-      ) : (
-        <SquarePen aria-hidden className="shrink-0" />
-      )}
     </Button>
   );
 }
@@ -515,8 +525,13 @@ function SuggestionDirection({
       data-slot="suggestion-direction"
       className="min-w-0"
     >
-      {open && <SuggestionDirectionCaption writing={writing} />}
-      <div className="grid min-w-0">
+      {/* Mounted folded from the start, so the first opening folds it in
+          like every later one. */}
+      <SuggestionDirectionCaption writing={writing} />
+      {/* The entry and the editor share one cell, the entry painted over the
+          folded editor's card (which stacks at z-10). `isolate` keeps that
+          order local to the cell. */}
+      <div className="isolate grid min-w-0">
         {open && (
           <SuggestionDirectionComposer
             entry={entry}
