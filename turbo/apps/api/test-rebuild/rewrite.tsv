@@ -1471,17 +1471,17 @@ messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-0
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-005	planned				B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-006	planned				B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-007	planned				B13	d-other
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-009	planned				B13	d-other
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-009	rewritten	92.0		src/signals/routes/__tests__/discord-ingress.test.ts	B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-010	planned				B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-011	planned				B13	d-other
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-012	planned				B13	d-other
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-013	planned				B13	d-other
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-012	rewritten	125.2		src/signals/routes/__tests__/discord-ingress.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-013	rewritten	33.0		src/signals/routes/__tests__/discord-ingress.test.ts	B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-017	planned				B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-018	planned				B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-020	planned				B13	d-other
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-022	planned				B13	d-other
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-023	planned				B13	d-other
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-031	planned				B13	d-other
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-022	rewritten	142.8		src/signals/routes/__tests__/discord-ingress.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-023	rewritten	130.1		src/signals/routes/__tests__/discord-ingress.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-031	rewritten	135.6		src/signals/routes/__tests__/discord-ingress.test.ts	B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-037	planned				B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-040	planned				B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-043	planned				B13	d-other
@@ -1491,8 +1491,8 @@ messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-0
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-049	planned					a-run
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-050	planned				B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-051	planned				B13	d-other
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-052	planned				B13	d-other
-messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-053	planned				B13	d-other
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-052	rewritten	48.5		src/signals/routes/__tests__/discord-ingress.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-053	revisit		revisit: non-first median 204.2 ms (202.2/222.8/180.2/204.2/287.8); setup is two provisioned workspaces and two OAuth bindings for one Discord identity; draft /home/user/pilot-env/wip/r17/discord-ingress.test.ts; resume: split		B13	d-other
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-054	planned					a-run
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-055	planned					a-run
 messaging	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	discord-interactions-preferences-001	rewritten	175.4	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	B04	
