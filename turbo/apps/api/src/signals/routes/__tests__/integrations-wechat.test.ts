@@ -327,11 +327,14 @@ async function deliver(
 }
 
 function reconnectToken(text: string): string {
-  const match = /\/settings\/wechat\?token=([^\s]+)/u.exec(text);
-  if (!match?.[1]) {
+  const link = text.split(/\s+/u).find((word) => {
+    return URL.canParse(word) && new URL(word).pathname === "/settings/wechat";
+  });
+  const token = link ? new URL(link).searchParams.get("token") : null;
+  if (!token) {
     throw new Error("No reconnect link in the notice");
   }
-  return decodeURIComponent(match[1]);
+  return token;
 }
 
 async function connectedThenDisconnected(tencent: Tencent, actor: Actor) {

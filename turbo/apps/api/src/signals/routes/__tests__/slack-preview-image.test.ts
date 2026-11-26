@@ -83,13 +83,21 @@ function cloudflareTransformation(imageUrl: string): {
   readonly directives: string;
   readonly source: URL;
 } {
-  const match = /^https:\/\/a\.okou\.io\/cdn-cgi\/image\/([^/]+)\/(.+)$/u.exec(
-    imageUrl,
-  );
-  if (!match?.[1] || !match[2]) {
+  const url = new URL(imageUrl);
+  const [, cdn, image, directives, ...source] = url.pathname.split("/");
+  if (
+    url.origin !== "https://a.okou.io" ||
+    cdn !== "cdn-cgi" ||
+    image !== "image" ||
+    !directives ||
+    source.length === 0
+  ) {
     throw new Error(`Expected a Cloudflare transformation: ${imageUrl}`);
   }
-  return { directives: match[1], source: new URL(match[2]) };
+  return {
+    directives,
+    source: new URL(`${source.join("/")}${url.search}`),
+  };
 }
 
 describe("Slack preview image URLs", () => {

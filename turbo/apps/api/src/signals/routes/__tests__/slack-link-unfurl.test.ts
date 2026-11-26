@@ -143,13 +143,21 @@ async function publishPublicSite(owner: ApiTestUser, title: string) {
 
 /** The signed preview source inside a Cloudflare image transformation. */
 function signedImageSource(imageUrl: string | undefined): URL {
-  const match = /^https:\/\/a\.okou\.io\/cdn-cgi\/image\/[^/]+\/(.+)$/u.exec(
-    imageUrl ?? "",
-  );
-  if (!match?.[1]) {
+  if (!imageUrl) {
+    throw new Error("Expected a Cloudflare transformation");
+  }
+  const url = new URL(imageUrl);
+  const [, cdn, image, directives, ...source] = url.pathname.split("/");
+  if (
+    url.origin !== "https://a.okou.io" ||
+    cdn !== "cdn-cgi" ||
+    image !== "image" ||
+    !directives ||
+    source.length === 0
+  ) {
     throw new Error(`Expected a Cloudflare transformation: ${imageUrl}`);
   }
-  return new URL(match[1]);
+  return new URL(`${source.join("/")}${url.search}`);
 }
 
 function sectionTexts(blocks: readonly UnfurlBlock[]): string[] {
