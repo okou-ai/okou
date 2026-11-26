@@ -24,6 +24,8 @@ private struct ChatModelPickerButtonContent: View {
   @ResolvedValue private var resolvedConfiguration: ChatModelConfiguration?
   @LoadableStatus<ChatModelConfiguration> private var modelStatus: LoadableState
   @LoadableValue private var metadata: Loadable<ChatModelSelection?>
+  /// The connector choices' writes, which gate sending, kept in the same Store.
+  @ResolvedValue private var resolvedConnectors: ComposerConnectorStore.Status?
 
   init(selection: ChatModelSelectionStore, action: @escaping () -> Void) {
     self.selection = selection
@@ -33,6 +35,7 @@ private struct ChatModelPickerButtonContent: View {
       task: selection.models.configurationValue, keepLast: true)
     _modelStatus = LoadableStatus(task: selection.models.configurationValue)
     _metadata = LoadableValue(task: selection.metadataValue)
+    _resolvedConnectors = ResolvedValue(selection.connectors.statusValue)
   }
 
   /// This render's graph value. The synchronous read only covers a missing first resolution.
@@ -54,7 +57,9 @@ private struct ChatModelPickerButtonContent: View {
     if case .loading = metadata { return true }
     return modelStatus == .loading || presentation.isBusy
   }
-  private var canSend: Bool { presentation.canSend && selection.connectors.canSend }
+  private var canSend: Bool {
+    presentation.canSend && (resolvedConnectors ?? selection.connectors.status).canSend
+  }
   private var hasError: Bool {
     modelError != nil || metadataError != nil || presentation.error != nil
       || (configuration != nil && !canSend && !isLoading)

@@ -11,12 +11,15 @@ struct ComposerConnectorDetail: View {
   @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
   /// The authorization attempt, kept in the same Store.
   @ResolvedValue private var resolvedAuthorization: ConnectorActionStore.Presentation?
+  /// The composer's writes, kept in the same Store.
+  @ResolvedValue private var connectorStatus: ComposerConnectorStore.Status?
 
   init(store: ComposerConnectorStore, connector: ChatCatalogConnector) {
     self.store = store
     self.connector = connector
     _resolvedSnapshot = ResolvedValue(store.snapshotValue)
     _resolvedAuthorization = ResolvedValue(store.authorization.presentationValue)
+    _connectorStatus = ResolvedValue(store.statusValue)
   }
 
   private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
@@ -70,7 +73,7 @@ struct ComposerConnectorDetail: View {
             } else {
               accountDestination = store.openAccounts(current, managesDefaults: true)
             }
-          }.disabled(store.isSaving || store.uncertain)
+          }.disabled(!(connectorStatus ?? store.status).canSend)
         }.frame(minHeight: OkouControl.listRow)
         Divider()
       }

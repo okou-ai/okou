@@ -12,23 +12,34 @@ extension View {
   }
 }
 
-/// Each entry owns its navigation binding; the composer owns the resource lifetime.
+/// Each entry owns its navigation binding; the composer owns the resource lifetime, which it
+/// keeps in the session Store.
 private struct ConnectorPermissionDestination: ViewModifier {
   let store: ComposerConnectorStore
   @Binding var destination: ComposerConnectorPermissionResources?
+  @ResolvedValue private var status: ComposerConnectorStore.Status?
+
+  init(
+    store: ComposerConnectorStore, destination: Binding<ComposerConnectorPermissionResources?>
+  ) {
+    self.store = store
+    _destination = destination
+    _status = ResolvedValue(store.statusValue)
+  }
 
   func body(content: Content) -> some View {
+    let presented = (status ?? store.status).permissions
     content.navigationDestination(
       isPresented: Binding(
-        get: { destination != nil && store.permissions === destination },
-        set: { presented in
-          if !presented {
+        get: { destination != nil && presented === destination },
+        set: { isPresented in
+          if !isPresented {
             if store.permissions === destination { store.closePermissions() }
             destination = nil
           }
         })
     ) {
-      if let resources = destination, store.permissions === resources {
+      if let resources = destination, presented === resources {
         ComposerConnectorPermissions(store: store, resources: resources)
           .id(ObjectIdentifier(resources))
       }
@@ -53,6 +64,8 @@ private struct ComposerConnectorPermissionsContent: View {
   @LoadableValue private var page: Loadable<ComposerConnectorPermissionResources.Page>
   @LoadableValue private var controls: Loadable<ComposerConnectorPermissionResources.Controls>
   @LoadableStatus<ComposerConnectorPermissionResources.Page> private var status: LoadableState
+  /// The composer's writes and notices, kept in the session Store.
+  @ResolvedValue private var resolvedConnectorStatus: ComposerConnectorStore.Status?
   @Environment(\.dismiss) private var dismiss
   @State private var confirmsReset = false
 
@@ -62,9 +75,15 @@ private struct ComposerConnectorPermissionsContent: View {
     _page = LoadableValue(task: resources.page, keepLast: true)
     _status = LoadableStatus(task: resources.page)
     _controls = LoadableValue(resources.controls)
+    _resolvedConnectorStatus = ResolvedValue(store.statusValue)
   }
 
-  private var busy: Bool { status == .loading || store.isSaving || store.uncertain }
+  private var connectorStatus: ComposerConnectorStore.Status {
+    resolvedConnectorStatus ?? store.status
+  }
+  private var busy: Bool {
+    status == .loading || connectorStatus.isSaving || connectorStatus.uncertain
+  }
 
   var body: some View {
     List {
@@ -78,13 +97,13 @@ private struct ComposerConnectorPermissionsContent: View {
         }
       }
       ComposerConnectorReadError(store: store) { await resources.retry() }
-      if let notice = store.notice {
+      if let notice = connectorStatus.notice {
         Text(notice).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
       }
       if case .hasData(let controls) = controls,
-        let failure = controls.confirmationFailure, store.error == nil
+        let failure = controls.confirmationFailure, connectorStatus.error == nil
       {
-        ConnectorLoadError(error: failure, isLoading: store.isRefreshing) {
+        ConnectorLoadError(error: failure, isLoading: connectorStatus.isRefreshing) {
           await resources.retry()
         }
       }
@@ -178,12 +197,12 @@ private struct ComposerConnectorPermissionsContent: View {
     HStack(spacing: OkouSpace.md) {
       Button("Cancel") { dismiss() }
         .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
-        .disabled(store.isSaving)
+        .disabled(connectorStatus.isSaving)
       Button {
         Task { if await resources.save() { dismiss() } }
       } label: {
         HStack {
-          if store.isSaving { ProgressView() }
+          if connectorStatus.isSaving { ProgressView() }
           Text("Apply")
         }.frame(maxWidth: .infinity)
       }
@@ -214,6 +233,8 @@ private struct ComposerPermissionGroup: View {
   let resources: ComposerConnectorPermissionResources
   let category: String
   @LoadableValue private var page: Loadable<ComposerConnectorPermissionResources.Page>
+  /// The composer's writes, kept in the session Store.
+  @ResolvedValue private var connectorStatus: ComposerConnectorStore.Status?
 
   init(
     composer: ComposerConnectorStore, resources: ComposerConnectorPermissionResources,
@@ -223,7 +244,10 @@ private struct ComposerPermissionGroup: View {
     self.resources = resources
     self.category = category
     _page = LoadableValue(task: resources.page, keepLast: true)
+    _connectorStatus = ResolvedValue(composer.statusValue)
   }
+
+  private var busy: Bool { !(connectorStatus ?? composer.status).canSend }
 
   var body: some View {
     List {
@@ -240,7 +264,7 @@ private struct ComposerPermissionGroup: View {
             Button("Deny all") {
               Task { await resources.apply(.denyGroup(permissions.map(\.name))) }
             }
-          }.disabled(composer.isSaving || composer.uncertain)
+          }.disabled(busy)
         } footer: {
           Text("Apply on the Permissions page to save.").okouSectionNote()
         }
@@ -248,7 +272,7 @@ private struct ComposerPermissionGroup: View {
           ForEach(permissions, id: \.name) { permission in
             ComposerPermissionRow(
               name: permission.name, description: permission.description, page: value,
-              resources: resources, busy: composer.isSaving || composer.uncertain)
+              resources: resources, busy: busy)
           }
         }
       }

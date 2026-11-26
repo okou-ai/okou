@@ -80,7 +80,7 @@ final class ConversationFailureRecovery {
 
   func failureState(
     _ failure: ChatFailure, models: ChatModelSelectionStore.Presentation? = nil,
-    subscriptionsBusy: Bool? = nil,
+    connectors: ComposerConnectorStore.Status? = nil, subscriptionsBusy: Bool? = nil,
     context: FailureRecoveryResources? = nil, accounts: [PersonalSubscription]? = nil,
     accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
   ) -> AssistantFailureState {
@@ -94,7 +94,7 @@ final class ConversationFailureRecovery {
         && conversation.pending.isEmpty
         && conversation.history?.latestFailureID == failure.id
         && (context == nil || failureContext === context),
-      selection: conversation.modelSelection, models: models,
+      selection: conversation.modelSelection, models: models, connectors: connectors,
       subscriptionsBusy: subscriptionsBusy, accounts: accounts,
       busy: isRecoveringFailure || conversation.isSending,
       accountsError: accountsError.map(ChatRequestFailure.message(for:)))
@@ -255,15 +255,17 @@ final class ConversationFailureRecovery {
 extension ConversationStore {
   var isRecoveringFailure: Bool { failureRecoveryActions.isRecoveringFailure }
   var failureContext: FailureRecoveryResources? { failureRecoveryActions.failureContext }
-  /// Views pass the model selection's graph value they resolved for this render.
+  /// Views pass the model selection's and connector choices' graph values they resolved for
+  /// this render.
   func failureState(
     _ failure: ChatFailure, models: ChatModelSelectionStore.Presentation? = nil,
-    subscriptionsBusy: Bool? = nil,
+    connectors: ComposerConnectorStore.Status? = nil, subscriptionsBusy: Bool? = nil,
     context: FailureRecoveryResources? = nil, accounts: [PersonalSubscription]? = nil,
     accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
   ) -> AssistantFailureState {
     failureRecoveryActions.failureState(
-      failure, models: models, subscriptionsBusy: subscriptionsBusy, context: context,
+      failure, models: models, connectors: connectors, subscriptionsBusy: subscriptionsBusy,
+      context: context,
       accounts: accounts, accountsError: accountsError, billing: billing,
       billingError: billingError)
   }
