@@ -203,7 +203,8 @@ public actor VoiceDraftSession {
     guard let current = record, current.id == recordingID, sampleCount > 0
     else { throw VoiceDraftError.unavailable }
     guard sampleCount * 2 + 44 <= 25 * 1024 * 1024 else {
-      throw ChatError.invalidContract("Voice recordings can contain up to 25 MiB. Your recording is saved.")
+      throw ChatError.invalidContract(
+        "Voice recordings can contain up to 25 MiB. Your recording is saved.")
     }
     if let id = current.uploadedClipID { return id }
     let pcm = try Data(contentsOf: storage.directory.appendingPathComponent("audio.pcm"))

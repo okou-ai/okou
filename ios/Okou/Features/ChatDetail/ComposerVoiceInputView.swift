@@ -149,3 +149,19 @@ struct ComposerVoiceInputTray: View {
     }
   }
 }
+
+/// Animates a container whose layout follows the voice tray. The phase is read from the session
+/// graph, so the container changes in the same transaction as the composer.
+struct ComposerVoiceAnimation: ViewModifier {
+  let animation: Animation?
+  @ResolvedValue private var phase: ComposerVoiceInputStore.Phase?
+
+  init(voice: ComposerVoiceInputStore?, animation: Animation?) {
+    self.animation = animation
+    _phase = ResolvedValue(voice?.phaseValue ?? ComposerVoiceInputStore.idlePhase)
+  }
+
+  func body(content: Content) -> some View {
+    content.animation(animation, value: phase)
+  }
+}
