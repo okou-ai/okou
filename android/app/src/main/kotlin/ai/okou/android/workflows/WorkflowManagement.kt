@@ -1,9 +1,9 @@
 package ai.okou.android.workflows
 
 import ai.okou.android.LocalOkouDarkMode
+import ai.okou.android.NativeAboveLabelPadding
 import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouActionTreatment
-import ai.okou.android.OkouFormLabel
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.SettingsTrigger
@@ -23,7 +23,6 @@ import ai.okou.android.api.generated.WorkflowAutomationVariant3
 import ai.okou.android.api.generated.WorkflowAutomationVariant4
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.chat.chatTime
-import ai.okou.android.okouFormInputStyle
 import ai.okou.android.okouFormLabelHeight
 import ai.okou.android.okouFormSupportingTextStyle
 import ai.okou.android.preferences.TimezoneSelectionSheet
@@ -48,7 +47,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
@@ -820,7 +818,13 @@ private fun WorkflowField(
         val requester = remember { FocusRequester() }
         var focused by remember { mutableStateOf(false) }
         val supportStyle = okouFormSupportingTextStyle()
-        val labelHeight = okouFormLabelHeight(title, constraints.maxWidth)
+        val labelHeight =
+            okouFormLabelHeight(
+                title,
+                constraints.maxWidth,
+                MaterialTheme.typography.bodySmall,
+                NativeAboveLabelPadding,
+            )
         val minimumHeight =
             if (validation == null) baseHeight else baseHeight + OkouFormLayout.SupportingTextGap
         val supportHeight =
@@ -840,14 +844,11 @@ private fun WorkflowField(
                     },
             enabled = enabled,
             labelPosition = TextFieldLabelPosition.Above(),
-            label = { OkouFormLabel(title) },
+            label = { Text(title) },
             isError = errorMessage != null,
             lineLimits =
                 if (singleLine) TextFieldLineLimits.SingleLine
                 else TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
-            textStyle = okouFormInputStyle(),
-            shape = RoundedCornerShape(12.dp),
-            contentPadding = OkouFormLayout.FieldPadding,
             supportingText =
                 if (validation == null) null
                 else {
@@ -1016,29 +1017,29 @@ private fun WorkflowSelection(
     icon: Int = R.drawable.ic_expand_more,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(12.dp)
     val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(OkouFormLayout.LabelGap)) {
+    Column(verticalArrangement = Arrangement.spacedBy(NativeAboveLabelPadding)) {
         Text(
             label,
+            Modifier.padding(horizontal = NativeAboveLabelPadding),
             color =
                 when {
                     !enabled -> colors.onSurface.copy(alpha = 0.38f)
                     focused -> colors.primary
                     else -> colors.onSurfaceVariant
                 },
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
         )
         OutlinedButton(
             onClick,
             modifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp)
+                .heightIn(min = OutlinedTextFieldDefaults.MinHeight)
                 .onFocusChanged { focused = it.isFocused }
                 .semantics { contentDescription = label },
             enabled = enabled,
-            shape = shape,
+            shape = OutlinedTextFieldDefaults.shape,
             colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
             border =
                 when {
@@ -1046,9 +1047,9 @@ private fun WorkflowSelection(
                     focused -> BorderStroke(2.dp, colors.primary)
                     else -> BorderStroke(1.dp, colors.outline)
                 },
-            contentPadding = OkouFormLayout.FieldPadding,
+            contentPadding = OutlinedTextFieldDefaults.contentPaddingWithoutLabel(),
         ) {
-            Text(value, Modifier.weight(1f), style = okouFormInputStyle())
+            Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.size(8.dp))
             Icon(
                 painterResource(icon),
