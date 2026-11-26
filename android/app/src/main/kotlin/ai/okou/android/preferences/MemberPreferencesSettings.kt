@@ -22,9 +22,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
@@ -38,7 +41,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
@@ -107,7 +109,7 @@ internal fun MemberPreferencesSettings(
                 enabled = state != null,
             ) { dismiss ->
                 if (state == null || model == null) return@SettingsPickerRow
-                SettingsSheet(colorTitle, dismiss) {
+                SettingsSheet(colorTitle, dismiss, scroll = SettingsSheetScroll.None) {
                     PaletteOptions(state.colorTheme, dark) { palette ->
                         dismiss()
                         model.selectColorTheme(palette)
@@ -268,27 +270,29 @@ private fun PaletteOptions(
     dark: Boolean,
     onSelect: (UserPreferencesColorTheme) -> Unit,
 ) {
-    val initial = remember { selected }
-    val position = rememberSettingsChoicePosition(reveal = true)
-    BoxWithConstraints(Modifier.fillMaxWidth().selectableGroup()) {
+    val palettes = UserPreferencesColorTheme.entries
+    val position =
+        rememberSettingsChoicePosition(selected.name) { name ->
+            palettes.any { it.name == name }
+        }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
         val columns = if (maxWidth < 312.dp || LocalDensity.current.fontScale > 1.3f) 1 else 2
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            UserPreferencesColorTheme.entries.chunked(columns).forEach { choices ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    choices.forEach { palette ->
-                        key(palette) {
-                            val anchor = if (palette == initial) position else Modifier
-                            SettingsChoiceRow(
-                                stringResource(paletteLabel(palette)),
-                                selected = palette == selected,
-                                enabled = true,
-                                onClick = { onSelect(palette) },
-                                modifier = Modifier.weight(1f).then(anchor),
-                                leading = { PaletteSwatch(palette, dark) },
-                            )
-                        }
-                    }
-                }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns),
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+            state = rememberLazyGridState(initialFirstVisibleItemIndex = selected.ordinal),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(palettes, key = { it.name }) { palette ->
+                SettingsChoiceRow(
+                    stringResource(paletteLabel(palette)),
+                    selected = palette == selected,
+                    enabled = true,
+                    onClick = { onSelect(palette) },
+                    modifier = position(palette.name),
+                    leading = { PaletteSwatch(palette, dark) },
+                )
             }
         }
     }

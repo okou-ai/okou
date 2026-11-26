@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.state.rememberSettingsChoiceFocus
 import ai.okou.android.state.rememberSettingsFlag
 import ai.okou.android.updates.updateFocusOutline
 import androidx.activity.compose.BackHandler
@@ -30,8 +31,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -762,26 +761,32 @@ internal fun <T : Enum<T>> SettingsRadioOptions(
 internal fun <T> SettingsChoiceList(
     options: List<T>,
     selectedIndex: Int,
-    optionKey: (T) -> Any,
+    optionKey: (T) -> String,
     choice: @Composable (T, Modifier) -> Unit,
 ) {
     val initialIndex = remember { if (selectedIndex in options.indices) selectedIndex else 0 }
-    val initialKey = remember { options.getOrNull(initialIndex)?.let(optionKey) }
-    val position = rememberSettingsChoicePosition()
+    val position =
+        rememberSettingsChoicePosition(options.getOrNull(initialIndex)?.let(optionKey)) { key ->
+            options.any { optionKey(it) == key }
+        }
     LazyColumn(
         Modifier.fillMaxWidth().selectableGroup(),
         state = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex),
     ) {
         items(options, key = optionKey) { option ->
-            choice(option, if (optionKey(option) == initialKey) position else Modifier)
+            choice(option, position(optionKey(option)))
         }
     }
 }
 
 @Composable
-internal fun rememberSettingsChoicePosition(reveal: Boolean = false): Modifier {
+internal fun rememberSettingsChoicePosition(
+    initialKey: String?,
+    isAvailable: (String) -> Boolean,
+): (String) -> Modifier {
+    var focusedKey by rememberSettingsChoiceFocus()
+    val openingKey = remember { focusedKey?.takeIf(isAvailable) ?: initialKey }
     val focus = remember { FocusRequester() }
-    val requester = remember { BringIntoViewRequester() }
     val inputMode = LocalInputModeManager.current
     var positioned by remember { mutableStateOf(false) }
     var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -789,14 +794,17 @@ internal fun rememberSettingsChoicePosition(reveal: Boolean = false): Modifier {
         if (!positioned && coordinates?.isAttached == true) {
             positioned = true
             if (inputMode.inputMode == InputMode.Keyboard) focus.requestFocus()
-            if (reveal) requester.bringIntoView()
         }
     }
-    return Modifier.focusRequester(focus)
-        .then(if (reveal) Modifier.bringIntoViewRequester(requester) else Modifier)
-        .onGloballyPositioned {
+    val anchor =
+        Modifier.focusRequester(focus).onGloballyPositioned {
             if (!positioned && coordinates?.isAttached != true) coordinates = it
         }
+    return { key ->
+        (if (key == openingKey) anchor else Modifier).onFocusChanged {
+            if (it.isFocused) focusedKey = key
+        }
+    }
 }
 
 private val settingsChoiceRipple = ripple(enableFocusIndication = false)

@@ -2,6 +2,7 @@ package ai.okou.android
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.IntState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performKeyInput
@@ -31,6 +33,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w360dp-h480dp")
 class SettingsChoiceListTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    private val restoration = StateRestorationTester(compose)
 
     @Test
     fun opensAtTheSelectionAndOnlySavesWhenTheFocusedChoiceIsActivated() = keyboard {
@@ -49,6 +52,11 @@ class SettingsChoiceListTest {
         compose.onNodeWithText("Choose entry").assertIsDisplayed()
         compose.runOnIdle { assertEquals(emptyList<Int>(), submissions) }
 
+        restoration.emulateSavedInstanceStateRestore()
+        option(18).assertIsDisplayed().assertIsFocused()
+        option(2).assertDoesNotExist()
+        compose.runOnIdle { assertEquals(emptyList<Int>(), submissions) }
+
         option(18).performKeyInput { pressKey(Key.Enter) }
         compose.onNodeWithText("Choose entry").assertDoesNotExist()
         compose.onNodeWithText("Settings entry").assertIsFocused()
@@ -64,21 +72,23 @@ class SettingsChoiceListTest {
         compose.runOnIdle { assertEquals(emptyList<Int>(), submissions) }
     }
 
-    private fun show(selected: androidx.compose.runtime.IntState, onSelect: (Int) -> Unit) {
+    private fun show(selected: IntState, onSelect: (Int) -> Unit) {
         val keyboard =
             object : InputModeManager {
                 override val inputMode = InputMode.Keyboard
 
                 override fun requestInputMode(inputMode: InputMode) = inputMode == this.inputMode
             }
-        compose.setContent {
+        restoration.setContent {
             CompositionLocalProvider(LocalInputModeManager provides keyboard) {
                 OkouTheme(dark = false) {
                     SettingsPickerRow("Settings entry", null, leading = {}) { dismiss ->
                         SettingsSheet("Choose entry", dismiss, scroll = SettingsSheetScroll.None) {
-                            SettingsChoiceList((0..23).toList(), selected.intValue, { it }) {
-                                option,
-                                position ->
+                            SettingsChoiceList(
+                                (0..23).toList(),
+                                selected.intValue,
+                                Int::toString,
+                            ) { option, position ->
                                 SettingsChoiceRow(
                                     "Option $option",
                                     option == selected.intValue,
