@@ -364,20 +364,9 @@ internal constructor(
     internal suspend fun readInlineImage(
         source: String,
         width: Int,
+        cached: CachedInlineThumbnail?,
         onAuthorized: (InlineImageGrant) -> Unit,
     ): Bitmap? {
-        chatAttachment(source)?.let { file ->
-            if (!file.contentType.isAttachmentImage) throw ApiFailure.IncompatibleResponse()
-            val grant = api.resolveChatUpload(file.id)
-            val url = artifactHttpsUrl(grant.url) ?: throw ApiFailure.IncompatibleResponse()
-            onAuthorized(InlineImageGrant(source, file.filename))
-            return thumbnail(grant.previewImageUrl, width)
-                ?: readBitmap(
-                    url.inlineThumbnail(width, file.contentType) ?: url,
-                    width,
-                    MAX_IMAGE_BYTES,
-                )
-        }
         if (source.startsWith(ExternalImagePreviewPrefix)) {
             val info = externalImageInfo(source)
             val url = checkNotNull(info.resolvedAccess?.url)
@@ -385,6 +374,35 @@ internal constructor(
                 readBitmap(url, width, MAX_IMAGE_BYTES) ?: throw ApiFailure.IncompatibleResponse()
             onAuthorized(InlineImageGrant(source, info.item.title))
             return bitmap
+        }
+        val image = authorizeInlineImage(source)
+        onAuthorized(image.grant)
+        return cached?.takeIf { it.grant.fileId == image.grant.fileId }?.bitmap
+            ?: image.loadThumbnail(width)
+    }
+
+    internal suspend fun revalidateInlineImage(source: String): InlineImageGrant =
+        authorizeInlineImage(source).grant
+
+    private class AuthorizedInlineImage(
+        val grant: InlineImageGrant,
+        val loadThumbnail: suspend (Int) -> Bitmap?,
+    )
+
+    private suspend fun authorizeInlineImage(source: String): AuthorizedInlineImage {
+        chatAttachment(source)?.let { file ->
+            if (!file.contentType.isAttachmentImage) throw ApiFailure.IncompatibleResponse()
+            val grant = api.resolveChatUpload(file.id)
+            val url = artifactHttpsUrl(grant.url) ?: throw ApiFailure.IncompatibleResponse()
+            return AuthorizedInlineImage(InlineImageGrant(source, file.filename, file.id)) { width
+                ->
+                thumbnail(grant.previewImageUrl, width)
+                    ?: readBitmap(
+                        url.inlineThumbnail(width, file.contentType) ?: url,
+                        width,
+                        MAX_IMAGE_BYTES,
+                    )
+            }
         }
         val reference = artifactReference(source) ?: throw ApiFailure.IncompatibleResponse()
         val resolved = api.resolveArtifactReference(reference)
@@ -394,14 +412,17 @@ internal constructor(
                 !resolved.contentType.startsWith("image/", ignoreCase = true)
         )
             throw ApiFailure.IncompatibleResponse()
-        onAuthorized(InlineImageGrant(source, resolved.filename))
-        val resized = original.inlineThumbnail(width, resolved.contentType)
         val cover =
             resolved.previewImageUrl?.takeUnless {
                 it == resolved.url || artifactReference(it) == reference
             }
-        return if (resized != null) readBitmap(resized, width, MAX_IMAGE_BYTES)
-        else thumbnail(cover, width)
+        return AuthorizedInlineImage(
+            InlineImageGrant(source, resolved.filename, resolved.target.id),
+        ) { width ->
+            val resized = original.inlineThumbnail(width, resolved.contentType)
+            if (resized != null) readBitmap(resized, width, MAX_IMAGE_BYTES)
+            else thumbnail(cover, width)
+        }
     }
 
     private fun externalImageInfo(id: String): ArtifactInfo {

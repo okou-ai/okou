@@ -117,7 +117,7 @@ internal constructor(
     private val previews = LinkedHashMap<String, ArtifactPreviewState>(3, 0.75f, true)
     private val thumbnails = LruCache<String, Bitmap>(40)
     internal val inlineImages =
-        InlineArtifactImages(service, viewModelScope) { error ->
+        InlineArtifactImages(service, viewModelScope, cache?.inlineThumbnails) { error ->
             val failure = problem(error)
             if (error is ApiFailure.Unauthenticated) ArtifactProblem.Denied else failure
         }
@@ -135,9 +135,9 @@ internal constructor(
     init {
         viewModelScope.launch {
             catalogChanges.collect { changes ->
-                if (changes.resync) inlineImages.invalidate()
-                else if (changes.artifactThreads.isNotEmpty())
+                if (changes.artifactThreads.isNotEmpty())
                     inlineImages.invalidate(changes.artifactThreads)
+                if (changes.resync) inlineImages.revalidate()
                 val threadId = mutable.value.query.chatThreadId ?: return@collect
                 if (catalogVisible && (changes.resync || threadId in changes.artifactThreads)) {
                     readCatalog()
