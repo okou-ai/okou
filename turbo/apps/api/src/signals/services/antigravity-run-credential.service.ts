@@ -54,14 +54,10 @@ async function refreshAccessToken(refreshToken: string, signal: AbortSignal) {
 }
 
 /**
- * The official `agy` CLI validates a local Google login before any request, so
- * a run receives its native `oauth2.Token` JSON instead of a firewall
- * placeholder. Lancy approved this staff-pilot deviation from the credential
- * trust boundary; firewall-side replacement is the follow-up. The value lives
- * only in process-local admission facts and the dispatched platform
- * environment, where it is a reserved secret alias.
+ * Refresh the member's stored Google AI grant into a fresh access token. The
+ * value stays in process memory; callers must not persist it.
  */
-export const mintAntigravityRunCredential$ = command(
+export const refreshAntigravityAccessToken$ = command(
   async (
     { get },
     args: {
@@ -71,7 +67,11 @@ export const mintAntigravityRunCredential$ = command(
       readonly featureSwitchContext: FeatureSwitchContext;
     },
     signal: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<{
+    readonly accessToken: string;
+    readonly refreshToken: string;
+    readonly expiry: Date;
+  }> => {
     const plan = personalSubscriptionAccountCiphertextsReadPlan({
       orgId: args.orgId,
       userId: args.userId,
@@ -107,11 +107,50 @@ export const mintAntigravityRunCredential$ = command(
     const startedAt = nowDate().getTime();
     const refreshed = await refreshAccessToken(refreshToken, signal);
     signal.throwIfAborted();
-    return JSON.stringify({
-      access_token: refreshed.access_token,
+    return {
+      accessToken: refreshed.access_token,
+      refreshToken,
+      expiry: new Date(startedAt + refreshed.expires_in * 1000),
+    };
+  },
+);
+
+/**
+ * The official `agy` CLI validates a local Google login before any request, so
+ * a run receives its native stored-token JSON instead of a firewall
+ * placeholder. Lancy approved this staff-pilot deviation from the credential
+ * trust boundary; firewall-side replacement is the follow-up. The value lives
+ * only in process-local admission facts and the dispatched platform
+ * environment, where it is a reserved secret alias.
+ */
+export const mintAntigravityRunCredential$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly accountId: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const grant = await set(refreshAntigravityAccessToken$, args, signal);
+    signal.throwIfAborted();
+    const token = {
+      access_token: grant.accessToken,
       token_type: "Bearer",
-      refresh_token: refreshToken,
-      expiry: new Date(startedAt + refreshed.expires_in * 1000).toISOString(),
+      refresh_token: grant.refreshToken,
+      expiry: grant.expiry.toISOString(),
+    };
+    // agy 1.5.15 file token storage reads `{ token, auth_method }`; without
+    // `auth_method` it reports "You are not logged into Antigravity".
+    // `consumer` selects its personal Google account sign-in, whose OAuth
+    // client issued this refresh token. The guest validates and writes the
+    // payload verbatim, and currently requires the top-level token fields.
+    return JSON.stringify({
+      ...token,
+      token,
+      auth_method: "consumer",
     });
   },
 );

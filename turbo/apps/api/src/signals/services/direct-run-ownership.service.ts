@@ -124,7 +124,13 @@ export const selectDirectRunOwner$ = command(
       .from(changed)
       .leftJoin(slot, eq(slot.runId, changed.id))
       .leftJoin(thread, eq(thread.id, changed.chatThreadId));
-    signal.throwIfAborted();
+    if (signal.aborted) {
+      // The caller needs a successful receipt for diagnostics even on abort.
+      if (row !== undefined) {
+        return true;
+      }
+      signal.throwIfAborted();
+    }
     return row !== undefined;
   },
 );

@@ -214,6 +214,7 @@ import { createBrowserAuthorizationCardSignalsRegistry } from "./browser-authori
 import { createHostAuthorizationCardSignalsRegistry } from "./host-authorization-block.ts";
 import { createDesktopShellAuthorizationCardSignalsRegistry } from "./desktop-shell-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
+import { createRemoteDeviceApprovalRegistry } from "./remote-device-approval-block.ts";
 import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
 import { createWalletCardSignalsRegistry } from "./wallet-action-block.ts";
 import {
@@ -1456,6 +1457,9 @@ interface EventTreeRegistries {
   readonly connectorAccountActionCardSignals: ReturnType<
     typeof createConnectorAccountActionCardSignalsRegistry
   >;
+  readonly remoteDeviceApprovalSignals: ReturnType<
+    typeof createRemoteDeviceApprovalRegistry
+  >;
   readonly permissionCardSignals: ReturnType<
     typeof createPermissionCardSignalsRegistry
   >;
@@ -1608,6 +1612,11 @@ function createCardRefRegistrar(
               descriptor.descriptor,
             ),
           };
+        }
+        case "remote-device-approval": {
+          const { register$ } = cards.remoteDeviceApprovalSignals;
+          const signals = set(register$, descriptor.descriptor);
+          return { kind: descriptor.type, signals };
         }
         case "permission-action":
         case "permission-batch-action": {
@@ -1997,6 +2006,7 @@ function createPagedEventResources({
       artifactCardSignals,
       connectorCardSignals,
       connectorAccountActionCardSignals,
+      remoteDeviceApprovalSignals: createRemoteDeviceApprovalRegistry(),
       permissionCardSignals,
       permissionBatchCardSignals,
       bankingCardSignals,
@@ -3018,7 +3028,7 @@ const onWorkflowsChanged$ = command(
 function createArtifactRealtimeHandlers(messages: RunTrackingDeps["messages"]) {
   const onArtifactCatalogChanged$ = command(
     async ({ set }, signal: AbortSignal) => {
-      set(messages.sidebar.artifactDetails.refresh$);
+      set(messages.sidebar.artifactDetails.restartRequests$, signal);
       set(messages.sidebar.artifactCatalog.reload$);
       set(messages.refreshArtifactPreviews$);
       await set(messages.sidebar.refreshPreviewSessions$, signal);
@@ -3052,6 +3062,7 @@ function createRunTracking({
 
   const subscribeChatThread$ = command(async ({ set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ start", { threadId });
+    set(messages.sidebar.artifactDetails.restartRequests$, signal);
     await set(messages.setup$, signal);
     signal.throwIfAborted();
 

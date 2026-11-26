@@ -293,6 +293,11 @@ final class WorkspaceSynchronization {
   }
 
   private func refreshModels(_ batch: Set<ChatInvalidation>) async {
+    if batch.contains(.remoteDevices) || batch.contains(.foregroundResume)
+      || batch.contains(.realtimeGap)
+    {
+      resources.remoteDevices.refresh()
+    }
     let full = batch.contains(where: \.requiresFullRefresh)
     if modelStore.active
       && (full || batch.contains(.runModels) || batch.contains(.modelPreference)

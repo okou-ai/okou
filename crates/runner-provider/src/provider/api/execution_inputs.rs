@@ -1,10 +1,19 @@
 //! Translate the API's publication protocol into normalized execution inputs.
 
-use guest_contracts::agent_instructions::instruction_paths;
+use api_contracts::generated::constants::runners::paths::{
+    CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_CLAUDE_MEMORY_MOUNT_PATH, CANONICAL_CODEX_HOME_DIR,
+    CANONICAL_CODEX_MEMORY_MOUNT_PATH, CANONICAL_GUEST_HOME_DIR, CANONICAL_PI_MEMORY_MOUNT_PATH,
+    PI_AGENT_DIR,
+};
+use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
+use guest_contracts::{
+    agent_instructions::instruction_paths,
+    env::{CliAgentTypeSelection, CliFramework},
+};
 use runner_types::{
     storage_manifest::{
-        INSTRUCTION_STORAGE_NAME, InstructionFile, StorageEntry, StorageManifest,
-        WORKFLOW_STORAGE_NAME, validate_workflow_mount,
+        ArtifactEntry, INSTRUCTION_STORAGE_NAME, InstructionFile, StorageEntry, StorageManifest,
+        WORKFLOW_STORAGE_NAME, validate_workflow_skill_name,
     },
     types::ExecutionContext,
 };
@@ -14,13 +23,12 @@ use std::{collections::HashSet, path::Path};
 mod publication;
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ContentBundles {
     #[serde(rename = "format")]
     _format: BundleFormat,
     #[serde(default, deserialize_with = "instruction_reference")]
     instructions: Option<BundleReference>,
-    skills: Vec<SkillBundle>,
+    skills: Vec<NamedSkillBundle>,
     #[serde(default)]
     templates: Vec<TemplateBundle>,
 }
@@ -32,7 +40,7 @@ enum BundleFormat {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct BundleReference {
     sha256: String,
     archive_bytes: u64,
@@ -40,12 +48,46 @@ struct BundleReference {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SkillBundle {
-    sha256: String,
-    archive_bytes: u64,
-    download_url: String,
-    mount_path: String,
+#[serde(rename_all = "camelCase")]
+struct NamedSkillBundle {
+    name: String,
+    bundle: BundleReference,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StartupInputs {
+    memory: Option<MemoryInput>,
+    content_bundles: ContentBundles,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryInput {
+    storage_id: String,
+    version_id: String,
+    archive_url: Option<String>,
+    archive_size: Option<u64>,
+    empty: Option<bool>,
+    missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,
+}
+
+impl MemoryInput {
+    fn bind(self, mount_path: &str) -> Result<ArtifactEntry, String> {
+        if self.archive_url.is_none() && self.empty != Some(true) {
+            return Err("Nonempty Memory requires an archive URL".into());
+        }
+        Ok(ArtifactEntry {
+            mount_path: mount_path.into(),
+            vas_storage_name: "memory".into(),
+            vas_storage_id: self.storage_id,
+            vas_version_id: self.version_id,
+            archive_url: self.archive_url,
+            archive_size: self.archive_size,
+            empty: self.empty,
+            missing_root_policy: self.missing_root_policy,
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -56,7 +98,7 @@ enum TemplateOwnerKind {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct TemplateBundle {
     sha256: String,
     archive_bytes: u64,
@@ -148,46 +190,52 @@ pub fn decode_execution_publication(body: &[u8]) -> Result<ExecutionContext, Str
             if super::decode_api_json_bytes::<ExecutionContext>(body).is_err() {
                 "Invalid execution context"
             } else {
-                "Invalid content bundles"
+                "Invalid startup inputs"
             }
         })?;
-    normalize(publication.context, publication.packages)
+    normalize(publication.context, publication.startup_inputs)
 }
 
 fn normalize(
     mut context: ExecutionContext,
-    packages: ContentBundles,
+    inputs: StartupInputs,
 ) -> Result<ExecutionContext, String> {
-    let mut paths: HashSet<String> = context
-        .storage_manifest
+    let framework = CliAgentTypeSelection::parse(&context.cli_agent_type);
+    let (config_dir, memory_path) = match framework.framework() {
+        CliFramework::ClaudeCode | CliFramework::Antigravity => (
+            CANONICAL_CLAUDE_CONFIG_DIR,
+            CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+        ),
+        CliFramework::Codex => (CANONICAL_CODEX_HOME_DIR, CANONICAL_CODEX_MEMORY_MOUNT_PATH),
+        CliFramework::Pi => (PI_AGENT_DIR, CANONICAL_PI_MEMORY_MOUNT_PATH),
+    };
+    let packages = inputs.content_bundles;
+    let memory = inputs
+        .memory
+        .map(|memory| memory.bind(memory_path))
+        .transpose()?;
+    let mut paths: HashSet<_> = memory
         .iter()
-        .flat_map(|manifest| {
-            manifest
-                .storages
-                .iter()
-                .map(|s| s.mount_path.clone())
-                .chain(manifest.artifacts.iter().map(|a| a.mount_path.clone()))
-        })
+        .map(|entry| entry.mount_path.clone())
         .collect();
-    let mut entries = Vec::with_capacity(packages.skills.len() + 1);
+    let mut manifest = StorageManifest {
+        storages: Vec::with_capacity(packages.skills.len() + 1 + packages.templates.len()),
+        artifacts: memory.into_iter().collect(),
+    };
+    let skill_prefix = format!("{config_dir}/skills/");
     for skill in packages.skills {
-        validate_workflow_mount(&skill.mount_path)?;
-        if !paths.insert(skill.mount_path.clone()) {
+        validate_workflow_skill_name(&skill.name)?;
+        let mount_path = format!("{skill_prefix}{}", skill.name);
+        if !paths.insert(mount_path.clone()) {
             return Err("Conflicting content bundle mount".into());
         }
-        entries.push(
-            BundleReference {
-                sha256: skill.sha256,
-                archive_bytes: skill.archive_bytes,
-                download_url: skill.download_url,
-            }
-            .storage(WORKFLOW_STORAGE_NAME, skill.mount_path)?,
-        );
+        manifest
+            .storages
+            .push(skill.bundle.storage(WORKFLOW_STORAGE_NAME, mount_path)?);
     }
     let instruction_file = if let Some(reference) = packages.instructions {
-        let framework = guest_contracts::env::CliAgentTypeSelection::parse(&context.cli_agent_type);
         let mount = instruction_paths(
-            Path::new("/home/user"),
+            Path::new(CANONICAL_GUEST_HOME_DIR),
             framework.normalized_cli_agent_type(),
         )
         .ok_or("Unsupported instruction framework")?
@@ -197,20 +245,15 @@ fn normalize(
         if !paths.insert(mount.clone()) {
             return Err("Conflicting content bundle mount".into());
         }
-        entries.push(reference.storage(INSTRUCTION_STORAGE_NAME, mount.clone())?);
+        manifest
+            .storages
+            .push(reference.storage(INSTRUCTION_STORAGE_NAME, mount.clone())?);
         Some(InstructionFile {
             storage_mount: mount,
         })
     } else {
         None
     };
-    let manifest = context
-        .storage_manifest
-        .get_or_insert_with(|| StorageManifest {
-            storages: Vec::new(),
-            artifacts: Vec::new(),
-        });
-    manifest.storages.extend(entries);
     for template in packages.templates {
         let mount_path = template.mount_path()?;
         // Ancestor/descendant overlays are valid; a second destination is not.
@@ -236,8 +279,7 @@ fn normalize(
             guest_contracts::storage_manifest::MAX_TEMPLATE_ARCHIVE_BYTES,
         )?;
         entry.template_guidance = Some(integrity);
-        // Missing optional Storage mounts have no entry. Use the first surviving
-        // anchor to preserve the API's winning order across both transports.
+        // The first surviving anchor preserves the API's selected overlay order.
         let position = template
             .before_mount_paths
             .iter()
@@ -250,6 +292,7 @@ fn normalize(
             .unwrap_or(manifest.storages.len());
         manifest.storages.insert(position, entry);
     }
+    context.storage_manifest = Some(manifest);
     context.instruction_file = instruction_file;
     Ok(context)
 }

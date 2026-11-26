@@ -59,7 +59,6 @@ fn execution_context_deserializes_pi_sandbox_resources() {
             }]
         },
         "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
         "connectorRuntimeTargets": []
     });
 
@@ -103,7 +102,6 @@ fn execution_context_preserves_optional_first_run_context() {
             "firewallToken": "host-firewall",
             "cliAgentType": "claude-code",
             "platformEnvironment": {},
-            "contentBundles": {"format": "tar-gzip-v1", "skills": []},
             "connectorRuntimeTargets": []
         });
         if let Some(label) = label {
@@ -123,7 +121,6 @@ fn execution_context_rejects_legacy_expanded_firewall_entry() {
         "firewallToken": "host-firewall",
         "cliAgentType": "claude-code",
         "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
         "connectorRuntimeTargets": [],
         "firewalls": [{
             "name": "github",
@@ -151,7 +148,6 @@ fn execution_context_rejects_unknown_firewall_kind() {
         "firewallToken": "host-firewall",
         "cliAgentType": "claude-code",
         "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
         "connectorRuntimeTargets": [],
         "firewalls": [{
             "kind": "unknown",
@@ -528,7 +524,6 @@ fn cli_agent_session_id_returns_none_without_supplied_id() {
         "cliAgentType": "claude_code",
         "billableFirewalls": [],
         "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
         "connectorRuntimeTargets": []
     });
     let ctx: ExecutionContext = serde_json::from_value(json).unwrap();
@@ -546,7 +541,6 @@ fn execution_context_requires_custom_connector_routing_values() {
             "cliAgentType": "claude_code",
             "billableFirewalls": [],
             "platformEnvironment": {},
-            "contentBundles": {"format": "tar-gzip-v1", "skills": []},
             "connectorRuntimeTargets": [target]
         })
     };
@@ -595,153 +589,13 @@ fn execution_context_requires_custom_connector_routing_values() {
 fn cli_agent_session_identity_uses_native_intent_and_local_submission() {
     let mut context: ExecutionContext = serde_json::from_value(json!({
             "runId": "550e8400-e29b-41d4-a716-446655440000", "prompt": "hello", "sandboxToken": "tok", "firewallToken": "host-firewall", "cliAgentType": "claude-code", "platformEnvironment": {},
-            "contentBundles": {"format": "tar-gzip-v1", "skills": []}, "connectorRuntimeTargets": [],
+            "connectorRuntimeTargets": [],
             "nativeContinuation": { "sessionId": "native-session", "generationRunId": "550e8400-e29b-41d4-a716-446655440001", "recoveryPrompt": null }
         })).unwrap();
     assert_eq!(context.cli_agent_session_id(), Some("native-session"));
     context.native_continuation = None;
     context.local_resume_session_id = Some("local-session".into());
     assert_eq!(context.cli_agent_session_id(), Some("local-session"));
-}
-
-fn execution_context_with_storage_manifest(
-    storage_manifest: serde_json::Value,
-) -> serde_json::Value {
-    json!({
-        "runId": "550e8400-e29b-41d4-a716-446655440000",
-        "prompt": "hello",
-        "sandboxToken": "tok",
-        "firewallToken": "host-firewall",
-        "storageManifest": storage_manifest,
-        "cliAgentType": "claude_code",
-        "billableFirewalls": [],
-        "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
-        "connectorRuntimeTargets": []
-    })
-}
-
-#[test]
-fn execution_context_accepts_canonical_storage_mounts() {
-    let json = execution_context_with_storage_manifest(json!({
-        "storageMounts": [
-            {
-                "name": "workflow",
-                "storageId": "storage-read-only",
-                "versionId": "version-1",
-                "mountPath": "/home/user/.claude/skills/workflow",
-                "archiveUrl": "https://example.com/workflow.tar.gz",
-                "futureMountField": true
-            },
-            {
-                "name": "memory",
-                "storageId": "storage-writeback",
-                "versionId": "version-2",
-                "mountPath": "/memory",
-                "empty": true,
-                "missingRootPolicy": "preserveParentVersion",
-                "writeback": true
-            }
-        ],
-        "futureManifestField": true
-    }));
-
-    let context: ExecutionContext = serde_json::from_value(json).unwrap();
-    let manifest = context.storage_manifest.unwrap();
-
-    assert_eq!(manifest.storages.len(), 1);
-    assert_eq!(manifest.storages[0].name, "workflow");
-    assert_eq!(manifest.storages[0].vas_storage_name, "workflow");
-    assert_eq!(manifest.storages[0].vas_version_id, "version-1");
-    assert_eq!(manifest.artifacts.len(), 1);
-    assert_eq!(manifest.artifacts[0].vas_storage_name, "memory");
-    assert_eq!(manifest.artifacts[0].vas_storage_id, "storage-writeback");
-    assert_eq!(manifest.artifacts[0].empty, Some(true));
-}
-
-#[test]
-fn execution_context_rejects_legacy_storage_manifest_representations() {
-    for storage_manifest in [
-        json!({ "storages": [], "artifacts": [] }),
-        json!({ "storages": [] }),
-        json!({ "artifacts": [] }),
-        json!({}),
-    ] {
-        let result = serde_json::from_value::<ExecutionContext>(
-            execution_context_with_storage_manifest(storage_manifest),
-        );
-        assert!(result.is_err());
-    }
-}
-
-#[test]
-fn execution_context_rejects_duplicate_storage_mount_paths() {
-    let result = serde_json::from_value::<ExecutionContext>(
-        execution_context_with_storage_manifest(json!({
-            "storageMounts": [
-                {
-                    "name": "workspace",
-                    "storageId": "storage-read-only",
-                    "versionId": "version-1",
-                    "mountPath": "/workspace",
-                    "archiveUrl": "https://example.com/workspace.tar.gz"
-                },
-                {
-                    "name": "artifact",
-                    "storageId": "storage-writeback",
-                    "versionId": "version-2",
-                    "mountPath": "/workspace",
-                    "empty": true,
-                    "writeback": true
-                }
-            ]
-        })),
-    );
-
-    let error = result.unwrap_err().to_string();
-    assert!(error.contains("duplicate mountPath \"/workspace\""));
-}
-
-#[test]
-fn execution_context_rejects_invalid_canonical_storage_mount_behavior() {
-    for mount in [
-        json!({
-            "name": "read-only",
-            "storageId": "storage-1",
-            "versionId": "version-1",
-            "mountPath": "/read-only"
-        }),
-        json!({
-            "name": "read-only-empty",
-            "storageId": "storage-2",
-            "versionId": "version-2",
-            "mountPath": "/read-only-empty",
-            "archiveUrl": "https://example.com/empty.tar.gz",
-            "empty": true
-        }),
-        json!({
-            "name": "read-only-missing-root-policy",
-            "storageId": "storage-3",
-            "versionId": "version-3",
-            "mountPath": "/read-only-missing-root-policy",
-            "archiveUrl": "https://example.com/read-only.tar.gz",
-            "missingRootPolicy": "preserveParentVersion"
-        }),
-        json!({
-            "name": "writeback-without-archive",
-            "storageId": "storage-5",
-            "versionId": "version-5",
-            "mountPath": "/writeback-without-archive",
-            "writeback": true
-        }),
-    ] {
-        let result = serde_json::from_value::<ExecutionContext>(
-            execution_context_with_storage_manifest(json!({
-                "storageMounts": [mount]
-            })),
-        );
-        assert!(result.is_err());
-    }
 }
 
 #[test]

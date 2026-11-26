@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.ChatEvents
@@ -14,6 +15,8 @@ import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.preferences.MemberPreferenceSaveFeedback
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
+import ai.okou.android.settings.DefaultModelSetting
+import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.updates.UpdateTransfer
 import ai.okou.android.updates.UpdateUiState
 import ai.okou.android.updates.updateRelease
@@ -31,6 +34,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -54,6 +58,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
@@ -82,7 +87,13 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.platform.app.InstrumentationRegistry
 import java.text.NumberFormat
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -118,6 +129,7 @@ class OkouAppTest {
         failPreferenceSave: () -> Boolean = { false },
         chatService: ChatListService = TestChatService(),
         inputModeManager: InputModeManager? = null,
+        defaultModel: DefaultModelSettings? = null,
     ) {
         val models = compose.runOnIdle {
             val provider =
@@ -240,6 +252,7 @@ class OkouAppTest {
                 OkouTheme(dark) {
                     val color = MaterialTheme.colorScheme.background
                     val snackbar = remember { SnackbarHostState() }
+                    var feedbackInOverlay by remember { mutableStateOf(false) }
                     SideEffect { background = color }
                     Box {
                         Box(Modifier.heightIn(max = contentHeight.value)) {
@@ -248,11 +261,22 @@ class OkouAppTest {
                                 models.first.second,
                                 controls,
                                 projectExpansion = null,
+                                defaultModel = defaultModel,
                                 snackbar = snackbar,
+                                feedbackInOverlay = feedbackInOverlay,
                                 settingsContent = { _, _, _ ->
                                     MemberPreferenceSaveFeedback(models.second, snackbar)
                                     SettingsScreen(
-                                        models = {},
+                                        models = {
+                                            if (defaultModel != null)
+                                                DefaultModelSetting(
+                                                    defaultModel,
+                                                    snackbar,
+                                                    onFeedbackInOverlay = {
+                                                        feedbackInOverlay = it
+                                                    },
+                                                )
+                                        },
                                         tools = {},
                                         myOkou = {},
                                         workspacePreferences = {
@@ -354,6 +378,8 @@ class OkouAppTest {
 
         listOf(
                 UpdateTransfer.Idle to compose.activity.getString(R.string.updates_download),
+                UpdateTransfer.Interrupted to
+                    compose.activity.getString(R.string.updates_error_interrupted),
                 progressCase(null, 0.0),
                 progressCase(1_060_000_000L, 0.53),
                 progressCase(1_180_000_000L, 0.59),
@@ -405,7 +431,7 @@ class OkouAppTest {
         compose
             .onNodeWithTag("workspace_popup")
             .assertWidthIsEqualTo(244.dp)
-            .assertHeightIsEqualTo(265.dp)
+            .assertHeightIsEqualTo(267.dp)
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
         compose.onNodeWithText("Archived").performClick()
         compose.openChatListSettings()
@@ -430,7 +456,7 @@ class OkouAppTest {
         compose
             .onNodeWithTag("workspace_popup")
             .assertWidthIsEqualTo(244.dp)
-            .assertHeightIsEqualTo(158.dp)
+            .assertHeightIsEqualTo(160.dp)
         val filter = compose.onNodeWithText("Filter").getUnclippedBoundsInRoot()
         val project = compose.onNodeWithText("New project").getUnclippedBoundsInRoot()
         val settings = compose.onNodeWithText("Settings").getUnclippedBoundsInRoot()
@@ -470,6 +496,67 @@ class OkouAppTest {
             .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Light").assertIsDisplayed()
         notice.assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w900dp-h900dp")
+    fun openingTheModelPickerDoesNotRestartCatalogFeedbackTimeout() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        try {
+            ChatListApiFixture().use { api ->
+                DefaultModelApiFixture(api)
+                val defaultResponse = api.commandResponse
+                val failCatalog = AtomicBoolean(false)
+                api.commandResponse = { request ->
+                    if (
+                        failCatalog.get() && request.requestUrl?.encodedPath == "/api/model-catalog"
+                    )
+                        MockResponse().setResponseCode(400)
+                    else defaultResponse(request)
+                }
+                val app = compose.activity.application as TestOkouApplication
+                val model =
+                    DefaultModelSettings(
+                        scope,
+                        api.service,
+                        api.identity,
+                        app.defaultModelStore,
+                        { true },
+                    ) {
+                        if (it !is ApiFailure.Http || it.status != 400) throw it
+                    }
+                render(defaultModel = model)
+                compose.runOnIdle { model.foreground(true) }
+                compose.openChatListSettings()
+                val entry = hasText("Default model") and hasClickAction()
+                compose.waitUntilExactlyOneExists(entry, 10_000)
+                compose.runOnIdle {
+                    model.foreground(false)
+                    failCatalog.set(true)
+                    model.foreground(true)
+                }
+                val message = app.getString(R.string.settings_model_catalog_refresh_failed)
+                compose.waitUntilExactlyOneExists(hasText(message), 10_000)
+                val notice = compose.onNodeWithText(message).assertIsDisplayed()
+                compose.mainClock.autoAdvance = false
+                try {
+                    compose.mainClock.advanceTimeBy(3_000)
+                    compose.onNode(entry).performClick()
+                    compose.mainClock.advanceTimeByFrame()
+                    compose.waitForIdle()
+                    compose.mainClock.advanceTimeBy(450)
+                    compose.onNode(hasText("Auto") and isSelectable()).assertIsDisplayed()
+                    notice.assertIsDisplayed()
+
+                    compose.mainClock.advanceTimeBy(2_100)
+                    notice.assertDoesNotExist()
+                } finally {
+                    compose.mainClock.autoAdvance = true
+                }
+            }
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test

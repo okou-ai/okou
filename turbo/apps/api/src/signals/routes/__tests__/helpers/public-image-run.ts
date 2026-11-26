@@ -26,6 +26,7 @@ import {
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
 import { purchaseToolCredits } from "./public-tool-actor";
+import { setPaidToolDisabled } from "./paid-tools";
 
 export const tokenRequest = Object.freeze({
   keyName: "test-key",
@@ -159,10 +160,16 @@ export async function createImageRun(
   context: TestContext,
   imageModel: string | null,
   credits = 1000,
-  providerCleanupBody: Record<string, unknown> = {
-    status: "ERROR",
-    error: "Image provider request cancelled during cleanup",
-  },
+  {
+    imageGenerationDisabled = false,
+    providerCleanupBody = {
+      status: "ERROR",
+      error: "Image provider request cancelled during cleanup",
+    },
+  }: {
+    readonly imageGenerationDisabled?: boolean;
+    readonly providerCleanupBody?: Record<string, unknown>;
+  } = {},
 ) {
   const mocks = createRouteMocks(context);
   const chat = createChatEventsFixture(context);
@@ -400,7 +407,10 @@ export async function createImageRun(
       }),
     ).resolves.toBe(initialCredits);
   }
-  const sent = await run(() => {
+  const sent = await run(async () => {
+    if (imageGenerationDisabled) {
+      await setPaidToolDisabled(context, actor, "image-generation", true);
+    }
     return chat.sendChatRun(actor, {
       prompt: "Generate an image for this Run",
       model: "claude-fable-5-1",

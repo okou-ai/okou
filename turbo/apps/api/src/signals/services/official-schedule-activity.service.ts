@@ -2,6 +2,7 @@ import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { command } from "ccstate";
 import { and, eq, gte, inArray } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 
 /**
@@ -26,6 +27,32 @@ const MANUAL_RUN_TRIGGER_SOURCES = [
   "github",
 ] as const satisfies readonly TriggerSource[];
 
+function officialOwnerActivityCondition(
+  owner: { readonly orgId: string; readonly userId: string },
+  at: Date,
+) {
+  return and(
+    eq(agentRuns.userId, owner.userId),
+    eq(agentRuns.orgId, owner.orgId),
+    inArray(agentRuns.triggerSource, [...MANUAL_RUN_TRIGGER_SOURCES]),
+    gte(
+      agentRuns.createdAt,
+      new Date(at.getTime() - OFFICIAL_SCHEDULE_ACTIVITY_WINDOW_MS),
+    ),
+  );
+}
+
+export function activeOfficialScheduleOwnerQuery(
+  owner: { readonly orgId: string; readonly userId: string },
+  at: Date,
+) {
+  return new QueryBuilder()
+    .select({ id: agentRuns.id })
+    .from(agentRuns)
+    .where(officialOwnerActivityCondition(owner, at))
+    .limit(1);
+}
+
 export const officialScheduleOwnerIsActive$ = command(
   async (
     { get },
@@ -36,17 +63,7 @@ export const officialScheduleOwnerIsActive$ = command(
     const [manualRun] = await get(db$)
       .select({ id: agentRuns.id })
       .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.userId, owner.userId),
-          eq(agentRuns.orgId, owner.orgId),
-          inArray(agentRuns.triggerSource, [...MANUAL_RUN_TRIGGER_SOURCES]),
-          gte(
-            agentRuns.createdAt,
-            new Date(at.getTime() - OFFICIAL_SCHEDULE_ACTIVITY_WINDOW_MS),
-          ),
-        ),
-      )
+      .where(officialOwnerActivityCondition(owner, at))
       .limit(1);
     signal.throwIfAborted();
     return manualRun !== undefined;

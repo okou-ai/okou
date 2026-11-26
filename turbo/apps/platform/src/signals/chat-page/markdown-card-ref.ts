@@ -5,6 +5,7 @@ import type { BrowserUserActionSignals } from "./browser-user-action-block.ts";
 import type { BankingSignals } from "./banking-action-block.ts";
 import type { ConnectorSignals } from "./connector-action-block.ts";
 import type { ConnectorAccountActionSignals } from "./connector-account-action-block.ts";
+import type { RemoteDeviceApprovalSignals } from "./remote-device-approval-block.ts";
 import type { ComputerUseAuthorizationSignals } from "./computer-use-authorization-block.ts";
 import type { HostAuthorizationSignals } from "./host-authorization-block.ts";
 import type { DesktopShellAuthorizationSignals } from "./desktop-shell-authorization-block.ts";
@@ -42,6 +43,10 @@ export type MarkdownCardRef =
   | {
       readonly kind: "connector-account-action";
       readonly signals: ConnectorAccountActionSignals;
+    }
+  | {
+      readonly kind: "remote-device-approval";
+      readonly signals: RemoteDeviceApprovalSignals;
     }
   | { readonly kind: "permission-action"; readonly signals: PermissionSignals }
   | {

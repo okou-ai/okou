@@ -22,10 +22,7 @@ import {
 } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -637,20 +634,17 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       fixture.registerRun(r1.runId);
       const execution1 = await api.executionInput(r1.runId);
       fixture.registerExecution(r1.runId, execution1.sandboxToken);
-      const workflowMount = execution1.contentBundles.skills.find((mount) => {
-        return mount.mountPath === readonlySkill.mountPath;
-      });
-      expect(workflowMount).toMatchObject({
+      const workflowMount = execution1.startupInputs.contentBundles.skills.find(
+        (mount) => {
+          return mount.name === readonlySkill.name;
+        },
+      );
+      expect(workflowMount?.bundle).toMatchObject({
         sha256: readonlySkill.sha256,
         archiveBytes: readonlySkill.archiveBytes,
       });
-      const memory1 = expectCanonicalStorageManifest(
-        execution1.storageManifest,
-      )?.storageMounts.find((mount) => {
-        return mount.name === "memory";
-      });
+      const memory1 = execution1.startupInputs.memory;
       expect(memory1).toMatchObject({
-        mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
         empty: true,
         storageId: expect.any(String),
         versionId: expect.any(String),
@@ -762,7 +756,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
               },
             ],
             volumeVersionsSnapshot: {
-              versions: { [memory1.name]: memory1.versionId },
+              versions: { memory: memory1.versionId },
             },
           },
         },
@@ -782,11 +776,15 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         continuedExecution.sandboxToken,
       );
       expect(continuedExecution.vars).toStrictEqual(execution1.vars);
-      expect(continuedExecution.contentBundles.skills).toContainEqual(
+      expect(
+        continuedExecution.startupInputs.contentBundles.skills,
+      ).toContainEqual(
         expect.objectContaining({
-          mountPath: readonlySkill.mountPath,
-          sha256: readonlySkill.sha256,
-          archiveBytes: readonlySkill.archiveBytes,
+          name: readonlySkill.name,
+          bundle: expect.objectContaining({
+            sha256: readonlySkill.sha256,
+            archiveBytes: readonlySkill.archiveBytes,
+          }),
         }),
       );
 
@@ -794,13 +792,8 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         sessionId: `bdd-cli-${r1.runId}`,
         generationRunId: r1.runId,
       });
-      const continuedMemory = expectCanonicalStorageManifest(
-        continuedExecution.storageManifest,
-      )?.storageMounts.find((mount) => {
-        return mount.name === "memory";
-      });
+      const continuedMemory = continuedExecution.startupInputs.memory;
       expect(continuedMemory).toMatchObject({
-        mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
         missingRootPolicy: "preserveParentVersion",
       });
       await api.requestCancelRun(actor, continued.runId, [200]);

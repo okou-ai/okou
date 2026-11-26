@@ -43,11 +43,14 @@ internal val RecoverySubscriptionsSubscriptionsItem.provider: ModelAccountProvid
             RecoverySubscriptionsSubscriptionsItemType.BUILT_IN -> null
         }
 
+internal class SettingsRefreshFailure
+
 internal data class SettingsRead<T>(
     val value: T? = null,
     val unavailable: Boolean = false,
     val readAt: Long? = null,
     val refreshing: Boolean = false,
+    val refreshFailure: SettingsRefreshFailure? = null,
 ) {
     val initialFailure: Boolean
         get() = value == null && unavailable
@@ -91,6 +94,7 @@ internal data class WorkspaceSettingsState(
     val accounts: SettingsRead<List<RecoverySubscriptionsSubscriptionsItem>> = SettingsRead(),
     val usagePack: SettingsRead<UsagePackCredits> = SettingsRead(),
     val workspaceCredits: SettingsRead<WorkspaceCreditSummary> = SettingsRead(),
+    val creditRefreshFailure: SettingsRefreshFailure? = null,
     val showWorkspaceCredits: Boolean = false,
     val switching: Map<ModelAccountProvider, AccountSwitch> = emptyMap(),
 )
@@ -160,22 +164,21 @@ internal constructor(
     private var accountsRead: Job? = null
     private var usagePackRead: Job? = null
     private var workspaceCreditsRead: Job? = null
-    private var creditRefreshFailureReported = false
     private val refreshTokens = mutableMapOf<WorkspaceSettingsResource, Any>()
 
     internal fun visible(destination: SettingsDestination?) {
         if (visible == destination) return
         visible = destination
+        if (destination != SettingsDestination.ModelAccounts) clearAccountRefreshFailure()
         if (
             destination != SettingsDestination.ModelAccounts &&
                 mutable.value.switching.values.none { it.phase == AccountSwitchPhase.Confirming }
         )
             accountsRead?.cancel()
         if (destination != SettingsDestination.CreditBalance) {
+            mutable.update { it.copy(creditRefreshFailure = null) }
             usagePackRead?.cancel()
             workspaceCreditsRead?.cancel()
-        } else {
-            creditRefreshFailureReported = false
         }
         if (
             !restored &&
@@ -289,6 +292,7 @@ internal constructor(
             return
         if (accountsRead?.isActive == true) return
         accountsRead = viewModelScope.launch {
+            clearAccountRefreshFailure()
             read(
                 WorkspaceSettingsResource.Accounts,
                 accountsSerializer,
@@ -312,7 +316,16 @@ internal constructor(
                 if (result.unavailable) {
                     mutable.value =
                         state.copy(
-                            accounts = result,
+                            accounts =
+                                result.copy(
+                                    refreshFailure =
+                                        if (
+                                            incoming != null &&
+                                                visible == SettingsDestination.ModelAccounts
+                                        )
+                                            SettingsRefreshFailure()
+                                        else null,
+                                ),
                             switching =
                                 state.switching.mapValues { (_, intent) ->
                                     if (intent.phase == AccountSwitchPhase.Confirming)
@@ -343,6 +356,10 @@ internal constructor(
                 }
             }
         }
+    }
+
+    private fun clearAccountRefreshFailure() {
+        mutable.update { it.copy(accounts = it.accounts.copy(refreshFailure = null)) }
     }
 
     internal fun activate(accountId: String) {
@@ -499,9 +516,12 @@ internal constructor(
     }
 
     private fun reportCreditRefreshFailure() {
-        if (creditRefreshFailureReported) return
-        creditRefreshFailureReported = true
-        messages.trySend(SettingsNotice.CreditBalanceRefreshFailed)
+        if (visible != SettingsDestination.CreditBalance) return
+        mutable.update { state ->
+            if (state.creditRefreshFailure == null)
+                state.copy(creditRefreshFailure = SettingsRefreshFailure())
+            else state
+        }
     }
 
     private fun showProgress(resource: WorkspaceSettingsResource, refreshing: Boolean) {

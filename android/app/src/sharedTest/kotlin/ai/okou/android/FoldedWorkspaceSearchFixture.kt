@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonPrimitive
 internal class FoldedWorkspaceSearchFixture(chats: ChatListApiFixture) {
     val keyword = "截止时间"
     val hit = "把发布清单中的截止时间更新到周五。"
+    val leadingParagraph = "已逐项和负责人核对发布清单。"
     val otherHit = "等确认截止时间后，再通知项目成员。"
     val otherEarlierReply = "先核对访谈记录与会议附件。"
     val otherFinalReply = "访谈纪要已整理。"
@@ -16,12 +17,13 @@ internal class FoldedWorkspaceSearchFixture(chats: ChatListApiFixture) {
         val otherHitSequence = 23L
         val otherRun = "a9999999-9999-4999-8999-999999999999"
         val lastEvent = "a8888888-8888-4888-8888-888888888888"
+        val indexedBody = "$leadingParagraph\n\n$hit"
         chats.setHistoryEvents(
             CHAT_PERSONAL,
             listOf(
                 prompt("launch-input", 17, HISTORY_RUN, "核对发布计划"),
                 reply("launch-review", 20, HISTORY_RUN, "已读取发布清单，正在核对负责人。"),
-                reply("launch-hit", hitSequence, HISTORY_RUN, hit),
+                reply("launch-hit", hitSequence, HISTORY_RUN, "\n\n$indexedBody"),
                 reply("launch-other-hit", otherHitSequence, HISTORY_RUN, otherHit),
                 reply(matchedFinalId, 24, HISTORY_RUN, "第一轮检查已完成。"),
                 historyEventWire(HISTORY_LAST_EVENT, 37, type = "run.completed", payload = "null"),
@@ -38,7 +40,7 @@ internal class FoldedWorkspaceSearchFixture(chats: ChatListApiFixture) {
             ),
         )
         val matches =
-            listOf(searchResult(otherHit, otherHitSequence), searchResult(hit, hitSequence))
+            listOf(searchResult(otherHit, otherHitSequence), searchResult(indexedBody, hitSequence))
                 .joinToString(",")
         chats.searchMessages = { request ->
             if (request.requestUrl?.queryParameter("keyword") == keyword) {

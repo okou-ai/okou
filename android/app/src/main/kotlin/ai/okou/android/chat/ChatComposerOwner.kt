@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.AttachmentStorageRejection
 import ai.okou.android.api.MaxChatAttachmentBytes
+import ai.okou.android.api.boundedApiRetryDelayMillis
 import ai.okou.android.api.generated.CanonicalInteger1
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.ResetSubscriptionResultOutcome
@@ -81,6 +82,7 @@ internal class ChatComposerOwner(
     private var restoring: Job? = null
     private var contextJob: Job? = null
     private var contextConnection: Connection? = null
+    private var openedTarget: ComposerTarget? = null
     private var revision = 0L
 
     private class DraftWork(val connection: Connection, val target: ServerDraftTarget) {
@@ -260,6 +262,7 @@ internal class ChatComposerOwner(
 
     fun open(connection: Connection, target: ComposerTarget): Job? {
         if (!connection.current()) return null
+        openedTarget = target
         restoreJournal()
         if (target.threadId == null && contextJob?.isActive != true) {
             contextConnection = connection
@@ -629,7 +632,12 @@ internal class ChatComposerOwner(
         val journal = mutable.value.journal ?: return
         val draftKey = mutable.value.draftKey(target)
         val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
-        if (!connection.current() || draft.text.isNotEmpty() || draft.attachments.isNotEmpty())
+        if (
+            !connection.current() ||
+                !key.canRestoreIn(target) ||
+                draft.text.isNotEmpty() ||
+                draft.attachments.isNotEmpty()
+        )
             return
         val text = journal.retainedDrafts[key] ?: return
         val choices = if (draftKey == "new:") journal.retainedDraftConnectorOverrides[key] else null
@@ -758,6 +766,22 @@ internal class ChatComposerOwner(
                             )
                             unmatched.values.flatten().forEach { discardAttachment(it.key) }
                         }
+                        val opened = openedTarget
+                        if (
+                            opened != null &&
+                                !local.dirty &&
+                                local.revision == before.revision &&
+                                remote.text.isEmpty() &&
+                                remote.attachments.isEmpty() &&
+                                mutable.value.draftKey(opened) == target.key &&
+                                mutable.value.entry(opened).pending == null &&
+                                mutable.value.readingAttachmentSelections.none {
+                                    it.destination(journal) == target.key
+                                }
+                        )
+                            journal.compatibleDraftKey(opened)?.let {
+                                restoreDraft(connection, opened, it)
+                            }
                     }
                     while (current()) {
                         val draft = mutable.value.journal?.drafts?.get(target.key) ?: break
@@ -785,30 +809,35 @@ internal class ChatComposerOwner(
                         if (mutable.value.journal?.drafts?.get(target.key) != draft) continue
                         if (!saved.durable || saved.journal.drafts[target.key] != draft)
                             throw IOException("Draft is not durable")
-                        val submitted =
-                            ChatWriteRetries().run {
-                                currentCoroutineContext().ensureActive()
-                                if (
-                                    !current() ||
-                                        mutable.value.journal?.drafts?.get(target.key) != draft
-                                )
-                                    return@run false
+                        var failures = 0
+                        while (
+                            current() && mutable.value.journal?.drafts?.get(target.key) == draft
+                        ) {
+                            try {
                                 if (attachments.isEmpty())
                                     connection.service.saveComposerDraft(target, draft.text)
                                 else {
                                     val service =
-                                        connection.service.attachmentService ?: return@run false
+                                        connection.service.attachmentService ?: return@launch
                                     service.saveAttachmentDraft(target, draft.text, attachments)
                                 }
-                                true
+                                break
+                            } catch (error: ApiFailure) {
+                                if (
+                                    mutable.value.journal?.drafts?.get(target.key) != draft &&
+                                        error.boundedApiRetryDelayMillis(0) != null
+                                )
+                                    break
+                                val wait =
+                                    error.boundedApiRetryDelayMillis(failures++) ?: throw error
+                                withTimeoutOrNull(wait) {
+                                    uiState.first { it.journal?.drafts?.get(target.key) != draft }
+                                }
                             }
-                        if (!submitted) {
-                            if (mutable.value.journal?.drafts?.get(target.key) == draft)
-                                return@launch
-                            continue
                         }
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
+                        if (mutable.value.journal?.drafts?.get(target.key) != draft) continue
                         target.threadId?.let {
                             connection.chatList?.confirmDraftPresence(
                                 it,
@@ -845,17 +874,6 @@ internal class ChatComposerOwner(
                 }
             }
         return work.job
-    }
-
-    fun retryLocal(connection: Connection) {
-        if (connection.current()) {
-            mutable.value.journal?.let { replace(it) }
-            mutable.value.journal
-                ?.drafts
-                ?.filterValues { it.dirty }
-                ?.keys
-                ?.forEach { key -> serverTarget(key)?.let { synchronize(connection, it) } }
-        }
     }
 
     fun beginNew(connection: Connection, projectId: String?) {

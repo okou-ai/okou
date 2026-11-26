@@ -35,7 +35,6 @@
     <string name="settings_model_accounts">Contas de modelos</string>
     <string name="settings_accounts_scope">Escolha as contas de assinatura usadas em “%1$s”.</string>
     <string name="settings_accounts_scope_empty">Contas de modelos em “%1$s”</string>
-    <string name="settings_workspace_status">“%1$s” · %2$s</string>
     <string name="settings_accounts_update_failed">Não foi possível atualizar as contas. Exibindo as últimas informações conhecidas.</string>
     <string name="settings_accounts_empty">Nenhuma conta de modelo vinculada</string>
     <string name="settings_accounts_empty_help">Conecte o ChatGPT ou Claude para ver as cotas e escolher uma conta.</string>
@@ -52,6 +51,7 @@
     <string name="settings_account_switch_failed">Não foi possível trocar de conta do modelo.</string>
     <string name="settings_quota">Cota</string>
     <string name="settings_hour_quota">Cota de %1$d h</string>
+    <string name="settings_minute_quota">Cota de %1$d min</string>
     <string name="settings_day_quota">Cota de %1$d dias</string>
     <string name="settings_weekly_quota">Cota semanal</string>
     <string name="settings_quota_unavailable">Cota temporariamente indisponível</string>
@@ -111,4 +111,5 @@
     <string name="settings_suggestions_save_failed">Não foi possível salvar as sugestões. A configuração anterior foi restaurada.</string>
     <string name="settings_timezone_save_rejected">Não foi possível salvar o fuso horário. O fuso anterior foi restaurado.</string>
     <string name="settings_timezone_schedule_update_failed">Fuso horário salvo. Não foi possível atualizar o horário do resumo matinal.</string>
+    <string name="settings_model_catalog_refresh_failed">Não foi possível atualizar os modelos disponíveis. A última lista carregada é exibida.</string>
 </resources>

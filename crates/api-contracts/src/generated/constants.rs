@@ -237,9 +237,16 @@ pub mod runners {
         /// Guest launch, session capture, runner restore, and API-managed mounts use this shared path independently of the user HOME environment.
         pub const CANONICAL_CLAUDE_CONFIG_DIR: &str = "/home/user/.claude";
 
+        /// Canonical member Memory mount for this Guest framework.
+        pub const CANONICAL_CLAUDE_MEMORY_MOUNT_PATH: &str =
+            "/home/user/.claude/projects/-home-user-workspace/memory";
+
         /// Canonical directory for Okou-managed Codex state inside runner guests.
         /// Guest auth, runtime configuration, session capture, and runner restore use this shared path independently of the user HOME environment.
         pub const CANONICAL_CODEX_HOME_DIR: &str = "/home/user/.codex";
+
+        /// Canonical member Memory mount for this Guest framework.
+        pub const CANONICAL_CODEX_MEMORY_MOUNT_PATH: &str = "/home/user/.codex/memories";
 
         /// Canonical directory for Codex session histories inside runner guests.
         pub const CANONICAL_CODEX_SESSIONS_DIR: &str = "/home/user/.codex/sessions";
@@ -247,6 +254,9 @@ pub mod runners {
         /// Canonical home directory path expected for the sandbox user inside runner guests.
         /// Rust and TypeScript components use this shared contract value when building runner guest paths.
         pub const CANONICAL_GUEST_HOME_DIR: &str = "/home/user";
+
+        /// Canonical member Memory mount for this Guest framework.
+        pub const CANONICAL_PI_MEMORY_MOUNT_PATH: &str = "/home/user/.pi/agent/memory";
 
         /// Official Pi JSONL session directory for the canonical guest workspace.
         /// Guest finalization validates Pi session files under this directory and runner restore materializes resume history here.

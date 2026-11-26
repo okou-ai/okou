@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from tests.repeated_bytes_helpers import repeat_bytes
+from tests.repeated_bytes_helpers import join_repeated_bytes, repeat_bytes
 from usage import (
     create_anthropic_messages_sse_usage_extractor,
     create_model_json_response_inspector,
@@ -472,16 +472,21 @@ class TestAnthropicSseUsageExtractor:
             on_parse_error=lambda event, error: parse_errors.append((event, error)),
             on_accounting_event=accounting_events.append,
         )
-        dense_object_first_line = b",".join([b'"x":0'] * 10_000) + b","
-        dense_object_second_line = b",".join([b'"x":0'] * 10_000)
-
         parse(
-            b"event: message_start\n"
-            b'data: {"type":"message_start","message":{"id":"msg_partial",'
-            b'"model":"claude-sonnet-4-6","usage":{"input_tokens":7}},'
-            b'"padding":{' + dense_object_first_line + b"\n"
+            join_repeated_bytes(
+                b",",
+                b'"x":0',
+                10_000,
+                prefix=(
+                    b"event: message_start\n"
+                    b'data: {"type":"message_start","message":{"id":"msg_partial",'
+                    b'"model":"claude-sonnet-4-6","usage":{"input_tokens":7}},'
+                    b'"padding":{'
+                ),
+                suffix=b",\n",
+            )
         )
-        parse(b"data: " + dense_object_second_line + b"}}\n\n")
+        parse(join_repeated_bytes(b",", b'"x":0', 10_000, prefix=b"data: ", suffix=b"}}\n\n"))
 
         assert usage == {}
         assert accounting_events == []

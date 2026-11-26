@@ -1,10 +1,15 @@
 package ai.okou.android.settings
 
 import ai.okou.android.OkouTheme
+import ai.okou.android.WorkspaceFeedbackHost
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.auth.WorkspaceIdentity
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -39,6 +44,34 @@ class BuiltInToolsPageTest {
     @After
     fun closeOwner() {
         scope.cancel()
+    }
+
+    @Test
+    fun cachedCatalogFailureKeepsItsRowAndClearsFeedbackOnExit() {
+        val family = DataToolFamily("finance", mapOf("en-US" to "Financial data"))
+        val fixture = ToolFixture()
+        var now = 0L
+        var fail = false
+        val service =
+            object : BuiltInToolsService by fixture {
+                override suspend fun catalog(): List<DataToolFamily> {
+                    if (fail) throw ApiFailure.Http(400, null, null, null)
+                    return listOf(family)
+                }
+            }
+        val model = render(service, nowMillis = { now })
+        val row = compose.onNodeWithText("Financial data")
+        row.assertIsEnabled()
+        compose.runOnIdle {
+            now += 600_001L
+            fail = true
+            model.refresh()
+        }
+        val failure = compose.onNodeWithText("Tools are temporarily unavailable.")
+        failure.assertIsDisplayed()
+        row.assertIsEnabled()
+        compose.runOnIdle { model.hidePage() }
+        failure.assertDoesNotExist()
     }
 
     @Test
@@ -85,8 +118,9 @@ class BuiltInToolsPageTest {
     }
 
     private fun render(
-        service: ToolFixture,
+        service: BuiltInToolsService,
         inputModeManager: InputModeManager? = null,
+        nowMillis: () -> Long = System::currentTimeMillis,
     ): BuiltInToolsSettings {
         val model =
             BuiltInToolsSettings(
@@ -96,13 +130,20 @@ class BuiltInToolsPageTest {
                 cache = null,
                 authorized = { true },
                 onSessionFailure = { throw it },
+                nowMillis = nowMillis,
                 notice = {},
             )
         compose.setContent {
             CompositionLocalProvider(
                 LocalInputModeManager provides (inputModeManager ?: LocalInputModeManager.current),
             ) {
-                OkouTheme(dark = false) { Column { BuiltInToolsPage("My Space", model) } }
+                OkouTheme(dark = false) {
+                    val snackbar = remember { SnackbarHostState() }
+                    Column {
+                        BuiltInToolsPage("My Space", model, snackbar)
+                        WorkspaceFeedbackHost(snackbar, Modifier)
+                    }
+                }
             }
         }
         return model

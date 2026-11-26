@@ -15,9 +15,7 @@ CASES = {f"BatchRepark-{mode}" for mode in ("fresh", "snapshot")}
 
 
 def canonical_uuid(value):
-    if not isinstance(value, str) or not report.is_canonical_uuid(value):
-        raise ValueError("physical rollback run identity is not canonical")
-    return value
+    return report.require_canonical_uuid(value, "physical rollback run identity is not canonical")
 
 
 def validate(directory):

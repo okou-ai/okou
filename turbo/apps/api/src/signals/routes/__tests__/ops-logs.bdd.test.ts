@@ -1,10 +1,7 @@
 import { launchPublicToolRun } from "./helpers/public-tool-actor";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { commitMemoryVersion } from "./helpers/memory";
-import {
-  expectCanonicalStorageManifest,
-  createRunsApi,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
@@ -205,7 +202,7 @@ describe("OPS-01: user data export", () => {
           sandboxHeaders: {
             authorization: `Bearer ${oldRun.execution.sandboxToken}`,
           },
-          storageManifest: oldRun.execution.storageManifest,
+          memory: oldRun.execution.startupInputs.memory,
         },
         [{ path: "removed.md", content: "An old memory version" }],
       );
@@ -222,7 +219,7 @@ describe("OPS-01: user data export", () => {
           sandboxHeaders: {
             authorization: `Bearer ${currentRun.execution.sandboxToken}`,
           },
-          storageManifest: currentRun.execution.storageManifest,
+          memory: currentRun.execution.startupInputs.memory,
         },
         [
           { path: "MEMORY.md", content: "# Exported memory" },
@@ -247,7 +244,7 @@ describe("OPS-01: user data export", () => {
           sandboxHeaders: {
             authorization: `Bearer ${peerRun.execution.sandboxToken}`,
           },
-          storageManifest: peerRun.execution.storageManifest,
+          memory: peerRun.execution.startupInputs.memory,
         },
         [{ path: "peer-secret.md", content: "Another user's memory" }],
       );
@@ -258,16 +255,10 @@ describe("OPS-01: user data export", () => {
         actor,
         registerRunCleanup,
       );
-      expect(
-        expectCanonicalStorageManifest(reader.execution.storageManifest)
-          ?.storageMounts,
-      ).toContainEqual(
-        expect.objectContaining({
-          name: "memory",
-          storageId: memory.storageId,
-          versionId: memory.versionId,
-        }),
-      );
+      expect(reader.execution.startupInputs.memory).toMatchObject({
+        storageId: memory.storageId,
+        versionId: memory.versionId,
+      });
       await reader.cleanup();
       await flushWaitUntilForTest();
     });

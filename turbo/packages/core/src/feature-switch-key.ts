@@ -4,7 +4,6 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  IosConnectorManagement = "iosConnectorManagement",
   IosConnectorAppAuthorization = "iosConnectorAppAuthorization",
   ComposerVoiceMessages = "composerVoiceMessages",
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
@@ -59,7 +58,6 @@ export enum FeatureSwitchKey {
   HostedSiteCustomDomains = "hostedSiteCustomDomains",
   HostedSiteShareRows = "hostedSiteShareRows",
   HostedSiteEmailSharing = "hostedSiteEmailSharing",
-  FeishuArtifactChannelSharing = "feishuArtifactChannelSharing",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",
   ChatShareRefresh = "chatShareRefresh",

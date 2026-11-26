@@ -42,12 +42,17 @@ private struct ChatComposerContent: View {
   let configuration: ChatComposerView
   @ResolvedValue private var draftPresentation: ComposerDraftPresentation?
   @ResolvedValue private var resolvedModels: ChatModelSelectionStore.Presentation??
+  /// The connector choices' writes, which gate sending, kept in the session Store.
+  @ResolvedValue private var resolvedConnectors: ComposerConnectorStore.Status?
 
   init(configuration: ChatComposerView) {
     self.configuration = configuration
     _draftPresentation = ResolvedValue(configuration.draftState.presentation)
     _resolvedModels = ResolvedValue(
       ChatModelSelectionStore.presentation(of: configuration.modelSelection))
+    _resolvedConnectors = ResolvedValue(
+      ComposerConnectorStore.status(
+        of: configuration.connectorSelection ?? configuration.modelSelection?.connectors))
   }
 
   private var isBusy: Bool { configuration.isBusy }
@@ -77,10 +82,16 @@ private struct ChatComposerContent: View {
   private var models: ChatModelSelectionStore.Presentation? {
     resolvedModels ?? modelSelection?.presentation
   }
+  /// The connector choices' graph value for this render, with the same fallback.
+  private var connectors: ComposerConnectorStore.Status {
+    resolvedConnectors
+      ?? (connectorSelection ?? modelSelection?.connectors)?.status
+      ?? ComposerConnectorStore.Status()
+  }
   /// The model selection's part of send admission; a composer without one is not gated.
   private var modelsAllowSending: Bool {
-    guard let modelSelection, let models else { return true }
-    return models.canSend && modelSelection.connectors.canSend
+    guard modelSelection != nil, let models else { return true }
+    return models.canSend && connectors.canSend
   }
 
   @State private var isFocused = false
@@ -267,7 +278,7 @@ private struct ChatComposerContent: View {
                 .frame(width: actionSize, height: actionSize)
                 .contentShape(Rectangle())
                 .overlay(alignment: .topTrailing) {
-                  if connectorSelection?.uncertain == true {
+                  if connectorSelection != nil && connectors.uncertain {
                     OkouIcon("circle-alert", size: OkouIconSize.badge)
                       .foregroundStyle(OkouStatusColor.warning)
                   }
@@ -276,7 +287,7 @@ private struct ChatComposerContent: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Add attachments and tools")
             .accessibilityValue(
-              connectorSelection?.uncertain == true
+              connectorSelection != nil && connectors.uncertain
                 ? "Confirm connector settings before sending" : ""
             )
             .disabled(isBusy || needsUpgrade)

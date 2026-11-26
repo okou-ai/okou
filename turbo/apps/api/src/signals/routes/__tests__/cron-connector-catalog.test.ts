@@ -515,10 +515,12 @@ describe("connector catalog valid lifecycle", () => {
     });
     const { execution, sandboxHeaders } = await owner.runExecution(run.runId);
     expect(execution.cliAgentType).toBe("pi");
-    const bundle = execution.contentBundles.skills.find((entry) => {
-      return entry.mountPath === "/home/user/.pi/agent/skills/x";
-    });
-    expect(bundle).toMatchObject({
+    const bundle = execution.startupInputs.contentBundles.skills.find(
+      (entry) => {
+        return entry.name === "x";
+      },
+    );
+    expect(bundle?.bundle).toMatchObject({
       sha256: skill.sha256,
       archiveBytes: skill.archiveBytes,
     });
@@ -528,7 +530,7 @@ describe("connector catalog valid lifecycle", () => {
     expect(
       readExecutionContentBundle(
         new Map([[`bundles/v1/${skill.sha256}.tar.gz`, skill.archive]]),
-        bundle,
+        bundle.bundle,
       ),
     ).toStrictEqual(
       new Map(
@@ -705,21 +707,26 @@ describe("connector catalog valid lifecycle", () => {
         prompt,
       });
       const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
-      const mounts = execution.contentBundles.skills.filter((mount) => {
-        return skills.some(({ connector }) => {
-          return mount.mountPath.endsWith(
-            `/${getCustomConnectorSkillName(connector.slug, connector.id)}`,
-          );
-        });
-      });
+      const mounts = execution.startupInputs.contentBundles.skills.filter(
+        (mount) => {
+          return skills.some(({ connector }) => {
+            return (
+              mount.name ===
+              getCustomConnectorSkillName(connector.slug, connector.id)
+            );
+          });
+        },
+      );
       expect(mounts).toHaveLength(17);
       for (const { connector, published } of skills) {
         expect(mounts).toContainEqual(
           expect.objectContaining({
-            mountPath: `/home/user/.pi/agent/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`,
-            sha256: published.sha256,
-            archiveBytes: published.archiveBytes,
-            downloadUrl: expect.any(String),
+            name: getCustomConnectorSkillName(connector.slug, connector.id),
+            bundle: {
+              sha256: published.sha256,
+              archiveBytes: published.archiveBytes,
+              downloadUrl: expect.any(String),
+            },
           }),
         );
       }
@@ -776,13 +783,15 @@ describe("connector catalog valid lifecycle", () => {
     expect(updated.sha256).not.toBe(published.sha256);
     const check = async (runId: string, expected: typeof published) => {
       const { execution, sandboxHeaders } = await owned.runExecution(runId);
-      const mount = execution.contentBundles.skills.find((entry) => {
-        return (
-          entry.mountPath ===
-          `/home/user/.pi/agent/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`
-        );
-      });
-      expect(mount).toMatchObject({
+      const mount = execution.startupInputs.contentBundles.skills.find(
+        (entry) => {
+          return (
+            entry.name ===
+            getCustomConnectorSkillName(connector.slug, connector.id)
+          );
+        },
+      );
+      expect(mount?.bundle).toMatchObject({
         sha256: expected.sha256,
         archiveBytes: expected.archiveBytes,
         downloadUrl: expect.any(String),
@@ -1097,10 +1106,13 @@ describe("connector catalog valid lifecycle", () => {
       context,
       actor,
       ({ execution: receivedExecution }) => {
-        const bundle = receivedExecution.contentBundles.skills.find((entry) => {
-          return entry.mountPath.endsWith("/agora");
-        });
-        expect(bundle).toMatchObject({
+        const bundle =
+          receivedExecution.startupInputs.contentBundles.skills.find(
+            (entry) => {
+              return entry.name === "agora";
+            },
+          );
+        expect(bundle?.bundle).toMatchObject({
           sha256: skill.sha256,
           archiveBytes: skill.archiveBytes,
         });
@@ -1110,7 +1122,7 @@ describe("connector catalog valid lifecycle", () => {
         expect(
           readExecutionContentBundle(
             new Map([[`bundles/v1/${skill.sha256}.tar.gz`, skill.archive]]),
-            bundle,
+            bundle.bundle,
           ),
         ).toStrictEqual(
           new Map(

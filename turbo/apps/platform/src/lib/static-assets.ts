@@ -49,8 +49,11 @@ export const platformPreviewMessagePdfFontUrls = Object.freeze({
   unicodeBoldItalic: pdfUnicodeBoldItalicFontUrl,
 });
 
+// The still is the idle portrait at t = 0, where the head is upright. The idle
+// hero frame (t = 1.2 s) tilts the head, which reads as a crooked Okou on
+// every finished reply.
 export const okouMessageAvatarStill = platformStaticAssetUrl(
-  "views/okou-page/assets/okou-avatar/still-6067a2799779.webp",
+  "views/okou-page/assets/okou-avatar/still-03b2c9a3000b.webp",
 );
 export const okouMessageAvatarAnimated = platformStaticAssetUrl(
   "views/okou-page/assets/okou-avatar/idle-50ae6937b88f.svg",

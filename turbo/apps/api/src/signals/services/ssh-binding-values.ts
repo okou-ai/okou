@@ -183,7 +183,10 @@ export function sshConnectionCreationSource(
       displayName: sql`${args.body.displayName}`
         .mapWith(pgTextDecoder)
         .as("display_name"),
-      remoteDeviceId: sql`gen_random_uuid()`
+      remoteDeviceId: (args.body.remoteDeviceId === undefined
+        ? sql`gen_random_uuid()`
+        : sql`${args.body.remoteDeviceId}::uuid`
+      )
         .mapWith(sshConnections.remoteDeviceId)
         .as("remote_device_id"),
       host: sql`${args.canonicalHost}`.mapWith(pgTextDecoder).as("host"),

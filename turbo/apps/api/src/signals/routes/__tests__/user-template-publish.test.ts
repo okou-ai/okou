@@ -1106,7 +1106,7 @@ describe("POST /api/user-templates", () => {
       const { execution } = await chatEvents.runExecution(runId);
       expect(execution.appendSystemPrompt).toContain("okou host screenshot");
       expect(execution.appendSystemPrompt).toContain("previewImageUrl");
-      const bundle = execution.contentBundles.templates?.[0];
+      const bundle = execution.startupInputs.contentBundles.templates?.[0];
       if (!bundle) {
         throw new Error("Expected the selected template's immutable bundle");
       }

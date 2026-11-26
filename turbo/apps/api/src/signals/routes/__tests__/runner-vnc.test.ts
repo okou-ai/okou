@@ -272,6 +272,13 @@ describe("private Runner VNC authority", () => {
       if (!desktop || !carrier) {
         throw new Error("Expected separate devices for VNC and its SSH hop");
       }
+      expect(desktop.channels).toMatchObject([
+        {
+          id: f.connectionId,
+          kind: "vnc",
+          sshDependencyIds: [gateway.connectionId],
+        },
+      ]);
       const transport = { ...gateway, generation: 1 };
       const binding: Partial<RunnerVncCheckRequest> =
         hop === "display"

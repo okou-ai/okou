@@ -213,14 +213,9 @@ async function postFalWebhook(
 function createImageRun(
   imageModel: string | null,
   credits = 1000,
-  providerCleanupBody?: Record<string, unknown>,
+  options?: Parameters<typeof createImageExecutionForContext>[3],
 ) {
-  return createImageExecutionForContext(
-    context,
-    imageModel,
-    credits,
-    providerCleanupBody,
-  );
+  return createImageExecutionForContext(context, imageModel, credits, options);
 }
 
 async function createFundedImageRun(imageModel: string, credits: number) {
@@ -432,6 +427,39 @@ describe("POST /api/image-io/generate", () => {
       expect(fluxCalls).toBe(1);
     });
   });
+
+  it("uses the current member model for a direct request from an image-disabled Run", async () => {
+    const fixture = await createImageRun("fal-ai/flux-pro/v1.1", 0, {
+      imageGenerationDisabled: true,
+    });
+    expect(fixture.execution.appendSystemPrompt).not.toContain(
+      "# Built-in image model",
+    );
+
+    await fixture.run(async () => {
+      await useImageModel(fixture, "gpt-image-1");
+      let providerEndpoint: string | undefined;
+      server.use(
+        http.post("https://queue.fal.run/*", ({ request }) => {
+          const url = new URL(request.url);
+          providerEndpoint = url.origin + url.pathname;
+          return HttpResponse.json(falQueueHandle("disabled-run-image"));
+        }),
+      );
+      const response = await fixture.request(
+        createImageIoTestApp(),
+        "/api/image-io/generate",
+        {
+          method: "POST",
+          headers: { authorization: `Bearer ${fixture.token}` },
+          body: JSON.stringify({ prompt: "A direct image request" }),
+        },
+      );
+      expect(response.status).toBe(202);
+      expect(providerEndpoint).toBe(FAL_GPT_IMAGE_1_URL);
+    });
+  });
+
   it("uses the catalog default in a real Run with an unset member preference", async () => {
     const fixture = await createImageRun(null);
     await fixture.run(async () => {
@@ -566,10 +594,12 @@ describe("POST /api/image-io/generate", () => {
       prompt: "An admitted image after public credit exhaustion.",
     };
     const fixture = await createImageRun("gpt-image-1", 1000, {
-      // Cleanup finishes pending work or replays this same success, never a
-      // provider failure after the successful completion under test.
-      status: "COMPLETED",
-      payload: completion,
+      providerCleanupBody: {
+        // Cleanup finishes pending work or replays this same success, never a
+        // provider failure after the successful completion under test.
+        status: "COMPLETED",
+        payload: completion,
+      },
     });
     await fixture.run(async () => {
       let observedRequestUrl: string | null = null;

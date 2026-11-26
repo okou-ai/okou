@@ -17,7 +17,14 @@ import {
   createChatCapabilityHelpers,
   readyChat,
   RUN_PATH,
+  SECOND_CAPABILITY_RUN_ID,
 } from "./chat-capability-test-helpers.ts";
+import {
+  createChatRunFixtures,
+  findButton,
+  promptEvent,
+} from "./chat-run-test-fixtures.ts";
+import { findNamedMenuItem } from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
@@ -54,15 +61,16 @@ function gmailDraft(overrides: Partial<MailDraft> = {}): MailDraft {
 /** The Gmail drafts the API stores, by mail draft ID. */
 function mockMailDrafts(drafts: Map<string, MailDraft>): void {
   context.mocks.api(mailContract.getDraft, ({ params, respond }) => {
-    const draft = drafts.get(params.mailDraftId);
+    const id = params.mailDraftId.toLowerCase();
+    const draft = drafts.get(id);
     if (!draft) {
       return respond(404, {
         error: { code: "NOT_FOUND", message: "Mail draft not found" },
       });
     }
     return respond(200, {
-      mailDraftId: params.mailDraftId,
-      mailDraftUrl: mailUrl(params.mailDraftId),
+      mailDraftId: id,
+      mailDraftUrl: mailUrl(id),
       mailDraft: draft,
     });
   });
@@ -250,6 +258,113 @@ async function findPreview(
     return preview;
   });
 }
+
+test("A Gmail preview opened from an uppercase UUID link shows a confirmed revision during its run", async () => {
+  const id = "a0000000-0000-4000-a000-000000000741";
+  const otherId = "a0000000-0000-4000-a000-000000000742";
+  const original = gmailDraft({
+    subject: "Launch review",
+    body: "Original proposal",
+  });
+  const other = gmailDraft({ subject: "Travel review" });
+  const drafts = new Map([
+    [id, original],
+    [otherId, other],
+  ]);
+  mockMailDrafts(drafts);
+  createChatRunFixtures(context).installRunChat({
+    activeRunIds: [SECOND_CAPABILITY_RUN_ID],
+    chatEvents: [
+      ...completedConversation(
+        `${mailUrl(id.toUpperCase())}\n\n${mailUrl(otherId)}`,
+      ),
+      promptEvent({
+        id: "revise-launch",
+        runId: SECOND_CAPABILITY_RUN_ID,
+        seqId: 3,
+        text: "Revise the launch proposal and keep researching.",
+      }),
+    ],
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  const panel = await openMail("Open draft email: Launch review");
+  await within(panel).findByText("Original proposal");
+  expect(mailCard("Open draft email: Travel review")).toBeDefined();
+
+  drafts.set(
+    id,
+    gmailDraft({
+      subject: original.subject,
+      gmailMessageId: "message-revised",
+      body: "Revised proposal",
+    }),
+  );
+  drafts.set(otherId, { ...other, subject: "Separate edit" });
+  context.mocks.ably.triggerOnChannel(
+    "user-org:test-user-123:org_default",
+    `mailDraftChanged:${id}`,
+  );
+
+  await expect(
+    within(panel).findByText("Revised proposal"),
+  ).resolves.toBeInTheDocument();
+  expect(mailCard("Open draft email: Travel review")).toBeDefined();
+});
+
+test("A Gmail draft opened from Manage emails refreshes before the next chat event", async () => {
+  const id = "a0000000-0000-4000-a000-000000000743";
+  const draft = gmailDraft({
+    subject: "Shipping plan",
+    body: "Deliver on Monday",
+  });
+  const drafts = new Map([[id, draft]]);
+  mockMailDrafts(drafts);
+  context.mocks.browser.matchMedia((query) => {
+    return query.startsWith("(min-width:");
+  });
+  context.mocks.api(mailContract.listThreadMail, ({ respond }) => {
+    return respond(200, {
+      mails: [
+        {
+          mailDraftId: id,
+          status: "draft",
+          subject: draft.subject,
+          from: draft.from,
+          createdAt: draft.createdAt,
+        },
+      ],
+    });
+  });
+  createChatRunFixtures(context).installRunChat({
+    activeRunIds: [SECOND_CAPABILITY_RUN_ID],
+    chatEvents: [
+      promptEvent({
+        id: "shipping-update",
+        runId: SECOND_CAPABILITY_RUN_ID,
+        seqId: 1,
+        text: "Revise the shipping dates.",
+      }),
+    ],
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await screen.findByText("Revise the shipping dates.");
+  click(await findButton("More actions"));
+  const menu = await screen.findByRole("menu");
+  click(await findNamedMenuItem("Manage emails", menu));
+  const list = await screen.findByRole("dialog", { name: "Emails" });
+  click(await within(list).findByText(draft.subject));
+  const panel = await screen.findByTestId("mail-draft-sidebar");
+  await within(panel).findByText(draft.body);
+
+  drafts.set(id, { ...draft, body: "Deliver on Tuesday" });
+  context.mocks.ably.triggerOnChannel(
+    "user-org:test-user-123:org_default",
+    `mailDraftChanged:${id}`,
+  );
+  await expect(
+    within(panel).findByText("Deliver on Tuesday"),
+  ).resolves.toBeInTheDocument();
+});
 
 test("Send, revisit, and delete mail drafts from chat", async () => {
   const launchId = "a0000000-0000-4000-a000-000000000731";

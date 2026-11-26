@@ -102,14 +102,24 @@ def validate_snapshot_preparation(directory, artifacts):
             raise ValueError("invalid snapshot preparation observation clock")
     if record["completed_monotonic_ns"] <= record["started_monotonic_ns"]:
         raise ValueError("unordered snapshot preparation observation clocks")
-    boot = record["creator_boot_id"]
-    if not isinstance(boot, str) or not is_canonical_uuid(boot):
-        raise ValueError("invalid snapshot preparation creator boot identity")
+    require_canonical_uuid(record["creator_boot_id"], "invalid snapshot preparation creator boot identity")
 
 
 def is_canonical_uuid(value):
     """Compare the original spelling, preserving UUID parsing errors."""
     return str(uuid.UUID(value)) == value
+
+
+def require_canonical_uuid(value, message):
+    """Return a canonical UUID string with its original spelling."""
+    if not isinstance(value, str) or not is_canonical_uuid(value):
+        raise ValueError(message)
+    return value
+
+
+def validate_evidence_uuid(value):
+    """Check evidence UUIDs with the diagnostic shared by the original readers."""
+    return require_canonical_uuid(value, "later parking identity is not canonical")
 
 
 def positive_integer(value):

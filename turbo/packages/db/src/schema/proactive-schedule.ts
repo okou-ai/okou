@@ -10,6 +10,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { chatThreads } from "./chat-thread";
@@ -39,6 +40,8 @@ export const proactiveSchedules = pgTable(
   "proactive_schedules",
   {
     ...scheduleColumns(),
+    // Changes to the member's choice invalidate only occurrences that have not started.
+    preferenceRevision: integer("preference_revision").default(0).notNull(),
     chatThreadId: uuid("chat_thread_id").references(
       () => {
         return chatThreads.id;
@@ -121,3 +124,63 @@ export const legacyProactiveSchedules = pgView("legacy_proactive_schedules", {
   LEFT JOIN chat_threads t ON t.id = b.chat_thread_id AND t.org_id = o.org_id AND t.user_id = o.user_id
   WHERE e.state IS DISTINCT FROM 'departed'
 `);
+
+/** One release-wide handoff; ordinary member automations never consult it. */
+export const proactiveDispatchHandoff = pgTable(
+  "proactive_dispatch_handoff",
+  {
+    singleton: boolean("singleton").primaryKey().default(true),
+    phase: text("phase")
+      .$type<"automation" | "draining" | "standalone">()
+      .notNull(),
+    changedAt: timestamp("changed_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return [
+      check("chk_proactive_handoff_singleton", sql`${table.singleton}`),
+      check(
+        "chk_proactive_handoff_phase",
+        sql`${table.phase} IN ('automation', 'draining', 'standalone')`,
+      ),
+    ];
+  },
+);
+
+/** The original time, input identity and Run receipt survive preference changes. */
+export const proactiveOccurrences = pgTable(
+  "proactive_occurrences",
+  {
+    id: uuid("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    task: text("task").$type<ProactiveTask>().notNull(),
+    scheduledAt: timestamp("scheduled_at").notNull(),
+    preferenceRevision: integer("preference_revision").notNull(),
+    chatThreadId: uuid("chat_thread_id").notNull(),
+    runId: uuid("run_id"),
+    suggestionsEnabled: boolean("suggestions_enabled"),
+    cardDeliveryEnabled: boolean("card_delivery_enabled"),
+    settledAt: timestamp("settled_at"),
+  },
+  (table) => {
+    return [
+      check(
+        "chk_proactive_occurrence_task",
+        sql`${table.task} IN ('morning-brief','suggestions','learning')`,
+      ),
+      index("idx_proactive_occurrence_thread").on(table.chatThreadId),
+      uniqueIndex("uq_proactive_occurrence_slot").on(
+        table.orgId,
+        table.userId,
+        table.task,
+        table.scheduledAt,
+      ),
+      uniqueIndex("uq_proactive_occurrence_run")
+        .on(table.runId)
+        .where(sql`${table.runId} IS NOT NULL`),
+      uniqueIndex("uq_proactive_occurrence_outstanding")
+        .on(table.orgId, table.userId, table.task)
+        .where(sql`${table.settledAt} IS NULL`),
+    ];
+  },
+);

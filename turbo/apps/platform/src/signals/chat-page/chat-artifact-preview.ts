@@ -5,7 +5,7 @@ import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/cha
 import { accept } from "../../lib/accept.ts";
 import { messageArtifactKey } from "../../views/okou-page/attachment-url.ts";
 import { resetSignal } from "../utils.ts";
-import { apiClient$ } from "../api-client.ts";
+import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import { isPreviewableChatUrl } from "./parse-body-blocks.ts";
@@ -24,62 +24,82 @@ export interface MessageArtifactReads {
 export const emptyPreviewItem$ = computed(() => {
   return Promise.resolve(undefined);
 });
+function messageArtifactRequests(threadId: string, signal: AbortSignal) {
+  return {
+    async detail(client: ApiClientFactory, url: string) {
+      signal.throwIfAborted();
+      const result = await accept(
+        client(artifactReferencesContract).byUrl({
+          query: { url },
+          fetchOptions: { signal },
+        }),
+        [200, 404],
+        signal,
+        { showErrorToast: false },
+      );
+      return result.status === 200 ? result.body : null;
+    },
+    async driveStatus(client: ApiClientFactory, publicationId: string) {
+      signal.throwIfAborted();
+      const result = await accept(
+        client(artifactReferencesContract).driveStatus({
+          params: { publicationId },
+          query: { chatThreadId: threadId },
+          fetchOptions: { signal },
+        }),
+        [200, 404],
+        signal,
+        { showErrorToast: false },
+      );
+      return result.status === 200 ? result.body : null;
+    },
+  };
+}
+
 /** Cards, a sidebar and the lightbox in a chat share the same per-link read. */
 export function createMessageArtifactDetails(
   threadId: string,
   driveAccountRevision$: Computed<string>,
 ) {
-  const revision$ = state(0);
+  const requests$ = state<ReturnType<typeof messageArtifactRequests> | null>(
+    null,
+  );
+  const resetRequests$ = resetSignal();
   const beginOpen$ = resetSignal();
   const registry = createCardSignalsRegistry(
     messageArtifactKey,
     (url: string): MessageArtifactReads => {
       const detail$: MessageArtifactRead = computed(async (get) => {
-        if (!isPreviewableChatUrl(url)) {
+        const requests = get(requests$);
+        if (!requests || !isPreviewableChatUrl(url)) {
           return null;
         }
-        get(revision$);
         get(artifactCatalogRevision$);
-        const result = await accept(
-          get(apiClient$)(artifactReferencesContract).byUrl({
-            query: { url },
-          }),
-          [200, 404],
-          undefined,
-          { showErrorToast: false },
-        );
-        return result.status === 200 ? result.body : null;
+        return await requests.detail(get(apiClient$), url);
       });
       // Only the open preview's action bar subscribes to the viewing chat's selected Drive account.
       const item$ = computed(async (get) => {
+        const requests = get(requests$);
         const detail = await get(detail$);
         const item = ownedPreviewItem(detail);
-        if (!item?.file.artifactId || !detail?.owner) {
+        if (!requests || !item?.file.artifactId || !detail?.owner) {
           return item;
         }
         get(driveAccountRevision$);
-        const result = await accept(
-          get(apiClient$)(artifactReferencesContract).driveStatus({
-            params: { publicationId: detail.owner.publicationId },
-            query: { chatThreadId: threadId },
-          }),
-          [200, 404],
-          undefined,
-          { showErrorToast: false },
+        const drive = await requests.driveStatus(
+          get(apiClient$),
+          detail.owner.publicationId,
         );
-        return result.status === 200
-          ? { file: { ...item.file, ...result.body } }
-          : item;
+        return drive ? { file: { ...item.file, ...drive } } : item;
       });
       return { detail$, item$, beginOpen$ };
     },
   );
   return {
     register$: registry.register$,
-    refresh$: command(({ set }) => {
-      return set(revision$, (n) => {
-        return n + 1;
-      });
+    restartRequests$: command(({ set }, signal: AbortSignal) => {
+      const owner = set(resetRequests$, signal);
+      set(requests$, messageArtifactRequests(threadId, owner));
     }),
   };
 }

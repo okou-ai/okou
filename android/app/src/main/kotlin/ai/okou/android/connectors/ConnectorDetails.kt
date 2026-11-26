@@ -1,11 +1,14 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.ContentReadFailure
+import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouActionTreatment
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.OkouSwitch
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
+import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.isShortSettingsPanelWindow
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -39,6 +43,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -80,27 +85,32 @@ internal fun ConnectorDetails(
     state: ConnectorUiState,
     preview: ConnectorEntry?,
     wide: Boolean,
+    announcements: ConnectorReadAnnouncements,
     initialAccountId: String? = null,
     onCloseInitialAccount: () -> Unit = {},
 ) {
     val detail = state.detail.data
-    val detailUnavailable = state.detail.failure == ConnectorReadFailure.Unavailable
+    val detailFailure = state.detail.failure
+    val detailUnavailable = detailFailure == ConnectorReadFailure.Unavailable
     val entry = detail?.entry ?: preview
-    if (entry == null && state.detail.failure != null) {
+    if (entry == null && detailFailure != null) {
+        val pane = Modifier.widthIn(max = 666.dp)
         Box(
             Modifier.fillMaxSize().testTag("connector-detail"),
             contentAlignment = Alignment.TopCenter,
         ) {
-            ConnectorReadError(
+            ConnectorReadFailureContent(
+                detailFailure,
                 R.string.connector_load_failed,
-                Modifier.widthIn(max = 666.dp),
+                if (detailUnavailable) pane
+                else pane.fillMaxHeight().padding(horizontal = if (wide) 32.dp else 20.dp),
             )
         }
         return
     }
-    val accounts = entry?.slug?.let(state::accountsFor).orEmpty()
-    val hasAccountContent =
-        state.accounts.data != null || state.cachedAccounts != null || accounts.isNotEmpty()
+    val accountContent = state.selectedAccountContent
+    val accounts = accountContent.orEmpty()
+    val hasAccountContent = accountContent != null
     val showsAddAccount = hasAccountContent && detail?.methods?.isNotEmpty() == true
     var panel by remember { mutableStateOf<ConnectorPanel?>(null) }
     var accountId by remember { mutableStateOf<String?>(null) }
@@ -108,6 +118,7 @@ internal fun ConnectorDetails(
         remember(initialAccountId) { mutableStateOf(initialAccountId != null) }
     var restoreAccountFocus by remember { mutableStateOf(false) }
     var restoreActionFocus by remember { mutableStateOf<FocusRequester?>(null) }
+    val permissionAnnouncements = remember(model) { ConnectorReadAnnouncements() }
     val accountFocus = remember { FocusRequester() }
     val addFocus = remember { FocusRequester() }
     val permissionsFocus = remember { FocusRequester() }
@@ -165,6 +176,16 @@ internal fun ConnectorDetails(
     }
 
     val confirmingDisconnect = disconnectImpact != null
+    val accountNotice = state.accounts.notice().takeIf { hasAccountContent }
+    val detailNotice =
+        state.detail
+            .notice(
+                if (detail == null) R.string.connector_load_failed
+                else R.string.connector_refresh_failed,
+            )
+            .takeUnless { detailUnavailable }
+    val serviceNotice =
+        listOfNotNull(detailNotice, accountNotice).maxByOrNull(ConnectorReadNotice::round)
 
     val authorization = action?.authorization
     LaunchedEffect(authorization) {
@@ -279,17 +300,32 @@ internal fun ConnectorDetails(
                 if (detailUnavailable) {
                     ContentReadFeedback(R.string.connector_load_failed)
                 } else if (!hasAccountContent) {
-                    when {
-                        state.accounts.failure != null ->
+                    when (state.accounts.failure) {
+                        ConnectorReadFailure.Unavailable ->
                             ContentReadFeedback(
                                 R.string.connector_accounts_failed,
                                 Modifier.fillMaxWidth(),
                             )
-                        else ->
-                            ConnectorSkeleton(
-                                stringResource(R.string.connector_loading_accounts),
-                                rows = 1,
-                            )
+                        else -> {
+                            val bodyHeight = if (isShortSettingsPanelWindow()) 160.dp else 208.dp
+                            Box(
+                                Modifier.fillMaxWidth().heightIn(min = bodyHeight),
+                                propagateMinConstraints = true,
+                            ) {
+                                if (state.accounts.failure == null) {
+                                    ConnectorSkeleton(
+                                        stringResource(R.string.connector_loading_accounts),
+                                        rows = 1,
+                                    )
+                                } else {
+                                    ContentReadFailure(
+                                        R.string.chat_list_first_load_failed,
+                                        Modifier.fillMaxWidth(),
+                                        failureLayout = ContentReadFailureLayout.Section,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 if (detail != null && hasAccountContent) {
@@ -333,18 +369,6 @@ internal fun ConnectorDetails(
                         model.showPermissions()
                     }
                 }
-                if (!detailUnavailable) {
-                    when {
-                        detail == null && state.detail.failure != null ->
-                            ContentReadFeedback(R.string.connector_load_failed)
-                        hasAccountContent &&
-                            state.accounts.failure == ConnectorReadFailure.Unavailable ->
-                            ContentReadFeedback(R.string.connector_accounts_failed)
-                        state.detail.failure != null ||
-                            hasAccountContent && state.accounts.failure != null ->
-                            ContentReadFeedback(R.string.connector_refresh_failed)
-                    }
-                }
                 if (panel == null) ConnectorActionFeedback(action)
             } else if (rememberContentReadSkeleton()) {
                 val label = stringResource(R.string.connector_loading)
@@ -356,6 +380,13 @@ internal fun ConnectorDetails(
                     ChatSkeletonBlock(Modifier.widthIn(max = 300.dp).fillMaxWidth().height(14.dp))
                 }
             }
+        }
+        if (panel == null && entry != null) {
+            ConnectorReadFeedbackHost(
+                serviceNotice,
+                announcements,
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+            )
         }
     }
 
@@ -376,6 +407,7 @@ internal fun ConnectorDetails(
                     ConnectorPermissionSheet(
                         entry.name,
                         state.permissions,
+                        permissionAnnouncements,
                         ::dismissPanel,
                     )
                 ConnectorPanel.Account ->
@@ -385,6 +417,11 @@ internal fun ConnectorDetails(
                             ::dismissPanel,
                             dismissible = !busy,
                             back = if (account.id == initialAccountId) ::dismissPanel else null,
+                            feedback =
+                                rememberConnectorReadFeedback(
+                                    accountNotice.takeUnless { confirmingDisconnect },
+                                    announcements,
+                                ),
                         ) {
                             ConnectorAccountActions(
                                 account,
@@ -432,6 +469,8 @@ internal fun ConnectorDetails(
                             action,
                             save = { model.rename(account.id, it) },
                             cancel = ::dismissPanel,
+                            readFeedback =
+                                rememberConnectorReadFeedback(accountNotice, announcements),
                         )
                     }
                 ConnectorPanel.Authorize ->
@@ -444,6 +483,11 @@ internal fun ConnectorDetails(
                         canModify = canModify,
                         action = action,
                         cancel = ::dismissPanel,
+                        readFeedback =
+                            rememberConnectorReadFeedback(
+                                if (detail == null) accountNotice else serviceNotice,
+                                announcements,
+                            ),
                     )
                 null -> Unit
             }
@@ -535,6 +579,7 @@ internal fun ConnectorSheet(
     expandInShortWindow: Boolean = false,
     back: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
+    feedback: SnackbarHostState? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val shortWindow = isShortSettingsPanelWindow()
@@ -544,7 +589,12 @@ internal fun ConnectorSheet(
         if (fullScreen)
             MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 24.sp)
         else MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp)
-    SettingsModal(dismiss, dismissible, fullScreen) { centered ->
+    SettingsModal(
+        dismiss,
+        dismissible,
+        fullScreen,
+        snackbar = feedback.takeUnless { fullScreen },
+    ) { centered ->
         val frame =
             if (fullScreen) Modifier.fillMaxSize()
             else
@@ -589,15 +639,25 @@ internal fun ConnectorSheet(
                             titleStyle.copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
                     )
                 }
-                Column(
+                Box(
                     if (scrollAll) Modifier.fillMaxWidth()
-                    else
-                        Modifier.weight(1f, fill = fullScreen)
-                            .fillMaxWidth()
-                            .verticalScroll(scroll),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    content = content,
-                )
+                    else Modifier.weight(1f, fill = fullScreen).fillMaxWidth(),
+                    propagateMinConstraints = true,
+                ) {
+                    Column(
+                        if (scrollAll) Modifier else Modifier.verticalScroll(scroll),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        content = content,
+                    )
+                    if (fullScreen && feedback != null) {
+                        Box(
+                            Modifier.matchParentSize().padding(bottom = 8.dp),
+                            contentAlignment = Alignment.BottomCenter,
+                        ) {
+                            WorkspaceFeedbackHost(feedback, Modifier)
+                        }
+                    }
+                }
                 actions?.invoke()
             }
         }
@@ -608,27 +668,44 @@ internal fun ConnectorSheet(
 private fun ConnectorPermissionSheet(
     service: String,
     permissions: ConnectorRead<List<ConnectorPermission>>,
+    announcements: ConnectorReadAnnouncements,
     close: () -> Unit,
 ) {
+    val pendingHeight = if (isShortSettingsPanelWindow()) 160.dp else 208.dp
+    val pendingBody = Modifier.fillMaxWidth().heightIn(min = pendingHeight)
     ConnectorSheet(
         stringResource(R.string.connector_permissions_title, service),
         close,
         actions = { ConnectorCloseAction(close) },
+        feedback =
+            rememberConnectorReadFeedback(
+                permissions.notice().takeIf { permissions.data != null },
+                announcements,
+            ),
     ) {
         Text(stringResource(R.string.connector_permissions_copy), style = connectorBodyType())
         when {
             permissions.data == null ->
                 when {
-                    permissions.failure != null ->
+                    permissions.failure == ConnectorReadFailure.Unavailable ->
                         ContentReadFeedback(
                             R.string.connector_permissions_failed,
                             Modifier.fillMaxWidth(),
                         )
-                    else ->
-                        ConnectorSkeleton(
-                            stringResource(R.string.connector_loading_permissions),
-                            rows = 1,
+                    permissions.failure != null ->
+                        ConnectorReadFailureContent(
+                            permissions.failure,
+                            R.string.connector_permissions_failed,
+                            pendingBody,
+                            failureLayout = ContentReadFailureLayout.Panel,
                         )
+                    else ->
+                        Box(pendingBody) {
+                            ConnectorSkeleton(
+                                stringResource(R.string.connector_loading_permissions),
+                                rows = 1,
+                            )
+                        }
                 }
             permissions.data.isEmpty() ->
                 Text(
@@ -657,8 +734,6 @@ private fun ConnectorPermissionSheet(
                     }
                 }
         }
-        if (permissions.data != null && permissions.failure == ConnectorReadFailure.Sustained)
-            ContentReadFeedback(R.string.connector_refresh_failed)
     }
 }
 

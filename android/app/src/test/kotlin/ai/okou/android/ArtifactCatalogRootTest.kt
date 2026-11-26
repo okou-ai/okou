@@ -37,6 +37,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
@@ -56,6 +57,7 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
@@ -403,6 +405,12 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithText(fixture.summary.title).assertIsDisplayed()
         compose.onNodeWithTag("artifact_refresh_feedback").assertIsDisplayed()
 
+        compose.mainClock.advanceTimeBy(5_500L)
+        compose.onNodeWithText(failure).assertDoesNotExist()
+        failRefresh.set(true)
+        resumeArtifactRoute()
+        awaitText(failure)
+
         val videos = compose.onNodeWithText("Videos")
         videos.performClick()
         awaitText(fixture.video.title)
@@ -411,39 +419,55 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h380dp")
     fun chatResourcesResumesTheSameFailedPageAndEvictsOnConfirmedRevocation() {
         val fixture = ArtifactApiFixture(app.fixture)
-        fixture.pageSize = 2
+        fixture.pageSize = 3
         fixture.install()
         val realtime = app.realtimeService as TestRealtimeService
-        val refuseAppend = AtomicBoolean(true)
         val deny = AtomicBoolean(false)
         val appendRequests = AtomicInteger()
+        val releaseFailure = CountDownLatch(1)
         val respond = app.fixture.commandResponse
         app.fixture.commandResponse = { request ->
             val url = request.requestUrl
             if (url?.encodedPath == "/api/artifacts/catalog" && deny.get()) {
                 MockResponse().setResponseCode(403)
             } else if (
-                url?.encodedPath == "/api/artifacts/catalog" && url.queryParameter("cursor") == "2"
+                url?.encodedPath == "/api/artifacts/catalog" &&
+                    url.queryParameter("cursor") == "3" &&
+                    appendRequests.incrementAndGet() == 1
             ) {
-                appendRequests.incrementAndGet()
-                if (refuseAppend.get()) MockResponse().setResponseCode(400) else respond(request)
+                check(releaseFailure.await(10, TimeUnit.SECONDS))
+                MockResponse().setResponseCode(400)
             } else respond(request)
         }
         app.responseGate.countDown()
-        openChatResources(fixture.sourceTitle)
-        val notice = "Temporarily unable to load more artifacts"
+        val retained = compose.onNodeWithText(fixture.site.title)
+        val before =
+            try {
+                openChatResources(fixture.sourceTitle)
+                awaitText(fixture.summary.title)
+                val list = compose.onNodeWithTag("chat_resources_list")
+                list.performScrollToNode(hasTestTag("artifact_row_skeleton"))
+                list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 500f) }
+                retained.assertIsDisplayed().getUnclippedBoundsInRoot()
+            } finally {
+                releaseFailure.countDown()
+            }
+        val notice = "Temporarily unable to load more"
         awaitText(notice)
-        val previousRow = compose.onNodeWithText(fixture.summary.title).getUnclippedBoundsInRoot()
-        assertTrue(
-            compose.onNodeWithText(notice).getUnclippedBoundsInRoot().top > previousRow.bottom,
+        assertEquals(before, retained.getUnclippedBoundsInRoot())
+        assertEquals(
+            12.dp,
+            compose.onNodeWithText(notice).getUnclippedBoundsInRoot().top - before.bottom,
         )
         assertEquals(1, appendRequests.get())
-        refuseAppend.set(false)
         resumeArtifactRoute()
         awaitText(fixture.slides.title)
         assertEquals(2, appendRequests.get())
+        assertEquals(before, retained.getUnclippedBoundsInRoot())
+        compose.onNodeWithText(notice).assertDoesNotExist()
 
         deny.set(true)
         realtime.invalidate(ChatChanges(artifactThreads = setOf(CHAT_PERSONAL)))
@@ -455,6 +479,55 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         compose.waitUntil(10_000) {
             runBlocking { cache.loadArtifactCatalog(CHAT_PERSONAL) == null }
         }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h560dp")
+    fun workspaceKeepsTheRetainedPageAndResumesItsFailedCursor() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.pageSize = 4
+        fixture.install()
+        val appendRequests = AtomicInteger()
+        val releaseFailure = CountDownLatch(1)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            val url = request.requestUrl
+            if (
+                url?.encodedPath == "/api/artifacts/catalog" &&
+                    url.queryParameter("cursor") == "4" &&
+                    appendRequests.incrementAndGet() == 1
+            ) {
+                check(releaseFailure.await(10, TimeUnit.SECONDS))
+                MockResponse().setResponseCode(400)
+            } else respond(request)
+        }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        val retained = compose.onNodeWithText(fixture.slides.title)
+        val before =
+            try {
+                compose.onNodeWithContentDescription("Artifacts").performClick()
+                awaitText(fixture.summary.title)
+                val list = compose.onNodeWithTag("artifact_list")
+                list.performScrollToNode(hasTestTag("artifact_row_skeleton"))
+                list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 500f) }
+                retained.assertIsDisplayed().getUnclippedBoundsInRoot()
+            } finally {
+                releaseFailure.countDown()
+            }
+        val notice = "Temporarily unable to load more"
+        awaitText(notice)
+        assertEquals(before, retained.getUnclippedBoundsInRoot())
+        assertEquals(
+            12.dp,
+            compose.onNodeWithText(notice).getUnclippedBoundsInRoot().top - before.bottom,
+        )
+        assertEquals(1, appendRequests.get())
+        resumeArtifactRoute()
+        awaitText(fixture.image.title)
+        assertEquals(2, appendRequests.get())
+        assertEquals(before, retained.getUnclippedBoundsInRoot())
+        compose.onNodeWithText(notice).assertDoesNotExist()
     }
 
     @Test
@@ -995,12 +1068,35 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             image.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
             val rowBounds = image.assertIsFocused().getUnclippedBoundsInRoot()
             image.performClick()
-            compose.onNodeWithTag("artifact_preview_title").assertTextContains(fixture.image.title)
+            compose.waitUntilExactlyOneExists(hasContentDescription(fixture.image.title), 10_000)
             compose.onNodeWithContentDescription("Back to artifacts").performClick()
 
             query.assertTextContains("launch").assertIsNotFocused()
             compose.onNodeWithText("Yesterday").assertDoesNotExist()
             assertEquals(rowBounds, image.assertIsFocused().getUnclippedBoundsInRoot())
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    fun touchBackFromAnArtifactKeepsTheDirectorySearchUnfocused() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(true)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.summary.title)
+            compose.onNodeWithText(fixture.summary.title).performClick()
+            awaitText("Preview only", partial = true)
+
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+
+            compose.onNodeWithTag("artifact_query").assertIsNotFocused()
         } finally {
             instrumentation.resetInTouchMode()
         }
@@ -1245,7 +1341,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         instrumentation.setInTouchMode(false)
         try {
             compose.activityRule.scenario.recreate()
-            val fixture = ArtifactApiFixture(app.fixture)
+            val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = true)
             fixture.install()
             fixture.installInlineHistory()
             app.fixture.historyReply +=
@@ -1281,6 +1377,12 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             compose.onNodeWithContentDescription("Back").performClick()
             awaitText(fixture.image.title)
             summary.assertIsFocused()
+
+            image.performClick()
+            compose.waitUntilExactlyOneExists(hasTestTag("artifact_image_toolbar"), 10_000)
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.waitUntilExactlyOneExists(hasText(fixture.image.title) and isFocused(), 10_000)
+            assertTrue(fixture.catalogScopes.isEmpty())
         } finally {
             instrumentation.resetInTouchMode()
         }
@@ -1546,23 +1648,26 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithContentDescription("Artifacts").performClick()
         awaitText(fixture.image.title)
         compose.onNodeWithText(fixture.image.title).performClick()
-        awaitText("Temporarily unable to load preview")
-        compose.onNodeWithText("Save file").assertIsEnabled()
+        awaitText("Temporarily unable to load image")
+        compose.onNodeWithContentDescription("Image actions").performClick()
+        compose.onNodeWithText("Save image").assertIsEnabled()
         val frame = compose.onNodeWithTag("artifact_preview_surface").getUnclippedBoundsInRoot()
         val status =
-            compose.onNodeWithText("Temporarily unable to load preview").getUnclippedBoundsInRoot()
-        assertTrue(abs(frame.height.value - frame.width.value * 9 / 16) <= 1)
-        val frameCenter = frame.top + frame.height / 2
-        val statusCenter = status.top + status.height / 2
-        assertTrue(abs((statusCenter - frameCenter).value) <= 1)
+            compose.onNodeWithText("Temporarily unable to load image").getUnclippedBoundsInRoot()
+        assertTrue(status.top >= frame.top && status.bottom <= frame.bottom)
     }
 
     @Test
     fun imagePreviewReservesItsFrameBeforeShowingLoadingAndAccessLoss() {
-        val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = true)
+        val fixture =
+            ArtifactApiFixture(
+                app.fixture,
+                imageBody = "Invalid thumbnail".encodeToByteArray(),
+                imageDownloadAllowed = true,
+            )
         val releaseImage = CountDownLatch(1)
         fixture.imageResponse = {
-            releaseImage.await()
+            check(releaseImage.await(10, TimeUnit.SECONDS))
             MockResponse().setResponseCode(403)
         }
         fixture.install()
@@ -1572,27 +1677,65 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         awaitText(fixture.image.title)
 
         val surface = compose.onNodeWithTag("artifact_preview_surface")
-        val loading = compose.onNodeWithText("Loading preview…")
+        val loading = compose.onNodeWithText("Loading image…")
+        val toolbar = compose.onNodeWithTag("artifact_image_toolbar")
         compose.mainClock.autoAdvance = false
-        try {
-            compose.onNodeWithText(fixture.image.title).performClick()
-            compose.mainClock.advanceTimeBy(160)
-            val pending = surface.assertIsDisplayed().getUnclippedBoundsInRoot()
-            loading.assertDoesNotExist()
-            assertEquals(pending.width.value * 9f / 16f, pending.height.value, 1f)
-            compose.mainClock.advanceTimeBy(160)
-            loading.assertIsDisplayed()
-            assertEquals(pending.height, surface.getUnclippedBoundsInRoot().height)
-            compose.mainClock.autoAdvance = true
-            awaitText("Save file")
-            compose.onNodeWithText("Save file").assertIsEnabled()
-        } finally {
-            releaseImage.countDown()
-            compose.mainClock.autoAdvance = true
-        }
+        val pendingFrame =
+            try {
+                compose.onNodeWithText(fixture.image.title).performClick()
+                compose.mainClock.advanceTimeBy(160)
+                val pending = surface.assertIsDisplayed().getUnclippedBoundsInRoot()
+                loading.assertDoesNotExist()
+                assertEquals(64.dp, toolbar.getUnclippedBoundsInRoot().height)
+                assertEquals(toolbar.getUnclippedBoundsInRoot().bottom, pending.top)
+                compose.mainClock.advanceTimeBy(160)
+                loading.assertIsDisplayed()
+                assertEquals(pending.height, surface.getUnclippedBoundsInRoot().height)
+                compose.mainClock.autoAdvance = true
+                compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
+                compose.onNodeWithContentDescription("Image actions").performClick()
+                compose.onNodeWithText("Save image").assertIsEnabled()
+                pending
+            } finally {
+                releaseImage.countDown()
+                compose.mainClock.autoAdvance = true
+            }
         awaitText("Image unavailable")
+        assertEquals(pendingFrame, surface.getUnclippedBoundsInRoot())
         loading.assertDoesNotExist()
-        compose.onNodeWithText("Save file").assertDoesNotExist()
+        compose.onNodeWithText("Save image").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Image actions").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun wideImageKeepsItsZoomWhenExpandedAndCollapsed() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.image.title)
+        compose.onNodeWithText(fixture.image.title).performClick()
+        compose.waitUntilExactlyOneExists(hasContentDescription(fixture.image.title), 10_000)
+
+        val viewport = compose.onNodeWithTag("artifact_preview_surface")
+        val paneWidth = viewport.getUnclippedBoundsInRoot().width
+        val image = compose.onNodeWithTag("artifact_image_transform")
+        fun actions() = image.fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        val zoom = actions().single { it.label == "Zoom in" }
+        compose.runOnIdle { assertTrue(zoom.action()) }
+        assertTrue(actions().any { it.label == "Fit image" })
+
+        compose.onNodeWithContentDescription("Expand image viewer").performClick()
+        assertTrue(viewport.getUnclippedBoundsInRoot().width > paneWidth)
+        assertTrue(actions().any { it.label == "Fit image" })
+        compose.onNodeWithContentDescription("Collapse image viewer").performClick()
+        assertEquals(paneWidth, viewport.getUnclippedBoundsInRoot().width)
+        assertTrue(actions().any { it.label == "Fit image" })
+        image.performTouchInput { doubleClick() }
+        assertTrue(actions().none { it.label == "Fit image" })
     }
 
     @Test

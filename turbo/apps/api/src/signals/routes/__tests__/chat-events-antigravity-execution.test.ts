@@ -108,12 +108,19 @@ describe("Antigravity execution", () => {
         OKOU_ANTIGRAVITY_MODEL: "gemini-4-neon",
         OKOU_REASONING_EFFORT: "high",
       });
-      expect(
-        JSON.parse(environment.OKOU_ANTIGRAVITY_OAUTH_TOKEN ?? "null"),
-      ).toMatchObject({
+      const token = {
         access_token: "test-google-run-access",
         refresh_token: "test-google-refresh",
         token_type: "Bearer",
+      };
+      // agy reads the nested token and personal-account auth method; the
+      // guest validates the top-level token fields.
+      expect(
+        JSON.parse(environment.OKOU_ANTIGRAVITY_OAUTH_TOKEN ?? "null"),
+      ).toMatchObject({
+        ...token,
+        token,
+        auth_method: "consumer",
       });
       // The credential never resolves through firewall secret references.
       expect(execution.secretConnectorMetadataMap ?? {}).toStrictEqual({});

@@ -66,6 +66,8 @@ Firewall and auth context
   invalidation, usage dispatch, and local error responses.
 - ``FIREWALL_API_ID``: non-empty ``str`` API id from the registry-resolved
   matched firewall. Read by auth handling.
+- ``FIREWALL_SOURCE_ID``: account ID on the matched API entry, when present.
+  Used to correlate a confirmed provider write with its linked preview.
 - ``FIREWALL_AUTH_CACHE_KEY``: opaque typed auth cache key written by matched
   auth handling after the full auth input identity is known. Read by 401 cache
   invalidation; stores only a digest of auth inputs and sandbox token.
@@ -240,6 +242,7 @@ TCP_START_MONOTONIC: Final = "tcp_start_monotonic"
 # Firewall and auth metadata
 FIREWALL_BASE: Final = "firewall_base"
 FIREWALL_API_ID: Final = "firewall_api_id"
+FIREWALL_SOURCE_ID: Final = "firewall_source_id"
 FIREWALL_AUTH_CACHE_KEY: Final = "firewall_auth_cache_key"
 FIREWALL_AUTH_CACHE_ENTRY_IDENTITY: Final = "firewall_auth_cache_entry_identity"
 FIREWALL_NAME: Final = "firewall_name"

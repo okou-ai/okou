@@ -1,10 +1,12 @@
 package ai.okou.android.chat
 
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.R
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.committedSearchText
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.searchClearAction
 import ai.okou.android.workspaceSearchControlHeight
 import ai.okou.android.workspaceSearchFocusOutline
@@ -109,11 +111,12 @@ internal class ConversationFindVisit(
     var focusedResult by mutableStateOf<String?>(null)
         private set
 
-    var focusPending = true
+    val returnFocus = DirectoryReturnFocus()
+    var focusOnEntry = true
         private set
 
-    fun focusRestored() {
-        focusPending = false
+    fun entryFocused() {
+        focusOnEntry = false
     }
 
     fun onInputFocusChanged(focused: Boolean) {
@@ -147,30 +150,32 @@ internal class ConversationFindVisit(
         if (normalized == keyword) return
         keyword = normalized
         focusedResult = null
+        returnFocus.cancel()
         position.requestScrollToItem(0)
     }
 
     fun open(result: FindResult) {
+        returnFocus.cancel()
         val message = result.message
         focusedResult = message.id
         target =
             ConversationFindTarget(
                 message.id,
-                result.passage?.index.takeIf { message.role == HistoryRole.Assistant },
+                result.passage?.index?.toString().takeIf { message.role == HistoryRole.Assistant },
                 bodyIndex = result.passage?.bodyIndex,
                 markdownImage = result.passage?.imagePath,
             )
     }
 
-    fun returnToResults() {
-        focusPending = true
+    fun returnToResults(inputMode: InputMode) {
+        returnFocus.returningFrom(focusedResult, inputMode, keyboardOnly = false)
         target = null
     }
 }
 
 internal class ConversationFindTarget(
     val id: String,
-    val markdownBlock: Int?,
+    val markdownBlockPath: String?,
     val isRun: Boolean = false,
     val bodyIndex: Int? = null,
     val markdownImage: String? = null,
@@ -215,12 +220,14 @@ internal data class FindMessage(
     val text: String,
     val passages: List<FindPassage>,
     val attachmentOnly: Boolean,
+    val filenames: List<String>,
 )
 
 internal data class FindResult(
     val message: FindMessage,
     val match: Int = 0,
     val passage: FindPassage? = null,
+    val text: String = message.text,
 )
 
 private fun findMessages(
@@ -253,27 +260,36 @@ private fun findMessages(
                 }
             }
         }
-        if (text.isNotEmpty()) {
-            return@mapNotNull FindMessage(
-                message.id,
-                message.role,
-                text.toString(),
-                passages,
-                false,
-            )
+        val references =
+            if (message.role == HistoryRole.User)
+                message.blocks.filter {
+                    it.kind == HistoryBlockKind.Attachment || it.kind == HistoryBlockKind.Reference
+                }
+            else emptyList()
+        if (text.isEmpty() && references.isEmpty()) return@mapNotNull null
+        val attachments = references.filter { it.isFindAttachment() }
+        val filenames = attachments.mapNotNull {
+            (it.attachment?.filename ?: it.title)?.let(::normalizeFindText)
         }
-        val references = message.blocks.filter { it.kind == HistoryBlockKind.Reference }
-        if (references.isEmpty() || message.role != HistoryRole.User) return@mapNotNull null
-        val attachments = references.all { reference ->
-            val part = Json.parseToJsonElement(reference.text)
-            when ((part as? JsonObject)?.text("type")) {
-                "attachment",
-                "file",
-                "image" -> true
-                else -> false
-            }
-        }
-        FindMessage(message.id, message.role, "", emptyList(), attachments)
+        FindMessage(
+            message.id,
+            message.role,
+            text.toString(),
+            passages,
+            attachments.isNotEmpty() && attachments.size == references.size,
+            filenames,
+        )
+    }
+}
+
+private fun HistoryBlock.isFindAttachment(): Boolean {
+    if (kind == HistoryBlockKind.Attachment) return true
+    val part = Json.parseToJsonElement(text) as? JsonObject
+    return when (part?.text("type")) {
+        "attachment",
+        "file",
+        "image" -> true
+        else -> false
     }
 }
 
@@ -285,7 +301,14 @@ internal fun conversationFindResults(
         FindResult(message).takeIf { message.role == HistoryRole.User }
     } else {
         val match = message.text.indexOf(keyword, ignoreCase = true)
-        if (match < 0) return@mapNotNull null
+        if (match < 0) {
+            for (filename in message.filenames) {
+                val filenameMatch = filename.indexOf(keyword, ignoreCase = true)
+                if (filenameMatch >= 0)
+                    return@mapNotNull FindResult(message, filenameMatch, text = filename)
+            }
+            return@mapNotNull null
+        }
         val passage =
             message.passages.firstOrNull {
                 match >= it.start && match + keyword.length <= it.end
@@ -323,14 +346,25 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
             }
         }
     val results = filtered?.takeIf { it.first === index && it.second == keyword }?.third
+    val returnRow = visit.returnFocus.pending?.rowKey
     LaunchedEffect(visit) {
-        if (visit.focusPending && visit.focusedResult == null && inputFocus.requestFocus()) {
-            visit.focusRestored()
+        if (visit.focusOnEntry && inputFocus.requestFocus()) {
+            visit.entryFocused()
             keyboard?.show()
         }
     }
     Column(
-        Modifier.fillMaxSize().testTag("conversation_find"),
+        Modifier.fillMaxSize()
+            .restoreDirectoryFocus(
+                visit.returnFocus,
+                ready = results != null,
+                position = visit.position,
+                row = resultFocus,
+                fallback = inputFocus,
+                rowEnabled =
+                    returnRow != null && results?.any { it.message.id == returnRow } == true,
+            )
+            .testTag("conversation_find"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.widthIn(max = 720.dp)) {
@@ -373,29 +407,35 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                 state = visit.position,
             ) {
                 item {
-                    Text(
-                        when {
-                            keyword.isEmpty() && results.isEmpty() ->
-                                stringResource(R.string.conversation_find_empty)
-                            keyword.isEmpty() -> stringResource(R.string.conversation_find_turns)
-                            results.isEmpty() -> stringResource(R.string.conversation_find_no_match)
-                            else ->
-                                pluralStringResource(
-                                    R.plurals.conversation_find_matches,
-                                    results.size,
-                                    results.size,
-                                )
-                        },
-                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics {
-                            heading()
-                        },
-                        style = summaryStyle.copy(fontWeight = FontWeight.SemiBold),
-                        color = colors.onSurfaceVariant,
-                    )
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Text(
+                            when {
+                                keyword.isEmpty() && results.isEmpty() ->
+                                    stringResource(R.string.conversation_find_empty)
+                                keyword.isEmpty() ->
+                                    stringResource(R.string.conversation_find_turns)
+                                results.isEmpty() ->
+                                    stringResource(R.string.conversation_find_no_match)
+                                else ->
+                                    pluralStringResource(
+                                        R.plurals.conversation_find_matches,
+                                        results.size,
+                                        results.size,
+                                    )
+                            },
+                            Modifier.semantics { heading() },
+                            style = summaryStyle.copy(fontWeight = FontWeight.SemiBold),
+                            color = colors.onSurfaceVariant,
+                        )
+                        Text(
+                            stringResource(R.string.conversation_find_loaded_scope),
+                            style = summaryStyle,
+                            color = colors.onSurfaceVariant,
+                        )
+                    }
                 }
                 items(results, key = { it.message.id }) { result ->
                     val message = result.message
-                    val restoreFocus = visit.focusedResult == message.id
                     var rowFocused by remember { mutableStateOf(false) }
                     Column(
                         Modifier.fillMaxWidth()
@@ -408,9 +448,12 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                             )
                             .onFocusChanged { rowFocused = it.isFocused }
                             .then(
-                                if (restoreFocus)
+                                if (visit.focusedResult == message.id)
                                     Modifier.focusProperties { canFocus = true }
-                                        .focusRequester(resultFocus)
+                                else Modifier,
+                            )
+                            .then(
+                                if (returnRow == message.id) Modifier.focusRequester(resultFocus)
                                 else Modifier,
                             )
                             .clickable(role = Role.Button) {
@@ -446,12 +489,6 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                             FindExcerpt(result, keyword.length, summaryStyle)
                         }
                     }
-                    if (restoreFocus) {
-                        LaunchedEffect(message.id) {
-                            if (visit.focusPending && resultFocus.requestFocus())
-                                visit.focusRestored()
-                        }
-                    }
                 }
             }
         }
@@ -464,7 +501,7 @@ private fun FindExcerpt(result: FindResult, matchLength: Int, style: TextStyle) 
     val windowSize = LocalWindowInfo.current.containerSize
     val density = LocalDensity.current
     var startAtMatch by remember(result, matchLength, windowSize, density) { mutableStateOf(false) }
-    val text = result.message.text
+    val text = result.text
     val excerptStart = result.passage?.start ?: 0
     val excerptEnd = result.passage?.end ?: text.length
     val start =

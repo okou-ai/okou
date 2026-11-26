@@ -35,7 +35,6 @@
     <string name="settings_model_accounts">Model accounts</string>
     <string name="settings_accounts_scope">Choose the subscription accounts you use in “%1$s”.</string>
     <string name="settings_accounts_scope_empty">Model accounts in “%1$s”</string>
-    <string name="settings_workspace_status">“%1$s” · %2$s</string>
     <string name="settings_accounts_update_failed">Unable to refresh model accounts. Showing last known information.</string>
     <string name="settings_accounts_empty">No model accounts connected</string>
     <string name="settings_accounts_empty_help">Connect ChatGPT or Claude to view quotas and choose an account.</string>
@@ -52,6 +51,7 @@
     <string name="settings_account_switch_failed">Unable to switch model accounts.</string>
     <string name="settings_quota">Quota</string>
     <string name="settings_hour_quota">%1$d-hour quota</string>
+    <string name="settings_minute_quota">%1$d-minute quota</string>
     <string name="settings_day_quota">%1$d-day quota</string>
     <string name="settings_weekly_quota">Weekly quota</string>
     <string name="settings_quota_unavailable">Quota temporarily unavailable</string>
@@ -112,4 +112,5 @@
     <string name="settings_suggestions_save_failed">Couldn’t save Suggestions. Restored the previous setting.</string>
     <string name="settings_timezone_save_rejected">Couldn’t save the time zone. Restored the previous time zone.</string>
     <string name="settings_timezone_schedule_update_failed">Time zone saved. Couldn’t update the Morning Brief schedule.</string>
+    <string name="settings_model_catalog_refresh_failed">Could not refresh available models. Showing the last loaded list.</string>
 </resources>

@@ -32,7 +32,10 @@ import {
   resolveArtifactTargetShare$,
   resolvePublicArtifactUrl$,
 } from "../services/artifact-shares.service";
-import { artifactReferenceRecord$ } from "../services/artifact-reference.service";
+import {
+  artifactReferenceRecord$,
+  type ArtifactReferenceRecord,
+} from "../services/artifact-reference.service";
 import { resolveSharedThreadArtifactReference$ } from "../services/shared-thread-artifact-reference.service";
 import type { RouteEntry } from "../route-entry";
 import { getOwnedArtifactCatalogFromReference$ } from "../services/artifact-catalog.service";
@@ -133,8 +136,15 @@ const resolveFileReference$ = command(
 const resolveReference$ = command(
   async (
     { get, set },
-    reference: string,
-    ownerKind: "file" | "html" | "artifact" | undefined,
+    {
+      reference,
+      ownerKind,
+      record: knownRecord,
+    }: {
+      readonly reference: string;
+      readonly ownerKind?: "file" | "html" | "artifact";
+      readonly record?: ArtifactReferenceRecord | null;
+    },
     signal: AbortSignal,
   ) => {
     const auth = get(authContext$);
@@ -145,7 +155,10 @@ const resolveReference$ = command(
     let id = parsed.id;
     let targetKind: "file" | "html" | undefined;
     if (id === null) {
-      const record = await set(artifactReferenceRecord$, parsed.hash, signal);
+      const record =
+        knownRecord === undefined
+          ? await set(artifactReferenceRecord$, parsed.hash, signal)
+          : knownRecord;
       signal.throwIfAborted();
       if (!record) {
         return notFound("Artifact unavailable");
@@ -224,7 +237,17 @@ const byUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
     };
   }
   const owner = get(organizationAuthContext$);
-  const detail = await set(ownedMessageArtifact$, owner, address, signal);
+  const record =
+    address.reference?.id === null
+      ? await set(artifactReferenceRecord$, address.reference.hash, signal)
+      : null;
+  signal.throwIfAborted();
+  const detail = await set(
+    ownedMessageArtifact$,
+    owner,
+    { ...address, record },
+    signal,
+  );
   if (detail) {
     return { status: 200 as const, body: detail };
   }
@@ -233,8 +256,10 @@ const byUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (address.reference) {
     const result = await set(
       resolveReference$,
-      address.reference.hash + address.reference.extension,
-      undefined,
+      {
+        reference: address.reference.hash + address.reference.extension,
+        record,
+      },
       signal,
     );
     if (result.status === 200) {
@@ -293,7 +318,11 @@ const byUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
 const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { kind } = get(queryOf(artifactReferencesContract.resolve));
   const { reference } = get(pathParamsOf(artifactReferencesContract.resolve));
-  const resolved = await set(resolveReference$, reference, kind, signal);
+  const resolved = await set(
+    resolveReference$,
+    { reference, ownerKind: kind },
+    signal,
+  );
   // Standalone conversation snapshots retain their independent sharing authority.
   if (
     resolved.status === 200 &&
@@ -369,7 +398,7 @@ const resolvePublicReference$ = command(
 
 const read$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { reference } = get(pathParamsOf(artifactReferencesContract.read));
-  const result = await set(resolveReference$, reference, undefined, signal);
+  const result = await set(resolveReference$, { reference }, signal);
   if (result.status === 200) {
     return {
       status: 200 as const,

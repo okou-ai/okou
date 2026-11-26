@@ -1,6 +1,6 @@
 import { writeToClipboard } from "./okou-page/clipboard.ts";
 import { i18n } from "../i18n/index.ts";
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state, type Computed, type Command } from "ccstate";
 import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/client/host";
 import type { hostedSiteUrlSchema } from "@okouai/api-contracts/contracts/host";
@@ -10,6 +10,7 @@ import { accept } from "../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "./api-client.ts";
 import { featureSwitches$ } from "./external/feature-switch.ts";
 import { openSettingsBillingPlansDialog$ } from "./okou-page/settings/settings-dialog.ts";
+import { resetSignal, setLoop } from "./utils.ts";
 import {
   hostedDomainProgress,
   type DomainSetupStage,
@@ -51,6 +52,7 @@ function createDomainState(site$: SiteSignal) {
   const hostname$ = state("");
   const notice$ = state<string | null>(null);
   const removalConfirmation$ = state(false);
+  const resetVerificationSignal$ = resetSignal();
   const settings$ = computed(async (get) => {
     const request = get(request$);
     if (!request) {
@@ -108,13 +110,18 @@ function createDomainState(site$: SiteSignal) {
     hostname$,
     notice$,
     removalConfirmation$,
+    resetVerificationSignal$,
     settings$,
     setup$,
     effectiveUrl$,
   };
 }
 type DomainState = ReturnType<typeof createDomainState>;
-function createDomainWizard(scope: DomainState) {
+type ResumeVerification = Command<void, [AbortSignal]>;
+function createDomainWizard(
+  scope: DomainState,
+  resumeVerification$: ResumeVerification,
+) {
   const wizard$ = computed(async (get) => {
     const settings = await get(scope.settings$);
     const domain = settings?.domains.find((item) => {
@@ -132,14 +139,23 @@ function createDomainWizard(scope: DomainState) {
         : 0;
     return { ...progress, currentStage, stage };
   });
-  const reviewStage$ = command(({ set }, stage: DomainSetupStage) => {
-    set(scope.viewedStage$, stage);
-    set(scope.notice$, null);
-  });
+  const reviewStage$ = command(
+    ({ set }, stage: DomainSetupStage, signal: AbortSignal) => {
+      set(scope.resetVerificationSignal$);
+      set(scope.viewedStage$, stage);
+      set(scope.notice$, null);
+      if (stage === 1) {
+        set(resumeVerification$, signal);
+      }
+    },
+  );
   return { wizard$, reviewStage$ };
 }
 type DomainAction = "create" | "verify" | "remove";
-function createDomainNavigation(scope: DomainState) {
+function createDomainNavigation(
+  scope: DomainState,
+  resumeVerification$: ResumeVerification,
+) {
   const {
     open$,
     addressMode$,
@@ -152,6 +168,7 @@ function createDomainNavigation(scope: DomainState) {
     settings$,
   } = scope;
   const begin$ = command(async ({ get, set }, signal: AbortSignal) => {
+    set(scope.resetVerificationSignal$);
     const settings = await get(settings$);
     signal.throwIfAborted();
     set(open$, false);
@@ -168,6 +185,7 @@ function createDomainNavigation(scope: DomainState) {
     set(addressMode$, selected ? "custom" : "platform");
   });
   const show$ = command(async ({ get, set }, signal: AbortSignal) => {
+    set(scope.resetVerificationSignal$);
     const settings = await get(settings$);
     signal.throwIfAborted();
     if (!settings?.allowed) {
@@ -182,6 +200,7 @@ function createDomainNavigation(scope: DomainState) {
     set(open$, true);
   });
   const back$ = command(({ set }) => {
+    set(scope.resetVerificationSignal$);
     set(open$, false);
     set(notice$, null);
   });
@@ -191,6 +210,7 @@ function createDomainNavigation(scope: DomainState) {
   });
   const changeMode$ = command(
     async ({ get, set }, mode: "platform" | "custom", signal: AbortSignal) => {
+      set(scope.resetVerificationSignal$);
       const settings = await get(settings$);
       signal.throwIfAborted();
       set(addressMode$, mode);
@@ -215,13 +235,16 @@ function createDomainNavigation(scope: DomainState) {
       }
     },
   );
-  const manage$ = command(({ set }, id: string | null) => {
+  const manage$ = command(({ set }, id: string | null, signal: AbortSignal) => {
+    set(scope.resetVerificationSignal$);
     set(managedDomainId$, id);
     set(viewedStage$, null);
     set(notice$, null);
     set(open$, true);
+    set(resumeVerification$, signal);
   });
   const requestRemoval$ = command(({ set }, id: string) => {
+    set(scope.resetVerificationSignal$);
     set(managedDomainId$, id);
     set(removalConfirmation$, true);
     set(notice$, null);
@@ -237,13 +260,12 @@ function createDomainNavigation(scope: DomainState) {
     const copied = await writeToClipboard(value);
     signal.throwIfAborted();
     const message = copied
-      ? i18n.t(($) => {
-          return $.artifacts.customDomain.copied;
-        })
+      ? null
       : i18n.t(($) => {
           return $.artifacts.customDomain.copyFailed;
         });
     set(notice$, message);
+    return copied;
   });
   return {
     begin$,
@@ -436,18 +458,67 @@ function createDomainMutations(scope: DomainState) {
   const create$ = command(({ set }, signal: AbortSignal) => {
     return set(mutate$, "create", signal);
   });
-  const verify$ = command(({ set }, signal: AbortSignal) => {
+  const resumeVerification$ = command(({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
+    const pollingSignal = set(scope.resetVerificationSignal$, signal);
+    const id = get(scope.managedDomainId$);
+    let first = true;
+    setLoop(
+      async () => {
+        const settings = await get(scope.settings$);
+        pollingSignal.throwIfAborted();
+        const domain = settings?.domains.find((item) => {
+          return item.id === id;
+        });
+        const checks = domain?.verification?.checks;
+        const stage =
+          get(scope.viewedStage$) ??
+          (domain && hostedDomainProgress(domain).initialStage);
+        if (
+          !get(scope.open$) ||
+          get(scope.managedDomainId$) !== id ||
+          stage !== 1 ||
+          get(scope.notice$) ||
+          !domain ||
+          domain.ready ||
+          !checks ||
+          checks.ownership.status !== "passed" ||
+          checks.dns.status !== "passed" ||
+          Object.values(checks).some((check) => {
+            return check.status === "failed" || check.status === "unavailable";
+          })
+        ) {
+          return true;
+        }
+        if (first) {
+          first = false;
+          return false;
+        }
+        await set(mutate$, "verify", pollingSignal);
+        pollingSignal.throwIfAborted();
+        return false;
+      },
+      30_000,
+      pollingSignal,
+      { testIntervalMs: 100 },
+    );
+  });
+  const verify$ = command(async ({ set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const verificationSignal = set(scope.resetVerificationSignal$, signal);
     set(scope.viewedStage$, 1);
     set(scope.notice$, null);
-    return set(mutate$, "verify", signal);
+    await set(mutate$, "verify", verificationSignal);
+    signal.throwIfAborted();
+    verificationSignal.throwIfAborted();
+    set(resumeVerification$, signal);
   });
   const remove$ = command(async ({ set }, signal: AbortSignal) => {
     await set(mutate$, "remove", signal);
     signal.throwIfAborted();
     set(removalConfirmation$, false);
   });
-  return { create$, verify$, remove$ };
+  return { create$, verify$, remove$, resumeVerification$ };
 }
 function createDomainSelection(scope: DomainState, site$: SiteSignal) {
   const { settings$, selectedDomainId$, notice$, saved$ } = scope;
@@ -493,11 +564,12 @@ function createDomainSelection(scope: DomainState, site$: SiteSignal) {
 }
 export function createHostedSiteDomainSignals(site$: SiteSignal) {
   const scope = createDomainState(site$);
+  const mutations = createDomainMutations(scope);
   return {
     ...scope,
-    ...createDomainWizard(scope),
-    ...createDomainNavigation(scope),
-    ...createDomainMutations(scope),
+    ...createDomainWizard(scope, mutations.resumeVerification$),
+    ...createDomainNavigation(scope, mutations.resumeVerification$),
+    ...mutations,
     ...createDomainSelection(scope, site$),
   };
 }

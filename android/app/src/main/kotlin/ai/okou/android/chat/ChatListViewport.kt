@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
+import ai.okou.android.WithButtonFocusOutline
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -77,10 +78,6 @@ internal fun ChatListViewport(
         val edge = ChatPaneBottomInset.roundToPx()
         val gap = 8.dp.roundToPx()
         val loose = bounds.copy(minWidth = 0, minHeight = 0)
-        val feedbackLayer =
-            subcompose(ListLayer.Feedback) { Box(Modifier.zIndex(2f)) { feedback() } }
-                .single()
-                .measure(loose)
         val floating =
             if (short) null
             else
@@ -95,15 +92,14 @@ internal fun ChatListViewport(
                     .single()
                     .measure(loose)
         val actionTop = bounds.maxHeight - edge - (floating?.height ?: 0)
-        val feedbackBottom = if (short) bounds.maxHeight - gap else actionTop - gap
-        val feedbackTop = (feedbackBottom - feedbackLayer.height).coerceAtLeast(0)
-        val highestOverlay =
-            when {
-                feedbackLayer.height > 0 -> feedbackTop
-                floating != null -> actionTop
-                else -> bounds.maxHeight
-            }
-        val reserve = (bounds.maxHeight - highestOverlay + gap).toDp()
+        val feedbackBottom = (if (short) height - gap else actionTop - gap).coerceAtLeast(0)
+        val feedbackLayer =
+            subcompose(ListLayer.Feedback) { Box(Modifier.zIndex(2f)) { feedback() } }
+                .single()
+                .measure(loose.copy(maxHeight = feedbackBottom))
+        val feedbackTop = feedbackBottom - feedbackLayer.height
+        // Reserve scroll space for the persistent action. Feedback covers the rows independently.
+        val reserve = ((floating?.let { edge + it.height } ?: 0) + gap).toDp()
         val inline: (@Composable () -> Unit)? =
             if (short) {
                 {
@@ -166,16 +162,18 @@ private fun NewChatAction(enabled: Boolean, onClick: () -> Unit) {
     }
     val title = stringResource(R.string.composer_new)
     val label: @Composable () -> Unit = { Text(title) }
+    val colors = MaterialTheme.colorScheme
     if (enabled) {
-        ExtendedFloatingActionButton(
-            text = label,
-            icon = icon,
-            onClick = onClick,
-            modifier = Modifier.semantics { text = AnnotatedString(title) },
-        )
+        WithButtonFocusOutline(colors.onPrimaryContainer) {
+            ExtendedFloatingActionButton(
+                text = label,
+                icon = icon,
+                onClick = onClick,
+                modifier = Modifier.semantics { text = AnnotatedString(title) },
+            )
+        }
         return
     }
-    val colors = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
         enabled = false,

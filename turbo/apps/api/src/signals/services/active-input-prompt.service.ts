@@ -227,6 +227,7 @@ const loadIntegrationPromptMaterial$ = command(
       case "agentphone": {
         return await set(loadAgentPhoneQueuedLaunchMaterial$, loaderArgs);
       }
+      case "proactive":
       case "web":
       case "automation":
       case "agent_run": {

@@ -1,5 +1,65 @@
 # Changelog
 
+## [8.886.1](https://github.com/okou-ai/okou/compare/core-v8.886.0...core-v8.886.1) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** retire legacy startup dispatch fields ([#51189](https://github.com/okou-ai/okou/issues/51189)) ([ae83fa7](https://github.com/okou-ai/okou/commit/ae83fa732618ccd8d0fa0d1bd3172c7c4c7ecd41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.135.0
+
+## [8.886.0](https://github.com/okou-ai/okou/compare/core-v8.885.4...core-v8.886.0) (2026-11-26)
+
+
+### Features
+
+* **app:** for you corner radii, selectable option text and action labels ([#51148](https://github.com/okou-ai/okou/issues/51148)) ([d3a229a](https://github.com/okou-ai/okou/commit/d3a229a493ba204b298d182eeeaf60c735241d02))
+
+## [8.885.4](https://github.com/okou-ai/okou/compare/core-v8.885.3...core-v8.885.4) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.134.0
+
+## [8.885.3](https://github.com/okou-ai/okou/compare/core-v8.885.2...core-v8.885.3) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.1
+
+## [8.885.2](https://github.com/okou-ai/okou/compare/core-v8.885.1...core-v8.885.2) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** remove connector management feature switch ([#51077](https://github.com/okou-ai/okou/issues/51077)) ([79c9d56](https://github.com/okou-ai/okou/commit/79c9d5630289c1fc7058fa7984c18593943ce31a))
+
+## [8.885.1](https://github.com/okou-ai/okou/compare/core-v8.885.0...core-v8.885.1) (2026-11-26)
+
+
+### Refactoring
+
+* remove slack artifact sharing feature switch ([#51083](https://github.com/okou-ai/okou/issues/51083)) ([50b7d05](https://github.com/okou-ai/okou/commit/50b7d05735afeaefa0cbcc86b33ffa8e4141922f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.0
+
 ## [8.885.0](https://github.com/okou-ai/okou/compare/core-v8.884.0...core-v8.885.0) (2026-11-26)
 
 

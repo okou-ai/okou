@@ -1,13 +1,15 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
+import ai.okou.android.WorkspaceSearchGroupHeading
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
-import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.hasPendingSearchText
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
 import ai.okou.android.state.ConnectorDirectoryState
@@ -81,7 +83,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -108,13 +109,18 @@ internal fun ConnectorsPage(
     val route = rememberConnectorDirectory(initialSlug)
     val discoverPosition = rememberLazyListState()
     val connectedPosition = rememberLazyListState()
+    val directoryAnnouncements = remember(model) { ConnectorReadAnnouncements() }
+    val detailAnnouncements = remember(model) { ConnectorReadAnnouncements() }
     val focus = LocalFocusManager.current
     val inputMode = LocalInputModeManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    var restoreRow by remember { mutableStateOf<String?>(null) }
     val filter =
         if (route.connected) ConnectorBrowseFilter.of("", route.category)
         else ConnectorBrowseFilter.of(route.committedQuery.text, route.category)
+    val returnFocus =
+        remember(route, route.connected, filter, route.committedQuery.text.trim()) {
+            DirectoryReturnFocus()
+        }
     val wide = listWidth != null
     val selected = route.slug
     val directoryVisible = wide || selected == null
@@ -144,7 +150,7 @@ internal fun ConnectorsPage(
         focus.clearFocus()
         keyboard?.hide()
         if (initialSlug == null && !wide && selected != null) {
-            restoreRow = selected
+            returnFocus.returningFrom("connector-$selected", inputMode.inputMode)
             route.slug = null
         } else {
             closePage()
@@ -173,29 +179,28 @@ internal fun ConnectorsPage(
             .imePadding(),
     ) {
         if (directoryVisible) {
-            Column(
-                (if (listWidth == null) Modifier.weight(1f) else Modifier.width(listWidth.dp))
-                    .fillMaxHeight(),
-            ) {
-                ConnectorTopBar(stringResource(R.string.connector_title), ::back)
-                ConnectorDirectory(
-                    route,
-                    state,
-                    filter,
-                    if (route.connected) connectedPosition else discoverPosition,
-                    selected = selected.takeIf { wide },
-                    restoreRow = restoreRow,
-                    onRestored = { restoreRow = null },
-                    editQuery = ::setQuery,
-                    setCategory = ::setCategory,
-                    open = { entry ->
-                        if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
-                        keyboard?.hide()
-                        route.slug = entry.slug
-                        model.select(entry.slug, entry)
-                    },
-                )
-            }
+            ConnectorDirectory(
+                route,
+                state,
+                filter,
+                if (route.connected) connectedPosition else discoverPosition,
+                directoryAnnouncements,
+                selected = selected.takeIf { wide },
+                returnFocus = returnFocus,
+                onBack = ::back,
+                editQuery = ::setQuery,
+                setCategory = ::setCategory,
+                open = { entry ->
+                    returnFocus.cancel()
+                    if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
+                    keyboard?.hide()
+                    route.slug = entry.slug
+                    model.select(entry.slug, entry)
+                },
+                modifier =
+                    (if (listWidth == null) Modifier.weight(1f) else Modifier.width(listWidth.dp))
+                        .fillMaxHeight(),
+            )
         }
         if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (selected != null) {
@@ -230,6 +235,7 @@ internal fun ConnectorsPage(
                         matchingState ?: ConnectorUiState(),
                         entry ?: matchingState?.selectedPreview,
                         wide,
+                        detailAnnouncements,
                         initialAccountId = initialAccountId.takeIf { selected == initialSlug },
                         onCloseInitialAccount = ::closePage,
                     )
@@ -285,14 +291,17 @@ private fun ConnectorDirectory(
     state: ConnectorUiState,
     filter: ConnectorBrowseFilter?,
     position: LazyListState,
+    announcements: ConnectorReadAnnouncements,
     selected: String?,
-    restoreRow: String?,
-    onRestored: () -> Unit,
+    returnFocus: DirectoryReturnFocus,
+    onBack: () -> Unit,
     editQuery: (TextFieldValue) -> Unit,
     setCategory: (String?) -> Unit,
     open: (ConnectorEntry) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val query = route.committedQuery.text.trim()
+    val restoreRow = returnFocus.pending?.rowKey
     val searchFocus = remember { FocusRequester() }
     val clearQuery = searchClearAction(searchFocus) { editQuery(TextFieldValue()) }
     val directory =
@@ -365,100 +374,119 @@ private fun ConnectorDirectory(
             }
         }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Spacer(Modifier.height(12.dp))
-        ConnectorTabs(route.connected) { route.connected = it }
-        Spacer(Modifier.height(8.dp))
-        ConnectorFilters(
-            route,
-            directory.browse.data?.categories ?: catalogRead.data?.categories.orEmpty(),
-            searchFocus,
-            editQuery,
-            clearQuery,
-            setCategory,
-        )
-        val initialFailure = entries == null && failure != null
-        if (initialFailure) {
-            ConnectorReadError(
-                R.string.connector_load_failed,
-                Modifier.testTag("connector-directory"),
-            )
-            return@Column
+    val notice =
+        when {
+            entries == null || failure == ConnectorReadFailure.Unavailable -> null
+            route.connected ->
+                listOfNotNull(directory.connected.notice(), filtered?.notice())
+                    .maxByOrNull(ConnectorReadNotice::round)
+            else -> catalogRead.notice()
         }
-        val restoreFocus = remember { FocusRequester() }
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth().testTag("connector-directory"),
-            state = position,
-            contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
-        ) {
-            if (entries.isNullOrEmpty()) {
-                item {
-                    when {
-                        entries == null ->
-                            key(route.connected, filter) {
-                                ConnectorSkeleton(
-                                    stringResource(R.string.connector_loading),
-                                    rows = 3,
+    val restoreFocus = remember { FocusRequester() }
+    val tabFocus = remember { List(2) { FocusRequester() } }
+    val selectedTab = if (route.connected) 1 else 0
+    Column(
+        modifier.restoreDirectoryFocus(
+            returnFocus,
+            entries != null || failure != null,
+            position,
+            restoreFocus,
+            tabFocus[selectedTab],
+            rowEnabled =
+                restoreRow != null && entries?.any { "connector-${it.slug}" == restoreRow } == true,
+        ),
+    ) {
+        ConnectorTopBar(stringResource(R.string.connector_title), onBack)
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) directoryContent@{
+            Spacer(Modifier.height(12.dp))
+            ConnectorTabs(selectedTab, tabFocus) { route.connected = it }
+            Spacer(Modifier.height(8.dp))
+            ConnectorFilters(
+                route,
+                directory.browse.data?.categories ?: catalogRead.data?.categories.orEmpty(),
+                searchFocus,
+                editQuery,
+                clearQuery,
+                setCategory,
+            )
+            if (entries == null && failure != null) {
+                val viewport =
+                    if (failure == ConnectorReadFailure.Unavailable) Modifier
+                    else Modifier.weight(1f)
+                ConnectorReadFailureContent(
+                    failure,
+                    R.string.connector_load_failed,
+                    viewport.testTag("connector-directory"),
+                )
+                return@directoryContent
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().testTag("connector-directory"),
+                    state = position,
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
+                ) {
+                    if (entries.isNullOrEmpty()) {
+                        item {
+                            when {
+                                entries == null ->
+                                    key(route.connected, filter) {
+                                        ConnectorSkeleton(
+                                            stringResource(R.string.connector_loading),
+                                            rows = 3,
+                                        )
+                                    }
+                                query.isNotEmpty() ->
+                                    ConnectorEmpty(
+                                        R.string.connector_no_match,
+                                        R.string.connector_clear,
+                                        clearQuery,
+                                    )
+                                route.category != null ->
+                                    ConnectorEmpty(
+                                        R.string.connector_empty_category,
+                                        R.string.connector_clear_category,
+                                    ) {
+                                        setCategory(null)
+                                    }
+                                route.connected ->
+                                    ConnectorEmpty(
+                                        R.string.connector_empty_connected,
+                                        R.string.connector_discover_action,
+                                    ) {
+                                        route.connected = false
+                                    }
+                                else -> ConnectorEmpty(R.string.connector_no_recommendations)
+                            }
+                        }
+                    } else {
+                        if (recommended) {
+                            item(key = "recommendations") {
+                                WorkspaceSearchGroupHeading(
+                                    stringResource(R.string.connector_recommended),
+                                    Modifier.padding(horizontal = 12.dp),
                                 )
                             }
-                        query.isNotEmpty() ->
-                            ConnectorEmpty(
-                                R.string.connector_no_match,
-                                R.string.connector_clear,
-                                clearQuery,
-                            )
-                        route.category != null ->
-                            ConnectorEmpty(
-                                R.string.connector_empty_category,
-                                R.string.connector_clear_category,
-                            ) {
-                                setCategory(null)
-                            }
-                        route.connected ->
-                            ConnectorEmpty(
-                                R.string.connector_empty_connected,
-                                R.string.connector_discover_action,
-                            ) {
-                                route.connected = false
-                            }
-                        else -> ConnectorEmpty(R.string.connector_no_recommendations)
-                    }
-                }
-            } else {
-                if (recommended) {
-                    item(key = "recommendations") {
-                        Text(
-                            stringResource(R.string.connector_recommended),
-                            Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 4.dp)
-                                .semantics { heading() },
-                            style = connectorSmallType().copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                items(entries, key = { "connector-${it.slug}" }) { entry ->
-                    val restoring = restoreRow == entry.slug
-                    ConnectorDirectoryRow(
-                        entry,
-                        directory.accountsFor(entry.slug),
-                        selected == entry.slug,
-                        (if (restoring) Modifier.focusRequester(restoreFocus) else Modifier)
-                            .testTag("connector-${entry.slug}"),
-                    ) {
-                        open(entry)
-                    }
-                    if (restoring)
-                        LaunchedEffect(entry.slug) {
-                            restoreFocus.requestFocus()
-                            onRestored()
                         }
+                        items(entries, key = { "connector-${it.slug}" }) { entry ->
+                            val restoring = restoreRow == "connector-${entry.slug}"
+                            ConnectorDirectoryRow(
+                                entry,
+                                directory.accountsFor(entry.slug),
+                                selected == entry.slug,
+                                (if (restoring) Modifier.focusRequester(restoreFocus) else Modifier)
+                                    .testTag("connector-${entry.slug}"),
+                            ) {
+                                open(entry)
+                            }
+                        }
+                    }
                 }
-            }
-            if (entries != null && failure != null) {
-                item(key = "connector-directory-read-feedback") {
-                    ContentReadFeedback(
-                        R.string.connector_refresh_failed,
-                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                key(route.connected, filter, query) {
+                    ConnectorReadFeedbackHost(
+                        notice,
+                        announcements,
+                        Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
                     )
                 }
             }
@@ -468,9 +496,7 @@ private fun ConnectorDirectory(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
-    val selected = if (connected) 1 else 0
-    val focus = remember { List(2) { FocusRequester() } }
+private fun ConnectorTabs(selected: Int, focus: List<FocusRequester>, select: (Boolean) -> Unit) {
     val accent = MaterialTheme.colorScheme.primary
     PrimaryTabRow(
         selectedTabIndex = selected,
@@ -512,7 +538,7 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                 text = {
                     Text(
                         stringResource(label),
-                        style = connectorFeedbackType().copy(fontWeight = FontWeight(550)),
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 },
                 selectedContentColor = accent,
@@ -750,14 +776,6 @@ private fun ConnectorEmpty(title: Int, action: Int? = null, onAction: () -> Unit
                 treatment = ConnectorButtonTreatment.Text,
             )
     }
-}
-
-@Composable
-internal fun ConnectorReadError(message: Int, modifier: Modifier = Modifier) {
-    ContentReadFeedback(
-        message,
-        modifier.fillMaxWidth().padding(start = 12.dp, top = 24.dp, end = 12.dp),
-    )
 }
 
 @Composable

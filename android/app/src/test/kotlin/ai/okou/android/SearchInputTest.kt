@@ -29,6 +29,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
@@ -38,6 +39,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.awaitCancellation
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -50,6 +52,59 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = TestOkouApplication::class)
 class SearchInputTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun findBrowsesAttachmentOnlyTurnsAndOpensOneResultPerMatchingMessage() {
+        val first = "77777777-7777-4777-8777-777777777771"
+        val second = "77777777-7777-4777-8777-777777777772"
+        fun prompt(id: String, sequence: Long, parts: String) =
+            HistoryEvent.decode(
+                historyEventWire(
+                    id = id,
+                    seq = sequence,
+                    type = "input.prompt",
+                    payload = """{"userMessage":{"version":1,"parts":[$parts]}}""",
+                ),
+            )
+        val file =
+            """{"type":"file","fileId":"42","filenameSnapshot":"Launch Checklist.txt","contentType":"text/plain"}"""
+        val otherFile =
+            """{"type":"file","fileId":"43","filenameSnapshot":"Launch Review.txt","contentType":"text/plain"}"""
+        val rows =
+            listOf(
+                prompt(first, 36, "$file,$otherFile"),
+                prompt(second, 37, """{"type":"text","text":"Review the draft"},$file"""),
+            )
+        val latest = rows.last()
+        val visit =
+            ConversationFindVisit(
+                projectHistory(
+                    HistoryCheckpoint(
+                        latest.threadId,
+                        rows,
+                        HistoryCursor(latest.id, latest.seqId),
+                    ),
+                ),
+                rows,
+                artifactCards = false,
+                restoreActionsFocus = false,
+            )
+        compose.setContent { OkouTheme(false) { ConversationFind(visit) {} } }
+        compose.waitUntilExactlyOneExists(hasText("Browse turns"), 5_000)
+        compose.onNodeWithText("Only searches loaded messages").assertIsDisplayed()
+        compose.onNodeWithText("Attachment").assertIsDisplayed()
+        compose.onNodeWithText("Review the draft").assertIsDisplayed()
+
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.performTextReplacement("draft Launch")
+        compose.waitUntilExactlyOneExists(hasText("No matching messages"), 5_000)
+        compose.onNodeWithText("Only searches loaded messages").assertIsDisplayed()
+        query.performTextReplacement("  LAUNCH  ")
+        compose.waitUntilExactlyOneExists(hasText("2 matching messages"), 5_000)
+        val matches = compose.onAllNodes(hasText("Launch Checklist.txt"))
+        matches[1].performClick()
+        compose.runOnIdle { assertEquals(first, visit.target?.id) }
+    }
 
     @Test
     fun findKeepsTheTurnListUntilImeCommitAndRestoresFocusOnClear() {

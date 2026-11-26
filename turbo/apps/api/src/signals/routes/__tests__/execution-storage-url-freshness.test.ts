@@ -32,7 +32,11 @@ describe("Execution Storage URL freshness", () => {
       const cached = await fixture.startExecution(
         "Cache the accepted version URL",
       );
-      expect(cached.memory).toMatchObject({ versionId, writeback: true });
+      expect(cached.memory).toMatchObject({
+        storageId: writer.memory.storageId,
+        versionId,
+        missingRootPolicy: "preserveParentVersion",
+      });
       expect(cached.memory.archiveSize).toBeGreaterThan(0);
       expect(cached.memory.archiveUrl).toBeDefined();
       await fixture.cancel(cached);

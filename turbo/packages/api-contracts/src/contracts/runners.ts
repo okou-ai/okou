@@ -491,11 +491,20 @@ function uniqueStorageMountPaths<T extends { readonly mountPath: string }>(
   }
 }
 
-/** Canonical Runner wire representation. */
-export const storageManifestSchema = object({
-  storageMounts: array(storageMountEntrySchema).superRefine(
-    uniqueStorageMountPaths,
-  ),
+const startupInputsSchema = object({
+  memory: object({
+    storageId: string(),
+    versionId: string(),
+    archiveUrl: string().optional(),
+    archiveSize: archiveSizeSchema.optional(),
+    empty: boolean().optional(),
+    missingRootPolicy: artifactMissingRootPolicySchema.optional(),
+  })
+    .refine((memory) => {
+      return memory.archiveUrl !== undefined || memory.empty === true;
+    })
+    .nullable(),
+  contentBundles: executionContentBundlesSchema,
 });
 
 /** Retained native files are disposable; Chat remains the recovery source. */
@@ -904,8 +913,7 @@ export const preparedExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = object({
-  // Selected immutable packages, including an empty set for agentless jobs.
-  contentBundles: executionContentBundlesSchema,
+  startupInputs: startupInputsSchema,
   // Chat execution telemetry context.
   isFirstRun: boolean().optional(),
   runId: uuid(),
@@ -916,7 +924,6 @@ const executionContextObjectSchema = object({
   sandboxToken: string(),
   // Host-only resolver authority. Never export into Guest env/config/masking.
   firewallToken: string().min(1),
-  storageManifest: storageManifestSchema.nullable(),
   environment: record(string(), string()).nullable(),
   platformEnvironment: record(string(), string()),
   nativeContinuation: nativeContinuationSchema,
@@ -1289,5 +1296,3 @@ export type StorageMountEntry = zInfer<typeof storageMountEntrySchema>;
 export type StoredStorageMountEntry = zInfer<
   typeof storedStorageMountEntrySchema
 >;
-export type StorageManifest = zInfer<typeof storageManifestSchema>;
-export type CanonicalStorageManifest = StorageManifest;

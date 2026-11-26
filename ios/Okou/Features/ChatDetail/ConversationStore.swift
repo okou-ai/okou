@@ -168,7 +168,8 @@ final class ConversationStore {
   }
 
   lazy var approvals = ApprovalCardRegistry(
-    thread: thread, commands: commands, sync: sync, graph: graph, didFail: didFail,
+    thread: thread, commands: commands, sync: sync, graph: graph,
+    remoteDevices: modelSelection?.connectors.remoteDevices, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()

@@ -56,7 +56,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,8 +86,10 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -107,6 +108,8 @@ internal data class UpdateToolbarAction(
     val progress: String? = null,
     val installsPackage: Boolean = false,
     @DrawableRes val icon: Int = R.drawable.ic_update,
+    val opensDetails: Boolean = false,
+    val detailsOpen: Boolean = false,
 )
 
 private fun UpdateTransfer.Downloading.percent(): Int? = downloadedBytes?.let {
@@ -148,6 +151,7 @@ internal fun updateToolbarAction(
                 stringResource(R.string.updates_downloading, percent),
                 openDetails,
                 progress = percent,
+                opensDetails = true,
             )
         }
         transfer is UpdateTransfer.Ready && state.canInstall ->
@@ -158,9 +162,13 @@ internal fun updateToolbarAction(
             )
         state.interrupted || transfer is UpdateTransfer.Waiting ->
             UpdateToolbarAction(
-                stringResource(R.string.updates_download_failed),
+                stringResource(
+                    if (transfer is UpdateTransfer.Interrupted) R.string.updates_error_interrupted
+                    else R.string.updates_download_failed,
+                ),
                 openDetails,
                 icon = R.drawable.ic_download,
+                opensDetails = true,
             )
         state.canDownload -> {
             val release = checkNotNull(state.candidate)
@@ -170,7 +178,15 @@ internal fun updateToolbarAction(
                 icon = R.drawable.ic_download,
             )
         }
-        else -> UpdateToolbarAction(stringResource(R.string.updates_toolbar), openDetails)
+        else ->
+            UpdateToolbarAction(
+                stringResource(
+                    if (state.requiresNewerAndroid) R.string.updates_android_unsupported
+                    else R.string.updates_toolbar,
+                ),
+                openDetails,
+                opensDetails = true,
+            )
     }
 }
 
@@ -178,18 +194,27 @@ internal fun updateToolbarAction(
 internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
     val shape = RoundedCornerShape(12.dp)
     val colors = MaterialTheme.colorScheme
-    val focus = rememberInstallControlFocus(inProgress = action.activate == null)
+    val focus = rememberUpdateControlFocus(away = action.activate == null || action.detailsOpen)
+    val detailsLabel = stringResource(R.string.updates_title)
+    val inputMode = LocalInputModeManager.current
     val maxTextSize = with(LocalDensity.current) { 16.dp.toSp() }
     FilledIconButton(
         onClick = {
-            if (action.installsPackage) focus.rememberTrigger()
+            if (
+                action.installsPackage ||
+                    (action.opensDetails && inputMode.inputMode == InputMode.Keyboard)
+            )
+                focus.rememberTrigger()
             action.activate?.invoke()
         },
         enabled = action.activate != null,
         modifier =
             focus.modifier
                 .updateFocusOutline(shape, colors.onBackground, keyboardOnly = true)
-                .semantics { contentDescription = action.label },
+                .semantics {
+                    contentDescription = action.label
+                    if (action.opensDetails) onClick(label = detailsLabel, action = null)
+                },
         shape = shape,
     ) {
         if (action.progress == null) {
@@ -227,13 +252,10 @@ internal fun UpdateHost(
 ) {
     var details by detailsOpen
     val savedUi = rememberUpdateWorkspaceState()
-    var returningToDetails by remember { mutableStateOf(false) }
-    if (details && installProgress != null) SideEffect { returningToDetails = true }
     val showDetails = details && !state.required
     if (state.required) {
         LaunchedEffect(Unit) {
             details = false
-            returningToDetails = false
             savedUi.removeState("update-details")
         }
         RequiredUpdateScreen(state, check, download, install, installProgress)
@@ -260,11 +282,8 @@ internal fun UpdateHost(
                 download,
                 install,
                 installProgress,
-                restoreInstallFocus = returningToDetails && installProgress == null,
-                onInstallFocusRestored = { returningToDetails = false },
                 close = {
                     details = false
-                    returningToDetails = false
                     savedUi.removeState("update-details")
                 },
             )
@@ -335,8 +354,6 @@ private fun UpdateSheet(
     download: (AndroidUpdatesRelease) -> Unit,
     install: (AndroidUpdatesRelease) -> Unit,
     @StringRes installProgress: Int?,
-    restoreInstallFocus: Boolean,
-    onInstallFocusRestored: () -> Unit,
     close: () -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -349,15 +366,6 @@ private fun UpdateSheet(
     val compact = windowHeight < base * 13
     val short = windowHeight < base * 9
     SettingsModal(close, showDragHandle = !compact) { centered ->
-        val focused = LocalWindowInfo.current.isWindowFocused
-        val installFocus = remember { FocusRequester() }
-        val inputMode = LocalInputModeManager.current
-        LaunchedEffect(restoreInstallFocus, focused) {
-            if (restoreInstallFocus && focused) {
-                if (inputMode.inputMode == InputMode.Keyboard) installFocus.requestFocus()
-                onInstallFocusRestored()
-            }
-        }
         val release = state.displayedRelease?.takeIf { state.available }
         val inset = if (compact) 16.dp else 24.dp
         val verticalInset = if (short) 8.dp else if (compact) 12.dp else 24.dp
@@ -461,9 +469,7 @@ private fun UpdateSheet(
                         download,
                         install,
                         installProgress = installProgress,
-                        Modifier.weight(1f)
-                            .heightIn(min = actions.height)
-                            .focusRequester(installFocus),
+                        Modifier.weight(1f).heightIn(min = actions.height),
                     )
                 }
             }
@@ -740,7 +746,7 @@ private fun UpdateAction(
         if (state.required)
             PaddingValues(requiredUpdateActionHorizontalPadding, updateActionVerticalPadding)
         else updateActionPadding
-    val focus = rememberInstallControlFocus(inProgress = installProgress != null)
+    val focus = remember { UpdateControlFocus() }
     val checking =
         state.check == UpdateCheck.Checking &&
             transfer !is UpdateTransfer.Downloading &&
@@ -774,26 +780,36 @@ private fun UpdateAction(
     if (progress != null) {
         val fraction = downloadPercent?.let { it / 100f }
         val disabledColors = ButtonDefaults.buttonColors()
+        val waitingToInstall =
+            state.canInstall && installProgress == R.string.updates_waiting_to_install
+        val useDisabledColors = checking || waitingToInstall
         Box(
             controlModifier
                 .focusable()
                 .clip(shape)
                 .background(
-                    if (checking) disabledColors.disabledContainerColor else colors.surfaceVariant,
+                    if (useDisabledColors) disabledColors.disabledContainerColor
+                    else colors.surfaceVariant,
                 )
                 .semantics(
                     mergeDescendants = true,
                 ) {
-                    progressBarRangeInfo =
-                        if (fraction == null) ProgressBarRangeInfo.Indeterminate
-                        else ProgressBarRangeInfo(fraction, 0f..1f)
+                    if (waitingToInstall) {
+                        disabled()
+                    } else {
+                        progressBarRangeInfo =
+                            if (fraction == null) ProgressBarRangeInfo.Indeterminate
+                            else ProgressBarRangeInfo(fraction, 0f..1f)
+                    }
                 },
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 progress,
                 modifier = Modifier.padding(contentPadding),
-                color = if (checking) disabledColors.disabledContentColor else colors.onBackground,
+                color =
+                    if (useDisabledColors) disabledColors.disabledContentColor
+                    else colors.onBackground,
                 style = updateProgressStyle(),
                 textAlign = TextAlign.Center,
             )
@@ -835,10 +851,7 @@ private fun UpdateAction(
             else -> R.string.updates_check to check
         }
     Button(
-        onClick = {
-            if (state.canInstall) focus.rememberTrigger()
-            action()
-        },
+        onClick = action,
         modifier = controlModifier,
         shape = shape,
         contentPadding = contentPadding,
@@ -856,7 +869,7 @@ private fun UpdateAction(
     }
 }
 
-private class InstallControlFocus {
+private class UpdateControlFocus {
     private val requester = FocusRequester()
     private var restore = false
     var isFocused = false
@@ -879,11 +892,11 @@ private class InstallControlFocus {
 }
 
 @Composable
-private fun rememberInstallControlFocus(inProgress: Boolean): InstallControlFocus {
-    val focus = remember { InstallControlFocus() }
+private fun rememberUpdateControlFocus(away: Boolean): UpdateControlFocus {
+    val focus = remember { UpdateControlFocus() }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
-    LaunchedEffect(inProgress, windowFocused) {
-        if (!inProgress && windowFocused) focus.restoreTrigger()
+    LaunchedEffect(away, windowFocused) {
+        if (!away && windowFocused) focus.restoreTrigger()
     }
     return focus
 }

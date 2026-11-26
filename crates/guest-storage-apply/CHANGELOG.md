@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.32.55](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.54...guest-storage-apply-v0.32.55) (2026-11-26)
+
+
+### Performance Improvements
+
+* **runner:** inline warm artifact archives on blank startup ([#51172](https://github.com/okou-ai/okou/issues/51172)) ([65d01d2](https://github.com/okou-ai/okou/commit/65d01d216eeba83e5ea7687eb60c9ec5681f8ef5))
+
+## [0.32.54](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.53...guest-storage-apply-v0.32.54) (2026-11-26)
+
 ## [0.32.53](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.52...guest-storage-apply-v0.32.53) (2026-11-26)
 
 

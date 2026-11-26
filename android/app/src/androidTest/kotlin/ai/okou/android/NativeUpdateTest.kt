@@ -11,6 +11,7 @@ import ai.okou.android.updates.UpdateStore
 import ai.okou.android.updates.UpdateTransfer
 import android.text.format.Formatter
 import android.view.KeyEvent
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
@@ -41,6 +42,120 @@ import org.junit.runners.model.MultipleFailureException
 @RunWith(AndroidJUnit4::class)
 class NativeUpdateTest {
     @Test
+    fun aReadyUpdateShowsTheWaitingActionAcrossUpdateSurfaces() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as TestOkouApplication
+        val device = UiDevice.getInstance(instrumentation)
+        val download = CompletableDeferred<Unit>()
+        val release = nativeUpdateRelease()
+        val owner =
+            AppUpdates(
+                object : UpdateService {
+                    override suspend fun initialize(retainedRelease: AndroidUpdatesRelease?) = Unit
+
+                    override suspend fun check() = AndroidUpdates(null, release)
+
+                    override suspend fun recover(release: AndroidUpdatesRelease): File? =
+                        error("A paused Activity cannot start the install handoff")
+
+                    override suspend fun download(
+                        release: AndroidUpdatesRelease,
+                        progress: (Long) -> Unit,
+                    ): File {
+                        download.await()
+                        return File(app.filesDir, "updates/native-update-fixture.apk")
+                    }
+
+                    override fun close() = Unit
+                },
+                EmptyUpdateStore,
+                BuildConfig.VERSION_NAME,
+                35,
+            )
+        val previous = app.updateOwner
+        var scenario: ActivityScenario<MainActivity>? = null
+        val failures = mutableListOf<Throwable>()
+        try {
+            app.updateOwner = owner
+            val activity = ActivityScenario.launch(MainActivity::class.java)
+            scenario = activity
+            fun find(selector: BySelector): UiObject2 =
+                checkNotNull(device.wait(Until.findObject(selector), 10_000)) {
+                    "Expected update state $selector"
+                }
+            fun text(id: Int) = By.pkg(app.packageName).text(app.getString(id))
+
+            device.awaitChatList(app)
+            val update =
+                device.enabledUpdateControl(
+                    By.pkg(app.packageName).desc(app.getString(R.string.updates_download)),
+                )
+            val toolbarBounds = update.visibleBounds
+            update.click()
+            device
+                .enabledUpdateControl(
+                    By.pkg(app.packageName).desc(app.getString(R.string.updates_downloading, "0%")),
+                )
+                .click()
+            find(text(R.string.updates_preparing))
+            instrumentation.setInTouchMode(false)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
+            device.awaitKeyboardFocus(text(R.string.updates_close))
+
+            // Exercise the paused, still visible window without another Activity covering it.
+            activity.onActivity {
+                instrumentation.callActivityOnPause(it)
+                assertEquals(Lifecycle.State.STARTED, it.lifecycle.currentState)
+            }
+            download.complete(Unit)
+            val waiting = text(R.string.updates_waiting_to_install)
+            fun assertNoWaitAction(control: UiObject2) {
+                assertFalse(
+                    generateSequence(control) { it.parent }.any { it.isClickable && it.isEnabled },
+                )
+            }
+            assertNoWaitAction(find(waiting))
+            device.awaitKeyboardFocus(text(R.string.updates_close))
+            captureUpdate(device, "details-waiting-to-install")
+            assertTrue(device.pressDPadCenter())
+            val toolbar =
+                find(
+                    By.pkg(app.packageName)
+                        .desc(app.getString(R.string.updates_waiting_to_install)),
+                )
+            assertNoWaitAction(toolbar)
+            assertEquals(toolbarBounds, toolbar.visibleBounds)
+            captureUpdate(device, "toolbar-waiting-to-install")
+
+            owner.requireUpdate(RequiredUpdate(release.version))
+            find(text(R.string.updates_required))
+            assertNoWaitAction(find(waiting))
+            captureUpdate(device, "required-waiting-to-install")
+        } catch (error: Throwable) {
+            failures += error
+            try {
+                takeScreenshot().writeToTestStorage("android-update-install-wait-failure")
+            } catch (diagnostic: Throwable) {
+                error.addSuppressed(diagnostic)
+            }
+        } finally {
+            download.cancel()
+            for (cleanup in
+                listOf<() -> Unit>(
+                    { scenario?.close() },
+                    { instrumentation.resetInTouchMode() },
+                    { app.updateOwner = previous },
+                    { owner.close() },
+                )) try {
+                cleanup()
+            } catch (error: Throwable) {
+                failures += error
+            }
+        }
+        MultipleFailureException.assertEmpty(failures)
+    }
+
+    @Test
     fun updateSharesProgressInstallsFromSearchAndKeepsTheRequiredGateAcrossRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
@@ -49,15 +164,7 @@ class NativeUpdateTest {
         val reopenedCheck = AtomicReference<CompletableDeferred<Unit>?>(null)
         val firstProgress = CompletableDeferred<Unit>()
         val download = AtomicReference(CompletableDeferred<File>())
-        val release =
-            AndroidUpdatesRelease(
-                "99.0.0",
-                24,
-                10_200_000,
-                "a".repeat(64),
-                "https://static.okou.io/android-updates/releases/99.0.0/${"a".repeat(64)}.apk",
-                "",
-            )
+        val release = nativeUpdateRelease()
         val failFirstCheck = AtomicBoolean(true)
         val candidate = AtomicReference(release.copy(version = BuildConfig.VERSION_NAME))
         val file = File(app.filesDir, "updates/native-update-fixture.apk")
@@ -88,11 +195,7 @@ class NativeUpdateTest {
 
                     override fun close() = Unit
                 },
-                object : UpdateStore {
-                    override suspend fun load(): UpdateRecord? = null
-
-                    override suspend fun save(record: UpdateRecord) = Unit
-                },
+                EmptyUpdateStore,
                 BuildConfig.VERSION_NAME,
                 35,
             )
@@ -104,24 +207,7 @@ class NativeUpdateTest {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun find(label: BySelector) = device.wait(Until.findObject(label), 10_000)
             fun text(value: String) = find(By.pkg(app.packageName).text(value))
-            fun button(label: BySelector): UiObject2 =
-                checkNotNull(
-                    device.wait(
-                        object : Condition<UiDevice, UiObject2?> {
-                            override fun apply(device: UiDevice): UiObject2? =
-                                try {
-                                    generateSequence(device.findObject(label)) { it.parent }
-                                        .firstOrNull { it.isClickable }
-                                        ?.takeIf { it.isEnabled }
-                                } catch (_: StaleObjectException) {
-                                    null
-                                }
-                        },
-                        10_000,
-                    ),
-                ) {
-                    "Expected enabled update control $label"
-                }
+            fun button(label: BySelector): UiObject2 = device.enabledUpdateControl(label)
             fun click(label: Int) =
                 button(By.pkg(app.packageName).text(app.getString(label))).click()
             fun exists(label: Int) = assertNotNull(text(app.getString(label)))
@@ -138,10 +224,7 @@ class NativeUpdateTest {
                     settings.scrollUntil(Direction.DOWN, visible) == true,
                 )
             }
-            fun captureState(name: String) {
-                device.waitForIdle()
-                takeScreenshot().writeToTestStorage("android-update-$name")
-            }
+            fun captureState(name: String) = captureUpdate(device, name)
             fun withShortWindowAndLargeText(width: Int, block: () -> Unit) {
                 val originalSize =
                     device
@@ -257,14 +340,24 @@ class NativeUpdateTest {
                 ),
             )
             captureState("details-incompatible")
+            closeDetails()
+            backToChatList()
+            val incompatibleToolbar =
+                By.pkg(app.packageName).desc(app.getString(R.string.updates_android_unsupported))
+            button(incompatibleToolbar)
+            captureState("toolbar-incompatible")
+            button(incompatibleToolbar).click()
+            exists(R.string.updates_check_compatible)
+            captureState("toolbar-incompatible-details")
+
             candidate.set(release)
             click(R.string.updates_check_compatible)
             exists(R.string.updates_download)
             assertNotNull(text(updateTarget))
             device.waitForIdle()
             assertEquals(initialDetailsBounds, detailsBounds())
-            closeDetails()
-            backToChatList()
+            click(R.string.updates_close)
+            assertTrue(device.wait(Until.gone(close), 10_000))
 
             val updateAction = app.getString(R.string.updates_download)
             val updateBounds = button(By.pkg(app.packageName).desc(updateAction)).visibleBounds
@@ -391,8 +484,24 @@ class NativeUpdateTest {
             assertTrue(errorBounds.top >= targetBounds.bottom)
             captureState("details-download-failed")
             assertEquals(initialDetailsBounds, detailsBounds())
+            candidate.set(release.copy(version = "99.1.0", minimumSdk = 36))
+            instrumentation.runOnMainSync { owner.check() }
+            exists(R.string.updates_android_unsupported)
+            assertNotNull(text(app.getString(R.string.updates_version, "99.1.0")))
+            val downloadError =
+                By.pkg(app.packageName).text(app.getString(R.string.updates_error_download))
+            assertFalse(device.hasObject(downloadError))
+            assertEquals(initialDetailsBounds, detailsBounds())
+            captureState("details-replacement-incompatible")
+            candidate.set(release)
+            click(R.string.updates_check_compatible)
+            exists(R.string.updates_download)
+            assertNotNull(text(updateTarget))
+            assertFalse(device.hasObject(downloadError))
+            captureState("details-replacement-download")
+
             download.set(CompletableDeferred())
-            click(R.string.updates_retry_download)
+            click(R.string.updates_download)
             assertNotNull(text(progressLabel))
             val rateLimited = download.getAndSet(CompletableDeferred())
             rateLimited.completeExceptionally(ApiFailure.Http(429, null, null, 60))
@@ -433,6 +542,14 @@ class NativeUpdateTest {
                 captureState("install-permission-short")
             }
             click(R.string.updates_later)
+            assertTrue(
+                device.wait(
+                    Until.gone(
+                        By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install)),
+                    ),
+                    10_000,
+                ),
+            )
             assertNotNull(text(searchQuery))
             button(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
             device.awaitChatList(app)
@@ -510,4 +627,44 @@ class NativeUpdateTest {
         }
         MultipleFailureException.assertEmpty(failures)
     }
+}
+
+private fun nativeUpdateRelease() =
+    AndroidUpdatesRelease(
+        "99.0.0",
+        24,
+        10_200_000,
+        "a".repeat(64),
+        "https://static.okou.io/android-updates/releases/99.0.0/${"a".repeat(64)}.apk",
+        "",
+    )
+
+private object EmptyUpdateStore : UpdateStore {
+    override suspend fun load(): UpdateRecord? = null
+
+    override suspend fun save(record: UpdateRecord) = Unit
+}
+
+private fun UiDevice.enabledUpdateControl(label: BySelector): UiObject2 =
+    checkNotNull(
+        wait(
+            object : Condition<UiDevice, UiObject2?> {
+                override fun apply(device: UiDevice): UiObject2? =
+                    try {
+                        generateSequence(device.findObject(label)) { it.parent }
+                            .firstOrNull { it.isClickable }
+                            ?.takeIf { it.isEnabled }
+                    } catch (_: StaleObjectException) {
+                        null
+                    }
+            },
+            10_000,
+        ),
+    ) {
+        "Expected enabled update control $label"
+    }
+
+private fun captureUpdate(device: UiDevice, name: String) {
+    device.waitForIdle()
+    takeScreenshot().writeToTestStorage("android-update-$name")
 }

@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -63,7 +64,11 @@ internal fun ContentReadFailure(
             Image(
                 illustration,
                 contentDescription = null,
-                modifier = if (dark) Modifier.illustrationEdge(illustration, color) else Modifier,
+                modifier =
+                    Modifier.testTag("content-read-failure-illustration")
+                        .then(
+                            if (dark) Modifier.illustrationEdge(illustration, color) else Modifier,
+                        ),
             )
         },
     ) { (text, image), constraints ->

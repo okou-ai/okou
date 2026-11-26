@@ -1,11 +1,12 @@
-import { Collapsible } from "@base-ui/react/collapsible";
 import { useGet, useSet } from "ccstate-react";
-import { Check, ChevronDown, Copy } from "lucide-react";
-import { IconButton } from "@okouai/ui";
+import { Check } from "lucide-react";
+import { CopyButton } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import type { HostedSiteDomain } from "../../lib/hosted-site-domains.ts";
+import {
+  domainRecordCheck,
+  type HostedSiteDomain,
+} from "../../lib/hosted-site-domains.ts";
 import type { HostedSiteShareSession } from "../../signals/hosted-site-sharing.ts";
-import { detach, Reason } from "../../signals/utils.ts";
 
 interface DomainRecordsProps {
   readonly session: HostedSiteShareSession;
@@ -23,6 +24,7 @@ function DomainRecord({
   const { t } = useTranslation();
   const copy = useSet(session.domains.copy$);
   const signal = useGet(session.signal$);
+  const passed = domainRecordCheck(domain, record)?.status === "passed";
   const certificate = domain.verification?.validationRecords.some((item) => {
     return (
       item.type === record.type &&
@@ -38,6 +40,16 @@ function DomainRecord({
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
         <span className="rounded-md bg-gray-50 px-2 py-1 font-medium">
           {record.type}
+        </span>
+        <span className="flex min-h-4 items-center gap-1 text-muted-foreground">
+          {passed && (
+            <>
+              <Check size={12} className="text-green-600" aria-hidden />
+              {t(($) => {
+                return $.artifacts.customDomain.checkPassed;
+              })}
+            </>
+          )}
         </span>
         <span className="min-w-0 flex-1 text-muted-foreground">
           {certificate
@@ -70,8 +82,9 @@ function DomainRecord({
               <code className="min-w-0 flex-1 break-all py-2 text-xs leading-5">
                 {record[field]}
               </code>
-              <IconButton
+              <CopyButton
                 className="shrink-0"
+                showTooltip={false}
                 aria-label={
                   field === "name"
                     ? t(
@@ -87,12 +100,10 @@ function DomainRecord({
                         { type: record.type, name: record.name },
                       )
                 }
-                onClick={() => {
-                  detach(copy(record[field], signal), Reason.DomCallback);
+                copyAction={() => {
+                  return copy(record[field], signal);
                 }}
-              >
-                <Copy size={14} />
-              </IconButton>
+              />
             </div>
           );
         })}
@@ -139,35 +150,5 @@ export function DomainRecords({
         );
       })}
     </div>
-  );
-}
-
-export function VerifiedDomainRecords(props: DomainRecordsProps) {
-  const { t } = useTranslation();
-  if (props.records.length === 0) {
-    return null;
-  }
-  return (
-    <Collapsible.Root className="group/records">
-      <Collapsible.Trigger className="flex w-full items-center gap-2 rounded-lg py-2 text-left text-xs hover:bg-gray-50">
-        <Check size={14} className="shrink-0 text-green-600" aria-hidden />
-        <span className="flex-1">
-          {t(
-            ($) => {
-              return $.artifacts.customDomain.verifiedRecords;
-            },
-            { total: props.records.length },
-          )}
-        </span>
-        <ChevronDown
-          size={14}
-          className="shrink-0 text-muted-foreground group-data-[open]/records:rotate-180"
-          aria-hidden
-        />
-      </Collapsible.Trigger>
-      <Collapsible.Panel className="pt-3">
-        <DomainRecords {...props} />
-      </Collapsible.Panel>
-    </Collapsible.Root>
   );
 }

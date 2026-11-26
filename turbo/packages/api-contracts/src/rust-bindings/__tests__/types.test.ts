@@ -157,11 +157,6 @@ const expectedBindings = [
     direction: "response",
   },
   {
-    rustModulePath: ["runners", "storage"],
-    rustTypeName: "StorageMountEntry",
-    direction: "response",
-  },
-  {
     rustModulePath: ["webhooks", "agent", "complete"],
     rustTypeName: "Request",
     direction: "request",
@@ -398,7 +393,6 @@ describe("Rust type bindings", () => {
     ).toHaveLength(2);
     expect(firstRender).not.toContain("pub struct RequestFile {");
     expect(firstRender).toContain("pub uploads: Option<ResponseUploads>,");
-    expect(firstRender).toContain("pub struct StorageMountEntry {");
     expect(firstRender).toContain("pub struct CodexRuntimeConfig {");
     expect(firstRender).toContain("pub struct PiLaunchConfig {");
     expect(firstRender).toContain("pub struct PiModelConfigV2 {");
@@ -418,7 +412,6 @@ describe("Rust type bindings", () => {
     );
     expect(firstRender).toContain("pub storage_id: String,");
     expect(firstRender).toContain("pub version_id: String,");
-    expect(firstRender).toContain("pub writeback: Option<bool>,");
     expect(firstRender).toContain("pub enum ArtifactEntryMissingRootPolicy {");
     expect(firstRender).toContain(
       "/// Policy used when an artifact mount root is missing from the uploaded manifest.",
@@ -428,9 +421,6 @@ describe("Rust type bindings", () => {
     );
     expect(firstRender).toContain("Fail,");
     expect(firstRender).toContain("PreserveParentVersion,");
-    expect(firstRender).toContain(
-      "pub missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,",
-    );
     expect(firstRender).toContain(
       "/// Final Run output metadata included with completion.",
     );
@@ -458,9 +448,6 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain("pub enum RequestFailureReason {");
     expect(firstRender).toContain("pub failure_reason: Option<String>,");
     expect(firstRender).toContain("pub last_event_sequence: Option<u32>,");
-    expect(firstRender.match(/pub archive_size: Option<u64>,/g)).toHaveLength(
-      1,
-    );
   });
 
   it("keeps the Codex runtime override aligned with its canonical schema", () => {

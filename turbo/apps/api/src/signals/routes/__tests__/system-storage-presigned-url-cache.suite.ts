@@ -83,7 +83,7 @@ describe("system storage presigned URL cache", () => {
         { key: "secret", kind: "secret", value: "readonly-cache-test-token" },
       ]);
     });
-    const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`;
+    const skillName = getCustomConnectorSkillName(connector.slug, connector.id);
     const signedCount = mockUniquePresignedUrls();
     return {
       async advance(milliseconds: number) {
@@ -98,20 +98,24 @@ describe("system storage presigned URL cache", () => {
           prompt,
         });
         const execution = await owned.runExecution(run.runId);
-        const matchingMounts = execution.execution.contentBundles.skills.filter(
-          (entry) => {
-            return entry.mountPath === mountPath;
-          },
-        );
+        const matchingMounts =
+          execution.execution.startupInputs.contentBundles.skills.filter(
+            (entry) => {
+              return entry.name === skillName;
+            },
+          );
         expect(matchingMounts).toHaveLength(1);
         const mount = matchingMounts?.[0];
-        if (!mount?.downloadUrl || mount.archiveBytes === undefined) {
+        if (
+          !mount?.bundle.downloadUrl ||
+          mount.bundle.archiveBytes === undefined
+        ) {
           throw new Error("Expected a complete Connector Skill bundle");
         }
-        expect(mount.archiveBytes).toBe(published.archiveBytes);
-        expect(mount.sha256).toBe(published.sha256);
-        expect(mount.mountPath).toBe(
-          `/home/user/.claude/skills/custom-${connector.slug.slice(1, 49)}-${connector.id.replaceAll("-", "").slice(0, 8)}`,
+        expect(mount.bundle.archiveBytes).toBe(published.archiveBytes);
+        expect(mount.bundle.sha256).toBe(published.sha256);
+        expect(mount.name).toBe(
+          `custom-${connector.slug.slice(1, 49)}-${connector.id.replaceAll("-", "").slice(0, 8)}`,
         );
         expect(execution.execution.connectorRuntimeTargets).toContainEqual(
           expect.objectContaining({
@@ -136,10 +140,10 @@ describe("system storage presigned URL cache", () => {
           }),
         ).resolves.toMatchObject({ status: "failed" });
         return {
-          mountPath: mount.mountPath,
-          sha256: mount.sha256,
-          archiveBytes: mount.archiveBytes,
-          downloadUrl: mount.downloadUrl,
+          name: mount.name,
+          sha256: mount.bundle.sha256,
+          archiveBytes: mount.bundle.archiveBytes,
+          downloadUrl: mount.bundle.downloadUrl,
         };
       },
     };
@@ -257,11 +261,11 @@ describe("system storage presigned URL cache", () => {
       }),
     );
     const expectedMounts = fixtures
-      .map(({ mountPath, sha256, archiveBytes }) => {
-        return { mountPath, sha256, archiveBytes };
+      .map(({ name, sha256, archiveBytes }) => {
+        return { name, bundle: { sha256, archiveBytes } };
       })
       .sort((left, right) => {
-        return left.mountPath.localeCompare(right.mountPath);
+        return left.name.localeCompare(right.name);
       });
     const signedCount = mockUniquePresignedUrls();
     const api = createRunsApi(context);
@@ -276,14 +280,16 @@ describe("system storage presigned URL cache", () => {
       const execution = await api.executionInput(run.runId);
       // The post-commit cache write completes before the run is cancelled.
       await flushWaitUntilForTest();
-      const mounts = execution.contentBundles.skills.filter((mount) => {
-        return expectedMounts.some((expected) => {
-          return expected.mountPath === mount.mountPath;
-        });
-      });
+      const mounts = execution.startupInputs.contentBundles.skills.filter(
+        (mount) => {
+          return expectedMounts.some((expected) => {
+            return expected.name === mount.name;
+          });
+        },
+      );
       await api.requestCancelRun(actor, run.runId, [200]);
       return [...mounts].sort((left, right) => {
-        return left.mountPath.localeCompare(right.mountPath);
+        return left.name.localeCompare(right.name);
       });
     };
 
@@ -291,35 +297,32 @@ describe("system storage presigned URL cache", () => {
       "request all connector skill bundles",
     );
     expect(
-      expected.map(({ downloadUrl: _url, ...bundle }) => {
-        return bundle;
+      expected.map(({ name, bundle: { downloadUrl: _url, ...bundle } }) => {
+        return { name, bundle };
       }),
     ).toStrictEqual(expectedMounts);
     // Object identities are observed in the URLs delivered to the Runner.
     const objectKeys = expected.map((mount) => {
-      if (!mount.downloadUrl) {
+      if (!mount.bundle.downloadUrl) {
         throw new Error("Expected a Runner archive URL");
       }
-      const url = new URL(mount.downloadUrl);
+      const url = new URL(mount.bundle.downloadUrl);
       expect(url.origin).toBe("https://r2.example.com");
       expect(url.searchParams.get("sig")).toBe("1");
       const objectKey = decodeURIComponent(url.pathname.slice(1));
-      expect(objectKey === `bundles/v1/${mount.sha256}.tar.gz`).toBeTruthy();
+      expect(
+        objectKey === `bundles/v1/${mount.bundle.sha256}.tar.gz`,
+      ).toBeTruthy();
       return objectKey;
     });
-    // Each authorized Connector retains its distinct mount path.
+    // Each authorized Connector contributes one distinct Skill name.
     expect(
       new Set(
         expected.map((mount) => {
-          return mount.mountPath;
+          return mount.name;
         }),
       ).size,
     ).toBe(51);
-    for (const mount of expected) {
-      expect(mount.mountPath).toMatch(
-        /^\/home\/user\/\.claude\/skills\/[^/]+$/,
-      );
-    }
     expect(
       objectKeys.map((objectKey) => {
         return signedCount(objectKey);

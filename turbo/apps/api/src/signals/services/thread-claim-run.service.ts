@@ -1,3 +1,7 @@
+import {
+  proactiveInputSql,
+  PROACTIVE_SELECTED_MODEL,
+} from "./proactive-run-context.service";
 import { launchFrameworkForProviderType } from "./launch-framework";
 import { mintAntigravityRunCredential$ } from "./antigravity-run-credential.service";
 import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
@@ -79,7 +83,6 @@ import { recordTemplateUsage } from "../../lib/template-usage-log";
 import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import {
   publishChatIndicatorsChangedSafely,
-  publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 
@@ -1019,7 +1022,15 @@ export function createThreadClaimRunObjects(
         contextId: event.contextId,
         requiredOfficialWorkflowIds,
       });
-      if (event.preparation.isOfficialWorkflowThread) {
+      const proactive =
+        event.contextType === "proactive" &&
+        (await get(threadContext.proactiveInput$));
+      if (event.contextType === "proactive" && !proactive) {
+        throw new QueuedPromptLaunchUnavailableError(
+          "Proactive occurrence is no longer eligible",
+        );
+      }
+      if (event.preparation.isOfficialWorkflowThread && !proactive) {
         throw new QueuedPromptLaunchUnavailableError(
           OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
         );
@@ -1099,6 +1110,9 @@ export function createThreadClaimRunObjects(
     async (get): Promise<QueuedLaunchMaterial> => {
       const { queuedMessage } = await get(promptArgs$);
       switch (queuedMessage.contextType) {
+        case "proactive": {
+          return { triggerSource: "proactive", delivery: {} };
+        }
         case "web":
         case "agent_run": {
           return {
@@ -1630,10 +1644,11 @@ export function createThreadClaimRunObjects(
     if (!(await get(selectionReady$))) {
       return null;
     }
-    const [model, automationContinuation, assembly] = await Promise.all([
+    const [model, automationContinuation, assembly, head] = await Promise.all([
       get(threadContext.subscriptionSelection$),
       get(automationContinuation$),
       get(assembly$),
+      get(head$),
     ]);
     if (assembly.kind !== "assembled") {
       return null;
@@ -1652,6 +1667,7 @@ export function createThreadClaimRunObjects(
     }
     const args = buildThreadRunArgs(
       {
+        contextType: head.contextType,
         modelSelection: model.pin,
         command: assembly.run,
         threadContinuation: resolution,
@@ -1818,13 +1834,11 @@ export function createThreadClaimRunObjects(
         });
         return usageError === null ? runtime : providerUnavailable(usageError);
       })();
-      const [route, connector, runtimeResult, selectedImageModel] =
-        await Promise.all([
-          get(authorizedRunRoute$),
-          get(connectorAdmission$),
-          settle(usage),
-          get(bootstrap.selectedImageModel$),
-        ]);
+      const [route, connector, runtimeResult] = await Promise.all([
+        get(authorizedRunRoute$),
+        get(connectorAdmission$),
+        settle(usage),
+      ]);
       // Preserve the existing rejection order when both branches reject admission.
       if (isRouteError(route)) {
         return route;
@@ -1869,7 +1883,7 @@ export function createThreadClaimRunObjects(
         persisted: {
           inputEvent: event,
           content,
-          selectedImageModel,
+          selectedImageModel: runPrompt.selectedImageModel,
           launchSnapshot,
           officialWorkflowProvenance: officialWorkflowRun?.provenance,
           modelProvider: persistedModelProvider(modelProvider),
@@ -2140,8 +2154,8 @@ export function createThreadClaimRunObjects(
         officialWorkflow,
       });
     const officialMountPaths = mounts.officialWorkflowBundles.map(
-      ({ mountPath }) => {
-        return mountPath;
+      ({ mount }) => {
+        return mount.mountPath;
       },
     );
     const selected = selectExecutionPackages(packageSources?.sources ?? null, {
@@ -2157,10 +2171,7 @@ export function createThreadClaimRunObjects(
       prefetchedUrls: packageSources?.prefetchedUrls ?? null,
       packages: {
         mounts,
-        bundles: selectExecutionContentBundles(selected, {
-          skillRoot,
-          ...mounts,
-        }),
+        bundles: selectExecutionContentBundles(selected, mounts),
       },
     };
   });
@@ -2513,7 +2524,7 @@ export function createThreadClaimRunObjects(
 
   const createRun$ = command(
     async (
-      { set },
+      { get, set },
       {
         claim,
         context,
@@ -2546,6 +2557,13 @@ export function createThreadClaimRunObjects(
         dimensions: input.args.timingDimensions,
         triggerSource: input.context.content.triggerSource,
       });
+      const proactive =
+        context.head.contextType === "proactive"
+          ? await get(threadContext.proactiveInput$)
+          : null;
+      if (context.head.contextType === "proactive" && !proactive) {
+        return null;
+      }
       const preparedCommit: PreparedThreadLaunchCommit = {
         ...commit,
         persistence: context.persistence,
@@ -2563,6 +2581,16 @@ export function createThreadClaimRunObjects(
             orgId: claim.orgId,
             chatThreadId: claim.chatThreadId,
             claimId: claim.claimId,
+            ...(proactive
+              ? {
+                  proactive: {
+                    id: context.head.id,
+                    userId: context.head.userId,
+                    suggestionsEnabled: proactive.suggestionsEnabled,
+                    cardDeliveryEnabled: proactive.cardDeliveryEnabled,
+                  },
+                }
+              : {}),
             automationQueueEventId:
               context.head.contextType === "automation"
                 ? context.head.id
@@ -2611,10 +2639,6 @@ export function createThreadClaimRunObjects(
 
   const publishPendingRun$ = command(
     async (_context, pending: PendingClaimRun, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      // Immediate and queued picks have committed their active-run slot here.
-      // Pending shell approvals must re-read chat_busy before the runner starts.
-      await publishDesktopShellAuthorizationChangedSafely(pending.head.userId);
       signal.throwIfAborted();
       // The committed pending Run is the active indicator's only start edge.
       await publishChatIndicatorsChangedSafely({
@@ -2714,7 +2738,13 @@ export function createThreadClaimRunObjects(
         }
         signal.throwIfAborted();
       }
-      await set(publishChatQueueHeadConsumed$, pending.head, signal);
+      // The initiating send publishes both invalidations after its sort touch.
+      if (
+        dispatched.kind !== "accepted" ||
+        pending.head.id !== requestInput?.id
+      ) {
+        await set(publishChatQueueHeadConsumed$, pending.head, signal);
+      }
     },
   );
 
@@ -2943,7 +2973,7 @@ interface ThreadRunPersistenceContext {
       readonly userMessage: ChatEventUserMessage;
     };
   readonly content: ThreadRunContent;
-  readonly selectedImageModel: ImageModel;
+  readonly selectedImageModel: ImageModel | null;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly officialWorkflowProvenance:
     OfficialWorkflowObservation["provenance"] | undefined;
@@ -2974,7 +3004,7 @@ interface LaunchRunRowsArgs {
   readonly memoryMount: PersistedStorageMount;
   readonly modelProvider: ThreadRunPersistenceContext["modelProvider"];
   readonly modelSelection: ModelFirstPin;
-  readonly selectedImageModel: ImageModel;
+  readonly selectedImageModel: ImageModel | null;
   readonly callbacks: readonly PreparedLaunchCallback[];
   readonly chatThreadId: string;
   readonly agentRunMetadata: AgentRunMetadata;
@@ -3069,7 +3099,10 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
     modelProvider: modelPin.modelProviderType,
     modelProviderId: exactSubscriptionId ?? modelPin.modelProviderId,
     modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
-    selectedModel: modelPin.selectedModel,
+    selectedModel:
+      args.content.triggerSource === "proactive"
+        ? PROACTIVE_SELECTED_MODEL
+        : modelPin.selectedModel,
     ...modelLaunchMetadataValues(args.modelProvider),
     ...(args.modelProvider.builtInModelRuntimeRoute &&
     isAutoSelectedModel(modelPin.selectedModel)
@@ -3450,6 +3483,7 @@ function enforceCaptureNetworkBodiesGate(
 }
 
 interface ThreadRunArgsInput {
+  readonly contextType: string | null;
   readonly command: ThreadRunCommand;
   readonly modelSelection: ModelFirstPin;
   readonly threadContinuation: ChatThreadContinuation;
@@ -3487,7 +3521,9 @@ function buildThreadRunArgs(
   const command = args.command;
   const origin = command.agentRunMetadata.workflowAutomationId
     ? "workflow_automation"
-    : "direct";
+    : command.triggerSource === "proactive"
+      ? "proactive"
+      : "direct";
   return {
     orgId: command.owner.orgId,
     userId: command.owner.userId,
@@ -3509,6 +3545,7 @@ function buildThreadRunArgs(
     timingDimensions: {
       agent_run_origin: origin,
       api_start_source: "queue_event",
+      ...(args.contextType ? { context_type: args.contextType } : {}),
     },
   };
 }
@@ -3689,10 +3726,12 @@ function pendingAtomicLaunchPlan(
     status: "pending",
     billingCompletedAt: null,
     creditChargePolicy:
-      context.rowsArgs.officialWorkflowProvenance &&
-      context.rowsArgs.agentRunMetadata.workflowAutomationId
-        ? "official_workflow_free"
-        : "standard",
+      context.rowsArgs.content.triggerSource === "proactive"
+        ? "platform_proactive"
+        : context.rowsArgs.officialWorkflowProvenance &&
+            context.rowsArgs.agentRunMetadata.workflowAutomationId
+          ? "official_workflow_free"
+          : "standard",
   });
   const attribution = new QueryBuilder()
     .$with("inserted_launch_billing_attribution", {
@@ -3796,9 +3835,13 @@ function pendingLaunchPublicationCtes({
     .where(queuedThreadInputCondition(claim.chatThreadId))
     .orderBy(asc(chatEvents.seqId))
     .limit(1);
+  const headMatches = eq(sql`(${currentHead})`, claimedInput.revokesEventId);
+  const eligibility = claim.proactive
+    ? sql`${headMatches} AND EXISTS (${proactiveInputSql({ ...claim, ...claim.proactive }, claim.proactive)})`
+    : headMatches;
   const claimCtes = sql`${canonicalChatEventInputCtes(
     [claimedInput],
-    eq(sql`(${currentHead})`, claimedInput.revokesEventId),
+    eligibility,
   )},
       inserted AS (${canonicalChatEventInsertSql("any")}),
       launch_claim_relations AS (
@@ -3815,7 +3858,12 @@ function pendingLaunchPublicationCtes({
     sql`EXISTS (SELECT 1 FROM inserted)
               AND (SELECT ${count()} FROM launch_claim_relations) >= 0`,
   )})`;
-  return sql`${claimCtes}${released}`;
+  const receipt = claim.proactive
+    ? sql`, admitted_proactive AS (
+    UPDATE proactive_occurrences SET run_id=${claimedInput.runId}::uuid,suggestions_enabled=${claim.proactive.suggestionsEnabled},card_delivery_enabled=${claim.proactive.cardDeliveryEnabled}
+    WHERE id=${claim.proactive.id}::uuid AND EXISTS (SELECT 1 FROM inserted) RETURNING id)`
+    : sql.empty();
+  return sql`${claimCtes}${receipt}${released}`;
 }
 
 function pendingLaunchGuardedRunId(

@@ -110,8 +110,10 @@ struct ChatSettingsView: View {
           )
           .okouSectionNote()
         }
+        SettingsConnectorsSection(open: openConnectors)
         StoreProvider(store.settingsResources.store) {
-          SettingsConnectorsSection(workspace: store, open: openConnectors)
+          SettingsRemoteDevicesSection(
+            resources: store.settingsResources.remoteDevices, webURL: store.webURL)
           SettingsModelsSection(models: store.modelStore)
         }
         Section {
@@ -211,8 +213,11 @@ struct ChatSettingsView: View {
     }
     .background {
       if let connectors {
-        // Keep authorization mounted while connector and account pages are pushed.
-        Color.clear.connectorAuthorizationPresentation(store: connectors)
+        // Keep authorization mounted while connector and account pages are pushed. Its web
+        // page is read from the connectors' Store.
+        StoreProvider(connectors.graph) {
+          Color.clear.connectorAuthorizationPresentation(store: connectors)
+        }
       }
     }
     .onDisappear {
@@ -226,7 +231,6 @@ struct ChatSettingsView: View {
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
       webURL: store.webURL, graph: models.stateStore, includesRemote: false,
-      management: ComposerConnectorStore.managementEnabled,
       memberAccessEnabled: { [weak models] in
         models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
       },

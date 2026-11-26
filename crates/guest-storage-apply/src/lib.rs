@@ -398,9 +398,7 @@ fn bind_inline_archives<'input>(
             .local_archive_path()
             .and_then(|path| archives.get_key_value(path))
         {
-            if !task.set_inline_archive(archive) {
-                return false;
-            }
+            task.set_inline_archive(archive);
             used.insert(source);
         }
     }

@@ -62,7 +62,7 @@ fn envelope(identity: RunnerProcessIdentity, run_id: RunId) -> Value {
         "executionContext": {
             "runId": run_id, "prompt": "supplied complete input", "sandboxToken": "run-scoped-token", "firewallToken": "firewall-token",
             "cliAgentType": "claude-code", "platformEnvironment": {}, "connectorRuntimeTargets": [],
-            "contentBundles": { "format": "tar-gzip-v1", "skills": [] }
+            "startupInputs": {"memory": null, "contentBundles":{"format":"tar-gzip-v1","skills":[]}}
         }
     })
 }

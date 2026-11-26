@@ -89,6 +89,7 @@ export const vncConnectionCredentialSchema = union([
 ]);
 
 export const createVncConnectionRequestSchema = object({
+  remoteDeviceId: uuid().optional(),
   id: uuid(),
   displayName: displayNameSchema,
   host: hostSchema,

@@ -201,8 +201,14 @@ export const prepareExecutionRuntimeContext$ = command(
             disallowedTools: [...DEFAULT_DISALLOWED_TOOLS],
             userTimezone: facts.userTimezone,
             captureNetworkBodies: facts.captureNetworkBodies ? true : undefined,
-            seedSkillBundles: packages.seedSkillBundles,
-            officialWorkflowBundles: packages.officialWorkflowBundles,
+            seedSkillBundles: packages.seedSkillBundles.map(({ mount }) => {
+              return mount;
+            }),
+            officialWorkflowBundles: packages.officialWorkflowBundles.map(
+              ({ mount }) => {
+                return mount;
+              },
+            ),
             templateGuidanceBundles: packages.templateGuidanceBundles,
           };
           return {

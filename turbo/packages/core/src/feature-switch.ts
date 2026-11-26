@@ -57,7 +57,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ming@okou.ai",
     displayName: "Simplified For you deck",
     description:
-      "Browse For you without arrow buttons, show a display-only progress bar, lower the card stack, and size cards from the deck width.",
+      "Browse For you without arrow buttons, show a display-only progress bar, lower the card stack, size cards from the deck width, use tighter card and option corners, label what each option does, and let option text be selected.",
     enabled: false,
   },
   [FeatureSwitchKey.WorkflowListRedesign]: {
@@ -66,14 +66,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Browse workflows with search, separate visibility and automation filters, and a flat list sorted by creation date.",
     enabled: false,
-  },
-  [FeatureSwitchKey.IosConnectorManagement]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "iOS connector management",
-    description:
-      "Manage connector accounts and permissions in native iOS Settings.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.IosConnectorAppAuthorization]: {
     maintainer: "yuma@okou.ai",
@@ -314,14 +306,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Artifact email sharing",
     description:
       "Share websites and files with existing accounts or invite verified email recipients.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.FeishuArtifactChannelSharing]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Feishu and Lark artifact sharing",
-    description:
-      "Preview artifacts per authorized reader and privately help owners share access with current chat members.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

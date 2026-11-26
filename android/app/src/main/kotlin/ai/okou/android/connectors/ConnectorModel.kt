@@ -104,14 +104,25 @@ internal data class ConnectorUiState(
     val canChangeAccounts: Boolean
         get() = accounts.data != null && action?.blocksOtherActions != true
 
-    fun accountsFor(slug: String): List<ConnectorSavedAccount> {
-        if (this.slug == slug && accounts.data != null) return accounts.data
-        if (this.slug == slug && accounts.failure == ConnectorReadFailure.Unavailable)
-            return emptyList()
-        val overview = connected.data
-        if (overview != null) return overview[slug]?.accounts.orEmpty()
-        return cachedAccounts.takeIf { this.slug == slug }?.data.orEmpty()
-    }
+    val selectedAccountContent: List<ConnectorSavedAccount>?
+        get() {
+            val selected = slug ?: return null
+            accounts.data?.let {
+                return it
+            }
+            if (accounts.failure == ConnectorReadFailure.Unavailable) return null
+            val overview = connected.data
+            overview?.get(selected)?.accounts?.let {
+                return it
+            }
+            val cached = cachedAccounts?.data ?: return null
+            // A confirmed overview takes precedence over an earlier detail snapshot.
+            return if (overview != null) emptyList() else cached
+        }
+
+    fun accountsFor(slug: String): List<ConnectorSavedAccount> =
+        if (this.slug == slug) selectedAccountContent.orEmpty()
+        else connected.data?.get(slug)?.accounts.orEmpty()
 }
 
 private data class ServiceReadSnapshot(
@@ -150,6 +161,7 @@ class ConnectorModel(
     private var deviceJob: Job? = null
     private var verificationJob: Job? = null
     private var verificationFailures = 0
+    private var readFailureRound = 0L
     private var permissionsRequested = false
     private var open = false
     private var foreground = true
@@ -224,6 +236,9 @@ class ConnectorModel(
 
     private fun refreshDirectory(browse: Boolean = true, accounts: Boolean = true) {
         if (browse && browseJob?.isActive != true) {
+            clearColdReadFailure(mutableState.value.browse) {
+                it.copy(browse = it.browse.confirmed())
+            }
             browseJob = viewModelScope.launch {
                 load({ service.discover(null, null) }) { read ->
                     val unavailable = read.failure == ConnectorReadFailure.Unavailable
@@ -244,6 +259,9 @@ class ConnectorModel(
             }
         }
         if (accounts && connectedJob?.isActive != true) {
+            clearColdReadFailure(mutableState.value.connected) {
+                it.copy(connected = it.connected.confirmed())
+            }
             connectedJob = viewModelScope.launch {
                 load(service::connected) { read ->
                     val value = read.data
@@ -302,6 +320,12 @@ class ConnectorModel(
         if (matchesJob?.isActive == true) return
         matchesJob = viewModelScope.launch {
             if (selected.keyword != null) delay(250)
+            val previous = mutableState.value.matches?.takeIf { it.filter == selected }
+            if (previous != null) {
+                clearColdReadFailure(previous.entries) {
+                    it.copy(matches = previous.copy(entries = previous.entries.confirmed()))
+                }
+            }
             load({ service.discover(selected.keyword, selected.category) }) { read ->
                 if (filter != selected) return@load
                 if (read.isConfirmed) recentMatches.rememberRead(selected, read)
@@ -368,6 +392,9 @@ class ConnectorModel(
     private fun refreshDetail() {
         val slug = mutableState.value.slug ?: return
         if (detailJob?.isActive != true) {
+            clearColdReadFailure(mutableState.value.detail) {
+                it.copy(detail = it.detail.confirmed())
+            }
             detailJob = viewModelScope.launch {
                 load({ service.detail(slug) }) { read ->
                     val unavailable = read.failure == ConnectorReadFailure.Unavailable
@@ -392,6 +419,10 @@ class ConnectorModel(
             }
         }
         if (accountsJob?.isActive != true) {
+            val state = mutableState.value
+            if (state.selectedAccountContent == null) {
+                clearColdReadFailure(state.accounts) { it.copy(accounts = it.accounts.confirmed()) }
+            }
             accountsJob = viewModelScope.launch {
                 load({ service.accounts(slug) }) { read ->
                     if (read.data != null) publishAccounts(slug, read.data)
@@ -431,6 +462,9 @@ class ConnectorModel(
     private fun refreshPermissions() {
         val slug = mutableState.value.slug ?: return
         if (permissionJob?.isActive == true) return
+        clearColdReadFailure(mutableState.value.permissions) {
+            it.copy(permissions = it.permissions.confirmed())
+        }
         permissionJob = viewModelScope.launch {
             load({ service.permissions(slug) }) { read ->
                 mutableState.update { state ->
@@ -1168,6 +1202,13 @@ class ConnectorModel(
             sessionFailure(error)
     }
 
+    private inline fun clearColdReadFailure(
+        read: ConnectorRead<*>,
+        update: (ConnectorUiState) -> ConnectorUiState,
+    ) {
+        if (read.data == null && read.failureRound != null) mutableState.update(update)
+    }
+
     private suspend fun <T : Any> load(read: suspend () -> T, publish: (ConnectorRead<T>) -> Unit) =
         retryConnectorRead(
             read,
@@ -1177,7 +1218,7 @@ class ConnectorModel(
                 publish(
                     if (it.isConfirmed)
                         it.copy(expiresAt = clock.markNow() + CONNECTOR_READ_LIFETIME)
-                    else it,
+                    else it.copy(failureRound = ++readFailureRound),
                 )
             },
         )

@@ -1,3 +1,4 @@
+import { CANONICAL_CLAUDE_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
 import { webhookMemoryArchiveContract } from "@okouai/api-contracts/contracts/webhooks";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -184,7 +185,7 @@ describe("Memory publication authorization", () => {
             storageOutputs: [
               {
                 name: "memory",
-                mountPath: stale.memory.mountPath,
+                mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
                 version: merged.body.versionId,
               },
             ],
@@ -307,7 +308,7 @@ describe("Memory publication authorization", () => {
         {
           runId: receivedExecution.run.runId,
           sandboxHeaders: receivedExecution.headers,
-          storageManifest: receivedExecution.execution.storageManifest,
+          memory: receivedExecution.execution.startupInputs.memory,
         },
         [
           {
@@ -334,7 +335,7 @@ describe("Memory publication authorization", () => {
         {
           runId: first.run.runId,
           sandboxHeaders: first.headers,
-          storageManifest: first.execution.storageManifest,
+          memory: first.execution.startupInputs.memory,
         },
         [{ path: "notes.md", content: "Newest verified fact" }],
       );
@@ -343,7 +344,7 @@ describe("Memory publication authorization", () => {
         {
           runId: stale.run.runId,
           sandboxHeaders: stale.headers,
-          storageManifest: stale.execution.storageManifest,
+          memory: stale.execution.startupInputs.memory,
         },
         [{ path: "notes.md", content: "Stale competing fact" }],
         409,
@@ -384,7 +385,7 @@ describe("Memory publication authorization", () => {
         {
           runId: next.run.runId,
           sandboxHeaders: next.headers,
-          storageManifest: next.execution.storageManifest,
+          memory: next.execution.startupInputs.memory,
         },
         [
           {
@@ -413,7 +414,7 @@ describe("Memory publication authorization", () => {
             {
               runId: receivedExecution.run.runId,
               sandboxHeaders: receivedExecution.headers,
-              storageManifest: receivedExecution.execution.storageManifest,
+              memory: receivedExecution.execution.startupInputs.memory,
             },
             [{ path: "notes.md", content: `Verified candidate ${index}` }],
             [200, 409],

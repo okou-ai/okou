@@ -127,6 +127,32 @@ function receipt(f: Fixture, attemptId: string) {
 }
 
 describe("builtin MCP automatic authentication", () => {
+  it("keeps a direct native Automatic OAuth callback on its connector result page", async () => {
+    const f = fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      endpoint: f.endpoint,
+    });
+    const started = await beginOAuth(f, undefined, true);
+    const result = await accept(
+      automatic().callback({
+        query: {
+          state: started.state,
+          code: "authorized-code",
+          iss: provider.issuer,
+        },
+      }),
+      [307],
+    );
+    const destination = new URL(result.headers.get("location") ?? "");
+    expect(destination.origin).toBe("https://app.okou.ai");
+    expect(destination.pathname).toBe(`/connectors/${f.slug}/callback/success`);
+    expect(destination.searchParams.get("nativeAppAttemptId")).toBe(
+      started.oauthAttemptId,
+    );
+    expect((await receipt(f, started.oauthAttemptId)).status).toBe(200);
+  });
+
   it.each([false, true])(
     "returns a native Automatic OAuth attempt after consent or refusal (denied=%s)",
     async (denied) => {

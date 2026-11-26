@@ -1,3 +1,4 @@
+import { createProactiveInput } from "./proactive-run-context.service";
 import { createEmailMailboxConnections } from "./email-mailbox-context.service";
 import { createEmailThreadContext } from "./email-queued-launch-context.service";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
@@ -42,6 +43,7 @@ type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one claimed Thread and its eventual picked event. */
 export interface ThreadContext extends ThreadWorkflowContext {
+  readonly proactiveInput$: ReturnType<typeof createProactiveInput>;
   /** Background source acquisition; consumers join the individual nodes below. */
   readonly inputResources$: Computed<Promise<void>>;
   readonly projectContext$: ReturnType<typeof createThreadProjectContext>;
@@ -162,6 +164,7 @@ export function createThreadContext(
     inputSources,
   );
   return {
+    proactiveInput$: model.proactiveInput$,
     inputResources$: resources.inputResources$,
     projectContext$: resources.projectContext$,
     incompleteContext$: resources.incompleteContext$,
@@ -202,6 +205,7 @@ function createThreadModelContext(
   automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
   dispatchTiming$: ThreadContext["dispatchTiming$"],
 ) {
+  const proactiveInput$ = createProactiveInput(bootstrap, pickedEvent$);
   const effectiveSelection$ = computed(async (get) => {
     const [event, target] = await Promise.all([
       get(pickedEvent$),
@@ -211,7 +215,8 @@ function createThreadModelContext(
       return null;
     }
     // Official Workflows always route through Auto.
-    return target?.workflow.officialDefinitionName
+    return target?.workflow.officialDefinitionName ||
+      (event.contextType === "proactive" && (await get(proactiveInput$)))
       ? {
           selectedModel: AUTO_SELECTED_MODEL,
           codexServiceTier: null,
@@ -220,16 +225,25 @@ function createThreadModelContext(
       : event.modelSelection;
   });
   const creditsWaived$ = createOfficialWorkflowCreditWaiver(
+    proactiveInput$,
     pickedEvent$,
     automationTarget$,
   );
-  return createThreadModelSignals(
+  const model = createThreadModelSignals(
     bootstrap,
     chatThreadId,
     effectiveSelection$,
     creditsWaived$,
     dispatchTiming$,
   );
+  return {
+    proactiveInput$,
+    modelSelection$: model.modelSelection$,
+    subscriptionSelection$: model.subscriptionSelection$,
+    requestedFramework$: model.requestedFramework$,
+    modelRoute$: model.modelRoute$,
+    providerFramework$: model.providerFramework$,
+  };
 }
 
 function createThreadInputResources(
@@ -259,6 +273,7 @@ function createThreadInputResources(
       Computed<Promise<unknown>>
     >
   > = {
+    proactive: projectContext$,
     web: projectContext$,
     agent_run: projectContext$,
     slack: integrations.slackContext$,
@@ -358,6 +373,7 @@ function createThreadIntegrationContexts(
 /** Routing candidate only; exact accepted artifacts and installation ownership
  * are still validated before a Run can be committed. */
 function createOfficialWorkflowCreditWaiver(
+  proactiveInput$: ThreadContext["proactiveInput$"],
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   automationTarget$: ThreadContext["automationTarget$"],
 ) {
@@ -366,6 +382,9 @@ function createOfficialWorkflowCreditWaiver(
       get(pickedEvent$),
       get(automationTarget$),
     ]);
+    if (event?.contextType === "proactive") {
+      return Boolean(await get(proactiveInput$));
+    }
     return (
       event?.eventType === "input.automation" &&
       event.contextType === "automation" &&
@@ -440,7 +459,9 @@ function createThreadContinuation(
     const identity = get(runIds$);
     return resolveChatThreadContinuation(event.thread, {
       cliAgentType: selection.cliAgentType,
-      officialWorkflow: Boolean(target?.workflow.officialDefinitionName),
+      officialWorkflow:
+        event.contextType === "proactive" ||
+        Boolean(target?.workflow.officialDefinitionName),
       admission: {
         ...identity,
         finalizingSourceRunId: event.thread.frameworkSessionRunId,

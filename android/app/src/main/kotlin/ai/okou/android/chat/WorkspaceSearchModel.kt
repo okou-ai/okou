@@ -1,7 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.boundedReadRetryDelayMillis
+import ai.okou.android.api.boundedApiRetryDelayMillis
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
@@ -43,7 +43,12 @@ data class SearchMessageHit(
     val seqId: Long,
     val content: String,
     val ranges: List<IntRange>,
-)
+) {
+    internal val firstRange
+        get() = ranges.minByOrNull { it.first }
+}
+
+internal data class SearchMessageAnchor(val sequence: Long, val range: IntRange?)
 
 data class SearchWorkflowHit(
     val id: String,
@@ -75,8 +80,12 @@ internal fun WorkflowState.searchCatalog(keyword: String): SearchRead<SearchWork
     val matches = rows.mapNotNull { it.toSearchHit().takeIf { hit -> hit.matches(keyword) } }
     return SearchRead.Ready(
         matches,
-        refreshing = catalogRefreshing,
-        refreshFailed = !catalogRefreshing && catalogFailure != null,
+        refresh =
+            when {
+                catalogRefreshing -> SearchRefresh.Reading
+                catalogFailure != null -> SearchRefresh.Failed
+                else -> SearchRefresh.Idle
+            },
     )
 }
 
@@ -91,6 +100,8 @@ interface WorkspaceSearchService {
 }
 
 internal sealed interface SearchRead<out T> {
+    data object Scheduled : SearchRead<Nothing>
+
     data object Loading : SearchRead<Nothing>
 
     data object Retrying : SearchRead<Nothing>
@@ -102,9 +113,15 @@ internal sealed interface SearchRead<out T> {
     data class Ready<T>(
         val rows: List<T>,
         val nextCursor: String? = null,
-        val refreshFailed: Boolean = false,
-        val refreshing: Boolean = false,
+        val refresh: SearchRefresh = SearchRefresh.Idle,
     ) : SearchRead<T>
+}
+
+internal enum class SearchRefresh {
+    Idle,
+    Scheduled,
+    Reading,
+    Failed,
 }
 
 internal val SearchRead<*>?.hasFailure: Boolean
@@ -112,30 +129,35 @@ internal val SearchRead<*>?.hasFailure: Boolean
         when (this) {
             SearchRead.Failed,
             SearchRead.AccessLost -> true
-            is SearchRead.Ready -> refreshFailed
+            is SearchRead.Ready -> refresh == SearchRefresh.Failed
             else -> false
         }
 
 private fun <T> SearchRead<T>.updated(read: SearchRead<T>): SearchRead<T> =
     when {
         this !is SearchRead.Ready -> read
-        read == SearchRead.Loading -> copy(refreshFailed = false, refreshing = true)
+        read == SearchRead.Scheduled -> copy(refresh = SearchRefresh.Scheduled)
+        read == SearchRead.Loading -> copy(refresh = SearchRefresh.Reading)
         read == SearchRead.Retrying -> this
-        read == SearchRead.Failed -> copy(refreshFailed = true, refreshing = false)
+        read == SearchRead.Failed -> copy(refresh = SearchRefresh.Failed)
         else -> read
     }
 
 internal data class WorkspaceSearchResults(
     val keyword: String = "",
-    val messages: SearchRead<SearchMessageHit> = SearchRead.Loading,
-    val artifacts: SearchRead<SearchArtifactHit> = SearchRead.Loading,
+    val messages: SearchRead<SearchMessageHit> = SearchRead.Scheduled,
+    val artifacts: SearchRead<SearchArtifactHit> = SearchRead.Scheduled,
     val artifactPaging: ArtifactSearchPaging = ArtifactSearchPaging.Idle,
 )
 
-internal enum class ArtifactSearchPaging {
+internal enum class ArtifactSearchPaging(
+    val isLoading: Boolean = false,
+    val hasFailure: Boolean = false,
+) {
     Idle,
-    Loading,
-    Failed,
+    Loading(isLoading = true),
+    Failed(hasFailure = true),
+    Retrying(isLoading = true, hasFailure = true),
 }
 
 class WorkspaceSearchModel
@@ -189,7 +211,7 @@ internal constructor(
             artifactPageJob = null
             mutable.value =
                 mutable.value.copy(
-                    artifacts = SearchRead.Loading,
+                    artifacts = SearchRead.Scheduled,
                     artifactPaging = ArtifactSearchPaging.Idle,
                 )
         }
@@ -204,16 +226,23 @@ internal constructor(
                 state.copy(messages = state.messages.updated(read))
             }
         }
-        if (
-            artifactsAvailable &&
-                type.includes(WorkspaceSearchType.Artifacts) &&
-                artifactPageJob?.isActive != true
-        ) {
-            // A preview return must retain any pages needed to restore the selected result.
-            val refresh =
+        if (artifactsAvailable && type.includes(WorkspaceSearchType.Artifacts)) {
+            if (
+                type == WorkspaceSearchType.Artifacts &&
+                    previousType != type &&
+                    mutable.value.artifactPaging == ArtifactSearchPaging.Failed
+            ) {
+                // The failed page was already requested. Retry even if the list skipped that state.
+                val page = mutable.value.artifacts as? SearchRead.Ready
+                page?.nextCursor?.let {
+                    readMoreArtifacts(keyword, it, ArtifactSearchPaging.Retrying)
+                }
+            }
+            // A type change or preview return still uses the same query and its loaded pages.
+            val retry =
                 previousType?.includes(WorkspaceSearchType.Artifacts) != true &&
-                    (previousType != null || mutable.value.artifacts.hasFailure)
-            request(WorkspaceSearchType.Artifacts, refresh, { artifactPage(keyword, null) }) {
+                    mutable.value.artifacts.hasFailure
+            request(WorkspaceSearchType.Artifacts, retry, { artifactPage(keyword, null) }) {
                 state,
                 read ->
                 state.copy(
@@ -232,28 +261,38 @@ internal constructor(
     }
 
     internal fun nextArtifacts(keyword: String, cursor: String) {
+        if (mutable.value.artifactPaging == ArtifactSearchPaging.Failed) return
+        readMoreArtifacts(keyword, cursor, ArtifactSearchPaging.Loading)
+    }
+
+    private fun readMoreArtifacts(keyword: String, cursor: String, paging: ArtifactSearchPaging) {
         val current = mutable.value
         val loaded = current.artifacts as? SearchRead.Ready ?: return
         if (
             !authorized() ||
                 current.keyword != keyword ||
                 loaded.nextCursor != cursor ||
-                loaded.refreshFailed ||
-                current.artifactPaging == ArtifactSearchPaging.Failed ||
+                loaded.refresh == SearchRefresh.Failed ||
                 artifactPageJob?.isActive == true
         )
             return
         artifactPageJob = viewModelScope.launch {
             searches[WorkspaceSearchType.Artifacts]?.join()
-            val currentPage = mutable.value.artifacts as? SearchRead.Ready ?: return@launch
-            if (currentPage.nextCursor != cursor || currentPage.refreshFailed) return@launch
-            mutable.value = mutable.value.copy(artifactPaging = ArtifactSearchPaging.Loading)
+            val state = mutable.value
+            val currentPage = state.artifacts as? SearchRead.Ready ?: return@launch
+            if (currentPage.nextCursor != cursor || currentPage.refresh == SearchRefresh.Failed) {
+                return@launch
+            }
             readSearch(
                 { it == WorkspaceSearchType.Artifacts },
                 { artifactPage(keyword, cursor) },
             ) { next ->
                 if (next == SearchRead.Retrying) return@readSearch
                 val latest = mutable.value
+                if (next == SearchRead.Loading) {
+                    mutable.value = latest.copy(artifactPaging = paging)
+                    return@readSearch
+                }
                 val merged =
                     (next as? SearchRead.Ready)?.let { page ->
                         val rows = (currentPage.rows + page.rows).distinctBy { it.id }
@@ -285,7 +324,7 @@ internal constructor(
         publish: (WorkspaceSearchResults, SearchRead<T>) -> WorkspaceSearchResults,
     ) {
         if (searches[type]?.let { it.isActive || !refresh } == true) return
-        mutable.value = publish(mutable.value, SearchRead.Loading)
+        mutable.value = publish(mutable.value, SearchRead.Scheduled)
         searches[type] = viewModelScope.launch {
             delay(SearchDebounceMillis)
             readSearch({ it.includes(type) }, read) { result ->
@@ -305,6 +344,7 @@ internal constructor(
             visibleType.first { it != null && inScope(it) }
             context.ensureActive()
             if (!authorized()) return
+            if (failures == 0) publish(SearchRead.Loading)
             val result =
                 try {
                     read()
@@ -320,7 +360,7 @@ internal constructor(
                     ) {
                         onFailure(error)
                     }
-                    val retryDelay = error.boundedReadRetryDelayMillis(failures)
+                    val retryDelay = error.boundedApiRetryDelayMillis(failures)
                     if (authorized()) {
                         publish(
                             when {

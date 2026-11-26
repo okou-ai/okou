@@ -11,7 +11,7 @@ fn prefix(member: &str) -> String {
 
 fn bundles() -> String {
     let fixture: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
-    fixture["contentBundles"].to_string()
+    fixture["startupInputs"].to_string()
 }
 
 fn reject(body: &str, expected: &str) {
@@ -33,6 +33,15 @@ fn raw_publication_preserves_unknown_and_skipped_fields_without_coercing_them() 
         context.instruction_file.unwrap().storage_mount,
         "/home/user/.vm0/agent-instructions/codex"
     );
+    let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
+    body["startupInputs"]["contentBundles"]["futureBundles"] = Value::Bool(true);
+    body["startupInputs"]["contentBundles"]["skills"][0]["futureSkill"] = Value::Bool(true);
+    assert_eq!(
+        decode_execution_publication(body.to_string().as_bytes())
+            .unwrap()
+            .storage_manifest,
+        context.storage_manifest,
+    );
     let body = RUNNER_EXECUTION_CONTEXT_FIXTURE.replace("\"prompt\"", r#""\u0070rompt""#);
     assert_eq!(
         decode_execution_publication(body.as_bytes())
@@ -48,11 +57,11 @@ fn raw_publication_rejects_duplicate_context_and_bundle_members() {
         r#""runId":"00000000-0000-4000-8000-000000020985""#.to_owned(),
         r#""userTimezone":null"#.to_owned(),
         r#""prompt":"private-secret""#.to_owned(),
-        format!(r#""contentBundles":{}"#, bundles()),
-        format!(r#""\u0063ontentBundles":{}"#, bundles()),
+        format!(r#""startupInputs":{}"#, bundles()),
+        format!(r#""\u0073tartupInputs":{}"#, bundles()),
     ] {
-        let expected = if member.contains("Bundles") {
-            "Invalid content bundles"
+        let expected = if member.contains("Inputs") {
+            "Invalid startup inputs"
         } else {
             "Invalid execution context"
         };
@@ -66,31 +75,30 @@ fn raw_publication_rejects_duplicate_context_and_bundle_members() {
     assert_ne!(duplicate, bundles());
     let fixture: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     let mut context = fixture.as_object().unwrap().clone();
-    context.remove("contentBundles");
+    context.remove("startupInputs");
     let rest = serde_json::to_string(&context).unwrap();
     reject(
-        &format!(r#"{{"contentBundles":{duplicate},{}"#, &rest[1..]),
-        "Invalid content bundles",
+        &format!(r#"{{"startupInputs":{duplicate},{}"#, &rest[1..]),
+        "Invalid startup inputs",
     );
 }
 
 #[test]
-fn raw_publication_preserves_missing_null_and_nested_strictness() {
+fn raw_publication_preserves_missing_and_null_semantics() {
     let fixture: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     let mut context = fixture.as_object().unwrap().clone();
-    context.remove("contentBundles");
+    context.remove("startupInputs");
     let rest = serde_json::to_string(&context).unwrap();
-    reject(&rest, "Invalid content bundles");
+    reject(&rest, "Invalid startup inputs");
     for package in [
         "null".to_owned(),
-        r#"{"format":"tar-gzip-v1","skills":[],"instructions":null}"#.to_owned(),
-        r#"{"format":"tar-gzip-v1","skills":[],"private-secret":1}"#.to_owned(),
-        r#"{"format":"tar-gzip-v1","skills":null}"#.to_owned(),
-        r#"{"format":"tar-gzip-v1","skills":[],"templates":null}"#.to_owned(),
+        r#"{"memory":null,"contentBundles":{"format":"tar-gzip-v1","skills":[],"instructions":null}}"#.to_owned(),
+        r#"{"memory":null,"contentBundles":{"format":"tar-gzip-v1","skills":null}}"#.to_owned(),
+        r#"{"memory":null,"contentBundles":{"format":"tar-gzip-v1","skills":[],"templates":null}}"#.to_owned(),
     ] {
         reject(
-            &format!(r#"{{"contentBundles":{package},{}"#, &rest[1..]),
-            "Invalid content bundles",
+            &format!(r#"{{"startupInputs":{package},{}"#, &rest[1..]),
+            "Invalid startup inputs",
         );
     }
     for key in [
@@ -122,7 +130,7 @@ fn raw_publication_preserves_missing_null_and_nested_strictness() {
 #[test]
 fn raw_publication_keeps_context_first_redacted_errors_and_trailing_rejection() {
     let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
-    body["contentBundles"] = Value::Null;
+    body["startupInputs"]["contentBundles"] = Value::Null;
     for key in [
         "sandboxToken",
         "firewallToken",
@@ -173,18 +181,18 @@ fn raw_publication_accepts_bundles_before_or_after_context_with_escaped_keys() {
     let packages = fixture
         .as_object_mut()
         .unwrap()
-        .remove("contentBundles")
+        .remove("startupInputs")
         .unwrap();
     let rest = serde_json::to_string(&fixture).unwrap();
     for body in [
-        format!(r#"{{"\u0063ontentBundles":{packages},{}"#, &rest[1..]),
+        format!(r#"{{"\u0073tartupInputs":{packages},{}"#, &rest[1..]),
         format!(
-            r#"{},"contentBundles":{packages}}}"#,
+            r#"{},"startupInputs":{packages}}}"#,
             rest.strip_suffix('}').unwrap()
         ),
     ] {
         let context = decode_execution_publication(body.as_bytes()).unwrap();
         assert_eq!(context.prompt, "Inspect the fixture repository");
-        assert_eq!(context.storage_manifest.unwrap().storages.len(), 3);
+        assert_eq!(context.storage_manifest.unwrap().storages.len(), 2);
     }
 }

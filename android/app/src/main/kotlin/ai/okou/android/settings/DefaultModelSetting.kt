@@ -3,13 +3,13 @@ package ai.okou.android.settings
 import ai.okou.android.R
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsModal
+import ai.okou.android.SettingsRadioRow
 import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.settingsPanelContentPadding
-import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,8 +36,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -101,6 +98,7 @@ internal fun DefaultModelSetting(
     model: DefaultModelSettings?,
     snackbar: SnackbarHostState,
     onFeedbackInOverlay: (Boolean) -> Unit,
+    fallbackFocus: FocusRequester? = null,
 ) {
     val title = stringResource(R.string.settings_default_model)
     val auto = stringResource(R.string.settings_auto_model)
@@ -110,22 +108,38 @@ internal fun DefaultModelSetting(
     }
     val state by model.state.collectAsStateWithLifecycle()
     val options = state.options
-    if (options == null || state.record == null) {
+    val record = state.record
+    SettingsRefreshFeedback(
+        snackbar,
+        state.settingsCatalogRefreshFailure,
+        R.string.settings_model_catalog_refresh_failed,
+    )
+    if (options == null || record == null) {
         val status =
             when {
                 state.catalogUnavailable -> stringResource(R.string.chat_list_first_load_failed)
                 else -> null
             }
-        val value =
-            state.record?.let {
-                if (isAutoDefaultModel(it.confirmed.selectedModel)) auto else it.confirmedLabel
-            }
+        val value = record?.let {
+            if (isAutoDefaultModel(it.confirmed.selectedModel)) auto
+            else it.confirmedLabel ?: it.confirmed.selectedModel
+        }
         DefaultModelUnavailableRow(title, value, status)
         return
     }
-    val selected = state.selected
-    if (options.choices.none { it.canSelect } && selected == null) return
+    val selectedId = state.selectedModel
+    val usingAuto = isAutoDefaultModel(selectedId)
+    val confirmedAuto = isAutoDefaultModel(record.confirmed.selectedModel)
+    val value =
+        if (usingAuto) auto
+        else
+            state.selected?.label
+                ?: record.confirmedLabel?.takeIf { record.confirmed.selectedModel == selectedId }
+                ?: selectedId
     SettingsTrigger(
+        visible = !usingAuto || !confirmedAuto || options.choices.any { it.canSelect },
+        fallbackFocus = fallbackFocus,
+        keepOpenWhenHidden = true,
         content = { dismiss ->
             DefaultModelSheet(title, state, model, snackbar, onFeedbackInOverlay, dismiss)
         },
@@ -134,11 +148,11 @@ internal fun DefaultModelSetting(
             title,
             leading = { SettingsIcon(R.drawable.ic_memory) },
             modifier = modifier,
-            value = selected?.label ?: auto,
+            value = value,
             onClick = open,
         )
+        HorizontalDivider()
     }
-    HorizontalDivider()
 }
 
 @Composable
@@ -172,25 +186,22 @@ private fun DefaultModelSheet(
     onFeedbackInOverlay: (Boolean) -> Unit,
     dismiss: () -> Unit,
 ) {
+    val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
+    DisposableEffect(Unit) {
+        routeFeedback(true)
+        onDispose { routeFeedback(false) }
+    }
     ModelPickerSheet(
         title = title,
         choices = state.options?.choices,
-        selectedId = state.selected?.id,
+        selectedId = state.selected?.id ?: state.selectedModel.takeUnless(::isAutoDefaultModel),
         effort = state.effort,
         fast = state.fast,
-        catalogUnavailable = state.catalogUnavailable,
         select = model::select,
         selectEffort = model::effort,
         selectFast = model::fast,
         dismiss = dismiss,
-        footer = {
-            val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
-            DisposableEffect(Unit) {
-                routeFeedback(true)
-                onDispose { routeFeedback(false) }
-            }
-            WorkspaceFeedbackHost(snackbar, Modifier.padding(top = 8.dp))
-        },
+        snackbar = snackbar,
     )
 }
 
@@ -206,13 +217,14 @@ internal fun ModelPickerSheet(
     selectFast: (Boolean) -> Unit,
     dismiss: () -> Unit,
     catalogUnavailable: Boolean = false,
+    snackbar: SnackbarHostState? = null,
     footer: @Composable () -> Unit = {},
 ) {
     val windowHeight = currentWindowSizeDp().height
     val fullScreen = windowHeight < 480
     val scroll = rememberScrollState()
     val selected = choices?.firstOrNull { it.id == selectedId }
-    SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
+    val panel: @Composable (Boolean) -> Unit = { centered ->
         val size =
             if (fullScreen) Modifier.fillMaxHeight()
             else
@@ -275,7 +287,7 @@ internal fun ModelPickerSheet(
                     }
                 }
                 Column(Modifier.fillMaxWidth().selectableGroup()) {
-                    ModelOption(
+                    SettingsRadioRow(
                         stringResource(R.string.settings_auto_model),
                         selected = selectedId == null,
                         enabled = true,
@@ -285,7 +297,7 @@ internal fun ModelPickerSheet(
                     )
                     for (choice in choices) {
                         key(choice.id) {
-                            ModelOption(
+                            SettingsRadioRow(
                                 choice.label,
                                 selected = choice.id == selected?.id,
                                 enabled = choice.canSelect,
@@ -320,7 +332,10 @@ internal fun ModelPickerSheet(
                                     checked = fast,
                                     onCheckedChange = selectFast,
                                     supportingText =
-                                        stringResource(R.string.settings_model_fast_usage, value),
+                                        stringResource(
+                                            R.string.settings_model_fast_usage,
+                                            value,
+                                        ),
                                 )
                             }
                         }
@@ -329,61 +344,19 @@ internal fun ModelPickerSheet(
             footer()
         }
     }
-}
-
-@Composable
-private fun ModelOption(
-    title: String,
-    selected: Boolean,
-    enabled: Boolean,
-    supportingText: String?,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
-    val radioColor = MaterialTheme.colorScheme.primary
-    val disabledColor = colors.onSurface.copy(alpha = 0.38f)
-    val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
-            .clip(shape)
-            .updateFocusOutline(shape, foreground)
-            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
-            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                color = if (enabled) foreground else foreground.copy(alpha = 0.38f),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            supportingText?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant,
-                )
+    SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
+        if (snackbar == null) panel(centered)
+        else
+            Box(propagateMinConstraints = true) {
+                panel(centered)
+                Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomCenter) {
+                    WorkspaceFeedbackHost(
+                        snackbar,
+                        Modifier.padding(bottom = 8.dp),
+                        manageTimeout = false,
+                    )
+                }
             }
-        }
-        RadioButton(
-            selected,
-            onClick = null,
-            enabled = enabled,
-            colors =
-                RadioButtonDefaults.colors(
-                    selectedColor = radioColor,
-                    unselectedColor = colors.onSurfaceVariant,
-                    disabledSelectedColor = disabledColor,
-                    disabledUnselectedColor = disabledColor,
-                ),
-        )
     }
 }
 

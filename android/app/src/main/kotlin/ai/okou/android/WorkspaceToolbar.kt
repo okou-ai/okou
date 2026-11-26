@@ -13,7 +13,6 @@ import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -150,7 +149,6 @@ internal fun WorkspaceSearchToolbar(
 @Composable
 internal fun WorkspaceSearchField(
     modifier: Modifier,
-    focused: Boolean? = null,
     onClick: (() -> Unit)? = null,
     hasTrailingAction: Boolean = false,
     iconOnly: Boolean = false,
@@ -158,14 +156,11 @@ internal fun WorkspaceSearchField(
     content: @Composable RowScope.() -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    // SearchBar has no resting border. Its focus outline uses the theme primary.
-    val outline = if (focused == true) Modifier.border(2.dp, colors.primary, shape) else Modifier
     Row(
         modifier
             .heightIn(min = workspaceSearchControlHeight())
             .clip(shape)
             .background(colors.surfaceContainerHigh)
-            .then(outline)
             .then(
                 if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick)
                 else Modifier,
@@ -182,7 +177,7 @@ internal fun WorkspaceSearchField(
             painterResource(R.drawable.ic_search),
             contentDescription = null,
             modifier = Modifier.size(searchIconSize),
-            tint = colors.onSurfaceVariant,
+            tint = colors.onSurface,
         )
         content()
     }
@@ -490,20 +485,22 @@ internal fun WorkspaceToolbarActions(
     if (update == null) {
         if (showFilter) {
             Box {
-                IconButton(
-                    onClick = { menu = WorkspaceMenuPage.Filter },
-                    enabled = selectFilter != null,
-                    colors = IconButtonDefaults.iconButtonColors(contentColor = filterTint),
-                    modifier =
-                        Modifier.size(48.dp)
-                            .focusRequester(filterFocus)
-                            .then(filterTreatment)
-                            .semantics { stateDescription = currentFilter },
-                ) {
-                    Icon(
-                        painterResource(R.drawable.ic_filter_list),
-                        stringResource(R.string.chat_filter),
-                    )
+                WithButtonFocusOutline(filterTint) {
+                    IconButton(
+                        onClick = { menu = WorkspaceMenuPage.Filter },
+                        enabled = selectFilter != null,
+                        colors = IconButtonDefaults.iconButtonColors(contentColor = filterTint),
+                        modifier =
+                            Modifier.size(48.dp)
+                                .focusRequester(filterFocus)
+                                .then(filterTreatment)
+                                .semantics { stateDescription = currentFilter },
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_filter_list),
+                            stringResource(R.string.chat_filter),
+                        )
+                    }
                 }
                 if (menu == WorkspaceMenuPage.Filter) menuContent()
             }
@@ -513,22 +510,27 @@ internal fun WorkspaceToolbarActions(
     }
     if (showFilter || hasUpdate) {
         Box {
-            IconButton(
-                modifier =
-                    settingsAnchor.then(if (hasUpdate) filterTreatment else Modifier).semantics {
-                        if (hasUpdate && showFilter) stateDescription = currentFilter
+            val overflowTint = if (hasUpdate) filterTint else colors.onSurface
+            WithButtonFocusOutline(overflowTint) {
+                IconButton(
+                    modifier =
+                        settingsAnchor
+                            .then(if (hasUpdate) filterTreatment else Modifier)
+                            .semantics {
+                                if (hasUpdate && showFilter) stateDescription = currentFilter
+                            },
+                    enabled = hasUpdate || openSettings != null || openProjectCreation != null,
+                    onClick = {
+                        restoreSettingsAnchor = anchorFocused
+                        menu = WorkspaceMenuPage.Overflow
                     },
-                enabled = hasUpdate || openSettings != null || openProjectCreation != null,
-                onClick = {
-                    restoreSettingsAnchor = anchorFocused
-                    menu = WorkspaceMenuPage.Overflow
-                },
-            ) {
-                Icon(
-                    painterResource(R.drawable.ic_more_horiz),
-                    stringResource(R.string.chat_more_actions),
-                    tint = if (hasUpdate) filterTint else colors.onSurface,
-                )
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_more_horiz),
+                        stringResource(R.string.chat_more_actions),
+                        tint = overflowTint,
+                    )
+                }
             }
             if (hasUpdate || menu == WorkspaceMenuPage.Overflow) menuContent()
         }
@@ -566,7 +568,6 @@ internal fun WorkspaceMenu(
     separatorBefore: Int? = null,
     back: () -> Unit = close,
 ) {
-    val colors = MaterialTheme.colorScheme
     val window = currentWindowSizeDp()
     val density = LocalDensity.current
     val position =
@@ -586,10 +587,10 @@ internal fun WorkspaceMenu(
                 Modifier.width((window.width - 24).coerceIn(1, 244).dp)
                     .heightIn(max = (window.height - 80).coerceAtLeast(48).dp)
                     .testTag("workspace_popup"),
-            shape = RoundedCornerShape(16.dp),
-            color = colors.surface,
-            shadowElevation = 6.dp,
-            border = BorderStroke(1.dp, colors.outlineVariant),
+            shape = MenuDefaults.shape,
+            color = MenuDefaults.containerColor,
+            tonalElevation = MenuDefaults.TonalElevation,
+            shadowElevation = MenuDefaults.ShadowElevation,
         ) {
             key(filter) { WorkspaceMenuItems(items, filter, close, back, separatorBefore) }
         }
@@ -658,7 +659,7 @@ private fun WorkspaceMenuItems(
             .focusRequester(popupFocus)
             .focusTarget()
             .verticalScroll(rememberScrollState())
-            .padding(7.dp),
+            .padding(vertical = 8.dp),
     ) {
         val row: @Composable (Int) -> Unit = { index ->
             WorkspaceMenuRow(
@@ -716,45 +717,36 @@ private fun WorkspaceMenuRow(item: WorkspaceMenuItem, modifier: Modifier, focuse
         modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .clip(shape)
             .then(if (focused) Modifier.border(2.dp, colors.onSurface, shape) else Modifier)
             .then(gesture)
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
             Icon(
                 painterResource(icon),
                 null,
-                Modifier.size(18.dp),
+                Modifier.size(24.dp),
                 tint = if (enabled) foreground else disabledColors.disabledLeadingIconColor,
             )
         }
         Text(
             label,
             Modifier.weight(1f),
-            style = filterLabelStyle(),
+            style = MaterialTheme.typography.labelLarge,
             color = if (enabled) foreground else disabledColors.disabledTextColor,
         )
         if (selected == true) {
             Icon(
                 painterResource(R.drawable.ic_check),
                 null,
-                Modifier.size(18.dp),
+                Modifier.size(24.dp),
                 tint = if (enabled) foreground else disabledColors.disabledTrailingIconColor,
             )
         }
     }
 }
-
-@Composable
-private fun filterLabelStyle() =
-    MaterialTheme.typography.bodyMedium.copy(
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.sp,
-    )
 
 private class WorkspaceMenuPosition(
     private val edge: Int,

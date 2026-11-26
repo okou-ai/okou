@@ -114,7 +114,6 @@ async function fixture(
   );
   await updateFeatureSwitchesForUser(context, owner, {
     [FeatureSwitchKey.HostedSiteEmailSharing]: true,
-    [FeatureSwitchKey.FeishuArtifactChannelSharing]: true,
   });
   directory([owner]);
   const stored = createHostBddApi(context).captureHostedSitesS3();
@@ -521,19 +520,6 @@ test("an incomplete member list never writes partial grants", async () => {
   await click(f);
   await expect(shares(f)).resolves.toMatchObject({ shares: [] });
   expect(JSON.stringify(f.updates)).toContain("could not be verified");
-  expect(f.refreshes).toHaveLength(0);
-});
-
-test("the feature switch suppresses previews, prompts and retained actions", async () => {
-  const f = await fixture();
-  await member(f);
-  await preview(f);
-  await updateFeatureSwitchesForUser(context, f.owner, {
-    [FeatureSwitchKey.FeishuArtifactChannelSharing]: false,
-  });
-  await expect(preview(f)).resolves.toStrictEqual({});
-  await click(f);
-  await expect(shares(f)).resolves.toMatchObject({ shares: [] });
   expect(f.refreshes).toHaveLength(0);
 });
 

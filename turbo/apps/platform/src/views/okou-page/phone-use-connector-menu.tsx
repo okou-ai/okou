@@ -10,6 +10,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
   PopoverClose,
 } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -162,6 +163,57 @@ export function PhoneUseConnectorMenuSection({
   const enabled =
     useLastResolved(featureSwitches$)?.[FeatureSwitchKey.PhoneUse] === true;
   return enabled ? <PhoneUseDevices signals={signals} /> : null;
+}
+
+export function PhoneUseDeviceSetup() {
+  const { t } = useTranslation();
+  const enabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.PhoneUse];
+  if (!enabled) {
+    return null;
+  }
+  return (
+    <Dialog>
+      <DialogTrigger
+        render={
+          <Button
+            variant="outline"
+            className="h-auto min-h-24 justify-start gap-4 whitespace-normal rounded-xl border-divider p-5 text-left"
+          />
+        }
+      >
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-nested-fill">
+          <Smartphone size={22} aria-hidden />
+        </span>
+        <span className="text-base font-semibold">
+          {t(($) => {
+            return $.chat.phoneUse.connectMyPhone;
+          })}
+        </span>
+      </DialogTrigger>
+      <DialogContent maxWidth={480}>
+        <DialogHeader>
+          <DialogTitle>
+            {t(($) => {
+              return $.chat.phoneUse.openApp;
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {t(($) => {
+              return $.chat.phoneUse.openAppDescription;
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex justify-end">
+          <DialogClose render={<Button />}>
+            {t(($) => {
+              return $.chat.phoneUse.done;
+            })}
+          </DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export function PhoneUseSetupDialog({

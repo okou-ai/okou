@@ -7,7 +7,7 @@ import pytest
 from mitmproxy import http
 
 import auth_base_transport as transport
-from tests.auth_base_client_header_helpers import UnconvertedHeaderValue
+from tests.auth_base_client_header_helpers import UnconvertedHeaderValue, connection_nominations
 
 
 class _MultiHeaders:
@@ -144,7 +144,7 @@ def test_multi_item_container_preserves_same_name_representation_fields():
 
 @pytest.fixture(scope="module")
 def large_connection_values() -> dict[str, str]:
-    suffix = ",".join(f"x{i:06x}" for i in range(131_072))
+    suffix = connection_nominations(131_072)
     return {
         "unmatched": suffix,
         "both-first": "content-type, content-encoding," + suffix,

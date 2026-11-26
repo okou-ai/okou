@@ -10,6 +10,7 @@ const NLMSG_SEQ_OFFSET: usize = 8;
 const NLMSG_ERROR_CODE_OFFSET: usize = NLMSG_HEADER_LEN;
 
 const U16_LEN: usize = 2;
+#[cfg(test)]
 const U32_LEN: usize = 4;
 
 // Linux kernel error returns are constrained to the ERR_PTR errno range.
@@ -81,19 +82,9 @@ pub(super) fn parse_nl_header(buf: &[u8], n: usize) -> Result<NlHeader> {
     }
 
     Ok(NlHeader {
-        len: read_u32_at(
-            received,
-            NLMSG_LEN_OFFSET,
-            "msg_len slice",
-            "msg_len conversion",
-        )? as usize,
-        msg_type: read_u16_at(
-            received,
-            NLMSG_TYPE_OFFSET,
-            "msg_type slice",
-            "msg_type conversion",
-        )?,
-        seq: read_u32_at(received, NLMSG_SEQ_OFFSET, "seq slice", "seq conversion")?,
+        len: u32::from_ne_bytes(field_bytes(received, NLMSG_LEN_OFFSET, "msg_len slice")?) as usize,
+        msg_type: u16::from_ne_bytes(field_bytes(received, NLMSG_TYPE_OFFSET, "msg_type slice")?),
+        seq: u32::from_ne_bytes(field_bytes(received, NLMSG_SEQ_OFFSET, "seq slice")?),
     })
 }
 
@@ -112,12 +103,11 @@ pub(super) fn parse_genl_response(buf: &[u8], n: usize) -> Result<GenlResponse<'
         .ok_or_else(|| NbdCowError::Netlink("truncated netlink message".into()))?;
 
     if header.msg_type == NLMSG_ERROR {
-        let error = read_i32_at(
+        let error = i32::from_ne_bytes(field_bytes(
             msg,
             NLMSG_ERROR_CODE_OFFSET,
             "error response too short",
-            "error code conversion",
-        )?;
+        )?);
         if error == 0 {
             return Ok(GenlResponse::Ack);
         }
@@ -157,13 +147,8 @@ pub(super) fn find_nla_u16(
             return Err(NbdCowError::Netlink("truncated nla".into()));
         }
 
-        let nla_len = read_u16_at(attrs, offset, "truncated nla", "nla len conversion")? as usize;
-        let nla_type = read_u16_at(
-            attrs,
-            offset + U16_LEN,
-            "truncated nla",
-            "nla type conversion",
-        )?;
+        let nla_len = u16::from_ne_bytes(field_bytes(attrs, offset, "truncated nla")?) as usize;
+        let nla_type = u16::from_ne_bytes(field_bytes(attrs, offset + U16_LEN, "truncated nla")?);
 
         if nla_len < NLA_HEADER_LEN {
             return Err(NbdCowError::Netlink("invalid nla length".into()));
@@ -176,13 +161,9 @@ pub(super) fn find_nla_u16(
             if nla_len < NLA_HEADER_LEN + U16_LEN {
                 return Err(NbdCowError::Netlink(truncated_value_message.into()));
             }
-            return read_u16_at(
-                attrs,
-                offset + NLA_HEADER_LEN,
-                truncated_value_message,
-                "id conversion",
-            )
-            .map(Some);
+            return field_bytes(attrs, offset + NLA_HEADER_LEN, truncated_value_message)
+                .map(u16::from_ne_bytes)
+                .map(Some);
         }
 
         let aligned = align_nla_len(nla_len);
@@ -239,46 +220,15 @@ fn received_slice(buf: &[u8], n: usize) -> Result<&[u8]> {
         .ok_or_else(|| NbdCowError::Netlink("recv length exceeds buffer".into()))
 }
 
-fn read_u16_at(
+fn field_bytes<const N: usize>(
     buf: &[u8],
     offset: usize,
-    slice_message: &'static str,
-    conversion_message: &'static str,
-) -> Result<u16> {
-    let bytes: [u8; U16_LEN] = buf
-        .get(offset..offset + U16_LEN)
-        .ok_or_else(|| NbdCowError::Netlink(slice_message.into()))?
-        .try_into()
-        .map_err(|_| NbdCowError::Netlink(conversion_message.into()))?;
-    Ok(u16::from_ne_bytes(bytes))
-}
-
-fn read_u32_at(
-    buf: &[u8],
-    offset: usize,
-    slice_message: &'static str,
-    conversion_message: &'static str,
-) -> Result<u32> {
-    let bytes: [u8; U32_LEN] = buf
-        .get(offset..offset + U32_LEN)
-        .ok_or_else(|| NbdCowError::Netlink(slice_message.into()))?
-        .try_into()
-        .map_err(|_| NbdCowError::Netlink(conversion_message.into()))?;
-    Ok(u32::from_ne_bytes(bytes))
-}
-
-fn read_i32_at(
-    buf: &[u8],
-    offset: usize,
-    slice_message: &'static str,
-    conversion_message: &'static str,
-) -> Result<i32> {
-    let bytes: [u8; U32_LEN] = buf
-        .get(offset..offset + U32_LEN)
-        .ok_or_else(|| NbdCowError::Netlink(slice_message.into()))?
-        .try_into()
-        .map_err(|_| NbdCowError::Netlink(conversion_message.into()))?;
-    Ok(i32::from_ne_bytes(bytes))
+    message: &'static str,
+) -> Result<[u8; N]> {
+    buf.get(offset..)
+        .and_then(|remaining| remaining.first_chunk::<N>())
+        .copied()
+        .ok_or_else(|| NbdCowError::Netlink(message.into()))
 }
 
 fn align_nla_len(len: usize) -> usize {

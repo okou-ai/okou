@@ -13,6 +13,97 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1191.1](https://github.com/okou-ai/okou/compare/app-v0.1191.0...app-v0.1191.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **platform:** wrap workflows description beside header actions ([#51178](https://github.com/okou-ai/okou/issues/51178)) ([ed04cbc](https://github.com/okou-ai/okou/commit/ed04cbc473d1bef46379abb361ed3e9f53808949))
+* refresh linked gmail drafts during active runs ([#51188](https://github.com/okou-ai/okou/issues/51188)) ([75d38ca](https://github.com/okou-ai/okou/commit/75d38ca957eed0354634ddd0f96797fb58d8dc14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.135.0
+    * @okouai/core bumped to 8.886.1
+    * @okouai/ui bumped to 1.22.38
+
+## [0.1191.0](https://github.com/okou-ai/okou/compare/app-v0.1190.0...app-v0.1191.0) (2026-11-26)
+
+
+### Features
+
+* **app:** for you corner radii, selectable option text and action labels ([#51148](https://github.com/okou-ai/okou/issues/51148)) ([d3a229a](https://github.com/okou-ai/okou/commit/d3a229a493ba204b298d182eeeaf60c735241d02))
+* offer four feedback choices on suggestion cards ([#51173](https://github.com/okou-ai/okou/issues/51173)) ([4f89ea3](https://github.com/okou-ai/okou/commit/4f89ea375bdad29e8180bf76011733206f402fcf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.886.0
+    * @okouai/ui bumped to 1.22.37
+
+## [0.1190.0](https://github.com/okou-ai/okou/compare/app-v0.1189.4...app-v0.1190.0) (2026-11-26)
+
+
+### Features
+
+* prepare later feedback for suggestions ([#51159](https://github.com/okou-ai/okou/issues/51159)) ([938f9b2](https://github.com/okou-ai/okou/commit/938f9b2cc1c2c188316ed17f72ce06ec4edb42b8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.134.0
+    * @okouai/core bumped to 8.885.4
+    * @okouai/ui bumped to 1.22.36
+
+## [0.1189.4](https://github.com/okou-ai/okou/compare/app-v0.1189.3...app-v0.1189.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* copy canonical artifact links from chat resources ([#51107](https://github.com/okou-ai/okou/issues/51107)) ([efdb0d7](https://github.com/okou-ai/okou/commit/efdb0d71bc53873fad7531040fe3ebc5126c21b8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.1
+    * @okouai/core bumped to 8.885.3
+    * @okouai/ui bumped to 1.22.35
+
+## [0.1189.3](https://github.com/okou-ai/okou/compare/app-v0.1189.2...app-v0.1189.3) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.885.2
+    * @okouai/ui bumped to 1.22.34
+
+## [0.1189.2](https://github.com/okou-ai/okou/compare/app-v0.1189.1...app-v0.1189.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **app:** clip the chat list divider to the workspace corners ([#51064](https://github.com/okou-ai/okou/issues/51064)) ([1f661e8](https://github.com/okou-ai/okou/commit/1f661e8094b9d0ea325b214fc5c46b6fc206a156))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.0
+    * @okouai/core bumped to 8.885.1
+    * @okouai/ui bumped to 1.22.33
+
 ## [0.1189.1](https://github.com/okou-ai/okou/compare/app-v0.1189.0...app-v0.1189.1) (2026-11-26)
 
 

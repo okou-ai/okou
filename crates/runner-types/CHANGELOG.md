@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.19.13](https://github.com/okou-ai/okou/compare/runner-types-v0.19.12...runner-types-v0.19.13) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** retire legacy startup dispatch fields ([#51189](https://github.com/okou-ai/okou/issues/51189)) ([ae83fa7](https://github.com/okou-ai/okou/commit/ae83fa732618ccd8d0fa0d1bd3172c7c4c7ecd41))
+
+## [0.19.12](https://github.com/okou-ai/okou/compare/runner-types-v0.19.11...runner-types-v0.19.12) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** generate startup storage destinations ([#51106](https://github.com/okou-ai/okou/issues/51106)) ([88e458e](https://github.com/okou-ai/okou/commit/88e458e669546d4c263cdb2d6016355806bba59c))
+
 ## [0.19.11](https://github.com/okou-ai/okou/compare/runner-types-v0.19.10...runner-types-v0.19.11) (2026-11-26)
 
 ## [0.19.10](https://github.com/okou-ai/okou/compare/runner-types-v0.19.9...runner-types-v0.19.10) (2026-11-26)

@@ -3,6 +3,7 @@ import type {
   InitClientReturn,
   InitClientArgs,
 } from "@okouai/api-contracts/client/types";
+import { invalidateRemoteDeviceDirectory$ } from "./remote-devices.ts";
 import { command, computed, state } from "ccstate";
 import { sshCredentialsContract } from "@okouai/api-contracts/client/ssh-credentials";
 import {
@@ -849,6 +850,7 @@ const invalidateAfterSshSave$ = command(
     });
     set(invalidateVncObservationConfiguration$);
     if (kind === "create" || kind === "edit" || kind === "delete") {
+      set(invalidateRemoteDeviceDirectory$);
       set(invalidateCloudflareAccess$);
       set(invalidateTailscale$);
     }
@@ -885,6 +887,7 @@ const saveSshHost$ = command(
     { get, set },
     dialog: SshDialogState,
     form: HTMLFormElement,
+    remoteDeviceId: string | undefined,
     signal: AbortSignal,
   ) => {
     const clients = await get(sshClients$);
@@ -906,6 +909,7 @@ const saveSshHost$ = command(
       const parsed = createSshConnectionRequestSchema.safeParse({
         ...fields,
         id,
+        remoteDeviceId,
       });
       if (!parsed.success) {
         set(saveMessage$, SSH_ERROR_CODES.INVALID_INPUT);
@@ -1011,8 +1015,13 @@ const prepareSshFormSave$ = command(
   },
 );
 
-export const saveSsh$ = command(
-  async ({ get, set }, form: HTMLFormElement, parentSignal: AbortSignal) => {
+export const saveSshForDevice$ = command(
+  async (
+    { get, set },
+    form: HTMLFormElement,
+    remoteDeviceId: string | undefined,
+    parentSignal: AbortSignal,
+  ) => {
     const signal = set(resetFormSave$, parentSignal);
     const prepared = await set(prepareSshFormSave$, form, signal);
     signal.throwIfAborted();
@@ -1044,7 +1053,13 @@ export const saveSsh$ = command(
         signal,
       );
     } else {
-      const result = await set(saveSshHost$, dialog, form, signal);
+      const result = await set(
+        saveSshHost$,
+        dialog,
+        form,
+        remoteDeviceId,
+        signal,
+      );
       if (result === false) {
         return;
       }
@@ -1090,5 +1105,11 @@ export const saveSsh$ = command(
     }
     set(conflict$, conflicted);
     return conflicted ? undefined : savedConnectionId;
+  },
+);
+
+export const saveSsh$ = command(
+  ({ set }, form: HTMLFormElement, signal: AbortSignal) => {
+    return set(saveSshForDevice$, form, undefined, signal);
   },
 );

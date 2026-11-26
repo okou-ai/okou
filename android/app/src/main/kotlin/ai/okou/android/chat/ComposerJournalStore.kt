@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
@@ -18,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -101,12 +103,7 @@ class ComposerJournalStore(
             latest[key] = write
             scope.launch {
                 try {
-                    val result = io.withLock {
-                        if (synchronized(guard) { latest[key] === write }) {
-                            withContext(dispatcher) { write(key, journal) }
-                            ComposerCommit.Committed
-                        } else ComposerCommit.Superseded
-                    }
+                    val result = commit(key, write)
                     synchronized(guard) { if (latest[key] === write) latest.remove(key) }
                     write.done.complete(result)
                 } catch (cancelled: CancellationException) {
@@ -119,6 +116,24 @@ class ComposerJournalStore(
             }
         }
         return write.done
+    }
+
+    private suspend fun commit(key: String, write: Write): ComposerCommit {
+        var failures = 0
+        while (true) {
+            try {
+                return io.withLock {
+                    if (synchronized(guard) { latest[key] !== write }) ComposerCommit.Superseded
+                    else {
+                        withContext(dispatcher) { write(key, write.journal) }
+                        ComposerCommit.Committed
+                    }
+                }
+            } catch (error: IOException) {
+                val wait = finiteReadRetryDelays.getOrNull(failures++) ?: throw error
+                delay(wait)
+            }
+        }
     }
 
     suspend fun load(identity: WorkspaceIdentity): RestoredComposer {

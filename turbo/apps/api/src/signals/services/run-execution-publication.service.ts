@@ -3,7 +3,6 @@ import type {
   ExecutionContext,
   PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { generateFirewallToken, generateSandboxToken } from "../auth/tokens";
@@ -92,7 +91,7 @@ export function buildExecutionContext(args: {
   readonly reuseKey: string;
   readonly preparedContext: PreparedExecutionContext;
   readonly networkPolicyInputs: PreparedNetworkPolicyRefreshInputs | null;
-  readonly contentBundles: ExecutionContext["contentBundles"];
+  readonly contentBundles: ExecutionContext["startupInputs"]["contentBundles"];
 }) {
   const refreshes = args.networkPolicyInputs
     ? activeNetworkPolicyRefreshesAt(args.networkPolicyInputs, nowDate())
@@ -105,31 +104,29 @@ export function buildExecutionContext(args: {
     featureFlags: _featureFlags,
     ...runnerContext
   } = args.preparedContext;
-  const bundledMountPaths = new Set([
-    ...args.contentBundles.skills.map((skill) => {
-      return skill.mountPath;
-    }),
-    ...(args.contentBundles.templates ?? []).map(templateGuidanceMountPath),
-  ]);
+  const [mount] = args.preparedContext.storageMounts;
+  const memory = mount
+    ? {
+        storageId: mount.storageId,
+        versionId: mount.versionId,
+        archiveUrl: mount.archiveUrl,
+        archiveSize: mount.archiveSize,
+        empty: mount.empty,
+        missingRootPolicy: mount.missingRootPolicy,
+      }
+    : null;
   return {
     ...runnerContext,
-    contentBundles: args.contentBundles,
+    startupInputs: {
+      memory,
+      contentBundles: args.contentBundles,
+    },
     isFirstRun: args.run.isFirstRun,
     runId: args.run.id,
     reuseKey: args.reuseKey,
     prompt: args.run.prompt,
     appendSystemPrompt: args.run.appendSystemPrompt,
     vars: { ...args.run.vars, ...args.preparedContext.vars },
-    storageManifest: {
-      storageMounts: args.preparedContext.storageMounts
-        .filter((mount) => {
-          return !bundledMountPaths.has(mount.mountPath);
-        })
-        .map((storageMount) => {
-          const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
-          return mount;
-        }),
-    },
     sandboxToken: generateSandboxToken(
       args.run.userId,
       args.run.id,

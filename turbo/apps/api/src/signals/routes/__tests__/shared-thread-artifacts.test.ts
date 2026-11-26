@@ -522,6 +522,29 @@ test("resolves a public snapshot to copied bytes without exposing its private so
     [200],
   );
   const reference = referenceName(shared.body.messages[0]!.content);
+  const previousStorageRequests = context.mocks.s3.send.mock.calls.length;
+  const messageDetail = await accept(
+    api()(artifactReferencesContract).byUrl({
+      headers: headers(bdd.user()),
+      query: { url: `/artifacts/${reference}` },
+    }),
+    [200],
+  );
+  expect(messageDetail.body).toMatchObject({
+    filename: "report.pdf",
+    preview: { kind: "pdf" },
+  });
+  expect(messageDetail.body).not.toHaveProperty("owner");
+  const referenceKey = `artifact-references/${reference.split(".")[0]}.json`;
+  const referenceReads = context.mocks.s3.send.mock.calls
+    .slice(previousStorageRequests)
+    .filter(([operation]) => {
+      return (
+        operation instanceof GetObjectCommand &&
+        operation.input.Key === referenceKey
+      );
+    });
+  expect(referenceReads).toHaveLength(1);
   const resolved = await accept(
     api()(artifactReferencesContract).resolve({ params: { reference } }),
     [200],

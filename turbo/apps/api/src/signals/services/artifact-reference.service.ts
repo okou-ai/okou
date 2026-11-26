@@ -54,6 +54,8 @@ const referenceRecordSchema = discriminatedUnion("version", [
   sharedThreadReferenceSchema,
 ]);
 
+export type ArtifactReferenceRecord = zInfer<typeof referenceRecordSchema>;
+
 function referenceBucket(): string {
   const bucket = env("R2_HOSTED_SITES_BUCKET_NAME");
   if (!bucket) {

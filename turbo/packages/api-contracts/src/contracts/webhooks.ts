@@ -1147,6 +1147,22 @@ export const runWebhookContract = c.router({
   complete: webhookCompleteContract.complete,
   heartbeat: webhookHeartbeatContract.send,
   firewallAuth: webhookFirewallAuthContract.resolve,
+  gmailDraftUpdated: {
+    method: "POST",
+    path: "/api/webhooks/run/gmail-draft-updated",
+    headers: authHeadersSchema,
+    body: object({
+      runId: uuid(),
+      connectionId: uuid(),
+      gmailDraftId: string().min(1).max(1024),
+    }).strict(),
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+    },
+    summary: "Notify a linked preview after Gmail updates its draft",
+  },
   usageEvent: webhookUsageEventContract.send,
   sessionOutput: webhookSessionOutputContract.send,
   telemetry: webhookTelemetryContract.send,

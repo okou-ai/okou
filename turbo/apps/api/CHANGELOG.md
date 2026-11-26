@@ -10,6 +10,118 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.137.2](https://github.com/okou-ai/okou/compare/api-v2.137.1...api-v2.137.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **api:** complete the proactive cutover from the minute cron ([#51207](https://github.com/okou-ai/okou/issues/51207)) ([3743211](https://github.com/okou-ai/okou/commit/37432116e7617cc1b185907d1669aa8600d7df1b))
+* refresh linked gmail drafts during active runs ([#51188](https://github.com/okou-ai/okou/issues/51188)) ([75d38ca](https://github.com/okou-ai/okou/commit/75d38ca957eed0354634ddd0f96797fb58d8dc14))
+
+
+### Refactoring
+
+* **api:** remove hardcoded agentSuggestion feature switch ([#51200](https://github.com/okou-ai/okou/issues/51200)) ([9b08a6a](https://github.com/okou-ai/okou/commit/9b08a6ab106941ed505e626245c4e7e701fc0138))
+* **runner:** retire legacy startup dispatch fields ([#51189](https://github.com/okou-ai/okou/issues/51189)) ([ae83fa7](https://github.com/okou-ai/okou/commit/ae83fa732618ccd8d0fa0d1bd3172c7c4c7ecd41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.135.0
+    * @okouai/core bumped to 8.886.1
+    * @okouai/db bumped to 2.71.5
+    * @okouai/pi-agent-runtime bumped to 1.52.94
+
+## [2.137.1](https://github.com/okou-ai/okou/compare/api-v2.137.0...api-v2.137.1) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.886.0
+    * @okouai/db bumped to 2.71.4
+    * @okouai/pi-agent-runtime bumped to 1.52.93
+
+## [2.137.0](https://github.com/okou-ai/okou/compare/api-v2.136.2...api-v2.137.0) (2026-11-26)
+
+
+### Features
+
+* prepare later feedback for suggestions ([#51159](https://github.com/okou-ai/okou/issues/51159)) ([938f9b2](https://github.com/okou-ai/okou/commit/938f9b2cc1c2c188316ed17f72ce06ec4edb42b8))
+
+
+### Performance Improvements
+
+* **api:** deduplicate desktop shell authorization notifications ([#51143](https://github.com/okou-ai/okou/issues/51143)) ([9a306f4](https://github.com/okou-ai/okou/commit/9a306f4e71c700f4eb61b12dea718e4ad5f6df9b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.134.0
+    * @okouai/core bumped to 8.885.4
+    * @okouai/db bumped to 2.71.3
+    * @okouai/pi-agent-runtime bumped to 1.52.92
+
+## [2.136.2](https://github.com/okou-ai/okou/compare/api-v2.136.1...api-v2.136.2) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** generate startup storage destinations ([#51106](https://github.com/okou-ai/okou/issues/51106)) ([88e458e](https://github.com/okou-ai/okou/commit/88e458e669546d4c263cdb2d6016355806bba59c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.1
+    * @okouai/core bumped to 8.885.3
+    * @okouai/db bumped to 2.71.2
+    * @okouai/pi-agent-runtime bumped to 1.52.91
+
+## [2.136.1](https://github.com/okou-ai/okou/compare/api-v2.136.0...api-v2.136.1) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.885.2
+    * @okouai/db bumped to 2.71.1
+    * @okouai/pi-agent-runtime bumped to 1.52.90
+
+## [2.136.0](https://github.com/okou-ai/okou/compare/api-v2.135.0...api-v2.136.0) (2026-11-26)
+
+
+### Features
+
+* **api:** prepare schedules for the standalone proactive cron ([#51079](https://github.com/okou-ai/okou/issues/51079)) ([2b49ea5](https://github.com/okou-ai/okou/commit/2b49ea55c08205b79c036a97f26a2e0e38baf117))
+
+
+### Refactoring
+
+* remove slack artifact sharing feature switch ([#51083](https://github.com/okou-ai/okou/issues/51083)) ([50b7d05](https://github.com/okou-ai/okou/commit/50b7d05735afeaefa0cbcc86b33ffa8e4141922f))
+
+
+### Performance Improvements
+
+* **api:** deduplicate chat search projection around runner dispatch ([#51080](https://github.com/okou-ai/okou/issues/51080)) ([ade8eac](https://github.com/okou-ai/okou/commit/ade8eac256f73ca08fffe6135d19151666a2e02c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.0
+    * @okouai/core bumped to 8.885.1
+    * @okouai/db bumped to 2.71.0
+    * @okouai/pi-agent-runtime bumped to 1.52.89
+
 ## [2.135.0](https://github.com/okou-ai/okou/compare/api-v2.134.1...api-v2.135.0) (2026-11-26)
 
 

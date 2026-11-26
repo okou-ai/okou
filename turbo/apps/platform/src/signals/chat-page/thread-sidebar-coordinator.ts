@@ -320,12 +320,7 @@ export const navigateThreadMail$ = command(
     }
     if (destination.view === "detail") {
       set(prepareNarrowSidebarScroll$);
-      const href = `/mail/drafts/${destination.mailDraftId}`;
-      set(thread.mail.register$, {
-        mailDraftId: destination.mailDraftId,
-        href,
-        originalUrl: new URL(href, window.location.origin).href,
-      });
+      set(thread.mail.prepareDraft$, destination.mailDraftId, signal);
     }
     set(updateSearchParams$, params, {}, get(hash$));
     detach(

@@ -11,13 +11,17 @@ import {
   type VncSecurity,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { sshConnectionsRoutes } from "../ssh-connections";
+import { remoteDevicesRoutes } from "../remote-devices";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { requireVncCredentialId } from "./helpers/vnc-response";
@@ -437,6 +441,84 @@ function rawRequest(path: string, body: unknown, method = "POST") {
     body: JSON.stringify(body),
   });
 }
+
+describe("VNC channel attachment", () => {
+  it.each(["inline", "saved"] as const)(
+    "attaches using a %s credential and rejects another member's device atomically",
+    async (selection) => {
+      useSecretKmsProbe();
+      const devices = setupApp({ context, routes: remoteDevicesRoutes })(
+        remoteDevicesContract,
+      );
+      const foreignOwner = owner();
+      await updateFeatureSwitchesForUser(context, foreignOwner, {
+        [FeatureSwitchKey.RemoteDevices]: true,
+      });
+      const foreignId = randomUUID();
+      await accept(
+        devices.create({
+          headers,
+          body: { id: foreignId, displayName: "Other member's device" },
+        }),
+        [201],
+      );
+
+      const actor = owner({ orgId: foreignOwner.orgId });
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.RemoteDevices]: true,
+      });
+      const deviceId = randomUUID();
+      await accept(
+        devices.create({
+          headers,
+          body: { id: deviceId, displayName: "My desktop" },
+        }),
+        [201],
+      );
+      const body = hostBody();
+      const credential =
+        selection === "inline"
+          ? body.credential
+          : {
+              id: (
+                await accept(
+                  credentials().create({
+                    headers,
+                    body: { id: randomUUID(), ...body.credential.create },
+                  }),
+                  [201],
+                )
+              ).body.id,
+            };
+      await accept(
+        connections().create({
+          headers,
+          body: { ...body, remoteDeviceId: foreignId, credential },
+        }),
+        [404],
+      );
+      expect(
+        (await accept(connections().list({ headers }), [200])).body.connections,
+      ).toStrictEqual([]);
+      expect(
+        (await accept(credentials().list({ headers }), [200])).body.credentials,
+      ).toHaveLength(selection === "inline" ? 0 : 1);
+
+      await accept(
+        connections().create({
+          headers,
+          body: { ...body, remoteDeviceId: deviceId, credential },
+        }),
+        [201],
+      );
+      expect(
+        (await accept(devices.list({ headers }), [200])).body.devices,
+      ).toMatchObject([
+        { id: deviceId, channels: [{ id: body.id, kind: "vnc" }] },
+      ]);
+    },
+  );
+});
 
 const inlineUpdateProfiles = Object.freeze<
   readonly {

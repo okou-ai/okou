@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.29.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.29.6...runner-supervisor-v0.29.7) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** retire legacy startup dispatch fields ([#51189](https://github.com/okou-ai/okou/issues/51189)) ([ae83fa7](https://github.com/okou-ai/okou/commit/ae83fa732618ccd8d0fa0d1bd3172c7c4c7ecd41))
+
+## [0.29.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.29.5...runner-supervisor-v0.29.6) (2026-11-26)
+
+## [0.29.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.29.4...runner-supervisor-v0.29.5) (2026-11-26)
+
 ## [0.29.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.29.3...runner-supervisor-v0.29.4) (2026-11-26)
 
 ## [0.29.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.29.2...runner-supervisor-v0.29.3) (2026-11-26)

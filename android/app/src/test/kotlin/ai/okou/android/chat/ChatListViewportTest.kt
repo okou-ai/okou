@@ -27,12 +27,15 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -53,6 +56,78 @@ class ChatListViewportTest {
                 get() = animationScale.floatValue
         }
     @get:Rule val compose = createComposeRule(ComposeUiTestConfig(motion))
+
+    @Test
+    fun floatingActionKeepsListGeometryStableUnderFeedback() {
+        verifyFeedbackOverlay(480.dp, floatingAction = true)
+    }
+
+    @Test
+    fun inlineActionKeepsListGeometryStableUnderFeedback() {
+        verifyFeedbackOverlay(200.dp, floatingAction = false)
+    }
+
+    private fun verifyFeedbackOverlay(height: Dp, floatingAction: Boolean) {
+        val feedbackHeight = mutableStateOf(0.dp)
+        compose.setContent {
+            OkouTheme {
+                val listState = rememberLazyListState()
+                ChatListViewport(
+                    Modifier.fillMaxWidth().height(height).testTag("viewport"),
+                    listState,
+                    contentChangeKey = null,
+                    syncing = false,
+                    newChatEnabled = true,
+                    newChat = {},
+                    feedback = {
+                        if (feedbackHeight.value > 0.dp) {
+                            Box(
+                                Modifier.fillMaxWidth()
+                                    .height(feedbackHeight.value)
+                                    .testTag("feedback"),
+                            )
+                        }
+                    },
+                ) { bottomSpace, inline ->
+                    LazyColumn(
+                        Modifier.fillMaxWidth().testTag("rows"),
+                        state = listState,
+                        contentPadding = PaddingValues(bottom = bottomSpace),
+                    ) {
+                        if (inline != null) item(content = { inline() })
+                        items(20) { index ->
+                            Box(Modifier.fillMaxWidth().height(52.dp)) { Text("Chat $index") }
+                        }
+                    }
+                }
+            }
+        }
+        val rows = compose.onNodeWithTag("rows")
+        val row = compose.onNodeWithText("Chat 19")
+        val feedback = compose.onNodeWithTag("feedback")
+        rows.performScrollToIndex(if (floatingAction) 19 else 20)
+        val rowBounds = row.assertIsDisplayed().getUnclippedBoundsInRoot()
+        val feedbackBottom =
+            if (floatingAction)
+                compose
+                    .onNode(hasText("New chat") and hasClickAction())
+                    .getUnclippedBoundsInRoot()
+                    .top - 8.dp
+            else compose.onNodeWithTag("viewport").getUnclippedBoundsInRoot().bottom - 8.dp
+
+        for (height in listOf(48.dp, 100.dp, 0.dp)) {
+            compose.runOnIdle { feedbackHeight.value = height }
+            assertEquals(rowBounds, row.getUnclippedBoundsInRoot())
+            if (height == 0.dp) feedback.assertDoesNotExist()
+            else assertEquals(feedbackBottom, feedback.getUnclippedBoundsInRoot().bottom)
+        }
+
+        rows.performScrollToIndex(7)
+        val midList = compose.onNodeWithText(if (floatingAction) "Chat 7" else "Chat 6")
+        val midBounds = midList.getUnclippedBoundsInRoot()
+        compose.runOnIdle { feedbackHeight.value = 100.dp }
+        assertEquals(midBounds, midList.getUnclippedBoundsInRoot())
+    }
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)

@@ -149,6 +149,7 @@ readonly SINGLE_CHARACTER_SKILL_READER_PATH=.github/rollback-floors/single-chara
 readonly SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH=.github/rollback-floors/single-character-skill-capability-free-api
 readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
 readonly REGISTRY_ARCHIVE_READER_PATH=.github/rollback-floors/registry-archive-reader
+readonly STARTUP_INPUTS_PATH=.github/rollback-floors/startup-inputs
 readonly TEMPLATE_GUIDANCE_BUNDLE_READER_PATH=.github/rollback-floors/template-guidance-bundle-reader
 readonly TEMPLATE_GUIDANCE_BUNDLE_WRITER_PATH=.github/rollback-floors/template-guidance-bundle-writer
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
@@ -1124,6 +1125,20 @@ if ! git merge-base --is-ancestor "$registry_archive_reader_commit" "$TARGET_COM
   fail "Rollback target predates independent Registry archive reads: ${registry_archive_reader_commit}."
 fi
 
+# The cleanup reader requires startupInputs, and the cleanup writer sends it alone.
+if ! startup_inputs_commit=$(git show "origin/main:${STARTUP_INPUTS_PATH}"); then
+  fail "Cannot read the startup inputs rollback floor from main."
+fi
+if [[ ! "$startup_inputs_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid startup inputs rollback floor."
+fi
+if ! git merge-base --is-ancestor "$startup_inputs_commit" origin/main; then
+  fail "Startup inputs rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$startup_inputs_commit" "$TARGET_COMMIT"; then
+  fail "Rollback API target predates startup inputs: ${startup_inputs_commit}."
+fi
+
 # Template owner pointers and retained Runs survive an API rollback. Runner is
 # restored first, so independently require this released reader in both roles.
 if ! template_guidance_bundle_reader_commit=$(git show "origin/main:${TEMPLATE_GUIDANCE_BUNDLE_READER_PATH}"); then
@@ -1283,6 +1298,17 @@ if ! git merge-base --is-ancestor "$widget_push_columns_floor" "$TARGET_COMMIT";
   fail "Rollback target predates the iOS widget push columns retirement: ${widget_push_columns_floor}."
 fi
 
+# Web and installed iOS clients may submit Later after a client rollback.
+if ! later_feedback_floor=$(git show origin/main:.github/rollback-floors/suggestion-later-feedback); then
+  fail "Cannot read the Later suggestion feedback rollback floor from main."
+fi
+if [[ ! "$later_feedback_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Later suggestion feedback rollback floor."
+fi
+if ! git merge-base --is-ancestor "$later_feedback_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Later suggestion feedback support: ${later_feedback_floor}."
+fi
+
 # Only artifacts with Agent connector SQL retirement support the contracted schema.
 agent_connector_schema_floor_path=.github/rollback-floors/agent-connector-schema-independent-api
 if ! agent_connector_schema_floor=$(git show "origin/main:${agent_connector_schema_floor_path}"); then
@@ -1413,6 +1439,10 @@ fi
 
 if ! git merge-base --is-ancestor "$content_bundle_archive_reader_commit" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates bounded content bundle archive delivery: ${content_bundle_archive_reader_commit}."
+fi
+
+if ! git merge-base --is-ancestor "$startup_inputs_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates startup inputs: ${startup_inputs_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" "$runner_tag_commit"; then

@@ -55,6 +55,7 @@
     <string name="conversation_skip_failed">Could not skip the automation.</string>
     <string name="conversation_find">Find messages</string>
     <string name="conversation_find_turns">Browse turns</string>
+    <string name="conversation_find_loaded_scope">Only searches loaded messages</string>
     <string name="conversation_find_empty">No messages to search</string>
     <string name="conversation_find_no_match">No matching messages</string>
     <string name="conversation_find_you">Your message</string>

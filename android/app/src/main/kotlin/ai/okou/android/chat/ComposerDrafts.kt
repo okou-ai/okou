@@ -164,6 +164,22 @@ private fun ChatAttachmentReference.draftPart() = buildJsonObject {
     put("contentType", JsonPrimitive(contentType))
 }
 
+// These historical keys record ownership. Other retained entries use an event ID or
+// an obsolete agent scope and need explicit selection.
+internal fun ComposerJournal.compatibleDraftKey(target: ComposerTarget): String? =
+    listOf(target.key, "draft:${target.key}").singleOrNull { it in retainedDrafts }
+
+internal fun String.canRestoreIn(target: ComposerTarget): Boolean {
+    val owner = removePrefix("draft:")
+    val scoped = owner.startsWith("thread:") || owner.startsWith("new:")
+    return !scoped || owner == target.key
+}
+
+internal fun ComposerJournal.manualDrafts(target: ComposerTarget): Map<String, String> {
+    val automatic = compatibleDraftKey(target)
+    return retainedDrafts.filterKeys { it != automatic && it.canRestoreIn(target) }
+}
+
 /** Preserve every old editable candidate and all frozen requests before changing ownership. */
 internal fun ComposerJournal.withServerDrafts(): ComposerJournal {
     if (format >= 3) {
@@ -171,7 +187,7 @@ internal fun ComposerJournal.withServerDrafts(): ComposerJournal {
             it != ServerDraftTarget().key && !it.startsWith("thread:")
         }
         if (retiredDrafts.isEmpty()) return this
-        // Keep old device-local text available for explicit restore into an empty composer.
+        // Keep old device-local text available for restoration into an empty composer.
         val candidates =
             retiredDrafts.entries
                 .filter { it.value.text.isNotEmpty() }
@@ -181,29 +197,10 @@ internal fun ComposerJournal.withServerDrafts(): ComposerJournal {
             retainedDrafts = retainedDrafts + candidates,
         )
     }
-    val drafts =
-        entries
-            .filterKeys { it.startsWith("thread:") }
-            .filterValues { it.text.isNotEmpty() }
-            .mapValues { (key, entry) -> EditableComposerDraft(entry.text, true, 1, key) }
-            .toMutableMap()
-    val newDrafts =
-        entries.filterKeys { it.startsWith("new:") }.filterValues { it.text.isNotEmpty() }
-    val preferred =
-        newDrafts["new:"]?.let { "new:" to it }
-            ?: newDrafts.entries.singleOrNull()?.let { it.key to it.value }
-    preferred?.let { (key, entry) ->
-        drafts["new:"] = EditableComposerDraft(entry.text, true, 1, key)
-    }
-    val retained =
-        entries
-            .filterKeys { !it.startsWith("thread:") && it != preferred?.first }
-            .filterValues { it.text.isNotEmpty() }
-            .mapValues { it.value.text }
+    val retained = entries.filterValues { it.text.isNotEmpty() }.mapValues { it.value.text }
     return copy(
         format = 3,
         entries = entries.mapValues { it.value.copy(text = "") },
-        drafts = drafts,
         retainedDrafts = retained,
     )
 }

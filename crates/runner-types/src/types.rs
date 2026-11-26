@@ -79,7 +79,7 @@ pub struct ExecutionContext {
     /// API publications require it. Standalone jobs are constructed with None.
     #[serde(deserialize_with = "deserialize_firewall_token")]
     pub firewall_token: Option<String>,
-    #[serde(default)]
+    #[serde(skip)]
     pub storage_manifest: Option<StorageManifest>,
     #[serde(default)]
     pub environment: Option<HashMap<String, String>>,

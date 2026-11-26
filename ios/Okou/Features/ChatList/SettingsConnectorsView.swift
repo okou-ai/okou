@@ -4,41 +4,49 @@ import SwiftUI
 
 struct SettingsConnectorsSection: View {
   let open: () -> Void
-  @ResolvedValue private var switches: SidebarFeatureSwitches?
-
-  init(workspace: WorkspaceStore, open: @escaping () -> Void) {
-    self.open = open
-    _switches = ResolvedValue(task: workspace.settingsResources.featureSwitches, keepLast: true)
-  }
 
   var body: some View {
-    if switches?.canManageConnectors == true {
-      Section {
-        Button(action: open) {
-          HStack {
-            OkouRowLabel("Connectors", okouSymbol: "plug")
-            Spacer(minLength: 0)
-            OkouIcon("chevron-right", size: OkouIconSize.inline)
-              .foregroundStyle(OkouColor.mutedForeground)
-          }
+    Section {
+      Button(action: open) {
+        HStack {
+          OkouRowLabel("Connectors", okouSymbol: "plug")
+          Spacer(minLength: 0)
+          OkouIcon("chevron-right", size: OkouIconSize.inline)
+            .foregroundStyle(OkouColor.mutedForeground)
         }
-      } header: {
-        Text("Connections").okouSectionHeader()
       }
+    } header: {
+      Text("Connections").okouSectionHeader()
     }
   }
 }
 
 struct SettingsConnectorsView: View {
   let store: ComposerConnectorStore
-  @State private var tab = "connected"
-  @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
+    // The directory the page opens is read from the connectors' Store.
+    StoreProvider(store.graph) { SettingsConnectorsContent(store: store) }
+  }
+}
+
+private struct SettingsConnectorsContent: View {
+  let store: ComposerConnectorStore
+  @State private var tab = "connected"
+  @ResolvedValue private var status: ComposerConnectorStore.Status?
+  @Environment(\.scenePhase) private var scenePhase
+
+  init(store: ComposerConnectorStore) {
+    self.store = store
+    _status = ResolvedValue(store.statusValue)
+  }
+
+  var body: some View {
+    let current = status ?? store.status
     Group {
-      if tab == "discover", let directory = store.directory {
+      if tab == "discover", let directory = current.directory {
         ComposerConnectorDirectory(store: store, resources: directory, showsCustom: false)
-      } else if let resources = store.resources {
+      } else if !current.isClosed, let resources = store.resources {
         StoreProvider(resources.store) {
           SettingsConnectedConnectors(store: store, resources: resources)
         }
@@ -65,19 +73,31 @@ struct SettingsConnectorsView: View {
 private struct SettingsConnectedConnectors: View {
   let store: ComposerConnectorStore
   @LoadableValue private var connected: Loadable<[ChatComposerConnector]>
+  /// The composer's writes, kept in the session Store.
+  @ResolvedValue private var connectorStatus: ComposerConnectorStore.Status?
   @State private var search = ""
   @State private var detail: ComposerConnectorAccountResources?
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
     self.store = store
     _connected = LoadableValue(task: resources.connected, keepLast: true)
+    _connectorStatus = ResolvedValue(store.statusValue)
   }
 
   var body: some View {
     List {
       ComposerConnectorReadError(store: store) { await store.refresh() }
       switch connected {
-      case .loading: OkouLoadingRow("Loading connectors…")
+      case .loading:
+        Section {
+          ForEach(0..<6, id: \.self) { _ in
+            ComposerConnectorSkeletonRow()
+              .okouShimmer()
+          }
+        } header: {
+          Text("Connected").okouSectionHeader()
+        }
+        .accessibilityRepresentation { ProgressView("Loading connectors…") }
       case .hasError: EmptyView()
       case .hasData(let entries):
         let matches = entries.filter {
@@ -149,7 +169,7 @@ private struct SettingsConnectedConnectors: View {
           .foregroundStyle(OkouColor.mutedForeground).accessibilityHidden(true)
       }
       .contentShape(Rectangle())
-    }.buttonStyle(.plain).disabled(store.isSaving || store.uncertain)
+    }.buttonStyle(.plain).disabled(!(connectorStatus ?? store.status).canSend)
   }
 
   private func accountCount(_ count: Int) -> Text {

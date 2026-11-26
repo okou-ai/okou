@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
   feedContract,
-  type Suggestion,
+  type SuggestionCard,
   type SuggestionOption,
   type FeedSources,
 } from "@okouai/api-contracts/contracts/feed";
@@ -49,7 +49,7 @@ function cardEvents(name: string) {
 }
 const reloadedContext = createTestRuntime(context);
 const threadId = "b0000000-0000-4000-a000-000000000811";
-function makeSuggestion(): Suggestion {
+function makeSuggestion(): SuggestionCard {
   const timestamp = nowDate().toISOString();
   return {
     id: "a0000000-0000-4000-a000-000000000001",
@@ -175,7 +175,7 @@ const SUGGESTIONS_TOPIC = "agentSuggestionsChanged";
 function notifySuggestionsChanged(): void {
   context.mocks.ably.trigger(SUGGESTIONS_TOPIC);
 }
-function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
+function mockPool(initial: SuggestionCard[] = [makeSuggestion()]) {
   let items = initial;
   let sources: FeedSources = {
     suggestions: true,
@@ -226,7 +226,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
     notifySuggestionsChanged();
     return respond(200, { readAt: nowDate().toISOString() });
   });
-  const retired = new Map<string, Suggestion>();
+  const retired = new Map<string, SuggestionCard>();
   const consumed: string[] = [];
   const selections: {
     id: string;
@@ -301,7 +301,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   return {
     consumed,
     selections,
-    publish: (item: Suggestion) => {
+    publish: (item: SuggestionCard) => {
       items = [...items, item];
     },
     withdrawAll: () => {
@@ -564,7 +564,7 @@ test("A saved suggestion keeps its attribution when the reloaded composer joins 
     titleSnapshot: "Referenced decision",
   });
 });
-function numberedSuggestions(count: number): Suggestion[] {
+function numberedSuggestions(count: number): SuggestionCard[] {
   return Array.from({ length: count }, (_, index) => {
     return {
       ...makeSuggestion(),
@@ -732,7 +732,7 @@ test("A hidden For you page leaves its card unread until the member sees it", as
     },
   ]);
 });
-test("Don't nudge records the no-repeat direction and Undo targets that feedback", async () => {
+test("Later records a request to revisit the suggestion and Undo targets that feedback", async () => {
   const items = numberedSuggestions(2);
   mockPool(items);
   const writes: {
@@ -747,12 +747,20 @@ test("Don't nudge records the no-repeat direction and Undo targets that feedback
   });
   await openForYou();
   const first = await activeForYouCard(items[0].content.title);
-  click(button("Don’t nudge me", "button", first));
+  const feedback = within(first).getByRole("group", {
+    name: "How is this suggestion?",
+  });
+  expect(
+    queryAllByRoleFast("button", feedback).map((control) => {
+      return control.textContent;
+    }),
+  ).toStrictEqual(["Done", "Won't do", "Later", "Less like this"]);
+  click(button("Later", "button", feedback));
   await activeForYouCard(items[1].content.title);
-  await screen.findByText("Noted — please don’t nudge me about this again");
+  await screen.findByText("Noted for later");
   expect(writes[0]).toMatchObject({
-    kind: "not_planned",
-    note: "Do not nudge me about this again.",
+    kind: "later",
+    note: "",
     targetId: null,
   });
   await undoSuggestionFeedback();
@@ -764,7 +772,7 @@ test("Don't nudge records the no-repeat direction and Undo targets that feedback
       surface: "home_suggestions",
       suggestion_id: items[0].id,
       impression_id: shown?.impression_id,
-      feedback_kind: "dont_nudge",
+      feedback_kind: "later",
     };
     expect(cardEvents("suggestion_card_feedback_recorded")).toStrictEqual([
       { ...context, operation: "apply" },

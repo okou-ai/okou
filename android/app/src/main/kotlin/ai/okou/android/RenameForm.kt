@@ -20,8 +20,10 @@ internal class RenameDraft(
 
     private val pristine: Boolean
         get() =
-            input.composition == null &&
-                normalizedRenameName(input.text) == normalizedRenameName(confirmed)
+            canAdoptConfirmedForm(
+                normalizedRenameName(input.text) != normalizedRenameName(confirmed),
+                input,
+            )
 
     fun receive(name: String, readOnly: Boolean = false): Boolean {
         if (name == confirmed) return false

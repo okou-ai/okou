@@ -1,4 +1,4 @@
-import { authenticatedWebFile } from "../../lib/message-url.ts";
+import { authenticatedWebFile, tryParseUrl } from "../../lib/message-url.ts";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { fetchResource } from "../../lib/resource-fetch.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -44,21 +44,20 @@ function browserOrigin(): string | null {
 }
 
 function addOrigin(origins: Set<string>, baseUrl: string | null) {
-  if (!baseUrl || !URL.canParse(baseUrl)) {
-    return;
+  const parsed = baseUrl ? tryParseUrl(baseUrl) : null;
+  if (parsed) {
+    origins.add(parsed.origin);
   }
-  origins.add(new URL(baseUrl).origin);
 }
 
 function addPlatformOriginVariants(
   origins: Set<string>,
   baseUrl: string | null,
 ) {
-  if (!baseUrl || !URL.canParse(baseUrl)) {
+  const parsed = baseUrl ? tryParseUrl(baseUrl) : null;
+  if (!parsed) {
     return;
   }
-
-  const parsed = new URL(baseUrl);
   origins.add(parsed.origin);
 
   for (const target of ["api", "www"] as const) {
@@ -109,11 +108,7 @@ function artifactCdnUrl(args: {
 }
 
 function parseFileUrl(url: string): URL | null {
-  const baseUrl = browserOrigin() ?? undefined;
-  if (!URL.canParse(url, baseUrl)) {
-    return null;
-  }
-  return new URL(url, baseUrl);
+  return tryParseUrl(url, browserOrigin() ?? undefined);
 }
 
 function normalizedLegacyFileUrl(url: string): string | null {
@@ -170,10 +165,10 @@ export function messageArtifactKey(value: string): string {
     return "/artifacts/" + ref.hash;
   }
   const canonical = publicAttachmentUrl(value);
-  if (!URL.canParse(canonical, origin)) {
+  const url = tryParseUrl(canonical, origin);
+  if (!url) {
     return canonical;
   }
-  const url = new URL(canonical, origin);
   url.hash = "";
   const file = authenticatedWebFile(value);
   if (file) {
@@ -192,11 +187,8 @@ function canUseDevArtifactFetchProxy(): boolean {
 }
 
 export function readableAttachmentResourceUrl(url: string): string {
-  if (!canUseDevArtifactFetchProxy() || !URL.canParse(url)) {
-    return url;
-  }
-  const parsed = new URL(url);
-  if (!isAllowedDevArtifactFetchUrl(parsed)) {
+  const parsed = canUseDevArtifactFetchProxy() ? tryParseUrl(url) : null;
+  if (!parsed || !isAllowedDevArtifactFetchUrl(parsed)) {
     return url;
   }
   return `${DEV_ARTIFACT_FETCH_PROXY_PATH}?url=${encodeURIComponent(url)}`;

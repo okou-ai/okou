@@ -38,7 +38,7 @@ export async function readonlyConnectorSkills(
     ]);
     mounts.push({
       ...readPublishedArchive(context, start),
-      mountPath: `/home/user/.claude/skills/custom-${connector.slug.slice(1, 49)}-${connector.id.replaceAll("-", "").slice(0, 8)}`,
+      name: `custom-${connector.slug.slice(1, 49)}-${connector.id.replaceAll("-", "").slice(0, 8)}`,
     });
   }
   return mounts;

@@ -72,11 +72,14 @@ internal class ConnectorApiFixture(
     @Volatile var omittedFromDefaultBrowse: Set<String> = emptySet()
     @Volatile var unavailableCatalogSlugs: Set<String> = emptySet()
     @Volatile var failDiscovery = false
+    @Volatile var discoveryRetryAfterSeconds: Long? = null
     @Volatile var denyDefaultDiscovery = false
     @Volatile var denyCatalogDetail = false
     @Volatile var offerLiveDeviceEnvironment = true
     @Volatile var failAccountReads = false
+    @Volatile var accountRetryAfterSeconds: Long? = null
     @Volatile var denyAccountReads = false
+    @Volatile var failPermissionReads = false
     @Volatile var denyPermissionReads = false
     @Volatile var memberAccess = false
     @Volatile var devicePollStatus = "pending"
@@ -209,7 +212,13 @@ internal class ConnectorApiFixture(
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
                         discoveryRequested.countDown()
                         discoveryGate?.await()
-                        if (failDiscovery) return rejected(503)
+                        if (failDiscovery) {
+                            val response = rejected(503)
+                            discoveryRetryAfterSeconds?.let {
+                                response.setHeader("Retry-After", it)
+                            }
+                            return response
+                        }
                         val keyword = url.queryParameter("keyword")
                         val category = url.queryParameter("category")
                         if (denyDefaultDiscovery && keyword == null && category == null)
@@ -404,6 +413,7 @@ internal class ConnectorApiFixture(
                 val entry = entries.find { it.slug == slug } ?: return rejected(404)
                 if (parts.getOrNull(3) == "permissions") {
                     if (denyPermissionReads) return rejected(403)
+                    if (failPermissionReads) return rejected(503).setHeader("Retry-After", 0)
                     val (read, write) =
                         if (slug == "gmail") "读取邮件" to "起草与发送邮件" else "读取日历与日程" to "创建和更新日程"
                     jsonResponse(
@@ -473,7 +483,11 @@ internal class ConnectorApiFixture(
             }
             path == "/api/connector-accounts/connections" -> {
                 if (denyAccountReads) return rejected(403)
-                if (failAccountReads) return rejected(503)
+                if (failAccountReads) {
+                    val response = rejected(503)
+                    accountRetryAfterSeconds?.let { response.setHeader("Retry-After", it) }
+                    return response
+                }
                 if (
                     querySlug == null ||
                         url.queryParameter("kind") != "builtin" ||

@@ -11,6 +11,7 @@ final class ApprovalCardRegistry {
   private let client: APIClient
   private let graph: CCState.Store
   private let didContinue: @MainActor () async -> Void
+  private let remoteDevices: RemoteDeviceResources?
   private final class WeakMailDraft {
     weak var value: MailDraftCardStore?
     init(_ value: MailDraftCardStore) { self.value = value }
@@ -29,28 +30,41 @@ final class ApprovalCardRegistry {
   private let commands: ChatCommands
   private let sync: ChatSync
   private let didFail: @MainActor (Error) -> Void
-  private final class ComputerKey: NSObject {
-    let action: ChatComputerAuthorizationAction
-    init(_ action: ChatComputerAuthorizationAction) { self.action = action }
+  private final class ApprovalKey<Action: Hashable>: NSObject {
+    let action: Action
+    init(_ action: Action) { self.action = action }
     override var hash: Int { action.hashValue }
-    override func isEqual(_ object: Any?) -> Bool { (object as? ComputerKey)?.action == action }
+    override func isEqual(_ object: Any?) -> Bool {
+      (object as? ApprovalKey<Action>)?.action == action
+    }
   }
 
-  private final class WeakComputer {
-    weak var value: ComputerAuthorizationStore?
-    init(_ value: ComputerAuthorizationStore) { self.value = value }
+  private final class WeakCard<Card: AnyObject> {
+    weak var value: Card?
+    init(_ value: Card) { self.value = value }
   }
 
   // Preserve the full descriptor's callback intent and case-sensitive tokens. Read retention
   // is advisory; native selections and explicit grant/continuation attempts survive until close.
+  private typealias ComputerKey = ApprovalKey<ChatComputerAuthorizationAction>
   private let computers: NSCache<ComputerKey, ComputerAuthorizationStore> = {
     let cache = NSCache<ComputerKey, ComputerAuthorizationStore>()
     cache.countLimit = 64
     return cache
   }()
-  private var liveComputers: [ChatComputerAuthorizationAction: WeakComputer] = [:]
+  private var liveComputers:
+    [ChatComputerAuthorizationAction: WeakCard<ComputerAuthorizationStore>] = [:]
   private var computerInteractions: [ChatComputerAuthorizationAction: ComputerAuthorizationStore] =
     [:]
+  private typealias DeviceKey = ApprovalKey<ChatRemoteDeviceApprovalAction>
+  private let deviceApprovals: NSCache<DeviceKey, RemoteDeviceApprovalStore> = {
+    let cache = NSCache<DeviceKey, RemoteDeviceApprovalStore>()
+    cache.countLimit = 64
+    return cache
+  }()
+  private var liveDeviceApprovals:
+    [ChatRemoteDeviceApprovalAction: WeakCard<RemoteDeviceApprovalStore>] = [:]
+  private var deviceInteractions: [ChatRemoteDeviceApprovalAction: RemoteDeviceApprovalStore] = [:]
   private final class WeakSSH {
     weak var value: SSHAuthorizationStore?
     init(_ value: SSHAuthorizationStore) { self.value = value }
@@ -68,6 +82,7 @@ final class ApprovalCardRegistry {
 
   init(
     thread: ChatThread, commands: ChatCommands, sync: ChatSync, graph: CCState.Store,
+    remoteDevices: RemoteDeviceResources? = nil,
     didFail: @escaping @MainActor (Error) -> Void,
     didContinue: @escaping @MainActor () async -> Void
   ) {
@@ -75,6 +90,7 @@ final class ApprovalCardRegistry {
     self.commands = commands
     self.sync = sync
     self.graph = graph
+    self.remoteDevices = remoteDevices
     self.didFail = didFail
     self.client = commands.approvalClient
     self.didContinue = didContinue
@@ -116,7 +132,7 @@ final class ApprovalCardRegistry {
     if closed {
       store.close()
     } else {
-      liveComputers[action] = WeakComputer(store)
+      liveComputers[action] = WeakCard(store)
       computers.setObject(store, forKey: key)
       if active { store.activate() }
     }
@@ -148,6 +164,8 @@ final class ApprovalCardRegistry {
   func activate() {
     guard !closed else { return }
     active = true
+    liveDeviceApprovals = liveDeviceApprovals.filter { $0.value.value != nil }
+    for card in liveDeviceApprovals.values.compactMap(\.value) { card.activate() }
     liveMailDrafts = liveMailDrafts.filter { $0.value.value != nil }
     for card in liveMailDrafts.values.compactMap(\.value) { card.activate() }
     liveComputers = liveComputers.filter { $0.value.value != nil }
@@ -158,6 +176,8 @@ final class ApprovalCardRegistry {
 
   func deactivate() {
     active = false
+    liveDeviceApprovals = liveDeviceApprovals.filter { $0.value.value != nil }
+    for card in liveDeviceApprovals.values.compactMap(\.value) { card.deactivate() }
     liveMailDrafts = liveMailDrafts.filter { $0.value.value != nil }
     for card in liveMailDrafts.values.compactMap(\.value) { card.deactivate() }
     liveComputers = liveComputers.filter { $0.value.value != nil }
@@ -177,6 +197,10 @@ final class ApprovalCardRegistry {
   func close() {
     closed = true
     active = false
+    for card in liveDeviceApprovals.values.compactMap(\.value) { card.deactivate() }
+    deviceApprovals.removeAllObjects()
+    liveDeviceApprovals = [:]
+    deviceInteractions = [:]
     for card in liveMailDrafts.values.compactMap(\.value) { card.close() }
     mailDrafts.removeAllObjects()
     liveMailDrafts = [:]
@@ -189,6 +213,25 @@ final class ApprovalCardRegistry {
     sshCards.removeAllObjects()
     liveSSH = [:]
     sshInteractions = [:]
+  }
+
+  func remoteDevice(_ action: ChatRemoteDeviceApprovalAction) -> RemoteDeviceApprovalStore? {
+    guard !closed, let remoteDevices else { return nil }
+    let key = DeviceKey(action)
+    if let existing = deviceInteractions[action] ?? deviceApprovals.object(forKey: key)
+      ?? liveDeviceApprovals[action]?.value
+    {
+      return existing
+    }
+    liveDeviceApprovals = liveDeviceApprovals.filter { $0.value.value != nil }
+    let card = RemoteDeviceApprovalStore(
+      action: action, resources: remoteDevices, graph: graph, thread: thread, commands: commands,
+      didContinue: didContinue, didFail: didFail,
+      didInteract: { [weak self] card in self?.deviceInteractions[action] = card })
+    if active { card.activate() }
+    liveDeviceApprovals[action] = WeakCard(card)
+    deviceApprovals.setObject(card, forKey: key)
+    return card
   }
 
 }

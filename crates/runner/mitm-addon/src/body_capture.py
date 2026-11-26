@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 from itertools import islice
-from typing import Literal
+from typing import Literal, Protocol
 
 from mitmproxy import http
 
@@ -384,19 +384,6 @@ def _sanitize_headers_for_capture(headers: http.Headers) -> tuple[dict[str, str]
     return inspection.serialized, inspection.serialized_truncated
 
 
-def _set_body_capture_failure(
-    log_entry: dict,
-    side: Literal["request", "response"],
-    body: bytes,
-    *,
-    truncated: bool = False,
-) -> None:
-    if truncated:
-        log_entry[f"{side}_body_truncated"] = True
-    if body:
-        log_entry[f"{side}_body_encoding"] = "binary"
-
-
 def _set_body_fields(
     log_entry: dict,
     side: Literal["request", "response"],
@@ -428,6 +415,42 @@ def _set_body_fields(
 
     log_entry[f"{side}_body"] = encoded
     log_entry[f"{side}_body_encoding"] = encoding
+
+
+class _BodyCaptureDecoder(Protocol):
+    def __call__(
+        self, data: bytes, headers: http.Headers, /, *, max_output: int
+    ) -> bytes | None: ...
+
+
+def _capture_body_fields(
+    log_entry: dict,
+    side: Literal["request", "response"],
+    raw_body: bytes,
+    dependency_headers: http.Headers | None,
+    decode_body: _BodyCaptureDecoder,
+    *,
+    already_truncated: bool,
+    truncated_at_limit: bool,
+) -> None:
+    """Decode a body with its source policy and publish the capture fields."""
+    if dependency_headers is not None:
+        body = decode_body(raw_body, dependency_headers, max_output=BODY_CAPTURE_LIMIT + 1)
+        if body is not None:
+            _set_body_fields(
+                log_entry,
+                side,
+                body,
+                dependency_headers.get("content-type", ""),
+                already_truncated=already_truncated,
+                truncated_at_limit=truncated_at_limit,
+            )
+            return
+
+    if truncated_at_limit or already_truncated:
+        log_entry[f"{side}_body_truncated"] = True
+    if raw_body:
+        log_entry[f"{side}_body_encoding"] = "binary"
 
 
 def _add_request_capture_fields(flow: http.HTTPFlow, log_entry: dict) -> None:
@@ -468,35 +491,12 @@ def _add_request_capture_fields(flow: http.HTTPFlow, log_entry: dict) -> None:
         if not raw_request_body:
             return
 
-    request_dependency_headers = request_inspection.body_dependency_headers
-    if request_dependency_headers is None:
-        _set_body_capture_failure(
-            log_entry,
-            "request",
-            raw_request_body,
-            truncated=request_stream_truncated or request_stream_incomplete,
-        )
-        return
-
-    req_ct = request_dependency_headers.get("content-type", "")
-    request_body = body_decoding.decode_request_body_for_network_log_capture(
-        raw_request_body,
-        request_dependency_headers,
-        max_output=BODY_CAPTURE_LIMIT + 1,
-    )
-    if request_body is None:
-        _set_body_capture_failure(
-            log_entry,
-            "request",
-            raw_request_body,
-            truncated=request_stream_truncated or request_stream_incomplete,
-        )
-        return
-    _set_body_fields(
+    _capture_body_fields(
         log_entry,
         "request",
-        request_body,
-        req_ct,
+        raw_request_body,
+        request_inspection.body_dependency_headers,
+        body_decoding.decode_request_body_for_network_log_capture,
         already_truncated=request_stream_incomplete,
         truncated_at_limit=request_stream_truncated,
     )
@@ -527,43 +527,17 @@ def _add_response_capture_fields(
         if raw_response_body is None:
             return
 
-        response_dependency_headers = response_inspection.body_dependency_headers
-        if response_dependency_headers is None:
-            _set_body_capture_failure(
-                log_entry,
-                "response",
-                raw_response_body,
-                truncated=stream_truncated or response_incomplete,
-            )
-            return
-
-        if stream_body is not None:
-            body = body_decoding.decompress_body(
-                raw_response_body,
-                response_dependency_headers,
-                max_output=BODY_CAPTURE_LIMIT + 1,
-            )
-        else:
-            body = body_decoding.decode_response_body_for_network_log_capture(
-                raw_response_body,
-                response_dependency_headers,
-                max_output=BODY_CAPTURE_LIMIT + 1,
-            )
-        if body is None:
-            _set_body_capture_failure(
-                log_entry,
-                "response",
-                raw_response_body,
-                truncated=stream_truncated or response_incomplete,
-            )
-            return
-        res_ct = response_dependency_headers.get("content-type", "")
-        # Also check decompressed size in case it expanded beyond the limit.
-        _set_body_fields(
+        decode_body = (
+            body_decoding.decompress_body
+            if stream_body is not None
+            else body_decoding.decode_response_body_for_network_log_capture
+        )
+        _capture_body_fields(
             log_entry,
             "response",
-            body,
-            res_ct,
+            raw_response_body,
+            response_inspection.body_dependency_headers,
+            decode_body,
             already_truncated=response_incomplete,
             truncated_at_limit=stream_truncated,
         )

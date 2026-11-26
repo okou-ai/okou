@@ -1,5 +1,7 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.CONNECTOR_CALENDAR_PRIMARY
+import ai.okou.android.CONNECTOR_CALENDAR_SECONDARY
 import ai.okou.android.CONNECTOR_EXAMPLE_DEVICE_CODE
 import ai.okou.android.CONNECTOR_EXAMPLE_EXTERNAL_CODE
 import ai.okou.android.ConnectorApiFixture
@@ -22,10 +24,15 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -40,6 +47,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.util.concurrent.CountDownLatch
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -232,6 +240,157 @@ class ConnectorSheetLayoutTest {
         assertEquals(22.dp, panel.getUnclippedBoundsInRoot().bottom - footer.bottom)
         compose.onNodeWithText("Permission 22").performScrollTo().assertIsDisplayed()
         assertEquals(footer, actions.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun firstAccountReadFailureStaysInTheSectionUntilRecovery() {
+        ConnectorApiFixture().use { fixture ->
+            fixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+            fixture.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+            fixture.accountRetryAfterSeconds = 0
+            fixture.failAccountReads = true
+            withConnectors(fixture) { model ->
+                compose.waitUntilAtLeastOneExists(hasText("Google Calendar"), 10_000)
+                compose.onNodeWithText("Google Calendar").performClick()
+                val failure = "Temporarily unable to load"
+                compose.waitUntilAtLeastOneExists(hasText(failure), 10_000)
+                compose.onNodeWithText("Google Calendar").assertIsDisplayed()
+                compose.onNodeWithText("Accounts").assertIsDisplayed()
+                val permissions = compose.onNodeWithText("Permissions this service can request")
+                permissions.assertIsEnabled()
+                compose.onNodeWithText("Could not load accounts.").assertDoesNotExist()
+                compose.onNodeWithText("Connect account").assertDoesNotExist()
+
+                fixture.failAccountReads = false
+                compose.runOnIdle {
+                    model.pause()
+                    model.resume()
+                }
+                compose.waitUntilAtLeastOneExists(hasText("Connect account"), 10_000)
+                compose.onNodeWithText("Connect account").assertIsEnabled()
+                compose.onNodeWithText(failure).assertDoesNotExist()
+                permissions.assertIsEnabled()
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun permissionFirstReadFailureUsesThePanelIllustrationSize() {
+        ConnectorApiFixture().use { fixture ->
+            fixture.failPermissionReads = true
+            withConnectors(fixture) {
+                compose.waitUntilAtLeastOneExists(hasText("Google Calendar"), 10_000)
+                compose.onNodeWithText("Google Calendar").performClick()
+                val permissions = "Permissions this service can request"
+                compose.waitUntilAtLeastOneExists(hasText(permissions), 10_000)
+                compose.onNodeWithText(permissions).performClick()
+                val failure = "Temporarily unable to load"
+                compose.waitUntilAtLeastOneExists(hasText(failure), 10_000)
+                val label = compose.onNodeWithText(failure).assertIsDisplayed()
+                val illustration =
+                    compose
+                        .onNodeWithTag("content-read-failure-illustration", useUnmergedTree = true)
+                        .assertWidthIsEqualTo(112.dp)
+                assertEquals(
+                    12.dp,
+                    label.getUnclippedBoundsInRoot().top -
+                        illustration.getUnclippedBoundsInRoot().bottom,
+                )
+                compose.onNodeWithText("Close").assertIsEnabled().performClick()
+                compose.onNodeWithText(permissions).assertIsDisplayed()
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun permissionRefreshFeedbackStaysOutsideTheSheet() {
+        ConnectorApiFixture().use { fixture ->
+            withConnectors(fixture) { model ->
+                compose.waitUntilAtLeastOneExists(hasText("Google Calendar"), 10_000)
+                compose.onNodeWithText("Google Calendar").performClick()
+                val permissions = "Permissions this service can request"
+                compose.waitUntilAtLeastOneExists(hasText(permissions), 10_000)
+                compose.onNodeWithText(permissions).performClick()
+                val ready = "读取日历与日程"
+                compose.waitUntilAtLeastOneExists(hasText(ready), 10_000)
+                val close = compose.onNodeWithText("Close").assertIsDisplayed()
+                val closeBounds = close.getUnclippedBoundsInRoot()
+                val permission = compose.onNodeWithText(ready)
+                val permissionBounds = permission.getUnclippedBoundsInRoot()
+
+                fixture.failPermissionReads = true
+                compose.runOnIdle {
+                    model.pause()
+                    model.resume()
+                }
+                val feedback = hasText("Could not refresh connectors.")
+                compose.waitUntilAtLeastOneExists(feedback and hasAnyAncestor(isPopup()), 10_000)
+                val popup =
+                    compose.onNode(isPopup() and hasAnyDescendant(feedback)).fetchSemanticsNode()
+                val permissionTop = permission.fetchSemanticsNode().positionOnScreen.y
+                assertTrue(popup.positionOnScreen.y + popup.size.height <= permissionTop)
+                assertEquals(closeBounds, close.getUnclippedBoundsInRoot())
+                assertEquals(permissionBounds, permission.getUnclippedBoundsInRoot())
+                close.assertIsEnabled().performClick()
+                compose.onNodeWithText(permissions).assertIsDisplayed()
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun accountRefreshFeedbackKeepsTheRenameDraftAndDoesNotReplayOnReturn() {
+        ConnectorApiFixture().use { fixture ->
+            withConnectors(fixture) { model ->
+                val calendar = "Google Calendar"
+                compose.waitUntilAtLeastOneExists(hasText(calendar), 10_000)
+                compose.onNodeWithText(calendar).performClick()
+                val account = "connector-account-$CONNECTOR_CALENDAR_PRIMARY"
+                compose.waitUntilAtLeastOneExists(hasTestTag(account), 10_000)
+                compose.onNodeWithTag(account).performClick()
+                val rename = hasText("Rename") and isEnabled()
+                compose.waitUntilAtLeastOneExists(rename, 10_000)
+                compose.onNode(rename).performClick()
+                val input = compose.onNodeWithTag("connector-input")
+                val save = compose.onNodeWithText("Save")
+                val cancel = compose.onNodeWithText("Cancel")
+                val draft = "New calendar name"
+                input.performTextReplacement(draft)
+                val inputBounds = input.getUnclippedBoundsInRoot()
+                val saveBounds = save.assertIsEnabled().getUnclippedBoundsInRoot()
+
+                fixture.accountRetryAfterSeconds = 0
+                fixture.failAccountReads = true
+                compose.runOnIdle { model.resume() }
+                val feedback = hasText("Could not refresh connectors.")
+                val inPopup = hasAnyAncestor(isPopup())
+                compose.waitUntilAtLeastOneExists(feedback and inPopup, 10_000)
+                compose.onNode(feedback and !inPopup).assertDoesNotExist()
+                val popup =
+                    compose.onNode(isPopup() and hasAnyDescendant(feedback)).fetchSemanticsNode()
+                assertTrue(
+                    popup.positionOnScreen.y + popup.size.height <=
+                        input.fetchSemanticsNode().positionOnScreen.y,
+                )
+                assertEquals(inputBounds, input.getUnclippedBoundsInRoot())
+                assertEquals(saveBounds, save.assertIsEnabled().getUnclippedBoundsInRoot())
+                input.assertTextContains(draft)
+                val updatedDraft = "Updated calendar name"
+                input.performTextReplacement(updatedDraft)
+                input.assertTextContains(updatedDraft)
+
+                cancel.performClick()
+                compose.onNode(rename).assertIsDisplayed()
+                compose.onNode(feedback).assertDoesNotExist()
+            }
+        }
     }
 
     @Test

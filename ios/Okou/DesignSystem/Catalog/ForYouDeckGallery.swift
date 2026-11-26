@@ -1,4 +1,5 @@
 #if DEBUG
+  import CCStateSwiftUI
   import ChatData
   import Foundation
   import SwiftUI
@@ -17,9 +18,12 @@
     var body: some View {
       switch preview {
       case .success(let preview):
-        ForYouView(workspace: preview.workspace, showChat: {}, goBack: {})
-          .task { await preview.workspace.forYou.beginVisit() }
-          .onDisappear { preview.close() }
+        // Production provides the session Store at the workspace root.
+        StoreProvider(preview.workspace.graph) {
+          ForYouView(workspace: preview.workspace, showChat: {}, goBack: {})
+        }
+        .task { await preview.workspace.forYou.beginVisit() }
+        .onDisappear { preview.close() }
       case .failure(let error):
         Text(verbatim: error.localizedDescription)
       }

@@ -1,8 +1,11 @@
+import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
+  DEFAULT_IMAGE_MODEL,
   IMAGE_MODEL_CONFIGS,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
 import { computed, type Computed } from "ccstate";
+import type { ExecutionMemberMetadata } from "../execution-member-metadata.service";
 import type { RunPrompt } from "../run-prompt-and-skills";
 
 const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
@@ -32,20 +35,36 @@ function builtInImageModelPrompt(model: ImageModel): string {
 }
 
 export function createRuntimePrompt(
-  selectedImageModel$: Computed<Promise<ImageModel>>,
+  memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
-): Computed<Promise<RunPrompt>> {
-  return computed(async (get): Promise<RunPrompt> => {
+): Computed<
+  Promise<{
+    readonly prompt: RunPrompt;
+    readonly selectedImageModel: ImageModel | null;
+  }>
+> {
+  return computed(async (get) => {
     const disabledPaidTools = await get(disabledPaidTools$);
-    const imageModelPrompt = disabledPaidTools.includes("image-generation")
-      ? ""
-      : builtInImageModelPrompt(await get(selectedImageModel$));
+    let selectedImageModel: ImageModel | null = null;
+    if (!disabledPaidTools.includes("image-generation")) {
+      const stored = (await get(memberMetadata$)).preferences
+        ?.selectedImageModel;
+      selectedImageModel = isImageModelId(stored)
+        ? stored
+        : DEFAULT_IMAGE_MODEL;
+    }
     return {
-      systemPromptVariables: {
-        builtInImageModel: imageModelPrompt,
-        restrictedExplicitContent: RESTRICTED_EXPLICIT_CONTENT_PROMPT,
+      selectedImageModel,
+      prompt: {
+        systemPromptVariables: {
+          builtInImageModel:
+            selectedImageModel === null
+              ? ""
+              : builtInImageModelPrompt(selectedImageModel),
+          restrictedExplicitContent: RESTRICTED_EXPLICIT_CONTENT_PROMPT,
+        },
+        userPromptVariables: {},
       },
-      userPromptVariables: {},
     };
   });
 }

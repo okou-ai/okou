@@ -238,10 +238,12 @@ class EmailSubscriptionSettingsTest {
                     }
                 }
             val model = model(api, service, otherWorkspace, cache) { 600_002L }
+            model.setPanelOpen(true)
             model.visible(true)
             assertEquals(initial, model.state.first { it.read.value != null }.read.value)
             runCurrent()
             assertTrue(model.state.value.read.refreshing)
+            assertNull(model.state.value.read.refreshFailure)
             advanceTimeBy(5_999)
             runCurrent()
             assertEquals(listOf(0L, 3_000L), reads)
@@ -253,11 +255,16 @@ class EmailSubscriptionSettingsTest {
             assertTrue(model.state.value.read.unavailable)
             assertFalse(model.state.value.read.refreshing)
             assertEquals(initial, model.state.value.read.value)
+            assertTrue(model.state.value.read.refreshFailure != null)
+            model.setPanelOpen(false)
+            assertNull(model.state.value.read.refreshFailure)
             model.visible(false)
             readFailure = 403
+            model.setPanelOpen(true)
             model.visible(true)
             runCurrent()
             assertTrue(model.state.value.read.initialFailure)
+            assertNull(model.state.value.read.refreshFailure)
             assertNull(model.state.value.checked)
             assertNull(cache.loadEmail(otherWorkspace))
         }

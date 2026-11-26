@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.69.0](https://github.com/okou-ai/okou/compare/ios-v0.68.0...ios-v0.69.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** reject graph state in observable owners ([#51160](https://github.com/okou-ai/okou/issues/51160)) ([efff3c2](https://github.com/okou-ai/okou/commit/efff3c205360bd4ed8334b5e6e4ecd0204110c83))
+
+## [0.68.0](https://github.com/okou-ai/okou/compare/ios-v0.67.4...ios-v0.68.0) (2026-11-26)
+
+
+### Features
+
+* offer four feedback choices on suggestion cards ([#51173](https://github.com/okou-ai/okou/issues/51173)) ([4f89ea3](https://github.com/okou-ai/okou/commit/4f89ea375bdad29e8180bf76011733206f402fcf))
+
+
+### Bug Fixes
+
+* **ios:** match the web chat thinking animation ([#51168](https://github.com/okou-ai/okou/issues/51168)) ([a82432a](https://github.com/okou-ai/okou/commit/a82432a4cd630f2ab87180431cd4627ad89d619f))
+
+
+### Refactoring
+
+* **ios:** keep the connector choices' status in the session graph ([#51146](https://github.com/okou-ai/okou/issues/51146)) ([f655b57](https://github.com/okou-ai/okou/commit/f655b576c8a8e843d398d459c47d0fbfea243132))
+* **ios:** keep the for you deck in the session graph ([#51153](https://github.com/okou-ai/okou/issues/51153)) ([5202a6d](https://github.com/okou-ai/okou/commit/5202a6d7103599bcaa8e3ae4fa03fd37b1779423))
+
+## [0.67.4](https://github.com/okou-ai/okou/compare/ios-v0.67.3...ios-v0.67.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ci:** allow compatible ios test products across runner image revisions ([#51147](https://github.com/okou-ai/okou/issues/51147)) ([7495108](https://github.com/okou-ai/okou/commit/74951083c486ca09acf7b775d65232202e0d12a6))
+
+## [0.67.3](https://github.com/okou-ai/okou/compare/ios-v0.67.2...ios-v0.67.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** use skeletons while connector lists load ([#51076](https://github.com/okou-ai/okou/issues/51076)) ([d060f19](https://github.com/okou-ai/okou/commit/d060f19e17e0e66d65a6445dd28f53280ce93475))
+
+## [0.67.2](https://github.com/okou-ai/okou/compare/ios-v0.67.1...ios-v0.67.2) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** remove connector management feature switch ([#51077](https://github.com/okou-ai/okou/issues/51077)) ([79c9d56](https://github.com/okou-ai/okou/commit/79c9d5630289c1fc7058fa7984c18593943ce31a))
+
+## [0.67.1](https://github.com/okou-ai/okou/compare/ios-v0.67.0...ios-v0.67.1) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** keep the workspace status and chat row mutations in the session graph ([#51053](https://github.com/okou-ai/okou/issues/51053)) ([fce69c7](https://github.com/okou-ai/okou/commit/fce69c7005f6edbb6ea110eb1e9e8477c53cfe6d))
+
 ## [0.67.0](https://github.com/okou-ai/okou/compare/ios-v0.66.10...ios-v0.67.0) (2026-11-26)
 
 

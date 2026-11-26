@@ -17,16 +17,14 @@ import { db$ } from "../external/db";
 const MAX_FEEDBACK_ROWS = 1000;
 const MAX_CONTEXT_BYTES = 65_536;
 const DAY = 86_400_000;
+const LEGACY_NO_NUDGE_NOTE = "Do not nudge me about this again.";
+
+type EffectiveFeedback = SuggestionFeedback & { readonly noNudge: boolean };
 
 type FeedbackRecord = {
-  readonly kind: Exclude<
-    SuggestionFeedback["kind"],
-    "undo" | "reason" | "dismissed"
-  >;
   readonly title: string;
   readonly rationale: string;
-  readonly reason?: string;
-  readonly choice?: string;
+  readonly message: string;
   readonly at: string;
   readonly until: string;
 };
@@ -35,7 +33,7 @@ function effectiveCardFeedback(
   feedbacks: readonly SuggestionFeedback[],
   at: number,
 ) {
-  const effective = new Map<string, SuggestionFeedback>();
+  const effective = new Map<string, EffectiveFeedback>();
   // The append-only array orders revisions, including equal-timestamp events.
   for (const feedback of feedbacks) {
     if (Date.parse(feedback.createdAt) > at) {
@@ -51,14 +49,21 @@ function effectiveCardFeedback(
         effective.set(target.id, { ...target, note: feedback.note });
       }
     } else if (feedback.kind !== "dismissed") {
-      effective.set(feedback.id, feedback);
+      const noNudge =
+        feedback.kind === "not_planned" &&
+        feedback.note === LEGACY_NO_NUDGE_NOTE;
+      effective.set(feedback.id, {
+        ...feedback,
+        noNudge,
+        note: noNudge ? "" : feedback.note,
+      });
     }
   }
   return effective.values();
 }
 
 function feedbackRecord(
-  feedback: SuggestionFeedback,
+  feedback: EffectiveFeedback,
   at: number,
 ): FeedbackRecord[] {
   const kind = feedback.kind;
@@ -70,15 +75,26 @@ function feedbackRecord(
   if (until <= at) {
     return [];
   }
-  const choice =
-    kind === "custom_sent" ? feedback.choice : feedback.context.optionLabel;
+  const messages = {
+    already_done: "I have already done this.",
+    not_planned: feedback.noNudge ? LEGACY_NO_NUDGE_NOTE : "I won't do this.",
+    later: "I want to look at this later. Remind me after a while.",
+    less_like_this: "Show me fewer suggestions like this.",
+    option_selected: feedback.context.optionLabel
+      ? `I chose this direction: ${feedback.context.optionLabel}`
+      : "I chose a suggested direction.",
+    custom_sent: feedback.choice
+      ? `I sent this direction: ${feedback.choice}`
+      : "I sent my own direction.",
+  };
+  const message = messages[kind];
   return [
     {
-      kind,
       title: feedback.context.title,
       rationale: feedback.context.rationale,
-      ...(feedback.note ? { reason: feedback.note } : {}),
-      ...(choice ? { choice } : {}),
+      message: feedback.note
+        ? `${message} My reason: ${feedback.note}`
+        : message,
       at: feedback.createdAt,
       until: new Date(until).toISOString(),
     },

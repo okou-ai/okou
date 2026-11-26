@@ -70,10 +70,8 @@ describe("ordinary Pi published personal Memory", () => {
         "Recall published personal Memory",
         "gpt-6-luna",
       );
-      expect(selected.memory).toMatchObject({
-        versionId: published,
-        mountPath: "/home/user/.pi/agent/memory",
-      });
+      expect(selected.execution.cliAgentType).toBe("pi");
+      expect(selected.memory.versionId).toBe(published);
       const queued = await fixture.enqueue(
         "Keep the accepted Memory version while queued",
         "gpt-6-luna",

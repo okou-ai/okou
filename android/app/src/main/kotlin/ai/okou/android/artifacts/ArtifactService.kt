@@ -85,6 +85,7 @@ internal data class ArtifactInfo(
     val resource: ArtifactResource,
     val browserUrl: HttpUrl? = null,
     val resolvedAccess: ArtifactAccess? = null,
+    val linkSource: ArtifactLinkSource? = null,
 )
 
 internal sealed interface ArtifactResource {
@@ -116,6 +117,7 @@ internal data class ArtifactAccess(
     val name: String,
     val save: ArtifactSave? = null,
     val previewOnly: Boolean = false,
+    val linkSource: ArtifactLinkSource.File? = null,
 )
 
 class ArtifactService
@@ -124,6 +126,8 @@ internal constructor(
     private val transfers: SignedTransferClient,
     apiOrigin: String,
 ) {
+    internal val links = ArtifactLinkAccess(api)
+
     private val referenceOrigins =
         setOfNotNull(apiOrigin.toHttpUrlOrNull(), BuildConfig.WEB_ORIGIN.toHttpUrlOrNull())
 
@@ -253,6 +257,10 @@ internal constructor(
                         ArtifactItem(id, resolved.filename, ArtifactKind.Website, null),
                         null,
                         ArtifactResource.ResolvedHtml(url),
+                        linkSource =
+                            if (resolved.sharedThreadSnapshot == null)
+                                ArtifactLinkSource.LegacyDeployment(resolved.target.id)
+                            else null,
                     )
                 }
                 val kind =
@@ -309,6 +317,10 @@ internal constructor(
                 if (resolved.downloadAllowed == false) null
                 else ArtifactSave(reference, resolved.filename, resolved.contentType),
             previewOnly = resolved.downloadAllowed == false,
+            linkSource =
+                if (resolved.sharedThreadSnapshot == null)
+                    ArtifactLinkSource.File(resolved.target.id)
+                else null,
         )
     }
 
@@ -364,20 +376,9 @@ internal constructor(
     internal suspend fun readInlineImage(
         source: String,
         width: Int,
+        cached: CachedInlineThumbnail?,
         onAuthorized: (InlineImageGrant) -> Unit,
     ): Bitmap? {
-        chatAttachment(source)?.let { file ->
-            if (!file.contentType.isAttachmentImage) throw ApiFailure.IncompatibleResponse()
-            val grant = api.resolveChatUpload(file.id)
-            val url = artifactHttpsUrl(grant.url) ?: throw ApiFailure.IncompatibleResponse()
-            onAuthorized(InlineImageGrant(source, file.filename))
-            return thumbnail(grant.previewImageUrl, width)
-                ?: readBitmap(
-                    url.inlineThumbnail(width, file.contentType) ?: url,
-                    width,
-                    MAX_IMAGE_BYTES,
-                )
-        }
         if (source.startsWith(ExternalImagePreviewPrefix)) {
             val info = externalImageInfo(source)
             val url = checkNotNull(info.resolvedAccess?.url)
@@ -385,6 +386,35 @@ internal constructor(
                 readBitmap(url, width, MAX_IMAGE_BYTES) ?: throw ApiFailure.IncompatibleResponse()
             onAuthorized(InlineImageGrant(source, info.item.title))
             return bitmap
+        }
+        val image = authorizeInlineImage(source)
+        onAuthorized(image.grant)
+        return cached?.takeIf { it.grant.fileId == image.grant.fileId }?.bitmap
+            ?: image.loadThumbnail(width)
+    }
+
+    internal suspend fun revalidateInlineImage(source: String): InlineImageGrant =
+        authorizeInlineImage(source).grant
+
+    private class AuthorizedInlineImage(
+        val grant: InlineImageGrant,
+        val loadThumbnail: suspend (Int) -> Bitmap?,
+    )
+
+    private suspend fun authorizeInlineImage(source: String): AuthorizedInlineImage {
+        chatAttachment(source)?.let { file ->
+            if (!file.contentType.isAttachmentImage) throw ApiFailure.IncompatibleResponse()
+            val grant = api.resolveChatUpload(file.id)
+            val url = artifactHttpsUrl(grant.url) ?: throw ApiFailure.IncompatibleResponse()
+            return AuthorizedInlineImage(InlineImageGrant(source, file.filename, file.id)) { width
+                ->
+                thumbnail(grant.previewImageUrl, width)
+                    ?: readBitmap(
+                        url.inlineThumbnail(width, file.contentType) ?: url,
+                        width,
+                        MAX_IMAGE_BYTES,
+                    )
+            }
         }
         val reference = artifactReference(source) ?: throw ApiFailure.IncompatibleResponse()
         val resolved = api.resolveArtifactReference(reference)
@@ -394,14 +424,17 @@ internal constructor(
                 !resolved.contentType.startsWith("image/", ignoreCase = true)
         )
             throw ApiFailure.IncompatibleResponse()
-        onAuthorized(InlineImageGrant(source, resolved.filename))
-        val resized = original.inlineThumbnail(width, resolved.contentType)
         val cover =
             resolved.previewImageUrl?.takeUnless {
                 it == resolved.url || artifactReference(it) == reference
             }
-        return if (resized != null) readBitmap(resized, width, MAX_IMAGE_BYTES)
-        else thumbnail(cover, width)
+        return AuthorizedInlineImage(
+            InlineImageGrant(source, resolved.filename, resolved.target.id),
+        ) { width ->
+            val resized = original.inlineThumbnail(width, resolved.contentType)
+            if (resized != null) readBitmap(resized, width, MAX_IMAGE_BYTES)
+            else thumbnail(cover, width)
+        }
     }
 
     private fun externalImageInfo(id: String): ArtifactInfo {
@@ -544,6 +577,7 @@ private fun messageSiteInfo(id: String, site: HttpUrl): ArtifactInfo =
         ArtifactItem(id, site.host, ArtifactKind.Website, null),
         null,
         ArtifactResource.Site(site),
+        linkSource = ArtifactLinkSource.Website(site),
     )
 
 private const val MAX_IMAGE_BYTES = 16L * 1024 * 1024
@@ -594,6 +628,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
         source: String?,
         resource: ArtifactResource,
         browser: HttpUrl? = null,
+        linkSource: ArtifactLinkSource? = null,
     ) =
         ArtifactInfo(
             ArtifactItem(
@@ -605,6 +640,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
             source,
             resource,
             browser,
+            linkSource = linkSource,
         )
 
     fun site(
@@ -614,6 +650,8 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
         created: String,
         source: String?,
         url: String,
+        siteId: String,
+        version: Double?,
     ): ArtifactInfo {
         val browser = artifactHttpsUrl(url)
         return entry(
@@ -624,6 +662,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
             source,
             browser?.let { ArtifactResource.Site(it) } ?: ArtifactResource.Unsupported,
             browser,
+            browser?.let { ArtifactLinkSource.Website(it, siteId, version?.toInt()) },
         )
     }
 
@@ -686,9 +725,27 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
                 ),
             )
         is ArtifactDetailVariant5 ->
-            site(id, title, ArtifactKind.Website, createdAt, sourceChatThreadId, site.url)
+            site(
+                id,
+                title,
+                ArtifactKind.Website,
+                createdAt,
+                sourceChatThreadId,
+                site.url,
+                site.id,
+                site.deploymentVersion,
+            )
         is ArtifactDetailVariant6 ->
-            site(id, title, ArtifactKind.Presentation, createdAt, sourceChatThreadId, site.url)
+            site(
+                id,
+                title,
+                ArtifactKind.Presentation,
+                createdAt,
+                sourceChatThreadId,
+                site.url,
+                site.id,
+                site.deploymentVersion,
+            )
         is ArtifactDetailVariant7 ->
             entry(
                 id,

@@ -73,6 +73,7 @@ import { DesktopShellAuthorizationCard } from "./desktop-shell-authorization-car
 import { BankingActionCard } from "./banking-action-card.tsx";
 import { WalletActionCard } from "./wallet-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
+import { RemoteDeviceApprovalCard } from "./remote-device-approval-card.tsx";
 import { SubscriptionResetCard } from "./subscription-reset-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
 import { billingStatusAsync$ } from "../../signals/okou-page/billing.ts";
@@ -323,6 +324,9 @@ export function MarkdownCardView({
     }
     case "connector-account-action": {
       return <ConnectorAccountActionCard signals={card.signals} />;
+    }
+    case "remote-device-approval": {
+      return <RemoteDeviceApprovalCard signals={card.signals} />;
     }
     case "permission-action": {
       return <PermissionActionCard signals={card.signals} />;

@@ -23,6 +23,8 @@ private struct ComposerConnectorDirectoryContent: View {
   @LoadableValue private var selection: Loadable<ComposerConnectorDirectoryResources.Selection>
   /// The composer's confirmed connectors and remote access, kept in the session Store.
   @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
+  /// The web page a connector action opened, kept in the same Store.
+  @ResolvedValue private var connectorStatus: ComposerConnectorStore.Status?
 
   init(
     store: ComposerConnectorStore, resources: ComposerConnectorDirectoryResources, showsCustom: Bool
@@ -32,6 +34,7 @@ private struct ComposerConnectorDirectoryContent: View {
     self.showsCustom = showsCustom
     _selection = LoadableValue(resources.selection)
     _resolvedSnapshot = ResolvedValue(store.snapshotValue)
+    _connectorStatus = ResolvedValue(store.statusValue)
   }
 
   private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
@@ -39,7 +42,11 @@ private struct ComposerConnectorDirectoryContent: View {
   var body: some View {
     switch selection {
     case .hasData(let value): content(value)
-    case .loading: OkouLoadingRow("Loading connectors…")
+    case .loading:
+      ScrollView {
+        ComposerConnectorDirectorySkeleton()
+      }
+      .okouGroupedBackground(OkouColor.background)
     case .hasError(let error):
       ConnectorLoadError(error: ChatRequestFailure.message(for: error)) {
         await resources.refresh()
@@ -86,7 +93,7 @@ private struct ComposerConnectorDirectoryContent: View {
       prompt: "Find connectors"
     )
     .refreshable { await resources.refresh() }
-    .onChange(of: store.webDestination?.id) { _, destinationID in
+    .onChange(of: (connectorStatus ?? store.status).webDestination?.id) { _, destinationID in
       if destinationID == nil { Task { await resources.refresh() } }
     }
   }
@@ -97,7 +104,7 @@ private struct ComposerConnectorDirectoryContent: View {
   ) -> some View {
     switch value {
     case .loading:
-      ProgressView().frame(maxWidth: .infinity).padding(.top, OkouSpace.xxl)
+      ComposerConnectorDirectorySkeleton()
     case .hasError(let error):
       ConnectorLoadError(error: ChatRequestFailure.message(for: error), isLoading: isLoading) {
         await resources.refresh()

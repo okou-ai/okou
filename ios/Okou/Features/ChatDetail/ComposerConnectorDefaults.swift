@@ -8,7 +8,6 @@ struct ComposerConnectorDefaults: View {
   let resources: ComposerConnectorAccountResources
   let page: ComposerConnectorAccountResources.Page
   let busy: Bool
-  @ResolvedValue private var managesAccounts: Bool?
   /// The authorization attempt, kept in the workspace session's Store.
   @ResolvedValue private var resolvedAuthorization: ConnectorActionStore.Presentation?
   @State private var renaming: ChatConnectorAccount?
@@ -23,7 +22,6 @@ struct ComposerConnectorDefaults: View {
     self.resources = resources
     self.page = page
     self.busy = busy
-    _managesAccounts = ResolvedValue(store.managementValue)
     _resolvedAuthorization = ResolvedValue(store.authorization.presentationValue)
   }
 
@@ -48,25 +46,23 @@ struct ComposerConnectorDefaults: View {
             }
           }
           Spacer(minLength: 0)
-          if managesAccounts ?? store.canManageAccounts {
-            Menu {
-              Button("Reconnect") {
-                store.connect(target: resources.connector.target, accountID: account.id)
-              }
-              Button("Rename") {
-                name = account.displayName ?? ""
-                renaming = account
-              }
-              Button("Disconnect", role: .destructive) {
-                resources.prepareDisconnect(account.id)
-                disconnecting = account
-              }
-            } label: {
-              OkouIcon("ellipsis", size: OkouIconSize.standard)
-                .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
+          Menu {
+            Button("Reconnect") {
+              store.connect(target: resources.connector.target, accountID: account.id)
             }
-            .accessibilityLabel("Actions for \(account.label)").disabled(busy)
+            Button("Rename") {
+              name = account.displayName ?? ""
+              renaming = account
+            }
+            Button("Disconnect", role: .destructive) {
+              resources.prepareDisconnect(account.id)
+              disconnecting = account
+            }
+          } label: {
+            OkouIcon("ellipsis", size: OkouIconSize.standard)
+              .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
           }
+          .accessibilityLabel("Actions for \(account.label)").disabled(busy)
         }
         if !account.ready {
           HStack(spacing: OkouSpace.sm) {
@@ -149,6 +145,8 @@ private struct ConnectorDisconnectConfirmation: View {
   let resources: ComposerConnectorAccountResources
   let account: ChatConnectorAccount
   @LoadableValue private var impact: Loadable<ChatConnectorDeletionImpact?>
+  /// The composer's writes and their failure, kept in the session Store.
+  @ResolvedValue private var resolvedConnectorStatus: ComposerConnectorStore.Status?
   @Environment(\.dismiss) private var dismiss
 
   init(
@@ -159,6 +157,11 @@ private struct ConnectorDisconnectConfirmation: View {
     self.resources = resources
     self.account = account
     _impact = LoadableValue(task: resources.deletionImpact)
+    _resolvedConnectorStatus = ResolvedValue(store.statusValue)
+  }
+
+  private var connectorStatus: ComposerConnectorStore.Status {
+    resolvedConnectorStatus ?? store.status
   }
 
   var body: some View {
@@ -176,19 +179,21 @@ private struct ConnectorDisconnectConfirmation: View {
           Text("\(value.explicitSelectionCount) chats use this account.")
           Text("Disconnecting removes this saved account across the workspace.")
             .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-          if let error = store.error { Text(error).foregroundStyle(OkouColor.destructive) }
+          if let error = connectorStatus.error {
+            Text(error).foregroundStyle(OkouColor.destructive)
+          }
           Button("Disconnect", role: .destructive) {
             Task {
               await resources.apply(.disconnect(account.id))
               if store.error == nil && !store.uncertain { dismiss() }
             }
-          }.disabled(store.isSaving || store.isUpdatingAccounts || store.uncertain)
+          }.disabled(!connectorStatus.canSend || connectorStatus.isUpdatingAccounts)
         }
       }
     }
     .okouGroupedBackground().navigationTitle("Disconnect account?")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar { OkouCloseToolbarItem { dismiss() } }
-    .interactiveDismissDisabled(store.isSaving)
+    .interactiveDismissDisabled(connectorStatus.isSaving)
   }
 }

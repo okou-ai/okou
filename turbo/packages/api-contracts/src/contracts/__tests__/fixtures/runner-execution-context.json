@@ -8,41 +8,6 @@
   },
   "sandboxToken": "fixture-sandbox-token-not-real",
   "firewallToken": "fixture-host-firewall-token-not-real",
-  "contentBundles": {
-    "format": "tar-gzip-v1",
-    "instructions": {
-      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "archiveBytes": 128,
-      "downloadUrl": "https://storage.fixture.invalid/bundles/v1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz"
-    },
-    "skills": [
-      {
-        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "archiveBytes": 256,
-        "downloadUrl": "https://storage.fixture.invalid/bundles/v1/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.tar.gz",
-        "mountPath": "/home/user/.codex/skills/fixture-skill"
-      }
-    ]
-  },
-  "storageManifest": {
-    "storageMounts": [
-      {
-        "name": "fixture-workspace",
-        "storageId": "fixture-workspace-id",
-        "versionId": "fixture-storage-version",
-        "mountPath": "/home/user/workspace",
-        "archiveUrl": "https://storage.fixture.invalid/workspace.tar.gz"
-      },
-      {
-        "name": "fixture-artifacts",
-        "storageId": "fixture-storage-id",
-        "versionId": "fixture-artifact-version",
-        "mountPath": "/home/user/artifacts",
-        "archiveUrl": "https://storage.fixture.invalid/artifacts.tar.gz",
-        "writeback": true
-      }
-    ]
-  },
   "environment": {
     "FIXTURE_API_KEY": "fixture-placeholder-not-a-secret",
     "FIXTURE_MODEL": "fixture-model"
@@ -115,5 +80,30 @@
     "sessionId": null,
     "generationRunId": null,
     "recoveryPrompt": null
+  },
+  "startupInputs": {
+    "memory": {
+      "storageId": "fixture-storage-id",
+      "versionId": "fixture-artifact-version",
+      "archiveUrl": "https://storage.fixture.invalid/artifacts.tar.gz"
+    },
+    "contentBundles": {
+      "format": "tar-gzip-v1",
+      "instructions": {
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "archiveBytes": 128,
+        "downloadUrl": "https://storage.fixture.invalid/bundles/v1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz"
+      },
+      "skills": [
+        {
+          "name": "fixture-skill",
+          "bundle": {
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "archiveBytes": 256,
+            "downloadUrl": "https://storage.fixture.invalid/bundles/v1/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.tar.gz"
+          }
+        }
+      ]
+    }
   }
 }

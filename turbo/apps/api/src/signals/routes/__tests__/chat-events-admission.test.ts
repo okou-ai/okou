@@ -3,10 +3,7 @@ import { instructionsRoutes } from "../instructions";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
@@ -122,11 +119,7 @@ describe("CHAT-02: on-demand member memory initialization", () => {
         member,
         launched.runId,
       );
-      const memory = expectCanonicalStorageManifest(
-        receivedExecution.storageManifest,
-      )?.storageMounts.find((mount) => {
-        return mount.name === "memory";
-      });
+      const memory = receivedExecution.startupInputs.memory;
       if (!memory) {
         throw new Error("Expected the member's real Memory mount");
       }
@@ -146,13 +139,7 @@ describe("CHAT-02: on-demand member memory initialization", () => {
         prompt: "Observe repeated memory initialization",
       });
       const repeated = await lifecycle.executionInput(member, next.runId);
-      expect(
-        expectCanonicalStorageManifest(
-          repeated.storageManifest,
-        )?.storageMounts.find((mount) => {
-          return mount.name === "memory";
-        }),
-      ).toMatchObject({
+      expect(repeated.startupInputs.memory).toMatchObject({
         empty: true,
         storageId: memory.storageId,
         versionId: memory.versionId,

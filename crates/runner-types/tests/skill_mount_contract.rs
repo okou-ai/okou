@@ -1,30 +1,19 @@
-use runner_types::storage_manifest::validate_workflow_mount;
+use runner_types::storage_manifest::validate_workflow_skill_name;
 
 #[test]
-fn skill_mounts_accept_single_character_names_for_every_framework() {
-    for root in [".claude", ".codex", ".pi/agent"] {
-        for name in [
-            "x".to_string(),
-            "workflow-setup".to_string(),
-            "x".repeat(64),
-        ] {
-            let path = format!("/home/user/{root}/skills/{name}");
-            assert_eq!(validate_workflow_mount(&path), Ok(()), "{path}");
-        }
+fn accepts_single_character_and_maximum_length_skill_names() {
+    for name in [
+        "x".to_string(),
+        "workflow-setup".to_string(),
+        "x".repeat(64),
+    ] {
+        assert_eq!(validate_workflow_skill_name(&name), Ok(()));
     }
 }
 
 #[test]
-fn skill_mounts_keep_directory_and_name_boundaries() {
-    for path in [
-        "/etc/x".to_string(),
-        "/home/user/.codex/skills/../x".to_string(),
-        "/home/user/.codex/skills/".to_string(),
-        "/home/user/.codex/skills/-x".to_string(),
-        "/home/user/.codex/skills/x-".to_string(),
-        "/home/user/.codex/skills/x_y".to_string(),
-        format!("/home/user/.codex/skills/{}", "x".repeat(65)),
-    ] {
-        assert!(validate_workflow_mount(&path).is_err(), "{path}");
+fn skill_names_are_one_safe_path_component() {
+    for name in ["..", "", "-x", "x-", "x_y", "a/b", &"x".repeat(65)] {
+        assert!(validate_workflow_skill_name(name).is_err(), "{name}");
     }
 }

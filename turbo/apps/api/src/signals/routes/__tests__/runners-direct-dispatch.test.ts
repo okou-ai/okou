@@ -71,7 +71,12 @@ test("delivers complete input after binding its process", async () => {
   expect(input.prompt).toContain("direct complete input");
   expect(input.sandboxToken).toBeTruthy();
   expect(input.platformEnvironment.OKOU_TOKEN).toMatch(/^vm0_sandbox_/);
-  expect(input.contentBundles).toBeDefined();
+  expect(input.startupInputs.contentBundles.instructions).toBeDefined();
+  expect(input.startupInputs.memory).toMatchObject({
+    storageId: expect.any(String),
+    versionId: expect.any(String),
+    empty: true,
+  });
   expect(run.status).toBe("running");
   expect(
     (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
@@ -171,6 +176,8 @@ test.each([
 
 test("fails a Run with no serving process and releases its concurrency slot", async () => {
   const f = await launchFixture();
+  await flushWaitUntilForTest();
+  context.mocks.ably.publish.mockClear();
   const run = await f.api.createThreadRun(f.actor, {
     prompt: "no serving process",
   });
@@ -178,6 +185,11 @@ test("fails a Run with no serving process and releases its concurrency slot", as
     status: "failed",
     failureReason: "unknown",
   });
+  expect(
+    context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+      return topic === `chatThreadMessageCreated:${run.threadId}`;
+    }),
+  ).toHaveLength(3);
   await f.api.requestRunContext(f.actor, run.runId, [404]);
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
 });

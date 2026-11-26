@@ -1,5 +1,5 @@
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -36,6 +36,13 @@ import { VncDialog } from "./vnc-dialog.tsx";
 import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
 import { RemoteComputerNetwork } from "./remote-computer-setup.tsx";
 import { ComputerUseDownloadDialog } from "./computer-use-download-dialog.tsx";
+import { PhoneUseDeviceSetup } from "./phone-use-connector-menu.tsx";
+import {
+  remoteDeviceDirectory$,
+  remoteDevicesEnabled$,
+  selectedRemoteDeviceId$,
+} from "../../signals/remote-devices.ts";
+import { AddEmptyRemoteDeviceDialog } from "./remote-device-directory.tsx";
 
 function ComputerUseChoice() {
   const { t } = useTranslation();
@@ -89,7 +96,15 @@ function ComputerUseChoice() {
   );
 }
 
-function ProtocolChoice({ setup }: { readonly setup: RemoteSetup }) {
+function ProtocolChoice({
+  setup,
+  deviceMode,
+  attaching,
+}: {
+  readonly setup: RemoteSetup;
+  readonly deviceMode: boolean;
+  readonly attaching: boolean;
+}) {
   const { t } = useTranslation();
   const choose = useSet(chooseRemoteProtocol$);
   const [opening, open] = useLoadableSet(openRemoteLogin$);
@@ -119,8 +134,11 @@ function ProtocolChoice({ setup }: { readonly setup: RemoteSetup }) {
     },
   ];
   return (
-    <div className="grid gap-3">
-      {!setup.sourceNetwork && <ComputerUseChoice />}
+    <div className={cn("grid gap-3", deviceMode && "@min-[36rem]:grid-cols-2")}>
+      {!setup.sourceNetwork && !attaching && <ComputerUseChoice />}
+      {deviceMode && !setup.sourceNetwork && !attaching && (
+        <PhoneUseDeviceSetup />
+      )}
       {options.map((option) => {
         return (
           <Button
@@ -156,27 +174,73 @@ function ProtocolChoice({ setup }: { readonly setup: RemoteSetup }) {
     </div>
   );
 }
-function SetupEntry({ setup }: { readonly setup: RemoteSetup }) {
+
+function AttachChannelTitle({ deviceId }: { readonly deviceId: string }) {
+  const { t } = useTranslation();
+  const devices = useLastResolved(remoteDeviceDirectory$);
+  const device = devices?.find(({ id }) => {
+    return id === deviceId;
+  });
+  return device
+    ? t(
+        ($) => {
+          return $.remoteDevices.addChannelTo;
+        },
+        { device: device.displayName },
+      )
+    : t(($) => {
+        return $.remoteDevices.addChannel;
+      });
+}
+
+function SetupEntry({
+  setup,
+  deviceMode,
+  deviceId,
+}: {
+  readonly setup: RemoteSetup;
+  readonly deviceMode: boolean;
+  readonly deviceId: string | undefined;
+}) {
   const { t } = useTranslation();
   return (
-    <div className="grid gap-6">
-      <header className="grid gap-1.5">
-        <h2 className="text-base font-semibold">
-          {t(($) => {
-            return setup.fromComputer
-              ? $.remoteComputerSetup.operationTitle
-              : $.remoteControlSetup.entryTitle;
-          })}
-        </h2>
-        {setup.sourceNetwork && (
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {t(($) => {
-              return $.remoteControlSetup.entryDescription;
-            })}
-          </p>
-        )}
+    <div className={deviceMode ? "@container grid gap-4" : "grid gap-6"}>
+      <header
+        className={
+          deviceMode
+            ? "flex flex-wrap items-center justify-between gap-3"
+            : undefined
+        }
+      >
+        <div className="grid min-w-0 gap-1.5">
+          <h2 className="break-words text-base font-semibold">
+            {deviceId ? (
+              <AttachChannelTitle deviceId={deviceId} />
+            ) : (
+              t(($) => {
+                return deviceMode
+                  ? $.remoteDevices.add
+                  : setup.fromComputer
+                    ? $.remoteComputerSetup.operationTitle
+                    : $.remoteControlSetup.entryTitle;
+              })
+            )}
+          </h2>
+          {setup.sourceNetwork && (
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {t(($) => {
+                return $.remoteControlSetup.entryDescription;
+              })}
+            </p>
+          )}
+        </div>
+        {deviceMode && !deviceId && <AddEmptyRemoteDeviceDialog />}
       </header>
-      <ProtocolChoice setup={setup} />
+      <ProtocolChoice
+        setup={setup}
+        deviceMode={deviceMode}
+        attaching={deviceId !== undefined}
+      />
     </div>
   );
 }
@@ -314,9 +378,13 @@ function RemoteSetupHeader({ setup }: { readonly setup: RemoteSetup }) {
 }
 export function RemoteConnectionSetup() {
   const setup = useGet(remoteSetup$);
+  const enabled = useLastResolved(remoteDevicesEnabled$);
+  const selectedDeviceId = useGet(selectedRemoteDeviceId$);
   if (!setup) {
     return null;
   }
+  const deviceMode =
+    enabled === true && !setup.sourceNetwork && !setup.fromComputer;
   return (
     <div
       className={cn(
@@ -325,10 +393,16 @@ export function RemoteConnectionSetup() {
           "mx-auto max-w-[760px]",
       )}
     >
-      {(setup.step !== "entry" || setup.fromComputer) && (
+      {(setup.step !== "entry" || setup.fromComputer || deviceMode) && (
         <RemoteSetupHeader setup={setup} />
       )}
-      {setup.step === "entry" && <SetupEntry setup={setup} />}
+      {setup.step === "entry" && (
+        <SetupEntry
+          setup={setup}
+          deviceMode={deviceMode}
+          deviceId={deviceMode ? selectedDeviceId : undefined}
+        />
+      )}
       {setup.step === "computer-network" && <RemoteComputerNetwork />}
       <RemoteSetupForms setup={setup} />
       {setup.step === "saved" && <RemoteSetupSaved setup={setup} />}

@@ -71,6 +71,18 @@ async function openFirstPhoto() {
   return await screen.findByTestId("artifact-sidebar");
 }
 
+test("opens an uploaded photo and switches to its neighbor on browsers without URL.canParse", async () => {
+  class BrowserURL extends URL {}
+  Object.defineProperty(BrowserURL, "canParse", { value: undefined });
+  vi.stubGlobal("URL", BrowserURL);
+  twoImageChat();
+  const sidebar = await openFirstPhoto();
+  click(await findNamedButton("Next image artifact", sidebar));
+  await expect(
+    within(sidebar).findByRole("group", { name: "harbor.png preview" }),
+  ).resolves.toBeVisible();
+});
+
 test("the same photo opens in its clicked message group without reading either thread list", async () => {
   const parts = (names: string[]) => {
     return names.map((filename) => {

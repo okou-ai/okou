@@ -497,9 +497,9 @@ private struct ForYouChipButtonStyle: ButtonStyle {
 extension ForYouFeedback {
   var title: String {
     switch self {
-    case .alreadyDone: String(localized: "Already done")
-    case .notPlanned: String(localized: "Not planned")
-    case .dontNudge: String(localized: "Don’t nudge me")
+    case .alreadyDone: String(localized: "Done")
+    case .notPlanned: String(localized: "Won't do")
+    case .later: String(localized: "Later")
     case .lessLikeThis: String(localized: "Less like this")
     }
   }
@@ -508,7 +508,7 @@ extension ForYouFeedback {
     switch self {
     case .alreadyDone: "circle-check"
     case .notPlanned: "circle-minus"
-    case .dontNudge: "bell-off"
+    case .later: "clock"
     case .lessLikeThis: "eye-off"
     }
   }
@@ -516,8 +516,8 @@ extension ForYouFeedback {
   var confirmation: String {
     switch self {
     case .alreadyDone: String(localized: "Noted — this is already done")
-    case .notPlanned: String(localized: "Noted — this is not planned")
-    case .dontNudge: String(localized: "Noted — please don’t nudge me about this again")
+    case .notPlanned: String(localized: "Noted — you won't do this")
+    case .later: String(localized: "Noted for later")
     case .lessLikeThis: String(localized: "You’ll see fewer suggestions like this.")
     }
   }

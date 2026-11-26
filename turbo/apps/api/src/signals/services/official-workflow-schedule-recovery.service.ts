@@ -1,3 +1,4 @@
+import { legacyProactiveClaimAllowed } from "./proactive-dispatch-ownership.service";
 import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -117,6 +118,7 @@ export const recoverDueOfficialWorkflowSchedules$ = command(
           eq(workflowAutomations.officialReconciliationStatus, "current"),
           eq(workflowAutomations.kind, "schedule"),
           gte(workflowAutomations.consecutiveFailures, 3),
+          legacyProactiveClaimAllowed(),
           acceptedBlueprints,
           or(
             lte(workflowAutomations.nextRunAt, nowDate()),

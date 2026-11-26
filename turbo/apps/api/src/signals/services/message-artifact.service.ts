@@ -27,7 +27,7 @@ import {
 import { hostedLinkDomain, hostedLinkOrigin } from "../../lib/link-layout";
 import { inferMimetype } from "../../lib/mimetype";
 import { db$, type ReadonlyDb } from "../external/db";
-import { artifactReferenceRecord$ } from "./artifact-reference.service";
+import type { ArtifactReferenceRecord } from "./artifact-reference.service";
 import {
   googleDriveArtifactStatusFields,
   googleDriveArtifactStatusLookup$,
@@ -253,19 +253,19 @@ export function messageArtifactPreview(
   }
 }
 
+type MessageAddress = NonNullable<ReturnType<typeof messageArtifactAddress>> & {
+  readonly record: ArtifactReferenceRecord | null;
+};
+
 const referenceTarget$ = command(
   async (
-    { get, set },
+    { get },
     owner: Owner,
-    address: NonNullable<ReturnType<typeof messageArtifactAddress>>,
+    address: MessageAddress,
     signal: AbortSignal,
   ) => {
     const db = get(db$);
-    const { reference, fileId } = address;
-    const record =
-      reference?.id === null
-        ? await set(artifactReferenceRecord$, reference.hash, signal)
-        : null;
+    const { reference, fileId, record } = address;
     if (reference?.id === null && (!record || record.version === 3)) {
       return null;
     }
@@ -301,7 +301,6 @@ const referenceTarget$ = command(
   },
 );
 
-type MessageAddress = NonNullable<ReturnType<typeof messageArtifactAddress>>;
 type Publication = Awaited<ReturnType<typeof fileBy>>[number];
 type CatalogEntry = Awaited<ReturnType<typeof catalogBy>>[number];
 type Site = Awaited<ReturnType<typeof siteBy>>[number];
@@ -470,7 +469,7 @@ export const ownedMessageArtifact$ = command(
   async (
     { get, set },
     owner: Owner,
-    address: NonNullable<ReturnType<typeof messageArtifactAddress>>,
+    address: MessageAddress,
     signal: AbortSignal,
   ): Promise<MessageArtifactDetail | null> => {
     const publication = await set(

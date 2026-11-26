@@ -2,7 +2,7 @@ import {
   nativeConnectorCallbackResponse,
   nativeConnectorReturn,
 } from "./connector-native-app-authorization";
-import { connectorNativeAppReturnUrl } from "@okouai/api-contracts/validators/connectors";
+import { connectorCallbackResultUrl } from "../services/connector-native-return";
 import { waitUntil } from "../context/wait-until";
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import {
@@ -755,7 +755,10 @@ const callbackOAuth2$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (nativeReturn) {
       response.headers.set(
         "Location",
-        connectorNativeAppReturnUrl(nativeReturn),
+        connectorCallbackResultUrl(
+          "custom",
+          callbackResultFromRedirect(response),
+        ),
       );
     }
     return response;

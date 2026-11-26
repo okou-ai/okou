@@ -4,6 +4,7 @@ import ai.okou.android.ChatListApiFixture
 import ai.okou.android.SettingsApiFixture
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.CanonicalOptional
+import ai.okou.android.api.generated.RecoverySubscriptions
 import ai.okou.android.api.generated.UsagePackCredits
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
@@ -22,7 +23,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -36,7 +36,9 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -46,6 +48,47 @@ import org.junit.rules.TemporaryFolder
 class WorkspaceSettingsModelTest {
     @get:Rule val temporary = TemporaryFolder()
     private val presentationJobs = mutableListOf<Job>()
+
+    @Test
+    fun failedRefreshRetainsConfirmedEmptyAccountsAndReportsOnlyForThisVisit() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                var fail = false
+                val service =
+                    object : WorkspaceSession by api.service {
+                        override suspend fun recoverySubscriptions(): RecoverySubscriptions {
+                            if (fail) throw ApiFailure.Http(400, null, null, null)
+                            return RecoverySubscriptions(emptyList())
+                        }
+                    }
+                val model = settings(store, api, service = service)
+                model.visible(SettingsDestination.ModelAccounts)
+                runCurrent()
+                assertEquals(emptyList<Any>(), model.uiState.value.accounts.value)
+                assertNull(model.uiState.value.accounts.refreshFailure)
+
+                model.visible(null)
+                fail = true
+                model.visible(SettingsDestination.ModelAccounts)
+                runCurrent()
+                val failed = model.uiState.value.accounts
+                assertEquals(emptyList<Any>(), failed.value)
+                assertTrue(failed.refreshFailure != null)
+                assertFalse(failed.initialFailure)
+
+                model.visible(null)
+                assertNull(model.uiState.value.accounts.refreshFailure)
+                model.visible(SettingsDestination.ModelAccounts)
+                runCurrent()
+                val nextFailure = checkNotNull(model.uiState.value.accounts.refreshFailure)
+                assertTrue(nextFailure !== failed.refreshFailure)
+            }
+        } finally {
+            closeOwners(store)
+        }
+    }
 
     @Test
     fun preservesAccountOrderAndReconcilesAnUnconfirmedSwitchWithoutResending() = runTest {
@@ -87,7 +130,9 @@ class WorkspaceSettingsModelTest {
                                 usage.copy(fiveHour = shortWindow.copy(resetAt = "unavailable")),
                         )
                         .quotas()
-                assertEquals(invalidShortReset[1].resetAt, invalidShortReset[0].resetAt)
+                assertNull(invalidShortReset[0].resetAt)
+                assertEquals(claude.quotas()[1].resetAt, invalidShortReset[1].resetAt)
+                assertEquals(0.0, invalidShortReset[0].remaining)
                 val resetOnly =
                     claude
                         .copy(
@@ -206,20 +251,41 @@ class WorkspaceSettingsModelTest {
         try {
             ChatListApiFixture().use { api ->
                 val fixture = SettingsApiFixture(api)
-                val model = settings(store, api, admin = true)
-                val notices = mutableListOf<SettingsNotice>()
-                backgroundScope.launch { model.notices.collect { notices.add(it) } }
+                var pendingWorkspaceRoleCheck: CompletableDeferred<Unit>? = null
+                val model =
+                    settings(
+                        store,
+                        api,
+                        admin = true,
+                        readWorkspaceAdmin = {
+                            pendingWorkspaceRoleCheck?.await()
+                            true
+                        },
+                    )
                 model.visible(SettingsDestination.CreditBalance)
                 val confirmed =
                     model.uiState.first {
                         it.usagePack.value != null && it.workspaceCredits.value != null
                     }
 
-                repeat(2) { refresh ->
+                var previousFailure: SettingsRefreshFailure? = null
+                repeat(2) {
                     model.visible(null)
+                    assertNull(model.uiState.value.creditRefreshFailure)
                     fixture.usagePackStatus = 400
                     fixture.billingStatus = 400
+                    // Observe the personal failure before StateFlow can conflate both failures.
+                    val releaseWorkspaceRole = CompletableDeferred<Unit>()
+                    pendingWorkspaceRoleCheck = releaseWorkspaceRole
                     model.visible(SettingsDestination.CreditBalance)
+                    val personalFailure =
+                        checkNotNull(
+                            model.uiState
+                                .first { it.creditRefreshFailure != null }
+                                .creditRefreshFailure,
+                        )
+                    assertNotSame(previousFailure, personalFailure)
+                    releaseWorkspaceRole.complete(Unit)
                     val failed =
                         model.uiState.first {
                             it.usagePack.unavailable && it.workspaceCredits.unavailable
@@ -227,18 +293,18 @@ class WorkspaceSettingsModelTest {
                     runCurrent()
                     assertEquals(confirmed.usagePack.value, failed.usagePack.value)
                     assertEquals(confirmed.workspaceCredits.value, failed.workspaceCredits.value)
-                    assertEquals(
-                        List(refresh + 1) { SettingsNotice.CreditBalanceRefreshFailed },
-                        notices,
-                    )
+                    assertSame(personalFailure, model.uiState.value.creditRefreshFailure)
+                    previousFailure = personalFailure
                     // The next visible refresh starts with successful, confirmed reads.
                     model.visible(null)
+                    pendingWorkspaceRoleCheck = null
                     fixture.usagePackStatus = 200
                     fixture.billingStatus = 200
                     model.visible(SettingsDestination.CreditBalance)
                     model.uiState.first {
                         !it.usagePack.unavailable && !it.workspaceCredits.unavailable
                     }
+                    assertNull(model.uiState.value.creditRefreshFailure)
                 }
             }
         } finally {
@@ -614,7 +680,9 @@ class WorkspaceSettingsModelTest {
                 assertEquals(4, roleReads)
                 assertTrue(failed.showWorkspaceCredits)
                 assertEquals(confirmed.workspaceCredits.value, failed.workspaceCredits.value)
-                assertEquals(SettingsNotice.CreditBalanceRefreshFailed, model.notices.first())
+                assertTrue(
+                    model.uiState.first { it.creditRefreshFailure != null }.showWorkspaceCredits,
+                )
                 assertEquals(1, fixture.billingReads.get())
 
                 unavailable = false

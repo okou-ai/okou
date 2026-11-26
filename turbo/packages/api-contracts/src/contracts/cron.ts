@@ -593,6 +593,32 @@ const proactiveShadowCounts = object({
 });
 
 export const cronProactiveContract = c.router({
+  handoff: {
+    method: "POST",
+    path: "/api/cron/proactive/handoff",
+    headers: authHeadersSchema,
+    body: object({
+      action: zEnum(["drain", "activate"]),
+      apply: boolean().default(false),
+    }).strict(),
+    responses: {
+      200: object({
+        phase: zEnum(["automation", "draining", "standalone"]),
+        ready: boolean(),
+        changed: boolean(),
+        queued: number(),
+        running: number(),
+        claims: number(),
+        callbacks: number(),
+        missingCursors: number(),
+        copied: number(),
+        removed: number(),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+    },
+    summary: "Inspect or apply the release-wide proactive dispatcher handoff",
+  },
   compare: {
     method: "GET",
     path: "/api/cron/proactive",
@@ -620,11 +646,22 @@ export const cronProactiveContract = c.router({
           suggestions: proactiveShadowCounts,
           learning: proactiveShadowCounts,
         }),
-      }),
+      })
+        .or(object({ phase: literal("draining"), minute: iso.datetime() }))
+        .or(
+          object({
+            phase: literal("standalone"),
+            minute: iso.datetime(),
+            enqueued: number().int(),
+            inactive: number().int(),
+            expired: number().int(),
+            contended: number().int(),
+          }),
+        ),
       401: apiErrorSchema,
     },
     summary:
-      "Compare upcoming built-in task slots while Automation owns dispatch",
+      "Advance the proactive handoff and dispatch due built-in task slots",
   },
 });
 
