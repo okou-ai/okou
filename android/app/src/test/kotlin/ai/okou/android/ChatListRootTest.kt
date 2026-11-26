@@ -1982,7 +1982,7 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun titleSearchKeepsTheResultAndReportsARefreshFailureUntilRecovery() {
+    fun titleSearchKeepsTheResultAndOverlaysARefreshFailureUntilRecovery() {
         val app = compose.activity.application as ChatListApplication
         val realtime = app.realtimeService as TestRealtimeService
         app.responseGate.countDown()
@@ -2001,10 +2001,8 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         val notice = hasText(app.getString(R.string.chat_search_saved_chats))
         compose.waitUntilExactlyOneExists(notice, 5_000)
         result.assertIsDisplayed()
-        assertTrue(
-            compose.onNode(notice).getUnclippedBoundsInRoot().bottom <=
-                result.getUnclippedBoundsInRoot().top,
-        )
+        assertTrue(compose.onNode(notice).getUnclippedBoundsInRoot().top >= resultBounds.bottom)
+        assertEquals(resultBounds, result.getUnclippedBoundsInRoot())
         compose.onNodeWithText(app.getString(R.string.retry)).assertDoesNotExist()
         input.assertIsFocused().assert(hasText("personal"))
         app.fixture.events = events
