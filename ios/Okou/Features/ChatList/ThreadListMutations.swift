@@ -204,16 +204,23 @@ final class ThreadListMutations {
   }
 
   func settleOptimisticChanges(eventIDs: Set<String>) {
-    var confirmedMemberships: [String: Int] = [:]
-    for (index, event) in optimisticChanges.enumerated()
-    where event.change.kind == .projectUpdated && eventIDs.contains(event.id) {
-      confirmedMemberships[event.change.chatThreadId] = index
+    enum Field: Hashable {
+      case project(String)
+      case archive(String)
     }
-    optimisticChanges = optimisticChanges.enumerated().filter { index, event in
-      !eventIDs.contains(event.id)
-        && (event.change.kind != .projectUpdated
-          || index > (confirmedMemberships[event.change.chatThreadId] ?? -1))
-    }.map(\.element)
+    var confirmedFields = Set<Field>()
+    // A persistent receipt also settles earlier edits to that field on the same chat.
+    optimisticChanges = optimisticChanges.reversed().filter { event in
+      let confirmed = eventIDs.contains(event.id)
+      let field: Field
+      switch event.change.kind {
+      case .projectUpdated: field = .project(event.change.chatThreadId)
+      case .archived, .unarchived: field = .archive(event.change.chatThreadId)
+      default: return !confirmed
+      }
+      if confirmed { confirmedFields.insert(field) }
+      return !confirmedFields.contains(field)
+    }.reversed()
   }
 
   @discardableResult
@@ -272,10 +279,6 @@ final class ThreadListMutations {
   ) async -> Bool {
     guard canUpdate(thread.id), !Task.isCancelled else { return false }
     if !retry, !optimisticChanges.contains(where: { $0.id == eventID }) {
-      // An explicit choice from Archived supersedes a previous unconfirmed archive on this chat.
-      optimisticChanges.removeAll {
-        $0.change.chatThreadId == thread.id && [.archived, .unarchived].contains($0.change.kind)
-      }
       optimisticChanges.append(
         (
           eventID,

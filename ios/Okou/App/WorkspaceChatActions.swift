@@ -292,7 +292,9 @@ final class WorkspaceChatActions {
       archiveFailures.append(recovery)
       if feedback?.id == pending.id { feedback = recovery }
     } else if feedback?.id == pending.id {
-      if succeeded, source == ArchiveFeedbackVisit(workspace) {
+      if succeeded, source == ArchiveFeedbackVisit(workspace),
+        workspace.list.threads.first(where: { $0.id == id })?.isArchived == change.archived
+      {
         confirmArchiveChange(change, in: workspace)
       } else {
         feedback = nil
