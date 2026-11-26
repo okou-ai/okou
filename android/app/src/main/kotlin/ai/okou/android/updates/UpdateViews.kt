@@ -16,6 +16,7 @@ import ai.okou.android.entryTopPadding
 import ai.okou.android.measureEntryBrandHeight
 import ai.okou.android.state.rememberUpdateWorkspaceState
 import android.text.format.Formatter
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -46,6 +47,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -104,6 +106,7 @@ internal data class UpdateToolbarAction(
     val activate: (() -> Unit)?,
     val progress: String? = null,
     val installsPackage: Boolean = false,
+    @DrawableRes val icon: Int = R.drawable.ic_update,
 )
 
 private fun UpdateTransfer.Downloading.fraction(): Float? = downloadedBytes?.let {
@@ -154,10 +157,18 @@ internal fun updateToolbarAction(
                 installsPackage = true,
             )
         state.interrupted || transfer is UpdateTransfer.Waiting ->
-            UpdateToolbarAction(stringResource(R.string.updates_download_failed), openDetails)
+            UpdateToolbarAction(
+                stringResource(R.string.updates_download_failed),
+                openDetails,
+                icon = R.drawable.ic_download,
+            )
         state.canDownload -> {
             val release = checkNotNull(state.candidate)
-            UpdateToolbarAction(stringResource(R.string.updates_toolbar), { download(release) })
+            UpdateToolbarAction(
+                stringResource(R.string.updates_download),
+                { download(release) },
+                icon = R.drawable.ic_download,
+            )
         }
         else -> UpdateToolbarAction(stringResource(R.string.updates_toolbar), openDetails)
     }
@@ -169,30 +180,21 @@ internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
     val colors = MaterialTheme.colorScheme
     val focus = rememberInstallControlFocus(inProgress = action.activate == null)
     val maxTextSize = with(LocalDensity.current) { 16.dp.toSp() }
-    TextButton(
+    FilledIconButton(
         onClick = {
             if (action.installsPackage) focus.rememberTrigger()
             action.activate?.invoke()
         },
         enabled = action.activate != null,
         modifier =
-            Modifier.size(48.dp)
-                .then(focus.modifier)
-                .updateFocusOutline(shape, colors.inverseOnSurface)
+            focus.modifier
+                .updateFocusOutline(shape, colors.onBackground, keyboardOnly = true)
                 .semantics { contentDescription = action.label },
         shape = shape,
-        contentPadding = PaddingValues(0.dp),
-        colors =
-            ButtonDefaults.textButtonColors(
-                containerColor = colors.inverseSurface,
-                contentColor = colors.inverseOnSurface,
-                disabledContainerColor = colors.surfaceVariant,
-                disabledContentColor = colors.onSurfaceVariant,
-            ),
     ) {
         if (action.progress == null) {
             Icon(
-                painterResource(R.drawable.ic_update),
+                painterResource(action.icon),
                 contentDescription = null,
                 Modifier.size(24.dp),
             )
@@ -770,20 +772,27 @@ private fun UpdateAction(
             )
     if (progress != null) {
         val fraction = (transfer as? UpdateTransfer.Downloading)?.fraction()
+        val disabledColors = ButtonDefaults.buttonColors()
         Box(
-            controlModifier.focusable().clip(shape).background(colors.surfaceVariant).semantics(
-                mergeDescendants = true,
-            ) {
-                progressBarRangeInfo =
-                    if (fraction == null) ProgressBarRangeInfo.Indeterminate
-                    else ProgressBarRangeInfo(fraction, 0f..1f)
-            },
+            controlModifier
+                .focusable()
+                .clip(shape)
+                .background(
+                    if (checking) disabledColors.disabledContainerColor else colors.surfaceVariant,
+                )
+                .semantics(
+                    mergeDescendants = true,
+                ) {
+                    progressBarRangeInfo =
+                        if (fraction == null) ProgressBarRangeInfo.Indeterminate
+                        else ProgressBarRangeInfo(fraction, 0f..1f)
+                },
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 progress,
                 modifier = Modifier.padding(contentPadding),
-                color = if (checking) colors.onSurfaceVariant else colors.onBackground,
+                color = if (checking) disabledColors.disabledContentColor else colors.onBackground,
                 style = updateProgressStyle(),
                 textAlign = TextAlign.Center,
             )
@@ -791,10 +800,16 @@ private fun UpdateAction(
                 Box(Modifier.align(Alignment.BottomStart).matchParentSize()) {
                     Box(
                         Modifier.align(Alignment.BottomStart)
-                            .fillMaxWidth(fraction)
+                            .fillMaxWidth()
                             .height(2.dp)
-                            .background(MaterialTheme.colorScheme.primary),
-                    )
+                            .background(colors.secondaryContainer),
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth(fraction)
+                                .fillMaxSize()
+                                .background(colors.primary),
+                        )
+                    }
                 }
             }
         }

@@ -259,7 +259,7 @@ class NativeUpdateTest {
             closeDetails()
             backToChatList()
 
-            val updateAction = app.getString(R.string.updates_toolbar)
+            val updateAction = app.getString(R.string.updates_download)
             val updateBounds = button(By.pkg(app.packageName).desc(updateAction)).visibleBounds
             assertEquals(searchBounds, button(search).visibleBounds)
             assertGap(48, updateBounds.width())
