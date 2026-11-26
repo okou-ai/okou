@@ -2818,12 +2818,12 @@ remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connectio
 remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-007	planned		extension after sandbox reset		pilot
 remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-008	planned		extension after sandbox reset		pilot
 remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-009	planned		extension after sandbox reset		pilot
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-001	planned				B02
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-003	planned				B02
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-007	planned				B02
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-008	planned				B02
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-010	planned				B02
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-011	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-001	rewritten	71.0		src/signals/routes/__tests__/ssh-create-retries.test.ts	B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-003	rewritten	39.7		src/signals/routes/__tests__/ssh-create-retries.test.ts	B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-007	rewritten	63.2		src/signals/routes/__tests__/ssh-create-retries.test.ts	B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-008	rewritten	64.1		src/signals/routes/__tests__/ssh-create-retries.test.ts	B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-010	rewritten	99.5		src/signals/routes/__tests__/ssh-create-retries.test.ts	B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-011	rewritten	75.7		src/signals/routes/__tests__/ssh-create-retries.test.ts	B02
 remote-access	src/signals/routes/__tests__/ssh-credential-rotation-race.test.ts	ssh-credential-rotation-race-002	planned				
 remote-access	src/signals/routes/__tests__/ssh-credential-rotation-race.test.ts	ssh-credential-rotation-race-003	planned				
 remote-access	src/signals/routes/__tests__/ssh-credentials.test.ts	ssh-credentials-001	rewritten	23.9	extension after sandbox reset	src/signals/routes/__tests__/ssh-credentials.test.ts	pilot
