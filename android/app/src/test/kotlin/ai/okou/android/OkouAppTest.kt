@@ -344,18 +344,21 @@ class OkouAppTest {
         assertEquals(12f, (actionBounds.left - searchBounds.right).value, 0.5f)
         val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
         val percentFormat = NumberFormat.getPercentInstance(Locale.GERMANY)
+        val largeRelease = release.copy(size = 2_000_000_000L)
+        fun progressCase(bytes: Long?, expectedFraction: Double) =
+            UpdateTransfer.Downloading(largeRelease, bytes) to
+                compose.activity.getString(
+                    R.string.updates_downloading,
+                    percentFormat.format(expectedFraction),
+                )
+
         listOf(
                 UpdateTransfer.Idle to compose.activity.getString(R.string.updates_download),
-                UpdateTransfer.Downloading(release) to
-                    compose.activity.getString(
-                        R.string.updates_downloading,
-                        percentFormat.format(0),
-                    ),
-                UpdateTransfer.Downloading(release, release.size / 2) to
-                    compose.activity.getString(
-                        R.string.updates_downloading,
-                        percentFormat.format(0.5),
-                    ),
+                progressCase(null, 0.0),
+                progressCase(1_060_000_000L, 0.53),
+                progressCase(1_180_000_000L, 0.59),
+                progressCase(largeRelease.size - 1, 0.99),
+                progressCase(largeRelease.size, 1.0),
                 UpdateTransfer.Ready(release) to compose.activity.getString(R.string.updates_ready),
             )
             .forEach { (transfer, label) ->
