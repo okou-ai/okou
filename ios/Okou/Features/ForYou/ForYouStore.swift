@@ -17,13 +17,9 @@ final class ForYouStore {
     let feedbackID: String
     let undoID = UUID().uuidString
   }
-  /// One card this visit settled, for the recap that closes it.
+  /// One card this visit settled. Only their count is read: a new one plays the success haptic.
   struct Handled: Identifiable, Equatable {
     let id: String
-    let title: String
-    let detail: String
-    var threadID: String?
-    var undo: Undo?
   }
   private struct Selection {
     let cardID: String
@@ -126,7 +122,7 @@ final class ForYouStore {
       let undo = Undo(card: card, position: position, feedbackID: id)
       notice = Notice(
         text: reason?.confirmation ?? String(localized: "Suggestion dismissed"), undo: undo)
-      record(card, detail: reason?.title ?? String(localized: "Dismissed"), undo: undo)
+      record(card)
       remove(card)
       feedbackID = nil
     }
@@ -136,11 +132,9 @@ final class ForYouStore {
     await perform {
       let restored = try await feed.feedback(
         action.card, reason: nil, id: action.undoID, undoing: action.feedbackID)
-      if let index = handled.firstIndex(where: { $0.id == action.card.id }) {
-        // A card that came back is no longer settled; one that is gone can not be undone again.
-        if restored { handled.remove(at: index) } else { handled[index].undo = nil }
-      }
       if restored {
+        // A card that came back is no longer settled.
+        handled.removeAll { $0.id == action.card.id }
         updateDeck { deck in
           if let index = deck.cards.firstIndex(where: { $0.id == action.card.id }) {
             deck.position = index
@@ -162,7 +156,7 @@ final class ForYouStore {
       notice = Notice(
         text: enable
           ? String(localized: "Automation enabled") : String(localized: "Event dismissed"))
-      record(card, detail: enable ? String(localized: "Enabled") : String(localized: "Dismissed"))
+      record(card)
       remove(card)
     }
   }
@@ -192,15 +186,11 @@ final class ForYouStore {
         guard failure.statusCode == 409 else { throw failure }
         // The local draft or sent message is already durable even if another device consumed the card.
       }
-      if openChat {
-        record(
-          card, detail: String(localized: "Draft ready · \(option.label)"),
-          threadID: option.threadId)
-      } else {
+      if !openChat {
         let threadID = selections[card.id]?.threadID
         notice = Notice(text: String(localized: "Sent to a new chat"), threadID: threadID)
-        record(card, detail: String(localized: "Sent · \(option.label)"), threadID: threadID)
       }
+      record(card)
       remove(card)
     }
     return openChat && error == nil
@@ -259,7 +249,7 @@ final class ForYouStore {
         text: destination == target
           ? String(localized: "Sent to the chat") : String(localized: "Sent to a new chat"),
         threadID: destination)
-      record(card, detail: String(localized: "Sent"), threadID: destination)
+      record(card)
       // Accepting the annotated message consumes the card on the server.
       remove(card)
     }
@@ -344,12 +334,9 @@ final class ForYouStore {
     return destination
   }
 
-  private func record(
-    _ card: ForYouCard, detail: String, threadID: String? = nil, undo: Undo? = nil
-  ) {
+  private func record(_ card: ForYouCard) {
     handled.removeAll { $0.id == card.id }
-    handled.append(
-      Handled(id: card.id, title: card.title, detail: detail, threadID: threadID, undo: undo))
+    handled.append(Handled(id: card.id))
   }
 
   private func remove(_ card: ForYouCard) {

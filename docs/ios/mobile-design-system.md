@@ -951,17 +951,15 @@ feature; the catalog shows each one.
   elsewhere. A direction is a step back from the white card (`background-50` by day, `card` at
   night, a step up from the card) with a hairline (`state-pressed` and `control-border` while
   pressed, scaled to 98%), 16 pt around its text and 8 pt from the next, so it reads as a button
-  on the card in both schemes. It carries no mark: a short Caption line above its label says what
-  choosing it does, in uppercase with a 6 pt dot, amber (`primary-700`, or `primary-200` at night)
-  for "Send to a new chat" and `muted-foreground` for "Draft in" the chat it drafts in; so the
-  label and description keep the button's whole width (at most two lines of description;
-  VoiceOver hears the line as the button's hint). While a choice is under way that line shows
-  progress and "Sending…" or "Opening draft…", a 2 pt line runs along the button's foot (amber or
-  `control-border`; still under Reduce Motion), and the other directions fade. A card that ends in
-  text, as a direction's context does, keeps as much room below the text as above it. A card is a
-  reading surface ([Type roles](#type-roles)): a Title 3 title over Body for the reason and each
-  direction's label, with Subheadline for a direction's description and the source; the action
-  line is its one Caption label.
+  on the card in both schemes. It is its label and description only, with no mark and no line
+  saying whether it sends to a new chat or drafts in one, so both keep the button's whole width
+  (at most two lines of description); VoiceOver hears where it goes as the button's hint. While a
+  choice is under way a 2 pt line runs along the button's foot (amber when it sends,
+  `control-border` when it drafts; still under Reduce Motion), and the other directions fade. A
+  card that ends in text, as a direction's context does, keeps as much room below the text as
+  above it. A card is a reading surface ([Type roles](#type-roles)): a Title 3 title over Body for
+  the reason and each direction's label, with Subheadline for a direction's description and the
+  source.
 - **Dense text scrolls in place.** A reason shows whole. When the heading runs past the card's
   room it scrolls above the directions, which stay at the card's bottom (`ForYouCardLayout`): it
   fades out at the edge where more lies with the cut line peeking under the fade, and its scroll
@@ -992,8 +990,10 @@ feature; the catalog shows each one.
   ("Noted — this is not planned · Undo", "Sent to the chat · Open chat") drops in as
   `ChatFeedbackSurface`: one line with its action on the right and a ✕, floating over the ground
   so the deck never moves and the card's directions are never covered. It lifts away after six
-  idle seconds or a sideways swipe; Undo stays in the caught-up recap. A failure floats in the
-  same place and stays until it is dismissed.
+  idle seconds or a sideways swipe. A failure floats in the same place and stays until it is
+  dismissed.
+- **Caught up** is the rest picture, "All caught up", one line, and Back to chats. It lists
+  nothing of what the visit settled and offers no Undo: each card's own confirmation already did.
 - **Writing a direction focuses the page.** The ground recedes under the page's canvas, so the
   composer's glass and the keyboard read plain. The card stays above the input as its context:
   its heading only, as tall as it is up to the room under the header, held still while the member
@@ -1124,7 +1124,7 @@ authentication or product services.
 
 In Debug builds, `--for-you-deck` opens the production For you page (`ForYouDeckGallery`)
 against an isolated `.invalid` HTTP fixture with suggestion and paused-automation cards, so
-paging, the dock, dismissal with Undo and the caught-up recap can be checked without signing
+the deck, the dock, dismissal with Undo and the caught-up panel can be checked without signing
 in or sending read receipts. Add `--for-you-deck-slow` to hold the first load (the skeleton)
 and every choice (a direction's progress), or `--for-you-deck-failure` to fail the first load.
 

@@ -218,13 +218,7 @@ struct ForYouView: View {
       .transition(panelTransition)
     } else if visit.loaded {
       standalone {
-        ForYouCaughtUp(
-          handled: visit.handled,
-          undo: { undo in run { await store.undo(undo) } },
-          open: { id in run { if await store.open(id) { showChat() } } },
-          done: goBack
-        )
-        .disabled(visit.busy)
+        ForYouCaughtUp(done: goBack).disabled(visit.busy)
       }
       .transition(panelTransition)
     } else {

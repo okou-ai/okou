@@ -30,12 +30,9 @@ struct ForYouHeader: View {
   }
 }
 
-/// The panel once every card is settled, with what this visit settled: a sent direction leads
-/// to its chat, a dismissal can come back.
+/// The panel once every card is settled: nothing is left to handle, and there is no list of what
+/// was settled. Each card's own confirmation already offered its Undo or its chat.
 struct ForYouCaughtUp: View {
-  let handled: [ForYouStore.Handled]
-  let undo: (ForYouStore.Undo) -> Void
-  let open: (String) -> Void
   let done: () -> Void
 
   var body: some View {
@@ -46,40 +43,12 @@ struct ForYouCaughtUp: View {
       Text("Okou will bring the next thing here when there is something worth your time.")
         .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
         .multilineTextAlignment(.center)
-      if !handled.isEmpty { recap }
       Button("Back to chats", action: done)
         .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
         .padding(.top, OkouSpace.xs)
         .accessibilityIdentifier("for-you-done")
     }
     .frame(maxWidth: .infinity)
-  }
-
-  private var recap: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      OkouListDivider()
-      Text("Handled just now").font(.okou(.footnote).weight(.semibold))
-        .foregroundStyle(OkouColor.mutedForeground).padding(.top, OkouSpace.md)
-      ForEach(handled) { item in
-        HStack(spacing: OkouSpace.ten) {
-          VStack(alignment: .leading, spacing: OkouSpace.two) {
-            Text(verbatim: item.title).font(.okou(.subheadline)).lineLimit(1)
-            Text(verbatim: item.detail).font(.okou(.footnote))
-              .foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          // A row's action is the card's bare text action, so the recap stays a quiet list.
-          if let action = item.undo {
-            Button("Undo") { undo(action) }
-              .buttonStyle(ChatCardButtonStyle(emphasis: .detail)).fixedSize()
-          } else if let id = item.threadID {
-            Button("Open chat") { open(id) }
-              .buttonStyle(ChatCardButtonStyle(emphasis: .detail)).fixedSize()
-          }
-        }
-        .frame(minHeight: OkouControl.groupedRow)
-      }
-    }
   }
 }
 
@@ -91,11 +60,10 @@ struct ForYouLoadingCard: View {
   var height: CGFloat?
 
   /// The skeleton draws the card it stands for: two lines of title, four of reason, and two
-  /// directions at the foot, each a white button with its action line, label and description.
+  /// directions at the foot, each a button with its label and description.
   private static let titleLine: CGFloat = 18
   private static let textLine: CGFloat = 12
   private static let shortEnd: CGFloat = 96
-  private static let actionLine: CGFloat = 88
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.xl) {
@@ -121,7 +89,6 @@ struct ForYouLoadingCard: View {
   private var direction: some View {
     let shape = RoundedRectangle(cornerRadius: OkouRadius.control, style: .continuous)
     return VStack(alignment: .leading, spacing: OkouSpace.ten) {
-      OkouSkeletonBlock(width: Self.actionLine, height: Self.textLine * 0.75)
       OkouSkeletonBlock(height: Self.textLine).padding(.trailing, Self.shortEnd)
       OkouSkeletonBlock(height: Self.textLine).padding(.trailing, Self.shortEnd / 2)
     }

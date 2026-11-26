@@ -85,12 +85,11 @@ struct ForYouSuggestionView: View {
       .fixedSize(horizontal: false, vertical: true)
   }
 
-  /// A direction says what choosing it does before it is chosen, in a short line above its label:
-  /// one that sends says so in amber, one that only prepares a draft names the chat it drafts in.
-  /// There is no mark beside the text, so the label and description keep the button's whole
-  /// width. Each is a white button on the card's grey ground, as the web draws its options, and
-  /// the one being chosen shows its progress in that line and along its foot until the choice
-  /// settles.
+  /// A direction is its label and description, as the web draws its options, with no line saying
+  /// whether it sends now or drafts in a chat: the card is about what to do, not where it lands.
+  /// There is no mark beside the text, so both keep the button's whole width. The one being chosen
+  /// shows its progress along its foot until the choice settles; VoiceOver hears where it goes as
+  /// the button's hint.
   private func optionButton(_ option: ForYouOption) -> some View {
     let sends = option.threadId == nil
     let isPending = pendingOptionID == option.id
@@ -98,8 +97,6 @@ struct ForYouSuggestionView: View {
       choose(option)
     } label: {
       VStack(alignment: .leading, spacing: OkouSpace.six) {
-        ForYouOptionAction(
-          sends: sends, chat: option.threadId.flatMap(threadTitle), isPending: isPending)
         Text(option.label).font(Self.labelFont)
         // A long description keeps its first lines so a dense card leaves its heading room;
         // VoiceOver reads all of it.
@@ -370,55 +367,6 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     } action: {
       actionsHeight = $0
     }
-  }
-}
-
-/// What choosing a direction does, as a short line above its label: an amber dot and "Send to
-/// a new chat" for one that sends now, a quiet dot and the chat's name for one that drafts, and
-/// progress with "Sending…" while the choice is under way. VoiceOver hears it as the button's
-/// hint instead.
-private struct ForYouOptionAction: View {
-  let sends: Bool
-  /// The chat a draft opens in, when its title is known.
-  let chat: String?
-  let isPending: Bool
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  private static let dot: CGFloat = 6
-
-  /// Amber that reads as text: a deep stop on white, a light one at night.
-  static let sendInk = Color(
-    uiColor: UIColor { traits in
-      UIColor(traits.userInterfaceStyle == .dark ? OkouColor.primary200 : OkouColor.primary700)
-        .resolvedColor(with: traits)
-    })
-
-  private var text: LocalizedStringKey {
-    if isPending { return sends ? "Sending…" : "Opening draft…" }
-    if sends { return "Send to a new chat" }
-    if let chat { return "Draft in \(chat)" }
-    return "Draft in the existing chat"
-  }
-
-  var body: some View {
-    HStack(spacing: OkouSpace.six) {
-      ZStack {
-        if isPending {
-          ProgressView().controlSize(.mini).scaleEffect(0.7).transition(.opacity)
-        } else {
-          Circle().frame(width: Self.dot, height: Self.dot).transition(.opacity)
-        }
-      }
-      .frame(width: OkouSpace.ten, height: OkouSpace.ten)
-      .animation(reduceMotion ? nil : OkouMotion.press, value: isPending)
-      // The words switch at once; fading one phrase into the other overlaps them.
-      Text(text).lineLimit(1)
-    }
-    .font(.okou(.caption).weight(.semibold))
-    .textCase(.uppercase)
-    .tracking(0.5)
-    .foregroundStyle(sends ? Self.sendInk : OkouColor.mutedForeground)
-    .tint(sends ? Self.sendInk : OkouColor.mutedForeground)
-    .accessibilityHidden(true)
   }
 }
 
