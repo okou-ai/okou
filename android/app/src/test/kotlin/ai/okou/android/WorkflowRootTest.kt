@@ -25,6 +25,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToIndexAction
@@ -968,6 +969,12 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE")
         val originalRow = row.assertIsEnabled().getUnclippedBoundsInRoot()
         val scope = compose.onNodeWithTag("workflow_scope_Private").assertIsSelected()
+        val filterScroll =
+            compose.onNode(
+                hasAnyDescendant(hasTestTag("workflow_scope_Private")) and
+                    SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollBy),
+            )
+        filterScroll.assertExists()
         val clear = compose.onNodeWithContentDescription("Clear search")
         val back =
             compose.onNode(
@@ -979,6 +986,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         query.assertIsNotEnabled().assertTextContains("Release")
         clear.assertIsNotEnabled()
         scope.assertIsNotEnabled().assertIsSelected()
+        filterScroll.assertDoesNotExist()
         back.assertIsNotEnabled()
         assertEquals(originalRow, row.assertIsNotEnabled().getUnclippedBoundsInRoot())
 
@@ -987,6 +995,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         query.assertIsEnabled().assertTextContains("Release")
         clear.assertIsEnabled()
         scope.assertIsEnabled().assertIsSelected()
+        filterScroll.assertExists()
         back.assertIsEnabled()
         assertEquals(originalRow, row.assertIsEnabled().getUnclippedBoundsInRoot())
     }
