@@ -1028,9 +1028,9 @@ billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test
 billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-002	planned				
 billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-011	planned				
 billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-012	planned				
-billing	src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	codex-reset-credit-expiry-002	planned				B04
-billing	src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	codex-reset-credit-expiry-018	planned				B04
-billing	src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	codex-reset-credit-expiry-019	planned				B04
+billing	src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	codex-reset-credit-expiry-002	rewritten	48.6		src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	B04
+billing	src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	codex-reset-credit-expiry-018	rewritten	92.5		src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	B04
+billing	src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	codex-reset-credit-expiry-019	rewritten	39.0		src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	B04
 chat	src/signals/routes/__tests__/composer-draft.test.ts	composer-draft-002	planned		extension after sandbox reset		pilot
 chat	src/signals/routes/__tests__/composer-draft.test.ts	composer-draft-003	planned		extension after sandbox reset		pilot
 chat	src/signals/routes/__tests__/composer-draft.test.ts	composer-draft-005	planned		extension after sandbox reset		pilot
