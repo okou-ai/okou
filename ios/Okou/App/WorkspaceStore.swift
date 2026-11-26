@@ -708,7 +708,8 @@ extension WorkspaceStore {
         // An omitted chat with a local draft stays pending across relaunches.
       }
     }
-    unverifiedDraftThreads.subtract(confirmed.union(dismissed))
+    // Keep a confirmed loss selected across refreshes until discardDeletedThread reports it.
+    unverifiedDraftThreads.subtract(dismissed)
     await sync.resolveThreadAbsences(
       dismissing: dismissed.intersection(pending), unavailable: confirmed)
     return confirmed
