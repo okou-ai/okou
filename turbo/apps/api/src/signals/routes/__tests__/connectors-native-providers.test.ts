@@ -184,7 +184,7 @@ test.each(providers)(
           /^ios-https-v1:app-tiktok:/u,
         );
         expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-        expect(url.searchParams.has("from")).toBe(false);
+        expect(url.searchParams.has("from")).toBeFalsy();
       }
       expect(started.authorizationUrl).not.toContain("server-secret");
       expect(started.authorizationUrl).not.toContain("code_verifier");
