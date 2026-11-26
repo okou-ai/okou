@@ -2201,9 +2201,9 @@ billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	ma
 billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-003	planned				
 billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-004	planned				
 billing	src/signals/routes/__tests__/marketing-reward-checkin.test.ts	marketing-reward-checkin-001	planned				
-billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-002	planned				B04
-billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-004	planned				B04
-billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-006	planned				B04
+billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-002	revisit		revisit: custom HTTP connector OAuth authorize+callback flow not investigated within first-pass time box; evidence: no shared helper for custom-connector OAuth completion found in this pass; resume: drive custom connector create + OAuth authorize/callback via the custom-connectors routes with MSW token endpoint, then assert consumer.received		B04
+billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-004	rewritten	158.6		src/signals/routes/__tests__/marketing-reward-events.test.ts	B04
+billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-006	revisit		revisit: over 200 ms by 3-run median ((1/2) 200.1 ms, (2/2) 186.2 ms; (1/2) is the first row reaching the Slack install path); draft /home/user/pilot-env/wip/r11/marketing-reward-events.test.ts; resume: decide the cold-start rule or split further		B04
 billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-002	planned				
 billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-004	planned				
 billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-005	planned				
