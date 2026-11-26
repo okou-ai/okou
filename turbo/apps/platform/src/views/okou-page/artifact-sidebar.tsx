@@ -1,3 +1,5 @@
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { ApiError } from "../../lib/api-error.ts";
 import { ArtifactAccessCard } from "../components/artifact-access-card.tsx";
 import type { ArtifactDeletionOrigin } from "../../signals/artifact-deletion-origin.ts";
@@ -147,8 +149,12 @@ export function ArtifactSidebar({
   const item = detail.state === "hasData" ? detail.data : undefined;
   const setArtifactSourceRef = useSet(thread.feedback.setArtifactSourceRef$);
   const imageNavigation = thread.imageNavigation.sidebar;
-  const hasPreviousImage = useGet(imageNavigation.hasPrevious$);
-  const hasNextImage = useGet(imageNavigation.hasNext$);
+  const pageSignal = useGet(pageSignal$);
+  const neighbors = useLoadable(imageNavigation.neighbors$);
+  const hasPreviousImage =
+    neighbors.state === "hasData" && neighbors.data.previous !== undefined;
+  const hasNextImage =
+    neighbors.state === "hasData" && neighbors.data.next !== undefined;
   const navigate = useSet(imageNavigation.navigate$);
   const text$ = providedText$ ?? artifactRef.text$;
   const markdownTree$ = providedMarkdownTree$ ?? artifactRef.markdownTree$;
@@ -163,12 +169,12 @@ export function ArtifactSidebar({
         imageNavigation={{
           onNext: hasNextImage
             ? () => {
-                return navigate("next");
+                detach(navigate("next", pageSignal), Reason.DomCallback);
               }
             : undefined,
           onPrevious: hasPreviousImage
             ? () => {
-                return navigate("previous");
+                detach(navigate("previous", pageSignal), Reason.DomCallback);
               }
             : undefined,
         }}

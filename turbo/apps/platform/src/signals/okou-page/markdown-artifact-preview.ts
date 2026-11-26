@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { isTextPreviewKind } from "../text-preview.ts";
 
 import type { MarkdownCardRef } from "../chat-page/markdown-card-ref.ts";
 import {
@@ -22,21 +23,14 @@ export const openMarkdownArtifact$ = command(
       : signal;
     const { url } = signals;
     // A reference may omit its extension. The detail discriminant selects the reader.
-    const [read] =
-      signals.kind === "file" && signals.artifactReads
-        ? await Promise.allSettled([get(signals.artifactReads.detail$)])
-        : [];
+    const display =
+      signals.kind === "file" ? await get(signals.descriptor$) : signals;
     current.throwIfAborted();
-    const result = read?.status === "fulfilled" ? read.value : null;
-    const type = result?.preview.kind;
-    const kind =
-      type === "website" || type === "presentation-html"
-        ? "html"
-        : (type ?? signals.kind);
+    const { kind, filename, contentType } = display;
     const input = {
       threadId,
-      filename: result?.filename ?? signals.filename,
-      contentType: result?.contentType ?? signals.contentType,
+      filename,
+      contentType,
       url,
       preview: signals,
     };
@@ -60,7 +54,11 @@ export const openMarkdownArtifact$ = command(
       default: {
         return set(
           openDocumentLightbox$,
-          { ...input, kind, text$: signals.text$ },
+          {
+            ...input,
+            kind,
+            text$: isTextPreviewKind(kind) ? signals.text$ : undefined,
+          },
           signal,
         );
       }

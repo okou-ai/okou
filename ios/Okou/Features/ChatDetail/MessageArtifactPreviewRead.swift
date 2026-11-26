@@ -141,13 +141,17 @@ final class MessageArtifactPreviewRead: Identifiable {
       for source in sources {
         let content = await markdown.content(for: source)
         try Task.checkCancellation()
-        for image in MessageArtifactBody.resources(
-          content,
-          resolve: {
-            ChatArtifactReference.parse($0, webURL: webURL, apiURL: service.apiURL)
+        let resources = MessageArtifactBody.resources(content) {
+          ChatArtifactReference.parse($0, webURL: webURL, apiURL: service.apiURL)
+        }
+        for resource in resources where seen.insert(resource.id).inserted {
+          if reads.metadata(resource).kind == .file {
+            try await reads.prepareMetadata(resource)
+            try Task.checkCancellation()
           }
-        ).map(reads.metadata)
-        where image.kind == .image && seen.insert(image.id).inserted { group.append(image) }
+          let candidate = reads.metadata(resource)
+          if candidate.kind == .image { group.append(candidate) }
+        }
       }
     }
     if resolved.artifact.kind == .html {

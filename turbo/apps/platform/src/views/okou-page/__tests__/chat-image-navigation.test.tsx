@@ -139,12 +139,15 @@ test("the same photo opens in its clicked message group without reading either t
 test("an extensionless image uses its single detail for opening and returning from its neighbor", async () => {
   const id = "a7000000-0000-4000-a000-000000000c61";
   const first = artifactReferencePath(id);
-  const second = artifactFile("neighbor.png", { contentType: "image/png" });
+  const second = artifactFile("neighbor.png", {
+    url: artifactReferencePath("a7000000-0000-4000-a000-000000000c62"),
+    contentType: "image/png",
+  });
   mockAttachmentChat(context, {
     chatEvents: [
       {
         role: "assistant",
-        content: `Open the [blueprint](${first}) or [neighbor](${second.url}).`,
+        content: `Open the [blueprint](${first}) or ![neighbor](${second.url}).`,
         runId: ATTACHMENT_RUN_ID,
         runEventId: "two-blueprints",
         sequenceNumber: 1,
@@ -161,7 +164,8 @@ test("an extensionless image uses its single detail for opening and returning fr
     ];
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    const url = "https://media.example.test/blueprint.png";
+    const url =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3MoAAAAASUVORK5CYII=";
     return respond(200, {
       url,
       downloadUrl: url,
@@ -172,6 +176,11 @@ test("an extensionless image uses its single detail for opening and returning fr
     });
   });
   await setupPage({ context, path: "/chats/" + ATTACHMENT_THREAD_ID });
+  await waitFor(() => {
+    expect(
+      document.querySelector('[data-role="assistant"] img[alt="neighbor.png"]'),
+    ).toBeInTheDocument();
+  });
   click(await findNamedLink("blueprint"));
   const sidebar = await screen.findByTestId("artifact-sidebar");
   await expect(
@@ -188,6 +197,11 @@ test("an extensionless image uses its single detail for opening and returning fr
   expect(
     queries.filter((url) => {
       return new URL(url, location.origin).pathname === first;
+    }),
+  ).toHaveLength(1);
+  expect(
+    queries.filter((url) => {
+      return new URL(url, location.origin).pathname === second.url;
     }),
   ).toHaveLength(1);
 });

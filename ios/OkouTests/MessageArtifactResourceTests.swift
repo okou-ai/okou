@@ -48,10 +48,10 @@ final class MessageArtifactResourceTests: XCTestCase {
       MessageArtifactGroup(
         id: id,
         sources: [
-          "![same](/artifacts/image00001.png) ![next](/artifacts/\(neighbor).png)"
+          "![same](/artifacts/image00001.png) ![next](/artifacts/\(neighbor))"
         ])
     }
-    fixture.viewer.open(same, group: group("first", "image00002"))
+    fixture.viewer.open(same, group: group("first", "image00002.png"))
     let first = try await artifactPreviewTask(fixture.viewer).value
     XCTAssertEqual(first.image(1)?.id, fixture.artifact("image00002.png").id)
     fixture.viewer.open(same, group: group("second", "image00003"))
@@ -65,7 +65,7 @@ final class MessageArtifactResourceTests: XCTestCase {
     XCTAssertEqual(
       fixture.state.value.withLock { $0.detailLinks },
       [
-        "/artifacts/image00001.png", "/artifacts/image00003.png"
+        "/artifacts/image00001.png", "/artifacts/image00003"
       ])
   }
 

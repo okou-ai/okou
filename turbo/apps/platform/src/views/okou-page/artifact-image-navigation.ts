@@ -1,3 +1,4 @@
+import type { ArtifactSignals } from "../../signals/chat-page/artifact-card-signals.ts";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Element, Root } from "hast";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
@@ -14,7 +15,7 @@ export type ImageArtifactNavigationItem = {
   readonly preview?: AttachmentPreviewSignals;
 };
 
-type ImageArtifactNavigation = {
+export type ImageArtifactNavigation = {
   readonly next?: ImageArtifactNavigationItem;
   readonly previous?: ImageArtifactNavigationItem;
   readonly role?: EventImageGroup["role"];
@@ -50,12 +51,15 @@ function isImageDescriptor(descriptor: {
   );
 }
 
-type EventImage = {
-  readonly url: string;
-  readonly filename: string;
-  readonly contentType?: string;
-  readonly preview?: AttachmentPreviewSignals;
+type EventImage = ImageArtifactNavigationItem & {
+  readonly descriptor$?: ArtifactSignals["descriptor$"];
 };
+type AddImage = (
+  url: string,
+  filename: string,
+  preview?: AttachmentPreviewSignals,
+  descriptor$?: ArtifactSignals["descriptor$"],
+) => void;
 
 // Matches markdown images `![alt](url)` and links `[label](url)`, capturing the
 // optional image marker, label/alt text, and url while allowing escaped label
@@ -82,20 +86,13 @@ function filenameFromMarkdownLink(label: string, url: string): string {
 }
 
 /** Ordered, de-duplicated images (url + filename) shown in a single event. */
-function eventImages(
-  event: EventImageSource,
-  knownImages: ReadonlyMap<string, ImageArtifactNavigationItem>,
-): EventImage[] {
+function eventImages(event: EventImageSource): EventImage[] {
   const images: EventImage[] = [];
   const seen = new Set<string>();
-  const add = (
-    url: string,
-    filename: string,
-    preview?: AttachmentPreviewSignals,
-  ): void => {
+  const add: AddImage = (url, filename, preview, descriptor$) => {
     if (!seen.has(url)) {
       seen.add(url);
-      images.push({ url, filename, preview });
+      images.push({ url, filename, preview, descriptor$ });
     }
   };
 
@@ -114,7 +111,7 @@ function eventImages(
     }
   }
   if (event.tree) {
-    visitTreeImages(event.tree, knownImages, add);
+    visitTreeImages(event.tree, add);
   }
   return images;
 }
@@ -131,15 +128,7 @@ function nodeText(node: Element): string {
 }
 
 /** Walks a rendered body for its images: card slots, `<img>`, image links. */
-function visitTreeImages(
-  root: Root,
-  knownImages: ReadonlyMap<string, ImageArtifactNavigationItem>,
-  add: (
-    url: string,
-    filename: string,
-    preview?: AttachmentPreviewSignals,
-  ) => void,
-): void {
+function visitTreeImages(root: Root, add: AddImage): void {
   const visit = (node: Root | Element): void => {
     for (const child of node.children) {
       if (child.type !== "element") {
@@ -151,9 +140,10 @@ function visitTreeImages(
           continue;
         }
         const { url, filename, kind } = card.signals;
-        const known = knownImages.get(messageArtifactKey(url));
-        if (kind === "image" || (kind === "file" && known)) {
-          add(url, known?.filename ?? filename, card.signals);
+        if (kind === "image") {
+          add(url, filename, card.signals);
+        } else if (kind === "file" && card.signals.artifactReads) {
+          add(url, filename, card.signals, card.signals.descriptor$);
         }
         continue;
       }
@@ -181,45 +171,26 @@ function visitTreeImages(
   visit(root);
 }
 
-function scopedEventImages(
-  events: readonly EventImageSource[],
-  knownImages: ReadonlyMap<string, ImageArtifactNavigationItem>,
-): EventImage[] {
-  const images: EventImage[] = [];
-  const seen = new Set<string>();
+export function eventImageCandidates(events: readonly EventImageSource[]) {
+  const candidates = new Map<string, EventImage>();
   for (const event of events) {
-    for (const image of eventImages(event, knownImages)) {
+    for (const image of eventImages(event)) {
       const id = messageArtifactKey(image.url);
-      if (seen.has(id)) {
-        continue;
+      if (!candidates.has(id)) {
+        candidates.set(id, image);
       }
-      seen.add(id);
-      const known = knownImages.get(id);
-      images.push(
-        known
-          ? {
-              ...image,
-              filename: known.filename,
-              contentType: known.contentType,
-            }
-          : image,
-      );
     }
   }
-  return images;
+  return [...candidates.values()];
 }
 
 /** The clicked occurrence supplies its group even when two messages link to the same image. */
 export function currentEventImageArtifactNavigation(
-  group: EventImageGroup | undefined,
+  group: EventImageGroup,
   currentUrl: string,
-  knownImages: ReadonlyMap<string, ImageArtifactNavigationItem>,
+  images: readonly ImageArtifactNavigationItem[],
 ): ImageArtifactNavigation {
-  if (!group) {
-    return {};
-  }
   const currentId = messageArtifactKey(currentUrl);
-  const images = scopedEventImages(group.events, knownImages);
   const currentIndex = images.findIndex((item) => {
     return messageArtifactKey(item.url) === currentId;
   });

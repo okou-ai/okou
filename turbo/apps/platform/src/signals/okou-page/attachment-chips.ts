@@ -1,4 +1,3 @@
-import type { ImageArtifactNavigationItem } from "../../views/okou-page/artifact-image-navigation.ts";
 import {
   currentLeftThread$,
   currentRightThread$,
@@ -388,19 +387,14 @@ function imageLightboxState(
 }
 
 const chatGroupForImageEvent$ = command(
-  (
-    { get, set },
-    threadId: string,
-    eventId: string,
-    item: ImageArtifactNavigationItem,
-  ) => {
+  ({ get, set }, threadId: string, eventId: string) => {
     const thread = [get(currentLeftThread$), get(currentRightThread$)].find(
       (pane) => {
         return pane?.threadId === threadId;
       },
     );
     return thread
-      ? set(thread.imageNavigation.openGroupForImage$, eventId, item)
+      ? set(thread.imageNavigation.openGroupForImage$, eventId)
       : undefined;
   },
 );
@@ -416,21 +410,8 @@ export const openImageLightbox$ = command(
       ...source,
       groupId:
         source.groupId ??
-        (source.sourceEventId &&
-        source.threadId &&
-        source.url &&
-        source.filename
-          ? set(
-              chatGroupForImageEvent$,
-              source.threadId,
-              source.sourceEventId,
-              {
-                url: source.url,
-                filename: source.filename,
-                contentType: source.contentType,
-                preview: source.preview,
-              },
-            )
+        (source.sourceEventId && source.threadId
+          ? set(chatGroupForImageEvent$, source.threadId, source.sourceEventId)
           : undefined),
     };
     signal.throwIfAborted();

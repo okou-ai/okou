@@ -1,3 +1,4 @@
+import { isTextPreviewKind } from "../../signals/text-preview.ts";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import { now } from "../../lib/time.ts";
@@ -399,6 +400,7 @@ function ArtifactCardView({
       Reason.DomCallback,
     );
   };
+  const display = useLastResolved(signals.descriptor$) ?? signals;
   const previewImageLoadable = useLastLoadable(signals.previewImageUrl$);
   const previewImagePending = previewImageLoadable.state === "loading";
   const previewImageUrl =
@@ -406,16 +408,16 @@ function ArtifactCardView({
       ? previewImageLoadable.data
       : undefined;
 
-  if (signals.kind === "image") {
+  if (display.kind === "image") {
     return (
       <ChatImagePreviewLink
-        alt={signals.filename}
+        alt={display.filename}
         ariaLabel={t(
           ($) => {
             return $.chat.attachments.previewFile;
           },
           {
-            filename: signals.filename,
+            filename: display.filename,
           },
         )}
         imageClassName="block h-full w-full object-contain"
@@ -429,7 +431,7 @@ function ArtifactCardView({
       />
     );
   }
-  if (signals.kind === "video") {
+  if (display.kind === "video") {
     return (
       <ChatVideoPreviewButton
         resourceUrl$={signals.resourceUrl$}
@@ -438,11 +440,11 @@ function ArtifactCardView({
             return $.chat.attachments.previewFile;
           },
           {
-            filename: signals.filename,
+            filename: display.filename,
           },
         )}
         buttonClassName={CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS}
-        filename={signals.filename}
+        filename={display.filename}
         onPreview={openPreview}
         posterClassName="h-full w-full"
         posterLoad={signals.previewImageLoad}
@@ -456,15 +458,16 @@ function ArtifactCardView({
       preview={signals}
       threadId={threadId}
       attachment={{
-        filename: signals.kind === "html" && label ? label : signals.filename,
+        filename: display.kind === "html" && label ? label : display.filename,
         url: signals.url,
-        contentType: contentTypeForBodyPreviewKind(signals.kind),
+        contentType:
+          display.contentType ?? contentTypeForBodyPreviewKind(display.kind),
         ...(previewImagePending ? { previewImagePending: true } : {}),
         ...(previewImageUrl ? { previewImageUrl } : {}),
       }}
       onPreviewFile={openPreview}
       previewImageLoad={signals.previewImageLoad}
-      text$={signals.text$}
+      text$={isTextPreviewKind(display.kind) ? signals.text$ : undefined}
     />
   );
 }

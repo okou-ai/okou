@@ -45,6 +45,7 @@ export interface ArtifactDescriptor {
 export interface ArtifactSignals
   extends ArtifactDescriptor, AttachmentPreviewSignals {
   readonly artifactReads?: MessageArtifactReads;
+  readonly descriptor$: Computed<Promise<ArtifactDescriptor>>;
   /** Load state of the card's presented image (the image itself, or a poster). */
   readonly previewImageLoad: ImageLoadSignals;
   readonly previewImageUrl$: Computed<Promise<string | undefined>>;
@@ -66,9 +67,28 @@ export function createArtifactSignals(
     contentType: descriptor.contentType,
     refreshOnArtifactChange: shouldRefreshArtifactPreview(descriptor.kind),
   });
+  const descriptor$ = computed(async (get): Promise<ArtifactDescriptor> => {
+    if (descriptor.kind !== "file" || !artifactReads) {
+      return descriptor;
+    }
+    const [read] = await Promise.allSettled([get(artifactReads.detail$)]);
+    const detail = read.status === "fulfilled" ? read.value : null;
+    if (!detail) {
+      return descriptor;
+    }
+    const kind = detail.preview.kind;
+    return {
+      ...descriptor,
+      filename: detail.filename,
+      contentType: detail.contentType,
+      kind: kind === "website" || kind === "presentation-html" ? "html" : kind,
+    };
+  });
   const previewImageLoad = createImageLoadSignals();
   const previewImageUrl$ = computed(async (get) => {
-    if (descriptor.kind !== "html" && descriptor.kind !== "video") {
+    const { kind } =
+      descriptor.kind === "file" ? await get(descriptor$) : descriptor;
+    if (kind !== "html" && kind !== "video") {
       return undefined;
     }
     let url = (await get(preview.presignedToken$))?.previewImageUrl;
@@ -87,11 +107,12 @@ export function createArtifactSignals(
   });
   return {
     ...descriptor,
+    descriptor$,
     artifactReads,
     previewImageLoad,
     previewImageUrl$,
     ...preview,
-    ...(isTextPreviewKind(descriptor.kind)
+    ...(isTextPreviewKind(descriptor.kind) || descriptor.kind === "file"
       ? {
           text$: createTextPreviewComputed(
             descriptor.url,

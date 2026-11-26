@@ -1,15 +1,9 @@
-import {
-  command,
-  computed,
-  state,
-  type Command,
-  type Computed,
-  type State,
-} from "ccstate";
-import { messageArtifactKey } from "../../views/okou-page/attachment-url.ts";
+import { command, computed, type Command, type Computed } from "ccstate";
 import {
   currentEventImageArtifactNavigation,
+  eventImageCandidates,
   type ImageArtifactNavigationItem,
+  type ImageArtifactNavigation,
 } from "../../views/okou-page/artifact-image-navigation.ts";
 import {
   lightboxUrl$,
@@ -27,27 +21,25 @@ interface ImageSelection {
 }
 
 export interface EventImageNavigationSignals {
-  readonly hasPrevious$: Computed<boolean>;
-  readonly hasNext$: Computed<boolean>;
-  readonly navigate$: Command<void, [EventImageNavigationDirection]>;
+  readonly neighbors$: Computed<Promise<ImageArtifactNavigation>>;
+  readonly navigate$: Command<
+    Promise<void>,
+    [EventImageNavigationDirection, AbortSignal]
+  >;
 }
 
 export interface ThreadImageNavigationSignals {
-  readonly openGroupForImage$: Command<
-    string | undefined,
-    [string, ImageArtifactNavigationItem]
-  >;
+  readonly openGroupForImage$: Command<string | undefined, [string]>;
   readonly lightbox: EventImageNavigationSignals;
   readonly sidebar: EventImageNavigationSignals;
 }
 
 function createEventImageNavigation(
   groups$: Computed<readonly EventImageGroupProjection[]>,
-  knownImages$: State<ReadonlyMap<string, ImageArtifactNavigationItem>>,
   selection$: Computed<ImageSelection | null>,
   select$: Command<void, [ImageArtifactNavigationItem, string, boolean]>,
 ): EventImageNavigationSignals {
-  const neighbors$ = computed((get) => {
+  const neighbors$ = computed(async (get): Promise<ImageArtifactNavigation> => {
     const selection = get(selection$);
     if (!selection?.groupId) {
       return {};
@@ -55,27 +47,49 @@ function createEventImageNavigation(
     const group = get(groups$).find((candidate) => {
       return candidate.id === selection.groupId;
     });
-    return currentEventImageArtifactNavigation(
-      group,
-      selection.url,
-      get(knownImages$),
+    if (!group) {
+      return {};
+    }
+    // Unclassified links use their own card read. Already typed images require no detail read.
+    const candidates = await Promise.all(
+      eventImageCandidates(group.events).map(async (item) => {
+        const { descriptor$, ...image } = item;
+        if (!descriptor$) {
+          return image;
+        }
+        const descriptor = await get(descriptor$);
+        return descriptor.kind === "image"
+          ? {
+              ...image,
+              filename: descriptor.filename,
+              contentType: descriptor.contentType,
+            }
+          : undefined;
+      }),
     );
+    const images = candidates.filter((item) => {
+      return item !== undefined;
+    });
+    return currentEventImageArtifactNavigation(group, selection.url, images);
   });
   return {
-    hasPrevious$: computed((get) => {
-      return get(neighbors$).previous !== undefined;
-    }),
-    hasNext$: computed((get) => {
-      return get(neighbors$).next !== undefined;
-    }),
-    navigate$: command(({ get, set }, direction) => {
-      const groupId = get(selection$)?.groupId;
-      const neighbors = get(neighbors$);
-      const item = neighbors[direction];
-      if (groupId && item) {
-        set(select$, item, groupId, neighbors.role !== "user");
-      }
-    }),
+    neighbors$,
+    navigate$: command(
+      async (
+        { get, set },
+        direction: EventImageNavigationDirection,
+        signal: AbortSignal,
+      ) => {
+        const selection = get(selection$);
+        const groupId = selection?.groupId;
+        const neighbors = await get(neighbors$);
+        signal.throwIfAborted();
+        const item = neighbors[direction];
+        if (groupId && item && get(selection$) === selection) {
+          set(select$, item, groupId, neighbors.role !== "user");
+        }
+      },
+    ),
   };
 }
 
@@ -85,17 +99,8 @@ export function createThreadImageNavigationSignals(
   groups$: Computed<readonly EventImageGroupProjection[]>,
   sidebar: Pick<ThreadSidebarSignals, "target$" | "openAttachment$">,
 ): ThreadImageNavigationSignals {
-  // A link without an extension joins the gallery once its own detail identifies it as an image.
-  const knownImages$ = state<ReadonlyMap<string, ImageArtifactNavigationItem>>(
-    new Map(),
-  );
   return {
-    openGroupForImage$: command(({ get, set }, eventId, item) => {
-      const id = messageArtifactKey(item.url);
-      const previous = get(knownImages$);
-      if (!previous.has(id)) {
-        set(knownImages$, new Map(previous).set(id, item));
-      }
+    openGroupForImage$: command(({ get }, eventId) => {
       return get(groups$).find((group) => {
         return group.events.some((event) => {
           return event.id === eventId;
@@ -104,7 +109,6 @@ export function createThreadImageNavigationSignals(
     }),
     lightbox: createEventImageNavigation(
       groups$,
-      knownImages$,
       computed((get) => {
         const preview = get(lightboxUrl$);
         return preview?.kind === "image" && preview.threadId === threadId
@@ -122,7 +126,6 @@ export function createThreadImageNavigationSignals(
     ),
     sidebar: createEventImageNavigation(
       groups$,
-      knownImages$,
       computed((get) => {
         const target = get(sidebar.target$);
         return target?.type === "artifact" &&

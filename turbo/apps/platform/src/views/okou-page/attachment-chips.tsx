@@ -1312,18 +1312,22 @@ function ArtifactPreviewDialogThreadResolver({
   const detail = useLoadable(preview.artifactReads?.item$ ?? emptyPreviewItem$);
   const item = detail.state === "hasData" ? detail.data : undefined;
   const imageNavigation = thread.imageNavigation.lightbox;
-  const hasPrevious = useGet(imageNavigation.hasPrevious$);
-  const hasNext = useGet(imageNavigation.hasNext$);
+  const pageSignal = useGet(pageSignal$);
+  const neighbors = useLoadable(imageNavigation.neighbors$);
+  const hasPrevious =
+    neighbors.state === "hasData" && neighbors.data.previous !== undefined;
+  const hasNext =
+    neighbors.state === "hasData" && neighbors.data.next !== undefined;
   const navigate = useSet(imageNavigation.navigate$);
   const imageNavigationActions = {
     onPrevious: hasPrevious
       ? () => {
-          return navigate("previous");
+          detach(navigate("previous", pageSignal), Reason.DomCallback);
         }
       : undefined,
     onNext: hasNext
       ? () => {
-          return navigate("next");
+          detach(navigate("next", pageSignal), Reason.DomCallback);
         }
       : undefined,
   };
