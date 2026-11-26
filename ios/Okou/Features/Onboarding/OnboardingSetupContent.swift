@@ -45,11 +45,12 @@ struct OnboardingIndustryContent: View {
 struct OnboardingReadyContent: View {
   let store: OnboardingStore
   @ResolvedValue private var resolvedState: OnboardingStore.Snapshot?
-  @FocusState private var isFocused: Bool
+  @FocusState.Binding private var isFocused: Bool
   @LoadableValue private var recommendation: Loadable<OnboardingRecommendation?>
 
-  init(store: OnboardingStore) {
+  init(store: OnboardingStore, isFocused: FocusState<Bool>.Binding) {
     self.store = store
+    _isFocused = isFocused
     _resolvedState = ResolvedValue(store.value)
     _recommendation = LoadableValue(task: store.resources.recommendation, keepLast: true)
   }

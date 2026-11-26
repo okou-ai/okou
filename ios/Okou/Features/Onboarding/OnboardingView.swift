@@ -138,6 +138,7 @@ struct OnboardingView: View {
   @ResolvedValue private var resolvedState: OnboardingStore.Snapshot?
   @ResolvedValue private var resolvedConnectors: ComposerConnectorStore.Snapshot?
   @State private var confirmsSignOut = false
+  @FocusState private var isEditingTask: Bool
   @Environment(\.scenePhase) private var scenePhase
 
   init(store: OnboardingStore) {
@@ -215,7 +216,7 @@ struct OnboardingView: View {
             .accessibilityAddTraits(.isHeader)
           Text(state.step.detail).font(.okou(.subheadline))
             .foregroundStyle(OkouColor.mutedForeground)
-          if state.step == .ready {
+          if state.step == .ready, !isEditingTask {
             Image(OkouBrand.firstTaskIllustration)
               .renderingMode(.original)
               .resizable()
@@ -233,7 +234,7 @@ struct OnboardingView: View {
       case .industry: OnboardingIndustryContent(store: store)
       case .sources:
         OnboardingSourcesContent(store: store)
-      case .ready: OnboardingReadyContent(store: store)
+      case .ready: OnboardingReadyContent(store: store, isFocused: $isEditingTask)
       }
     }
     .listSectionSpacing(OkouSpace.lg)
