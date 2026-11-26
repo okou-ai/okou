@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
+import { server } from "../../../mocks/server";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -90,4 +92,47 @@ test("connectors-oauth-reconnect-start-004 reconnects the exact owned account", 
     externalId: "39076",
     isDefault: true,
   });
+});
+
+async function deleteDuringReconnectConsent(owner: ApiTestUser) {
+  server.use(
+    http.delete(
+      "https://api.github.com/applications/github-client-id/grant",
+      () => new HttpResponse(null, { status: 204 }),
+    ),
+  );
+  const account = await connectGithub(owner);
+  const started = await connectors.startOauth(
+    owner,
+    "github",
+    "oauth",
+    reconnect(account.id),
+  );
+  await connectors.deleteBuiltinConnectorAccount(owner, "github", account.id);
+  return await connectors.completeOauthCallbackResult("github", {
+    state: stateOf(started.authorizationUrl),
+    code: `code-${randomUUID()}`,
+  });
+}
+
+test("connectors-oauth-reconnect-start-005 (1/2) rejects the reconnect callback after the account is deleted", async () => {
+  mockGitHubConnectorOAuth();
+  const owner = bdd.user({ orgRole: "org:member" });
+
+  const completed = await deleteDuringReconnectConsent(owner);
+
+  expect(completed.body).toStrictEqual({
+    status: "error",
+    message: "Connector account not found",
+  });
+});
+
+test("connectors-oauth-reconnect-start-005 (2/2) keeps the github account list empty after the rejected callback", async () => {
+  mockGitHubConnectorOAuth();
+  const owner = bdd.user({ orgRole: "org:member" });
+  await deleteDuringReconnectConsent(owner);
+
+  await expect(
+    connectors.listBuiltinConnectorAccounts(owner, "github"),
+  ).resolves.toStrictEqual([]);
 });
