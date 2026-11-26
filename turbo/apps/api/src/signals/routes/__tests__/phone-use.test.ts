@@ -15,6 +15,8 @@ import { phoneUseRoutes } from "../phone-use";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { remoteDevicesRoutes } from "../remote-devices";
 
 const context = testContext();
 afterEach(clearMockNow);
@@ -74,6 +76,303 @@ function setPhoneUse(enabled: boolean) {
     [200],
   );
 }
+
+test(
+  "admits the current Run after device approval and checks the policy again at native claim",
+  { timeout: 30_000 },
+  async () => {
+    const scenario = createPublicComputerUseScenario(context);
+    const actor = scenario.user({ orgId: `org_${randomUUID()}` });
+    await scenario.prepareActor(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected organization context");
+    }
+    const orgId = actor.orgId;
+    const sessionId = `sess_${randomUUID()}`;
+    const client = api();
+    const policy = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    authenticate(actor.userId, orgId, sessionId);
+    context.mocks.ably.createTokenRequest.mockResolvedValue({
+      keyName: "phone.key",
+      timestamp: now(),
+      nonce: "nonce",
+      mac: "mac",
+      capability: "{}",
+      clientId: actor.userId,
+    });
+    await accept(
+      featureApi().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.PhoneUse]: true,
+            [FeatureSwitchKey.RemoteDevices]: true,
+          },
+        },
+      }),
+      [200],
+    );
+    const registered = await accept(client.register({ headers, body }), [200]);
+    const params = { deviceId: registered.body.id };
+    const generation = registered.body.generation;
+    await accept(
+      client.heartbeat({ headers, params, body: { generation, ready: true } }),
+      [200],
+    );
+    const [device] = (await accept(policy.list({ headers }), [200])).body
+      .devices;
+    if (!device) {
+      throw new Error("Expected the registered phone's Remote Device");
+    }
+
+    const chat = createChatFilesBddApi(context);
+    const otherThread = await scenario.run(() => {
+      return chat.createThread(actor, {});
+    });
+    const run = await scenario.launchRun(actor);
+    authenticate(actor.userId, orgId, sessionId);
+    const agentHeaders = { authorization: `Bearer ${run.token}` };
+    const request = {
+      headers: agentHeaders,
+      body: {
+        id: randomUUID(),
+        ...params,
+        action: { kind: "observe" as const },
+      },
+    };
+    await accept(client.create(request), [403]);
+    await accept(
+      client.grant({
+        headers,
+        body: { ...params, generation, threadId: run.threadId, allow: true },
+      }),
+      [403],
+    );
+    await accept(
+      policy.approve({
+        headers,
+        params: { threadId: run.threadId },
+        body: { deviceId: device.id },
+      }),
+      [200],
+    );
+    expect((await accept(client.create(request), [200])).body.status).toBe(
+      "queued",
+    );
+    const nativeNext = { headers, params, body: { generation } };
+    expect(
+      (
+        await accept(
+          client.next({
+            ...nativeNext,
+            body: { generation, threadId: otherThread.id },
+          }),
+          [200],
+        )
+      ).body.operation,
+    ).toBeNull();
+    const claimed = await accept(
+      client.next({
+        ...nativeNext,
+        body: { generation, threadId: run.threadId },
+      }),
+      [200],
+    );
+    expect(claimed.body.operation?.id).toBe(request.body.id);
+    const mismatchedSession = await accept(
+      client.next({
+        ...nativeNext,
+        body: {
+          generation,
+          threadId: otherThread.id,
+          activeRunId: run.runId,
+          activeGrantId: claimed.body.operation?.grantId,
+        },
+      }),
+      [200],
+    );
+    expect(mismatchedSession.body).toMatchObject({
+      operation: null,
+      sessionEnded: true,
+    });
+    await accept(
+      policy.setAccess({
+        headers,
+        params: { deviceId: device.id },
+        body: { mode: "denied" },
+      }),
+      [200],
+    );
+    await accept(
+      client.complete({
+        ...nativeNext,
+        body: {
+          generation,
+          operationId: request.body.id,
+          result: { status: "succeeded" },
+        },
+      }),
+      [200],
+    );
+    await accept(
+      client.create({
+        ...request,
+        body: { ...request.body, id: randomUUID() },
+      }),
+      [403],
+    );
+    await accept(
+      policy.approve({
+        headers,
+        params: { threadId: run.threadId },
+        body: { deviceId: device.id },
+      }),
+      [200],
+    );
+    await accept(
+      client.create({
+        ...request,
+        body: { ...request.body, id: randomUUID() },
+      }),
+      [200],
+    );
+    await accept(
+      policy.setAccess({
+        headers,
+        params: { deviceId: device.id },
+        body: { mode: "denied" },
+      }),
+      [200],
+    );
+    expect(
+      (await accept(client.next(nativeNext), [200])).body.operation,
+    ).toBeNull();
+  },
+);
+
+test(
+  "an iOS poll scoped to its previous Chat grant cannot claim device-policy work",
+  { timeout: 30_000 },
+  async () => {
+    const scenario = createPublicComputerUseScenario(context);
+    const orgId = `org_${randomUUID()}`;
+    const actor = scenario.user({ orgId });
+    await scenario.prepareActor(actor);
+    const chat = createChatFilesBddApi(context);
+    const thread = await scenario.run(() => {
+      return chat.createThread(actor, {});
+    });
+    const sessionId = `sess_${randomUUID()}`;
+    authenticate(actor.userId, orgId, sessionId);
+    await setPhoneUse(true);
+    const client = api();
+    const registered = await accept(client.register({ headers, body }), [200]);
+    const { id: deviceId, generation } = registered.body;
+    const params = { deviceId };
+    await accept(
+      client.heartbeat({ headers, params, body: { generation, ready: true } }),
+      [200],
+    );
+    await accept(
+      client.grant({
+        headers,
+        body: { deviceId, generation, threadId: thread.id, allow: true },
+      }),
+      [200],
+    );
+
+    const run = await scenario.launchRun(actor, undefined, thread.id);
+    authenticate(actor.userId, orgId, sessionId);
+    context.mocks.ably.createTokenRequest.mockResolvedValue({
+      keyName: "phone.key",
+      timestamp: now(),
+      nonce: "nonce",
+      mac: "mac",
+      capability: "{}",
+      clientId: actor.userId,
+    });
+    const agentHeaders = { authorization: `Bearer ${run.token}` };
+    const action = { kind: "observe" as const };
+    const legacy = await accept(
+      client.create({
+        headers: agentHeaders,
+        body: { id: randomUUID(), action },
+      }),
+      [200],
+    );
+    const native = {
+      headers,
+      params,
+      body: { generation, threadId: thread.id },
+    };
+    const first = await accept(client.next(native), [200]);
+    expect(first.body.operation?.id).toBe(legacy.body.id);
+    await accept(
+      client.complete({
+        headers,
+        params,
+        body: {
+          generation,
+          operationId: legacy.body.id,
+          result: { status: "succeeded" },
+        },
+      }),
+      [200],
+    );
+
+    await accept(
+      featureApi().update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.RemoteDevices]: true } },
+      }),
+      [200],
+    );
+    const policy = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    const [device] = (await accept(policy.list({ headers }), [200])).body
+      .devices;
+    if (!device) {
+      throw new Error("Expected the registered phone's Remote Device");
+    }
+    await accept(
+      policy.approve({
+        headers,
+        params: { threadId: thread.id },
+        body: { deviceId: device.id },
+      }),
+      [200],
+    );
+    const current = await accept(
+      client.create({
+        headers: agentHeaders,
+        body: { id: randomUUID(), deviceId, action },
+      }),
+      [200],
+    );
+    expect(current.body.grantId).not.toBe(legacy.body.grantId);
+    const poll = { ...native.body, activeRunId: run.runId };
+    const stale = await accept(
+      client.next({
+        ...native,
+        body: { ...poll, activeGrantId: legacy.body.grantId },
+      }),
+      [200],
+    );
+    expect(stale.body.operation).toBeNull();
+    const claimed = await accept(
+      client.next({
+        ...native,
+        body: { ...poll, activeGrantId: current.body.grantId },
+      }),
+      [200],
+    );
+    expect(claimed.body.operation?.id).toBe(current.body.id);
+  },
+);
+
 describe("Phone Use native connection authority", () => {
   it("returns temporary unavailability without making the device ready when Clerk times out", async () => {
     const actor = authenticate();

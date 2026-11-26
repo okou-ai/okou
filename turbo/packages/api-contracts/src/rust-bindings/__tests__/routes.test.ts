@@ -61,6 +61,12 @@ const expectedBindings = [
     rustConstName: "PIN",
   },
   {
+    method: "POST",
+    path: "/api/runners/runs/:runId/ssh/check",
+    rustModulePath: ["runners", "runs", "by_run_id", "ssh", "check"],
+    rustConstName: "CHECK",
+  },
+  {
     method: "GET",
     path: "/api/runners/runs/:runId/steerable-inputs/next",
     rustModulePath: [

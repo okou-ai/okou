@@ -102,6 +102,16 @@ const expectedBindings = [
     direction: "response",
   },
   {
+    rustModulePath: ["runners", "ssh"],
+    rustTypeName: "CheckRequest",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["runners", "ssh"],
+    rustTypeName: "CheckResponse",
+    direction: "response",
+  },
+  {
     rustModulePath: ["runners", "runs"],
     rustTypeName: "CodexRuntimeConfig",
     direction: "response",

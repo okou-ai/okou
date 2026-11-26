@@ -637,6 +637,10 @@ export const clientDescriptorManifest = [
     contracts: ["registryResourceDownloadContract"],
   },
   {
+    module: "remote-devices",
+    contracts: ["remoteDevicesContract"],
+  },
+  {
     module: "remotes",
     contracts: ["remotesContract"],
   },

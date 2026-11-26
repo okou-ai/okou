@@ -50,7 +50,8 @@ async fn both_native_carriers_admit_all_eighteen_current_authentication_profiles
                 )
                 .await;
             assert!(credential.is_ok(), "{carrier} {outcome}");
-            assert!(credential.unwrap().native.is_some());
+            let (credential, _) = credential.unwrap();
+            assert!(credential.native.is_some());
             assert!(h.network.attempts.lock().unwrap().is_empty());
             resolve.assert_calls_async(1).await;
             resolve.delete_async().await;

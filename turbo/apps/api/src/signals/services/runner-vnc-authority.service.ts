@@ -14,6 +14,7 @@ import {
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
+import { remoteDeviceMode } from "./remote-device-access";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import {
   vncNetworkAliases,
@@ -24,10 +25,15 @@ import {
   runThreadVncAccess,
 } from "./run-thread-remote-access.service";
 
+export interface RunnerVncContext {
+  readonly runId: string;
+  readonly supportsDevicePolicy?: boolean;
+}
 type RunnerVncInput = Pick<
   RunnerVncResolveRequest,
   "connectionId" | "runnerIdentity"
-> & { readonly runId: string };
+> &
+  RunnerVncContext;
 const kdcSsh = alias(sshConnections, "vnc_kdc_ssh");
 const { rfbAccess, rfbTailscale, kdcAccess, kdcTailscale } = vncNetworkAliases;
 const kdcSshNeedsRebind =
@@ -41,6 +47,7 @@ const currentVncSelection = Object.freeze({
   createdAt: vncCreationTimestamp,
   orgId: agentRuns.orgId,
   userId: agentRuns.userId,
+  remoteDeviceMode: remoteDeviceMode(agentRuns),
   host: vncConnections.host,
   port: vncConnections.port,
   transportType: vncConnections.transportType,
@@ -180,7 +187,7 @@ export const currentRunnerVncAuthority$ = command(
             agentRuns.runnerHeartbeatGeneration,
             input.runnerIdentity.heartbeatGeneration,
           ),
-          runThreadVncAccess(),
+          runThreadVncAccess(input.supportsDevicePolicy === true),
         ),
       );
     signal.throwIfAborted();
