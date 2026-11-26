@@ -1008,13 +1008,13 @@ remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.
 remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-004	rewritten	131.6		src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	pilot	
 remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-008	rewritten	38.6		src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	pilot	
 remote-access	src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	cloudflare-access-promotion-deletion-012	rewritten	49.0		src/signals/routes/__tests__/cloudflare-access-promotion-deletion.test.ts	pilot	
-remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-001	planned					d-other
-remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-003	planned					d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-001	rewritten	128.8		src/signals/routes/__tests__/cloudflare-access.test.ts		d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-003	rewritten	145.2		src/signals/routes/__tests__/cloudflare-access.test.ts		d-other
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-005	planned					a-run
-remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-006	planned					d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-006	rewritten	81.0		src/signals/routes/__tests__/cloudflare-access.test.ts		d-other
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-007	planned					a-run
-remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-011	planned					d-other
-remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-012	planned					d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-011	rewritten	91.0		src/signals/routes/__tests__/cloudflare-access.test.ts		d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-012	rewritten	36.5		src/signals/routes/__tests__/cloudflare-access.test.ts		d-other
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-014	planned					a-run
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-015	planned					a-run
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-016	planned					a-run
