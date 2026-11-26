@@ -2107,7 +2107,7 @@ messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	intern
 messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-004	planned					a-run
 messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-005	planned					a-run
 messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-009	planned					a-run
-messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-010	planned					d-other
+messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-010	revisit		revisit: reclassify to a-run: Given requires a dispatched Discord DM Run failing with account_verification_required via run completion, and Then asserts a distinct continuation Run with a continue input.			d-other
 messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-011	planned					a-run
 messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-013	planned					a-run
 messaging	src/signals/routes/__tests__/internal-callbacks-discord.test.ts	internal-callbacks-discord-014	planned					a-run
