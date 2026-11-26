@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.70.1](https://github.com/okou-ai/okou/compare/ios-v0.70.0...ios-v0.70.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** dismiss image previews with a vertical swipe ([#51247](https://github.com/okou-ai/okou/issues/51247)) ([236705f](https://github.com/okou-ai/okou/commit/236705fb0a1e82efd56c0dd239178c92f3ebd32b))
+* **ios:** scope chat archive undo to the originating view ([#51253](https://github.com/okou-ai/okou/issues/51253)) ([391e1f9](https://github.com/okou-ai/okou/commit/391e1f9114e3e9309972a716e52489541366d87a))
+
 ## [0.70.0](https://github.com/okou-ai/okou/compare/ios-v0.69.3...ios-v0.70.0) (2026-11-26)
 
 
