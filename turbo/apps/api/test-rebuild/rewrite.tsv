@@ -842,10 +842,10 @@ chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-00
 chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-007	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-008	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-010	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-001	planned				B11	d-other
+chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-001	revisit		revisit: needs a dispatched Run (a-run, awaiting decision)		B11	d-other
 chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-004	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-005	planned				B11	d-other
-chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-006	planned				B11	d-other
+chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-005	revisit		revisit: needs a dispatched Run (a-run, awaiting decision)		B11	d-other
+chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-006	revisit		revisit: needs a dispatched Run (a-run, awaiting decision)		B11	d-other
 chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-007	planned					a-run
 chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-001	rewritten	123.9	split n=2: 1/2=48.1; 2/2=123.9; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/chat-files.bdd.test.ts	B09	d-other
 chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-002	rewritten	52.6	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/chat-files.bdd.test.ts	B09	d-other
