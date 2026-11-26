@@ -239,8 +239,11 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       if slug != "spotify" {
         let base =
           slug == "dropbox" ? "db-42://1/connect" : "https://app.okou.ai/connectors/tiktok/callback"
-        store.receiveProviderReturn(URL(string: "\(base)?state=unrelated&code=provider-code")!)
-        store.receiveProviderReturn(URL(string: "\(base)?state=server-state&code=provider-code")!)
+        let codeParameter = slug == "dropbox" ? "oauth_code" : "code"
+        store.receiveProviderReturn(
+          URL(string: "\(base)?state=unrelated&\(codeParameter)=provider-code")!)
+        store.receiveProviderReturn(
+          URL(string: "\(base)?state=server-state&\(codeParameter)=provider-code")!)
         await fulfillment(of: [try XCTUnwrap(callback)], timeout: 3)
       }
       clock.advance(.seconds(2))
