@@ -561,10 +561,10 @@ browser	src/signals/routes/__tests__/browser-reclaim.test.ts	browser-reclaim-005
 browser	src/signals/routes/__tests__/browser-reclaim.test.ts	browser-reclaim-011	planned					a-run
 browser	src/signals/routes/__tests__/browser-reclaim.test.ts	browser-reclaim-012	planned					d-other
 browser	src/signals/routes/__tests__/browser-reclaim.test.ts	browser-reclaim-013	planned					d-other
-browser	src/signals/routes/__tests__/browser-reconcile.test.ts	browser-reconcile-001	planned				B09	d-other
-browser	src/signals/routes/__tests__/browser-reconcile.test.ts	browser-reconcile-002	planned				B09	d-other
-browser	src/signals/routes/__tests__/browser-reconcile.test.ts	browser-reconcile-005	planned				B09	d-other
-browser	src/signals/routes/__tests__/browser-reconcile.test.ts	browser-reconcile-008	planned				B09	a-run
+browser	src/signals/routes/__tests__/browser-reconcile.test.ts	browser-reconcile-001	skipped		slow-setup: Given needs three chat Runs sharing one Browser instance plus three more opened chat Browsers; the two-Run subset of this Given alone (createBrowserFixtures fixture with Pro chat actor and Runner registration, two chat sends launched with cloud Browser, two POST /api/browsers/use opens) measured 908 ms and 738 ms as the first row and 510 ms and 442 ms warm as a second row, before any reconcile When/Then		B09	d-other
+browser	src/signals/routes/__tests__/browser-reconcile.test.ts	browser-reconcile-002	skipped		slow-setup: Given+first When/Then exceeds 200 ms on the Given alone; chats A and B with Runs using one shared Browser instance (createBrowserFixtures fixture with Pro chat actor and Runner registration, two chat sends launched with cloud Browser, two POST /api/browsers/use opens) measured 908 ms and 738 ms as the first row and 510 ms and 442 ms warm as a second row		B09	d-other
+browser	src/signals/routes/__tests__/browser-reconcile.test.ts	browser-reconcile-005	skipped		slow-setup: Given has the same two chat Runs on one shared Browser instance as browser-reconcile-002 (createBrowserFixtures fixture, two chat sends launched with cloud Browser, two POST /api/browsers/use opens), measured 908 ms and 738 ms first in file and 510 ms and 442 ms warm, before the lease renewal and reconcile		B09	d-other
+browser	src/signals/routes/__tests__/browser-reconcile.test.ts	browser-reconcile-008	skipped		slow-setup: Given needs two members each with a chat Run holding a Browser in its own provider instance (two createBrowserFixtures fixtures); one fixture with two Runs and two opens already measured 908 ms and 738 ms first in file and 510 ms and 442 ms warm		B09	a-run
 browser	src/signals/routes/__tests__/browser-recovery.test.ts	browser-recovery-002	planned					a-run
 browser	src/signals/routes/__tests__/browser-recovery.test.ts	browser-recovery-003	planned					a-run
 browser	src/signals/routes/__tests__/browser-recovery.test.ts	browser-recovery-005	planned					a-run
