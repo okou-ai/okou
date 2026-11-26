@@ -200,13 +200,26 @@ class ScreenshotScenario {
         // After wm size, the Activity can report the new size before Launcher moves its buttons.
         val backButtons =
             listOf(By.res("com.android.launcher3", "back"), By.res("com.android.systemui", "back"))
+        val systemUiAnr = By.res("android", "alertTitle").text("System UI isn't responding")
+        val waitButton = By.res("android", "aerr_wait")
+        var requestedWait = false
         val settled =
             object : Condition<UiDevice, Boolean> {
-                override fun apply(device: UiDevice) =
-                    backButtons.any { selector ->
+                override fun apply(device: UiDevice): Boolean {
+                    if (device.hasObject(systemUiAnr)) {
+                        if (!requestedWait) {
+                            device.findObject(waitButton)?.let { button ->
+                                button.click()
+                                requestedWait = true
+                            }
+                        }
+                        return false
+                    }
+                    return backButtons.any { selector ->
                         device.findObject(selector)?.visibleBounds?.centerY()
                             ?.let { it in (height - 56) until height } == true
                     }
+                }
             }
         check(device.wait(settled, 20_000)) {
             "The system navigation buttons have not reached the bottom edge"
