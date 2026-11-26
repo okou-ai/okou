@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.251.27](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.26...runner-rs-v0.251.27) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** own guest preparation report fixtures ([#51260](https://github.com/okou-ai/okou/issues/51260)) ([512cafb](https://github.com/okou-ai/okou/commit/512cafb1757ec850060cb69fd46c6d7b0596e195))
+
 ## [0.251.26](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.25...runner-rs-v0.251.26) (2026-11-26)
 
 
