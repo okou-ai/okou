@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import Observation
 import SwiftUI
 import UIKit
@@ -60,9 +61,23 @@ extension EnvironmentValues {
 struct NewChatNavigation: ViewModifier {
   let workspace: WorkspaceStore
   let isAuthenticated: Bool
-  var requests = NewChatRequests.shared
-  var didOpen: () -> Void = {}
+  let requests: NewChatRequests
+  let didOpen: () -> Void
   @Environment(\.scenePhase) private var scenePhase
+  /// The workspace's status, kept in the workspace session's Store, so a prepared composer, a
+  /// finished creation or an update requirement checks a pending request again.
+  @ResolvedValue private var shell: WorkspaceStore.Shell?
+
+  init(
+    workspace: WorkspaceStore, isAuthenticated: Bool, requests: NewChatRequests = .shared,
+    didOpen: @escaping () -> Void = {}
+  ) {
+    self.workspace = workspace
+    self.isAuthenticated = isAuthenticated
+    self.requests = requests
+    self.didOpen = didOpen
+    _shell = ResolvedValue(workspace.shellValue)
+  }
 
   private struct Readiness: Equatable {
     let requestID: UUID?
@@ -77,7 +92,8 @@ struct NewChatNavigation: ViewModifier {
       .task(
         id: Readiness(
           requestID: requests.requestedID, isActive: scenePhase == .active,
-          isAuthenticated: isAuthenticated, canOpen: workspace.canOpenNewChatFromSystem)
+          isAuthenticated: isAuthenticated,
+          canOpen: workspace.canOpenNewChatFromSystem(shell ?? workspace.shell))
       ) {
         // Retire requests outside SwiftUI's update so a second system entry can
         // replace voice startup without exhausting onChange's per-frame limit.

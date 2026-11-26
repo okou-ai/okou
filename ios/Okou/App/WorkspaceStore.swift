@@ -98,7 +98,6 @@ final class WorkspaceStore {
   private let voiceCapture: (@MainActor (ChatDraftTarget) -> any VoiceAudioCapture)?
   private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
-  private var workspaceComposerReady = false
   private var composerSyncTask: Task<Void, Never>?
   private var unverifiedDraftThreads = Set<String>()
   private lazy var sidebarDrafts = SidebarDraftStore(
@@ -337,8 +336,11 @@ final class WorkspaceStore {
       previous.move(to: composer)
     }
     if !isCreating { previous.close() }
-    workspaceComposerReady = true
-    newComposer = composer
+    // Readiness and the composer it opens publish together.
+    updateShell {
+      $0.isComposerReady = true
+      $0.newComposer = composer
+    }
     composer.setScenePhase(synchronization.scenePhase)
     composerSyncTask = Task { await composer.synchronize() }
     if let composerSyncTask { lifecycleTasks.track(composerSyncTask) }
@@ -384,9 +386,7 @@ final class WorkspaceStore {
 
   func removeNewChatProject() { newChatProjectID = nil }
 
-  var canOpenNewChatFromSystem: Bool {
-    isForeground && workspaceComposerReady && !isCreating && !needsUpgrade && !closed
-  }
+  var canOpenNewChatFromSystem: Bool { canOpenNewChatFromSystem(shell) }
 
   @discardableResult
   func createChat(composerOptions: ChatComposerOptions? = nil) async
@@ -545,11 +545,14 @@ final class WorkspaceStore {
 
 extension WorkspaceStore {
   /// The workspace's own status: a required update, sidebar restoration, and the new chat's
-  /// creation, submission, Project, failure and composer. References compare by identity.
+  /// composer readiness, creation, submission, Project, failure and composer. References compare
+  /// by identity.
   struct Shell: Equatable {
     var needsUpgrade = false
     /// Mount the sidebar with its cached chats, Projects and disclosure restored together.
     var hasRestoredSidebar = false
+    /// The workspace's own composer is prepared, so a system entry can open a new chat.
+    var isComposerReady = false
     var isCreating = false
     var newChatSubmission: NewChatSubmission?
     var newChatProjectID: String?
@@ -558,7 +561,8 @@ extension WorkspaceStore {
 
     static func == (lhs: Self, rhs: Self) -> Bool {
       lhs.needsUpgrade == rhs.needsUpgrade && lhs.hasRestoredSidebar == rhs.hasRestoredSidebar
-        && lhs.isCreating == rhs.isCreating && lhs.newChatSubmission === rhs.newChatSubmission
+        && lhs.isComposerReady == rhs.isComposerReady && lhs.isCreating == rhs.isCreating
+        && lhs.newChatSubmission === rhs.newChatSubmission
         && lhs.newChatProjectID == rhs.newChatProjectID && lhs.error == rhs.error
         && lhs.newComposer === rhs.newComposer
     }
@@ -579,6 +583,7 @@ extension WorkspaceStore {
     get { shell.hasRestoredSidebar }
     set { updateShell { $0.hasRestoredSidebar = newValue } }
   }
+  private var workspaceComposerReady: Bool { shell.isComposerReady }
   private(set) var isCreating: Bool {
     get { shell.isCreating }
     set { updateShell { $0.isCreating = newValue } }
@@ -598,6 +603,11 @@ extension WorkspaceStore {
   private(set) var newComposer: ComposerDraftStore {
     get { shell.newComposer }
     set { updateShell { $0.newComposer = newValue } }
+  }
+
+  /// Whether a system entry can open a new chat, given the workspace status a view resolved.
+  func canOpenNewChatFromSystem(_ shell: Shell) -> Bool {
+    isForeground && shell.isComposerReady && !shell.isCreating && !shell.needsUpgrade && !closed
   }
 
   private func updateShell(_ change: (inout Shell) -> Void) {
