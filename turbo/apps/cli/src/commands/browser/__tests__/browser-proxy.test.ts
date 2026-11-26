@@ -146,6 +146,7 @@ describe("chat-window CDP proxy protocol", () => {
   });
 
   it("retains the upstream close before disposal disconnects the local client", async () => {
+    await connection.request("Target.getTargets");
     provider.disconnectClients(1012, "private upstream detail");
 
     const [, exit] = await Promise.all([connection.closed, proxy.closed]);
