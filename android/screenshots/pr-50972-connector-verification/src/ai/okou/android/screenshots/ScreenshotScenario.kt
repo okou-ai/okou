@@ -39,15 +39,16 @@ class ScreenshotScenario {
             description("连接器").click()
             action("Google Calendar")
             text("推荐")
-            val discover = action("发现")
+            val discover = checkNotNull(text("发现").parent)
             val connected = action("已连接")
             check(discover.isSelected)
             check(discover.visibleBounds.height() == 48)
             check(discover.visibleBounds.width() == connected.visibleBounds.width())
             capture("phone-connectors-discover.png")
             connected.click()
-            text("工作日历")
-            check(action("已连接").isSelected)
+            check(device.wait(Until.gone(By.text("推荐")), 12_000))
+            text("Google Calendar")
+            check(checkNotNull(text("已连接").parent).isSelected)
             capture("phone-connectors-connected.png")
         }
 
@@ -56,10 +57,12 @@ class ScreenshotScenario {
         onDevice("connector-external-checking", 412, 892) { fixture ->
             fixture.externalAccountReplyGate = CountDownLatch(1)
             openExternalCode()
-            description("授权码").setText("  $CONNECTOR_EXAMPLE_EXTERNAL_CODE  ")
+            codeEditor().setText("  $CONNECTOR_EXAMPLE_EXTERNAL_CODE  ")
+            val submit = action("确认授权码")
+            device.waitForIdle()
             val bounds = description("授权码").visibleBounds
             val cancelBounds = text("取消").visibleBounds
-            action("确认授权码").click()
+            submit.click()
             check(fixture.externalAccountReadStarted.await(10, TimeUnit.SECONDS))
             text("正在核对…")
             check(description("授权码").visibleBounds == bounds)
@@ -73,11 +76,13 @@ class ScreenshotScenario {
     fun wideExternalCodeRejectionAppearsBelowTheSameField() =
         onDevice("connector-external-error", 1180, 820) {
             openExternalCode()
-            description("授权码").setText("invalid-fixture-code")
+            codeEditor().setText("invalid-fixture-code")
+            val submit = action("确认授权码")
+            device.waitForIdle()
             val bounds = description("授权码").visibleBounds
             val cancelBounds = text("取消").visibleBounds
             check(bounds.left > device.displayWidth / 6)
-            action("确认授权码").click()
+            submit.click()
             text("授权码核对失败。")
             check(description("授权码").visibleBounds == bounds)
             check(text("取消").visibleBounds == cancelBounds)
@@ -119,6 +124,19 @@ class ScreenshotScenario {
             action("前往服务方").click()
             description("授权码")
         }
+
+        fun codeEditor(): UiObject2 =
+            checkNotNull(device.wait(object : Condition<UiDevice, UiObject2?> {
+                override fun apply(device: UiDevice) =
+                    device.findObjects(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                        .singleOrNull { editor ->
+                            try {
+                                editor.accessibilityNodeInfo.isPassword
+                            } catch (_: StaleObjectException) {
+                                false
+                            }
+                        }
+            }, 12_000)) { "Missing secure authorization code editor" }
 
         fun searchField(): UiObject2 =
             checkNotNull(
