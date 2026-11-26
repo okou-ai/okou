@@ -111,8 +111,6 @@ function titleModel(text: string) {
   return requests;
 }
 
-describe("client-generated shared-thread IDs", () => {});
-
 describe("optional shared-thread titles", () => {
   it("shared-threads-011 rejects unauthenticated, foreign and empty selections without a share", async () => {
     const bdd = createBddApi(context);
