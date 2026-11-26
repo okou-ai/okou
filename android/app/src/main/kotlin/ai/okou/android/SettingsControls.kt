@@ -376,7 +376,7 @@ internal fun SettingsModal(
     showDragHandle: Boolean = true,
     fitContentInsets: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
-    bottomSheetModifier: Modifier = Modifier,
+    reserveTopInset: Boolean = false,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -407,7 +407,12 @@ internal fun SettingsModal(
         val confirm by rememberUpdatedState(confirmDismiss)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
-            modifier = bottomSheetModifier,
+            modifier =
+                if (reserveTopInset)
+                    Modifier.windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
+                    )
+                else Modifier,
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
@@ -468,18 +473,14 @@ internal fun SettingsSheet(
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
-    // Give native scroll bodies stable height as the sheet opens and consumes the top inset.
-    val bottomSheetModifier =
-        if (scroll == SettingsSheetScroll.None)
-            Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-        else Modifier
     SettingsModal(
         onDismiss,
         dismissible = dismissible,
         fullScreen = compactHeight && fullScreenInShortWindow,
         fitContentInsets = compactHeight && fullScreenInShortWindow,
         confirmDismiss = confirmDismiss,
-        bottomSheetModifier = bottomSheetModifier,
+        // Give native scroll bodies stable height as the sheet opens and consumes the top inset.
+        reserveTopInset = scroll == SettingsSheetScroll.None,
     ) { centered ->
         var panelBottom by remember { mutableFloatStateOf(0f) }
         var actionTop by remember { mutableStateOf<Float?>(null) }
