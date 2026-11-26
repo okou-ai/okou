@@ -17,7 +17,7 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
     val readyAlt = "Release readiness chart"
     val earlierAlt = "Staging baseline chart"
     val deniedAlt = "Restricted source image"
-    val filename = "release-readiness.png"
+    @Volatile var filename = "release-readiness.png"
     val readyReference = "image00001.png"
     val earlierReference = "older00001.png"
     val deniedReference = "hidden0001.png"
@@ -26,6 +26,7 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
     val originals = CopyOnWriteArrayList<String>()
     var missingThumbnail = false
     @Volatile var readyReferenceDenied = false
+    @Volatile var beforeReadyReference: () -> Unit = {}
     @Volatile var deniedExternalFilename: String? = null
 
     fun install(
@@ -44,6 +45,7 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
                     name in listOf(readyReference, earlierReference, deniedReference) -> {
                     assertEquals("Bearer fixture-token", request.getHeader("Authorization"))
                     references.add(name)
+                    if (name == readyReference) beforeReadyReference()
                     if (name == readyReference && readyReferenceDenied)
                         jsonResponse("""{"error":{"code":"FORBIDDEN","message":"Unavailable"}}""")
                             .setResponseCode(403)

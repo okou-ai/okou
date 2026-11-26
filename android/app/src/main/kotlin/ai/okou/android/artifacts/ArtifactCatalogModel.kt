@@ -135,9 +135,9 @@ internal constructor(
     init {
         viewModelScope.launch {
             catalogChanges.collect { changes ->
-                if (changes.resync) inlineImages.invalidate()
-                else if (changes.artifactThreads.isNotEmpty())
+                if (changes.artifactThreads.isNotEmpty())
                     inlineImages.invalidate(changes.artifactThreads)
+                if (changes.resync) inlineImages.revalidate()
                 val threadId = mutable.value.query.chatThreadId ?: return@collect
                 if (catalogVisible && (changes.resync || threadId in changes.artifactThreads)) {
                     readCatalog()

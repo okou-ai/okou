@@ -26,6 +26,8 @@ import androidx.compose.ui.test.printToString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -113,6 +115,76 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
             listOf(fixture.readyReference, fixture.readyReference),
             fixture.references.toList(),
         )
+    }
+
+    @Test
+    fun keepsTheThumbnailOnForegroundUntilTheServerRevokesAccess() {
+        val fixture = InlineImageFixture(app.fixture)
+        fixture.install(earlier = false)
+        openConversation()
+        val image = hasContentDescription(fixture.readyAlt)
+        val loaded =
+            image and
+                hasClickAction() and
+                SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
+        compose.waitUntilExactlyOneExists(loaded, 8_000)
+        val frame = compose.onNode(loaded).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val allowResponse = CountDownLatch(1)
+        fixture.beforeReadyReference = { check(allowResponse.await(10, TimeUnit.SECONDS)) }
+
+        try {
+            resumeArtifactRoute()
+            compose.waitUntil(5_000) { fixture.references.size >= 2 }
+            assertEquals(
+                frame,
+                compose.onNode(loaded).assertIsDisplayed().getUnclippedBoundsInRoot(),
+            )
+            assertEquals(listOf(fixture.readyReference), fixture.thumbnails.toList())
+
+            fixture.readyReferenceDenied = true
+        } finally {
+            allowResponse.countDown()
+        }
+        val unavailable =
+            image and
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Image unavailable",
+                )
+        compose.waitUntilExactlyOneExists(unavailable, 8_000)
+        compose.onNode(unavailable).assert(!hasClickAction())
+        assertEquals(frame, compose.onNode(unavailable).getUnclippedBoundsInRoot())
+        assertEquals(listOf(fixture.readyReference), fixture.thumbnails.toList())
+    }
+
+    @Test
+    fun refreshesTheAuthorizedFilenameWithoutDownloadingTheSameThumbnailAgain() {
+        val fixture = InlineImageFixture(app.fixture)
+        fixture.install(latest = "![](/artifacts/${fixture.readyReference})", earlier = false)
+        openConversation()
+        val ready =
+            hasClickAction() and
+                SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
+        val initial = ready and hasContentDescription(fixture.filename)
+        compose.waitUntilExactlyOneExists(initial, 8_000)
+        val frame = compose.onNode(initial).assertIsDisplayed().getUnclippedBoundsInRoot()
+
+        val updatedName = "verified-rollout.png"
+        fixture.filename = updatedName
+        resumeArtifactRoute()
+
+        val validated = ready and hasContentDescription(updatedName)
+        compose.waitUntilExactlyOneExists(validated, 8_000)
+        assertEquals(
+            frame,
+            compose.onNode(validated).assertIsDisplayed().getUnclippedBoundsInRoot(),
+        )
+        assertEquals(
+            listOf(fixture.readyReference, fixture.readyReference),
+            fixture.references.toList(),
+        )
+        assertEquals(listOf(fixture.readyReference), fixture.thumbnails.toList())
+        assertTrue(fixture.originals.isEmpty())
     }
 
     @Test

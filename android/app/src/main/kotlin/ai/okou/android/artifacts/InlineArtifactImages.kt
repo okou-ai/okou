@@ -20,7 +20,11 @@ internal fun inlineImageSource(destination: String): String? =
 
 internal data class InlineImageRequest(val threadId: String, val source: String, val width: Int)
 
-internal data class InlineImageGrant(val previewId: String, val filename: String)
+internal data class InlineImageGrant(
+    val previewId: String,
+    val filename: String,
+    val fileId: String? = null,
+)
 
 internal enum class InlineImageStatus {
     Loading,
@@ -44,6 +48,8 @@ internal class InlineArtifactImages(
     private val entries = MutableStateFlow<Map<InlineImageRequest, InlineImageState>>(emptyMap())
     private val reads = mutableMapOf<InlineImageRequest, Job>()
     private val visibleCounts = mutableMapOf<InlineImageRequest, Int>()
+    // An entry with no job waits until a cached image of this source becomes visible.
+    private val accessChecks = mutableMapOf<String, Job?>()
 
     fun observe(request: InlineImageRequest) = entries.map { it[request] }.distinctUntilChanged()
 
@@ -51,6 +57,7 @@ internal class InlineArtifactImages(
 
     fun retainVisible(request: InlineImageRequest) {
         visibleCounts[request] = (visibleCounts[request] ?: 0) + 1
+        revalidateVisible(request)
     }
 
     fun releaseVisible(request: InlineImageRequest) {
@@ -134,6 +141,7 @@ internal class InlineArtifactImages(
     }
 
     fun revoke(source: String) {
+        accessChecks.remove(source)?.cancel()
         val current = entries.value
         val matching = current.keys.filter { it.source == source }
         if (matching.isEmpty()) return
@@ -145,8 +153,68 @@ internal class InlineArtifactImages(
     fun invalidate(threadIds: Set<String>? = null) {
         val removed = entries.value.keys.filter { threadIds == null || it.threadId in threadIds }
         if (removed.isEmpty()) return
-        for (request in removed) reads.remove(request)?.cancel()
-        entries.value = entries.value - removed.toSet()
+        remove(removed)
+    }
+
+    fun revalidate() {
+        for ((request, state) in entries.value) {
+            if (state.bitmap != null && state.grant?.fileId != null)
+                accessChecks.putIfAbsent(request.source, null)
+        }
+        for (request in visibleCounts.keys.toList()) revalidateVisible(request)
+    }
+
+    private fun revalidateVisible(request: InlineImageRequest) {
+        val source = request.source
+        if (source !in accessChecks || accessChecks[source] != null) return
+        if (entries.value[request]?.bitmap == null) return
+        val check =
+            scope.launch(start = CoroutineStart.LAZY) {
+                val job = currentCoroutineContext()[Job]
+                try {
+                    val grant = service.revalidateInlineImage(source)
+                    currentCoroutineContext().ensureActive()
+                    applyGrant(source, grant)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    val failure = onFailure(error)
+                    if (failure != ArtifactProblem.Temporary) revoke(source)
+                } finally {
+                    if (accessChecks[source] == job) accessChecks.remove(source)
+                }
+            }
+        accessChecks[source] = check
+        check.start()
+    }
+
+    private fun applyGrant(source: String, grant: InlineImageGrant) {
+        val current = entries.value
+        val matching = current.filterKeys { it.source == source }
+        if (matching.values.any { it.grant != null && it.grant.fileId != grant.fileId }) {
+            remove(matching.keys)
+            return
+        }
+        entries.value =
+            current +
+                matching
+                    .filterValues { it.grant != null }
+                    .mapValues { it.value.copy(grant = grant) }
+    }
+
+    private fun remove(requests: Collection<InlineImageRequest>) {
+        for (request in requests) reads.remove(request)?.cancel()
+        val next = entries.value - requests.toSet()
+        pruneAccessChecks(next)
+        entries.value = next
+    }
+
+    private fun pruneAccessChecks(images: Map<InlineImageRequest, InlineImageState>) {
+        if (accessChecks.isEmpty()) return
+        val cachedSources =
+            images.filterValues { it.bitmap != null }.keys.mapTo(mutableSetOf()) { it.source }
+        for (source in accessChecks.keys - cachedSources) accessChecks.remove(source)?.cancel()
     }
 
     fun revisit(threadId: String) {
@@ -178,6 +246,7 @@ internal class InlineArtifactImages(
             bytes -= value.bitmap?.allocationByteCount ?: 0
             older.remove()
         }
+        pruneAccessChecks(next)
         return next
     }
 }
