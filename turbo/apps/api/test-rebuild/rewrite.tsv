@@ -1214,10 +1214,10 @@ connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-
 connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-055	planned				
 connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-060	planned				
 connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-001	planned				B03
-connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-003	planned				B03
-connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-004	planned				B03
-connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-005	planned				B03
-connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-006	planned				B03
+connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-003	rewritten	94.8		src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-004	rewritten	69.7		src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-005	rewritten	68.9		src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-006	rewritten	173.3		src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03
 connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-001	planned				B03
 connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-003	planned				B03
 connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-004	planned				B03
