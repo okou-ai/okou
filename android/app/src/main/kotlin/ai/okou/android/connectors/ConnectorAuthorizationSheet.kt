@@ -41,6 +41,7 @@ import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.runtime.Composable
@@ -76,7 +77,7 @@ internal fun ConnectorRenameSheet(
     action: ConnectorAction?,
     save: (String) -> Unit,
     cancel: () -> Unit,
-    readFeedback: (@Composable () -> Unit)?,
+    readFeedback: SnackbarHostState,
 ) {
     val currentLabel = account.label()
     val draft = remember(account.id) { RenameDraft(currentLabel) }
@@ -150,7 +151,7 @@ internal fun ConnectorAuthorizationSheet(
     canModify: Boolean,
     action: ConnectorAction?,
     cancel: () -> Unit,
-    readFeedback: (@Composable () -> Unit)?,
+    readFeedback: SnackbarHostState,
 ) {
     val actionLabel =
         remember(account?.id) {
