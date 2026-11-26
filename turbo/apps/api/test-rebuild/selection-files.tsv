@@ -317,7 +317,7 @@ src/signals/routes/__tests__/discord-gateway-auth.test.ts	16	8	5	fewer	Remaining
 src/signals/routes/__tests__/discord-gateway-identity.test.ts	3	2	1	fewer	Remaining 2 are channel/guild variants of the same changed-identity replay, constructible only by the internal Gateway since a Discord message ID cannot change channel or guild
 src/signals/routes/__tests__/discord-ingress.test.ts	56	28	28	none	
 src/signals/routes/__tests__/discord-interactions-preferences.test.ts	11	6	6	none	
-src/signals/routes/__tests__/discord-interactions-verification.test.ts	29	15	2	fewer	Remaining 27 are Ed25519 signature-format vectors, missing headers, reserialized bytes, +/-seconds timestamp boundaries, malformed or unsupported payload schemas, oversized body and missing-config 503s (protocol/config only; one forged-signature rejection already kept)
+src/signals/routes/__tests__/discord-interactions-verification.test.ts	29	15	3	fewer	Remaining 26 are Ed25519 signature-format vectors, missing headers, reserialized bytes, +/-seconds timestamp boundaries, malformed or unsupported payload schemas, oversized body and missing-config 503s (protocol/config only; one forged-signature rejection already kept); rewrite review added discord-interactions-verification-017 (a correctly signed interaction for another Discord application is a distinct boundary from an invalid signature)
 src/signals/routes/__tests__/discord-interactions.test.ts	9	5	5	none	
 src/signals/routes/__tests__/discord-lifecycle.test.ts	2	1	1	none	
 src/signals/routes/__tests__/discord-oauth-export.test.ts	1	1	1	none	
@@ -418,7 +418,7 @@ src/signals/routes/__tests__/membership-refresh.test.ts	8	4	2	fewer	Remaining 6 
 src/signals/routes/__tests__/memory-publication-authorization.test.ts	11	6	6	none	
 src/signals/routes/__tests__/misc-routes.bdd.test.ts	6	3	3	none	
 src/signals/routes/__tests__/model-catalog-antigravity.test.ts	2	1	1	none	
-src/signals/routes/__tests__/model-catalog-authority.test.ts	2	1	1	none	
+src/signals/routes/__tests__/model-catalog-authority.test.ts	2	1	2	more	Rewrite review added model-catalog-authority-001 (every member's model catalog shape (Auto as default and first, private no-store, one enabled built-in route) is not covered; the selected case covers only route capabilities)
 src/signals/routes/__tests__/model-catalog.test.ts	12	6	6	none	
 src/signals/routes/__tests__/model-identity-writes.test.ts	6	3	3	none	
 src/signals/routes/__tests__/model-route-capabilities.test.ts	2	1	1	none	
@@ -435,7 +435,7 @@ src/signals/routes/__tests__/org-delete-billing.test.ts	22	11	11	none
 src/signals/routes/__tests__/org-invitation-purchase.test.ts	2	1	1	none	
 src/signals/routes/__tests__/org-member-cleanup-automations.bdd.test.ts	3	2	2	none	
 src/signals/routes/__tests__/org-member-directory.test.ts	14	7	7	none	
-src/signals/routes/__tests__/org-openrouter-preset.test.ts	6	3	3	none	
+src/signals/routes/__tests__/org-openrouter-preset.test.ts	6	3	4	more	Rewrite review added org-openrouter-preset-004 (an admin without Debug being denied is a separate permission gate; selected cases cover a member without the admin role)
 src/signals/routes/__tests__/org-team.bdd.test.ts	12	6	6	none	
 src/signals/routes/__tests__/paid-tools.test.ts	12	6	6	none	
 src/signals/routes/__tests__/personal-subscription-run-identity.test.ts	41	21	21	none	

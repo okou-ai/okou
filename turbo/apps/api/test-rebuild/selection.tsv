@@ -3392,7 +3392,7 @@ src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-i
 src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-014	not-selected	
 src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-015	not-selected	
 src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-016	not-selected	
-src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-017	not-selected	
+src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-017	selected	access-isolation
 src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-018	not-selected	
 src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-019	not-selected	
 src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-020	not-selected	
@@ -5017,7 +5017,7 @@ src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd-005	not-sel
 src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd-006	selected	core-path
 src/signals/routes/__tests__/model-catalog-antigravity.test.ts	model-catalog-antigravity-001	selected	visible-result
 src/signals/routes/__tests__/model-catalog-antigravity.test.ts	model-catalog-antigravity-002	not-selected	
-src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-001	not-selected	
+src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-001	selected	visible-result
 src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-002	selected	business-rule
 src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-001	selected	visible-result
 src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-002	selected	core-path
@@ -5169,7 +5169,7 @@ src/signals/routes/__tests__/org-member-directory.test.ts	org-member-directory-0
 src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-001	selected	core-path
 src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-002	not-selected	
 src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-003	selected	access-isolation
-src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-004	not-selected	
+src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-004	selected	access-isolation
 src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-005	selected	business-rule
 src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-006	not-selected	
 src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-001	selected	visible-result
