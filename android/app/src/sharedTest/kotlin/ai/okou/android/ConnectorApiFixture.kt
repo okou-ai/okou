@@ -72,6 +72,7 @@ internal class ConnectorApiFixture(
     @Volatile var omittedFromDefaultBrowse: Set<String> = emptySet()
     @Volatile var unavailableCatalogSlugs: Set<String> = emptySet()
     @Volatile var failDiscovery = false
+    @Volatile var discoveryRetryAfterSeconds: Long? = null
     @Volatile var denyDefaultDiscovery = false
     @Volatile var denyCatalogDetail = false
     @Volatile var offerLiveDeviceEnvironment = true
@@ -209,7 +210,13 @@ internal class ConnectorApiFixture(
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
                         discoveryRequested.countDown()
                         discoveryGate?.await()
-                        if (failDiscovery) return rejected(503)
+                        if (failDiscovery) {
+                            val response = rejected(503)
+                            discoveryRetryAfterSeconds?.let {
+                                response.setHeader("Retry-After", it)
+                            }
+                            return response
+                        }
                         val keyword = url.queryParameter("keyword")
                         val category = url.queryParameter("category")
                         if (denyDefaultDiscovery && keyword == null && category == null)
