@@ -66,11 +66,14 @@ class ScreenshotScenario {
         val pendingBounds = try {
             action(fixture.releaseTitle).click()
             node(By.desc("工作流"))
-            node(By.text("在聊天中使用").enabled(false)).visibleBounds.also { bounds ->
+            disabledControl(text("在聊天中使用")).visibleBounds.also { bounds ->
                 assertTrue(bounds.height() >= 48)
                 assertEquals(20, bounds.left)
                 ScreenshotCapture.capture("workflow-phone-loading.png")
             }
+        } catch (failure: Throwable) {
+            captureFailure("phone-loading-failure")
+            throw failure
         } finally {
             release.countDown()
         }
@@ -98,11 +101,14 @@ class ScreenshotScenario {
         fixture.beforeWeekdayToggle = { release.await() }
         try {
             pause.click()
-            val pending = node(By.desc("暂停").enabled(false))
+            val pending = disabledControl(node(By.desc("暂停")))
             assertEquals(pauseBounds, pending.visibleBounds)
             text("已启用")
             assertTrue(fixture.active.get())
             ScreenshotCapture.capture("workflow-wide-pausing.png")
+        } catch (failure: Throwable) {
+            captureFailure("wide-pausing-failure")
+            throw failure
         } finally {
             release.countDown()
         }
@@ -112,11 +118,11 @@ class ScreenshotScenario {
         text("执行频率")
         assertTrue(action("工作日").visibleBounds.height() >= 56)
         assertTrue(action("保存").visibleBounds.height() >= 48)
-        node(By.desc("搜索工作流").enabled(false))
+        disabledControl(node(By.desc("搜索工作流")))
         ScreenshotCapture.capture("workflow-wide-editor.png")
         action("取消").click()
-        node(By.desc("搜索工作流").enabled(true))
         text("触发规则")
+        assertTrue(searchInput().isEnabled)
     }
 
     private fun withWindow(
@@ -162,11 +168,7 @@ class ScreenshotScenario {
                             }
                             capture(fixture)
                         } catch (failure: Throwable) {
-                            runCatching {
-                                TestStorage().openOutputFile("capture-failure.xml")
-                                    .use(device::dumpWindowHierarchy)
-                                ScreenshotCapture.capture("capture-failure.png")
-                            }
+                            captureFailure("capture-failure")
                             throw failure
                         }
                     }
@@ -201,6 +203,24 @@ class ScreenshotScenario {
         }
 
     private fun text(label: String): UiObject2 = node(By.text(label))
+
+    private fun disabledControl(label: UiObject2): UiObject2 =
+        checkNotNull(generateSequence(label) { it.parent }.firstOrNull { !it.isEnabled }) {
+            "The labelled control is still enabled"
+        }
+
+    private fun searchInput(): UiObject2 =
+        checkNotNull(
+            generateSequence(node(By.desc("搜索工作流"))) { it.parent }
+                .firstOrNull { it.className == "android.widget.EditText" },
+        ) { "Missing workflow search input" }
+
+    private fun captureFailure(name: String) {
+        runCatching {
+            TestStorage().openOutputFile("$name.xml").use(device::dumpWindowHierarchy)
+        }
+        runCatching { ScreenshotCapture.capture("$name.png") }
+    }
 
     private fun tab(label: String): UiObject2 =
         checkNotNull(generateSequence(text(label)) { it.parent }.firstOrNull { it.isFocusable }) {
