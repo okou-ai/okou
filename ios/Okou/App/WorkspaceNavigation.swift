@@ -115,8 +115,8 @@ struct WorkspaceNavigation<Sidebar: View, ForYou: View, Chat: View>: UIViewContr
       sidebar.setTransitioning(true)
       let showsChat = viewController === chat
       presentation.beginTransition(showsChat: showsChat)
-      navigationController.transitionCoordinator?.notifyWhenInteractionChanges {
-        [weak self] context in
+      let transition = navigationController.transitionCoordinator
+      transition?.notifyWhenInteractionChanges { [weak self] context in
         if !showsChat && context.isCancelled { self?.presentation.cancelDeparture() }
       }
     }

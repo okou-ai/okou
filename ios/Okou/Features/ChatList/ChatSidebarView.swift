@@ -253,9 +253,8 @@ struct ChatSidebarView: View {
 
   /// For you is always the list's first row, whatever the chats below it are doing.
   private var forYouRow: some View {
-    ForYouSidebarRow(summary: forYouSummary, rowInset: rowInset) {
-      store.sidebarInteraction.path = [.forYou]
-    }
+    ForYouSidebarRow(
+      summary: forYouSummary, rowInset: rowInset, open: store.sidebarInteraction.openForYou)
   }
 
   /// For you, then the projects, oldest first, then the chats outside them. Each list leads

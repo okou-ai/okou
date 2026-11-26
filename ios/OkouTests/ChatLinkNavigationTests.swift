@@ -83,7 +83,7 @@ final class ChatLinkNavigationTests: XCTestCase {
     defer { store.close() }
     await store.refresh()
     let sidebar = store.sidebarInteraction
-    sidebar.path = [.forYou]
+    sidebar.openForYou()
 
     await store.forYou.openSource(ChatLinkFixture.sourceID)
     XCTAssertEqual(store.selectedThreadID, ChatLinkFixture.sourceID)
