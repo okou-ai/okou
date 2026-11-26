@@ -509,9 +509,9 @@ const startupInputsSchema = object({
     missingRootPolicy: artifactMissingRootPolicySchema.optional(),
   })
     .strict()
-    .refine(
-      (memory) => memory.archiveUrl !== undefined || memory.empty === true,
-    )
+    .refine((memory) => {
+      return memory.archiveUrl !== undefined || memory.empty === true;
+    })
     .nullable(),
   contentBundles: namedExecutionContentBundlesSchema,
 }).strict();
