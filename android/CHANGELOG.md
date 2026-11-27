@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.65.3](https://github.com/okou-ai/okou/compare/android-v0.65.2...android-v0.65.3) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** align workflow loading states with the design ([#51338](https://github.com/okou-ai/okou/issues/51338)) ([3d3af39](https://github.com/okou-ai/okou/commit/3d3af392dae5856fccd3bdf7704d0b84b7199695))
+
 ## [0.65.2](https://github.com/okou-ai/okou/compare/android-v0.65.1...android-v0.65.2) (2026-11-27)
 
 

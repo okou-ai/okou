@@ -10,6 +10,14 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.138.4](https://github.com/okou-ai/okou/compare/api-v2.138.3...api-v2.138.4) (2026-11-27)
+
+
+### Performance Improvements
+
+* **api:** reuse built-in route pricing checks ([#51348](https://github.com/okou-ai/okou/issues/51348)) ([5536f8a](https://github.com/okou-ai/okou/commit/5536f8a75be7ac3284c8e1d865d7021b61e33508))
+* **api:** trim startup model pricing ([#51347](https://github.com/okou-ai/okou/issues/51347)) ([e20c2e9](https://github.com/okou-ai/okou/commit/e20c2e9f59be38867b48dd4994824ad81eeb0f60))
+
 ## [2.138.3](https://github.com/okou-ai/okou/compare/api-v2.138.2...api-v2.138.3) (2026-11-27)
 
 

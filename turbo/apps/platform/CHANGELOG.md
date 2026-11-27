@@ -13,6 +13,19 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1194.0](https://github.com/okou-ai/okou/compare/app-v0.1193.3...app-v0.1194.0) (2026-11-27)
+
+
+### Features
+
+* **platform:** split composer voice finish into voice and text actions ([#51351](https://github.com/okou-ai/okou/issues/51351)) ([1ba0283](https://github.com/okou-ai/okou/commit/1ba02834e42d072d7385d97d57cb1c3a8fc780ec))
+
+
+### Bug Fixes
+
+* **platform:** align artifact library file metadata ([#51302](https://github.com/okou-ai/okou/issues/51302)) ([5115bac](https://github.com/okou-ai/okou/commit/5115baceb47b01c2448c092c1228d96ca3fb63de))
+* **platform:** tint share header select-all and cancel with brand color ([#51337](https://github.com/okou-ai/okou/issues/51337)) ([733f343](https://github.com/okou-ai/okou/commit/733f3432e6a104d6e5b5d440bbfafb233eb97644))
+
 ## [0.1193.3](https://github.com/okou-ai/okou/compare/app-v0.1193.2...app-v0.1193.3) (2026-11-27)
 
 
