@@ -352,4 +352,75 @@ describe("external MCP authentication and transport", () => {
       status: 200,
     });
   });
+
+  it("pf-096 rejects Origin null before authorization", async () => {
+    configureMcp();
+    const app = createAppWithRoutes({
+      signal: context.signal,
+      routes: mcpServerRoutes,
+    });
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: {
+        origin: "null",
+        "content-type": "application/json",
+        ...legacyHeaders(),
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toStrictEqual({
+      error: "Forbidden Origin",
+    });
+  });
+
+  it("pf-099 allows bearer MCP discovery from third-party HTTPS origin and rejects cookies", async () => {
+    const identity = await member();
+    const token = accessToken(identity);
+    const app = createAppWithRoutes({
+      signal: context.signal,
+      routes: mcpServerRoutes,
+    });
+    const body = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+      params: {},
+    });
+
+    const [allowed, withCookie] = await Promise.all([
+      app.request("/mcp", {
+        method: "POST",
+        headers: {
+          origin: "https://client.example.test",
+          "content-type": "application/json",
+          ...legacyHeaders(token),
+        },
+        body,
+      }),
+      app.request("/mcp", {
+        method: "POST",
+        headers: {
+          origin: "https://client.example.test",
+          cookie: "session=forbidden",
+          "content-type": "application/json",
+          ...legacyHeaders(token),
+        },
+        body,
+      }),
+    ]);
+
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers.get("access-control-allow-origin")).toBe("*");
+    expect(withCookie.status).toBe(403);
+    await expect(withCookie.json()).resolves.toStrictEqual({
+      error: "Forbidden Origin",
+    });
+  });
 });

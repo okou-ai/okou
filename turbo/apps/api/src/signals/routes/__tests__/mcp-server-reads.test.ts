@@ -6,6 +6,7 @@ import {
   sign,
 } from "node:crypto";
 
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
@@ -16,8 +17,11 @@ import {
   array,
   boolean,
   literal,
+  number,
   object,
+  record,
   string,
+  union,
   unknown as zUnknown,
 } from "zod";
 
@@ -809,5 +813,180 @@ describe("thin MCP Web adapters", () => {
         ]),
       },
     });
+  });
+
+  it("pf-093 authorizes a device to subscribe to its own workspace through Ably", async () => {
+    const harness = createHarness();
+    const { member, token } = await harness.memberWithToken();
+    const tokenRequestParams = object({
+      capability: union([
+        string(),
+        record(string(), array(string())),
+      ]).optional(),
+      clientId: string().optional(),
+      timestamp: number().optional(),
+      ttl: number().optional(),
+    });
+    context.mocks.ably.createTokenRequest.mockImplementation(
+      (rawParams: unknown) => {
+        const params = tokenRequestParams.parse(rawParams);
+        return Promise.resolve({
+          keyName: "ably-test-key",
+          clientId: params.clientId ?? member.userId,
+          capability:
+            typeof params.capability === "string"
+              ? params.capability
+              : JSON.stringify(params.capability ?? {}),
+          timestamp: params.timestamp ?? now(),
+          ttl: params.ttl ?? 60_000,
+          nonce: "test-nonce",
+          mac: "test-mac",
+        });
+      },
+    );
+
+    const result = await mcpCall(token, "get_chat_realtime_token");
+    expect(result.isError).not.toBeTruthy();
+    const parsed = object({
+      clientId: string(),
+      capability: string(),
+    }).parse(result.structuredContent);
+    expect(parsed.clientId).toBe(member.userId);
+    const capability = JSON.parse(parsed.capability) as Record<
+      string,
+      readonly string[]
+    >;
+    const channels = Object.keys(capability);
+    expect(
+      channels.every((channel) => {
+        return (
+          channel.includes(member.userId) && channel.includes(member.orgId)
+        );
+      }),
+    ).toBeTruthy();
+    expect(
+      Object.values(capability).every((ops) => {
+        return ops.length === 1 && ops[0] === "subscribe";
+      }),
+    ).toBeTruthy();
+  });
+
+  it("pf-094 sends and plays a private WAV through MCP and signed storage URLs", async () => {
+    const harness = createHarness();
+    const { member, token } = await harness.memberWithToken();
+    const peer = await harness.seededUser(member.orgId);
+    const peerToken = harness.signToken(peer);
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.test/signed-voice.wav",
+    );
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      return Promise.resolve(
+        command instanceof HeadObjectCommand
+          ? { ContentLength: 128, ContentType: "audio/wav" }
+          : {},
+      );
+    });
+
+    const prepared = await mcpCall(token, "prepare_voice_upload", {
+      filename: "device-note.wav",
+      size: 128,
+    });
+    expect(prepared.isError).not.toBeTruthy();
+    const uploaded = object({
+      id: string(),
+      uploadUrl: string(),
+    }).parse(prepared.structuredContent);
+    expect(uploaded.uploadUrl).toContain("https://r2.example.test/");
+
+    const completed = await mcpCall(token, "complete_voice_upload", {
+      id: uploaded.id,
+    });
+    expect(completed.isError).not.toBeTruthy();
+
+    const sent = sendResult(
+      await mcpCall(token, "send_chat_message", {
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "voice",
+              clips: [{ fileId: uploaded.id }],
+            },
+          ],
+        },
+      }),
+    );
+    expect(sent.threadId).toBeTruthy();
+
+    const playback = await mcpCall(token, "get_voice_playback_url", {
+      fileId: uploaded.id,
+    });
+    expect(playback.isError).not.toBeTruthy();
+    expect(playback.structuredContent).toMatchObject({
+      url: "https://r2.example.test/signed-voice.wav",
+    });
+
+    const peerPlayback = await mcpCall(peerToken, "get_voice_playback_url", {
+      fileId: uploaded.id,
+    });
+    expect(peerPlayback).toMatchObject(NOT_FOUND_RESULT);
+  });
+
+  it("pf-095 (1/2) recovers an empty device thread after losing the acknowledgement", async () => {
+    const { token } = await createHarness().memberWithToken();
+    const clientThreadId = randomUUID();
+
+    const firstThread = object({ threadId: string() }).parse(
+      (
+        await mcpCall(token, "create_chat_thread", {
+          clientThreadId,
+          title: "Device conversation",
+        })
+      ).structuredContent,
+    );
+    const secondThread = object({ threadId: string() }).parse(
+      (
+        await mcpCall(token, "create_chat_thread", {
+          clientThreadId,
+          title: "Device conversation",
+        })
+      ).structuredContent,
+    );
+    expect(secondThread.threadId).toBe(firstThread.threadId);
+  });
+
+  it("pf-095 (2/2) recovers a keyed device send after losing the acknowledgement", async () => {
+    const { token } = await createHarness().memberWithToken();
+    const clientEventId = randomUUID();
+
+    const firstSend = sendResult(
+      await mcpCall(token, "send_chat_message", {
+        clientEventId,
+        prompt: "Retry safe message",
+      }),
+    );
+    const secondSend = sendResult(
+      await mcpCall(token, "send_chat_message", {
+        threadId: firstSend.threadId,
+        clientEventId,
+        prompt: "Retry safe message",
+      }),
+    );
+    expect(secondSend).toMatchObject({
+      threadId: firstSend.threadId,
+      eventId: firstSend.eventId,
+    });
+
+    const messages = await mcpCall(token, "get_chat_messages", {
+      threadId: firstSend.threadId,
+    });
+    const rows = object({ rows: array(object({ eventId: string() })) }).parse(
+      messages.structuredContent,
+    ).rows;
+    expect(
+      rows.filter((row) => {
+        return row.eventId === firstSend.eventId;
+      }),
+    ).toHaveLength(1);
   });
 });

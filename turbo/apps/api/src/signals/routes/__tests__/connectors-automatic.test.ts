@@ -1219,4 +1219,138 @@ describe("builtin MCP automatic authentication", () => {
     expect(completion.status).toBe(404);
     expect(listed).toStrictEqual([]);
   });
+
+  it("pf-063 keeps a direct native Automatic OAuth callback on its connector result page", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      endpoint: fixture.endpoint,
+    });
+    const actor = member();
+    const started = await authorize(actor, fixture, add, "ios-https");
+
+    const redirect = await accept(
+      automatic.callback({
+        query: {
+          state: started.state,
+          iss: provider.issuer,
+          code: "native-direct-code",
+        },
+      }),
+      [307],
+    );
+
+    const location = new URL(redirect.headers.get("location") ?? "");
+    expect(`${location.origin}${location.pathname}`).toBe(
+      `https://app.okou.ai/connectors/${fixture.slug}/callback/success`,
+    );
+    expect(location.searchParams.get("nativeAppAttemptId")).toBe(
+      started.oauthAttemptId,
+    );
+    expect(location.searchParams.get("nativeAppHttpsHost")).toBe("app.okou.ai");
+    await expect(
+      completedConnection(actor, fixture, started.oauthAttemptId),
+    ).resolves.toBeTruthy();
+  });
+
+  it("pf-064 deduplicates repeated Automatic OAuth identity (overlap=false)", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      endpoint: fixture.endpoint,
+      identity: {
+        subject: "shared-oidc-subject",
+        tokenUsername: "same-user",
+        tokenEmail: "same-user@example.test",
+        userInfoUsername: "same-user",
+        userInfoEmail: "same-user@example.test",
+      },
+    });
+    const actor = member();
+
+    const first = await authorize(actor, fixture);
+    await callback({
+      state: first.state,
+      iss: provider.issuer,
+      code: "first-code",
+    });
+    const firstId = await completedConnection(
+      actor,
+      fixture,
+      first.oauthAttemptId,
+    );
+
+    const second = await authorize(actor, fixture);
+    await callback({
+      state: second.state,
+      iss: provider.issuer,
+      code: "second-code",
+    });
+    const secondId = await completedConnection(
+      actor,
+      fixture,
+      second.oauthAttemptId,
+    );
+
+    expect(secondId).toBe(firstId);
+    const listed = await listAccounts(actor, fixture);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.id).toBe(firstId);
+  });
+
+  it("pf-066 keeps the same subject from different OAuth issuers as distinct accounts", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    const firstProvider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      endpoint: fixture.endpoint,
+      issuer: "https://issuer-one.example.test",
+      identity: {
+        subject: "identical-subject",
+        tokenUsername: "user-one",
+        tokenEmail: "one@example.test",
+        userInfoUsername: "user-one",
+        userInfoEmail: "one@example.test",
+      },
+    });
+    const actor = member();
+
+    const first = await authorize(actor, fixture);
+    await callback({
+      state: first.state,
+      iss: firstProvider.issuer,
+      code: "code-one",
+    });
+    const firstId = await completedConnection(
+      actor,
+      fixture,
+      first.oauthAttemptId,
+    );
+
+    const secondProvider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      endpoint: fixture.endpoint,
+      issuer: "https://issuer-two.example.test",
+      identity: {
+        subject: "identical-subject",
+        tokenUsername: "user-two",
+        tokenEmail: "two@example.test",
+        userInfoUsername: "user-two",
+        userInfoEmail: "two@example.test",
+      },
+    });
+    const second = await authorize(actor, fixture);
+    await callback({
+      state: second.state,
+      iss: secondProvider.issuer,
+      code: "code-two",
+    });
+    const secondId = await completedConnection(
+      actor,
+      fixture,
+      second.oauthAttemptId,
+    );
+
+    expect(secondId).not.toBe(firstId);
+    expect(await listAccounts(actor, fixture)).toHaveLength(2);
+  });
 });

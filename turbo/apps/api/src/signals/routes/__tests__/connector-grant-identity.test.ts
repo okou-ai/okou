@@ -173,6 +173,25 @@ describe("slack authorization identity", () => {
       rejectsReconnectToAnotherGrant("slack"),
     ).resolves.toBeUndefined();
   });
+
+  it("pf-061 reuses the same Slack team grant on repeated Add account authorization", async () => {
+    mockSlack(["T0TEAMA", "T0TEAMA"]);
+    const owner = bdd.user();
+
+    await expect(authorize(owner, "slack")).resolves.toBe("success");
+    const first = await connectors.readDefaultBuiltinAccount(owner, "slack");
+    await expect(authorize(owner, "slack")).resolves.toBe("success");
+
+    const accounts = await connectors.listBuiltinConnectorAccounts(
+      owner,
+      "slack",
+    );
+    expect(
+      accounts.map((account) => {
+        return account.id;
+      }),
+    ).toStrictEqual([first.id]);
+  });
 });
 
 describe("notion authorization identity", () => {

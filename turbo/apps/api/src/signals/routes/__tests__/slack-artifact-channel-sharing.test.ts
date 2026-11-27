@@ -864,4 +864,30 @@ describe("Slack artifact channel sharing", () => {
     );
     expect(w.promptText()).not.toContain("need access");
   });
+
+  it("pf-128 adds a restricted file preview after granting access to every connected member", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    const viewer = await w.connectedMember();
+    await w.postLink(file.url);
+    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+
+    await w.click("artifact_share_channel");
+
+    await expect(w.shareEmails(file)).resolves.toStrictEqual([viewer.email]);
+    expect(w.unfurledUrls()).toContain(`${CHANNEL}/${MESSAGE_TS}/${file.url}`);
+  });
+
+  it("pf-130 refreshes the preview after making a file workspace-visible when every member belongs to that workspace", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    await w.connectedMember(w.owner.orgId);
+    await w.postLink(file.url);
+    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+
+    await w.click("artifact_share_organization");
+
+    await expect(w.fileAudience(file)).resolves.toBe("organization");
+    expect(w.unfurledUrls()).toContain(`${CHANNEL}/${MESSAGE_TS}/${file.url}`);
+  });
 });

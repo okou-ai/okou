@@ -255,8 +255,8 @@ async function paidOwnerWithSite() {
   mockEnv("HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN", `token-${randomUUID()}`);
   mockEnv("HOSTED_SITE_CUSTOM_DOMAIN_WORKER", WORKER);
   const owner = await member();
-  await upgrade(owner);
-  const [site] = await Promise.all([
+  const [, site] = await Promise.all([
+    upgrade(owner),
     publishPublicSite(owner),
     enableCustomDomains(owner),
   ]);
@@ -320,22 +320,10 @@ function verifyDomain(
   });
 }
 
-function domainOf(
-  settings: {
-    readonly domains: readonly {
-      readonly id: string;
-      readonly hostname: string;
-      readonly revision: string;
-      readonly ready: boolean;
-      readonly removing: boolean;
-      readonly verification: {
-        readonly status: string;
-        readonly checks: Readonly<Record<string, { readonly status: string }>>;
-      } | null;
-    }[];
-  },
+function domainOf<T extends { readonly id: string }>(
+  settings: { readonly domains: readonly T[] },
   id: string,
-) {
+): T {
   const domain = settings.domains.find((candidate) => {
     return candidate.id === id;
   });
@@ -1042,5 +1030,230 @@ describe("hosted site custom domain setup", () => {
       controlPanelUrl: "https://dash.cloudflare.com/",
       automaticUrl: null,
     });
+  });
+
+  it("pf-085 a pending TXT certificate switches to HTTP without resetting TLS settings", async () => {
+    const { owner, site } = await paidOwnerWithSite();
+    const dns = installDns();
+    const hostname = `${site.publicSlug}.customer-example.net`;
+    const base = `https://api.cloudflare.com/client/v4/zones/${ZONE_ID}`;
+    const tlsSettings = { min_tls_version: "1.2", tls_1_3: "on" };
+    const patchBodies: unknown[] = [];
+    let currentMethod = "txt";
+    const cfId = `cf-${randomUUID()}`;
+    server.use(
+      http.get(`${base}/custom_hostnames/fallback_origin`, () => {
+        return HttpResponse.json({
+          success: true,
+          result: { origin: "origin.okou.app", status: "active" },
+          errors: [],
+        });
+      }),
+      http.get(`${base}/workers/routes`, () => {
+        return HttpResponse.json({
+          success: true,
+          result: [{ pattern: "*/*", script: WORKER }],
+          errors: [],
+        });
+      }),
+      http.get(`${base}/custom_hostnames`, () => {
+        return HttpResponse.json({ success: true, result: [], errors: [] });
+      }),
+      http.post(`${base}/custom_hostnames`, () => {
+        return HttpResponse.json({
+          success: true,
+          result: {
+            id: cfId,
+            hostname,
+            status: "pending",
+            ssl: {
+              status: "pending_validation",
+              method: currentMethod,
+              settings: tlsSettings,
+            },
+          },
+          errors: [],
+        });
+      }),
+      http.patch(`${base}/custom_hostnames/${cfId}`, async ({ request }) => {
+        patchBodies.push(await request.json());
+        currentMethod = "http";
+        return HttpResponse.json({
+          success: true,
+          result: {
+            id: cfId,
+            hostname,
+            status: "pending",
+            ssl: {
+              status: "pending_validation",
+              method: "http",
+              settings: tlsSettings,
+            },
+          },
+          errors: [],
+        });
+      }),
+    );
+
+    const { domain, ownership } = await addDomain(owner, site.siteId, hostname);
+    dns.set(ownership.name, "TXT", [`"${ownership.value}"`]);
+    dns.set(hostname, "CNAME", [`${TARGET}.`]);
+
+    const verified = await accept(
+      verifyDomain(owner, site.siteId, domain),
+      [200],
+    );
+    expect(patchBodies).toStrictEqual([
+      { ssl: { method: "http", type: "dv", settings: tlsSettings } },
+    ]);
+    expect(
+      domainOf(verified.body, domain.id).verification?.checks.certificate
+        ?.status,
+    ).toBe("pending");
+  });
+
+  it("pf-087 certificate validation failure is actionable without new DNS records", async () => {
+    const { owner, site } = await paidOwnerWithSite();
+    const dns = installDns();
+    const hostname = `${site.publicSlug}.customer-example.net`;
+    const base = `https://api.cloudflare.com/client/v4/zones/${ZONE_ID}`;
+    const cfId = `cf-${randomUUID()}`;
+    server.use(
+      http.get(`${base}/custom_hostnames/fallback_origin`, () => {
+        return HttpResponse.json({
+          success: true,
+          result: { origin: "origin.okou.app", status: "active" },
+          errors: [],
+        });
+      }),
+      http.get(`${base}/workers/routes`, () => {
+        return HttpResponse.json({
+          success: true,
+          result: [{ pattern: "*/*", script: WORKER }],
+          errors: [],
+        });
+      }),
+      http.get(`${base}/custom_hostnames`, () => {
+        return HttpResponse.json({ success: true, result: [], errors: [] });
+      }),
+      http.post(`${base}/custom_hostnames`, () => {
+        return HttpResponse.json({
+          success: true,
+          result: {
+            id: cfId,
+            hostname,
+            status: "pending",
+            ssl: {
+              status: "validation_timed_out",
+              method: "http",
+              validation_errors: [{ message: "CAA record prevents issuance" }],
+            },
+          },
+          errors: [],
+        });
+      }),
+    );
+
+    const { domain, ownership } = await addDomain(owner, site.siteId, hostname);
+    dns.set(ownership.name, "TXT", [`"${ownership.value}"`]);
+    dns.set(hostname, "CNAME", [`${TARGET}.`]);
+
+    const verified = await accept(
+      verifyDomain(owner, site.siteId, domain),
+      [200],
+    );
+    const updated = domainOf(verified.body, domain.id);
+    expect(updated.ready).toBeFalsy();
+    expect(updated.verification?.checks.certificate).toMatchObject({
+      status: "failed",
+      message: expect.stringContaining("CAA record prevents issuance"),
+    });
+    expect(
+      updated.records.map((record) => {
+        return record.type;
+      }),
+    ).toStrictEqual(["TXT", "CNAME"]);
+  });
+
+  it("pf-088 only the saved domain serves a website and switching retains configured domains", async () => {
+    const { owner, site } = await paidOwnerWithSite();
+    const dns = installDns();
+    const provider = installProvider();
+    provider.activate();
+    const firstHost = `a-${site.publicSlug}.customer-example.net`;
+    const secondHost = `b-${site.publicSlug}.customer-example.net`;
+
+    const [first, second] = await Promise.all([
+      addDomain(owner, site.siteId, firstHost),
+      addDomain(owner, site.siteId, secondHost),
+    ]);
+    dns.set(first.ownership.name, "TXT", [`"${first.ownership.value}"`]);
+    dns.set(firstHost, "CNAME", [`${TARGET}.`]);
+    dns.set(second.ownership.name, "TXT", [`"${second.ownership.value}"`]);
+    dns.set(secondHost, "CNAME", [`${TARGET}.`]);
+
+    const verifiedFirst = await accept(
+      verifyDomain(owner, site.siteId, first.domain),
+      [200],
+    );
+    const verifiedSecond = await accept(
+      verifyDomain(
+        owner,
+        site.siteId,
+        domainOf(verifiedFirst.body, second.domain.id),
+      ),
+      [200],
+    );
+
+    const selectedFirst = await accept(
+      domainsApi().selectSiteDomain({
+        headers: signIn(owner),
+        params: { siteId: site.siteId },
+        body: {
+          domainId: first.domain.id,
+          expectedRevision: verifiedSecond.body.revision,
+        },
+      }),
+      [200],
+    );
+    expect(selectedFirst.body.effectiveUrl).toBe(`https://${firstHost}`);
+    const [resolvedFirstA, resolvedSecondA] = await Promise.all([
+      accept(
+        domainsApi().resolveCustomDomain({ params: { hostname: firstHost } }),
+        [200],
+      ),
+      accept(
+        domainsApi().resolveCustomDomain({ params: { hostname: secondHost } }),
+        [200],
+      ),
+    ]);
+    expect(resolvedFirstA.body?.siteId).toBe(site.siteId);
+    expect(resolvedSecondA.body).toBeNull();
+
+    const selectedSecond = await accept(
+      domainsApi().selectSiteDomain({
+        headers: signIn(owner),
+        params: { siteId: site.siteId },
+        body: {
+          domainId: second.domain.id,
+          expectedRevision: selectedFirst.body.revision,
+        },
+      }),
+      [200],
+    );
+    expect(selectedSecond.body.effectiveUrl).toBe(`https://${secondHost}`);
+    expect(selectedSecond.body.domains).toHaveLength(2);
+    const [resolvedFirstB, resolvedSecondB] = await Promise.all([
+      accept(
+        domainsApi().resolveCustomDomain({ params: { hostname: firstHost } }),
+        [200],
+      ),
+      accept(
+        domainsApi().resolveCustomDomain({ params: { hostname: secondHost } }),
+        [200],
+      ),
+    ]);
+    expect(resolvedFirstB.body).toBeNull();
+    expect(resolvedSecondB.body?.siteId).toBe(site.siteId);
   });
 });

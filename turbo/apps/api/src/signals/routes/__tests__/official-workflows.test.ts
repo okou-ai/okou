@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
@@ -9,8 +10,10 @@ import { createStore } from "ccstate";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { feedRoutes } from "../feed";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
+import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { workflowsRoutes } from "../workflows";
@@ -178,5 +181,109 @@ describe("My Okou proactive settings", () => {
       [200],
     );
     await expect(readSources()).resolves.toMatchObject({ suggestions: true });
+  });
+
+  it("pf-103 keeps the Suggestions choice while the member has no timezone", async () => {
+    await workspaceMember();
+
+    const updated = await accept(
+      proactive().update({ headers, body: { enabled: true } }),
+      [200],
+    );
+    expect(updated.body).toStrictEqual({
+      status: "preparing",
+      enabled: true,
+      unavailableReason: "missing-timezone",
+    });
+
+    await expect(readHourly()).resolves.toStrictEqual({
+      status: "preparing",
+      enabled: true,
+      unavailableReason: "missing-timezone",
+    });
+  });
+
+  it("pf-102 clears the departed member's proactive opt-in on membership deletion", async () => {
+    const member = await workspaceMember();
+    await Promise.all([
+      accept(proactive().update({ headers, body: { enabled: true } }), [200]),
+      accept(
+        morningBrief().update({ headers, body: { enabled: true } }),
+        [200],
+      ),
+    ]);
+
+    const deletion = {
+      organization: { id: member.orgId },
+      public_user_data: { user_id: member.userId },
+    };
+    context.mocks.clerk.verifyWebhook.mockResolvedValue({
+      type: "organizationMembership.deleted",
+      data: deletion,
+    });
+    await accept(
+      setupApp({ context, routes: webhooksClerkRoutes })(
+        webhookClerkContract,
+      ).post({
+        body: JSON.stringify({
+          type: "organizationMembership.deleted",
+          data: deletion,
+        }),
+        extraHeaders: {
+          "svix-id": `msg_${randomUUID()}`,
+          "svix-timestamp": String(Math.floor(now() / 1000)),
+          "svix-signature": "v1,signed-by-clerk",
+        },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+
+    await createStore().set(
+      seedOrgMembership$,
+      { ...member, role: "member" },
+      context.signal,
+    );
+    const [hourly, brief] = await Promise.all([
+      readHourly(),
+      accept(morningBrief().get({ headers }), [200]),
+    ]);
+    expect(hourly).toMatchObject({ enabled: false, status: "paused" });
+    expect(brief.body).toMatchObject({ enabled: false, status: "paused" });
+  });
+
+  it("pf-109 clears missing-timezone when onboarding supplies a timezone after opt-in", async () => {
+    await workspaceMember();
+    await accept(
+      morningBrief().update({ headers, body: { enabled: true } }),
+      [200],
+    );
+    await accept(
+      proactive().update({ headers, body: { enabled: true } }),
+      [200],
+    );
+
+    await accept(
+      setupApp({ context, routes: onboardingCompleteRoutes })(
+        onboardingCompleteContract,
+      ).complete({
+        headers,
+        body: { timezone: "Asia/Shanghai" },
+      }),
+      [200],
+    );
+
+    const [brief, suggestions] = await Promise.all([
+      accept(morningBrief().get({ headers }), [200]),
+      readHourly(),
+    ]);
+    expect(brief.body).toMatchObject({
+      enabled: true,
+      unavailableReason: null,
+    });
+    expect(suggestions).toMatchObject({
+      enabled: true,
+      unavailableReason: null,
+    });
   });
 });

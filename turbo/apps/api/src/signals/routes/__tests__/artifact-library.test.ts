@@ -193,4 +193,45 @@ describe("artifact library list queries", () => {
     });
     expect(ascending).toStrictEqual([...legacy].reverse());
   });
+
+  it("pf-058 filters semantic categories before paging without changing file-backed kinds", async () => {
+    const member = bdd.user({ orgRole: "org:member" });
+    await setOptIn(member, true);
+    await upload(member, "notes.txt", "text/plain");
+    await upload(member, "metrics.csv", "text/csv");
+    await upload(
+      member,
+      "slides.pptx",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    );
+    await upload(member, "brief.pdf", "application/pdf");
+
+    const firstDocPage = ok(
+      await list(member, { category: "document", direction: "desc", limit: 1 }),
+    );
+    expect(titles(firstDocPage)).toStrictEqual(["brief.pdf"]);
+    expect(firstDocPage.artifacts[0]?.category).toBe("document");
+    expect(firstDocPage.nextCursor).toBeTruthy();
+
+    const secondDocPage = ok(
+      await list(member, {
+        category: "document",
+        direction: "desc",
+        limit: 1,
+        cursor: firstDocPage.nextCursor ?? undefined,
+      }),
+    );
+    expect(titles(secondDocPage)).toStrictEqual(["notes.txt"]);
+    expect(secondDocPage.artifacts[0]?.category).toBe("document");
+    expect(secondDocPage.nextCursor).toBeNull();
+
+    const spreadsheets = ok(
+      await list(member, { category: "spreadsheet", direction: "desc" }),
+    );
+    expect(titles(spreadsheets)).toStrictEqual(["metrics.csv"]);
+    expect(spreadsheets.artifacts[0]?.category).toBe("spreadsheet");
+
+    const fileKind = await allPages(member, { kind: "file", limit: 10 });
+    expect(fileKind).toHaveLength(3);
+  });
 });

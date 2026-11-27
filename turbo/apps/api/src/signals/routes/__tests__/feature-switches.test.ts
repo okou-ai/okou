@@ -67,6 +67,7 @@ const presentation = FeatureSwitchKey.PresentationOutputFormat;
 const lark = FeatureSwitchKey.LarkIntegration;
 const realAgent = FeatureSwitchKey.RealAgentInPreview;
 const dummy = FeatureSwitchKey.Dummy;
+const threePointTiming = FeatureSwitchKey.ArtifactThreePointTiming;
 
 describe("/api/feature-switches", () => {
   it("feature-switches-001 stores the Antigravity opt-in only for the individual staff member", async () => {
@@ -225,5 +226,25 @@ describe("/api/feature-switches", () => {
       [realAgent]: false,
     });
     expect(peer.switches).toStrictEqual({ [dummy]: true, [lark]: true });
+  });
+
+  it("pf-081 enables three-point timing for external org:member with personal opt-out and reset", async () => {
+    const orgId = newOrg();
+    const memberId = newUser();
+    signIn(memberId, orgId, "org:member");
+
+    await expect(effective(threePointTiming)).resolves.toBeTruthy();
+    const optedOut = await update({ [threePointTiming]: false });
+    expect(optedOut.switches[threePointTiming]).toBeFalsy();
+    expect(optedOut.effectiveSwitches[threePointTiming]).toBeFalsy();
+
+    signIn(newUser(), orgId, "org:member");
+    await expect(effective(threePointTiming)).resolves.toBeTruthy();
+
+    signIn(memberId, orgId, "org:member");
+    await reset();
+    const afterReset = await read();
+    expect(afterReset.switches).not.toHaveProperty(threePointTiming);
+    expect(afterReset.effectiveSwitches[threePointTiming]).toBeTruthy();
   });
 });

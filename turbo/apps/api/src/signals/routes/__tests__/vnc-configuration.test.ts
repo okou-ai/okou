@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { createPrivateKey, generateKeyPairSync, randomUUID } from "node:crypto";
 
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   type VncConnectionResponse,
   type createVncConnectionRequestSchema,
@@ -19,8 +21,10 @@ import type { input as zInput } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow } from "../../../lib/time";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { remoteDevicesRoutes } from "../remote-devices";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncConnectionsRoutes } from "../vnc-connections";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
@@ -2031,5 +2035,101 @@ describe("VNC owner configuration (client certificates)", () => {
     ).not.toContain(unrelatedKey.split("\n")[1] ?? unrelatedKey);
     expect(expired.status).toBe(400);
     expect(outcome(inline)).toBe("400 VNC_INVALID_CLIENT_IDENTITY");
+  });
+
+  it("pf-137 attaches using an inline credential and rejects another member's device atomically", async () => {
+    const owner = await signedInAdmin();
+    const peer = await owner.join(owner.orgId);
+    const devices = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: owner.userId, orgId: owner.orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.RemoteDevices]: true },
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: peer.userId, orgId: peer.orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.RemoteDevices]: true },
+    );
+
+    const ownerDeviceId = randomUUID();
+    const peerDeviceId = randomUUID();
+    signIn(owner);
+    await accept(
+      devices.create({
+        headers,
+        body: { id: ownerDeviceId, displayName: "Owner Workstation" },
+      }),
+      [201],
+    );
+    signIn(peer);
+    await accept(
+      devices.create({
+        headers,
+        body: { id: peerDeviceId, displayName: "Peer Workstation" },
+      }),
+      [201],
+    );
+
+    signIn(owner);
+    const foreignAttempt = await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          remoteDeviceId: peerDeviceId,
+          displayName: "Foreign Device VNC",
+          host: "foreign.example.com",
+          credential: {
+            create: {
+              name: "Should Not Persist",
+              authentication: vncPassword("secretpw"),
+            },
+          },
+          security: x509Vnc,
+        },
+      }),
+      [404],
+    );
+    expect(foreignAttempt.status).toBe(404);
+    const credsAfterReject = await accept(
+      credentials().list({ headers }),
+      [200],
+    );
+    expect(credsAfterReject.body.credentials).toStrictEqual([]);
+
+    const hostId = randomUUID();
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: hostId,
+          remoteDeviceId: ownerDeviceId,
+          displayName: "Owned Device VNC",
+          host: "owned.example.com",
+          credential: {
+            create: {
+              name: "Owned Inline Password",
+              authentication: vncPassword("secretpw"),
+            },
+          },
+          security: x509Vnc,
+        },
+      }),
+      [201],
+    );
+    const directory = await accept(devices.list({ headers }), [200]);
+    const attached = directory.body.devices.find((device) => {
+      return device.id === ownerDeviceId;
+    });
+    expect(attached?.channels).toContainEqual(
+      expect.objectContaining({
+        id: hostId,
+        kind: "vnc",
+        displayName: "Owned Device VNC",
+      }),
+    );
   });
 });

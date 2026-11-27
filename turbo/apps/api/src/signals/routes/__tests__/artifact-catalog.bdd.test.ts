@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
@@ -8,16 +9,20 @@ import { http } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { hostedLinkOrigin } from "../../../lib/link-layout";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactCatalogRoutes } from "../artifact-catalog";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { sharedThreadRoutes } from "../shared-threads";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createHostBddApi } from "./helpers/api-bdd-host";
+import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   mockGoogleText,
@@ -348,5 +353,156 @@ describe("shared thread routes", () => {
         return row.id === promptEventId;
       }),
     ).toBeTruthy();
+  });
+});
+
+describe("GET /api/artifacts/by-url", () => {
+  function referencesApi(actor: ApiTestUser) {
+    signIn(actor);
+    return setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    );
+  }
+
+  it("pf-054 reads one owned file from its message links and keeps its metadata private", async () => {
+    const owner = bdd.user();
+    const peer = bdd.user({ orgId: owner.orgId });
+    const stored = createHostBddApi(context).captureHostedSitesS3();
+    const fallbackS3 = context.mocks.s3.send.getMockImplementation();
+    context.mocks.s3.send.mockImplementation((command: unknown, ...rest) => {
+      const { constructor } = command as {
+        readonly constructor: { readonly name: string };
+      };
+      if (constructor.name === "HeadObjectCommand") {
+        return Promise.resolve({
+          ContentLength: 24,
+          ContentType: "text/plain",
+        });
+      }
+      if (fallbackS3) {
+        return fallbackS3(command, ...rest);
+      }
+      return Promise.resolve({});
+    });
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/uploads/private-summary.txt",
+    );
+    signIn(owner);
+    const uploads = setupApp({
+      context,
+      routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+    })(uploadsContract);
+    const prepared = await accept(
+      uploads.prepare({
+        headers,
+        body: {
+          filename: "private-summary.txt",
+          contentType: "text/plain",
+          size: 24,
+          purpose: "artifact",
+        },
+      }),
+      [200],
+    );
+    const completed = await accept(
+      uploads.complete({ headers, body: { id: prepared.body.id } }),
+      [200],
+    );
+    expect(stored.objects.size).toBeGreaterThanOrEqual(0);
+
+    const owned = await accept(
+      referencesApi(owner).byUrl({
+        headers,
+        query: { url: completed.body.url },
+      }),
+      [200],
+    );
+    expect(owned.body).toMatchObject({
+      filename: "private-summary.txt",
+      contentType: "text/plain",
+    });
+
+    await accept(
+      referencesApi(peer).byUrl({
+        headers,
+        query: { url: completed.body.url },
+      }),
+      [404],
+    );
+  });
+
+  it("pf-055 describes an exact public template without granting the reader owner controls", async () => {
+    const reader = bdd.user();
+    const templateUrl =
+      "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99/campaign-visual.jpg";
+
+    const resolved = await accept(
+      referencesApi(reader).byUrl({
+        headers,
+        query: { url: templateUrl },
+      }),
+      [200],
+    );
+
+    expect(resolved.body).toMatchObject({
+      url: templateUrl,
+      filename: "campaign-visual.jpg",
+      contentType: "image/jpeg",
+    });
+    expect(resolved.body.owner).toBeUndefined();
+  });
+
+  it("pf-056 resolves each immutable site publication and the current alias independently", async () => {
+    const owner = bdd.user();
+    const host = createHostBddApi(context);
+    host.captureHostedSitesS3();
+    const siteSlug = `site-${randomUUID().slice(0, 8)}`;
+
+    const firstPrepared = await host.prepareHostedSite(owner, {
+      site: siteSlug,
+      title: "Release V1",
+      visibility: "private",
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<h1>V1</h1>")],
+    });
+    await host.completeHostedSite(owner, firstPrepared.deploymentId);
+
+    const secondPrepared = await host.prepareHostedSite(owner, {
+      site: siteSlug,
+      title: "Release V2",
+      visibility: "private",
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<h1>V2</h1>")],
+    });
+    const secondCompleted = await host.completeHostedSite(
+      owner,
+      secondPrepared.deploymentId,
+    );
+
+    const firstImmutableUrl = hostedLinkOrigin(
+      "current",
+      `dpl-${firstPrepared.deploymentId}`,
+    );
+    const secondImmutableUrl = hostedLinkOrigin(
+      "current",
+      `dpl-${secondPrepared.deploymentId}`,
+    );
+    const liveAliasUrl = secondCompleted.url;
+
+    const api = referencesApi(owner);
+    const [firstDetail, secondDetail, aliasDetail] = await Promise.all([
+      accept(api.byUrl({ headers, query: { url: firstImmutableUrl } }), [200]),
+      accept(api.byUrl({ headers, query: { url: secondImmutableUrl } }), [200]),
+      accept(api.byUrl({ headers, query: { url: liveAliasUrl } }), [200]),
+    ]);
+
+    expect(firstDetail.body.url).toBe(firstImmutableUrl);
+    expect(secondDetail.body.url).toBe(secondImmutableUrl);
+    expect(aliasDetail.body.url).toBe(liveAliasUrl);
+    expect(firstDetail.body.filename).toBe("Release V1.html");
+    expect(secondDetail.body.filename).toBe("Release V2.html");
+    expect(aliasDetail.body.filename).toBe("Release V2.html");
   });
 });
