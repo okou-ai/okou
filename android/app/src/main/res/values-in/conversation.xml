@@ -69,7 +69,9 @@
     <string name="conversation_code_copy">Salin kode</string>
     <string name="conversation_code_copied">Kode disalin</string>
     <string name="conversation_code_copy_failed">Kode tidak dapat disalin</string>
-    <string name="conversation_code_lines">Menampilkan %1$d dari %2$d baris</string>
+    <plurals name="conversation_code_lines">
+        <item quantity="other">Menampilkan %1$d dari %2$d baris</item>
+    </plurals>
     <string name="conversation_code_view">Lihat kode lengkap</string>
     <string name="conversation_code_full">Kode lengkap</string>
     <string name="conversation_code_expand">Perluas tampilan kode</string>

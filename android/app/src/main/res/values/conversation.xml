@@ -73,7 +73,10 @@
     <string name="conversation_code_copy">Copy code</string>
     <string name="conversation_code_copied">Code copied</string>
     <string name="conversation_code_copy_failed">Couldn’t copy code</string>
-    <string name="conversation_code_lines">Showing %1$d / %2$d lines</string>
+    <plurals name="conversation_code_lines">
+        <item quantity="one">Showing %1$d / %2$d line</item>
+        <item quantity="other">Showing %1$d / %2$d lines</item>
+    </plurals>
     <string name="conversation_code_view">View full code</string>
     <string name="conversation_code_full">Full code</string>
     <string name="conversation_code_expand">Expand code viewer</string>

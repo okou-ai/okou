@@ -69,7 +69,9 @@
     <string name="conversation_code_copy">コードをコピー</string>
     <string name="conversation_code_copied">コードをコピーしました</string>
     <string name="conversation_code_copy_failed">コードをコピーできませんでした</string>
-    <string name="conversation_code_lines">%2$d 行中 %1$d 行を表示</string>
+    <plurals name="conversation_code_lines">
+        <item quantity="other">%2$d 行中 %1$d 行を表示</item>
+    </plurals>
     <string name="conversation_code_view">コード全体を表示</string>
     <string name="conversation_code_full">コード全体</string>
     <string name="conversation_code_expand">コードビューアを拡大</string>

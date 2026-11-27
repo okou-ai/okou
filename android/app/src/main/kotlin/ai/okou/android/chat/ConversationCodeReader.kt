@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
@@ -195,7 +196,12 @@ private fun CodePreviewFooter(lineCount: Int, focus: FocusRequester, open: () ->
     val colors = MaterialTheme.colorScheme
     val type = MaterialTheme.typography
     val count =
-        stringResource(R.string.conversation_code_lines, ConversationCodePreviewLines, lineCount)
+        pluralStringResource(
+            R.plurals.conversation_code_lines,
+            lineCount,
+            ConversationCodePreviewLines,
+            lineCount,
+        )
     val action = stringResource(R.string.conversation_code_view)
     HorizontalDivider(color = colors.outlineVariant)
     BoxWithConstraints(

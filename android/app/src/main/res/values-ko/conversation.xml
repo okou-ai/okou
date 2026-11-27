@@ -69,7 +69,9 @@
     <string name="conversation_code_copy">코드 복사</string>
     <string name="conversation_code_copied">코드가 복사됨</string>
     <string name="conversation_code_copy_failed">코드를 복사할 수 없음</string>
-    <string name="conversation_code_lines">%2$d줄 중 %1$d줄 표시</string>
+    <plurals name="conversation_code_lines">
+        <item quantity="other">%2$d줄 중 %1$d줄 표시</item>
+    </plurals>
     <string name="conversation_code_view">전체 코드 보기</string>
     <string name="conversation_code_full">전체 코드</string>
     <string name="conversation_code_expand">코드 뷰어 확장</string>

@@ -75,7 +75,11 @@
     <string name="conversation_code_copy">Copier le code</string>
     <string name="conversation_code_copied">Code copié</string>
     <string name="conversation_code_copy_failed">Impossible de copier le code</string>
-    <string name="conversation_code_lines">%1$d lignes affichées sur %2$d</string>
+    <plurals name="conversation_code_lines">
+        <item quantity="one">%1$d ligne affichée sur %2$d</item>
+        <item quantity="many">%1$d lignes affichées sur %2$d</item>
+        <item quantity="other">%1$d lignes affichées sur %2$d</item>
+    </plurals>
     <string name="conversation_code_view">Afficher le code complet</string>
     <string name="conversation_code_full">Code complet</string>
     <string name="conversation_code_expand">Agrandir la vue du code</string>

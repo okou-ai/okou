@@ -72,7 +72,10 @@
     <string name="conversation_code_copy">कोड कॉपी करें</string>
     <string name="conversation_code_copied">कोड कॉपी हो गया</string>
     <string name="conversation_code_copy_failed">कोड कॉपी नहीं हो सका</string>
-    <string name="conversation_code_lines">%2$d में से %1$d लाइनें दिख रही हैं</string>
+    <plurals name="conversation_code_lines">
+        <item quantity="one">%2$d में से %1$d लाइन दिख रही है</item>
+        <item quantity="other">%2$d में से %1$d लाइनें दिख रही हैं</item>
+    </plurals>
     <string name="conversation_code_view">पूरा कोड देखें</string>
     <string name="conversation_code_full">पूरा कोड</string>
     <string name="conversation_code_expand">कोड व्यूअर बड़ा करें</string>
