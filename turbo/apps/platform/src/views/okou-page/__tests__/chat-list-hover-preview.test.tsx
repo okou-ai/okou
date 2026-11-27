@@ -76,27 +76,33 @@ async function collapsedChatList({
   return { trigger, composer, threads, list, finishExit };
 }
 
-test("Hover previews the hidden chat list without moving keyboard focus from the conversation", async () => {
-  const { trigger, composer } = await collapsedChatList();
-  const user = userEvent.setup();
-  await user.click(composer);
-  await user.hover(trigger);
-  const preview = await screen.findByRole("region", {
-    name: "Show chat list",
-  });
-  expect(within(preview).getByText("Release plan")).toBeInTheDocument();
-  expect(within(preview).getByText("Design review")).toBeInTheDocument();
-  expect(composer).toHaveFocus();
-  expect(trigger).toHaveAttribute("aria-expanded", "true");
-  expect(screen.queryByTestId("chat-list-column")).toBeNull();
-  await user.hover(preview);
-  await user.hover(composer);
-  await waitFor(() => {
-    expect(preview).not.toBeInTheDocument();
-  });
-  expect(trigger).toHaveAttribute("aria-expanded", "false");
-  expect(composer).toHaveFocus();
-});
+test.each([
+  { ownAccount: true, scenario: "Bingjie" },
+  { ownAccount: false, scenario: "Another user who opts in" },
+])(
+  "$scenario can preview the hidden chat list without moving composer focus",
+  async ({ ownAccount }) => {
+    const { trigger, composer } = await collapsedChatList({ ownAccount });
+    const user = userEvent.setup();
+    await user.click(composer);
+    await user.hover(trigger);
+    const preview = await screen.findByRole("region", {
+      name: "Show chat list",
+    });
+    expect(within(preview).getByText("Release plan")).toBeInTheDocument();
+    expect(within(preview).getByText("Design review")).toBeInTheDocument();
+    expect(composer).toHaveFocus();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByTestId("chat-list-column")).toBeNull();
+    await user.hover(preview);
+    await user.hover(composer);
+    await waitFor(() => {
+      expect(preview).not.toBeInTheDocument();
+    });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(composer).toHaveFocus();
+  },
+);
 
 test.each(["Escape", "outside click"])(
   "%s dismisses the preview without expanding the normal chat list",
@@ -235,7 +241,7 @@ test("The keyboard shortcut expands the normal chat list while keeping the compo
 
 test.each([
   { enabled: false, ownAccount: true, scenario: "the owner opts out" },
-  { enabled: true, ownAccount: false, scenario: "another user opts in" },
+  { enabled: false, ownAccount: false, scenario: "another user keeps it off" },
 ])(
   "The legacy tooltip and click remain available when $scenario",
   async ({ enabled, ownAccount }) => {

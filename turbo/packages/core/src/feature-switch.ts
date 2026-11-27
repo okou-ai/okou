@@ -171,7 +171,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledUserHashes: ["032a75d8"],
     enabledEmailHashes: ["6490c77f"],
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.ChatListAllFilter]: {
     maintainer: "ethan@okou.ai",

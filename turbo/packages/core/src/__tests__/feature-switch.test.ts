@@ -22,7 +22,7 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it("limits chat list hover previews and opt-in overrides to Bingjie", () => {
+  it("defaults chat list hover previews to Bingjie and allows everyone to opt in", () => {
     const key = FeatureSwitchKey.ChatListHoverPreview;
     for (const identity of [
       { userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV" },
@@ -41,11 +41,12 @@ describe("isFeatureEnabled", () => {
       { userId: "external-user", orgId: "external-org" },
       { userId: "staff-colleague", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
     ]) {
-      expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
       expect(isFeatureEnabled(key, identity)).toBe(false);
+      expect(getAllFeatureStates(identity)[key]).toBe(false);
       const context = { ...identity, overrides: { [key]: true } };
-      expect(isFeatureEnabled(key, context)).toBe(false);
-      expect(getAllFeatureStates(context)[key]).toBe(false);
+      expect(isFeatureEnabled(key, context)).toBe(true);
+      expect(getAllFeatureStates(context)[key]).toBe(true);
     }
   });
 
