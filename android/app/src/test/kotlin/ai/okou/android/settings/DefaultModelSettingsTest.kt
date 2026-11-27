@@ -703,6 +703,66 @@ class DefaultModelSettingsTest {
     }
 
     @Test
+    fun reopeningSettingsKeepsTheScheduledReadbackWait() = runTest {
+        ChatListApiFixture().use { api ->
+            DefaultModelApiFixture(api)
+            val original = api.service.defaultModelPreference()
+            val catalog = api.service.recoveryCatalog()
+            val models = api.service.recoveryModels()
+            val reads = mutableListOf<Long>()
+            val writes = mutableListOf<Pair<Long, String?>>()
+            val remote =
+                object : WorkspaceSession by api.service {
+                    override suspend fun recoveryCatalog() = catalog
+
+                    override suspend fun recoveryModels() = models
+
+                    override suspend fun defaultModelPreference(): DefaultModelPreference {
+                        reads += currentTime
+                        if (reads.size == 4) throw ApiFailure.Http(429, null, null, 1L)
+                        return original
+                    }
+
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference,
+                    ): DefaultModelPreference {
+                        writes += currentTime to update.selectedModel
+                        if (writes.size == 1) throw ApiFailure.Http(503, null, null, null)
+                        return original.copy(selectedModel = update.selectedModel)
+                    }
+                }
+            val model = model(api, service = remote, onFailure = {})
+            model.openAfterSync()
+            model.select(null)
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(DefaultModelNotice.SaveUnconfirmed, model.notices.first())
+
+            model.showSettings(null)
+            advanceTimeBy(594_000)
+            runCurrent()
+            val expectedReads = listOf(0L, 3_000L, 6_000L, 600_000L)
+            assertEquals(expectedReads, reads)
+
+            advanceTimeBy(400)
+            model.showSettings(SettingsDestination.Overview)
+            runCurrent()
+            assertEquals(expectedReads, reads)
+            model.select("claude-test")
+            advanceTimeBy(599)
+            runCurrent()
+            assertEquals(expectedReads, reads)
+            assertEquals(listOf(0L to null), writes)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(expectedReads + 601_000L, reads)
+            assertEquals(listOf(0L to null, 601_000L to "claude-test"), writes)
+            assertEquals("claude-test", model.state.value.record?.confirmed?.selectedModel)
+        }
+    }
+
+    @Test
     fun rejectedReadbackReconcilesOnForegroundingWithoutRepeatingTheWrite() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)

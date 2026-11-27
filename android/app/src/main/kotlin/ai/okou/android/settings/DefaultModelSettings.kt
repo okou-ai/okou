@@ -276,9 +276,15 @@ internal class DefaultModelSettings(
                 patch,
             )
         clearSaveFailure()
-        val verifying = current.save?.takeIf { unconfirmedWrite != null && !readbackBlocked }
+        val verifying = current.save?.takeIf { unconfirmedWrite != null }
         mutable.value =
-            current.copy(save = verifying?.copy(request = request) ?: DefaultModelSave(request))
+            current.copy(
+                save =
+                    verifying?.copy(
+                        request = request,
+                        failedAttempts = if (readbackBlocked) 0 else verifying.failedAttempts,
+                    ) ?: DefaultModelSave(request),
+            )
         if (verifying == null) saveWait?.cancel()
         resumeReadback()
     }
@@ -340,7 +346,15 @@ internal class DefaultModelSettings(
                             return@withLock it
                         }
                     }
-                    val remote = service.defaultModelPreference()
+                    val remote =
+                        try {
+                            service.defaultModelPreference()
+                        } catch (error: ApiFailure.Http) {
+                            currentCoroutineContext().ensureActive()
+                            if (attempted != null && authorized())
+                                retainScheduledReadbackWait(error, failures)
+                            throw error
+                        }
                     currentCoroutineContext().ensureActive()
                     if (!authorized()) return
                     if (before.save !== mutable.value.save) return@withLock null
@@ -381,6 +395,16 @@ internal class DefaultModelSettings(
                 }
             }
         }
+    }
+
+    private fun retainScheduledReadbackWait(error: ApiFailure.Http, retries: Int) {
+        if ((error.retryAfterSeconds ?: 0L) <= 0L || !error.retryable()) return
+        val wait = boundedRetryDelayMillis(retries, error) ?: return
+        val current = mutable.value
+        val save = current.save ?: return
+        // Reopening Settings can cancel the refresh while the same write still needs readback.
+        mutable.value =
+            current.copy(save = save.copy(lastFailureMillis = nowMillis(), retryDelayMillis = wait))
     }
 
     private suspend fun refreshCatalog() {
