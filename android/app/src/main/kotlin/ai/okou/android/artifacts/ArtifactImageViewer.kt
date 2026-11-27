@@ -42,8 +42,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -101,21 +104,24 @@ internal fun ArtifactImageViewer(
             preview.problem == ArtifactProblem.Unavailable
     val source = (preview.content as? ArtifactContent.EncodedImage).takeUnless { unavailable }
     val bitmap = (preview.content as? ArtifactContent.Image)?.bitmap ?: source?.fallback
+    val decoded = source?.let { rememberDecodedArtifactImage(it.bytes, imageSize) }
+    val original = decoded as? AsyncImagePainter.State.Success
+    val independentThumbnail =
+        preview.info?.independentThumbnailUrl(preview.access?.url?.toString())
     val thumbnailUrl =
-        (preview.info?.thumbnailUrl ?: preview.item?.thumbnail).takeIf {
-            bitmap == null && preview.access != null && !unavailable
+        (independentThumbnail ?: preview.info?.thumbnailUrl ?: preview.item?.thumbnail).takeIf {
+            bitmap == null && original == null && preview.access != null && !unavailable
         }
     val thumbnail = thumbnailUrl?.let { url ->
         key(model, url) {
+            val cacheOnly = independentThumbnail == null
             val result by
-                produceState<Bitmap?>(null) {
-                    value = model.thumbnail(url)
+                produceState<Bitmap?>(null, cacheOnly) {
+                    value = model.thumbnail(url, cacheOnly)
                 }
             result
         }
     }
-    val decoded = source?.let { rememberDecodedArtifactImage(it.bytes, imageSize) }
-    val original = decoded as? AsyncImagePainter.State.Success
     val fallback = (bitmap ?: thumbnail).takeUnless { unavailable }
     val fallbackPainter = remember(fallback) { fallback?.let { BitmapPainter(it.asImageBitmap()) } }
     val image = original?.painter ?: fallbackPainter
@@ -517,7 +523,7 @@ private fun ZoomableArtifactImage(
     LaunchedEffect(focus) { focus.requestFocus() }
     ZoomImage(
         painter = image,
-        contentDescription = description,
+        contentDescription = null,
         modifier =
             Modifier.fillMaxSize()
                 .focusRequester(focus)
@@ -540,6 +546,8 @@ private fun ZoomableArtifactImage(
                 .then(if (reducedMotion) Modifier.suppressImageReleaseFling(zoomable) else Modifier)
                 .focusable()
                 .semantics {
+                    role = Role.Image
+                    if (description != null) contentDescription = description
                     customActions = buildList {
                         if (zoomable.transform.scaleX < zoomable.maxScale) {
                             add(
