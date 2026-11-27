@@ -1540,7 +1540,7 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
             compose.mainClock.autoAdvance = true
         }
         waitForTag(runTag)
-        compose.onNodeWithTag(runTag).assertTextContains("Running")
+        compose.onNodeWithTag(runTag).assertTextContains("Running", substring = true)
         compose.onNodeWithTag("workflow_history_loading").assertDoesNotExist()
     }
 
@@ -1577,7 +1577,7 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
             val tag = "workflow_run_$WORKFLOW_SOURCE_RUN"
             waitForTag(tag)
             loading.assertDoesNotExist()
-            val loaded = compose.onNodeWithTag(tag).assertTextContains("Running")
+            val loaded = compose.onNodeWithTag(tag).assertTextContains("Running", substring = true)
             val loadedBounds = loaded.getUnclippedBoundsInRoot()
             assertEquals(rowBounds.top, loadedBounds.top)
             assertEquals(rowBounds.left, loadedBounds.left)
@@ -1640,6 +1640,7 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun historyShowsConfirmedResultsAndOnlyLinksAvailableSourceChats() {
         val page = app.fixture.firstRunHistory
         val earlierRun =
@@ -1660,17 +1661,19 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
         val sourceTag = "workflow_run_$WORKFLOW_SOURCE_RUN"
         val missingTag = "workflow_run_$WORKFLOW_NO_SOURCE_RUN"
         waitForTag(sourceTag)
-        compose.onNodeWithTag(sourceTag).assertTextContains("Running")
-        compose.onNodeWithTag(missingTag).assertTextContains("Failed")
+        compose.onNodeWithTag(sourceTag).assertTextContains("Running", substring = true)
+        compose.onNodeWithTag(missingTag).assertTextContains("Failed", substring = true)
         compose.onNode(hasTestTag(missingTag) and hasClickAction()).assertDoesNotExist()
         val bounds = compose.onNodeWithTag(sourceTag).getUnclippedBoundsInRoot()
-        assertTrue(bounds.bottom - bounds.top >= 52.dp)
+        assertEquals(72.dp, bounds.bottom - bounds.top)
+        val staticBounds = compose.onNodeWithTag(missingTag).getUnclippedBoundsInRoot()
+        assertEquals(72.dp, staticBounds.bottom - staticBounds.top)
         compose.onNodeWithTag("workflow_use").assertIsDisplayed()
 
         compose.onNodeWithTag("workflow_earlier_runs").performClick()
         val earlierTag = "workflow_run_${earlierRun.id}"
         waitForTag(earlierTag)
-        compose.onNodeWithTag(earlierTag).assertTextContains("Timed out")
+        compose.onNodeWithTag(earlierTag).assertTextContains("Timed out", substring = true)
         compose.onNodeWithTag(sourceTag).assertIsDisplayed()
         assertTrue(
             app.fixture.requests.any { it.requestUrl?.queryParameter("cursor") == "earlier" },
