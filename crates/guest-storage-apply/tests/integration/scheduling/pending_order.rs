@@ -1,4 +1,4 @@
-//! Pending conflicts must preserve overlay order without blocking independent work.
+//! Ready writes can pass a pending mount while active conflicts stay serialized.
 
 use super::{
     COMPLETION_TIMEOUT, REQUEST_START_TIMEOUT, ReleaseGate, RequestObservations, path_to_string,
@@ -9,7 +9,7 @@ use httpmock::MockServer;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
-fn assert_pending_overlay_order(
+fn assert_ready_child_passes_pending_parent(
     dir: &tempfile::TempDir,
     mounts: [PathBuf; 4],
     physical_parent: &Path,
@@ -58,16 +58,16 @@ fn assert_pending_overlay_order(
         .zip(&servers)
         .map(|(mount, server)| Ok((path_to_string(mount)?, server.url("/archive.tar.gz"))))
         .collect::<std::io::Result<Vec<_>>>()?;
-    let execution = spawn_guest_storage_apply("pending-overlay-order", dir, &storages)?;
+    let execution = spawn_guest_storage_apply("ready-child-progress", dir, &storages)?;
 
-    // D must start while A is held: this also rejects a global-FIFO fix.
+    // The active blocker excludes the parent but is disjoint from the child.
     let mut seen = Vec::new();
-    for name in ["blocker", "independent"] {
+    for name in ["blocker", "child", "independent"] {
         wait_for_event(&event_rx, &mut seen, name, REQUEST_START_TIMEOUT)?;
     }
     blocker_release.release_one();
     execution.wait_for_completion(
-        "pending-overlay-order",
+        "ready-child-progress",
         COMPLETION_TIMEOUT,
         &blocker_release,
         &observations,
@@ -84,9 +84,9 @@ fn assert_pending_overlay_order(
         .ok_or("child request did not start")?;
     let final_content = std::fs::read_to_string(physical_parent.join("b/value.txt"))?;
     assert_eq!(
-        (parent_start < child_start, final_content.as_str()),
-        (true, "child"),
-        "pending parent must precede its child; starts={starts:?}"
+        (child_start < parent_start, final_content.as_str()),
+        (true, "parent"),
+        "the parent must wait for the active child before writing; starts={starts:?}"
     );
     assert_eq!(starts.len(), 4, "unexpected download count: {starts:?}");
     assert_eq!(
@@ -101,7 +101,7 @@ fn assert_pending_overlay_order(
 }
 
 #[test]
-fn pending_parent_precedes_later_child_while_independent_download_starts() {
+fn ready_child_passes_pending_parent_while_independent_download_starts() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().join("mount");
     let mounts = [
@@ -110,12 +110,12 @@ fn pending_parent_precedes_later_child_while_independent_download_starts() {
         parent.join("b"),
         dir.path().join("independent"),
     ];
-    assert_pending_overlay_order(&dir, mounts, &parent).unwrap();
+    assert_ready_child_passes_pending_parent(&dir, mounts, &parent).unwrap();
 }
 
 #[cfg(unix)]
 #[test]
-fn canonical_pending_parent_precedes_later_aliased_child() {
+fn ready_aliased_child_passes_pending_parent() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().join("physical");
     let mounts = [
@@ -131,5 +131,5 @@ fn canonical_pending_parent_precedes_later_aliased_child() {
         std::fs::create_dir_all(target).unwrap();
         std::os::unix::fs::symlink(target, alias).unwrap();
     }
-    assert_pending_overlay_order(&dir, mounts, &parent).unwrap();
+    assert_ready_child_passes_pending_parent(&dir, mounts, &parent).unwrap();
 }

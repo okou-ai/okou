@@ -157,10 +157,17 @@ fn concurrent_calls_keep_observations_separate_and_reuse_connections() {
     .unwrap();
     let fixture = BinaryLoggingFixture::new("connection-concurrent").unwrap();
     let parent = fixture.dir.path().join("mounts");
-    let mounts: Vec<_> = (0..2 * WAVE_SIZE)
+    let first_mounts: Vec<_> = (0..WAVE_SIZE)
         .map(|index| parent.join(format!("mount-{index}")))
         .collect();
-    let mut storage_mounts = mounts
+    // Each follow-up waits for its active parent, which returns its connection
+    // to the pool before releasing the reservation.
+    let mounts: Vec<_> = first_mounts
+        .iter()
+        .cloned()
+        .chain(first_mounts.iter().map(|mount| mount.join("follow-up")))
+        .collect();
+    let storage_mounts = mounts
         .iter()
         .enumerate()
         .map(|(index, mount)| {
@@ -175,21 +182,6 @@ fn concurrent_calls_keep_observations_separate_and_reuse_connections() {
             json!({"mountPath": mount, "archiveUrl": url})
         })
         .collect::<Vec<_>>();
-    // The ordered parent mount waits for the first four archives to finish
-    // and keeps the second four pending until all their sockets are idle.
-    let local_archive = fixture.dir.path().join("local.tar.gz");
-    std::fs::write(
-        &local_archive,
-        create_tar_gz(&[("local", b"local")]).unwrap(),
-    )
-    .unwrap();
-    storage_mounts.insert(
-        WAVE_SIZE,
-        json!({
-            "mountPath": parent,
-            "archiveUrl": format!("file://{}", local_archive.display())
-        }),
-    );
     let output = run_manifest(&fixture, &json!({"storageMounts": storage_mounts})).unwrap();
     let (first_paths, second_paths) = server.finish().unwrap();
     assert!(output.status.success(), "{:?}", output);
@@ -201,19 +193,26 @@ fn concurrent_calls_keep_observations_separate_and_reuse_connections() {
         second_paths,
         ["/archive-4", "/archive-5", "/archive-6", "/archive-7"]
     );
-    assert_eq!(std::fs::read(parent.join("local")).unwrap(), b"local");
     for mount in &mounts {
         assert_eq!(std::fs::read(mount.join("result")).unwrap(), b"independent");
     }
     let records = observations(&fixture).unwrap();
     assert_eq!(records.len(), 2 * WAVE_SIZE, "{records:?}");
-    for record in &records[..WAVE_SIZE] {
+    let new_connections = records
+        .iter()
+        .filter(|record| record["transport_use"] == "new_for_call_only")
+        .collect::<Vec<_>>();
+    assert_eq!(new_connections.len(), WAVE_SIZE);
+    for record in new_connections {
         assert_record(record, "response_headers", "new_for_call_only");
         assert_phase(record, "resolve_outside_setup", 1, 0);
         assert_phase(record, "resolve_inside_setup", 0, 0);
         assert_phase(record, "connection_setup", 1, 0);
     }
-    for record in &records[WAVE_SIZE..] {
+    for record in records
+        .iter()
+        .filter(|record| record["transport_use"] != "new_for_call_only")
+    {
         assert_record(record, "response_headers", "prior_call_only");
         assert_phase(record, "resolve_outside_setup", 1, 0);
         assert_phase(record, "resolve_inside_setup", 0, 0);
