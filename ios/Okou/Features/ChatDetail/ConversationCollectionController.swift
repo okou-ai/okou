@@ -105,13 +105,17 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       scrolling.pendingScroll = nil
       collection.stopScrollingAndZooming()
       scrolling.animatesScroll = false
-      if let footer = dataSource.indexPath(for: "conversation-bottom"),
-        let frame = collection.layoutAttributesForItem(at: footer)?.frame
-      {
+      let insertion =
+        dataSource.indexPath(for: "conversation-finished")
+        ?? dataSource.indexPath(for: "conversation-bottom")
+      if let insertion, let frame = collection.layoutAttributesForItem(at: insertion)?.frame {
         let lastContent = source.rows.last(where: { $0.isMessageContent })
         let spacing: CGFloat =
           lastContent == nil ? 20 : (lastContent?.message?.role == .user ? 8 : 24)
-        source.sendTransition?.projectFlight(insertionY: frame.minY, topSpacing: spacing)
+        let footerHeight = Measurer.footerHeight(
+          state: .running, showsAvatar: true, traits: traitCollection)
+        source.sendTransition?.projectFlight(
+          insertionY: frame.minY, topSpacing: spacing, footerHeight: footerHeight)
       }
       source.phaseChanged(.animating)
     }
@@ -252,10 +256,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     let rows = source.rows
     var preparedMeasurements: [String: Measurement] = [:]
     for row in rows {
-      if let measured = measurements[row.id], measured.row == row, measured.width == width,
-        measured.category == category, measured.environment == environment
+      if let measured = measurements[row.id], measured.row.hasSameMeasuredLayout(as: row),
+        measured.width == width, measured.category == category,
+        measured.environment == environment
       {
-        preparedMeasurements[row.id] = measured
+        preparedMeasurements[row.id] = measured.withRow(row)
       } else if let measured = source.measurements.measurement(
         for: row, width: width, category: category, environment: environment)
       {
@@ -265,31 +270,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     let missing = rows.filter { preparedMeasurements[$0.id] == nil }
     let validIDs = Set(rows.map(\.id)).subtracting(missing.map(\.id))
     heightObservations.prune(validIDs: validIDs)
-
-    // Measure the outgoing literal text without mounting temporary SwiftUI trees
-    // on the send's first animation frames. Other rows keep their hosted measurement.
-    let measuresImmediately =
-      source.sendTransition?.hidesBubbleID != nil
-      && missing.allSatisfy { row in
-        switch row.content {
-        case .message(let message, _, _, let pendingRetry, _, _, _):
-          message.id == source.sendTransition?.messageID
-            && pendingRetry != true && message.role == .user && message.attachments.isEmpty
-            && message.modelChange == nil && message.inputError == nil
-            && message.userMessage?.parts.allSatisfy { $0.type == "text" } == true
-        case .footer(_, let showsAvatar): !showsAvatar
-        default: false
-        }
-      }
-    if measuresImmediately {
-      for (row, height) in zip(missing, measurer.measureImmediately(missing, width: width)) {
-        preparedMeasurements[row.id] = Measurement(
-          row: row, width: width, category: category, environment: environment, height: height)
-      }
-      preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
-      applyPreparedRows()
-      return
-    }
     if missing.isEmpty {
       preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
       applyPreparedRows()
@@ -297,6 +277,12 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
     let layout = ConversationMeasurementLayout(
       width: width, category: category, environment: environment)
+    if let immediate = measurer.immediateMeasurements(for: missing, layout: layout) {
+      preparedMeasurements.merge(immediate) { _, newest in newest }
+      preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
+      applyPreparedRows()
+      return
+    }
     preparation = Task { [weak self] in
       guard let self else { return }
       await prepareMissingRows(
@@ -362,10 +348,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     var updatedMeasurements = prepared.measurements
     for row in rows {
       if let current = measurements[row.id], let prepared = updatedMeasurements[row.id],
-        current.row == prepared.row, current.width == prepared.width,
+        current.row.hasSameMeasuredLayout(as: prepared.row), current.width == prepared.width,
         current.category == prepared.category, current.environment == prepared.environment
       {
-        updatedMeasurements[row.id] = current
+        updatedMeasurements[row.id] = current.withRow(prepared.row)
       }
     }
     let changed = rows.filter {

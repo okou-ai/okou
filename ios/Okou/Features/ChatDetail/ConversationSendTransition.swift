@@ -106,14 +106,14 @@ final class ConversationSendTransition {
     }
   }
 
-  func projectFlight(insertionY: CGFloat, topSpacing: CGFloat) {
+  func projectFlight(insertionY: CGFloat, topSpacing: CGFloat, footerHeight: CGFloat) {
     guard let flight, let collection else { return }
     let height = flight.measuredBubbleSize(width: collection.bounds.width).height
     flight.collection = collection
     flight.messageFrame = CGRect(
       x: 0, y: insertionY + topSpacing,
       width: collection.bounds.width, height: height)
-    projectedContentHeight = insertionY + topSpacing + height + 93
+    projectedContentHeight = insertionY + topSpacing + height + footerHeight
   }
 
   private func keyboardWillChange(duration: Double, curve: UInt) {

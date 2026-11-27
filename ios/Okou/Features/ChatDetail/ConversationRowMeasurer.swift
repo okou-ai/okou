@@ -202,7 +202,40 @@ final class ConversationRowMeasurer<Content: View> {
     return true
   }
 
-  func measureImmediately(
+  /// Measures outgoing plain text and its footer without mounting temporary SwiftUI trees.
+  func immediateMeasurements(
+    for missing: [ConversationCollectionRow], layout: ConversationMeasurementLayout
+  ) -> [String: ConversationMeasurementCache.Measurement]? {
+    guard let input = input(), let transition = input.source.sendTransition,
+      transition.hidesBubbleID != nil,
+      missing.allSatisfy({
+        Self.supportsImmediateMeasurement($0, sendMessageID: transition.messageID)
+      })
+    else { return nil }
+    var result: [String: ConversationMeasurementCache.Measurement] = [:]
+    for (row, height) in zip(missing, measureImmediately(missing, width: layout.width)) {
+      result[row.id] = ConversationMeasurementCache.Measurement(
+        row: row, width: layout.width, category: layout.category, environment: layout.environment,
+        height: height)
+    }
+    return result
+  }
+
+  private static func supportsImmediateMeasurement(
+    _ row: ConversationCollectionRow, sendMessageID: String?
+  ) -> Bool {
+    switch row.content {
+    case .message(let message, _, _, let pendingRetry, _, _, _):
+      message.id == sendMessageID
+        && pendingRetry != true && message.role == .user && message.attachments.isEmpty
+        && message.modelChange == nil && message.inputError == nil
+        && message.userMessage?.parts.allSatisfy { $0.type == "text" } == true
+    case .footer: true
+    default: false
+    }
+  }
+
+  private func measureImmediately(
     _ rows: [ConversationCollectionRow], width: CGFloat
   ) -> [CGFloat] {
     guard let input = input() else { return [] }
@@ -217,12 +250,20 @@ final class ConversationRowMeasurer<Content: View> {
           options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
         return Self.pixelHeight(
           size.height + 28 + topSpacing, scale: traitCollection.displayScale)
-      case .footer(let state, _):
-        return Self.pixelHeight(45 + (state.isActive ? 48 : 0), scale: traitCollection.displayScale)
+      case .footer(let state, let showsAvatar):
+        return Self.footerHeight(state: state, showsAvatar: showsAvatar, traits: traitCollection)
       default:
         preconditionFailure("Only outgoing plain text and its footer use immediate metrics")
       }
     }
+  }
+
+  static func footerHeight(
+    state: ChatExecutionState, showsAvatar: Bool, traits: UITraitCollection
+  ) -> CGFloat {
+    Self.pixelHeight(
+      ConversationFooterView.measuredHeight(for: state, showsAvatar: showsAvatar, traits: traits),
+      scale: traits.displayScale)
   }
 
   static func pixelHeight(_ height: CGFloat, scale: CGFloat) -> CGFloat {

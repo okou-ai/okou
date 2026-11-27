@@ -28,6 +28,28 @@ final class ConversationSendTransitionTests: XCTestCase {
     }
   }
 
+  func testFooterHidesActivityWhileSendFlightHidesOutgoingBubble() async throws {
+    let fixture = SendTransitionFixture()
+    defer { fixture.close() }
+    try await fixture.mount()
+    let input = try XCTUnwrap(fixture.inputs.first)
+    input.insertText("Keep footer hidden until the flying bubble lands")
+    input.layoutIfNeeded()
+
+    let transition = ConversationSendTransition()
+    defer { transition.cancel() }
+    XCTAssertFalse(ConversationFooterView.hidesActivity(during: nil))
+    XCTAssertFalse(ConversationFooterView.hidesActivity(during: transition))
+
+    transition.beginFirstMessage(messageID: "pending-1", sourceView: input)
+    XCTAssertEqual(transition.hidesBubbleID, "pending-1")
+    XCTAssertTrue(ConversationFooterView.hidesActivity(during: transition))
+
+    transition.cancel()
+    XCTAssertNil(transition.hidesBubbleID)
+    XCTAssertFalse(ConversationFooterView.hidesActivity(during: transition))
+  }
+
   private struct CapturedSend: Decodable { let userMessage: ChatDraftDocument }
 
 }
