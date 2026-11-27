@@ -1,6 +1,9 @@
 package ai.okou.android.settings
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.boundedApiRetryDelayMillis
+import ai.okou.android.api.boundedRetryDelayMillis
+import kotlinx.coroutines.delay
 
 internal enum class SettingReadback {
     ConfirmsLatest,
@@ -23,3 +26,19 @@ internal fun <T> settingReadback(
 internal fun Exception.definitivelyRejectedWrite(): Boolean =
     this is ApiFailure.Unauthenticated ||
         this is ApiFailure.Http && status in 400..499 && status != 408
+
+/** Read failures and observations that do not confirm the write share one retry budget. */
+internal suspend fun verifySettingWrite(read: suspend () -> Boolean): Boolean {
+    var retries = 0
+    while (true) {
+        val wait =
+            try {
+                if (read()) return true
+                boundedRetryDelayMillis(retries) ?: return false
+            } catch (error: ApiFailure) {
+                error.boundedApiRetryDelayMillis(retries) ?: throw error
+            }
+        retries++
+        delay(wait)
+    }
+}
