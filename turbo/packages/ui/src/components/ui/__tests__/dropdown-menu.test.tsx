@@ -10,7 +10,12 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuCheckboxItemIndicator,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -308,5 +313,60 @@ describe("DropdownMenu", () => {
 
     expect(dialogPortal).toContainElement(menuPortal);
     expect(menuPortal).toContainElement(tooltipPortal);
+  });
+
+  it("renders labelled radio groups with a default right-aligned check indicator", async () => {
+    const user = userEvent.setup();
+
+    function RadioFilterMenu() {
+      const [value, setValue] = useState("unarchived");
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger>Filter</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Filter</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={value}
+                onValueChange={(next) => {
+                  setValue(next);
+                }}
+              >
+                <DropdownMenuRadioItem value="unarchived">
+                  Unarchived
+                  <DropdownMenuRadioItemIndicator />
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="unread">
+                  Unread
+                  <DropdownMenuRadioItemIndicator />
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+    }
+
+    render(<RadioFilterMenu />);
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+
+    const group = await screen.findByRole("group", { name: "Filter" });
+    expect(group).toBeInTheDocument();
+
+    const unarchived = screen.getByRole("menuitemradio", {
+      name: "Unarchived",
+    });
+    const unread = screen.getByRole("menuitemradio", { name: "Unread" });
+
+    expect(unarchived).toHaveAttribute("aria-checked", "true");
+    expect(unread).toHaveAttribute("aria-checked", "false");
+    expect(unarchived.querySelector("svg")).toBeInTheDocument();
+    expect(unread.querySelector("svg")).not.toBeInTheDocument();
+
+    await user.click(unread);
+    expect(unread).toHaveAttribute("aria-checked", "true");
+    expect(unarchived).toHaveAttribute("aria-checked", "false");
+    expect(unread.querySelector("svg")).toBeInTheDocument();
+    expect(unarchived.querySelector("svg")).not.toBeInTheDocument();
   });
 });

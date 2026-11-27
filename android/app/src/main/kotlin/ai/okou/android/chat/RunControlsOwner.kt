@@ -261,8 +261,11 @@ internal class RunControlsOwner {
                 requireCurrent(op)
                 phase(op, RunControlPhase.Unknown)
                 invalidate(op.intent.threadId)
-                val delayMillis = dependencyRetryAfterMillis(error).takeIf { remaining > 0 }
-                if (delayMillis != null) delay(maxOf(ChatDependencyRetryDelayMillis, delayMillis))
+                val delayMillis =
+                    dependencyRetryDelayMillis(error, ChatDependencyRetryCount - remaining).takeIf {
+                        remaining > 0
+                    }
+                if (delayMillis != null) delay(delayMillis)
                 // Only an authoritative observation of the exact original target permits a resend.
                 if (!verifyTarget(op, canResend = delayMillis != null)) return
                 remaining--

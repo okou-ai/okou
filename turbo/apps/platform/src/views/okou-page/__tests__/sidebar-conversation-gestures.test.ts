@@ -81,7 +81,7 @@ test("unread-only-shortcut-001 Filtering an empty inbox keeps the current chat a
   await openDesk();
   click(await findFastControl("button", "Open chat list menu"));
   const entry = await waitFor(() => {
-    const item = queryAllByRoleFast("menuitem").find((el) => {
+    const item = queryAllByRoleFast("menuitemradio").find((el) => {
       return el.textContent?.includes("Unread");
     });
     expect(item).toBeDefined();

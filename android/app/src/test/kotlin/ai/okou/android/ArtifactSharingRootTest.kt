@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -18,6 +19,7 @@ import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -27,6 +29,20 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactSharingRootTest : ArtifactCatalogRootTestFixture() {
+    @Before
+    fun initializeShareProvider() {
+        compose.runOnIdle {
+            val activity = compose.activity
+            // Resolve the manifest provider for this test's application and cache directory.
+            checkNotNull(
+                    activity.contentResolver.acquireContentProviderClient(
+                        "${activity.packageName}.artifact-shares",
+                    ),
+                )
+                .close()
+        }
+    }
+
     @Test
     fun authorizedFileSharesOriginalBytesWithAReadOnlyGrant() {
         val fixture = ArtifactApiFixture(app.fixture)
@@ -166,6 +182,87 @@ internal class ArtifactSharingRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithTag("conversation").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to artifact preview").performClick()
         awaitText(fixture.summary.title)
+    }
+
+    @Test
+    fun sharesSentChatFileAndReturnsToItsMessage() {
+        val fixture = ChatFilePreviewFixture(app.fixture)
+        openChatFile(fixture)
+        compose.onNodeWithText("Save file").assertIsDisplayed()
+        val previewRequests = fixture.requests.size
+        compose.onNodeWithText("Share file").performClick()
+
+        var chooser: Intent? = null
+        compose.waitUntil(10_000) {
+            chooser = shadowOf(compose.activity).nextStartedActivity
+            chooser != null ||
+                compose
+                    .onAllNodesWithText("Unable to", substring = true)
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+        }
+        assertEquals(
+            listOf("/api/web/file-url", "/chat-file/download"),
+            fixture.requests.drop(previewRequests),
+        )
+        assertNotNull("The original share did not launch the chooser", chooser)
+        assertEquals(Intent.ACTION_CHOOSER, chooser?.action)
+        val send =
+            checkNotNull(
+                IntentCompat.getParcelableExtra(
+                    checkNotNull(chooser),
+                    Intent.EXTRA_INTENT,
+                    Intent::class.java,
+                ),
+            )
+        assertEquals(Intent.ACTION_SEND, send.action)
+        assertEquals("text/plain", send.type)
+        assertEquals(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            send.flags and
+                (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION),
+        )
+        val uri =
+            checkNotNull(
+                IntentCompat.getParcelableExtra(send, Intent.EXTRA_STREAM, Uri::class.java),
+            )
+        assertEquals("content", uri.scheme)
+        assertEquals(uri, send.clipData?.getItemAt(0)?.uri)
+        assertEquals(fixture.filename, send.clipData?.description?.label)
+        assertEquals(
+            fixture.original,
+            compose.activity.contentResolver.openInputStream(uri)?.bufferedReader()?.use {
+                it.readText()
+            },
+        )
+
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        awaitText(fixture.prompt)
+        compose.onNodeWithTag("chat-message-attachments").assertIsDisplayed()
+    }
+
+    @Test
+    fun revokedSentChatFileShareKeepsPreviewAndWithdrawsOriginalActions() {
+        val fixture = ChatFilePreviewFixture(app.fixture)
+        openChatFile(fixture)
+        fixture.denied = true
+        compose.onNodeWithText("Share file").performClick()
+        awaitText("Unable to share this file")
+        compose.onNodeWithText("Share file").assertDoesNotExist()
+        compose.onNodeWithText("Save file").assertDoesNotExist()
+        compose.onNodeWithText(fixture.preview).assertIsDisplayed()
+        assertNull(shadowOf(compose.activity).nextStartedActivity)
+    }
+
+    private fun openChatFile(fixture: ChatFilePreviewFixture) {
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText("Personal chat")
+        compose.onNodeWithText("Personal chat").performClick()
+        awaitText(fixture.filename)
+        compose.onNodeWithText(fixture.filename).performClick()
+        awaitText(fixture.preview)
+        awaitText("Share file")
     }
 
     private fun openFile(title: String) {

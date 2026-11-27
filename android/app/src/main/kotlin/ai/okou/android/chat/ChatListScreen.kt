@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadFailureLayout
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.WithButtonFocusOutline
@@ -20,6 +21,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -85,7 +87,9 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -153,6 +157,7 @@ internal fun ChatListScreen(
     confirmingProjectDelete: String?,
     projectExpansion: ProjectExpansionModel?,
     listState: LazyListState,
+    undoReturnFocus: DirectoryReturnFocus,
     newChat: (String?) -> Unit,
     showInbox: () -> Unit,
     selectedChatId: String?,
@@ -466,10 +471,35 @@ internal fun ChatListScreen(
             firstLoadFailed &&
                 pendingByProject.isEmpty() &&
                 groups.none { it.project != null || it.threads.isNotEmpty() }
+        val undoRowFocus = remember { FocusRequester() }
+        val listFocus = remember { FocusRequester() }
+        var listFocused by remember { mutableStateOf(false) }
+        val undoFocus = undoReturnFocus.pending
+        val inputMode = LocalInputModeManager.current
+        val restoreUndoFocus =
+            if (undoFocus == null) Modifier
+            else
+                Modifier.onGloballyPositioned {
+                    if (undoReturnFocus.isCurrent(undoFocus, inputMode.inputMode)) {
+                        val visible =
+                            chatActionsEnabled &&
+                                listState.layoutInfo.visibleItemsInfo.any {
+                                    it.key == undoFocus.rowKey
+                                }
+                        if (!visible || !undoRowFocus.requestFocus()) listFocus.requestFocus()
+                    }
+                    undoReturnFocus.finish(undoFocus)
+                }
         LazyColumn(
-            Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
-                contentDescription = listLabel
-            },
+            Modifier.widthIn(max = 720.dp)
+                .fillMaxSize()
+                .focusProperties { canFocus = undoReturnFocus.pending != null || listFocused }
+                .focusRequester(listFocus)
+                .onFocusChanged { listFocused = it.isFocused }
+                .focusable()
+                .then(restoreUndoFocus)
+                .testTag("chat_list")
+                .semantics { contentDescription = listLabel },
             contentPadding =
                 PaddingValues(
                     start = listInset,
@@ -663,6 +693,7 @@ internal fun ChatListScreen(
                                     pendingAction = state.pendingRowActions[id],
                                     enabled = chatActionsEnabled,
                                     deleteDialogOpen = deletingId == id,
+                                    undoFocus = undoRowFocus.takeIf { id == undoFocus?.rowKey },
                                     rename = { restore -> renameThread(id, restore) },
                                     renameFocus =
                                         (renameFocus as? WorkspaceRenameTarget.Chat)?.takeIf {
@@ -1139,6 +1170,7 @@ private fun ChatRow(
     pendingAction: ChatRowAction?,
     enabled: Boolean,
     deleteDialogOpen: Boolean,
+    undoFocus: FocusRequester?,
     rename: (Boolean) -> Unit,
     renameFocus: WorkspaceRenameTarget?,
     onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
@@ -1147,7 +1179,8 @@ private fun ChatRow(
     open: () -> Unit,
 ) {
     var menuOpen by remember(actions) { mutableStateOf(false) }
-    val rowFocus = remember { FocusRequester() }
+    val localFocus = remember { FocusRequester() }
+    val rowFocus = undoFocus ?: localFocus
     if (renameFocus != null) RestoreRenameOriginFocus(renameFocus, rowFocus, onRenameFocusFinished)
     var rowFocused by remember { mutableStateOf(false) }
     var restoreMenuFocus by remember { mutableStateOf(false) }

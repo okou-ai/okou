@@ -1,5 +1,4 @@
 import {
-  array,
   enum as zEnum,
   number,
   object,
@@ -32,8 +31,6 @@ export const storedTemplateGuidanceBundleSchema = templateGuidanceBundleSchema
   .extend({
     ownerKind: zEnum(["user-template", "presentation-template"]),
     templateId: uuid(),
-    // Older Runner startup readers require the field until #51330.
-    beforeMountPaths: array(string()),
   })
   .strict();
 export type StoredTemplateGuidanceBundle = zInfer<

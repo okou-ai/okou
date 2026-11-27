@@ -81,6 +81,7 @@ printf '%s\n' "$reader_sha" > "$work_dir/source/.github/rollback-floors/telegram
 printf '%s\n' "$slack_reader_sha" > "$work_dir/source/.github/rollback-floors/slack-settings-app"
 printf '%s\n' "$connector_resource_split_sha" > "$work_dir/source/.github/rollback-floors/connector-resource-split"
 printf '%s\n' "$connector_resource_split_sha" > "$work_dir/source/.github/rollback-floors/data-router-stateless-mcp-app"
+printf '%s\n' "$connector_resource_split_sha" > "$work_dir/source/.github/rollback-floors/template-guidance-diagnostic-app"
 printf '{"minimumSupportedVersion":"0.1029.3"}\n' > "$work_dir/source/turbo/apps/api/src/lib/web-client-compatibility.json"
 git -C "$work_dir/source" add .
 git -C "$work_dir/source" commit -qm 'fixture later main policy and unreleased API floor'
@@ -297,6 +298,12 @@ printf '%s\n' "$target_sha" > "$work_dir/source/.github/rollback-floors/data-rou
 git -C "$work_dir/source" commit -qam 'fixture later Data Router stateless MCP floor'
 TARGET_COMMIT="$connector_resource_split_sha" run_case pre-data-router-stateless-mcp fail 0
 grep -Fq 'App artifact predates the Data Router stateless MCP catalog request' "$work_dir/output"
+
+git -C "$work_dir/source" reset -q --hard "$policy_sha"
+printf '%s\n' "$target_sha" > "$work_dir/source/.github/rollback-floors/template-guidance-diagnostic-app"
+git -C "$work_dir/source" commit -qam 'fixture anchor-free template diagnostics reader floor'
+TARGET_COMMIT="$connector_resource_split_sha" run_case pre-template-guidance-diagnostic-reader fail 0
+grep -Fq 'App artifact predates anchor-free template diagnostics readers' "$work_dir/output"
 
 # Descendants with valid releases and deployment evidence still cannot retire
 # either Telegram route or the registered authenticated bare Slack reader.

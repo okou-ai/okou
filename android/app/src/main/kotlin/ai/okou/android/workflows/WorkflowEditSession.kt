@@ -32,11 +32,13 @@ internal sealed class WorkflowEditSession {
         val purpose = TextFieldState(initial.value.purpose)
         val instruction = TextFieldState(initial.value.instruction)
         private var original by mutableStateOf(initial.original)
+        private var suggestedTitle by mutableStateOf(initial.suggestedTitle)
 
         override val draft by
             derivedStateOf(structuralEqualityPolicy()) {
                 WorkflowEdit.Instructions(
                     original = original,
+                    suggestedTitle = suggestedTitle,
                     value =
                         InstructionsFields(
                             title.text.toString(),
@@ -54,6 +56,7 @@ internal sealed class WorkflowEditSession {
                     current.updateConfirmed(detail, keepInput) as? WorkflowEdit.Instructions
                         ?: return@withMutableSnapshot false
                 original = latest.original
+                suggestedTitle = latest.suggestedTitle
                 if (!keepInput) {
                     title.replaceTextPreservingSelection(latest.value.title)
                     purpose.replaceTextPreservingSelection(latest.value.purpose)

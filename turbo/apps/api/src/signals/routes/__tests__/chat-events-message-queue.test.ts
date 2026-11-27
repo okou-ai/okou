@@ -605,4 +605,81 @@ describe("CHAT-02: queueing and recalling messages", () => {
     );
     await cancelChatRun(actor, promoted.runId);
   }, 90_000);
+
+  it("drains multiple queued follow-ups in FIFO order after completion without dropping work", async () => {
+    const { actor } = await entitledNativeChatActor();
+
+    const first = await sendChatRun(actor, {
+      prompt: "first run in fifo chain",
+    });
+    const firstExec = await runExecution(first.runId);
+
+    const secondEventId = randomUUID();
+    const thirdEventId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        threadId: first.threadId,
+        prompt: "second queued follow-up",
+        clientEventId: secondEventId,
+      },
+      [201],
+    );
+    await chat.requestSendEvent(
+      actor,
+      {
+        threadId: first.threadId,
+        prompt: "third queued follow-up",
+        clientEventId: thirdEventId,
+      },
+      [201],
+    );
+
+    await completeChatRunOk(first.runId, firstExec.sandboxHeaders);
+    const afterFirst = await waitForThreadMessages(
+      actor,
+      first.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === secondEventId &&
+            typeof message.runId === "string"
+          );
+        });
+      },
+    );
+    const secondRunId = userMessages(afterFirst.events).find((message) => {
+      return message.revokesEventId === secondEventId;
+    })?.runId;
+    if (!secondRunId) {
+      throw new Error("Expected second queued follow-up to launch");
+    }
+
+    const secondExec = await runExecution(secondRunId);
+    await completeChatRunOk(secondRunId, secondExec.sandboxHeaders);
+    const afterSecond = await waitForThreadMessages(
+      actor,
+      first.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === thirdEventId &&
+            typeof message.runId === "string"
+          );
+        });
+      },
+    );
+    const thirdRunId = userMessages(afterSecond.events).find((message) => {
+      return message.revokesEventId === thirdEventId;
+    })?.runId;
+    if (!thirdRunId) {
+      throw new Error("Expected third queued follow-up to launch");
+    }
+
+    const thirdExec = await runExecution(thirdRunId);
+    await completeChatRunOk(thirdRunId, thirdExec.sandboxHeaders);
+    await waitForRunStatus(actor, thirdRunId, "completed");
+    expect(secondRunId).not.toBe(first.runId);
+    expect(thirdRunId).not.toBe(secondRunId);
+  }, 90_000);
 });

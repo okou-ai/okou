@@ -131,20 +131,28 @@ jobs:
               if (dryRun) {
                 console.log(`[DRY-RUN] Would delete deployment ${deployment.id} (${deployment.environment}) - ${reason}`);
               } else {
-                // Mark as inactive first (required by GitHub API)
-                await github.rest.repos.createDeploymentStatus({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  deployment_id: deployment.id,
-                  state: 'inactive',
-                  description: reason
-                });
+                try {
+                  // Mark as inactive first (required by GitHub API)
+                  await github.rest.repos.createDeploymentStatus({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    deployment_id: deployment.id,
+                    state: 'inactive',
+                    description: reason
+                  });
 
-                await github.rest.repos.deleteDeployment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  deployment_id: deployment.id
-                });
+                  await github.rest.repos.deleteDeployment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    deployment_id: deployment.id
+                  });
+                } catch (error) {
+                  if (error?.status !== 404) throw error;
+
+                  console.log(`Skipping deployment ${deployment.id}: already absent`);
+                  skipped++;
+                  return;
+                }
 
                 console.log(`Deleted deployment ${deployment.id} (${deployment.environment}) - ${reason}`);
               }

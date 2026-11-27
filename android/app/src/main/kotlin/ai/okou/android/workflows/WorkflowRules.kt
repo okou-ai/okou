@@ -175,13 +175,22 @@ internal sealed interface WorkflowEdit {
 
     data class Instructions(
         val original: InstructionsFields,
+        val suggestedTitle: String?,
         val value: InstructionsFields = original,
     ) : WorkflowEdit {
+        private val submittedValue
+            get() =
+                if (value.title == suggestedTitle && value.title != original.title)
+                    value.copy(title = original.title)
+                else value
+
         override val changed
-            get() = original != value
+            get() = original != submittedValue
 
         override val canSave
             get() = changed && value.valid
+
+        fun updateRequest() = submittedValue.changesFrom(original)
     }
 
     data class Rule(
@@ -223,9 +232,9 @@ internal fun WorkflowEdit.updateConfirmed(
     if (!detail.canEdit(this)) return null
     return when (this) {
         is WorkflowEdit.Instructions -> {
-            val latest = detail.editableInstructions().original
-            if (latest == original) this
-            else copy(original = latest, value = if (keepInput) value else latest)
+            val latest = detail.editableInstructions()
+            // Keep the original suggestion with the displayed input while a draft is retained.
+            if (keepInput) copy(original = latest.original) else latest
         }
         is WorkflowEdit.Rule -> {
             if (id == null) return this
@@ -267,9 +276,18 @@ internal data class InstructionsFields(
 private fun changedText(before: String, after: String): CanonicalOptional<String?> =
     if (after == before) CanonicalOptional.Absent else CanonicalOptional.Present(after)
 
+internal fun workflowDisplayTitle(name: String, displayName: String?): String =
+    displayName?.takeIf(String::isNotBlank) ?: name
+
 internal fun WorkflowDetail.editableInstructions() =
     WorkflowEdit.Instructions(
-        InstructionsFields(displayName ?: name, description.orEmpty(), instruction.orEmpty()),
+        original =
+            InstructionsFields(
+                workflowDisplayTitle(name, displayName),
+                description.orEmpty(),
+                instruction.orEmpty(),
+            ),
+        suggestedTitle = name.takeIf { displayName.isNullOrBlank() },
     )
 
 internal enum class EditableTrigger(val source: RuleSource) {

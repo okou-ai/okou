@@ -33,6 +33,7 @@ internal constructor(
     private val onFailure: (Exception) -> Unit,
     private val onRead: () -> Unit,
     private val precedingReadWrite: () -> Job?,
+    private val markRead: suspend (String) -> Unit,
 ) : AutoCloseable {
     private val scope = CoroutineScope(parent.coroutineContext + Job(parent.coroutineContext[Job]))
     private val mutable = MutableStateFlow(HistoryReadState.Idle)
@@ -127,7 +128,7 @@ internal constructor(
                             val submission = CompletableDeferred<Unit>()
                             pendingAutomaticRead = submission
                             try {
-                                service.markRead(threadId)
+                                markRead(threadId)
                             } finally {
                                 pendingAutomaticRead = null
                                 submission.complete(Unit)
