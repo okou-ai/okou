@@ -68,6 +68,9 @@ data class SearchWorkflowHit(
 private fun WorkflowSummary.toSearchHit() =
     SearchWorkflowHit(id, name, displayName, description, shadowedBy == null)
 
+internal fun WorkflowState.searchWorkflowById(id: String): SearchWorkflowHit? =
+    catalog?.firstOrNull { it.id == id }?.toSearchHit()
+
 internal fun WorkflowState.searchCatalog(keyword: String): SearchRead<SearchWorkflowHit> {
     val rows =
         catalog

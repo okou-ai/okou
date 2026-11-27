@@ -90,6 +90,7 @@ internal class WorkflowApiFixture(
         else
             "Review launch copy and product notes.\nCheck the website, email, and community assets."
     @Volatile var releaseTitle = if (chinese) "发布检查流程" else "Release checklist"
+    @Volatile var releaseInCatalog = true
     val sharedTitle = if (chinese) "发布后跟进" else "Release follow-up"
     private val feedbackTitle = if (chinese) "客户反馈汇总" else "Customer feedback"
     val releasePurpose =
@@ -119,7 +120,14 @@ internal class WorkflowApiFixture(
             "/api/workflows" -> {
                 assertNull(request.requestUrl?.query)
                 beforeCatalog()
-                jsonResponse("[${release()},${shared()},${feedback()},${official()}]")
+                val workflows =
+                    listOfNotNull(
+                        if (releaseInCatalog) release() else null,
+                        shared(),
+                        feedback(),
+                        official(),
+                    )
+                jsonResponse(workflows.joinToString(prefix = "[", postfix = "]"))
             }
             "/api/workflows/$WORKFLOW_RELEASE" -> {
                 if (request.method == "GET") beforeReleaseDetailRead()
