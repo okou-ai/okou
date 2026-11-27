@@ -10,6 +10,7 @@ import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
+import android.graphics.Rect
 import android.view.WindowInsets
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
@@ -56,6 +57,10 @@ class ScreenshotScenario {
                 assertWindow(scenario, 360, 280, 2f)
                 closeIme(scenario)
                 reveal(scenario, subject, minimumHeight = 70)
+                val field = node(subject).visibleBounds
+                val viewport = editorViewport()
+                val remaining = field.top - viewport.top
+                if (remaining > 8) scrollEditor(viewport, remaining + 4, safeBottom(scenario))
                 assertEquals(draft, node(subject).text)
                 ScreenshotCapture.capture("short-editor-fields.png")
                 reveal(scenario, save)
@@ -78,6 +83,7 @@ class ScreenshotScenario {
                         notice.visibleBounds.bottom <= safeBottom(scenario),
                 )
                 assertEquals(saveBounds, checkNotNull(saveControl(node(save))).visibleBounds)
+                awaitSnackbarSurface(notice.visibleBounds)
                 ScreenshotCapture.capture("short-editor-feedback.png")
             }
         } catch (failure: Throwable) {
@@ -236,20 +242,44 @@ class ScreenshotScenario {
             if (target != null && target.visibleBounds.height() >= minimumHeight &&
                 target.visibleBounds.bottom <= bottom
             ) return
-            val scrollBounds =
-                device.findObjects(By.scrollable(true).pkg(app.packageName))
-                    .map { it.visibleBounds }
-                    .filter { it.height() >= 48 }
-                    .minByOrNull { it.height() }
-                    ?: error("No scrollable editor viewport for $selector")
-            val x = scrollBounds.left + 14
-            val start = minOf(bottom, scrollBounds.bottom) - 12
             val drag = if (selector === save) 68 else if (target == null) 46 else 24
-            val end = maxOf(scrollBounds.top + 12, start - drag)
-            assertTrue(device.swipe(x, start, x, end, 60))
-            device.waitForIdle()
+            scrollEditor(editorViewport(), drag, bottom)
         }
         error("Could not reveal $selector, largest visible height was $largestVisibleHeight px")
+    }
+
+    private fun editorViewport(): Rect =
+        device.findObjects(By.scrollable(true).pkg(app.packageName))
+            .map { it.visibleBounds }
+            .filter { it.height() >= 48 }
+            .minByOrNull { it.height() }
+            ?: error("No scrollable editor viewport")
+
+    private fun scrollEditor(viewport: Rect, distance: Int, safeBottom: Int) {
+        val x = viewport.left + 14
+        val start = minOf(safeBottom, viewport.bottom) - 12
+        val end = maxOf(viewport.top + 12, start - distance)
+        assertTrue(device.swipe(x, start, x, end, 60))
+        device.waitForIdle()
+    }
+
+    private fun awaitSnackbarSurface(bounds: Rect) {
+        val painted = object : Condition<UiDevice, Boolean> {
+            override fun apply(device: UiDevice): Boolean {
+                val frame = instrumentation.uiAutomation.takeScreenshot() ?: return false
+                return try {
+                    val inverseSurface = 0xff362f27.toInt()
+                    (bounds.top until bounds.bottom step 4).any { y ->
+                        (bounds.left until bounds.right step 4).any { x ->
+                            frame.getPixel(x, y) == inverseSurface
+                        }
+                    }
+                } finally {
+                    frame.recycle()
+                }
+            }
+        }
+        assertTrue("The short editor Snackbar has drawn its inverse surface", device.wait(painted, 4_000))
     }
 
     private fun node(selector: BySelector): UiObject2 =
