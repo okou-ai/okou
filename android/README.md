@@ -63,15 +63,12 @@ The Material 3 text field keeps raw Markdown and native selection together.
 Output styling leaves the document and its offsets intact.
 Saving keeps the panel and its edit visible with a disabled saving action until
 the request settles. The panel closes after the save is confirmed. Field
-validation, save failures, and readback share the field's supporting line.
-An explicit save uses the latest confirmed
-version. A definitive stale-version rejection reads back the latest value and
-retries once with that version if the text differs. Clearing the field and saving
-clears Instructions. A lost save response reads the server back with the shared
-bounded read retry policy. Matching text confirms the save. A different server
-value restores the edit against the latest confirmed version. If reads end
-without a result, the editor retains the attempted draft until a later read or
-confirmed discard.
+validation and save failures share the field's supporting line. A rejected or
+lost response ends that attempt and restores the editor with its text and the
+last confirmed value. Each explicit Save can send one conditional write. If
+the previous attempt invalidated the version, the next explicit Save first
+reads the current version. Normal background reads also update the confirmed
+value. Clearing the field and saving clears Instructions.
 
 Activities for the same API origin/user/workspace share one editing transaction
 while retaining their own native selection and session authorization. Request

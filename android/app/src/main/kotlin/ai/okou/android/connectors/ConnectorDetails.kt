@@ -370,13 +370,14 @@ internal fun ConnectorDetails(
                 }
                 if (detail?.hasPermissions == true) {
                     ConnectorSectionDivider()
-                    ConnectorAccountAction(
-                        stringResource(R.string.connector_permissions),
+                    ConnectorNavigationRow(
+                        onClick = {
+                            panel = ConnectorPanel.Permissions
+                            model.showPermissions()
+                        },
                         modifier = Modifier.focusRequester(permissionsFocus),
-                        chevron = true,
                     ) {
-                        panel = ConnectorPanel.Permissions
-                        model.showPermissions()
+                        Text(stringResource(R.string.connector_permissions))
                     }
                 }
                 if (panel == null) ConnectorActionFeedback(action)
@@ -527,38 +528,25 @@ private fun ConnectorAccountRow(
     modifier: Modifier,
     open: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(8.dp)
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .updateFocusOutline(shape, MaterialTheme.colorScheme.onSurface, keyboardOnly = true)
-            .clip(shape)
-            .clickable(onClick = open, role = Role.Button)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .testTag("connector-account-${account.id}"),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                account.label(),
-                style = connectorBodyType().copy(fontWeight = FontWeight.SemiBold),
-            )
-            if (
-                account.displayName != null &&
-                    account.identity != null &&
-                    account.displayName != account.identity
-            ) {
-                Text(
-                    account.identity,
-                    style = connectorSmallType(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    val label = account.label()
+    val identity = account.identity?.takeIf { it != label }
+    ConnectorNavigationRow(
+        onClick = open,
+        modifier = modifier.testTag("connector-account-${account.id}"),
+        supportingContent = {
+            Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (identity != null) {
+                    Text(
+                        identity,
+                        style = connectorSmallType(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                ConnectorAccountStatusText(account)
             }
-            ConnectorAccountStatusText(account)
-        }
-        ConnectorChevron()
+        },
+    ) {
+        Text(label)
     }
 }
 
@@ -926,28 +914,25 @@ private fun ConnectorAccountAction(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     destructive: Boolean = false,
-    chevron: Boolean = false,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(if (chevron) 8.dp else 12.dp)
+    val shape = RoundedCornerShape(12.dp)
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = if (chevron) 52.dp else 56.dp)
+            .heightIn(min = 56.dp)
             .updateFocusOutline(shape, colors.onSurface, keyboardOnly = true)
             .clip(shape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = if (chevron) 12.dp else 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
             Modifier.weight(1f),
-            style =
-                connectorBodyType()
-                    .copy(fontWeight = if (chevron) FontWeight.SemiBold else FontWeight.Normal),
+            style = connectorBodyType(),
             color =
                 when {
                     !enabled -> colors.onSurfaceVariant
@@ -955,7 +940,6 @@ private fun ConnectorAccountAction(
                     else -> colors.onSurface
                 },
         )
-        if (chevron) ConnectorChevron()
     }
 }
 
@@ -977,6 +961,9 @@ private fun ConnectorDisconnectDialog(
         confirmEnabled = canModify && count != null,
         dismissEnabled = action?.busy != true,
         destructive = true,
+        pendingConfirmLabel = stringResource(R.string.connector_submitting),
+        confirmPending = action?.busy == true,
+        actionStatus = { ConnectorActionFeedback(action?.takeUnless { it.busy }) },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(account.label(), fontWeight = FontWeight.SemiBold)
@@ -1005,7 +992,6 @@ private fun ConnectorDisconnectDialog(
                     ConnectorStatusBanner(R.string.connector_impact_failed)
                 count == null -> ConnectorProgress(R.string.connector_loading_impact)
             }
-            ConnectorActionFeedback(action)
         }
     }
 }
@@ -1023,7 +1009,12 @@ internal fun ConnectorActionFeedback(action: ConnectorAction?) {
             else R.string.connector_submitting,
         )
     else if (action?.problem != null)
-        ConnectorStatusBanner(connectorActionProblemMessage(action.problem))
+        ConnectorStatusBanner(
+            connectorActionProblemMessage(action.problem),
+            error =
+                action.problem == ConnectorProblem.Failed ||
+                    action.problem == ConnectorProblem.Network,
+        )
 }
 
 internal fun connectorActionProblemMessage(problem: ConnectorProblem) =
@@ -1073,4 +1064,4 @@ internal fun ConnectorButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     treatment: ConnectorButtonTreatment = ConnectorButtonTreatment.Primary,
-) = OkouActionButton(label, onClick, modifier, enabled, treatment)
+) = OkouActionButton(label, onClick, modifier, enabled, treatment, useMaterialButtonDefaults = true)

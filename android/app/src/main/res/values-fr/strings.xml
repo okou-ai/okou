@@ -59,12 +59,11 @@
     <string name="instructions_title">Instructions personnelles</string>
     <string name="instructions_loading">Chargement des instructions…</string>
     <string name="instructions_refresh_failed">Impossible d’actualiser les instructions. Les dernières instructions chargées sont affichées.</string>
-    <string name="instructions_uncertain">L’enregistrement reste à confirmer. Vos modifications sont conservées.</string>
     <string name="instructions_load_failed">Chargement temporairement indisponible</string>
     <string name="instructions_unavailable">Les instructions personnelles sont indisponibles dans ce contexte.</string>
     <string name="instructions_unsaved">Vous avez des modifications non enregistrées.</string>
     <string name="instructions_local_failed">Impossible de conserver le brouillon local. Réessayez.</string>
-    <string name="instructions_save_rejected">Enregistrement refusé. Vos modifications sont conservées.</string>
+    <string name="instructions_save_rejected">Impossible d’enregistrer. Vos modifications sont conservées.</string>
     <string name="instructions_invalid">Le texte contient un caractère non pris en charge.</string>
     <string name="instructions_checking">Vérification du résultat de l’enregistrement…</string>
     <string name="instructions_save">Enregistrer</string>

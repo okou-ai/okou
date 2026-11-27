@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.251.41](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.40...runner-rs-v0.251.41) (2026-11-27)
+
+
+### Refactoring
+
+* **runner:** use one model sse test flow constructor ([#51514](https://github.com/okou-ai/okou/issues/51514)) ([23df9b6](https://github.com/okou-ai/okou/commit/23df9b6291f776c24ac72e5f3a9adeda630a8102))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.40](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.39...runner-rs-v0.251.40) (2026-11-27)
 
 

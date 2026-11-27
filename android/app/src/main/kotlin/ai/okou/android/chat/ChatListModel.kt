@@ -13,12 +13,12 @@ import ai.okou.android.api.generated.SetThreadModelRequestReasoningEffort
 import ai.okou.android.api.generated.ThreadDetail
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.contentReadStaleDelayMillis
+import ai.okou.android.nextPaneFeedbackOrder
 import ai.okou.android.settings.ModelEffort
 import ai.okou.android.settings.isAutoDefaultModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -48,9 +48,6 @@ import kotlinx.coroutines.yield
 
 private const val listRetryProgressThreshold = 3
 private const val unreadSnapshotRenewalMillis = 30_000L
-private val chatFeedbackOrder = AtomicLong()
-
-internal fun nextChatFeedbackOrder(): Long = chatFeedbackOrder.incrementAndGet()
 
 internal fun chatSyncNoticeDelayMillis(confirmedAt: Long, now: Long): Long =
     contentReadStaleDelayMillis(confirmedAt.coerceAtMost(now), now)
@@ -84,7 +81,7 @@ data class ChatMarkAllReadResult(
     val requested: Int,
     internal val rejected: Int = 0,
 ) {
-    internal val feedbackOrder = nextChatFeedbackOrder()
+    internal val feedbackOrder = nextPaneFeedbackOrder()
 }
 
 class ChatReadIntent
@@ -160,7 +157,7 @@ internal constructor(
     internal val renameThreadId: String? = null,
     internal val fromUndo: Boolean = false,
 ) {
-    internal val feedbackOrder = nextChatFeedbackOrder()
+    internal val feedbackOrder = nextPaneFeedbackOrder()
     internal val feedbackConversationId: String?
         get() = conversationId.takeUnless { action == ChatRowAction.Delete }
 }
@@ -2170,7 +2167,7 @@ class ChatListModel(
                                     feedbackScope === visibleListFeedbackScope &&
                                     state.hasUsableList
                             )
-                                nextChatFeedbackOrder()
+                                nextPaneFeedbackOrder()
                             else state.listRefreshFailureOrder,
                     )
                 } else if (needsListRead && retryScope === listReadScope) {
@@ -2606,7 +2603,7 @@ class ChatListModel(
                                     feedbackScope != null &&
                                     feedbackScope === visibleListFeedbackScope
                             )
-                                nextChatFeedbackOrder()
+                                nextPaneFeedbackOrder()
                             else state.indicatorsRefreshFailureOrder,
                     )
                 }

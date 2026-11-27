@@ -4,7 +4,7 @@
 //! lives in `main.rs`, not in the public `cli::setup_codex` helper.
 
 use crate::common;
-use cli_test_support::json_fixture::parse_json_lines;
+use cli_test_support::json_fixture::read_json_lines;
 
 use guest_contracts::diagnostics::{FailureClass, FailureDiagnostic};
 use serde_json::Value;
@@ -68,8 +68,7 @@ async fn codex_setup_failure_exits_before_cli_spawn() -> TestResult {
     assert_eq!(diagnostic.failure_class, FailureClass::CliExecutionError);
 
     let sandbox_ops_path = guest_contracts::runtime_paths::sandbox_ops_log_file(&runtime_dir);
-    let sandbox_ops = std::fs::read_to_string(sandbox_ops_path)?;
-    let startup = parse_json_lines(&sandbox_ops)?
+    let startup = read_json_lines(sandbox_ops_path)?
         .into_iter()
         .filter(|operation| {
             operation.get("action_type").and_then(Value::as_str) == Some("codex_startup")

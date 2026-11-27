@@ -137,14 +137,14 @@ internal fun OkouActionButton(
     treatment: OkouActionTreatment = OkouActionTreatment.Primary,
     layoutLabels: List<String> = emptyList(),
     retainDisabledFocus: Boolean = false,
-    useMaterialDefaults: Boolean = false,
+    useMaterialButtonDefaults: Boolean = false,
 ) {
     val size =
-        if (useMaterialDefaults) modifier
+        if (useMaterialButtonDefaults) modifier
         else modifier.minimumInteractiveComponentSize().heightIn(min = 48.dp)
-    val contentPadding =
+    val padding =
         when {
-            !useMaterialDefaults -> PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+            !useMaterialButtonDefaults -> PaddingValues(horizontal = 12.dp, vertical = 8.dp)
             treatment == OkouActionTreatment.Text -> ButtonDefaults.TextButtonContentPadding
             else -> ButtonDefaults.ContentPadding
         }
@@ -170,7 +170,7 @@ internal fun OkouActionButton(
                 onClick,
                 size,
                 enabled,
-                contentPadding = contentPadding,
+                contentPadding = padding,
                 content = { text() },
             )
         OkouActionTreatment.Outline ->
@@ -178,7 +178,7 @@ internal fun OkouActionButton(
                 onClick,
                 size,
                 enabled,
-                contentPadding = contentPadding,
+                contentPadding = padding,
                 content = { text() },
             )
         OkouActionTreatment.Primary -> {
@@ -200,7 +200,7 @@ internal fun OkouActionButton(
                             contentColor = defaults.disabledContentColor,
                         )
                     else defaults,
-                contentPadding = contentPadding,
+                contentPadding = padding,
                 content = { text() },
             )
         }
@@ -219,6 +219,7 @@ internal fun OkouFormActions(
     confirmLayoutLabels: List<String> = emptyList(),
     confirmMinWidth: Dp = 0.dp,
     keepConfirmFocusWhilePending: Boolean = false,
+    useMaterialButtonDefaults: Boolean = false,
 ) {
     FlowRow(
         Modifier.fillMaxWidth().then(modifier),
@@ -230,6 +231,7 @@ internal fun OkouFormActions(
             cancel,
             enabled = cancelEnabled,
             treatment = OkouActionTreatment.Text,
+            useMaterialButtonDefaults = useMaterialButtonDefaults,
         )
         if (confirmLabel != null) {
             OkouActionButton(
@@ -239,6 +241,7 @@ internal fun OkouFormActions(
                 enabled = confirmEnabled,
                 layoutLabels = confirmLayoutLabels,
                 retainDisabledFocus = keepConfirmFocusWhilePending,
+                useMaterialButtonDefaults = useMaterialButtonDefaults,
             )
         }
     }

@@ -1041,7 +1041,7 @@ private fun WorkflowUseBar(
                 { onUse(actionFocus.keyboardFocused) },
                 enabled = enabled && !pending,
                 retainDisabledFocus = enabled && pending,
-                useMaterialDefaults = true,
+                useMaterialButtonDefaults = true,
                 modifier =
                     actionFocus.modifier
                         .updateFocusOutline(

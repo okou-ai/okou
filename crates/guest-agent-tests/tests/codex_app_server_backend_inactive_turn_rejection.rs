@@ -131,9 +131,7 @@ async fn assert_rejection_scenario(
             if status == "completed" { 0 } else { 1 },
             "{scenario}"
         );
-        let events = common::json_fixture::parse_json_lines(&std::fs::read_to_string(
-            runtime.paths.agent_log_file(),
-        )?)?;
+        let events = common::json_fixture::read_json_lines(runtime.paths.agent_log_file())?;
         let terminal = events
             .iter()
             .find(|event| event.get("type").and_then(Value::as_str) == Some("turn.completed"))

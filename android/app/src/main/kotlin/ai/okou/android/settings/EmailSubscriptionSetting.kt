@@ -2,6 +2,7 @@ package ai.okou.android.settings
 
 import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.ContentReadProgress
+import ai.okou.android.PaneFeedback
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
@@ -64,10 +65,15 @@ private fun EmailSubscriptionSheet(
     val active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     val state by model.state.collectAsStateWithLifecycle()
     val snackbar = remember(model) { SnackbarHostState() }
-    SettingsRefreshFeedback(
-        snackbar,
-        state.read.refreshFailure,
-        R.string.settings_email_refresh_failed,
+    PaneFeedback(
+        listOf(
+            settingsRefreshError(
+                snackbar,
+                state.read.refreshFailure,
+                R.string.settings_email_refresh_failed,
+                model::dismissRefreshFailure,
+            ),
+        ),
     )
     fun close() {
         model.setPanelOpen(false)

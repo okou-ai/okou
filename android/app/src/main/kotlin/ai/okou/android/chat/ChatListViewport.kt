@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -210,12 +211,7 @@ internal fun ChatListSkeleton(@StringRes loadingLabel: Int = R.string.chat_loadi
     Column(Modifier.semantics { contentDescription = label }) {
         val widths = listOf(.56f, .70f, .44f)
         repeat(6) { index ->
-            Box(
-                Modifier.fillMaxWidth()
-                    .heightIn(min = ChatListRowHeight)
-                    .padding(ChatListRowPadding),
-                contentAlignment = Alignment.CenterStart,
-            ) {
+            ListItem(modifier = Modifier.fillMaxWidth()) {
                 ChatSkeletonBlock(Modifier.fillMaxWidth(widths[index % widths.size]).height(14.dp))
             }
         }

@@ -1,6 +1,8 @@
 package ai.okou.android.settings
 
 import ai.okou.android.OkouTheme
+import ai.okou.android.PaneFeedback
+import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.auth.WorkspaceIdentity
@@ -23,6 +25,7 @@ import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -140,7 +143,21 @@ class BuiltInToolsPageTest {
                 OkouTheme(dark = false) {
                     val snackbar = remember { SnackbarHostState() }
                     Column {
-                        BuiltInToolsPage("My Space", model, snackbar)
+                        BuiltInToolsPage("My Space", model)
+                        PaneFeedback(
+                            listOf(
+                                settingsRefreshError(
+                                    snackbar,
+                                    model.state
+                                        .collectAsStateWithLifecycle()
+                                        .value
+                                        .catalog
+                                        .refreshFailure,
+                                    R.string.settings_tools_unavailable,
+                                    model::dismissCatalogFailure,
+                                ),
+                            ),
+                        )
                         WorkspaceFeedbackHost(snackbar, Modifier)
                     }
                 }

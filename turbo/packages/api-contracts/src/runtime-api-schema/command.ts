@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { object, string } from "zod";
 import { iosGatePolicy } from "./ios-policy";
+import { checkIosSubmission } from "./ios-submission";
 import { checkIosConsumption } from "./ios-consumption";
 import { checkAndroidConsumption } from "./android-consumption";
 import { androidResponseTransforms } from "../client-transforms/android";
@@ -40,6 +41,7 @@ const LINT_OPTIONS = {
   "ios-floor": "single",
   "ios-base-floor": "single",
   "ios-availability": "single",
+  "ios-submission": "single",
   "android-floor": "single",
   "android-base-floor": "single",
   "android-published-version": "single",
@@ -59,6 +61,7 @@ const USAGE = `Usage:
     [--desktop-published-version x.y.z]
     [--ios-floor ios-client-compatibility.json --ios-base-floor base-ios-client-compatibility.json]
     [--ios-availability protected-distribution-receipts.json]
+    [--ios-submission submitted-ios-build.json]
     [--android-floor android-client-compatibility.json --android-base-floor base-android-client-compatibility.json]
     [--android-published-version x.y.z]
 
@@ -141,13 +144,13 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
   }
   const blockingOwners = readBlockingOwners(options);
   const desktop = await readNativePolicy(options, "desktop");
-  const ios = await readIosPolicy(options);
   const android = await readNativePolicy(options, "android");
 
   const currentPath = single(options, "current");
   const current = currentPath
     ? await readRuntimeApiSchemaDocument(resolve(currentPath))
     : buildRuntimeApiSchemaDocument();
+  const ios = await readIosPolicy(options, current);
   const online = await readOptionalSchema(against, "Online");
   const basePath = single(options, "base-schema");
   const base = basePath
@@ -233,11 +236,15 @@ function warnMissingNativeBaselines(
   }
 }
 
-async function readIosPolicy(options: ParsedOptions) {
+async function readIosPolicy(
+  options: ParsedOptions,
+  candidate: RuntimeApiSchemaDocument,
+) {
   const current = single(options, "ios-floor");
   const base = single(options, "ios-base-floor");
   const receipt = single(options, "ios-availability");
-  if (!current && !base && !receipt) return {};
+  const submission = single(options, "ios-submission");
+  if (!current && !base && !receipt && !submission) return {};
   if (!current || !base)
     throw new CliUsageError(
       "--ios-floor and --ios-base-floor must be passed together",
@@ -245,11 +252,22 @@ async function readIosPolicy(options: ParsedOptions) {
   const json = async (path: string): Promise<unknown> => {
     return JSON.parse(await readFile(resolve(path), "utf8"));
   };
-  return iosGatePolicy(
+  const policy = iosGatePolicy(
     await json(current),
     await json(base),
     receipt ? await json(receipt) : {},
   );
+  return {
+    ...policy,
+    iosSubmissionErrors: submission
+      ? await checkIosSubmission(
+          resolve(submission),
+          candidate,
+          policy.iosAppStoreFloor.floor,
+          iosResponseTransforms,
+        )
+      : [],
+  };
 }
 
 async function readNativePolicy(
