@@ -4,6 +4,7 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.AndroidUpdatesRelease
+import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateCheck
 import ai.okou.android.updates.UpdateRecord
@@ -12,8 +13,10 @@ import ai.okou.android.updates.UpdateStore
 import ai.okou.android.updates.UpdateTransfer
 import android.app.UiModeManager
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.text.format.Formatter
 import android.view.KeyEvent
+import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
@@ -418,12 +421,38 @@ class NativeUpdateTest {
             assertTrue(device.wait(Until.gone(close), 10_000))
 
             val updateAction = app.getString(R.string.updates_download)
-            val updateBounds = button(By.pkg(app.packageName).desc(updateAction)).visibleBounds
+            val updateSelector = By.pkg(app.packageName).desc(updateAction)
+            val updateBounds = button(updateSelector).visibleBounds
+            fun captureAlignedUpdate(name: String, bounds: Rect, searchField: Rect) {
+                assertGap(48, bounds.width())
+                assertEquals(searchField.top, bounds.top)
+                assertEquals(searchField.bottom, bounds.bottom)
+                val primary =
+                    resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false).primary.toArgb()
+                device.waitForIdle()
+                val screenshot = takeScreenshot()
+                try {
+                    // Sample inside the painted container, above the icon or progress label.
+                    assertEquals(primary, screenshot.getPixel(bounds.centerX(), bounds.top + 2))
+                    screenshot.writeToTestStorage("android-update-$name")
+                } finally {
+                    screenshot.recycle()
+                }
+            }
             assertEquals(searchBounds, button(search).visibleBounds)
-            assertGap(48, updateBounds.width())
             assertGap(48, updateBounds.height())
             assertGap(8, updateBounds.left - searchBounds.right)
-            captureState("toolbar-available")
+            captureAlignedUpdate("toolbar-available", updateBounds, searchBounds)
+            withShortWindowAndLargeText(width = 1000, height = 1600) {
+                val scaledSearch = button(search).visibleBounds
+                assertTrue(scaledSearch.height() > searchBounds.height())
+                captureAlignedUpdate(
+                    "toolbar-available-large-text",
+                    button(updateSelector).visibleBounds,
+                    scaledSearch,
+                )
+            }
+            device.enabledUpdateControl(updateSelector, expectedBounds = updateBounds)
             assertTrue(
                 device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000),
             )
@@ -777,7 +806,10 @@ private object EmptyUpdateStore : UpdateStore {
     override suspend fun save(record: UpdateRecord) = Unit
 }
 
-private fun UiDevice.enabledUpdateControl(label: BySelector): UiObject2 =
+private fun UiDevice.enabledUpdateControl(
+    label: BySelector,
+    expectedBounds: Rect? = null,
+): UiObject2 =
     checkNotNull(
         wait(
             object : Condition<UiDevice, UiObject2?> {
@@ -785,7 +817,10 @@ private fun UiDevice.enabledUpdateControl(label: BySelector): UiObject2 =
                     try {
                         generateSequence(device.findObject(label)) { it.parent }
                             .firstOrNull { it.isClickable }
-                            ?.takeIf { it.isEnabled }
+                            ?.takeIf {
+                                it.isEnabled &&
+                                    (expectedBounds == null || it.visibleBounds == expectedBounds)
+                            }
                     } catch (_: StaleObjectException) {
                         null
                     }
@@ -793,7 +828,8 @@ private fun UiDevice.enabledUpdateControl(label: BySelector): UiObject2 =
             10_000,
         ),
     ) {
-        "Expected enabled update control $label"
+        val bounds = expectedBounds?.let { " with visible bounds $it" }.orEmpty()
+        "Expected enabled update control $label$bounds"
     }
 
 private fun captureUpdate(device: UiDevice, name: String) {
