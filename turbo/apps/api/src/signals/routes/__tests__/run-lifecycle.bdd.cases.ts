@@ -8699,9 +8699,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const capabilities = verifyOkouToken(token)?.capabilities;
           expect(capabilities).toBeDefined();
           expect(prompt).toContain("Presentation delivery:");
-          expect(prompt).toContain("first author and check the deck as HTML");
+          expect(prompt).toContain("Author HTML-only templates as HTML");
           expect(prompt).toContain(
-            "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
+            "then this input's frozen presentation default, then HTML",
+          );
+          expect(prompt).toContain(
+            "An existing HTML deck requires an explicit conversion request",
           );
           expect(prompt).toContain(
             "Deliver one format unless the user requests multiple formats",
