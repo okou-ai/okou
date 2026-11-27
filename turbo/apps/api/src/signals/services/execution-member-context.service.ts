@@ -10,6 +10,7 @@ import {
 } from "zod";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { paidToolIdSchema } from "@okouai/api-contracts/contracts/paid-tools";
+import { presentationOutputFormatSchema } from "@okouai/api-contracts/validators/presentation-output-format";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -46,6 +47,7 @@ const preferencesSchema = object({
   serviceTier: string().nullable(),
   modelSettings: modelSettingsSchema,
   cloudBrowserEnabledByDefault: boolean(),
+  presentationFormat: presentationOutputFormatSchema.nullable(),
 });
 const switchSchema = array(
   object({ userId: string(), switches: record(string(), boolean()) }),
@@ -81,7 +83,8 @@ export function executionMemberQuery(
             sql`jsonb_build_object('timezone', ${orgMembersMetadata.timezone},
           'selectedImageModel', ${orgMembersMetadata.selectedImageModel}, 'selectedModel', ${orgMembersMetadata.selectedModel},
           'serviceTier', ${orgMembersMetadata.serviceTier}, 'modelSettings', ${orgMembersMetadata.modelSettings},
-          'cloudBrowserEnabledByDefault', ${orgMembersMetadata.cloudBrowserEnabledByDefault})`
+          'cloudBrowserEnabledByDefault', ${orgMembersMetadata.cloudBrowserEnabledByDefault},
+          'presentationFormat', ${orgMembersMetadata.presentationFormat})`
               .mapWith(rawDecoder)
               .as("payload"),
         })

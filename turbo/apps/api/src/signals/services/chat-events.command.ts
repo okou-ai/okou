@@ -29,6 +29,13 @@ import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import type { EnqueuedChatInputFacts } from "./chat-run-preparation-facts";
 
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
+import {
+  presentationPreferenceContextPart,
+  withoutPresentationPreferenceContext,
+  type PresentationPreferenceContext,
+} from "@okouai/api-contracts/contracts/presentation-preference-context";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   CodexServiceTier,
   UserMessageDocument,
@@ -482,7 +489,9 @@ type NormalSendChatRunSourceRead = ReturnType<
 function invalidGenerationTemplateSelection(
   userMessage: UserMessageDocument,
 ): ReturnType<typeof badRequestMessage> | undefined {
-  const { templates } = projectUserMessage(userMessage);
+  const { templates } = projectUserMessage(
+    withoutPresentationPreferenceContext(userMessage),
+  );
   const mountedUserPresentationTemplateIds =
     selectedUserPresentationTemplateIds(templates);
   for (const template of templates) {
@@ -1443,8 +1452,20 @@ function assertOfficialSourceClaim(
 function normalSendUserMessage(
   args: NormalSendArgs,
   chatRunSource: ChatRunSourceAnnotation | null,
+  presentationPreference: PresentationPreferenceContext | undefined,
 ): UserMessageDocument {
-  const userMessage = repairUserMessageText(args.body.userMessage);
+  const document = withoutPresentationPreferenceContext(
+    repairUserMessageText(args.body.userMessage),
+  );
+  const userMessage: UserMessageDocument = presentationPreference
+    ? {
+        ...document,
+        parts: [
+          ...document.parts,
+          presentationPreferenceContextPart(presentationPreference),
+        ],
+      }
+    : document;
   if (chatRunSource !== null) {
     return withChatRunSourceAnnotation(userMessage, chatRunSource);
   }
@@ -2419,13 +2440,30 @@ function preparedNormalSendEvent(
   threadId: string,
   modelSelection: Parameters<typeof normalSendEvent>[0]["modelSelection"],
   chatRunSource: ChatRunSourceAnnotation | null,
-  inputId: string,
+  prepared: {
+    readonly inputId: string;
+    readonly modelBootstrap: ModelSelectionBootstrap;
+  },
 ) {
+  const { inputId, modelBootstrap } = prepared;
+  const presentationPreference = isFeatureEnabled(
+    FeatureSwitchKey.PresentationOutputFormat,
+    modelBootstrap.featureSwitchContext,
+  )
+    ? {
+        format:
+          modelBootstrap.memberMetadata.preferences?.presentationFormat ?? null,
+      }
+    : undefined;
   return normalSendEvent({
     modelSelection,
     id: inputId,
     threadId: threadId,
-    userMessage: normalSendUserMessage(args, chatRunSource),
+    userMessage: normalSendUserMessage(
+      args,
+      chatRunSource,
+      presentationPreference,
+    ),
     triggerSource: normalSendTriggerSource(args.auth),
     chatRunSource,
     requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
@@ -2706,7 +2744,9 @@ const startNormalSendReads$ = command(
     const { body, auth } = args;
     // Shared input and template reads match PostgreSQL's canonical UUID form.
     const inputId = body.clientEventId?.toLowerCase() ?? randomUUID();
-    const templates = projectUserMessage(body.userMessage).templates;
+    const templates = projectUserMessage(
+      withoutPresentationPreferenceContext(body.userMessage),
+    ).templates;
     const presentationIds = selectedUserPresentationTemplateIds(templates);
     const userTemplateIds = selectedUserTemplateIds(templates);
     const graph = createAgentRunContextSignals(
@@ -3091,7 +3131,7 @@ const prepareNormalSendPublicationInput$ = command(
         thread.threadId,
         modelSelection,
         prepared.chatRunSource,
-        prepared.inputId,
+        prepared,
       );
       return {
         args,

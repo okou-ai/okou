@@ -1,4 +1,5 @@
 import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
+import { withoutPresentationPreferenceContext } from "@okouai/api-contracts/contracts/presentation-preference-context";
 import {
   userMessageDocumentSchema,
   userMessageInputDocumentSchema,
@@ -28,8 +29,6 @@ import type { RestorableAttachment } from "./chat-draft.ts";
 import { formatFeedbackPrompt, type FeedbackSource } from "./chat-feedback.ts";
 import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
-import { findPresentationRunbookPackage } from "@okouai/core/resource-registry";
-import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 
 export const VOICE_CLIP_NODE_NAME = "voiceClip";
 export const PROJECT_MENTION_NODE_NAME = "projectMention";
@@ -74,7 +73,9 @@ export function prependMessageDocument(
   current: UserMessageDocument | null,
 ): UserMessageDocument {
   if (!current) {
-    return userMessageDocumentSchema.parse(prefix);
+    return withoutPresentationPreferenceContext(
+      userMessageDocumentSchema.parse(prefix),
+    );
   }
   const hasCurrentSource = current.parts.some((part) => {
     return (
@@ -97,10 +98,12 @@ export function prependMessageDocument(
     }
     return part;
   });
-  return userMessageDocumentSchema.parse({
-    version: 1,
-    parts: [...parts, { type: "text", text: "\n\n" }, ...current.parts],
-  });
+  return withoutPresentationPreferenceContext(
+    userMessageDocumentSchema.parse({
+      version: 1,
+      parts: [...parts, { type: "text", text: "\n\n" }, ...current.parts],
+    }),
+  );
 }
 
 interface TextMessageTemplateSnapshot {
@@ -486,10 +489,9 @@ function completedEditorDraft(
   if (parts.length === 0) {
     return null;
   }
-  const parsed = userMessageInputDocumentSchema.safeParse({
-    version: 1,
-    parts,
-  });
+  const parsed = userMessageInputDocumentSchema.safeParse(
+    withoutPresentationPreferenceContext({ version: 1, parts }),
+  );
   return parsed.success ? { userMessage: parsed.data } : null;
 }
 
@@ -554,63 +556,6 @@ function editorDocToDraftDocument(
 }
 
 /**
- * Converts the current composer snapshot into its editor-independent business
- * document. External files are normalized after the leading template chip and
- * before the text body, matching their current composer presentation order.
- */
-export function editorDocToMessageDocument(
-  document: ProseMirrorNode,
-  context: EditorDocumentContext = {},
-): UserMessageInputDocument | null {
-  return editorDocToDraftDocument(document, context)?.userMessage ?? null;
-}
-
-function withPresentationOutputFormat(
-  template: GenerationTemplateRequest,
-  outputFormat: PresentationOutputFormat,
-): GenerationTemplateRequest {
-  if (
-    template.type !== "presentation" ||
-    !findPresentationRunbookPackage(template.selection.templateId)
-  ) {
-    return template;
-  }
-  return {
-    ...template,
-    selection: { ...template.selection, outputFormat },
-  };
-}
-
-function withPresentationTemplateFormats(
-  part: UserMessageInputDocument["parts"][number],
-  outputFormat: PresentationOutputFormat,
-): UserMessageInputDocument["parts"][number] {
-  if (part.type === "template") {
-    return {
-      ...part,
-      template: withPresentationOutputFormat(part.template, outputFormat),
-    };
-  }
-  if (part.type === "feedback") {
-    return {
-      ...part,
-      note: part.note.map((notePart) => {
-        return notePart.type === "template"
-          ? {
-              ...notePart,
-              template: withPresentationOutputFormat(
-                notePart.template,
-                outputFormat,
-              ),
-            }
-          : notePart;
-      }),
-    };
-  }
-  return part;
-}
-
-/**
  * Freezes the immutable ProseMirror document selected for one submission while
  * allowing external attachment ids to be supplied after upload/model filtering
  * settles. The returned value never crosses an API or persistence boundary.
@@ -618,36 +563,32 @@ function withPresentationTemplateFormats(
 export function createEditorDocumentSnapshot(
   document: ProseMirrorNode,
   additionalInfo?: string,
-  presentationOutputFormat?: PresentationOutputFormat,
 ): EditorDocumentSnapshot {
+  const toDraft = (
+    context: EditorDocumentContext = {},
+  ): EditorDraftDocument | null => {
+    const draft = editorDocToDraftDocument(document, context);
+    if (!draft || !additionalInfo) {
+      return draft;
+    }
+    return {
+      userMessage: withoutPresentationPreferenceContext({
+        ...draft.userMessage,
+        parts: [
+          { type: "additional_info" as const, text: additionalInfo },
+          ...draft.userMessage.parts,
+        ],
+      }),
+    };
+  };
   return Object.freeze({
     toEditorDocument() {
       return document.toJSON();
     },
-    toMessageDocument(
-      context: EditorDocumentContext = {},
-    ): UserMessageInputDocument | null {
-      const message = editorDocToMessageDocument(document, context);
-      if (!message) {
-        return null;
-      }
-      return {
-        ...message,
-        parts: [
-          ...(additionalInfo
-            ? [{ type: "additional_info" as const, text: additionalInfo }]
-            : []),
-          ...message.parts.map((part) => {
-            return presentationOutputFormat
-              ? withPresentationTemplateFormats(part, presentationOutputFormat)
-              : part;
-          }),
-        ],
-      };
+    toMessageDocument(context: EditorDocumentContext = {}) {
+      return toDraft(context)?.userMessage ?? null;
     },
-    toDraft(context: EditorDocumentContext = {}) {
-      return editorDocToDraftDocument(document, context);
-    },
+    toDraft,
   });
 }
 
@@ -658,18 +599,19 @@ export function createEditorDocumentSnapshot(
 export function createMessageDocumentSnapshot(
   document: UserMessageDocument,
 ): EditorDocumentSnapshot {
+  const normalizedDocument = withoutPresentationPreferenceContext(document);
   const toDraft = (
     context: EditorDocumentContext = {},
   ): EditorDraftDocument | null => {
     const userMessage = restoredMessageToDraftDocument(
-      document,
+      normalizedDocument,
       context.attachments ?? [],
     );
     return userMessage ? { userMessage } : null;
   };
   return Object.freeze({
     toEditorDocument() {
-      const editorDocument = draftToEditorDoc(document);
+      const editorDocument = draftToEditorDoc(normalizedDocument);
       if (!editorDocument) {
         throw new Error("Invalid prepared message document");
       }
@@ -976,9 +918,12 @@ export function draftToEditorDoc(userMessage: unknown): JSONContent | null {
   if (!parsedUserMessage.success) {
     return null;
   }
+  const normalizedDocument = withoutPresentationPreferenceContext(
+    parsedUserMessage.data,
+  );
   return restoredEditorDoc({
-    ...parsedUserMessage.data,
-    parts: parsedUserMessage.data.parts.flatMap((part): UserMessagePart[] => {
+    ...normalizedDocument,
+    parts: normalizedDocument.parts.flatMap((part): UserMessagePart[] => {
       if (part.type === "template") {
         return isRetiredTemplate(part.template) ? [] : [part];
       }

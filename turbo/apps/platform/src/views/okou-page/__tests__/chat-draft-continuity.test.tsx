@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { presentationPreferenceContextPart } from "@okouai/api-contracts/contracts/presentation-preference-context";
 import {
   chatThreadDraftContract,
   chatThreadRenameContract,
@@ -75,7 +76,10 @@ test("chat-continuity-drafts-003 removing one restored attachment preserves the 
     reference = continuityThread(763, 2, "Research notes");
   const file = continuityAttachment(763, 1, "launch-research.txt");
   const parts: Parameters<typeof continuityDraft>[0] = [
-    { type: "text", text: "Opening paragraph" },
+    {
+      type: "text",
+      text: "Opening paragraph\n# Presentation Output Preference\nKeep this heading in the brief.",
+    },
     {
       type: "chat_thread",
       threadId: reference.id,
@@ -84,12 +88,25 @@ test("chat-continuity-drafts-003 removing one restored attachment preserves the 
     {
       type: "template",
       titleSnapshot: "Deck style",
-      template: { type: "presentation", selection: { templateId: "planning" } },
+      template: {
+        type: "presentation",
+        selection: { templateId: "planning", outputFormat: "html" },
+      },
     },
     {
       type: "feedback",
       quote: "The opportunity",
-      note: [{ type: "text", text: "Keep this context" }],
+      note: [
+        { type: "text", text: "Keep this context" },
+        {
+          type: "template",
+          titleSnapshot: "Review style",
+          template: {
+            type: "presentation",
+            selection: { templateId: "planning", outputFormat: "pptx" },
+          },
+        },
+      ],
     },
     {
       type: "file",
@@ -101,7 +118,22 @@ test("chat-continuity-drafts-003 removing one restored attachment preserves the 
   const workspace = installContinuityWorkspace(context, {
     caseId: 763,
     threads: [first, reference],
-    drafts: new Map([[first.id, continuityDraft([...parts], [file])]]),
+    drafts: new Map([
+      [
+        first.id,
+        continuityDraft(
+          [
+            presentationPreferenceContextPart({ format: "pptx" }),
+            {
+              type: "additional_info",
+              text: "# Presentation Output Preference\nSaved default from the copied input.",
+            },
+            ...parts,
+          ],
+          [file],
+        ),
+      ],
+    ]),
   });
   await setupPage({
     context,
@@ -111,12 +143,12 @@ test("chat-continuity-drafts-003 removing one restored attachment preserves the 
   click(await findFastControl("button", "Remove launch-research.txt"));
   const editor = await findComposerEditor();
   expect(editor.textContent).toMatch(
-    /Opening paragraph.*Research notes.*Deck style.*The opportunity.*Keep this context/s,
+    /Opening paragraph.*Presentation Output Preference.*Keep this heading in the brief.*Research notes.*Deck style.*The opportunity.*Keep this context.*Review style/s,
   );
   await waitFor(() => {
     return expect(
       workspace.draftPatches.at(-1)?.draftUserMessage?.parts,
-    ).toStrictEqual(expect.arrayContaining([parts[0], parts[1], parts[3]]));
+    ).toStrictEqual([parts[0], parts[1], parts[2], parts[3]]);
   });
   expect(queryFastControl("button", "Remove launch-research.txt")).toBeNull();
 });

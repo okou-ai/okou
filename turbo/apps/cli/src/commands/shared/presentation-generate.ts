@@ -24,6 +24,9 @@ import {
   type ArtifactVisibility,
 } from "./artifact-visibility";
 
+const FORMAT_PARAMETER_GUIDANCE =
+  "The CLI output format is a package-selection parameter, not proof of an explicit user choice. Resolve the format from the current input before authoring; if it differs, select the matching package with --format. Do not query or update saved preferences.";
+
 type PresentationRunbookPackage = ReturnType<
   typeof listPresentationRunbookPackages
 >[number];
@@ -186,6 +189,7 @@ ${formatPresentationTemplateListing(templates)}`;
               "# Presentation Generation (template)",
               "",
               `Requested output format: ${outputFormat}`,
+              FORMAT_PARAMETER_GUIDANCE,
               "",
               ...buildPresentationRunbookInstructionLines({
                 runbookPackage: template,
@@ -212,6 +216,7 @@ ${formatPresentationTemplateListing(templates)}`;
             "",
             "## Requested Parameters",
             `- Requested output format: ${outputFormat}`,
+            `- ${FORMAT_PARAMETER_GUIDANCE}`,
             `- Slide count: ${options.slides}`,
             `- Requested deck title: ${options.title ?? "not specified"}`,
             "",

@@ -183,6 +183,7 @@ import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-thre
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { isPresentationPreferenceContext } from "@okouai/api-contracts/contracts/presentation-preference-context";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -1245,7 +1246,9 @@ export function createThreadClaimRunObjects(
       const { triggerSource, delivery } = material.launch;
       const parts = (await get(queuedInput$))?.userMessage.parts.filter(
         (part) => {
-          return part.type !== "model";
+          return (
+            part.type !== "model" && !isPresentationPreferenceContext(part)
+          );
         },
       );
       const voiceClipFileIds =

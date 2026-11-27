@@ -22,15 +22,19 @@ import {
 } from "./chat-composer-template-gallery-test-helpers.ts";
 import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadDraftContract,
+  type UserMessageDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
 
 test("chat-composer-presentation-gallery-001 Deep dive is persisted with the selected template without sending", async () => {
+  context.mocks.data.userPreferences({ presentationFormat: "pptx" });
   const sent = captureTemplateSubmission(context);
   serveDeck(context, "<section data-slide>Revenue</section>");
-  const saved = context.mocks.deferred<void>();
+  const saved = context.mocks.deferred<UserMessageDocument>();
   context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: { version: 1, parts: [presentationPart()] },
@@ -48,7 +52,7 @@ test("chat-composer-presentation-gallery-001 Deep dive is persisted with the sel
         );
       })
     ) {
-      saved.resolve();
+      saved.resolve(body.draftUserMessage);
     }
     return respond(204);
   });
@@ -62,11 +66,14 @@ test("chat-composer-presentation-gallery-001 Deep dive is persisted with the sel
   const modal = await screen.findByRole("dialog");
   click(await findAction("button", "Deep dive", modal));
   click(await findAction("button", "Use this template", modal));
-  await saved.promise;
+  expect((await saved.promise).parts).toContainEqual(
+    presentationPart("color-system:ocean-deep"),
+  );
   expect(editor).toHaveTextContent(deck.title);
   expect(sent.settled()).toBeFalsy();
 });
 test("chat-composer-presentation-gallery-002 the restored ocean theme reaches the quarterly presentation request", async () => {
+  context.mocks.data.userPreferences({ presentationFormat: "html" });
   const sent = captureTemplateSubmission(context);
   const part = presentationPart("color-system:ocean-deep");
   const prompt = "Create the quarterly presentation.";
@@ -88,16 +95,10 @@ test("chat-composer-presentation-gallery-002 the restored ocean theme reaches th
   click(await findAction("button", "Send"));
   const parts = (await sent.promise).userMessage?.parts;
   expect(parts).toContainEqual({ type: "text", text: prompt });
-  expect(parts).toContainEqual(
-    expect.objectContaining({
-      type: "template",
-      template: expect.objectContaining({
-        selection: expect.objectContaining(part.template.selection),
-      }),
-    }),
-  );
+  expect(parts).toContainEqual(part);
 });
 test("chat-composer-presentation-gallery-003 selecting an unthemed recommendation sends its default palette", async () => {
+  context.mocks.data.userPreferences({ presentationFormat: "pptx" });
   const sent = captureTemplateSubmission(context);
   await setupPage({ context, path: "/" });
   const editor = await screen.findByLabelText("Message");
@@ -111,17 +112,7 @@ test("chat-composer-presentation-gallery-003 selecting an unthemed recommendatio
   click(await findAction("button", "Send"));
   const parts = (await sent.promise).userMessage?.parts;
   expect(parts).toContainEqual({ type: "text", text: prompt });
-  expect(parts).toContainEqual(
-    expect.objectContaining({
-      type: "template",
-      template: expect.objectContaining({
-        selection: expect.objectContaining({
-          templateId: deck.templateId,
-          colorSystemId: deck.colorSystemId,
-        }),
-      }),
-    }),
-  );
+  expect(parts).toContainEqual(presentationPart());
 });
 test("chat-composer-presentation-gallery-004 a four-slide preview respects both ends while navigating by mouse and keyboard", async () => {
   serveDeck(
@@ -412,6 +403,7 @@ test("chat-composer-presentation-import-002 importing from home opens the new co
 });
 
 async function presentationDraft() {
+  context.mocks.data.userPreferences({ presentationFormat: "html" });
   const sent = captureTemplateSubmission(context);
   await setupPage({ context, path: "/" });
   const editor = await screen.findByLabelText("Message");

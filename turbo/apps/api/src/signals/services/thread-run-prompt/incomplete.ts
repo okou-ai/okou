@@ -18,10 +18,18 @@ import {
   chatEventCompatibilityRole,
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { db$ } from "../../external/db";
-import { canonicalChatEventContent } from "../canonical-chat-event-read.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventUserMessage,
+} from "../canonical-chat-event-read.service";
+import {
+  projectUserMessage,
+  requiredUserMessageForEvent,
+} from "../chat-user-message.service";
 import { visibleChatEventCondition } from "../chat-event-visibility.service";
 import {
   chatEventTextCondition,
@@ -42,12 +50,19 @@ interface IncompleteRoundEvent {
   readonly eventType: ChatEventType;
   readonly role: "user" | "assistant";
   readonly content: string | null;
-  readonly agentPrompt: string;
+  readonly userMessage: UserMessageDocument | null;
 }
 
 function formatIncompleteEvent(event: IncompleteRoundEvent): string {
   if (event.role === "user") {
-    return `User: ${truncateIncomplete(event.agentPrompt) || "[empty message]"}`;
+    const document = requiredUserMessageForEvent(
+      event.eventType,
+      event.userMessage,
+    );
+    if (!document) {
+      throw new Error("Incomplete input event is missing userMessage");
+    }
+    return `User: ${truncateIncomplete(projectUserMessage(document).agentPrompt) || "[empty message]"}`;
   }
   if (event.content !== null && event.content !== "") {
     return `Assistant (partial): ${truncateIncomplete(event.content)}`;
@@ -132,7 +147,6 @@ function recentRoundAnchors(event: IncompletePromptEvent) {
       .select({
         runId: agentRuns.id,
         status: agentRuns.status,
-        agentPrompt: agentRuns.prompt,
         firstSeq: anchor.seqId,
       })
       .from(anchor)
@@ -205,7 +219,7 @@ export function createIncompletePrompt(
         status: anchors.status,
         eventType: chatEvents.eventType,
         content: canonicalChatEventContent(),
-        agentPrompt: anchors.agentPrompt,
+        userMessage: canonicalChatEventUserMessage(),
       })
       .from(anchors)
       .innerJoin(
@@ -243,7 +257,7 @@ export function createIncompletePrompt(
         eventType: row.eventType,
         role: chatEventCompatibilityRole(row.eventType),
         content: row.content,
-        agentPrompt: row.agentPrompt,
+        userMessage: row.userMessage,
       });
     }
     return buildWebChatIncompleteContext([...rounds.values()]);
