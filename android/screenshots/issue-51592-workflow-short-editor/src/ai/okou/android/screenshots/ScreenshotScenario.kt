@@ -50,10 +50,13 @@ class ScreenshotScenario {
         val initialDensity = displayOverride("density", "\\d+")
         val initialScale = device.executeShellCommand("settings get system font_scale").trim()
         val initialIme = device.executeShellCommand("settings get secure show_ime_with_hard_keyboard").trim()
+        val timeoutSetting = "accessibility_non_interactive_ui_timeout_ms"
+        val initialTimeout = device.executeShellCommand("settings get secure $timeoutSetting").trim()
         val failures = mutableListOf<Throwable>()
         try {
             device.executeShellCommand("wm density 160")
             device.executeShellCommand("settings put secure show_ime_with_hard_keyboard 0")
+            device.executeShellCommand("settings put secure $timeoutSetting 30000")
             captureWindow(412, 892, 1f, UserPreferencesTheme.LIGHT) { scenario, fixture ->
                 closeIme(scenario)
                 device.executeShellCommand("wm size 360x280")
@@ -80,14 +83,13 @@ class ScreenshotScenario {
                 val saveBounds = checkNotNull(saveControl(node(save))).visibleBounds
                 scenario.moveToState(Lifecycle.State.STARTED)
                 scenario.moveToState(Lifecycle.State.RESUMED)
-                val notice = node(By.text("Could not refresh. Showing last loaded data."))
+                val noticeBounds = node(By.text("Could not refresh. Showing last loaded data.")).visibleBounds
                 assertTrue(
                     "Read feedback is visible above system insets",
-                    notice.visibleBounds.height() > 0 &&
-                        notice.visibleBounds.bottom <= safeBottom(scenario),
+                    noticeBounds.height() > 0 && noticeBounds.bottom <= safeBottom(scenario),
                 )
+                captureSnackbarSurface(noticeBounds)
                 assertEquals(saveBounds, checkNotNull(saveControl(node(save))).visibleBounds)
-                captureSnackbarSurface(notice.visibleBounds)
             }
         } catch (failure: Throwable) {
             failures += failure
@@ -99,6 +101,8 @@ class ScreenshotScenario {
                 else "settings put system font_scale $initialScale",
                 if (initialIme.toIntOrNull() == null) "settings delete secure show_ime_with_hard_keyboard"
                 else "settings put secure show_ime_with_hard_keyboard $initialIme",
+                if (initialTimeout.toIntOrNull() == null) "settings delete secure $timeoutSetting"
+                else "settings put secure $timeoutSetting $initialTimeout",
             ).forEach { command ->
                 try {
                     device.executeShellCommand(command)
