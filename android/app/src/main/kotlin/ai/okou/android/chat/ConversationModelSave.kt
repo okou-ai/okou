@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.FeedbackReceipt
 import ai.okou.android.R
 import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.ChatArchiveChatThreadsItemModelSettingsValue
@@ -25,7 +26,7 @@ internal constructor(
     internal val pending: List<ConversationModelEdit> = emptyList(),
     internal val phase: ConversationModelSave? = null,
     internal val accepted: Boolean = false,
-    @StringRes internal val failure: Int? = null,
+    internal val failures: List<FeedbackReceipt<Int>> = emptyList(),
 )
 
 internal data class ConversationModelEdit(

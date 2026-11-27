@@ -38,6 +38,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -113,6 +114,8 @@ internal fun ChatComposerField(
     manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
     defaultModel: DefaultModelSettings? = null,
     conversationModel: ConversationModelControls? = null,
+    conversationSnackbar: SnackbarHostState? = null,
+    onOptionsFeedbackInOverlay: (Boolean) -> Unit = {},
     attachmentPicker: ChatAttachmentPicker? = null,
     openUploadedAttachment: ((ChatAttachmentReference) -> Unit)? = null,
     attachmentImages: InlineArtifactImages? = null,
@@ -322,6 +325,8 @@ internal fun ChatComposerField(
                             manageConnectors,
                             defaultModel,
                             conversationModel,
+                            conversationSnackbar = conversationSnackbar,
+                            onOptionsFeedbackInOverlay = onOptionsFeedbackInOverlay,
                             buttonFocus = attachmentOptionsFocus,
                             attachmentPickerActive = attachmentPicker?.active == true,
                             pickAttachment =

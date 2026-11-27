@@ -235,7 +235,6 @@ internal fun ModelPickerSheet(
                 )
         Column(
             Modifier.fillMaxWidth()
-                .testTag("model-picker")
                 .then(size)
                 .padding(settingsPanelContentPadding(compactHeight = fullScreen))
                 .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
@@ -372,10 +371,9 @@ internal fun ModelPickerSheet(
         }
     }
     SettingsModal(dismiss, fullScreen = fullScreen, fitContentInsets = fullScreen) { centered ->
-        if (snackbar == null) panel(centered)
-        else
-            Box(propagateMinConstraints = true) {
-                panel(centered)
+        Box(Modifier.testTag("model-picker"), propagateMinConstraints = true) {
+            panel(centered)
+            if (snackbar != null) {
                 Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomCenter) {
                     WorkspaceFeedbackHost(
                         snackbar,
@@ -384,6 +382,7 @@ internal fun ModelPickerSheet(
                     )
                 }
             }
+        }
     }
 }
 

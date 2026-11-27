@@ -69,8 +69,8 @@ internal val NativeAboveLabelPadding = 4.dp
 internal fun OkouOutlinedSelectionField(
     label: String,
     value: String,
-    enabled: Boolean = true,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     icon: Int = R.drawable.ic_expand_more,
     onClick: () -> Unit,
 ) {

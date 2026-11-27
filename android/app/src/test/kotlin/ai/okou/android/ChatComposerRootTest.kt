@@ -18,6 +18,7 @@ import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -271,13 +272,37 @@ class ChatComposerRootTest {
             assertTrue(input.keys.none { it in setOf("inputModel", "model", "runOptions") })
             assertEquals(1, requests.size)
 
-            release.countDown()
+            val saveFailure = hasText("Couldn’t save the model for this chat.")
+            val conversationFeedback = hasTestTag("conversation_feedback")
             openModel()
+            release.countDown()
             compose.waitUntilExactlyOneExists(
-                hasText("Couldn’t save the model for this chat.") and
-                    hasAnyAncestor(hasTestTag("model-picker")),
+                saveFailure and hasAnyAncestor(hasTestTag("model-picker")),
                 8_000,
             )
+            compose.onAllNodes(saveFailure).assertCountEquals(1)
+            // Drive each transition without consuming the notice's accessible timeout.
+            compose.mainClock.autoAdvance = false
+            try {
+                compose
+                    .onNode(
+                        hasContentDescription("Back") and
+                            hasAnyAncestor(hasTestTag("model-picker")),
+                    )
+                    .performClick()
+                compose.mainClock.advanceTimeBy(500)
+                compose
+                    .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
+                    .performSemanticsAction(SemanticsActions.Dismiss)
+                compose.mainClock.advanceTimeBy(500)
+                compose
+                    .onNode(saveFailure and hasAnyAncestor(conversationFeedback))
+                    .assertIsDisplayed()
+                compose.onAllNodes(saveFailure).assertCountEquals(1)
+            } finally {
+                compose.mainClock.autoAdvance = true
+            }
+            openModel()
             compose.waitUntilExactlyOneExists(hasText("Fast mode") and isOff(), 8_000)
             gpt.assertIsSelected()
             compose.onNodeWithText("High").assertExists()

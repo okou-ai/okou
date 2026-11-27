@@ -579,6 +579,7 @@ internal fun ConnectorSheet(
     back: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
     feedback: SnackbarHostState? = null,
+    actionFeedback: SnackbarHostState? = null,
     inContentFeedbackMessage: String? = null,
     centerCompactContent: Boolean = false,
     retainedScroll: androidx.compose.foundation.ScrollState? = null,
@@ -587,7 +588,8 @@ internal fun ConnectorSheet(
     val shortWindow = isShortSettingsPanelWindow()
     val fullScreen = (expandInShortWindow || compactForm) && shortWindow
     val formTopBar = compactForm && fullScreen
-    val overlayFeedback = feedback.takeIf { fullScreen || inContentFeedbackMessage != null }
+    val overlayFeedback =
+        actionFeedback ?: feedback.takeIf { fullScreen || inContentFeedbackMessage != null }
     val scroll = retainedScroll ?: key(title) { rememberScrollState() }
     val titleStyle =
         if (fullScreen && !formTopBar)
@@ -703,7 +705,11 @@ internal fun ConnectorSheet(
                                 .padding(bottom = connectorFeedbackBottomInset),
                             contentAlignment = Alignment.BottomCenter,
                         ) {
-                            WorkspaceFeedbackHost(overlayFeedback, Modifier)
+                            WorkspaceFeedbackHost(
+                                overlayFeedback,
+                                Modifier,
+                                manageTimeout = actionFeedback == null,
+                            )
                         }
                     }
                 }

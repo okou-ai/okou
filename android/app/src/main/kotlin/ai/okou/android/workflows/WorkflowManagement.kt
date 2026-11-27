@@ -931,7 +931,7 @@ private fun WorkflowChoice(
                 )
             },
         ) { trigger, open ->
-            OkouOutlinedSelectionField(title, options[selected], enabled, trigger, onClick = open)
+            OkouOutlinedSelectionField(title, options[selected], trigger, enabled, onClick = open)
         }
     }
 }
@@ -947,8 +947,8 @@ private fun WorkflowTimezone(current: String, enabled: Boolean, pick: (String) -
             OkouOutlinedSelectionField(
                 title,
                 timezoneLabel(current),
-                enabled,
                 trigger.testTag("workflow_timezone"),
+                enabled,
                 onClick = open,
             )
         }
@@ -991,7 +991,7 @@ private fun WorkflowTime(value: String, enabled: Boolean, pick: (String) -> Unit
     OkouOutlinedSelectionField(
         stringResource(R.string.workflow_time),
         value,
-        enabled,
+        enabled = enabled,
         icon = R.drawable.ic_schedule,
         onClick = { showing = true },
     )
