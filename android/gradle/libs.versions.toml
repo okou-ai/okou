@@ -1,5 +1,5 @@
 [versions]
-agp = "9.5.2"
+agp = "9.5.3"
 kotlin = "2.4.21"
 compose-bom = "2026.11.01"
 activity = "1.13.0"
@@ -29,12 +29,12 @@ ksp = "2.3.14"
 sqlite = "2.7.1"
 commonmark = "0.33.0"
 ably = "2.2.0"
-sentry-android = "8.65.1"
-sentry-gradle = "6.27.0"
+sentry-android = "8.66.0"
+sentry-gradle = "6.28.0"
 
 [libraries]
 # Spotless reads the version and resolves the formatter. Android Lint reads the Maven coordinate.
-ktfmt = { module = "org.jetbrains.kotlinx:ktfmt", version = "0.65" }
+ktfmt = { module = "org.jetbrains.kotlinx:ktfmt", version = "0.65.1" }
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
 browser = { module = "androidx.browser:browser", version.ref = "browser" }
 clerk-ui = { module = "com.clerk:clerk-android-ui", version.ref = "clerk" }
