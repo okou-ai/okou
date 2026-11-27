@@ -1,5 +1,8 @@
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { DropdownMenuItem } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
+import { MessagesSquare } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { artifactCatalogRowDeletionScope } from "../../signals/artifacts-page/artifact-catalog-row-actions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
@@ -13,11 +16,14 @@ export function ArtifactCatalogRowActions({
 }: {
   readonly artifact: ArtifactSummary;
 }) {
+  const { t } = useTranslation();
   const scope = artifactCatalogRowDeletionScope;
   const pageSignal = useGet(pageSignal$);
   const triggerRef = useSet(scope.menuTriggerRef$);
   const menuOpenChanged = useSet(scope.menuOpenChanged$);
   const requestDeletion = useSet(scope.requestFromMenu$);
+  const dismiss = useSet(scope.dismiss$);
+  const source = artifact.sourceChatThread;
 
   return (
     <ArtifactDeleteMoreMenu
@@ -36,7 +42,28 @@ export function ArtifactCatalogRowActions({
       onDelete={() => {
         requestDeletion(artifact, pageSignal);
       }}
-    />
+    >
+      {source && (
+        <DropdownMenuItem
+          nativeButton={false}
+          render={<a href={`/chats/${encodeURIComponent(source.id)}`} />}
+          className="max-w-72 sm:max-w-80"
+          onClick={() => {
+            dismiss();
+          }}
+        >
+          <MessagesSquare aria-hidden="true" />
+          <span className="truncate">
+            {t(
+              ($) => {
+                return $.artifacts.library.openSourceChat;
+              },
+              { title: source.title },
+            )}
+          </span>
+        </DropdownMenuItem>
+      )}
+    </ArtifactDeleteMoreMenu>
   );
 }
 
