@@ -102,10 +102,6 @@ describe("template guidance execution and retained context", () => {
     expect(runContextArchiveSchema.parse(context)).not.toHaveProperty(
       "templateGuidanceBundles",
     );
-    const current = {
-      ...template,
-      templateId: "f0fbad48-3d7f-4468-83d1-221e9a27a1a9",
-    };
     const parsed = runContextArchiveSchema.parse({
       ...context,
       templateGuidanceBundles: [
@@ -113,10 +109,9 @@ describe("template guidance execution and retained context", () => {
           ...template,
           beforeMountPaths: ["/home/user/.claude/skills/example"],
         },
-        current,
       ],
     });
-    expect(parsed.templateGuidanceBundles).toStrictEqual([template, current]);
+    expect(parsed.templateGuidanceBundles).toMatchObject([template]);
     expect(parsed.storageMounts).toEqual([]);
   });
 });

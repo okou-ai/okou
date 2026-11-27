@@ -2034,7 +2034,6 @@ describe("RUN-04: agent run telemetry families", () => {
         templateId: "859550cb-28ad-47ef-8728-f6b3849f8c55",
         sha256: "a".repeat(64),
         archiveBytes: 512,
-        beforeMountPaths: ["/home/user/.claude/skills/example"],
       },
       {
         ownerKind: "presentation-template",
@@ -2254,11 +2253,7 @@ describe("RUN-04: agent run telemetry families", () => {
       throw new Error("Expected the run context read to succeed");
     }
     expect(contextRead.body.templateGuidanceBundles).toStrictEqual(
-      templateGuidanceBundles.map(
-        ({ beforeMountPaths: _anchors, ...bundle }) => {
-          return bundle;
-        },
-      ),
+      templateGuidanceBundles,
     );
     expect(contextRead.body).toMatchObject({
       runId,
