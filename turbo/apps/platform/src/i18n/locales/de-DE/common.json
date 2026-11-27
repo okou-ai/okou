@@ -5574,7 +5574,9 @@
     "noMatches": "Keine passenden Geräte",
     "off": "Aus",
     "policy": "Zugriff für {{device}}, {{status}}",
+    "renameDevice": "Gerät umbenennen",
     "retry": "Erneut versuchen",
+    "save": "Speichern",
     "saveFailed": "Die Änderung am Gerät konnte nicht gespeichert werden.",
     "title": "Remote-Geräte",
     "unavailable": "Dieses Gerät ist nicht verfügbar."

@@ -5551,7 +5551,9 @@
     "noMatches": "Tidak ada perangkat yang cocok",
     "off": "Nonaktif",
     "policy": "Akses untuk {{device}}, {{status}}",
+    "renameDevice": "Ubah nama perangkat",
     "retry": "Coba lagi",
+    "save": "Simpan",
     "saveFailed": "Perubahan perangkat tidak dapat disimpan.",
     "title": "Perangkat jarak jauh",
     "unavailable": "Perangkat ini tidak tersedia."

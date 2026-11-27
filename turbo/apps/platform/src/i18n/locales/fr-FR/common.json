@@ -5640,7 +5640,9 @@
     "noMatches": "Aucun appareil correspondant",
     "off": "Désactivé",
     "policy": "Accès à {{device}}, {{status}}",
+    "renameDevice": "Renommer l’appareil",
     "retry": "Réessayer",
+    "save": "Enregistrer",
     "saveFailed": "Impossible d’enregistrer la modification de l’appareil.",
     "title": "Appareils distants",
     "unavailable": "Cet appareil est indisponible."

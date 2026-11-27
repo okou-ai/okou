@@ -5640,7 +5640,9 @@
     "noMatches": "Nessun dispositivo corrispondente",
     "off": "Disattivato",
     "policy": "Accesso a {{device}}, {{status}}",
+    "renameDevice": "Rinomina dispositivo",
     "retry": "Riprova",
+    "save": "Salva",
     "saveFailed": "Impossibile salvare la modifica al dispositivo.",
     "title": "Dispositivi remoti",
     "unavailable": "Questo dispositivo non è disponibile."

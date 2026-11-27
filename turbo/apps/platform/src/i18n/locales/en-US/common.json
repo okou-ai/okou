@@ -5572,7 +5572,9 @@
     "noMatches": "No matching devices",
     "off": "Off",
     "policy": "Access for {{device}}, {{status}}",
+    "renameDevice": "Rename device",
     "retry": "Retry",
+    "save": "Save",
     "saveFailed": "Could not save the device change.",
     "title": "Remote devices",
     "unavailable": "This device is unavailable."

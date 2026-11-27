@@ -5551,7 +5551,9 @@
     "noMatches": "沒有符合的裝置",
     "off": "關閉",
     "policy": "{{device}} 的存取權限，{{status}}",
+    "renameDevice": "重新命名裝置",
     "retry": "重試",
+    "save": "儲存",
     "saveFailed": "無法儲存裝置變更。",
     "title": "遠端裝置",
     "unavailable": "此裝置無法使用。"

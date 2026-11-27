@@ -5551,7 +5551,9 @@
     "noMatches": "没有匹配的设备",
     "off": "关闭",
     "policy": "{{device}} 的访问权限，{{status}}",
+    "renameDevice": "重命名设备",
     "retry": "重试",
+    "save": "保存",
     "saveFailed": "无法保存设备更改。",
     "title": "远程设备",
     "unavailable": "此设备不可用。"
