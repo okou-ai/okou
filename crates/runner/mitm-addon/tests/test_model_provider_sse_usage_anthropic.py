@@ -10,11 +10,15 @@ import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 from tests.flow_helpers import response_stream
-from tests.model_provider_flow_helpers import RealFlowFactory, run_error, run_response
+from tests.model_provider_flow_helpers import (
+    RealFlowFactory,
+    make_model_provider_sse_flow,
+    run_error,
+    run_response,
+)
 from tests.model_provider_sse_usage_helpers import (
     assert_single_model_sse_parse_warning,
     compress_zlib_sse,
-    model_provider_sse_flow,
     model_sse_parse_warnings,
 )
 from tests.repeated_bytes_helpers import repeat_bytes
@@ -24,9 +28,9 @@ def _claude_code_sse_flow(
     tmp_path: Path,
     real_flow: RealFlowFactory,
 ) -> http.HTTPFlow:
-    flow = model_provider_sse_flow(
-        tmp_path,
+    flow = make_model_provider_sse_flow(
         real_flow,
+        tmp_path,
         host="api.anthropic.com",
         original_url="https://api.anthropic.com/v1/messages",
         firewall_name="model-provider:claude-code-oauth-token",
