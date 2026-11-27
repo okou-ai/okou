@@ -164,6 +164,7 @@ final class ComposerWorkflowRecencyTests: XCTestCase {
       return attempt == 1
         ? ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Try again"}}"#) : nil
     })
+    fixture.state.value.withLock { $0.recentWorkflowIDs = [] }
     let source = ComposerWorkflowSource(
       client: fixture.http.client, storage: nil, didFail: { _ in })
     defer { source.close() }
