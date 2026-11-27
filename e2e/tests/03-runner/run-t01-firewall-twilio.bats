@@ -59,8 +59,8 @@ EOF
     echo "$output"
     assert_success
     public_surfaces+="$output"$'\n'
-    assert_output --partial "TWILIO_ACCOUNT_SID=ACCoffeeSafeLocalCoffeeSafeLocalCo"
-    assert_output --partial "TWILIO_AUTH_TOKEN=c0ffee5afe10ca1c0ffee5afe10ca1c0"
+    assert_output --regexp 'TWILIO_ACCOUNT_SID=ACCoffeeSafeLocalCoffeeSafeLocalCoOkouConnector[0-9a-f]{20}($|[[:space:]])'
+    assert_output --regexp 'TWILIO_AUTH_TOKEN=0c0c[0-9a-f]{28}($|[[:space:]])'
 
     run runner_chat_event_rows "$THREAD_ID"
     echo "$output"
