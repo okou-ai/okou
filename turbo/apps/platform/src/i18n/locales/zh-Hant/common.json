@@ -1582,8 +1582,6 @@
       "dismissRecorded": "已收起這則建議",
       "done": "完成",
       "doneRecorded": "已記下，這件事已經處理了",
-      "draftIn": "在「{{title}}」中起草",
-      "draftInChat": "在原對話中起草",
       "editDraft": "在原對話中準備草稿",
       "editReason": "修改原因",
       "feedbackPrompt": "這則建議怎麼樣？",

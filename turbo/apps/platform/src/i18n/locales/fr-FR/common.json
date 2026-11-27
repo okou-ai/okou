@@ -1611,8 +1611,6 @@
       "dismissRecorded": "Suggestion dismissed",
       "done": "Terminé",
       "doneRecorded": "C’est noté, c’est déjà fait",
-      "draftIn": "Brouillon dans {{title}}",
-      "draftInChat": "Brouillon dans la discussion existante",
       "editDraft": "Préparer un brouillon dans la conversation existante",
       "editReason": "Edit reason",
       "feedbackPrompt": "Que pensez-vous de cette suggestion ?",

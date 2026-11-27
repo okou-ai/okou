@@ -1586,8 +1586,6 @@
       "dismissRecorded": "Suggestion dismissed",
       "done": "हो गया",
       "doneRecorded": "नोट कर लिया, यह काम हो चुका है",
-      "draftIn": "{{title}} में ड्राफ़्ट",
-      "draftInChat": "मौजूदा चैट में ड्राफ़्ट",
       "editDraft": "मौजूदा चैट में ड्राफ़्ट तैयार करें",
       "editReason": "Edit reason",
       "feedbackPrompt": "यह सुझाव कैसा लगा?",

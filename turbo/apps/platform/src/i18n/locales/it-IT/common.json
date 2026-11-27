@@ -1611,8 +1611,6 @@
       "dismissRecorded": "Suggestion dismissed",
       "done": "Fatto",
       "doneRecorded": "Annotato, è già fatto",
-      "draftIn": "Bozza in {{title}}",
-      "draftInChat": "Bozza nella chat esistente",
       "editDraft": "Prepara una bozza nella chat esistente",
       "editReason": "Edit reason",
       "feedbackPrompt": "Cosa pensi di questo suggerimento?",

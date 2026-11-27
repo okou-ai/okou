@@ -1611,8 +1611,6 @@
       "dismissRecorded": "Suggestion dismissed",
       "done": "Concluído",
       "doneRecorded": "Anotado, isso já está pronto",
-      "draftIn": "Rascunho em {{title}}",
-      "draftInChat": "Rascunho no chat existente",
       "editDraft": "Preparar um rascunho na conversa existente",
       "editReason": "Edit reason",
       "feedbackPrompt": "O que achou desta sugestão?",

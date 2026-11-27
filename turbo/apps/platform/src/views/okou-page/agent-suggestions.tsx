@@ -78,53 +78,6 @@ function selectsOptionText(event: MouseEvent<HTMLElement>) {
   );
 }
 
-/** The chat an option drafts into, as the option's own draft names it. */
-function optionSourceTitle(option: SuggestionOption) {
-  const part = option.draft.draftUserMessage?.parts.find((candidate) => {
-    return (
-      candidate.type === "chat_thread" && candidate.threadId === option.threadId
-    );
-  });
-  return part?.type === "chat_thread" ? part.titleSnapshot : null;
-}
-
-function SuggestionOptionAction({
-  option,
-}: {
-  readonly option: SuggestionOption;
-}) {
-  const { t } = useTranslation();
-  const source = option.threadId ? optionSourceTitle(option) : null;
-  // The action line says what choosing the option does. The button's
-  // accessible description already says it, so the line is visual only.
-  const action = !option.threadId
-    ? t(($) => {
-        return $.chat.agentSuggestions.sendNew;
-      })
-    : source
-      ? t(
-          ($) => {
-            return $.chat.agentSuggestions.draftIn;
-          },
-          { title: source },
-        )
-      : t(($) => {
-          return $.chat.agentSuggestions.draftInChat;
-        });
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "mb-0.5 flex min-w-0 items-center gap-1.5 text-xs leading-4 font-medium",
-        option.threadId ? "text-muted-foreground" : "text-brand-text",
-      )}
-    >
-      <span className="size-1.5 shrink-0 rounded-full bg-current" />
-      <span className="truncate">{action}</span>
-    </span>
-  );
-}
-
 function SuggestionOptionContent({
   option,
 }: {
@@ -132,7 +85,6 @@ function SuggestionOptionContent({
 }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col gap-0.5 wrap-break-word">
-      <SuggestionOptionAction option={option} />
       <span className="leading-6">{option.label}</span>
       {option.description && (
         <span className="text-[13px] leading-5 text-muted-foreground">
