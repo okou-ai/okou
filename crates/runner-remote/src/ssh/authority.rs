@@ -60,6 +60,23 @@ pub(super) enum CredentialAuth {
     Password(api_contracts::SecretText<4096>),
 }
 
+impl From<ResolveResponseResolvedAccessAuthentication> for CredentialAuth {
+    fn from(authentication: ResolveResponseResolvedAccessAuthentication) -> Self {
+        match authentication {
+            ResolveResponseResolvedAccessAuthentication::PrivateKey {
+                private_key,
+                passphrase,
+            } => Self::PrivateKey {
+                private_key,
+                passphrase,
+            },
+            ResolveResponseResolvedAccessAuthentication::Password { password } => {
+                Self::Password(password)
+            }
+        }
+    }
+}
+
 pub(super) struct PreparedCredential {
     pub(super) created_at: chrono::DateTime<chrono::Utc>,
     pub(super) device_policy: bool,
@@ -227,18 +244,7 @@ impl Authority {
             } => {
                 let configuration = super::native::configuration(tailscale)
                     .map_err(|_| FailureReason::AuthorityFailure)?;
-                let auth = match authentication {
-                    ResolveResponseResolvedAccessAuthentication::PrivateKey {
-                        private_key,
-                        passphrase,
-                    } => CredentialAuth::PrivateKey {
-                        private_key,
-                        passphrase,
-                    },
-                    ResolveResponseResolvedAccessAuthentication::Password { password } => {
-                        CredentialAuth::Password(password)
-                    }
-                };
+                let auth = CredentialAuth::from(authentication);
                 (
                     host,
                     port,
@@ -259,18 +265,7 @@ impl Authority {
                 access,
             } => {
                 super::access::validate(&host, port, &access)?;
-                let auth = match authentication {
-                    ResolveResponseResolvedAccessAuthentication::PrivateKey {
-                        private_key,
-                        passphrase,
-                    } => CredentialAuth::PrivateKey {
-                        private_key,
-                        passphrase,
-                    },
-                    ResolveResponseResolvedAccessAuthentication::Password { password } => {
-                        CredentialAuth::Password(password)
-                    }
-                };
+                let auth = CredentialAuth::from(authentication);
                 (
                     host,
                     port,
