@@ -343,7 +343,7 @@ describe("live chat SSH Run inventory", () => {
       [204],
     );
     const { body } = await accept(policy.list({ headers }), [200]);
-    expect(body.devices).toEqual([]);
+    expect(body.devices).toStrictEqual([]);
     await accept(
       config().create({
         headers,

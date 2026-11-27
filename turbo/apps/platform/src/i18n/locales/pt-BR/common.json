@@ -5617,9 +5617,6 @@
     "username": "Nome de usuário:"
   },
   "remoteDevices": {
-    "deleteDevice": "Excluir dispositivo",
-    "deleteTitle": "Excluir {{device}}?",
-    "deleteDescription": "O dispositivo e todos os seus canais serão excluídos permanentemente.",
     "add": "Adicionar dispositivo",
     "addChannel": "Adicionar canal",
     "addChannelTo": "Adicionar um canal a {{device}}",
@@ -5635,6 +5632,9 @@
     "continueTask": "Continuar tarefa",
     "create": "Criar dispositivo",
     "createEmpty": "Criar dispositivo sem canais",
+    "deleteDescription": "O dispositivo e todos os seus canais serão excluídos permanentemente.",
+    "deleteDevice": "Excluir dispositivo",
+    "deleteTitle": "Excluir {{device}}?",
     "empty": "Ainda não há dispositivos remotos.",
     "find": "Pesquisar dispositivos",
     "grantScope": "O acesso cobre todos os canais deste dispositivo nos seus chats.",

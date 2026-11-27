@@ -5617,9 +5617,6 @@
     "username": "Nome utente:"
   },
   "remoteDevices": {
-    "deleteDevice": "Elimina dispositivo",
-    "deleteTitle": "Eliminare {{device}}?",
-    "deleteDescription": "Il dispositivo e tutti i suoi canali verranno eliminati definitivamente.",
     "add": "Aggiungi dispositivo",
     "addChannel": "Aggiungi canale",
     "addChannelTo": "Aggiungi un canale a {{device}}",
@@ -5635,6 +5632,9 @@
     "continueTask": "Continua l’attività",
     "create": "Crea dispositivo",
     "createEmpty": "Crea dispositivo vuoto",
+    "deleteDescription": "Il dispositivo e tutti i suoi canali verranno eliminati definitivamente.",
+    "deleteDevice": "Elimina dispositivo",
+    "deleteTitle": "Eliminare {{device}}?",
     "empty": "Nessun dispositivo remoto.",
     "find": "Cerca dispositivi",
     "grantScope": "L’accesso si estende a tutti i canali del dispositivo nelle tue chat.",

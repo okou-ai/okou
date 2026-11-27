@@ -197,16 +197,16 @@ test("deletes a device from the detail header only after confirming", async () =
   context.mocks.api(remoteDevicesContract.delete, ({ params, respond }) => {
     deleted.push(params.deviceId);
     devices = [];
-    return respond(204, undefined);
+    return respond(204);
   });
   await setupPage({
     context,
     path: `/connectors?scope=remote-control&remoteDevice=${deviceId}`,
   });
 
-  expect(
-    await screen.findByRole("group", { name: "Access for Build Mac, Off" }),
-  ).toBeVisible();
+  await expect(
+    screen.findByRole("group", { name: "Access for Build Mac, Off" }),
+  ).resolves.toBeVisible();
   const trigger = await findFastControl("button", "Delete device");
   const user = userEvent.setup({ delay: null });
   await user.click(trigger);
@@ -219,15 +219,19 @@ test("deletes a device from the detail header only after confirming", async () =
     ),
   ).toBeVisible();
   await user.click(await findFastControl("button", "Cancel", confirmation));
-  await waitFor(() => expect(confirmation).not.toBeInTheDocument());
-  expect(deleted).toEqual([]);
+  await waitFor(() => {
+    return expect(confirmation).not.toBeInTheDocument();
+  });
+  expect(deleted).toStrictEqual([]);
 
   await user.click(trigger);
   const reopened = await screen.findByRole("dialog", {
     name: "Delete Build Mac?",
   });
   await user.click(await findFastControl("button", "Delete device", reopened));
-  await waitFor(() => expect(deleted).toEqual([deviceId]));
+  await waitFor(() => {
+    return expect(deleted).toStrictEqual([deviceId]);
+  });
   await screen.findByText("No remote devices yet.");
   expect(window.location.search).toBe("?scope=remote-control");
 });

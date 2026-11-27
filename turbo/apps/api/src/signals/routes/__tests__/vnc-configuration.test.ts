@@ -504,11 +504,11 @@ describe("VNC channel attachment", () => {
     ]);
     expect(
       (await accept(connections().list({ headers }), [200])).body.connections,
-    ).toEqual([]);
+    ).toStrictEqual([]);
     expect(
       (await accept(sshConnectionsClient().list({ headers }), [200])).body
         .connections,
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 
   it.each(["inline", "saved"] as const)(

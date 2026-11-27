@@ -5551,9 +5551,6 @@
     "username": "Benutzername:"
   },
   "remoteDevices": {
-    "deleteDevice": "Gerät löschen",
-    "deleteTitle": "{{device}} löschen?",
-    "deleteDescription": "Das Gerät und alle zugehörigen Kanäle werden dauerhaft gelöscht.",
     "add": "Gerät hinzufügen",
     "addChannel": "Kanal hinzufügen",
     "addChannelTo": "Kanal zu {{device}} hinzufügen",
@@ -5569,6 +5566,9 @@
     "continueTask": "Aufgabe fortsetzen",
     "create": "Gerät erstellen",
     "createEmpty": "Leeres Gerät erstellen",
+    "deleteDescription": "Das Gerät und alle zugehörigen Kanäle werden dauerhaft gelöscht.",
+    "deleteDevice": "Gerät löschen",
+    "deleteTitle": "{{device}} löschen?",
     "empty": "Noch keine Remote-Geräte.",
     "find": "Geräte suchen",
     "grantScope": "Der Zugriff gilt in allen deinen Chats für sämtliche Kanäle dieses Geräts.",

@@ -5528,9 +5528,6 @@
     "username": "使用者名稱："
   },
   "remoteDevices": {
-    "deleteDevice": "刪除裝置",
-    "deleteTitle": "刪除「{{device}}」？",
-    "deleteDescription": "此操作將永久刪除這部裝置及其所有通道。",
     "add": "新增裝置",
     "addChannel": "新增通道",
     "addChannelTo": "為 {{device}} 新增通道",
@@ -5546,6 +5543,9 @@
     "continueTask": "繼續任務",
     "create": "建立裝置",
     "createEmpty": "建立空白裝置",
+    "deleteDescription": "此操作將永久刪除這部裝置及其所有通道。",
+    "deleteDevice": "刪除裝置",
+    "deleteTitle": "刪除「{{device}}」？",
     "empty": "目前沒有遠端裝置。",
     "find": "搜尋裝置",
     "grantScope": "此權限適用於你的所有對話，涵蓋此裝置的所有通道。",

@@ -609,7 +609,9 @@ function DeleteRemoteDevice({
   const signal = useGet(pageSignal$);
   const [deleting, remove] = useLoadableSet(deleteRemoteDevice$);
   const pending = deleting.state === "loading";
-  const label = t(($) => $.remoteDevices.deleteDevice);
+  const label = t(($) => {
+    return $.remoteDevices.deleteDevice;
+  });
   return (
     <Dialog
       onOpenChange={(open, details) => {
@@ -625,17 +627,26 @@ function DeleteRemoteDevice({
       <DialogContent maxWidth="md" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>
-            {t(($) => $.remoteDevices.deleteTitle, {
-              device: device.displayName,
-            })}
+            {t(
+              ($) => {
+                return $.remoteDevices.deleteTitle;
+              },
+              {
+                device: device.displayName,
+              },
+            )}
           </DialogTitle>
           <DialogDescription>
-            {t(($) => $.remoteDevices.deleteDescription)}
+            {t(($) => {
+              return $.remoteDevices.deleteDescription;
+            })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" disabled={pending} />}>
-            {t(($) => $.remoteDevices.cancel)}
+            {t(($) => {
+              return $.remoteDevices.cancel;
+            })}
           </DialogClose>
           <Button
             variant="destructive"
