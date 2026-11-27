@@ -1447,10 +1447,10 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         awaitListAndNames()
         app.fixture.indicators = { MockResponse().setResponseCode(503) }
         (app.realtimeService as TestRealtimeService).invalidate(ChatChanges(indicators = true))
+        val mainLooper = shadowOf(Looper.getMainLooper())
         compose.waitUntil(10_000) {
-            val state = currentList()
-            state?.indicatorsPhase == ai.okou.android.chat.ChatReadPhase.Failed ||
-                state?.indicatorsRetryProgressVisible == true
+            mainLooper.idleFor(3, TimeUnit.SECONDS)
+            currentList()?.indicatorsRetryProgressVisible == true
         }
 
         val refreshFailure =
@@ -1470,7 +1470,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         syncBar.assertDoesNotExist()
 
         app.fixture.indicators = { MockResponse().setResponseCode(400) }
-        shadowOf(Looper.getMainLooper()).idleFor(6, TimeUnit.SECONDS)
+        mainLooper.idleFor(6, TimeUnit.SECONDS)
         val message = compose.activity.getString(R.string.chat_refresh_failed)
         compose.waitUntilExactlyOneExists(hasText(message), 10_000)
         assertEquals(before, empty.getUnclippedBoundsInRoot())
