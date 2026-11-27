@@ -116,7 +116,10 @@ class ScreenshotScenario {
                             )
                         }
                         fun openIntro(query: String) {
-                            editor().text = query
+                            val editorTarget = editor()
+                            editorTarget.click()
+                            get(By.pkg(app.packageName).clazz("android.widget.EditText").focused(true)).text = query
+                            get(By.pkg(app.packageName).clazz("android.widget.EditText").text(query))
                             hideKeyboard()
                             assertEquals(query, editor().text)
                             assertEquals(48, editor().visibleBounds.height())
