@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.58](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.57...guest-storage-apply-v0.32.58) (2026-11-27)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** dispatch independent decoded mounts directly ([#51306](https://github.com/okou-ai/okou/issues/51306)) ([35b4915](https://github.com/okou-ai/okou/commit/35b4915483d12022e98680101b99cb769e4ececf))
+
 ## [0.32.57](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.56...guest-storage-apply-v0.32.57) (2026-11-27)
 
 

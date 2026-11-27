@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.65.1](https://github.com/okou-ai/okou/compare/android-v0.65.0...android-v0.65.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** keep chat list position during dependency failures ([#51294](https://github.com/okou-ai/okou/issues/51294)) ([3ed7148](https://github.com/okou-ai/okou/commit/3ed71485c3a11907d2ec41de69655bb16e64bbfb))
+
 ## [0.65.0](https://github.com/okou-ai/okou/compare/android-v0.64.1...android-v0.65.0) (2026-11-27)
 
 
