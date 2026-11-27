@@ -321,11 +321,15 @@ internal fun ModelPickerSheet(
                                 EffortMenu(choice.efforts, effort, selectEffort)
                             }
                             choice.fastMultiplier?.let { multiplier ->
+                                val usage = multiplier.toBigDecimal()
                                 val value =
                                     NumberFormat.getNumberInstance(
                                             LocalLocale.current.platformLocale,
                                         )
-                                        .format(multiplier)
+                                        .apply {
+                                            maximumFractionDigits = usage.scale().coerceAtLeast(0)
+                                        }
+                                        .format(usage)
                                 SettingsSwitchRow(
                                     stringResource(R.string.settings_model_fast),
                                     leading = {},

@@ -310,6 +310,49 @@ class DefaultModelSettingsTest {
     }
 
     @Test
+    fun queuedSaveClearsFastWhenTheSubscriptionRouteLosesIt() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = DefaultModelApiFixture(api)
+            val effortSaveStarted = CompletableDeferred<Unit>()
+            val releaseEffortSave = CompletableDeferred<Unit>()
+            val service =
+                object : WorkspaceSession by api.service {
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference,
+                    ): DefaultModelPreference {
+                        if (update.modelSettingsPatch?.effort == ModelEffort.HIGH) {
+                            effortSaveStarted.complete(Unit)
+                            releaseEffortSave.await()
+                        }
+                        return api.service.updateDefaultModelPreference(update)
+                    }
+                }
+            val model = model(api, service = service)
+            assertEquals(2.5, model.openAfterSync().selected?.fastMultiplier)
+            model.fast(true)
+            assertTrue(model.state.first { it.pending == null }.fast)
+            model.effort(ModelEffort.HIGH)
+            effortSaveStarted.await()
+            model.effort(ModelEffort.MEDIUM)
+            assertTrue(model.state.value.fast)
+
+            fixture.gptFastAvailable = false
+            model.foreground(false)
+            model.foreground(true)
+            assertFalse(model.state.first { it.selected?.fastMultiplier == null }.fast)
+            releaseEffortSave.complete(Unit)
+
+            val confirmed = model.state.first { it.pending == null }
+            assertEquals(ModelEffort.MEDIUM, confirmed.effort)
+            assertNull(confirmed.record?.confirmed?.serviceTier)
+            assertEquals(
+                listOf(JsonPrimitive("priority"), JsonPrimitive("priority"), JsonNull),
+                fixture.writes.map { it["serviceTier"] },
+            )
+        }
+    }
+
+    @Test
     fun saveConfirmsItsFieldsAndKeepsAnotherModelsConfirmedEffort() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)

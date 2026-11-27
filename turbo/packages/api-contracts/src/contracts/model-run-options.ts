@@ -20,8 +20,16 @@ const CODEX_FAST_RUN_OPTIONS: ModelRunOptions = Object.freeze({
   fast: Object.freeze({ chatGptUsageMultiplier: 2.5 }),
 });
 
+// Included ChatGPT usage for GPT-6.2 Fast.
+// https://learn.chatgpt.com/docs/pricing?codex-pricing-speed=fast#speed-multipliers
+const GPT_62_FAST_RUN_OPTIONS: ModelRunOptions = Object.freeze({
+  fast: Object.freeze({ chatGptUsageMultiplier: 2 }),
+});
+
 const MODEL_RUN_OPTIONS: Readonly<Record<string, ModelRunOptions>> =
   Object.freeze({
+    "gpt-6.2-astra": GPT_62_FAST_RUN_OPTIONS,
+    "gpt-6.2-sol": GPT_62_FAST_RUN_OPTIONS,
     "gpt-6-astra": CODEX_FAST_RUN_OPTIONS,
     "gpt-6.1-sol": CODEX_FAST_RUN_OPTIONS,
     "gpt-6.1-terra": CODEX_FAST_RUN_OPTIONS,
