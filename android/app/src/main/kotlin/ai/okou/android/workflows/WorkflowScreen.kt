@@ -15,7 +15,6 @@ import ai.okou.android.api.generated.WorkflowDetailVisibility
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.chat.ChatListTextAction
-import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.retainSearchResultsWhileComposing
@@ -107,14 +106,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -160,6 +157,16 @@ internal fun WorkflowScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val editing = state.editing
     val detail = state.detail?.takeIf { it.id == route.id }
+    val historySkeletonVisible =
+        key(route.id) {
+            rememberContentReadSkeleton(
+                hasContent = state.history != null,
+                awaitingRead =
+                    route.tab == WorkflowTab.History &&
+                        state.historyRead == WorkflowHistoryRead.Latest &&
+                        state.historyFailure == null,
+            )
+        }
     SideEffect {
         readAnnouncements.directory.retainAll(
             listOfNotNull(state.catalogFailure, state.rulesFailure, state.connectionsFailure),
@@ -343,6 +350,7 @@ internal fun WorkflowScreen(
                             historyReturnFocus = historyReturnFocus,
                             onOpenChat = onOpenChat,
                             onEarlierRuns = model::loadEarlierRuns,
+                            historySkeletonVisible = historySkeletonVisible,
                         )
                 }
             }
@@ -564,8 +572,7 @@ private fun WorkflowDirectory(
                 catalog == null && state.catalogFailure != null ->
                     WorkflowReadFailureContent(Modifier.fillMaxSize().padding(horizontal = 16.dp))
                 catalog == null ->
-                    WorkflowSkeleton(
-                        directory = true,
+                    WorkflowDirectorySkeleton(
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 else ->
@@ -787,6 +794,7 @@ private fun WorkflowDetailPane(
     historyReturnFocus: DirectoryReturnFocus,
     onOpenChat: (runId: String, threadId: String) -> Unit,
     onEarlierRuns: () -> Unit,
+    historySkeletonVisible: Boolean,
 ) {
     val contentWidth = Modifier.widthIn(max = 730.dp).fillMaxWidth()
     val listPadding = workflowDetailPadding(wide)
@@ -916,6 +924,7 @@ private fun WorkflowDetailPane(
                             item(key = "history_pending") {
                                 WorkflowHistoryPending(
                                     state.historyFailure,
+                                    historySkeletonVisible,
                                     historyLayout?.body ?: Modifier,
                                 )
                             }
@@ -988,8 +997,7 @@ private fun WorkflowPendingDetail(
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when (failure) {
                 null ->
-                    WorkflowSkeleton(
-                        directory = false,
+                    WorkflowDetailSkeleton(
                         modifier = Modifier.padding(workflowDetailPadding(wide)),
                     )
                 WorkflowReadFailure.Unavailable ->
@@ -1317,57 +1325,6 @@ private fun WorkflowPlaceholder(label: Int) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
         )
-    }
-}
-
-@Composable
-private fun WorkflowSkeleton(directory: Boolean, modifier: Modifier) {
-    if (rememberContentReadSkeleton()) {
-        val label = stringResource(R.string.workspace_workflows)
-        Column(
-            modifier.fillMaxWidth().testTag("workflow_loading").semantics {
-                contentDescription = label
-                progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
-            },
-        ) {
-            if (directory) {
-                repeat(5) {
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        ChatSkeletonBlock(Modifier.size(40.dp), 12.dp)
-                        Column(
-                            Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            ChatSkeletonBlock(Modifier.fillMaxWidth(.7f).height(14.dp))
-                            ChatSkeletonBlock(Modifier.fillMaxWidth(.5f).height(14.dp))
-                        }
-                    }
-                }
-            } else {
-                ChatSkeletonBlock(Modifier.fillMaxWidth(.52f).height(24.dp))
-                Spacer(Modifier.height(12.dp))
-                ChatSkeletonBlock(Modifier.fillMaxWidth(.8f).height(14.dp))
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    Modifier.fillMaxWidth().height(48.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    repeat(WorkflowTab.entries.size) {
-                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            ChatSkeletonBlock(Modifier.fillMaxWidth(.64f).height(12.dp))
-                        }
-                    }
-                }
-                WorkflowDivider()
-                Spacer(Modifier.height(12.dp))
-                ChatSkeletonBlock(Modifier.fillMaxWidth(.8f).height(14.dp))
-                Spacer(Modifier.height(12.dp))
-                ChatSkeletonBlock(Modifier.fillMaxWidth(.64f).height(14.dp))
-            }
-        }
     }
 }
 
