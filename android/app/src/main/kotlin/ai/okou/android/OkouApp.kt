@@ -327,7 +327,7 @@ internal fun OkouApp(
             resourcesId == null &&
             findVisit?.let { it.target == null } == true
     val searchState = rememberChatSearchState()
-    var searchWorkflowId by rememberSearchWorkflowId()
+    var searchWorkflowId by rememberSearchWorkflowId(searchState)
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && !artifactsOpen && !showWorkflows && navigation.search.isOpen
     val searchKeyword =

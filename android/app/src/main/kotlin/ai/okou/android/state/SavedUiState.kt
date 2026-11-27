@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.SaveableStateHolder
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -304,9 +305,16 @@ internal fun rememberWorkflowEditorReturnFocus(
 internal fun rememberEarlierRepliesExpanded() = rememberSaveable { mutableStateOf(false) }
 
 @Composable
-internal fun rememberSearchWorkflowId(): MutableState<String?> = rememberSaveable {
-    mutableStateOf(null)
-}
+internal fun rememberSearchWorkflowId(search: ChatSearchState): MutableState<String?> =
+    rememberSaveable(
+        stateSaver =
+            Saver<String?, String>(
+                save = { it },
+                restore = { id -> id.takeIf { search.keyword.isNotEmpty() } },
+            ),
+    ) {
+        mutableStateOf(null)
+    }
 
 private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
 
