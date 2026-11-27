@@ -1596,8 +1596,6 @@
           "option": "커버 {{index}}"
         },
         "loading": "제안 불러오는 중",
-        "next": "다음 제안",
-        "previous": "이전 제안",
         "remaining": "{{total}}개 남음",
         "sources": {
           "description": "앞으로 받을 콘텐츠를 선택하세요. 이미 도착한 카드는 처리할 때까지 유지됩니다. 읽지 않음 알림에는 켜둔 출처의 콘텐츠만 포함됩니다.",
@@ -1613,9 +1611,7 @@
       "homeCard": {
         "completeDescription": "시간을 들일 만한 일이 생기면 Okou가 다음 일을 여기로 가져올게요.",
         "completeTitle": "모두 확인했어요",
-        "feedback": "제안 작업",
-        "navigation": "제안 둘러보기",
-        "show": "제안 {{index}}/{{total}} 보기"
+        "feedback": "제안 작업"
       },
       "label": "제안",
       "later": "나중에",

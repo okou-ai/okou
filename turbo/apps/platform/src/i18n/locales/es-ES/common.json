@@ -1625,8 +1625,6 @@
           "option": "Portada {{index}}"
         },
         "loading": "Cargando sugerencias",
-        "next": "Siguiente sugerencia",
-        "previous": "Sugerencia anterior",
         "remaining": "Quedan {{total}}",
         "sources": {
           "description": "Elige qué recibir a continuación. Las tarjetas ya recibidas se conservan hasta que las gestiones. Los avisos de contenido sin leer solo incluyen las fuentes activadas.",
@@ -1642,9 +1640,7 @@
       "homeCard": {
         "completeDescription": "Okou traerá aquí lo siguiente cuando haya algo que merezca tu tiempo.",
         "completeTitle": "Todo al día",
-        "feedback": "Acciones de sugerencia",
-        "navigation": "Explorar sugerencias",
-        "show": "Mostrar sugerencia {{index}} de {{total}}"
+        "feedback": "Acciones de sugerencia"
       },
       "label": "Sugerencias",
       "later": "Más tarde",

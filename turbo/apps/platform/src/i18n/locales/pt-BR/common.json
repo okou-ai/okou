@@ -1625,8 +1625,6 @@
           "option": "Capa {{index}}"
         },
         "loading": "Carregando sugestões",
-        "next": "Próxima sugestão",
-        "previous": "Sugestão anterior",
         "remaining": "{{total}} restantes",
         "sources": {
           "description": "Escolha o que receber a seguir. Os cartões já recebidos ficam até você tratá-los. Os alertas de não lidos incluem apenas as fontes ativadas.",
@@ -1642,9 +1640,7 @@
       "homeCard": {
         "completeDescription": "O Okou vai trazer a próxima coisa para cá quando houver algo que valha o seu tempo.",
         "completeTitle": "Tudo em dia",
-        "feedback": "Ações da sugestão",
-        "navigation": "Explorar sugestões",
-        "show": "Mostrar sugestão {{index}} de {{total}}"
+        "feedback": "Ações da sugestão"
       },
       "label": "Sugestões",
       "later": "Mais tarde",

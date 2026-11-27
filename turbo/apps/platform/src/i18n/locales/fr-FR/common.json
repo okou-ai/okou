@@ -1625,8 +1625,6 @@
           "option": "Couverture {{index}}"
         },
         "loading": "Chargement des suggestions",
-        "next": "Suggestion suivante",
-        "previous": "Suggestion précédente",
         "remaining": "Encore {{total}}",
         "sources": {
           "description": "Choisissez ce que vous recevrez ensuite. Les cartes déjà reçues restent jusqu’à ce que vous les traitiez. Les alertes de contenus non lus concernent uniquement les sources activées.",
@@ -1642,9 +1640,7 @@
       "homeCard": {
         "completeDescription": "Okou apportera ici la suite dès qu’il y aura quelque chose qui mérite votre temps.",
         "completeTitle": "Tout est à jour",
-        "feedback": "Actions de la suggestion",
-        "navigation": "Parcourir les suggestions",
-        "show": "Afficher la suggestion {{index}} sur {{total}}"
+        "feedback": "Actions de la suggestion"
       },
       "label": "Suggestions",
       "later": "Plus tard",

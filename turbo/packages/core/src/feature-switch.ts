@@ -51,12 +51,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.ForYouSimplifiedDeck]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Browse For you without arrow buttons, show a display-only progress bar, lower the card stack, size cards from the deck width, use tighter card and option corners, label what each option does, and let option text be selected.",
-    enabled: false,
-  },
   [FeatureSwitchKey.WorkflowListRedesign]: {
     maintainer: "ming@okou.ai",
     description:

@@ -1600,8 +1600,6 @@
           "option": "Titelbild {{index}}"
         },
         "loading": "Vorschläge werden geladen",
-        "next": "Nächster Vorschlag",
-        "previous": "Vorheriger Vorschlag",
         "remaining": "Noch {{total}}",
         "sources": {
           "description": "Wähle aus, was du künftig erhältst. Bereits erhaltene Karten bleiben, bis du sie bearbeitest. Hinweise auf ungelesene Inhalte berücksichtigen nur aktivierte Quellen.",
@@ -1617,9 +1615,7 @@
       "homeCard": {
         "completeDescription": "Okou bringt das Nächste hierher, sobald etwas deine Zeit wert ist.",
         "completeTitle": "Alles erledigt",
-        "feedback": "Vorschlagsaktionen",
-        "navigation": "Vorschläge durchsehen",
-        "show": "Vorschlag {{index}} von {{total}} anzeigen"
+        "feedback": "Vorschlagsaktionen"
       },
       "label": "Vorschläge",
       "later": "Später",

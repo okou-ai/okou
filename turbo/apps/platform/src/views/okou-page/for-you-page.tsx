@@ -7,7 +7,7 @@ import {
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ChevronLeft, ChevronRight, ImageIcon, Loader2 } from "lucide-react";
+import { ImageIcon, Loader2 } from "lucide-react";
 import {
   Button,
   Card,
@@ -16,7 +16,6 @@ import {
   PopoverTrigger,
   Radio,
   RadioGroup,
-  buttonVariants,
   cn,
 } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
@@ -27,7 +26,6 @@ import {
   reloadSuggestionSession$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
-  browseForYou$,
   finishForYouPaginationOnRef$,
   type ForYouDeck,
   forYouCardMinHeight$,
@@ -38,16 +36,12 @@ import {
   swipeForYouOnRef$,
 } from "../../signals/okou-page/for-you.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { Link } from "../router/link.tsx";
-import { shouldHandleLinkClick } from "../router/link-click.ts";
 import {
   AgentSuggestionCard,
   SuggestionSaveErrors,
   SuggestionSentNotice,
 } from "./agent-suggestions.tsx";
-import { useForYouSimplifiedDeck } from "./for-you-deck-switch.ts";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 import {
@@ -105,16 +99,10 @@ const STACK_LAYERS = [
 const STACK_CARD =
   "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col p-7 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)]";
 
-// The simplified deck sizes cards from its own width rather than the
-// viewport: an open chat list can leave a wide window with a narrow deck.
-function stackCardPadding(simplified: boolean) {
-  return simplified ? "@min-[32rem]/for-you:p-10" : "sm:p-10";
-}
-
-// The simplified deck uses the For you redesign's 20px card corners.
-function stackCardRadius(simplified: boolean) {
-  return simplified ? "rounded-surface" : "rounded-3xl";
-}
+// Cards size from the deck's own width rather than the viewport: an open
+// chat list can leave a wide window with a narrow deck. They use the For you
+// redesign's 20px corners.
+const STACK_CARD_FRAME = "rounded-surface @min-[32rem]/for-you:p-10";
 
 function SuggestionSendStatus({
   entry,
@@ -134,7 +122,6 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
   const minHeight = useGet(forYouCardMinHeight$);
   const measureCard = useSet(measureForYouCardOnRef$);
   const finishPagination = useSet(finishForYouPaginationOnRef$);
-  const simplified = useForYouSimplifiedDeck();
   const { cards, settled } = deck;
   const count = deck.remainingIds?.length;
   const complete = count === 0 && cards.length === 0;
@@ -147,12 +134,7 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
     ...settled,
   ];
   return (
-    <div
-      className={cn(
-        "pointer-events-none relative mx-auto w-full max-w-176 pb-6",
-        simplified ? "-mt-20 sm:-mt-23" : "-mt-26 sm:-mt-29",
-      )}
-    >
+    <div className="pointer-events-none relative mx-auto -mt-20 w-full max-w-176 pb-6 sm:-mt-23">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
@@ -168,13 +150,7 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
               data-slot="suggestion-stack-layer"
               aria-hidden
               inert
-              className={cn(
-                STACK_CARD,
-                stackCardPadding(simplified),
-                stackCardRadius(simplified),
-                "relative",
-                layer,
-              )}
+              className={cn(STACK_CARD, STACK_CARD_FRAME, "relative", layer)}
             />
           );
         })}
@@ -193,8 +169,7 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
               aria-hidden={!active || undefined}
               className={cn(
                 STACK_CARD,
-                stackCardPadding(simplified),
-                stackCardRadius(simplified),
+                STACK_CARD_FRAME,
                 outcome
                   ? cn(
                       "pointer-events-none inset-0 z-5 motion-safe:animate-card-fly-out motion-reduce:invisible",
@@ -231,7 +206,6 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
           );
         })}
       </div>
-      {!simplified && count !== undefined && <ForYouNavigation cards={cards} />}
     </div>
   );
 }
@@ -253,83 +227,6 @@ function ForYouCardContents({
         {children}
       </div>
     </div>
-  );
-}
-
-function ForYouNavigation({ cards }: { readonly cards: ForYouDeck["cards"] }) {
-  const { t } = useTranslation();
-  const browse = useSet(browseForYou$);
-  const signal = useGet(pageSignal$);
-  return (
-    <>
-      {cards.length > 1 && (
-        <nav
-          aria-label={t(($) => {
-            return $.chat.agentSuggestions.homeCard.navigation;
-          })}
-          className={cn(
-            // Paging moves through the whole stack, so the controls sit
-            // outside the card: on its flanks when the page has room, below
-            // it otherwise.
-            "-mt-3 flex items-center justify-end gap-2",
-            "@min-[56rem]/for-you:pointer-events-none @min-[56rem]/for-you:absolute @min-[56rem]/for-you:inset-0 @min-[56rem]/for-you:m-0",
-          )}
-        >
-          {[
-            {
-              card: cards.at(-1),
-              label: t(($) => {
-                return $.chat.agentSuggestions.forYou.previous;
-              }),
-              Icon: ChevronLeft,
-              direction: "previous" as const,
-              keys: "ArrowLeft",
-            },
-            {
-              card: cards[1],
-              label: t(($) => {
-                return $.chat.agentSuggestions.forYou.next;
-              }),
-              Icon: ChevronRight,
-              direction: "next" as const,
-              keys: "ArrowRight",
-            },
-          ].map(({ card, label, Icon, direction, keys }) => {
-            return card ? (
-              <Link
-                key={label}
-                pathname={ROUTES.forYou}
-                options={{
-                  searchParams: new URLSearchParams({
-                    suggestion: card.entry.item.id,
-                  }),
-                }}
-                aria-label={label}
-                aria-keyshortcuts={keys}
-                onClick={(event) => {
-                  if (shouldHandleLinkClick(event)) {
-                    // This changes the reading position in the current
-                    // visit; Router navigation would reload its snapshot.
-                    event.preventDefault();
-                    browse(card.entry.item.id, direction, signal);
-                  }
-                }}
-                className={cn(
-                  buttonVariants({ variant: "neutral", size: "icon-lg" }),
-                  "pointer-events-auto rounded-full bg-card shadow-surface",
-                  "@min-[56rem]/for-you:absolute @min-[56rem]/for-you:top-[calc(50%-0.75rem)] @min-[56rem]/for-you:-translate-y-1/2",
-                  direction === "previous"
-                    ? "@min-[56rem]/for-you:-left-17"
-                    : "@min-[56rem]/for-you:-right-17",
-                )}
-              >
-                <Icon aria-hidden className="size-4" />
-              </Link>
-            ) : null;
-          })}
-        </nav>
-      )}
-    </>
   );
 }
 
@@ -527,72 +424,6 @@ function ForYouProgress({
   );
 }
 
-function ForYouStepLinks({
-  steps,
-  firstStep,
-  position,
-  total,
-}: {
-  readonly steps: readonly string[];
-  readonly firstStep: number;
-  readonly position: number;
-  readonly total: number | undefined;
-}) {
-  const { t } = useTranslation();
-  const browse = useSet(browseForYou$);
-  const signal = useGet(pageSignal$);
-  return (
-    <nav
-      aria-label={t(($) => {
-        return $.chat.agentSuggestions.homeCard.navigation;
-      })}
-      className="flex min-w-0 flex-1 items-center"
-    >
-      {steps.map((id, offset) => {
-        const index = firstStep + offset;
-        return (
-          <Link
-            key={id}
-            pathname={ROUTES.forYou}
-            options={{
-              searchParams: new URLSearchParams({
-                suggestion: id,
-              }),
-            }}
-            aria-current={index === position ? "step" : undefined}
-            aria-label={t(
-              ($) => {
-                return $.chat.agentSuggestions.homeCard.show;
-              },
-              {
-                index: index + 1,
-                total,
-              },
-            )}
-            onClick={(event) => {
-              if (shouldHandleLinkClick(event)) {
-                event.preventDefault();
-                browse(id, index < position ? "previous" : "next", signal);
-              }
-            }}
-            className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-2"
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "h-1 w-full rounded-full transition-colors",
-                index === position
-                  ? "bg-[rgb(var(--for-you-bar))]"
-                  : "bg-[rgb(var(--for-you-track))]",
-              )}
-            />
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
 function ForYouHeader({
   ids,
   position,
@@ -605,7 +436,6 @@ function ForYouHeader({
   const total = ids?.length;
   const firstStep = Math.max(0, Math.min(position - 3, (total ?? 0) - 7));
   const steps = ids?.slice(firstStep, firstStep + 7);
-  const simplified = useForYouSimplifiedDeck();
   const cover = useLastResolved(forYouPaintedCover$);
   if (!cover) {
     return null;
@@ -629,23 +459,14 @@ function ForYouHeader({
         </p>
       </div>
       <div className="flex min-w-0 items-center gap-2 sm:gap-5">
-        {steps &&
-          steps.length > 0 &&
-          (simplified ? (
-            <ForYouProgress
-              steps={steps}
-              firstStep={firstStep}
-              position={position}
-              total={total}
-            />
-          ) : (
-            <ForYouStepLinks
-              steps={steps}
-              firstStep={firstStep}
-              position={position}
-              total={total}
-            />
-          ))}
+        {steps && steps.length > 0 && (
+          <ForYouProgress
+            steps={steps}
+            firstStep={firstStep}
+            position={position}
+            total={total}
+          />
+        )}
         {position >= 0 && (
           <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[rgb(var(--for-you-ink)/0.85)]">
             <span className="text-[rgb(var(--for-you-ink)/0.9)]">
@@ -687,7 +508,6 @@ export function ForYouPage() {
   const reload = useSet(reloadSuggestionSession$);
   const pageWithKeys = useSet(pageForYouWithKeysOnRef$);
   const signal = useGet(pageSignal$);
-  const simplified = useForYouSimplifiedDeck();
   const hasStack =
     deck.cards.length > 0 || deck.settled.length > 0 || remaining !== undefined;
   return (
@@ -717,18 +537,13 @@ export function ForYouPage() {
             })}
             className="m-auto w-full max-w-160"
           >
-            <Skeleton
-              className={cn("h-125 w-full", stackCardRadius(simplified))}
-            />
+            <Skeleton className="h-125 w-full rounded-surface" />
           </div>
         ) : null}
         {listState === "hasError" && (
           <div
             role="alert"
-            className={cn(
-              "m-auto flex flex-col items-center gap-4 bg-card p-6",
-              stackCardRadius(simplified),
-            )}
+            className="m-auto flex flex-col items-center gap-4 rounded-surface bg-card p-6"
           >
             <p className="text-sm text-muted-foreground">
               {t(($) => {
