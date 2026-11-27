@@ -82,9 +82,12 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.focused
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextRange
@@ -384,6 +387,7 @@ internal fun WorkflowEditor(
             connectionRequired == null &&
             state.issue?.failure != WorkflowWriteFailure.UncertainCreate
     val saveFocus = remember { FocusRequester() }
+    val saveFocused = remember { mutableStateOf(false) }
     val recoveryFocus = remember { FocusRequester() }
     val cancelFocus = remember { FocusRequester() }
     var connectionFocused by remember { mutableStateOf(false) }
@@ -539,9 +543,14 @@ internal fun WorkflowEditor(
                 val savingLabel = stringResource(R.string.settings_saving)
                 val pendingSemantics =
                     if (state.writing)
-                        Modifier.semantics {
+                        Modifier.clearAndSetSemantics {
+                            // Keep the name and state on the same Android accessibility node.
                             contentDescription = saveLabel
                             stateDescription = savingLabel
+                            role = Role.Button
+                            focused = saveFocused.value
+                            liveRegion = LiveRegionMode.Polite
+                            disabled()
                         }
                     else Modifier
                 WorkflowActionRipple(state.writing) {
@@ -552,10 +561,9 @@ internal fun WorkflowEditor(
                         layoutLabels = listOf(saveLabel, savingLabel),
                         retainDisabledFocus = state.writing,
                         useMaterialButtonDefaults = true,
-                        labelModifier =
-                            if (state.writing) Modifier.clearAndSetSemantics {} else Modifier,
                         modifier =
                             Modifier.focusRequester(saveFocus)
+                                .onFocusChanged { saveFocused.value = it.isFocused }
                                 .updateFocusOutline(
                                     ButtonDefaults.shape,
                                     if (state.writing) colors.onBackground else colors.onPrimary,

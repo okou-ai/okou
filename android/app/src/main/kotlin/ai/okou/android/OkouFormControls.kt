@@ -205,7 +205,6 @@ internal fun OkouActionButton(
     layoutLabels: List<String> = emptyList(),
     retainDisabledFocus: Boolean = false,
     useMaterialButtonDefaults: Boolean = false,
-    labelModifier: Modifier = Modifier,
 ) {
     val size =
         if (useMaterialButtonDefaults) modifier
@@ -218,8 +217,7 @@ internal fun OkouActionButton(
         }
     val style = MaterialTheme.typography.labelLarge
     val text: @Composable () -> Unit = {
-        if (layoutLabels.isEmpty())
-            Text(label, labelModifier, style = style, textAlign = TextAlign.Center)
+        if (layoutLabels.isEmpty()) Text(label, style = style, textAlign = TextAlign.Center)
         else
             Box(contentAlignment = Alignment.Center) {
                 for (layoutLabel in layoutLabels) {
@@ -230,7 +228,7 @@ internal fun OkouActionButton(
                         textAlign = TextAlign.Center,
                     )
                 }
-                Text(label, labelModifier, style = style, textAlign = TextAlign.Center)
+                Text(label, style = style, textAlign = TextAlign.Center)
             }
     }
     when (treatment) {

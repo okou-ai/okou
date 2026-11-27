@@ -39,6 +39,7 @@ class ScreenshotScenario {
     private val device = UiDevice.getInstance(instrumentation)
     private val subject = By.clazz("android.widget.EditText").hasDescendant(By.desc("Subject contains"))
     private val save = By.text("Save")
+    private val pendingSave = By.clazz("android.widget.Button").desc("Save").enabled(false)
     private val draft = "Release summary"
     private val instructions = "Review the release owner.\n![Checklist](https://example.test/checklist.png)"
 
@@ -51,7 +52,6 @@ class ScreenshotScenario {
         val failures = mutableListOf<Throwable>()
         try {
             device.executeShellCommand("wm density 160")
-            device.executeShellCommand("settings put secure show_ime_with_hard_keyboard 1")
             captureWindow(412, 892, 1f, UserPreferencesTheme.LIGHT, capture = ::captureInstructions)
             captureWindow(1180, 820, 1f, UserPreferencesTheme.DARK, workflowTitle = { it.sharedTitle }) { scenario, fixture ->
                 openAutomation(scenario)
@@ -85,6 +85,7 @@ class ScreenshotScenario {
                 assertEquals(saveBounds, checkNotNull(saveControl(node(save))).visibleBounds)
                 ScreenshotCapture.capture("short-editor-feedback.png")
             }
+            device.executeShellCommand("settings put secure show_ime_with_hard_keyboard 1")
             captureWindow(412, 520, 1f, UserPreferencesTheme.LIGHT) { scenario, _ ->
                 openAutomation(scenario)
                 node(subject).click()
@@ -96,6 +97,7 @@ class ScreenshotScenario {
                 assertTrue(device.pressBack())
                 assertIme(scenario, false)
                 assertTrue(device.hasObject(By.pkg(app.packageName).text("Edit")))
+                assertEquals(draft, node(subject).text)
                 reveal(scenario, save)
                 assertFooter(scenario)
             }
@@ -129,6 +131,7 @@ class ScreenshotScenario {
         capture: (ActivityScenario<MainActivity>, WorkflowApiFixture) -> Unit,
     ) {
         WorkflowApiFixture().use { fixture ->
+            fixture.releasePurpose = "Check launch copy and timing."
             val connectorFixture = ConnectorApiFixture()
             val originalPreferences = app.initialPreferences
             val preferenceData = app.snapshotApiPreferences()
@@ -197,7 +200,7 @@ class ScreenshotScenario {
         try {
             saveAction.click()
             assertTrue("Save reached the fixture", entered.await(10, TimeUnit.SECONDS))
-            val pending = node(By.desc("Save").enabled(false))
+            val pending = awaitPendingSave()
             assertEquals(saveBounds, pending.visibleBounds)
             ScreenshotCapture.capture("saving-editor.png")
         } finally {
@@ -235,7 +238,7 @@ class ScreenshotScenario {
         try {
             saveAction.click()
             assertTrue("Create reached the fixture", entered.await(10, TimeUnit.SECONDS))
-            assertEquals(saveBounds, node(By.desc("Save").enabled(false)).visibleBounds)
+            assertEquals(saveBounds, awaitPendingSave().visibleBounds)
             val mode = node(schedule)
             assertTrue(generateSequence(mode) { it.parent }.any { it.isSelected && !it.isEnabled })
             assertEquals(before, mode.visibleBounds)
@@ -257,6 +260,16 @@ class ScreenshotScenario {
             }
         }
         assertTrue("IME visible: $visible", device.wait(matches, 10_000))
+    }
+
+    private fun awaitPendingSave(): UiObject2 = try {
+        node(pendingSave)
+    } catch (failure: Throwable) {
+        runCatching {
+            TestStorage().openOutputFile("pending-save-failure.xml").use(device::dumpWindowHierarchy)
+        }
+        runCatching { ScreenshotCapture.capture("pending-save-failure.png") }
+        throw failure
     }
 
     private fun assertWindow(scenario: ActivityScenario<MainActivity>, width: Int, height: Int, scale: Float) {
