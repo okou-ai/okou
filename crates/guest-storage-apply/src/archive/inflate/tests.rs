@@ -42,7 +42,7 @@ fn inline_worker_size_hint_stays_within_the_measured_bands() {
     ] {
         let archive = input.get_mut(..compressed).unwrap();
         *archive.last_chunk_mut::<4>().unwrap() = (expanded as u32).to_le_bytes();
-        assert_eq!(inline_archive_size_is_eligible(archive), eligible);
+        assert_eq!(inline_artifact_size_is_eligible(archive), eligible);
     }
 }
 
@@ -94,15 +94,7 @@ fn wide_read_ahead_samples_a_prefix_of_small_regular_files() {
             wide
         );
         assert_eq!(staged.stream_position().unwrap(), 0);
-        assert_eq!(
-            has_small_file_prefix(
-                |output, offset| read_inline_at(&bytes, output, offset),
-                8,
-                16 * 1024,
-                Some(TAR_PREFIX_BYTES),
-            ),
-            inline
-        );
+        assert_eq!(has_small_inline_file_prefix(&bytes), inline);
     }
 }
 

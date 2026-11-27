@@ -531,6 +531,23 @@ fn single_inline_artifact<'input>(tasks: &[PreparedDownloadTask<'input>]) -> Opt
     artifact
 }
 
+#[cfg(target_os = "linux")]
+fn inline_batch_prefers_two_workers(tasks: &[PreparedDownloadTask<'_>]) -> bool {
+    let Some(artifact) = single_inline_artifact(tasks) else {
+        return false;
+    };
+    archive::inflate::inline_artifact_size_is_eligible(artifact)
+        && rustix::thread::sched_getaffinity(None).is_ok_and(|cpus| cpus.count() == 2)
+        && tasks.iter().all(|prepared| {
+            let task = &prepared.task;
+            task.telemetry.is_artifact()
+                || task
+                    .inline_archive
+                    .is_some_and(archive::inflate::inline_companion_is_small)
+        })
+        && archive::inflate::has_small_inline_file_prefix(artifact)
+}
+
 fn download_with_readiness(
     mut tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
@@ -556,14 +573,8 @@ fn download_with_readiness(
     #[cfg(target_os = "linux")]
     let concurrency = if allow_artifact_priority
         && (MIN_INLINE_ARTIFACT_BATCH_TASKS..WIDE_LOCAL_INFLATE_TASKS).contains(&tasks.len())
-        && single_inline_artifact(&tasks).is_some_and(archive::inflate::prefers_two_workers)
-        && tasks.iter().all(|prepared| {
-            let task = &prepared.task;
-            task.telemetry.is_artifact()
-                || task
-                    .inline_archive
-                    .is_some_and(archive::inflate::inline_companion_is_small)
-        }) {
+        && inline_batch_prefers_two_workers(&tasks)
+    {
         2
     } else {
         concurrency

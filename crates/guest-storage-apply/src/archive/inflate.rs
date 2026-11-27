@@ -157,18 +157,16 @@ fn has_expanded_work(
     read_exact_at(&mut size, offset).is_ok() && u32::from_le_bytes(size) >= min_expanded_bytes
 }
 
-pub(crate) fn prefers_two_workers(archive: &[u8]) -> bool {
-    inline_archive_size_is_eligible(archive)
-        && rustix::thread::sched_getaffinity(None).is_ok_and(|cpus| cpus.count() == 2)
-        && has_small_file_prefix(
-            |output, offset| read_inline_at(archive, output, offset),
-            8,
-            16 * 1024,
-            Some(TAR_PREFIX_BYTES),
-        )
+pub(crate) fn has_small_inline_file_prefix(archive: &[u8]) -> bool {
+    has_small_file_prefix(
+        |output, offset| read_inline_at(archive, output, offset),
+        8,
+        16 * 1024,
+        Some(TAR_PREFIX_BYTES),
+    )
 }
 
-fn inline_archive_size_is_eligible(archive: &[u8]) -> bool {
+pub(crate) fn inline_artifact_size_is_eligible(archive: &[u8]) -> bool {
     // Use the gzip length hint to stay within the measured Memory size range.
     // Full extraction still owns gzip validation.
     (1024 * 1024..4 * 1024 * 1024).contains(&archive.len())
