@@ -188,17 +188,20 @@ internal fun WorkflowScreen(
         )
     }
     val connectionReadApplies =
-        if (editing != null)
-            (editing.draft as? WorkflowEdit.Rule)?.value?.trigger?.source?.connector != null
-        else
-            route.tab == WorkflowTab.Automations &&
-                detail?.automations?.any { it.source.connector != null } == true
+        when {
+            detail == null -> false
+            editing != null ->
+                (editing.draft as? WorkflowEdit.Rule)?.value?.trigger?.source?.connector != null
+            else ->
+                route.tab == WorkflowTab.Automations &&
+                    detail.automations.any { it.source.connector != null }
+        }
+    val connectionNotice = if (connectionReadApplies) state.connectionReadNotice() else null
     val detailNotices =
         if (detail == null) emptyList()
         else
             listOfNotNull(
                 state.detailFailure.notice(),
-                state.connectionReadNotice().takeIf { connectionReadApplies },
                 state.historyFailure.notice().takeIf {
                     editing == null &&
                         route.tab == WorkflowTab.History &&
@@ -210,9 +213,16 @@ internal fun WorkflowScreen(
     if (route.id != null) {
         key(route.id) {
             readAnnouncements.detail.RetireOnExit(detailNotices.map { it.failure.feedbackOrder })
+            if (connectionNotice != null) {
+                readAnnouncements.detail.RetireOnExit(
+                    listOf(connectionNotice.failure.feedbackOrder),
+                )
+            }
         }
+        val notices =
+            if (connectionNotice == null) detailNotices else detailNotices + connectionNotice
         detailPaneFeedback(
-            workflowReadErrors(detailNotices, readAnnouncements.detail, detailSnackbar),
+            workflowReadErrors(notices, readAnnouncements.detail, detailSnackbar),
             detailSnackbar,
         )
         WorkspaceFeedbackTimeout(detailSnackbar)

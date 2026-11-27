@@ -462,6 +462,45 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    fun leavingAutomationTabRetiresItsConnectionReadFeedback() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        waitFor("Needs connection")
+        compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
+        waitForTag("workflow_detail_title")
+
+        val nextRead = CountDownLatch(1)
+        val finishRead = CountDownLatch(1)
+        val firstRefresh = AtomicBoolean(true)
+        val chats = app.fixture.chats
+        val respond = chats.commandResponse
+        chats.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath != "/api/connectors/connected") respond(request)
+            else if (firstRefresh.getAndSet(false)) MockResponse().setResponseCode(400)
+            else {
+                nextRead.countDown()
+                finishRead.await()
+                respond(request)
+            }
+        }
+        try {
+            val automations = compose.onNodeWithTag("workflow_tab_automations")
+            automations.performClick()
+            val message = app.getString(R.string.workflow_refresh_failed)
+            waitFor(message)
+            val feedback = compose.onNodeWithText(message).assertIsDisplayed()
+
+            compose.onNodeWithTag("workflow_tab_instructions").performClick()
+            feedback.assertDoesNotExist()
+            automations.performClick().assertIsSelected()
+            compose.waitUntil(10_000) { nextRead.count == 0L }
+            feedback.assertDoesNotExist()
+        } finally {
+            finishRead.countDown()
+        }
+    }
+
+    @Test
     fun emptyDirectorySearchKeepsTheRecoveryAtTheStartOfTheResults() {
         app.gate.countDown()
         compose.onNodeWithContentDescription("Workflows").performClick()
