@@ -1,5 +1,5 @@
 {
-  "id": "1bf742b6-e710-4029-b860-e4a98c600265",
+  "id": "e65c84b9-aa5c-4026-849d-8c48d5d6fd67",
   "prevId": "946ceb6f-742f-4cda-bcd6-3780ba879e28",
   "version": "7",
   "dialect": "postgresql",
@@ -9879,6 +9879,16 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "active_remote_device_id": {
+          "name": "active_remote_device_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "CASE WHEN revoked_at IS NULL THEN remote_device_id END",
+            "type": "stored"
+          }
         }
       },
       "indexes": {
@@ -9887,6 +9897,21 @@
           "columns": [
             {
               "expression": "remote_device_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_computer_use_hosts_active_remote_device": {
+          "name": "idx_computer_use_hosts_active_remote_device",
+          "columns": [
+            {
+              "expression": "active_remote_device_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -9963,6 +9988,19 @@
             "user_id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "computer_use_hosts_remote_device_active_fk": {
+          "name": "computer_use_hosts_remote_device_active_fk",
+          "tableFrom": "computer_use_hosts",
+          "tableTo": "remote_devices",
+          "columnsFrom": [
+            "active_remote_device_id"
+          ],
+          "columnsTo": [
+            "active_id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -25240,6 +25278,19 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
+        },
+        "phone_use_devices_remote_device_active_fk": {
+          "name": "phone_use_devices_remote_device_active_fk",
+          "tableFrom": "phone_use_devices",
+          "tableTo": "remote_devices",
+          "columnsFrom": [
+            "remote_device_id"
+          ],
+          "columnsTo": [
+            "active_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -26776,6 +26827,16 @@
           "primaryKey": false,
           "notNull": false
         },
+        "active_id": {
+          "name": "active_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "CASE WHEN deleted_at IS NULL THEN id END",
+            "type": "stored"
+          }
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -26810,6 +26871,13 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
+        "remote_devices_active_id_unique": {
+          "name": "remote_devices_active_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "active_id"
+          ]
+        },
         "uq_remote_devices_id_owner": {
           "name": "uq_remote_devices_id_owner",
           "nullsNotDistinct": false,
@@ -29370,6 +29438,19 @@
             "user_id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "ssh_connections_remote_device_active_fk": {
+          "name": "ssh_connections_remote_device_active_fk",
+          "tableFrom": "ssh_connections",
+          "tableTo": "remote_devices",
+          "columnsFrom": [
+            "remote_device_id"
+          ],
+          "columnsTo": [
+            "active_id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "ssh_connections_cloudflare_access_org_fk": {
@@ -35709,6 +35790,19 @@
             "user_id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "vnc_connections_remote_device_active_fk": {
+          "name": "vnc_connections_remote_device_active_fk",
+          "tableFrom": "vnc_connections",
+          "tableTo": "remote_devices",
+          "columnsFrom": [
+            "remote_device_id"
+          ],
+          "columnsTo": [
+            "active_id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "vnc_connections_cloudflare_org_fk": {

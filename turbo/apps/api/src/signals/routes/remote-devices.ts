@@ -29,6 +29,7 @@ import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 import {
   ownedRemoteDevice,
+  isRemoteDeviceReferenceViolation,
   remoteDeviceDestination,
   remoteDeviceMode,
   remoteDeviceMode$,
@@ -168,12 +169,7 @@ const moveChannel$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!result.ok) {
-    if (
-      isForeignKeyViolation(
-        result.error,
-        `${getTableName(table)}_remote_device_owner_fk`,
-      )
-    ) {
+    if (isRemoteDeviceReferenceViolation(result.error, getTableName(table))) {
       return missing;
     }
     throw result.error;
@@ -283,7 +279,12 @@ const deleteDevice$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!deleted.ok) {
     if (
       safeSqlStateCode(deleted.error) === "40P01" ||
-      isForeignKeyViolation(deleted.error, "remote_device_deleted_empty")
+      Object.values(channelTables).some((table) => {
+        return isRemoteDeviceReferenceViolation(
+          deleted.error,
+          getTableName(table),
+        );
+      })
     ) {
       return conflict("The device changed. Try deleting it again.");
     }

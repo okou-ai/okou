@@ -17,6 +17,7 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDateSql } from "../../lib/time";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
@@ -82,6 +83,16 @@ export function remoteDeviceDestination(
       .select({ id: remoteDevices.id })
       .from(remoteDevices)
       .where(ownedRemoteDevice(owner, deviceId)),
+  );
+}
+
+export function isRemoteDeviceReferenceViolation(
+  error: unknown,
+  table: string,
+) {
+  return (
+    isForeignKeyViolation(error, `${table}_remote_device_owner_fk`) ||
+    isForeignKeyViolation(error, `${table}_remote_device_active_fk`)
   );
 }
 

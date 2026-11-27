@@ -23,7 +23,12 @@ export type { ComputerUsePermissions } from "@okouai/db/jsonb-contracts/computer
 
 export const computerUseHosts = pgTable(
   "computer_use_hosts",
-  computerUseHostColumns(),
+  {
+    ...computerUseHostColumns(),
+    activeRemoteDeviceId: uuid("active_remote_device_id").generatedAlwaysAs(
+      sql`CASE WHEN revoked_at IS NULL THEN remote_device_id END`,
+    ),
+  },
   (table) => {
     return [
       foreignKey({
@@ -35,7 +40,15 @@ export const computerUseHosts = pgTable(
           remoteDevices.userId,
         ],
       }).onDelete("restrict"),
+      foreignKey({
+        name: "computer_use_hosts_remote_device_active_fk",
+        columns: [table.activeRemoteDeviceId],
+        foreignColumns: [remoteDevices.activeId],
+      }),
       index("idx_computer_use_hosts_remote_device").on(table.remoteDeviceId),
+      index("idx_computer_use_hosts_active_remote_device").on(
+        table.activeRemoteDeviceId,
+      ),
       uniqueIndex("idx_computer_use_hosts_active_installation")
         .on(table.orgId, table.userId, table.installationId)
         .where(sql`installation_id IS NOT NULL AND revoked_at IS NULL`),

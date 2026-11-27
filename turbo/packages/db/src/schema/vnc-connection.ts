@@ -128,6 +128,11 @@ export const vncConnections = pgTable(
           remoteDevices.userId,
         ],
       }).onDelete("restrict"),
+      foreignKey({
+        name: "vnc_connections_remote_device_active_fk",
+        columns: [table.remoteDeviceId],
+        foreignColumns: [remoteDevices.activeId],
+      }),
       index("idx_vnc_connections_remote_device").on(table.remoteDeviceId),
       foreignKey({
         name: "vnc_connections_cloudflare_org_fk",

@@ -43,6 +43,11 @@ export const phoneUseDevices = pgTable(
           remoteDevices.userId,
         ],
       }).onDelete("restrict"),
+      foreignKey({
+        name: "phone_use_devices_remote_device_active_fk",
+        columns: [table.remoteDeviceId],
+        foreignColumns: [remoteDevices.activeId],
+      }),
       index("idx_phone_use_devices_remote_device").on(table.remoteDeviceId),
       uniqueIndex("phone_use_device_installation").on(
         table.orgId,

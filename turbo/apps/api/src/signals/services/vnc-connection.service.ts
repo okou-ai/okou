@@ -1,4 +1,5 @@
 import { publishRemoteChannelDevice } from "./remote-device-publication";
+import { isRemoteDeviceReferenceViolation } from "./remote-device-access";
 import {
   vncConnectionResponseSchema,
   type CreateVncConnectionRequest,
@@ -754,12 +755,7 @@ export const createVncConnection$ = command(
     );
     signal.throwIfAborted();
     if (!written.ok) {
-      if (
-        isForeignKeyViolation(
-          written.error,
-          "vnc_connections_remote_device_owner_fk",
-        )
-      ) {
+      if (isRemoteDeviceReferenceViolation(written.error, "vnc_connections")) {
         return vncFailure("remoteDeviceNotFound");
       }
       if (safeSqlStateCode(written.error) === "40P01") {

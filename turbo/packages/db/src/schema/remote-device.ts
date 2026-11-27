@@ -20,6 +20,9 @@ export const remoteDevices = pgTable(
     accessAllowed: boolean("access_allowed").default(false).notNull(),
     accessExpiresAt: timestamp("access_expires_at"),
     deletedAt: timestamp("deleted_at"),
+    activeId: uuid("active_id")
+      .generatedAlwaysAs(sql`CASE WHEN deleted_at IS NULL THEN id END`)
+      .unique(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {
