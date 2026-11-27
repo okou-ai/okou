@@ -118,10 +118,16 @@ class ScreenshotScenario {
                             val previousValueRead = CountDownLatch(1)
                             connector.chatOverrideReadReplyGate = previousValueRead
                             try {
-                                text("核对结果").click()
-                                check(!text("正在核对账号…").isEnabled)
+                                device.waitForIdle()
+                                val action = checkNotNull(text("核对结果").parent)
+                                val availableBounds = action.visibleBounds
+                                check(action.isEnabled && availableBounds.height() >= 48)
+                                action.click()
+                                val progress = checkNotNull(text("正在核对账号…").parent)
                                 check(activeWindowId() == sheetWindow)
                                 device.waitForIdle()
+                                check(!progress.isEnabled)
+                                check(progress.visibleBounds == availableBounds)
                                 ScreenshotCapture.capture("$name-connector-checking.png")
                             } finally {
                                 previousValueRead.countDown()
