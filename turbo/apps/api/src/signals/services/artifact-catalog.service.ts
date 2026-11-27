@@ -1494,6 +1494,40 @@ function artifactCatalogOrderBy(direction: ArtifactCatalogDirection): SQL[] {
   ];
 }
 
+function artifactLibraryOrderBy(
+  direction: ArtifactCatalogDirection,
+  merged = false,
+): SQL[] {
+  const createdAt = merged ? sql.identifier("created_at") : artifacts.createdAt;
+  const id = merged ? sql.identifier("artifact_id") : artifacts.id;
+  return direction === "asc"
+    ? [sql`${asc(createdAt)} NULLS FIRST`, sql`${asc(id)} NULLS FIRST`]
+    : [sql`${desc(createdAt)} NULLS LAST`, sql`${desc(id)} NULLS LAST`];
+}
+
+function artifactCatalogSelection() {
+  return {
+    id: artifacts.id,
+    entityId: artifacts.entityId,
+    kind: artifacts.kind,
+    logicalKey: artifacts.logicalKey,
+    displayKind: artifactCatalogEffectiveKind(),
+    aliasUrl: artifacts.aliasUrl,
+    sourceUrl: artifacts.sourceUrl,
+    videoSourceUrl: artifacts.videoSourceUrl,
+    title: artifacts.title,
+    thumbnail: artifacts.thumbnail,
+    createdAt: artifacts.createdAt,
+    updatedAt: artifacts.updatedAt,
+    // Preserve PostgreSQL microseconds in new keyset cursors; Date truncates
+    // them and can skip records sharing a millisecond at a page boundary.
+    cursorCreatedAt:
+      sql`to_char(${artifacts.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
+        pgTextDecoder,
+      ),
+  };
+}
+
 export const listArtifactCatalog$ = command(
   async (
     { get },
@@ -1519,26 +1553,7 @@ export const listArtifactCatalog$ = command(
       args.keyword,
       libraryQuery,
     );
-    const selection = {
-      id: artifacts.id,
-      entityId: artifacts.entityId,
-      kind: artifacts.kind,
-      logicalKey: artifacts.logicalKey,
-      displayKind: artifactCatalogEffectiveKind(),
-      aliasUrl: artifacts.aliasUrl,
-      sourceUrl: artifacts.sourceUrl,
-      videoSourceUrl: artifacts.videoSourceUrl,
-      title: artifacts.title,
-      thumbnail: artifacts.thumbnail,
-      createdAt: artifacts.createdAt,
-      updatedAt: artifacts.updatedAt,
-      // Preserve PostgreSQL microseconds in new keyset cursors; Date truncates
-      // them and can skip records sharing a millisecond at a page boundary.
-      cursorCreatedAt:
-        sql`to_char(${artifacts.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
-          pgTextDecoder,
-        ),
-    };
+    const selection = artifactCatalogSelection();
     const category = artifactCatalogCategory();
     const filters = and(
       eq(artifacts.orgId, args.orgId),
@@ -1551,13 +1566,6 @@ export const listArtifactCatalog$ = command(
       keywordFilter,
       cursorFilter,
     );
-    const libraryOrderBy = () => {
-      return artifactCatalogOrderBy(direction).map((order) => {
-        return direction === "asc"
-          ? sql`${order} NULLS FIRST`
-          : sql`${order} NULLS LAST`;
-      });
-    };
     const libraryCatalog = (authorUserId: string) => {
       return db
         .select({
@@ -1589,7 +1597,7 @@ export const listArtifactCatalog$ = command(
           ),
         )
         .where(and(filters, eq(artifacts.authorUserId, authorUserId)))
-        .orderBy(...libraryOrderBy())
+        .orderBy(...artifactLibraryOrderBy(direction))
         .limit(limit + 1);
     };
     // Each author namespace has its own ordered index range. Bound both before
@@ -1599,19 +1607,7 @@ export const listArtifactCatalog$ = command(
           .unionAll(
             libraryCatalog(sharedThreadArtifactAuthorUserId(args.userId)),
           )
-          .orderBy(() => {
-            const createdAt = sql.identifier("created_at");
-            const id = sql.identifier("artifact_id");
-            return direction === "asc"
-              ? [
-                  sql`${asc(createdAt)} NULLS FIRST`,
-                  sql`${asc(id)} NULLS FIRST`,
-                ]
-              : [
-                  sql`${desc(createdAt)} NULLS LAST`,
-                  sql`${desc(id)} NULLS LAST`,
-                ];
-          })
+          .orderBy(...artifactLibraryOrderBy(direction, true))
           .limit(limit + 1)
       : await db
           .select(selection)
