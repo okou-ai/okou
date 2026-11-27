@@ -98,7 +98,7 @@
     <string name="workflow_webhook">Webhook received</string>
     <string name="workflow_weekday_schedule">Weekdays at %1$s</string>
     <string name="workflow_weekdays">Weekdays</string>
-    <string name="workflow_write_failed">Could not save your changes.</string>
+    <string name="workflow_write_failed">Could not save. Your changes are still here.</string>
     <plurals name="workflow_enabled_count">
         <item quantity="one">%d automation enabled</item>
         <item quantity="other">%d automations enabled</item>

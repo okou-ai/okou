@@ -98,7 +98,7 @@
     <string name="workflow_webhook">Webhook を受信</string>
     <string name="workflow_weekday_schedule">平日 %1$s</string>
     <string name="workflow_weekdays">平日</string>
-    <string name="workflow_write_failed">変更を保存できませんでした。</string>
+    <string name="workflow_write_failed">保存できませんでした。変更内容は保持されています。</string>
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d件の自動化が有効</item>
     </plurals>
