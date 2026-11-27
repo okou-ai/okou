@@ -17,6 +17,7 @@ import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { settle } from "../utils";
 import { claimHostedSiteShareAccess$ } from "./hosted-site-share-access.service";
+import { syncArtifactVisibilityBySiteId$ } from "./artifact-access-dual-write.service";
 
 type Owner = {
   readonly userId: string;
@@ -229,9 +230,15 @@ export const updateHostedSiteVisibility$ = command(
       })
       .returning();
     signal.throwIfAborted();
-    return changed
-      ? { status: "ok" as const, body: changed }
-      : { status: "conflict" as const };
+    if (!changed) {
+      return { status: "conflict" as const };
+    }
+    await set(
+      syncArtifactVisibilityBySiteId$,
+      { siteId: changed.siteId, visibility: changed.visibility },
+      signal,
+    );
+    return { status: "ok" as const, body: changed };
   },
 );
 

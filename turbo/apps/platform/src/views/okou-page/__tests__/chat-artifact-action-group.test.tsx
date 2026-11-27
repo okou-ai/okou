@@ -2,8 +2,8 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   setupPage,
@@ -92,24 +92,22 @@ function rights(
     },
   );
   context.mocks.api(
-    artifactSharesContract.status,
-    async ({ body, respond }) => {
+    artifactAccessContract.getVisibility,
+    async ({ params, respond }) => {
       await options.share;
-      if (options.readOnly || body.id !== r.file.id) {
+      if (options.readOnly || params.artifactId !== r.file.id) {
         return respond(404, {
           error: { code: "NOT_FOUND", message: "Not owned" },
         });
       }
       return respond(200, {
+        artifactId: r.file.id,
+        kind: "file",
+        visibility: "private",
         ownerUrl,
-        shareId: null,
-        audience: "private",
-        organization: { id: "org_default", name: "Field team" },
-        selectedTarget: null,
-        selectedVersion: null,
-        candidateVersion: null,
-        url: null,
+        shareUrl: null,
         shortUrl: null,
+        organization: { id: "org_default", name: "Field team" },
       });
     },
   );
@@ -322,7 +320,7 @@ test.each(["sharing", "deletion"] as const)(
       configureRights: (r) => {
         if (kind === "sharing") {
           context.mocks.api(
-            artifactSharesContract.status,
+            artifactAccessContract.getVisibility,
             async ({ request, respond }) => {
               return (await hold(request))
                 ? respond(500, {
@@ -332,15 +330,13 @@ test.each(["sharing", "deletion"] as const)(
                     },
                   })
                 : respond(200, {
+                    artifactId: r.file.id,
+                    kind: "file",
+                    visibility: "private",
                     ownerUrl: "https://app.okou.ai" + r.file.path,
-                    shareId: null,
-                    audience: "private",
-                    organization: { id: "org_default", name: "Field team" },
-                    selectedTarget: null,
-                    selectedVersion: null,
-                    candidateVersion: null,
-                    url: null,
+                    shareUrl: null,
                     shortUrl: null,
+                    organization: { id: "org_default", name: "Field team" },
                   });
             },
           );

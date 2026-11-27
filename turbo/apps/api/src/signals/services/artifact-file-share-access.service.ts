@@ -8,6 +8,7 @@ import type { PrivateArtifactRecord } from "./private-artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { resolveArtifactDownloadUrl$ } from "./artifact-download-url.service";
 import { uploadedArtifactPreviewImageUrl$ } from "./uploaded-artifact.service";
+import { syncArtifactUserShareByFileId$ } from "./artifact-access-dual-write.service";
 import { nowDate } from "../../lib/time";
 
 const claimFileShareAccess$ = command(
@@ -62,8 +63,22 @@ const claimFileShareAccess$ = command(
           inArray(artifactFileShares.email, emails),
         ),
       )
-      .returning({ id: artifactFileShares.id });
+      .returning({
+        id: artifactFileShares.id,
+        email: artifactFileShares.email,
+      });
     signal.throwIfAborted();
+    if (claimed.length > 0) {
+      await set(
+        syncArtifactUserShareByFileId$,
+        {
+          fileId: args.fileId,
+          userId: args.userId,
+          email: claimed[0]?.email ?? null,
+        },
+        signal,
+      );
+    }
     return claimed.length > 0;
   },
 );

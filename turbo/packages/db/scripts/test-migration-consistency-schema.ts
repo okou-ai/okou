@@ -71,6 +71,7 @@ import {
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
+import { validatePermanentFilesAndArtifactAccess } from "./test-files-and-artifact-access-permanent";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validateCanonicalModelSelections } from "./test-canonical-model-selections-permanent";
@@ -3018,6 +3019,7 @@ async function main(): Promise<void> {
     await validateChatEventContextPointerConstraints(dbUrl1);
     await validateCustomConnectorOauthModeConstraints(dbUrl1);
     await validateConnectorAutomaticOAuthConstraints(dbUrl1);
+    await validatePermanentFilesAndArtifactAccess(dbUrl1);
 
     // Step 2: Backup and regenerate migrations
     console.log("=== Phase 3: Test regenerated migrations ===\n");
@@ -3068,6 +3070,7 @@ async function main(): Promise<void> {
     await validateInactiveWorkflowAttachmentDeletion(dbUrl2);
     await validateOfficialAutomationBindingSchema(dbUrl2);
     await validateConnectorAutomaticOAuthConstraints(dbUrl2);
+    await validatePermanentFilesAndArtifactAccess(dbUrl2);
 
     // Step 4: Restore original migrations
     await restoreMigrations();

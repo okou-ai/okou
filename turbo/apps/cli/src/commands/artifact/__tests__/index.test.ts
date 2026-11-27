@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
+import type { ArtifactVisibilityResponse } from "@okouai/api-contracts/contracts/artifact-access";
 import { server } from "../../../mocks/server";
 import { artifactCommand } from "../index";
 
@@ -10,24 +10,21 @@ const TARGET = {
   kind: "file" as const,
   id: "00000000-0000-4000-8000-000000000001",
 };
-const SHARE_ID = "00000000-0000-4000-8000-000000000002";
 const OWNER_URL = `https://app.okou.ai${REFERENCE}`;
 const ORG_URL = OWNER_URL;
 const PUBLIC_URL = "https://a.okou.io/xyz123abcd.pdf";
-const PRIVATE: ArtifactShareStatus = {
+const PRIVATE: ArtifactVisibilityResponse = {
+  artifactId: TARGET.id,
+  kind: "file",
+  visibility: "private",
   ownerUrl: OWNER_URL,
-  shareId: null,
-  audience: "private",
-  organization: { id: "org_original", name: "Original organization" },
-  selectedTarget: null,
-  selectedVersion: null,
-  candidateVersion: null,
-  url: null,
+  shareUrl: null,
   shortUrl: null,
+  organization: { id: "org_original", name: "Original organization" },
 };
 
 function serveStatus(
-  status: ArtifactShareStatus = PRIVATE,
+  status: ArtifactVisibilityResponse = PRIVATE,
   kind: "file" | "html" = "file",
 ) {
   server.use(
@@ -46,9 +43,12 @@ function serveStatus(
         });
       },
     ),
-    http.post(`${API}/api/artifact-shares/status`, async ({ request }) => {
-      expect(await request.json()).toEqual({ ...TARGET, kind });
-      return HttpResponse.json(status);
+    http.get(`${API}/api/artifacts/:artifactId/visibility`, ({ params }) => {
+      expect(params.artifactId).toBe(TARGET.id);
+      return HttpResponse.json({
+        ...status,
+        kind: kind === "html" ? "hosted-site" : status.kind,
+      });
     }),
   );
 }
@@ -94,19 +94,17 @@ describe("okou artifact", () => {
 
   it.each(["organization", "public"] as const)(
     "reads %s visibility and returns the stable App URL without changing permissions",
-    async (audience) => {
-      const sharingUrl = audience === "organization" ? ORG_URL : PUBLIC_URL;
+    async (visibility) => {
+      const sharingUrl = visibility === "organization" ? ORG_URL : PUBLIC_URL;
       serveStatus({
         ...PRIVATE,
-        audience,
-        shareId: SHARE_ID,
-        selectedTarget: TARGET,
-        url: sharingUrl,
+        visibility,
+        shareUrl: sharingUrl,
       });
       await artifactCommand.parseAsync([REFERENCE, "--json"], { from: "user" });
       const output = log.mock.calls.flat().join("\n");
       expect(JSON.parse(output)).toMatchObject({
-        visibility: audience === "organization" ? "org" : "public",
+        visibility: visibility === "organization" ? "org" : "public",
         url: OWNER_URL,
       });
       expect(output).not.toContain(PUBLIC_URL);
@@ -114,29 +112,31 @@ describe("okou artifact", () => {
   );
 
   it.each(["organization", "public"] as const)(
-    "shares a file to %s using the UI endpoint and returns the stable App URL",
-    async (audience) => {
+    "shares a file to %s using the unified visibility endpoint and returns the stable App URL",
+    async (visibility) => {
       serveStatus();
-      const sharingUrl = audience === "organization" ? ORG_URL : PUBLIC_URL;
-      const shared = {
+      const sharingUrl = visibility === "organization" ? ORG_URL : PUBLIC_URL;
+      const shared: ArtifactVisibilityResponse = {
         ...PRIVATE,
-        audience,
-        shareId: SHARE_ID,
-        selectedTarget: TARGET,
-        url: sharingUrl,
-        shortUrl: audience === "organization" ? sharingUrl : null,
+        visibility,
+        shareUrl: sharingUrl,
+        shortUrl: visibility === "organization" ? sharingUrl : null,
       };
       server.use(
-        http.put(`${API}/api/artifact-shares`, async ({ request }) => {
-          expect(await request.json()).toEqual({ target: TARGET, audience });
-          return HttpResponse.json(shared);
-        }),
+        http.patch(
+          `${API}/api/artifacts/:artifactId/visibility`,
+          async ({ params, request }) => {
+            expect(params.artifactId).toBe(TARGET.id);
+            expect(await request.json()).toEqual({ visibility });
+            return HttpResponse.json(shared);
+          },
+        ),
       );
       await artifactCommand.parseAsync(
         [
           REFERENCE,
           "--visibility",
-          audience === "organization" ? "org" : "public",
+          visibility === "organization" ? "org" : "public",
         ],
         { from: "user" },
       );
@@ -145,7 +145,7 @@ describe("okou artifact", () => {
       expect(output).not.toContain(PUBLIC_URL);
       expect(output).toContain(`Shared artifact: ${TARGET.kind} ${TARGET.id}`);
       expect(output).toContain(
-        `Visibility: ${audience === "organization" ? "org" : "public"}`,
+        `Visibility: ${visibility === "organization" ? "org" : "public"}`,
       );
     },
   );
@@ -153,51 +153,45 @@ describe("okou artifact", () => {
   it.each([
     {
       kind: "file",
-      audience: "organization",
+      visibility: "organization",
       url: ORG_URL,
       shortUrl: ORG_URL,
-      version: null,
     },
     {
       kind: "file",
-      audience: "public",
+      visibility: "public",
       url: PUBLIC_URL,
       shortUrl: null,
-      version: null,
     },
     {
       kind: "html",
-      audience: "public",
+      visibility: "public",
       url: "https://report.okou.app/",
       shortUrl: "https://report.okou.app/",
-      version: 1,
     },
   ] as const)(
-    "reuses the Share button's $kind $audience grant and returns the stable App URL without a write",
-    async ({ kind, audience, url, shortUrl, version }) => {
-      const shared = {
+    "reuses the Share button's $kind $visibility grant and returns the stable App URL without a write",
+    async ({ kind, visibility, url, shortUrl }) => {
+      const shared: ArtifactVisibilityResponse = {
         ...PRIVATE,
-        shareId: SHARE_ID,
-        audience,
-        url,
+        kind: kind === "html" ? "hosted-site" : "file",
+        visibility,
+        shareUrl: url,
         shortUrl,
-        selectedTarget: { ...TARGET, kind },
-        selectedVersion: version,
-        candidateVersion: version,
       };
       serveStatus(shared, kind);
       await artifactCommand.parseAsync(
         [
           REFERENCE,
           "--visibility",
-          audience === "organization" ? "org" : "public",
+          visibility === "organization" ? "org" : "public",
           "--json",
         ],
         { from: "user" },
       );
       const output = log.mock.calls.flat().join("\n");
       expect(JSON.parse(output)).toMatchObject({
-        visibility: audience === "organization" ? "org" : "public",
+        visibility: visibility === "organization" ? "org" : "public",
         url: OWNER_URL,
         selectedTarget: { ...TARGET, kind },
       });
@@ -221,26 +215,23 @@ describe("okou artifact", () => {
     });
   });
 
-  it("revokes public sharing through the existing policy update", async () => {
+  it("revokes public sharing through the unified visibility update", async () => {
     serveStatus({
       ...PRIVATE,
-      audience: "public",
-      shareId: SHARE_ID,
-      selectedTarget: TARGET,
-      url: PUBLIC_URL,
+      visibility: "public",
+      shareUrl: PUBLIC_URL,
     });
     server.use(
-      http.put(`${API}/api/artifact-shares`, async ({ request }) => {
-        expect(await request.json()).toEqual({
-          target: TARGET,
-          audience: "private",
-        });
-        return HttpResponse.json({
-          ...PRIVATE,
-          shareId: SHARE_ID,
-          selectedTarget: TARGET,
-        });
-      }),
+      http.patch(
+        `${API}/api/artifacts/:artifactId/visibility`,
+        async ({ params, request }) => {
+          expect(params.artifactId).toBe(TARGET.id);
+          expect(await request.json()).toEqual({
+            visibility: "private",
+          });
+          return HttpResponse.json(PRIVATE);
+        },
+      ),
     );
     await artifactCommand.parseAsync([REFERENCE, "--visibility", "only-me"], {
       from: "user",
@@ -249,28 +240,24 @@ describe("okou artifact", () => {
     expect(log.mock.calls.flat().join("\n")).not.toContain(PUBLIC_URL);
   });
 
-  it("explicitly shares the requested deployment when another deployment is currently shared", async () => {
+  it("explicitly shares the requested deployment when it is currently private", async () => {
     const target = { ...TARGET, kind: "html" as const };
-    const shared = {
-      ...PRIVATE,
-      audience: "public" as const,
-      shareId: SHARE_ID,
-      selectedTarget: { ...target, id: "00000000-0000-4000-8000-000000000003" },
-      selectedVersion: 1,
-      candidateVersion: 2,
-      url: "https://report.okou.app/",
-      shortUrl: "https://report.okou.app/",
-    };
-    serveStatus(shared, "html");
+    serveStatus({ ...PRIVATE, kind: "hosted-site" }, "html");
     server.use(
-      http.put(`${API}/api/artifact-shares`, async ({ request }) => {
-        expect(await request.json()).toEqual({ target, audience: "public" });
-        return HttpResponse.json({
-          ...shared,
-          selectedTarget: target,
-          selectedVersion: 2,
-        });
-      }),
+      http.patch(
+        `${API}/api/artifacts/:artifactId/visibility`,
+        async ({ params, request }) => {
+          expect(params.artifactId).toBe(target.id);
+          expect(await request.json()).toEqual({ visibility: "public" });
+          return HttpResponse.json({
+            ...PRIVATE,
+            kind: "hosted-site",
+            visibility: "public",
+            shareUrl: "https://report.okou.app/",
+            shortUrl: "https://report.okou.app/",
+          });
+        },
+      ),
     );
     await artifactCommand.parseAsync(
       [TARGET.id, "--kind", "html", "--visibility", "public", "--json"],
@@ -282,27 +269,27 @@ describe("okou artifact", () => {
   });
 
   it("allocates a missing named HTML link on an explicit share", async () => {
-    const target = { ...TARGET, kind: "html" as const };
-    const shared = {
+    const shared: ArtifactVisibilityResponse = {
       ...PRIVATE,
-      audience: "public" as const,
-      shareId: SHARE_ID,
-      selectedTarget: target,
-      selectedVersion: 1,
-      candidateVersion: 1,
-      url: "https://old-token.okou.app/",
+      kind: "hosted-site",
+      visibility: "public",
+      shareUrl: "https://old-token.okou.app/",
       shortUrl: null,
     };
     serveStatus(shared, "html");
     server.use(
-      http.put(`${API}/api/artifact-shares`, async ({ request }) => {
-        expect(await request.json()).toEqual({ target, audience: "public" });
-        return HttpResponse.json({
-          ...shared,
-          url: "https://report.okou.app/",
-          shortUrl: "https://report.okou.app/",
-        });
-      }),
+      http.patch(
+        `${API}/api/artifacts/:artifactId/visibility`,
+        async ({ params, request }) => {
+          expect(params.artifactId).toBe(TARGET.id);
+          expect(await request.json()).toEqual({ visibility: "public" });
+          return HttpResponse.json({
+            ...shared,
+            shareUrl: "https://report.okou.app/",
+            shortUrl: "https://report.okou.app/",
+          });
+        },
+      ),
     );
     await artifactCommand.parseAsync([REFERENCE, "--visibility", "public"], {
       from: "user",
@@ -316,7 +303,7 @@ describe("okou artifact", () => {
     serveStatus();
     let writes = 0;
     server.use(
-      http.put(`${API}/api/artifact-shares`, () => {
+      http.patch(`${API}/api/artifacts/:artifactId/visibility`, () => {
         writes++;
         return HttpResponse.json(
           {
@@ -343,9 +330,7 @@ describe("okou artifact", () => {
   it("returns the stable App URL for a historical organization share without allocating an alias", async () => {
     serveStatus({
       ...PRIVATE,
-      audience: "organization",
-      shareId: SHARE_ID,
-      selectedTarget: TARGET,
+      visibility: "organization",
     });
     await artifactCommand.parseAsync([REFERENCE], { from: "user" });
     const output = log.mock.calls.flat().join("\n");

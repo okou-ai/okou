@@ -3,13 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
+import type { ArtifactVisibilityResponse } from "@okouai/api-contracts/contracts/artifact-access";
 import { server } from "../../../mocks/server";
 import { uploadFileCommand } from "../../web/upload-file";
 
 const API = "http://localhost:3000";
 const ID = "00000000-0000-4000-8000-000000000001";
-const SITE_ID = "00000000-0000-4000-8000-000000000002";
 const OWNER_URL = "https://app.okou.ai/artifacts/abc123def4.txt";
 const PUBLIC_URL = "https://a.okou.io/shared1234.txt";
 const LEGACY_URL = "https://legacy.example/report.txt";
@@ -92,55 +91,41 @@ describe.each(surfaces)("$label visibility", (surface) => {
     return target;
   }
 
-  function available(enabled = true) {
-    server.use(
-      http.get(`${API}/api/artifact-shares/availability`, () => {
-        return HttpResponse.json({ enabled });
-      }),
-    );
-  }
-
   function serveSharing(fail = false) {
-    const target = { kind: surface.kind, id: ID };
-    const status: ArtifactShareStatus = {
+    const current: ArtifactVisibilityResponse = {
+      artifactId: ID,
+      kind: "file",
+      visibility: "private",
       ownerUrl: OWNER_URL,
-      shareId: null,
-      audience: "private",
-      organization: { id: "org_original", name: "Original organization" },
-      selectedTarget: null,
-      selectedVersion: null,
-      candidateVersion: null,
-      url: null,
+      shareUrl: null,
       shortUrl: null,
+      organization: { id: "org_original", name: "Original organization" },
     };
     server.use(
-      http.post(`${API}/api/artifact-shares/status`, async ({ request }) => {
-        expect(await request.json()).toEqual(target);
-        return HttpResponse.json(status);
+      http.get(`${API}/api/artifacts/${ID}/visibility`, () => {
+        return HttpResponse.json(current);
       }),
-      http.put(`${API}/api/artifact-shares`, async ({ request }) => {
-        const body = (await request.json()) as {
-          target: typeof target;
-          audience: "organization" | "public";
-        };
-        expect(body.target).toEqual(target);
-        if (fail) {
-          return HttpResponse.json(
-            { error: { code: "FORBIDDEN", message: "Sharing was disabled" } },
-            { status: 403 },
-          );
-        }
-        const url = body.audience === "public" ? PUBLIC_URL : OWNER_URL;
-        return HttpResponse.json({
-          ...status,
-          audience: body.audience,
-          shareId: SITE_ID,
-          selectedTarget: target,
-          selectedVersion: status.candidateVersion,
-          url,
-          shortUrl: url,
-        });
-      }),
+      http.patch(
+        `${API}/api/artifacts/${ID}/visibility`,
+        async ({ request }) => {
+          const body = (await request.json()) as {
+            visibility: "organization" | "public";
+          };
+          if (fail) {
+            return HttpResponse.json(
+              { error: { code: "FORBIDDEN", message: "Sharing was disabled" } },
+              { status: 403 },
+            );
+          }
+          const url = body.visibility === "public" ? PUBLIC_URL : OWNER_URL;
+          return HttpResponse.json({
+            ...current,
+            visibility: body.visibility,
+            shareUrl: url,
+            shortUrl: url,
+          });
+        },
+      ),
     );
   }
 
@@ -158,13 +143,12 @@ describe.each(surfaces)("$label visibility", (surface) => {
   );
 
   it("keeps the new artifact owner-only without revoking a previous version's share", async () => {
-    available();
     serveCreation({ guarded: true });
     await surface.command.parseAsync(
       [...surface.args(dir), "--visibility", "only-me", "--json"],
       { from: "user" },
     );
-    // No status/update handlers: only-me must not touch any existing share.
+    // No visibility read/write handlers: only-me must not touch any existing share.
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
       url: OWNER_URL,
       ownerUrl: OWNER_URL,
@@ -175,7 +159,6 @@ describe.each(surfaces)("$label visibility", (surface) => {
   it.each(["org", "public"] as const)(
     "returns the stable App URL in JSON and Markdown after sharing with %s visibility",
     async (visibility) => {
-      available();
       serveCreation({ guarded: true });
       serveSharing();
       await surface.command.parseAsync(
@@ -197,7 +180,20 @@ describe.each(surfaces)("$label visibility", (surface) => {
   it.each(["only-me", "org", "public"])(
     "rejects explicit %s before creating when the serving API cannot create privately",
     async (visibility) => {
-      available(false);
+      server.use(
+        http.post(`${API}${surface.preparePath}/private`, () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "FORBIDDEN",
+                message:
+                  "Private artifact creation is unavailable for this request",
+              },
+            },
+            { status: 403 },
+          );
+        }),
+      );
       await expect(
         surface.command.parseAsync(
           [...surface.args(dir), "--visibility", visibility, "--json"],
@@ -205,14 +201,13 @@ describe.each(surfaces)("$label visibility", (surface) => {
         ),
       ).rejects.toThrow("CLI exit");
       expect(error.mock.calls.flat().join("\n")).toContain(
-        "Artifact visibility is unavailable",
+        "Private artifact creation is unavailable",
       );
       expect(log).not.toHaveBeenCalled();
     },
   );
 
   it("fails against an older creation API without falling back to a public upload", async () => {
-    available();
     server.use(
       http.post(`${API}${surface.preparePath}/private`, () => {
         return HttpResponse.json(
@@ -232,7 +227,6 @@ describe.each(surfaces)("$label visibility", (surface) => {
   });
 
   it("rejects an unexpected public preparation before uploading any bytes", async () => {
-    available();
     serveCreation({ guarded: true, url: LEGACY_URL });
     server.use(
       http.put(PUT_URL, () => {
@@ -252,7 +246,6 @@ describe.each(surfaces)("$label visibility", (surface) => {
   });
 
   it("reports the existing artifact and recovery command if sharing fails", async () => {
-    available();
     serveCreation({ guarded: true });
     serveSharing(true);
     await expect(

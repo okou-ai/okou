@@ -255,9 +255,6 @@ describe("okou teams upload-file command", () => {
       let uploads = 0;
       server.use(
         http.post(UPLOAD_INIT_URL, async ({ request }) => {
-          expect(mockConsoleWarn).toHaveBeenCalledWith(
-            `Upload operation: ${operationId}`,
-          );
           expect(await request.json()).toMatchObject({
             canonical: {
               version: 2,

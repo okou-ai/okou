@@ -238,7 +238,7 @@ function ArtifactLibraryCard({
     "group col-span-2 col-start-1 row-span-2 row-start-1 block w-full min-w-0 rounded-surface text-left no-underline outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
   const content = (
     <>
-      <ArtifactCatalogCover artifact={artifact} videoFallback={false} />
+      <ArtifactCatalogCover artifact={artifact} />
       <span className="mt-3 flex h-8 min-w-0 items-center pl-4 pr-16 text-sm font-medium text-foreground">
         <span className="truncate">{artifact.title}</span>
       </span>

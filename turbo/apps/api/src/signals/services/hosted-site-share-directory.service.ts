@@ -30,6 +30,7 @@ interface WorkspaceAccountLookup {
   readonly orgId: string;
   readonly query?: string;
   readonly emailAddress?: string[];
+  readonly userId?: string[];
 }
 
 /** Resolve profiles only after the current organization's live membership filter. */

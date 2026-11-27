@@ -344,6 +344,7 @@ export const importMarketingFiles$ = command(
           filename: file.filename,
           contentType: file.contentType,
           size: file.size,
+          purpose: "marketing-handoff",
         },
         signal,
       );

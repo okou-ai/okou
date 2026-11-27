@@ -1,60 +1,47 @@
-import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
+import type { ArtifactVisibilityResponse } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { http, HttpResponse } from "msw";
 import { expect } from "vitest";
 import { server } from "../../../mocks/server";
 
 export const GENERATION_ARTIFACT_ID = "00000000-0000-4000-8000-000000000001";
-export const AVAILABILITY_URL =
-  "http://localhost:3000/api/artifact-shares/availability";
 
 export function serveGenerationVisibility(
   filename: string,
   visibility: "only-me" | "org" | "public",
 ) {
-  const target = { kind: "file" as const, id: GENERATION_ARTIFACT_ID };
-  const reference = artifactReferencePath(target.id, filename);
+  const reference = artifactReferencePath(GENERATION_ARTIFACT_ID, filename);
   const ownerUrl = `https://app.okou.ai${reference}`;
   const sharingUrl =
     visibility === "public"
       ? `https://a.okou.io/generated1.${filename.split(".").at(-1)}`
       : ownerUrl;
-  const status: ArtifactShareStatus = {
+  const current: ArtifactVisibilityResponse = {
+    artifactId: GENERATION_ARTIFACT_ID,
+    kind: "file",
+    visibility: "private",
     ownerUrl,
-    shareId: null,
-    audience: "private",
-    organization: { id: "org_original", name: "Original organization" },
-    selectedTarget: null,
-    selectedVersion: null,
-    candidateVersion: null,
-    url: null,
+    shareUrl: null,
     shortUrl: null,
+    organization: { id: "org_original", name: "Original organization" },
   };
-  server.use(
-    http.get(AVAILABILITY_URL, () => {
-      return HttpResponse.json({ enabled: true });
-    }),
-  );
   if (visibility !== "only-me") {
     server.use(
-      http.post(
-        "http://localhost:3000/api/artifact-shares/status",
-        async ({ request }) => {
-          expect(await request.json()).toEqual(target);
-          return HttpResponse.json(status);
+      http.get(
+        `http://localhost:3000/api/artifacts/${GENERATION_ARTIFACT_ID}/visibility`,
+        () => {
+          return HttpResponse.json(current);
         },
       ),
-      http.put(
-        "http://localhost:3000/api/artifact-shares",
+      http.patch(
+        `http://localhost:3000/api/artifacts/${GENERATION_ARTIFACT_ID}/visibility`,
         async ({ request }) => {
-          const audience = visibility === "org" ? "organization" : "public";
-          expect(await request.json()).toEqual({ target, audience });
+          const expected = visibility === "org" ? "organization" : "public";
+          expect(await request.json()).toEqual({ visibility: expected });
           return HttpResponse.json({
-            ...status,
-            shareId: "00000000-0000-4000-8000-000000000002",
-            audience,
-            selectedTarget: target,
-            url: sharingUrl,
+            ...current,
+            visibility: expected,
+            shareUrl: sharingUrl,
             shortUrl: visibility === "org" ? sharingUrl : null,
           });
         },

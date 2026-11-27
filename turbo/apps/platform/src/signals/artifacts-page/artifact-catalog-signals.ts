@@ -60,7 +60,6 @@ export function artifactCatalogKindFromSearchParams(
     case "file":
     case "hosted-site":
     case "image":
-    case "video":
     case "avatar":
     case "shared-thread":
     case "presentation": {

@@ -56,6 +56,7 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
     FeatureSwitchKey.PresentationConvert,
+    FeatureSwitchKey.ArtifactUserSharing,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [

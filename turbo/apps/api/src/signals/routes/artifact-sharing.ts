@@ -27,6 +27,7 @@ import {
   removeFileArtifactShare$,
 } from "../services/artifact-file-sharing.service";
 import { sendEmailOutboxItem$ } from "../services/email-common.service";
+import { recordLegacyArtifactEndpointCall$ } from "../services/legacy-artifact-deprecation-telemetry";
 import type { RouteEntry } from "../route-entry";
 
 const resource$ = artifactSharingResource(
@@ -90,6 +91,12 @@ const admission$ = command(
   },
 );
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "GET /api/artifact-sharing/:kind/:id/shares",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   if (!(await set(owner$, signal))) {
     return notFound("Artifact not found");
   }
@@ -98,6 +105,12 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: { shares } };
 });
 const search$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "GET /api/artifact-sharing/:kind/:id/share-accounts",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const owner = await set(owner$, signal);
   if (!owner) {
     return notFound("Artifact not found");
@@ -118,6 +131,12 @@ const search$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 const share$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "POST /api/artifact-sharing/:kind/:id/shares",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const resource = await set(owner$, signal);
   if (!resource) {
     return notFound("Artifact not found");
@@ -173,6 +192,12 @@ const share$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: { share: result.share } };
 });
 const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "DELETE /api/artifact-sharing/:kind/:id/shares/:shareId",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const resource = await set(owner$, signal);
   if (!resource) {
     return notFound("Artifact not found");

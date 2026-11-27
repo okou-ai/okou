@@ -1155,6 +1155,7 @@ describe("GET /api/artifacts/catalog", () => {
         title: "quarterly-report.txt",
         sourceUrl: uploaded.url,
         thumbnail: null,
+        visibility: "private",
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
       },

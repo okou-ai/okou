@@ -1,3 +1,4 @@
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import {
   artifactCatalogContract,
   type ArtifactDetail,
@@ -191,13 +192,24 @@ test("Switching catalog websites cancels the previous domain read and shows the 
     })!;
     return respond(200, site);
   });
-  context.mocks.api(hostContract.siteVisibility, ({ params, respond }) => {
-    return respond(200, {
-      siteId: params.siteId,
-      visibility: params.siteId === first.id ? "public" : "private",
-      revision: null,
-    });
-  });
+  context.mocks.api(
+    artifactAccessContract.getVisibility,
+    ({ params, respond }) => {
+      const site = sites.find((item) => {
+        return item.siteId === params.artifactId;
+      });
+      const visibility = params.artifactId === first.id ? "public" : "private";
+      return respond(200, {
+        artifactId: params.artifactId,
+        kind: "hosted-site",
+        visibility,
+        ownerUrl: site?.url ?? null,
+        shareUrl: visibility === "public" ? (site?.url ?? null) : null,
+        shortUrl: null,
+        organization: { id: "org_default", name: "Default Org" },
+      });
+    },
+  );
   context.mocks.api(hostContract.siteBanner, ({ params, respond }) => {
     return respond(200, {
       siteId: params.siteId,
@@ -567,8 +579,16 @@ test("Sharing follows a changed website URL from a publication notification", as
   context.mocks.api(hostContract.sitePreview, ({ respond }) => {
     return respond(200, { url: url(), expiresAt: null });
   });
-  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
-    return respond(200, { siteId, visibility: "public", revision: null });
+  context.mocks.api(artifactAccessContract.getVisibility, ({ respond }) => {
+    return respond(200, {
+      artifactId: siteId,
+      kind: "hosted-site",
+      visibility: "public",
+      ownerUrl: url(),
+      shareUrl: url(),
+      shortUrl: null,
+      organization: { id: "org_default", name: "Default Org" },
+    });
   });
   context.mocks.api(hostContract.siteBanner, ({ respond }) => {
     return respond(200, { siteId, showBanner: true, revision: null });

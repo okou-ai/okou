@@ -49,6 +49,10 @@ import {
   privateArtifactUrl,
   artifactStorageBucket,
 } from "./private-artifact-storage.service";
+import {
+  syncArtifactVisibilityByFileId$,
+  syncArtifactVisibilityBySiteId$,
+} from "./artifact-access-dual-write.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
@@ -681,6 +685,19 @@ export const updateArtifactShare$ = command(
     signal.throwIfAborted();
     if (!policy && args.audience !== "private") {
       return null;
+    }
+    if (target.kind === "file") {
+      await set(
+        syncArtifactVisibilityByFileId$,
+        { fileId: targetId, visibility: args.audience },
+        signal,
+      );
+    } else {
+      await set(
+        syncArtifactVisibilityBySiteId$,
+        { siteId: target.siteId, visibility: args.audience },
+        signal,
+      );
     }
     return shareStatus({
       policy,

@@ -36,7 +36,6 @@ test("Artifact cards identify their kind and show available previews", async () 
           id: "a0000000-0000-4000-a000-000000000c03",
           kind: "avatar",
           title: "Founder intro",
-          videoSourceUrl: "https://media.example.test/founder-intro.mp4",
         }),
       ],
       nextCursor: null,
@@ -131,7 +130,6 @@ test("artifact-catalog-filters-002 retains the Files selection and all choices a
     "Images",
     "Presentations",
     "Shared chats",
-    "Videos",
     "Websites",
   ]);
 });

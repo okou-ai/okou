@@ -55,7 +55,6 @@ internal enum class ArtifactFilter(val wire: ArtifactCatalogQueryKind?, val kind
     Websites(ArtifactCatalogQueryKind.HOSTED_SITE, ArtifactKind.Website),
     Images(ArtifactCatalogQueryKind.IMAGE, ArtifactKind.Image),
     Presentations(ArtifactCatalogQueryKind.PRESENTATION, ArtifactKind.Presentation),
-    Videos(ArtifactCatalogQueryKind.VIDEO, ArtifactKind.Video),
 }
 
 internal data class ArtifactQuery(
@@ -222,7 +221,7 @@ internal constructor(
                                     ArtifactCatalogArtifactsItemVariant2Kind.PRESENTATION ->
                                         ArtifactKind.Presentation
                                     ArtifactCatalogArtifactsItemVariant2Kind.VIDEO ->
-                                        ArtifactKind.Video
+                                        ArtifactKind.File
                                     ArtifactCatalogArtifactsItemVariant2Kind.AVATAR ->
                                         ArtifactKind.Avatar
                                 },
@@ -698,7 +697,9 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
             source,
             browser?.let { ArtifactResource.Site(it) } ?: ArtifactResource.Unsupported,
             browser,
-            browser?.let { ArtifactLinkSource.Website(it, siteId, version?.toInt()) },
+            browser?.let {
+                ArtifactLinkSource.Website(it, siteId, version?.toInt(), artifactId = id)
+            },
         )
     }
 
@@ -707,8 +708,11 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
             entry(
                 id,
                 title,
-                if (file.filename.endsWith(".pptx", ignoreCase = true)) ArtifactKind.Presentation
-                else ArtifactKind.File,
+                when {
+                    file.filename.endsWith(".pptx", ignoreCase = true) -> ArtifactKind.Presentation
+                    file.contentType.startsWith("video/", ignoreCase = true) -> ArtifactKind.Video
+                    else -> ArtifactKind.File
+                },
                 createdAt,
                 sourceChatThreadId,
                 ArtifactResource.File(
@@ -737,7 +741,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
             entry(
                 id,
                 title,
-                ArtifactKind.Video,
+                ArtifactKind.File,
                 createdAt,
                 sourceChatThreadId,
                 ArtifactResource.File(

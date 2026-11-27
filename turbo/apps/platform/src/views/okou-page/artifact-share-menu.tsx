@@ -553,7 +553,7 @@ function ShareSessionMenu({
   const people = useArtifactPeopleOperations(session);
   const features = useLastResolved(featureSwitches$);
   const emailSharing =
-    features?.[FeatureSwitchKey.HostedSiteEmailSharing] &&
+    features?.[FeatureSwitchKey.ArtifactUserSharing] &&
     details?.target.kind === "file";
   const requestedOpen = useGet(session.open$);
   const signal = useGet(session.signal$);

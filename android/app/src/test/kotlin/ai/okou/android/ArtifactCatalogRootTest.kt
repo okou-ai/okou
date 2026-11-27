@@ -418,6 +418,7 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     @Test
     fun uncachedFiltersStartTheirOwnSkeletonDelay() {
         val fixture = ArtifactApiFixture(app.fixture)
+        fixture.removedCatalogIds = setOf(fixture.slides.id)
         fixture.install()
         val release = CountDownLatch(1)
         val respond = app.fixture.commandResponse
@@ -442,7 +443,7 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
             compose.mainClock.advanceTimeBy(144)
             assertTrue(skeletons.fetchSemanticsNodes().isNotEmpty())
 
-            compose.onNodeWithText("Videos").performClick()
+            compose.onNodeWithText("Presentations").performClick()
             compose.mainClock.advanceTimeByFrame()
             assertTrue(skeletons.fetchSemanticsNodes().isEmpty())
             compose.mainClock.advanceTimeBy(288)
@@ -718,10 +719,10 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         resumeArtifactRoute()
         awaitText(failure)
 
-        val videos = compose.onNodeWithText("Videos")
-        videos.performClick()
-        awaitText(fixture.video.title)
-        videos.assertIsSelected()
+        val presentations = compose.onNodeWithText("Presentations")
+        presentations.performClick()
+        awaitText(fixture.slides.title)
+        presentations.assertIsSelected()
         compose.onNodeWithText(failure).assertDoesNotExist()
     }
 
@@ -1191,6 +1192,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         try {
             compose.activityRule.scenario.recreate()
             val fixture = ArtifactApiFixture(app.fixture)
+            fixture.removedCatalogIds = setOf(fixture.slides.id)
             fixture.install()
             app.responseGate.countDown()
             awaitText(fixture.sourceTitle)
@@ -1215,7 +1217,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             files.assertIsSelected()
             compose.onNodeWithText("Yesterday").assertIsDisplayed()
 
-            compose.onNodeWithText("Videos").performClick()
+            compose.onNodeWithText("Presentations").performClick()
             awaitText("No artifacts of this type")
             clickCatalogEmptyAction("Show all")
             awaitText(fixture.checklist.title)
@@ -1246,10 +1248,13 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w840dp-h820dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun wideCatalogRevealsKeyboardFiltersAndKeepsFocusOnTheActivatedResult() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val originalScale = RuntimeEnvironment.getFontScale()
         instrumentation.setInTouchMode(false)
         try {
+            RuntimeEnvironment.setFontScale(1.5f)
             compose.activityRule.scenario.recreate()
             val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
             fixture.install()
@@ -1259,26 +1264,29 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             awaitText(fixture.checklist.title)
 
             val catalog = compose.onNodeWithTag("artifact_catalog").getUnclippedBoundsInRoot()
-            val videos = compose.onNodeWithText("Videos")
+            val presentations = compose.onNodeWithText("Presentations")
             val filterEnd = catalog.right - 16.dp
-            assertTrue(videos.getUnclippedBoundsInRoot().right > filterEnd)
-            videos.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
-            assertTrue(videos.assertIsFocused().getUnclippedBoundsInRoot().right <= filterEnd)
-            videos.performKeyInput { pressKey(Key.Enter) }
-            awaitText(fixture.video.title)
+            assertTrue(presentations.getUnclippedBoundsInRoot().right > filterEnd)
+            presentations.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            assertTrue(
+                presentations.assertIsFocused().getUnclippedBoundsInRoot().right <= filterEnd,
+            )
+            presentations.performKeyInput { pressKey(Key.Enter) }
+            awaitText(fixture.slides.title)
 
-            val row = compose.onNode(hasText(fixture.video.title) and hasClickAction())
+            val row = compose.onNode(hasText(fixture.slides.title) and hasClickAction())
             row.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
             row.performKeyInput { pressKey(Key.Enter) }
-            awaitText("Play")
+            awaitText("Open in browser")
             row.assertIsFocused().assertIsSelected()
 
             val all = compose.onNodeWithText("All")
             all.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
             all.performKeyInput { pressKey(Key.Enter) }
             awaitText(fixture.checklist.title)
-            compose.onNodeWithTag("artifact_preview_title").assertTextContains(fixture.video.title)
+            compose.onNodeWithTag("artifact_preview_title").assertTextContains(fixture.slides.title)
         } finally {
+            RuntimeEnvironment.setFontScale(originalScale)
             instrumentation.resetInTouchMode()
         }
     }
@@ -2342,7 +2350,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         assertNull(compose.runOnIdle { compose.activity.window.decorView.videoPreview() })
         compose.onNodeWithContentDescription("Back to artifacts").performClick()
         compose.onNodeWithText(videoTitle).assertIsDisplayed()
-        compose.onNodeWithText("Videos").assertIsSelected()
+        compose.onNodeWithText("Files").assertIsSelected()
     }
 
     @Test
@@ -2373,7 +2381,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         compose.onNodeWithContentDescription("Artifacts").performClick()
-        compose.onNodeWithText("Videos").performClick()
+        compose.onNodeWithText("Files").performClick()
         awaitText(fixture.video.title)
         compose.onNodeWithText(fixture.video.title).performClick()
         awaitText("Play")

@@ -499,8 +499,6 @@
         "presentationAria": "Show presentation artifacts",
         "sharedConversation": "Shared chats",
         "sharedConversationAria": "Show shared chat artifacts",
-        "video": "Videos",
-        "videoAria": "Show video artifacts",
         "website": "Websites",
         "websiteAria": "Show website artifacts"
       },

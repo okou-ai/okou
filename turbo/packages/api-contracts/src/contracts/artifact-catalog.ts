@@ -71,6 +71,8 @@ interface ArtifactSummaryBase {
   sharedThreadId?: string;
   /** Original video used when the catalog card cannot show a static poster. */
   videoSourceUrl?: string;
+  /** Unified artifact visibility (`private | organization | public`). */
+  visibility?: "private" | "organization" | "public";
   createdAt: string;
   updatedAt: string;
 }
@@ -315,6 +317,7 @@ const artifactSummaryBaseSchema = object({
   aliasUrl: string().optional(),
   sharedThreadId: uuid().optional(),
   videoSourceUrl: string().optional(),
+  visibility: zEnum(["private", "organization", "public"]).optional(),
   createdAt: string(),
   updatedAt: string(),
 });

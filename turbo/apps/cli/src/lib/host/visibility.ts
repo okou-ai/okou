@@ -2,7 +2,7 @@ import {
   hostedSiteVisibilitySchema,
   type HostedSiteVisibility,
 } from "@okouai/api-contracts/contracts/hosted-site-access";
-import { hostedSiteShareEmailSchema } from "@okouai/api-contracts/validators/hosted-site-sharing";
+import { artifactShareEmailSchema } from "@okouai/api-contracts/validators/artifact-access";
 import { hostedSitePublicSlugSchema } from "@okouai/api-contracts/contracts/host";
 import {
   getHostedSiteVisibility,
@@ -46,7 +46,7 @@ export function hostedSiteEmailRecipients(
   return [
     ...new Set(
       values.map((value) => {
-        const email = hostedSiteShareEmailSchema.safeParse(value);
+        const email = artifactShareEmailSchema.safeParse(value);
         if (!email.success) {
           throw new Error(
             `Use a complete email address with --email: ${value}`,
@@ -75,7 +75,12 @@ export async function shareHostedSitePrivately(
   try {
     const status = await updateHostedSiteVisibility(current, "private");
     for (const email of emails) {
-      shares.push(await shareHostedSiteByEmail(current.siteId, email));
+      shares.push(
+        await shareHostedSiteByEmail(
+          status.artifactId ?? current.siteId,
+          email,
+        ),
+      );
     }
     return { status, shares };
   } catch (cause) {

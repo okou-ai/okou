@@ -11,10 +11,7 @@ import { server } from "../../../mocks/server";
 import { deferred } from "../../../test-fixtures/ably-realtime";
 import { createGenerateCommand } from "../index";
 import { imageBatchCommand } from "../image-batch";
-import {
-  AVAILABILITY_URL,
-  serveGenerationVisibility,
-} from "./artifact-visibility-fixtures";
+import { serveGenerationVisibility } from "./artifact-visibility-fixtures";
 
 const generateCommand = createGenerateCommand();
 
@@ -547,17 +544,20 @@ if (args[0] === "stop") {
           moderation: "auto",
         });
       }),
-      http.put("http://localhost:3000/api/artifact-shares", () => {
-        return HttpResponse.json(
-          {
-            error: {
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Sharing temporarily unavailable",
+      http.patch(
+        `http://localhost:3000/api/artifacts/${IMAGE_GENERATION_ID}/visibility`,
+        () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Sharing temporarily unavailable",
+              },
             },
-          },
-          { status: 500 },
-        );
-      }),
+            { status: 500 },
+          );
+        },
+      ),
     );
     await generateCommand.parseAsync([
       "node",
@@ -581,16 +581,26 @@ if (args[0] === "stop") {
     );
   });
 
-  it("rejects explicit visibility before launching a batch when the serving API cannot create privately", async () => {
+  it("rejects explicit visibility before launching a batch when the run token lacks artifact sharing capabilities", async () => {
     const root = await makeTemporaryDirectory();
     const manifestPath = join(root, "images.tsv");
     const stateDirectory = join(root, "state");
     await writeFile(manifestPath, "hero\tA landscape\n", "utf8");
-    server.use(
-      http.get(AVAILABILITY_URL, () => {
-        return HttpResponse.json({ enabled: false });
-      }),
+    const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(
+      "base64url",
     );
+    const body = Buffer.from(
+      JSON.stringify({
+        userId: "user-batch",
+        runId: "run-batch",
+        orgId: "org-batch",
+        scope: "okou",
+        capabilities: ["file:write"],
+        iat: 1000,
+        exp: 2000,
+      }),
+    ).toString("base64url");
+    vi.stubEnv("OKOU_TOKEN", `vm0_sandbox_${header}.${body}.test-signature`);
     await expect(
       generateCommand.parseAsync([
         "node",
@@ -607,7 +617,7 @@ if (args[0] === "stop") {
       code: "ENOENT",
     });
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "Artifact visibility is unavailable on this API",
+      "requires artifact sharing capabilities",
     );
   });
 
