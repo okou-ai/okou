@@ -36,7 +36,11 @@ WITH stage AS MATERIALIZED (
             WHEN 'morning-brief' THEN a.official_blueprint_key <> 'daily-delivery'
             WHEN 'internal-test-morning-brief' THEN a.official_blueprint_key <> 'daily-delivery'
             WHEN 'agent-suggestions' THEN a.official_blueprint_key <> 'hourly-check'
-            WHEN 'proactive-learning' THEN a.official_blueprint_key <> 'nightly-learning' ELSE false END
+            WHEN 'proactive-learning' THEN a.official_blueprint_key <> 'nightly-learning'
+            ELSE NOT EXISTS (
+              SELECT FROM jsonb_array_elements(w.archived_official_snapshot#>'{revision,definition,blueprints}') blueprint
+              WHERE blueprint->>'key' = a.official_blueprint_key AND blueprint#>>'{desiredState,kind}' = a.kind
+            ) END
       ) THEN 'Retained workflow contains an unrecognized or differently owned automation'
       WHEN EXISTS (
         SELECT FROM bindings b JOIN retiring_workflows w ON w.id = b.workflow_id

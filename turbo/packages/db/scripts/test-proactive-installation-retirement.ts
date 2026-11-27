@@ -32,7 +32,18 @@ export async function validateProactiveInstallationRetirement(
         schemaVersion: 2,
         name: "proactive-planning",
         revision: "a".repeat(64),
-        blueprints: [],
+        blueprints: [
+          {
+            key: "weekly-plan",
+            parameters: [],
+            desiredState: {
+              kind: "schedule",
+              schedule: { type: "cron", cronExpression: "0 9 * * 1" },
+            },
+            runtime: { resultEmail: false },
+            fingerprint: "e".repeat(64),
+          },
+        ],
         workflow: {
           displayName: "Planning",
           description: "Archived plan",
@@ -60,11 +71,11 @@ export async function validateProactiveInstallationRetirement(
     await db`INSERT INTO org_members_metadata(org_id,user_id,timezone) VALUES(${org},${user},'UTC')`;
     await db`INSERT INTO chat_threads(id,org_id,user_id,hidden) VALUES
       (${thread},${org},${user},true),(${oldThread},${org},${user},true),(${pausedThread},${org},${user},true)`;
-    await db`INSERT INTO workflows(id,org_id,owner_user_id,name,official_definition_name,archived_official_snapshot,created_by,updated_by)
-      VALUES (${brief},${org},${user},'morning-brief','morning-brief',null,${user},${user}),
-      (${planning},${org},${user},'proactive-planning','proactive-planning',${db.json(snapshot)},${user},${user}),
-      (${paused},${org},${user},'agent-suggestions','agent-suggestions',NULL,${user},${user}),
-      (${ordinary},${org},${user},'morning-brief',NULL,NULL,${user},${user})`;
+    await db`INSERT INTO workflows(id,org_id,owner_user_id,name,official_definition_name,archived_official_snapshot,created_by,updated_by,attachments)
+      VALUES (${brief},${org},${user},'morning-brief','morning-brief',null,${user},${user},NULL),
+      (${planning},${org},${user},'proactive-planning','proactive-planning',${db.json(snapshot)},${user},${user},NULL),
+      (${paused},${org},${user},'agent-suggestions','agent-suggestions',NULL,${user},${user},NULL),
+      (${ordinary},${org},${user},'morning-brief',NULL,NULL,${user},${user},'{"kind":"empty"}')`;
     await db`INSERT INTO workflow_automations(id,org_id,owner_user_id,workflow_id,kind,schedule_type,cron_expression,
       official_blueprint_key, official_applied_fingerprint,official_parameter_bindings,official_reconciliation_status,official_intended_enabled)
       VALUES (${automation},${org},${user},${brief},'schedule','cron','50 6 * * *',
@@ -160,6 +171,15 @@ export async function validateProactiveInstallationRetirement(
       /unrecognized or differently owned automation/,
     );
     await db`UPDATE workflow_automations SET official_blueprint_key='daily-delivery' WHERE id=${automation}`;
+    await db`INSERT INTO workflow_automations(org_id,owner_user_id,workflow_id,kind,schedule_type,cron_expression,
+      official_blueprint_key,official_applied_fingerprint,official_parameter_bindings,official_reconciliation_status,official_intended_enabled)
+      VALUES(${org},${user},${planning},'schedule','cron','0 9 * * 1',
+      'unknown',repeat('e',64),'[]','current',true)`;
+    await assert.rejects(
+      retire,
+      /unrecognized or differently owned automation/,
+    );
+    await db`UPDATE workflow_automations SET official_blueprint_key='weekly-plan' WHERE workflow_id=${planning}`;
     await db`UPDATE chat_threads SET hidden=false WHERE id=${thread}`;
     await assert.rejects(retire, /Historical task thread is not hidden/);
     await db`UPDATE chat_threads SET hidden=true WHERE id=${thread}`;
@@ -176,7 +196,7 @@ export async function validateProactiveInstallationRetirement(
         {
           status: "retired",
           workflows: 3,
-          automations: 1,
+          automations: 2,
           enrollments: 1,
           runs: 1,
           rollbackRelease: first,
