@@ -20,7 +20,6 @@ import ai.okou.android.workspaceSearchControlHeight
 import ai.okou.android.workspaceSearchFocusOutline
 import ai.okou.android.workspaceSearchSecondaryStyle
 import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +29,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -40,6 +40,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -57,7 +59,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -77,6 +78,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -534,10 +536,8 @@ private fun SearchResults(
     val showEmpty =
         items.isEmpty() &&
             (!needsChatList || confirmedChats) &&
-            !needsMessageChats &&
-            !waitingForArtifactPage &&
-            !artifactPageFailed &&
-            !sourceUnavailable &&
+            !pending &&
+            !readFailed &&
             reads.all { it == null || it is SearchRead.Ready }
     val showDelayedFeedback =
         key(keyword, type) {
@@ -548,7 +548,7 @@ private fun SearchResults(
         }
     val showSkeleton = showDelayedFeedback && items.isEmpty() && !showEmpty
     val showProgress =
-        (items.isNotEmpty() || showEmpty) &&
+        items.isNotEmpty() &&
             (showDelayedFeedback || needsChatList && list.listRetryProgressVisible)
     val showFailure = readFailed && !pending && items.isEmpty() && !showEmpty
     val failureLabel =
@@ -691,7 +691,11 @@ private fun SearchResults(
                             row.key,
                             restoreResultFocus,
                             highlightedSearchText(chat.searchTitle(untitled), keyword),
-                            snippet = { SearchResultExcerpt(hit.content, hit.ranges) },
+                            snippet =
+                                if (hit.content.isBlank()) null
+                                else {
+                                    { SearchResultExcerpt(hit.content, hit.ranges) }
+                                },
                             metadata = metadata,
                         ) {
                             search.returnToResult(row.key, inputMode.inputMode)
@@ -705,13 +709,15 @@ private fun SearchResults(
                             row.key,
                             restoreResultFocus,
                             highlightedSearchText(hit.title, keyword),
-                            snippet = {
+                            snippet =
                                 hit.description?.takeIf(String::isNotBlank)?.let { purpose ->
-                                    val match = purpose.searchMatch(keyword)
-                                    if (match == null) SearchExcerptText(AnnotatedString(purpose))
-                                    else SearchResultExcerpt(purpose, listOf(match))
-                                }
-                            },
+                                    {
+                                        val match = purpose.searchMatch(keyword)
+                                        if (match == null)
+                                            SearchExcerptText(AnnotatedString(purpose))
+                                        else SearchResultExcerpt(purpose, listOf(match))
+                                    }
+                                },
                         ) {
                             search.returnToResult(row.key, inputMode.inputMode)
                             onOpenWorkflow?.invoke(hit)
@@ -749,8 +755,9 @@ private fun SearchResults(
             }
             if (showSkeleton) {
                 item(key = "search_loading") {
-                    ChatListSkeleton(
+                    SearchResultSkeleton(
                         if (remotePending) R.string.chat_search_loading else R.string.chat_loading,
+                        supporting = keyword.isNotEmpty() && type != WorkspaceSearchType.Chats,
                     )
                 }
             }
@@ -764,7 +771,7 @@ private fun SearchResults(
                     } else {
                         ContentReadFeedback(
                             accessFailure,
-                            Modifier.padding(horizontal = 12.dp, vertical = 24.dp),
+                            Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
                         )
                     }
                 }
@@ -773,7 +780,7 @@ private fun SearchResults(
                     if (keyword.isEmpty()) {
                         Text(
                             stringResource(R.string.chat_search_enter_keyword),
-                            Modifier.padding(12.dp),
+                            Modifier.padding(16.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = workspaceSearchSecondaryStyle(),
                         )
@@ -804,8 +811,8 @@ private fun SearchGroup(group: SearchItem.Group, onMore: () -> Unit) {
     Row(
         Modifier.fillMaxWidth()
             .padding(
-                start = 12.dp,
-                end = 12.dp,
+                start = 16.dp,
+                end = 16.dp,
                 top = if (group.separated) 16.dp else 0.dp,
             ),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -839,7 +846,7 @@ private fun SearchResult(
     key: String,
     restoreResultFocus: Boolean,
     title: AnnotatedString,
-    snippet: @Composable () -> Unit = {},
+    snippet: @Composable (() -> Unit)? = null,
     metadata: String? = null,
     onOpen: () -> Unit,
 ) {
@@ -858,27 +865,49 @@ private fun SearchResult(
             search.returnFocus.finish(request)
         }
     }
-    Column(
-        Modifier.fillMaxWidth()
-            .heightIn(min = ChatListRowHeight)
-            .clip(ChatListRowShape)
-            .focusRequester(rowFocus)
-            .focusProperties { canFocus = true }
-            .workspaceSearchFocusOutline(ChatListRowShape)
-            .clickable(role = Role.Button, onClick = onOpen)
-            .padding(ChatListRowPadding),
-        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+    val activeShape = MaterialTheme.shapes.extraLarge
+    val shapes = ListItemDefaults.shapes(pressedShape = activeShape, focusedShape = activeShape)
+    ListItem(
+        onClick = onOpen,
+        modifier =
+            Modifier.fillMaxWidth()
+                .focusRequester(rowFocus)
+                .focusProperties { canFocus = true }
+                .workspaceSearchFocusOutline(shapes.focusedShape)
+                .semantics { role = Role.Button },
+        shapes = shapes,
+        supportingContent =
+            if (snippet == null && metadata == null) null
+            else {
+                {
+                    Column {
+                        snippet?.invoke()
+                        if (metadata != null) {
+                            Text(metadata, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            },
     ) {
-        Text(title, style = chatListTitleStyle(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        snippet()
-        if (metadata != null) {
-            Text(
-                metadata,
-                style = workspaceSearchSecondaryStyle(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun SearchResultSkeleton(@StringRes loadingLabel: Int, supporting: Boolean) {
+    val label = stringResource(loadingLabel)
+    Column(Modifier.semantics { contentDescription = label }) {
+        val widths = listOf(.56f, .70f, .44f)
+        repeat(6) { index ->
+            ListItem(
+                modifier = Modifier.fillMaxWidth(),
+                supportingContent =
+                    if (supporting) {
+                        { ChatSkeletonBlock(Modifier.fillMaxWidth(.4f).height(14.dp)) }
+                    } else null,
+            ) {
+                ChatSkeletonBlock(Modifier.fillMaxWidth(widths[index % widths.size]).height(14.dp))
+            }
         }
     }
 }
@@ -894,7 +923,7 @@ private fun SearchEmpty(
     ) {
         Text(
             stringResource(type.emptyLabel),
-            Modifier.padding(horizontal = 12.dp).semantics {
+            Modifier.padding(horizontal = 16.dp).semantics {
                 heading()
                 liveRegion = LiveRegionMode.Polite
             },
@@ -903,7 +932,10 @@ private fun SearchEmpty(
         if (type != WorkspaceSearchType.All) {
             TextButton(
                 onClick = { onSelectType(WorkspaceSearchType.All) },
-                modifier = Modifier.heightIn(min = 48.dp).workspaceSearchFocusOutline(CircleShape),
+                modifier =
+                    Modifier.padding(start = 4.dp)
+                        .heightIn(min = 48.dp)
+                        .workspaceSearchFocusOutline(CircleShape),
             ) {
                 Text(
                     stringResource(R.string.chat_search_all_types),
@@ -967,8 +999,6 @@ private fun SearchExcerptText(
 ) {
     Text(
         text,
-        style = workspaceSearchSecondaryStyle(),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         onTextLayout = onTextLayout,
