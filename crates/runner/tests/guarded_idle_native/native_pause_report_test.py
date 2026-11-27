@@ -10,17 +10,20 @@ import sys
 import unittest
 
 import native_pause_report as native
-import native_unpark_report_test as unpark
+import held_status_report_fixture as fixture
 import report
 import report_test
 
 
 class NativePauseReportTests(unittest.TestCase):
-    event = unpark.NativeUnparkReportTests.event
-    refused = unpark.NativeUnparkReportTests.refused
+    def event(self, phase):
+        return report_test.witness_for_phase(self.witnesses, phase)
+
+    def refused(self, changes):
+        fixture.assert_unpark_witness_refusals(self, changes)
 
     def setUp(self):
-        unpark.NativeUnparkReportTests.setUp(self)
+        fixture.prepare_native_unpark(self)
         self.collector["metadata"]["native_pause_policy_json"] = self.collector["metadata"].pop("native_unpark_policy_json")
         self.events = json.loads(json.dumps(self.events).replace("Unpark", "Pause"))
         source = json.loads(json.dumps(self.witnesses).replace("Unpark", "Pause"))
