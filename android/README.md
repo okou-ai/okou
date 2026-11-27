@@ -40,7 +40,8 @@ After the initial read, Android refreshes member preferences every ten minutes
 in the foreground outside Settings. Opening Settings pauses this refresh for the
 whole visit and invalidates an outstanding ordinary read. A due refresh resumes
 after leaving Settings or returning to the foreground, once active writes and
-their readback have settled.
+their immediate readback have settled. A later read can resolve an unconfirmed
+save or clear an obsolete timezone schedule repair.
 Temporary workspace metadata and preference failures after authorization retry
 while the app is in the foreground. Cached chats stay usable, and the workspace
 row in Settings shows preparation and temporary failures in its subtitle.

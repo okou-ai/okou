@@ -115,6 +115,11 @@ private fun UserPreferences.withSavedFields(sent: PreferenceChange, response: Us
             else cloudBrowserEnabledByDefault,
     )
 
+private val PreferenceChange.isScheduleRepairOnly: Boolean
+    get() =
+        timezoneToReconcile != null &&
+            this == PreferenceChange(timezoneToReconcile = timezoneToReconcile)
+
 data class MemberPreferencesState(
     val confirmed: UserPreferences,
     val pending: PreferenceChange? = null,
@@ -229,6 +234,11 @@ class MemberPreferencesModel(
 
     private fun current() = !retired && authorized()
 
+    private fun MemberPreferencesState.canRefresh() =
+        pending == null ||
+            status == PreferenceStatus.SaveUnconfirmed ||
+            pending.isScheduleRepairOnly
+
     internal fun dismissNotice(notice: PreferenceSaveNotice) {
         if (saveNotice.value === notice) saveNotice.value = null
     }
@@ -281,12 +291,12 @@ class MemberPreferencesModel(
 
     internal fun refresh() {
         if (!current() || request != null || recovery != null) return
-        if (mutable.value.pending != null) {
-            if (mutable.value.status == PreferenceStatus.SaveUnconfirmed) synchronize()
-            return
+        val state = mutable.value
+        if (!state.canRefresh()) return
+        if (state.status != PreferenceStatus.SaveUnconfirmed) {
+            readFailures = 0
+            readRequested = true
         }
-        readFailures = 0
-        readRequested = true
         synchronize()
     }
 
@@ -315,14 +325,13 @@ class MemberPreferencesModel(
     private fun scheduleRefresh() {
         refreshTimer?.cancel()
         refreshTimer = null
-        val state = mutable.value
         if (
             !current() ||
                 !foreground ||
                 settingsOpen ||
                 request != null ||
                 recovery != null ||
-                (state.pending != null && state.status != PreferenceStatus.SaveUnconfirmed)
+                !mutable.value.canRefresh()
         )
             return
         val timer =
@@ -342,11 +351,14 @@ class MemberPreferencesModel(
         if (state.status != PreferenceStatus.Refreshing) return
         readRequested = false
         clearRecovery()
-        mutable.value = state.copy(status = PreferenceStatus.Ready, recovering = false)
+        val status =
+            if (state.pending?.isScheduleRepairOnly == true) PreferenceStatus.SaveFailed
+            else PreferenceStatus.Ready
+        mutable.value = state.copy(status = status, recovering = false)
         request?.let { read ->
             // Release the slot even if cancellation happens before the request starts.
             read.invokeOnCompletion {
-                viewModelScope.launch { finishRequest(read, continueSync = true) }
+                viewModelScope.launch { finishCancelledRead(read) }
             }
             read.cancel()
         }
@@ -359,10 +371,25 @@ class MemberPreferencesModel(
         scheduleRefresh()
     }
 
+    private fun finishCancelledRead(job: Job) {
+        val state = mutable.value
+        val waitingForRepair =
+            state.status == PreferenceStatus.SaveFailed &&
+                state.pending?.isScheduleRepairOnly == true
+        finishRequest(job, continueSync = !waitingForRepair)
+    }
+
     fun retry() {
         if (!current() || recovery?.protectsReadback == true) return
         clearRecovery()
-        if (mutable.value.pending == null) readRequested = true
+        val state = mutable.value
+        readRequested = state.pending == null
+        if (
+            state.status == PreferenceStatus.SaveFailed &&
+                state.pending?.isScheduleRepairOnly == true
+        ) {
+            mutable.value = state.copy(status = PreferenceStatus.Ready)
+        }
         synchronize()
     }
 
@@ -375,21 +402,25 @@ class MemberPreferencesModel(
 
     private fun synchronize() {
         if (!current() || request != null || recovery != null) return
-        val change = mutable.value.pending
+        val initial = mutable.value
+        // A scheduled read can run while the timezone repair waits for Retry.
+        val change = initial.pending.takeUnless { readRequested }
         if (change == null && !readRequested) return
+        val readingWithPendingRepair =
+            change == null && initial.pending?.isScheduleRepairOnly == true
         refreshTimer?.cancel()
         refreshTimer = null
         readRequested = false
         val saving = change != null
         val verifying = saving && needsWriteReadback
         val finalReadback = verifying && saveFailures > finiteReadRetryDelays.size
-        val wasUnconfirmed = mutable.value.status == PreferenceStatus.SaveUnconfirmed
-        val pendingForWrite = change?.let {
-            if (verifying || it.timezoneToWrite == null) it
-            else it.copy(timezoneToReconcile = it.timezoneToWrite)
-        }
+        val wasUnconfirmed = initial.status == PreferenceStatus.SaveUnconfirmed
+        val pendingForWrite =
+            if (change != null && !verifying && change.timezoneToWrite != null)
+                change.copy(timezoneToReconcile = change.timezoneToWrite)
+            else initial.pending
         mutable.value =
-            mutable.value.copy(
+            initial.copy(
                 pending = pendingForWrite,
                 status =
                     when {
@@ -423,18 +454,25 @@ class MemberPreferencesModel(
                         val latest = state.pending
                         val pending =
                             when {
-                                verifying -> latest?.afterReadback(confirmed)
+                                verifying || readingWithPendingRepair ->
+                                    latest?.afterReadback(confirmed)
                                 change != null -> latest?.after(change)
                                 else -> latest
                             }
-                        needsWriteReadback = false
+                        val waitingForRepair =
+                            readingWithPendingRepair &&
+                                latest?.isScheduleRepairOnly == true &&
+                                pending != null
+                        needsWriteReadback = waitingForRepair
                         val timezoneSaved =
                             change?.timezoneToWrite?.let { it == confirmed.timezone } == true
                         val updated =
                             state.copy(
                                 confirmed = confirmed,
                                 pending = pending,
-                                status = PreferenceStatus.Ready,
+                                status =
+                                    if (waitingForRepair) PreferenceStatus.SaveFailed
+                                    else PreferenceStatus.Ready,
                                 recovering = false,
                                 timezoneConfirmation =
                                     if (timezoneSaved) state.timezoneConfirmation + 1
@@ -478,7 +516,8 @@ class MemberPreferencesModel(
                     continueSync = fail(error, saving, sent = change.takeUnless { verifying })
                 } finally {
                     val job = checkNotNull(currentCoroutineContext()[Job])
-                    finishRequest(job, continueSync || (change == null && job.isCancelled))
+                    if (change == null && job.isCancelled) finishCancelledRead(job)
+                    else finishRequest(job, continueSync)
                 }
             }
         request = job
@@ -537,13 +576,18 @@ class MemberPreferencesModel(
                 else -> false
             }
         if (!saving) {
-            if (pending) return true
+            val waitingForRepair = state.pending?.isScheduleRepairOnly == true
+            if (pending && !waitingForRepair) return true
             val wait = if (recoverable) boundedRetryDelayMillis(readFailures++, error) else null
             val retry = wait != null
             mutable.value =
                 state.copy(
                     status =
-                        if (retry) PreferenceStatus.Refreshing else PreferenceStatus.RefreshFailed,
+                        when {
+                            retry -> PreferenceStatus.Refreshing
+                            waitingForRepair -> PreferenceStatus.SaveFailed
+                            else -> PreferenceStatus.RefreshFailed
+                        },
                     recovering = retry,
                 )
             readRequested = retry

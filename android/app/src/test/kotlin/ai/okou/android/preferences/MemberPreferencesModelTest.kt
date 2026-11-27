@@ -935,6 +935,87 @@ class MemberPreferencesRefreshTest {
             assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
             assertNull(model.uiState.value.pending)
         }
+
+    @Test
+    fun foregroundRefreshContinuesWhileTimezoneScheduleRepairWaitsForRetry() =
+        check { model, service, _ ->
+            val save = service.write
+            service.write = { update ->
+                save(update)
+                throw ApiFailure.Http(409, "CONFLICT", null, null)
+            }
+            model.foreground(true)
+            model.showSettings(true)
+            model.selectTimezone("Asia/Tokyo")
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            model.showSettings(false)
+
+            service.load = { throw IOException("offline") }
+            advanceTimeBy(606_000)
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            assertTrue(model.uiState.value.timezoneScheduleUpdatePending)
+            assertEquals(1, service.requests.size)
+
+            service.load = { service.stored }
+            service.stored = service.stored.copy(cloudBrowserEnabledByDefault = true)
+            advanceTimeBy(600_000)
+            runCurrent()
+            assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
+            assertTrue(model.uiState.value.timezoneScheduleUpdatePending)
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            assertEquals(1, service.requests.size)
+
+            service.stored = service.stored.copy(timezone = "Asia/Shanghai")
+            advanceTimeBy(600_000)
+            runCurrent()
+            assertEquals("Asia/Shanghai", model.uiState.value.timezone)
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertNull(model.uiState.value.pending)
+            assertEquals(1, service.requests.size)
+        }
+
+    @Test
+    fun cancelledRefreshKeepsTimezoneScheduleRepairAvailableToRetry() = check { model, service, _ ->
+        val save = service.write
+        service.write = { update ->
+            save(update)
+            throw ApiFailure.Http(409, "CONFLICT", null, null)
+        }
+        model.foreground(true)
+        model.showSettings(true)
+        model.selectTimezone("Asia/Tokyo")
+        runCurrent()
+        model.showSettings(false)
+
+        val lateRead = CompletableDeferred<Unit>()
+        var reads = 0
+        service.load = {
+            if (++reads == 1) {
+                withContext(NonCancellable) { lateRead.await() }
+                service.stored.copy(timezone = "Asia/Shanghai")
+            } else service.stored
+        }
+        advanceTimeBy(600_000)
+        runCurrent()
+        assertEquals(1, reads)
+
+        model.showSettings(true)
+        assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+        assertTrue(model.uiState.value.timezoneScheduleUpdatePending)
+        service.write = save
+        model.retry()
+        assertEquals(1, service.requests.size)
+        lateRead.complete(Unit)
+        runCurrent()
+
+        assertEquals(2, reads)
+        assertEquals(listOf("Asia/Tokyo", "Asia/Tokyo"), service.requests.map { it.timezone })
+        assertEquals("Asia/Tokyo", model.uiState.value.timezone)
+        assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+        assertNull(model.uiState.value.pending)
+    }
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
