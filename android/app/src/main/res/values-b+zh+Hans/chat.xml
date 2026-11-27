@@ -116,4 +116,5 @@
     <string name="inline_image_unavailable">图片不可用</string>
     <string name="inline_image_view_original">查看原图</string>
     <string name="inline_image_open_link">打开链接</string>
+    <string name="chat_list_sync_failed">暂时无法同步聊天列表。</string>
 </resources>
