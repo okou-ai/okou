@@ -80,10 +80,27 @@ data class PreferenceChange(
             .takeUnless { it == PreferenceChange() }
     }
 
-    fun afterReadback(confirmed: UserPreferences): PreferenceChange? {
-        val remaining = after(confirmed.asChoice())
+    fun afterReadback(
+        confirmed: UserPreferences,
+        attempted: PreferenceChange? = null,
+    ): PreferenceChange? {
+        // A read may still reflect the value from before the write.
+        fun <T> T?.confirmedAfter(written: T?): T? = takeIf { written == null || it == written }
+
+        val evidence = confirmed.asChoice()
+        val confirmedFields =
+            evidence.copy(
+                colorTheme = evidence.colorTheme.confirmedAfter(attempted?.colorTheme),
+                locale = evidence.locale.confirmedAfter(attempted?.locale),
+                theme = evidence.theme.confirmedAfter(attempted?.theme),
+                timezone = evidence.timezone.confirmedAfter(attempted?.timezoneToWrite),
+                cloudBrowser = evidence.cloudBrowser.confirmedAfter(attempted?.cloudBrowser),
+            )
+        val remaining = copy(timezoneToReconcile = null).after(confirmedFields)
         // Reading preferences confirms the stored value, but only the write confirms its schedules.
-        val timezone = timezoneToReconcile?.takeIf { it == confirmed.timezone } ?: return remaining
+        val timezone =
+            timezoneToReconcile?.takeIf { confirmed.timezone == null || it == confirmed.timezone }
+                ?: return remaining
         return (remaining ?: PreferenceChange()).copy(timezoneToReconcile = timezone)
     }
 
@@ -449,11 +466,12 @@ class MemberPreferencesModel(
                             if (change != null && !verifying)
                                 state.confirmed.withSavedFields(change, response)
                             else response
+                        val failed = failedWrite
                         val latest = state.pending
                         val pending =
                             when {
-                                verifying || readingWithPendingRepair ->
-                                    latest?.afterReadback(confirmed)
+                                verifying -> latest?.afterReadback(confirmed, failed)
+                                readingWithPendingRepair -> latest?.afterReadback(confirmed)
                                 change != null -> latest?.after(change)
                                 else -> latest
                             }
@@ -489,7 +507,6 @@ class MemberPreferencesModel(
                                                     change.colorTheme != confirmed.colorTheme)
                                     },
                             )
-                        val failed = failedWrite
                         val rejected = failed.takeIf { finalReadback }
                         failedWrite = null
                         if (
