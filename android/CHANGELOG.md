@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.64.1](https://github.com/okou-ai/okou/compare/android-v0.64.0...android-v0.64.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** align chat list terminal read feedback ([#51272](https://github.com/okou-ai/okou/issues/51272)) ([adace51](https://github.com/okou-ai/okou/commit/adace5196aed90e2d263a0ac14bbc3f5ab8a05f6))
+
 ## [0.64.0](https://github.com/okou-ai/okou/compare/android-v0.63.0...android-v0.64.0) (2026-11-27)
 
 

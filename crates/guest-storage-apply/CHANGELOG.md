@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.56](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.55...guest-storage-apply-v0.32.56) (2026-11-27)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** reduce worker contention for dense inline artifacts ([#51220](https://github.com/okou-ai/okou/issues/51220)) ([91e98f8](https://github.com/okou-ai/okou/commit/91e98f8cd6382146c7c6d9a69748f25afd710677))
+
 ## [0.32.55](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.54...guest-storage-apply-v0.32.55) (2026-11-26)
 
 
