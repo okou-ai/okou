@@ -203,8 +203,7 @@ def prepare_speculative_fault(test):
             "original_lease_active": True,
             "io_release_withheld": True,
         }
-        raw = history.encode()
-        digest = hashlib.sha256((raw * (65536 // len(raw) + 1))[:65536]).hexdigest()
+        digest = hashlib.sha256(report.history_payload(history)).hexdigest()
         values = (
             {
                 "policy": test.policy,

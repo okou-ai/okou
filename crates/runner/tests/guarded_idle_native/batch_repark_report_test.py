@@ -27,7 +27,7 @@ class BatchReparkReportTests(batch_test.BatchAbaReportTests):
             case, begin = blocked["case"], blocked["monotonic_ns"]
             initial = blocked["evidence"]["published_status"]["idle_sandboxes"][0]
             history = initial["reuse_key"].removeprefix("thread:native-guarded-")
-            digest = hashlib.sha256((history.encode()*1821)[:65536]).hexdigest()
+            digest = hashlib.sha256(report.history_payload(history)).hexdigest()
             cycles = []
             for index in range(2):
                 at = begin+20+index*60

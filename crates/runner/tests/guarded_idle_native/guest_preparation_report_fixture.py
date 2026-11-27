@@ -28,7 +28,7 @@ def prepare(test):
     test.ident, test.backing, test.history, test.run, test.runner = [
         str(uuid.uuid4()) for _ in range(5)
     ]
-    test.payload = (test.history.encode() * 2000)[:65536]
+    test.payload = report.history_payload(test.history)
     seed = test.root / "seed"
     private = seed / ".vm0" / "guest-agent" / "runs" / test.history
     private.mkdir(parents=True)
