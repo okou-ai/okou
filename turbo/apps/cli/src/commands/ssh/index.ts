@@ -197,7 +197,7 @@ Operational safety:
   - First contact learns a host key (TOFU). An unexpected key requires owner verification and an explicit reset in SSH settings, never automatic acceptance.
   - Inspect structured failure_reason and effects instead of matching error text. effects=unknown means the remote operation may have run.
   - Host inventory is live, while execution authority is cached for this Run and invalidated by notifications. A missed notification can leave stale authority until this Run ends. Ask the owner to end active Runs when immediate revocation is required.
-  - Ask the owner to check connection diagnostics in the Remote control tab of /connectors when setup fails.
+  - Ask the owner to check connection diagnostics in the Remote devices tab of /connectors when setup fails.
 
 File transfers (upload/download): ${FILE_LIMIT_HELP}
 `,

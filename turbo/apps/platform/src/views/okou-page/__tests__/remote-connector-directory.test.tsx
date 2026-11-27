@@ -42,7 +42,7 @@ test("connectors-ssh-001 returning to each directory picks up its latest invento
     ["Latest SSH host", "Latest private network"],
   ]) {
     db.ssh = [{ ...host, displayName: hostName }];
-    click(await findFastControl("radio", /^Remote control/i));
+    click(await findFastControl("radio", /^Remote devices/i));
     await expect(screen.findByText(hostName)).resolves.toBeInTheDocument();
     db.cloudflare = [{ ...gateway, name: networkName }];
     click(await findFastControl("radio", /^Private network/i));
@@ -161,7 +161,7 @@ test("connectors-remote-control-001 the connection inventory links to type-speci
     ],
   });
   await setupPage({ context, path: "/connectors?scope=remote-control" });
-  const scope = await findFastControl("radio", /^Remote control\s*3$/i);
+  const scope = await findFastControl("radio", /^Remote devices\s*3$/i);
   expect(scope).toHaveAttribute("aria-checked", "true");
   const list = await screen.findByRole("list", { name: "Remote connections" });
   for (const label of ["Deployment", "Analytics", "Design desktop"]) {

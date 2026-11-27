@@ -3204,7 +3204,6 @@
         "custom": "自定义",
         "discover": "发现",
         "privateNetwork": "私有网络",
-        "remoteControl": "远程控制",
         "searchConnected": "查找已连接的连接器",
         "searchCustom": "查找自定义连接器"
       },
@@ -5393,7 +5392,7 @@
     "rsaLogin": "{{login}} {{protection}} RA2 或 RA2_256 需与 VNC 配置一致，并使用管理员提供的可信 RSA 公钥。",
     "rsaPassword": "使用 VNC 服务中设置的密码。",
     "sshAddress": "VNC 与 SSH 位于同一电脑时，填写 127.0.0.1。连接其他电脑时，使用可从 SSH 电脑访问的地址，可向管理员获取。",
-    "sshEmptyHelp": "请先在「远程控制」中添加 SSH 连接。",
+    "sshEmptyHelp": "请先在「{{directory}}」中添加 SSH 连接。",
     "sshEmptyPlaceholder": "暂无可用的 SSH 主机",
     "sshRoute": "通过已保存的 SSH 连接访问设备屏幕。",
     "tailscaleRoute": "适用于已加入 Tailscale 的设备。选择对应网络，从设备上的 Tailscale 应用复制地址。",

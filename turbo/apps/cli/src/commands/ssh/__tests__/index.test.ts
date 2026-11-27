@@ -341,7 +341,7 @@ describe("okou ssh command", () => {
         "Direct SSH, Cloudflare Access, Tailscale or Tailscale SSH",
       );
       expect(help).toContain("port 443 identify the gateway");
-      expect(help).toContain("Remote control tab of /connectors");
+      expect(help).toContain("Remote devices tab of /connectors");
       expect(help).toContain("availability.status=ready");
       expect(help).toContain("no proxy or token options");
     } finally {

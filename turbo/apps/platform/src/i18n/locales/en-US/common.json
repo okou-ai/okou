@@ -3220,7 +3220,6 @@
         "custom": "Custom",
         "discover": "Discover",
         "privateNetwork": "Private network",
-        "remoteControl": "Remote control",
         "searchConnected": "Find connected connectors",
         "searchCustom": "Find custom connectors"
       },
@@ -5414,7 +5413,7 @@
     "rsaLogin": "{{login}} {{protection}} Match RA2 or RA2_256 to the VNC settings and use the trusted RSA public key from your administrator.",
     "rsaPassword": "Use the password set in the VNC service.",
     "sshAddress": "If VNC and SSH run on the same computer, use 127.0.0.1. For another computer, ask its administrator for an address reachable from the SSH computer.",
-    "sshEmptyHelp": "Add an SSH connection in “Remote control”, then select it here.",
+    "sshEmptyHelp": "Add an SSH connection in “{{directory}}”, then select it here.",
     "sshEmptyPlaceholder": "No SSH connections available",
     "sshRoute": "Access the device’s screen through a saved SSH connection.",
     "tailscaleRoute": "For devices already connected to Tailscale. Select the saved network and copy the address from Tailscale on the device.",

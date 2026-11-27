@@ -3275,7 +3275,6 @@
         "custom": "Personalizzati",
         "discover": "Esplora",
         "privateNetwork": "Rete privata",
-        "remoteControl": "Controllo remoto",
         "searchConnected": "Trova i connettori collegati",
         "searchCustom": "Trova i connettori personalizzati"
       },
@@ -5482,7 +5481,7 @@
     "rsaLogin": "{{login}} {{protection}} Scegli RA2 o RA2_256 in base alle impostazioni VNC e usa la chiave pubblica RSA attendibile fornita dall’amministratore.",
     "rsaPassword": "Usa la password configurata nel servizio VNC.",
     "sshAddress": "Se VNC e SSH sono sullo stesso computer, usa 127.0.0.1. Per un altro computer, chiedi all’amministratore un indirizzo raggiungibile dal computer SSH.",
-    "sshEmptyHelp": "Aggiungi una connessione SSH in «Controllo remoto», poi selezionala qui.",
+    "sshEmptyHelp": "Aggiungi una connessione SSH in «{{directory}}», poi selezionala qui.",
     "sshEmptyPlaceholder": "Nessuna connessione SSH disponibile",
     "sshRoute": "Accedi allo schermo del dispositivo tramite una connessione SSH salvata.",
     "tailscaleRoute": "Per i dispositivi già connessi a Tailscale. Seleziona la rete salvata e copia l’indirizzo da Tailscale sul dispositivo.",

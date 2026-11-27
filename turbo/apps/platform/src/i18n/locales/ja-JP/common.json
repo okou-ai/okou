@@ -3204,7 +3204,6 @@
         "custom": "カスタム",
         "discover": "探す",
         "privateNetwork": "プライベートネットワーク",
-        "remoteControl": "リモート操作",
         "searchConnected": "接続済みのコネクタを検索",
         "searchCustom": "カスタムコネクタを検索"
       },
@@ -5393,7 +5392,7 @@
     "rsaLogin": "{{login}} {{protection}} RA2またはRA2_256をVNCの設定に合わせ、管理者から提供された信頼できるRSA公開鍵を使用してください。",
     "rsaPassword": "VNCサービスで設定したパスワードを使用してください。",
     "sshAddress": "VNCとSSHが同じコンピューターで動作している場合は、127.0.0.1を使用してください。別のコンピューターの場合は、SSH接続元からアクセスできるアドレスを管理者に確認してください。",
-    "sshEmptyHelp": "「リモート操作」で SSH 接続を追加してから、ここで選択してください。",
+    "sshEmptyHelp": "「{{directory}}」で SSH 接続を追加してから、ここで選択してください。",
     "sshEmptyPlaceholder": "利用可能な SSH 接続がありません",
     "sshRoute": "保存済みSSH接続を通じてデバイスの画面にアクセスします。",
     "tailscaleRoute": "すでにTailscaleに接続されているデバイス向けです。保存済みネットワークを選び、デバイス上のTailscaleからアドレスをコピーしてください。",

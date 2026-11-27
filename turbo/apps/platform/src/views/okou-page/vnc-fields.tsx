@@ -992,9 +992,16 @@ function VncSshConnectionHelp({ isEmpty }: { readonly isEmpty: boolean }) {
   const { t } = useTranslation();
   return isEmpty ? (
     <p id="vnc-ssh-empty-help" className="text-sm text-muted-foreground">
-      {t(($) => {
-        return $.remoteConnectionHelp.sshEmptyHelp;
-      })}
+      {t(
+        ($) => {
+          return $.remoteConnectionHelp.sshEmptyHelp;
+        },
+        {
+          directory: t(($) => {
+            return $.remoteDevices.title;
+          }),
+        },
+      )}
     </p>
   ) : null;
 }

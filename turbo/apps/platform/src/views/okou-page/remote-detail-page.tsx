@@ -43,7 +43,7 @@ export function RemoteDetailPage({
           {t(($) => {
             return network
               ? $.connectors.catalog.scope.privateNetwork
-              : $.connectors.catalog.scope.remoteControl;
+              : $.remoteDevices.title;
           })}
         </Button>
         <ChevronRight size={14} aria-hidden />
