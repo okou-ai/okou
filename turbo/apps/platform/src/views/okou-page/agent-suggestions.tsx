@@ -648,10 +648,7 @@ function SuggestionFeedback({
             key={kind}
             type="button"
             variant="neutral"
-            className={cn(
-              "h-auto min-h-9 gap-1.5 border-border bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground",
-              simplified ? "rounded-lg" : "rounded-3xl",
-            )}
+            className="h-auto min-h-9 gap-1.5 rounded-3xl border-border bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
             onClick={() => {
               detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
             }}
