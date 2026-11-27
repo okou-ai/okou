@@ -21,8 +21,12 @@ import {
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventUserMessage,
+} from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
+import { projectUserMessage } from "./chat-user-message.service";
 
 const log = logger("callback:chat");
 
@@ -78,7 +82,8 @@ export interface ChatThreadForRunRow {
 }
 
 export interface ChatRunInfo {
-  readonly prompt: string;
+  /** Null defers historical input lookup to optional summary/push work. */
+  readonly displayText: string | null;
   readonly status: string;
   readonly failureReason: RunFailureReasonToken | null;
   readonly modelProvider: string | null;
@@ -120,7 +125,7 @@ export const loadTerminalChatCallbackContext$ = command(
       .select({
         chatThreadId: agentRuns.chatThreadId,
         triggerSource: agentRuns.triggerSource,
-        prompt: agentRuns.prompt,
+        userMessage: canonicalChatEventUserMessage(),
         status: agentRuns.status,
         failureReason: agentRuns.failureReason,
         modelProvider: agentRuns.modelProvider,
@@ -140,6 +145,17 @@ export const loadTerminalChatCallbackContext$ = command(
         sourceCallbackId: agentRunCallbacks.id,
       })
       .from(agentRuns)
+      .leftJoin(
+        chatEvents,
+        and(
+          // Current launches use the Run ID for their immutable input event.
+          // Other historical IDs are resolved by the archive-aware reader.
+          eq(chatEvents.id, agentRuns.id),
+          eq(chatEvents.runId, agentRuns.id),
+          eq(chatEvents.chatThreadId, agentRuns.chatThreadId),
+          chatEventTypeIn(["input.prompt", "input.automation"]),
+        ),
+      )
       .leftJoin(
         chatThreads,
         and(
@@ -196,7 +212,9 @@ export const loadTerminalChatCallbackContext$ = command(
       kind: "ready",
       persistedThreadId,
       run: {
-        prompt: row.prompt,
+        displayText: row.userMessage
+          ? projectUserMessage(row.userMessage).displayText
+          : null,
         status: row.status,
         failureReason: row.failureReason,
         modelProvider: row.modelProvider,

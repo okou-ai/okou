@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { ActivitySummaryResponse } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command } from "ccstate";
-import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { activityExcerpt, activityPhrases } from "../../lib/run-activity";
 import { writeDb$ } from "../external/db";
 import { VERTEX_TEXT_MODEL } from "../external/vertex-models";
@@ -11,6 +12,9 @@ import { generateVertexText } from "../external/vertex-text";
 import { settleIncludingAbort } from "../utils";
 import { generateAuxiliary } from "./auxiliary-generation.service";
 import { activityClock } from "./run-activity.service";
+import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
+import { chatEventTypeIn } from "./chat-event-type.service";
+import { projectUserMessage } from "./chat-user-message.service";
 
 const ATTEMPT_INTERVAL_MS = 15_000;
 // A completion that lands after its own claim was replaced cannot write the
@@ -222,21 +226,30 @@ export const requestActivitySummary$ = command(
     const db = set(writeDb$);
     const [run] = await db
       .select({
-        userId: agentRuns.userId,
-        orgId: agentRuns.orgId,
-        chatThreadId: agentRuns.chatThreadId,
         status: agentRuns.status,
-        prompt: agentRuns.prompt,
+        userMessage: canonicalChatEventUserMessage(),
       })
       .from(agentRuns)
-      .where(eq(agentRuns.id, identity.runId));
+      .leftJoin(
+        chatEvents,
+        and(
+          eq(chatEvents.runId, agentRuns.id),
+          eq(chatEvents.chatThreadId, agentRuns.chatThreadId),
+          chatEventTypeIn(["input.prompt", "input.automation"]),
+        ),
+      )
+      .where(
+        and(
+          eq(agentRuns.id, identity.runId),
+          eq(agentRuns.userId, identity.userId),
+          eq(agentRuns.orgId, identity.orgId),
+          eq(agentRuns.chatThreadId, identity.threadId),
+        ),
+      )
+      .orderBy(asc(chatEvents.seqId))
+      .limit(1);
     signal.throwIfAborted();
-    if (
-      !run ||
-      run.userId !== identity.userId ||
-      run.orgId !== identity.orgId ||
-      run.chatThreadId !== identity.threadId
-    ) {
+    if (!run) {
       return { kind: "not-found" as const };
     }
     if (!isProgressStatus(run.status)) {
@@ -245,7 +258,15 @@ export const requestActivitySummary$ = command(
         response: emptyResponse(identity.runId, "ineligible"),
       };
     }
-    const response = await set(generateSummary$, identity, run.prompt, signal);
+    if (!run.userMessage) {
+      throw new Error("Chat run is missing its input userMessage");
+    }
+    const response = await set(
+      generateSummary$,
+      identity,
+      projectUserMessage(run.userMessage).displayText,
+      signal,
+    );
     if (response.status === "ineligible") {
       return { kind: "summary" as const, response };
     }

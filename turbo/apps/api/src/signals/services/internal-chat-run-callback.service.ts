@@ -118,6 +118,9 @@ import type {
   QueuedUserMessageTriggerSource,
 } from "./chat-queued-event.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
+import { readSharedThreadChatEventHistory$ } from "./chat-event-history.service";
+import { canonicalArchivedChatEventUserMessage } from "./canonical-chat-event-read.service";
+import { projectUserMessage } from "./chat-user-message.service";
 import {
   canonicalDeliveryEventReadPlan,
   integrationCompletionFallbackReadPlan,
@@ -1363,6 +1366,42 @@ function completedChatCallbackFailure(
   };
 }
 
+/** Resolve retained inputs only within optional terminal summary/push work. */
+const loadChatRunInputDisplayText$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly run: Pick<ChatRunInfo, "displayText">;
+      readonly chatThread: Pick<ChatThreadForRunRow, "chatThreadId">;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    if (args.run.displayText !== null) {
+      return args.run.displayText;
+    }
+    const history = await set(
+      readSharedThreadChatEventHistory$,
+      args.chatThread.chatThreadId,
+      signal,
+    );
+    signal.throwIfAborted();
+    // History includes archived inputs and is ordered by thread sequence.
+    const input = history.find((event) => {
+      return (
+        event.runId === args.runId &&
+        (event.eventType === "input.prompt" ||
+          event.eventType === "input.automation")
+      );
+    });
+    const userMessage = input && canonicalArchivedChatEventUserMessage(input);
+    if (!userMessage) {
+      throw new Error("Chat run is missing its input userMessage");
+    }
+    return projectUserMessage(userMessage).displayText;
+  },
+);
+
 const runCompletedChatCallbackSideEffects$ = command(
   async (
     { set },
@@ -1376,17 +1415,22 @@ const runCompletedChatCallbackSideEffects$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
+    // Historical input lookup belongs to optional copy generation, not the
+    // terminal lifecycle or integration delivery path.
+    const displayText = set(loadChatRunInputDisplayText$, args, signal);
     // Summary, follow-ups, and push run independently in the background.
-    const saveSummaryStep = set(
-      saveRunSummary$,
-      {
-        runId: args.runId,
-        triggerSource: "chat",
-        prompt: args.run.prompt,
-        resultText: args.lastResultText ?? "",
-      },
-      signal,
-    );
+    const saveSummaryStep = (async () => {
+      return set(
+        saveRunSummary$,
+        {
+          runId: args.runId,
+          triggerSource: "chat",
+          prompt: await displayText,
+          resultText: args.lastResultText ?? "",
+        },
+        signal,
+      );
+    })();
 
     const followupsStep = (async () => {
       signal.throwIfAborted();
@@ -1430,12 +1474,13 @@ const runCompletedChatCallbackSideEffects$ = command(
       if (!args.sendClientPush) {
         return;
       }
+      const prompt = await displayText;
       const summaryStarted = performance.now();
       let summary: string | null = null;
       if (args.lastResultText) {
         summary = await generateChatNotificationSummary(
           {
-            prompt: args.run.prompt,
+            prompt,
             resultText: args.lastResultText,
             runId: args.runId,
           },
@@ -1457,7 +1502,7 @@ const runCompletedChatCallbackSideEffects$ = command(
           orgId: args.chatThread.orgId,
           threadId: args.chatThread.chatThreadId,
           notification: {
-            title: args.run.prompt.slice(0, 60),
+            title: prompt.slice(0, 60),
             body: summary ?? "Your task is complete",
             url: `/chats/${args.chatThread.chatThreadId}`,
           },
@@ -1592,6 +1637,7 @@ const runFailedChatCallbackSideEffects$ = command(
     if (!args.sendClientPush) {
       return;
     }
+    const displayText = await set(loadChatRunInputDisplayText$, args, signal);
     await set(
       sendUserPushNotifications$,
       {
@@ -1601,7 +1647,7 @@ const runFailedChatCallbackSideEffects$ = command(
         orgId: args.chatThread.orgId,
         threadId: args.chatThread.chatThreadId,
         notification: {
-          title: args.run.prompt.slice(0, 60),
+          title: displayText.slice(0, 60),
           body: `Task failed: ${args.displayErrorMessage.slice(0, 80)}`,
           url: `/chats/${args.chatThread.chatThreadId}`,
         },
@@ -1970,7 +2016,7 @@ export interface QueuedPromptLaunchContext {
   readonly userId: string;
   readonly orgId: string;
   readonly threadId: string;
-  readonly prompt: string;
+  readonly displayText: string;
   readonly voiceClipFileIds?: readonly string[];
   readonly triggerSource: QueuedUserMessageTriggerSource;
   readonly discordDelivery?: DiscordDeliveryTarget;
@@ -1997,7 +2043,7 @@ export const recordQueuedPromptRunLaunch$ = command(
           threadId,
           userId,
           orgId: args.orgId,
-          prompt: args.prompt,
+          displayText: args.displayText,
           voiceClipFileIds: args.voiceClipFileIds,
           integrationContext: args.integrationContext,
           includePriorRounds: true,

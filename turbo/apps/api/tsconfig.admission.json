@@ -225,6 +225,7 @@
     "src/signals/services/agent-webhook-complete.service.ts",
     "src/signals/services/automation-callback-payload.ts",
     "src/signals/services/chat-event-queue.service.ts",
+    "src/signals/services/chat-event-history.service.ts",
     "src/signals/services/chat-queue-wait-reason.ts",
     "src/signals/services/chat-thread-queue-drain.service.ts",
     "src/signals/services/execution-runtime-context.ts",

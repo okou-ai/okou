@@ -106,83 +106,99 @@ async function prepareChatTitle() {
   };
 }
 
-test("titles a voice-only conversation from its private recordings in order", async () => {
-  const chat = await prepareChatTitle();
-  installSharedThreadStorage(context);
-  const authorize = createMcpWebApi(context).authorize(chat.actor);
-  const headers = {
-    authorization: `Bearer ${authorize({ scope: "okou:chat:send" })}`,
-  };
-  const uploads = setupApp({
-    context,
-    routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
-  })(uploadsContract);
-  const recordings = [
-    "first recording".repeat(4),
-    "second recording".repeat(4),
-  ];
-  const clips = [];
-  for (const recording of recordings) {
-    const { body } = await accept(
-      uploads.preparePrivate({
-        headers,
-        body: {
-          filename: "voice.wav",
-          contentType: "audio/wav",
-          size: recording.length,
-        },
-      }),
-      [200],
-    );
-    if (!("uploadUrl" in body)) {
-      throw new Error("Expected direct upload");
-    }
-    const uploaded = await fetch(body.uploadUrl, {
-      method: "PUT",
-      headers: body.uploadHeaders,
-      body: recording,
-    });
-    expect(uploaded.status).toBe(200);
-    await accept(uploads.complete({ headers, body: { id: body.id } }), [200]);
-    clips.push({ fileId: body.id });
-  }
-  mockGoogleText();
-  const titleRequests: VertexVoiceRequest[] = [];
-  const title = "Plan the next product launch";
-  server.use(
-    http.post(endpoint, async ({ request }) => {
-      const input = (await request.json()) as VertexVoiceRequest;
-      if (
-        input.systemInstruction.parts[0]?.text.includes(
-          "Generate a short, descriptive title",
-        )
-      ) {
-        titleRequests.push(input);
-        return completion(title);
+test.each([false, true])(
+  "titles a voice-only conversation from its private recordings in order (hidden context: %s)",
+  async (hiddenContext) => {
+    const chat = await prepareChatTitle();
+    installSharedThreadStorage(context);
+    const authorize = createMcpWebApi(context).authorize(chat.actor);
+    const headers = {
+      authorization: `Bearer ${authorize({ scope: "okou:chat:send" })}`,
+    };
+    const uploads = setupApp({
+      context,
+      routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+    })(uploadsContract);
+    const recordings = [
+      "first recording".repeat(4),
+      "second recording".repeat(4),
+    ];
+    const clips = [];
+    for (const recording of recordings) {
+      const { body } = await accept(
+        uploads.preparePrivate({
+          headers,
+          body: {
+            filename: "voice.wav",
+            contentType: "audio/wav",
+            size: recording.length,
+          },
+        }),
+        [200],
+      );
+      if (!("uploadUrl" in body)) {
+        throw new Error("Expected direct upload");
       }
-      return completion("Thinking");
-    }),
-  );
+      const uploaded = await fetch(body.uploadUrl, {
+        method: "PUT",
+        headers: body.uploadHeaders,
+        body: recording,
+      });
+      expect(uploaded.status).toBe(200);
+      await accept(uploads.complete({ headers, body: { id: body.id } }), [200]);
+      clips.push({ fileId: body.id });
+    }
+    mockGoogleText();
+    const titleRequests: VertexVoiceRequest[] = [];
+    const title = "Plan the next product launch";
+    server.use(
+      http.post(endpoint, async ({ request }) => {
+        const input = (await request.json()) as VertexVoiceRequest;
+        if (
+          input.systemInstruction.parts[0]?.text.includes(
+            "Generate a short, descriptive title",
+          )
+        ) {
+          titleRequests.push(input);
+          return completion(title);
+        }
+        return completion("Thinking");
+      }),
+    );
 
-  await chat.create({ version: 1, parts: [{ type: "voice", clips }] });
-  await flushWaitUntilForTest();
+    await chat.create({
+      version: 1,
+      parts: [
+        ...(hiddenContext
+          ? [
+              {
+                type: "additional_info" as const,
+                text: "# Presentation Output Preference\nUse native PPTX.",
+              },
+            ]
+          : []),
+        { type: "voice", clips },
+      ],
+    });
+    await flushWaitUntilForTest();
 
-  expect(titleRequests).toHaveLength(1);
-  const parts = titleRequests[0]?.contents[0]?.parts ?? [];
-  const audioParts = parts.flatMap((part) => {
-    return part.inlineData ?? [];
-  });
-  expect(audioParts).toStrictEqual(
-    recordings.map((recording) => {
-      return {
-        mimeType: "audio/wav",
-        data: Buffer.from(recording).toString("base64"),
-      };
-    }),
-  );
-  expect(parts[0]?.text).not.toContain("okou transcribe");
-  await expect(chat.titles()).resolves.toStrictEqual([title]);
-});
+    expect(titleRequests).toHaveLength(1);
+    const parts = titleRequests[0]?.contents[0]?.parts ?? [];
+    const audioParts = parts.flatMap((part) => {
+      return part.inlineData ?? [];
+    });
+    expect(audioParts).toStrictEqual(
+      recordings.map((recording) => {
+        return {
+          mimeType: "audio/wav",
+          data: Buffer.from(recording).toString("base64"),
+        };
+      }),
+    );
+    expect(parts[0]?.text).not.toContain("okou transcribe");
+    await expect(chat.titles()).resolves.toStrictEqual([title]);
+  },
+);
 
 type TitleCompletion =
   Response | { readonly content: string; readonly finishReason: "length" };

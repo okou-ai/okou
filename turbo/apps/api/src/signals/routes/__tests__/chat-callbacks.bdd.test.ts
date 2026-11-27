@@ -841,8 +841,19 @@ describe("CHAT-02: completed chat callback", () => {
     await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
 
-  it("uses the optimized prompt and userMessage semantics for recommended follow-ups", async () => {
-    const { actor, runnerGroup } = await entitledChatActor();
+  it("uses visible current and historical userMessage content for titles and follow-ups", async () => {
+    const { actor, runnerGroup, storage } = await entitledChatActor();
+    const upload = await chat.prepareUpload(actor, {
+      filename: "brief.txt",
+      contentType: "text/plain",
+      size: 18,
+    });
+    storage.addObject({
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${upload.id}/brief.txt`,
+      size: 18,
+    });
+    const file = await chat.completeUpload(actor, { id: upload.id });
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -852,24 +863,41 @@ describe("CHAT-02: completed chat callback", () => {
       type: "illustration",
       selection: { illustrationStyleId: style.illustrationStyleId },
     };
+    const hiddenInfo = "# Presentation Output Preference\nUse native PPTX.";
     const firstUserMessage: UserMessageInputDocument = {
       version: 1,
       parts: [
+        { type: "additional_info", text: hiddenInfo },
         {
           type: "template",
           titleSnapshot: style.title,
           template: generationTemplate,
         },
         { type: "text", text: "first structured request" },
+        {
+          type: "feedback",
+          quote: "Keep scope",
+          note: [{ type: "text", text: "Use display text" }],
+        },
+        {
+          type: "file",
+          fileId: file.id,
+          filenameSnapshot: file.filename,
+          contentType: file.contentType,
+        },
       ],
     };
-    const templatePrompt = `[Template #1: ${style.title} (illustration)]`;
+    const templatePrompt = `[Template: ${style.title}]`;
 
     const first = await startChatRun(actor, {
       prompt: "stale first legacy request",
       userMessage: firstUserMessage,
     });
-    const firstHeaders = await runExecution(runnerGroup, first.runId);
+    const firstExecution = await readChatRunExecution(runnerGroup, first.runId);
+    expect(firstExecution.prompt).toContain(hiddenInfo);
+    const firstHeaders = {
+      authorization: `Bearer ${firstExecution.sandboxToken}`,
+    };
     chatCallbacks.mockChatOutputEvents([
       assistantEvent(0, "first structured answer"),
     ]);
@@ -902,12 +930,16 @@ describe("CHAT-02: completed chat callback", () => {
       return "Generated summary";
     });
 
+    const secondText = "Explain # Presentation Output Preference boundaries";
     const second = await startChatRun(actor, {
       threadId: first.threadId,
       prompt: "stale second legacy request",
       userMessage: {
         version: 1,
-        parts: [{ type: "text", text: "second structured request" }],
+        parts: [
+          { type: "additional_info", text: hiddenInfo },
+          { type: "text", text: secondText },
+        ],
       },
     });
     await waitForThreadTitle(actor, first.threadId, "Structured Context");
@@ -915,11 +947,17 @@ describe("CHAT-02: completed chat callback", () => {
     const userMessageContext = [
       templatePrompt,
       "first structured request",
-      "second structured request",
+      "> Keep scope",
+      "Use display text",
+      "[File: brief.txt]",
+      secondText,
     ];
     const legacyContext = [
       "stale first legacy request",
       "stale second legacy request",
+      hiddenInfo,
+      file.id,
+      "[Web file]",
     ];
     const expectedContext = userMessageContext;
     const excludedContext = legacyContext;
@@ -932,7 +970,14 @@ describe("CHAT-02: completed chat callback", () => {
       expect(titlePrompts[0]).not.toContain(value);
     }
 
-    const secondHeaders = await runExecution(runnerGroup, second.runId);
+    const secondExecution = await readChatRunExecution(
+      runnerGroup,
+      second.runId,
+    );
+    expect(secondExecution.prompt).toContain(hiddenInfo);
+    const secondHeaders = {
+      authorization: `Bearer ${secondExecution.sandboxToken}`,
+    };
     chatCallbacks.mockChatOutputEvents([
       assistantEvent(0, "second structured answer"),
     ]);
@@ -1909,6 +1954,150 @@ describe("CHAT-02: completed chat callback", () => {
     ).toHaveLength(1);
     await expectArchiveState(sandboxCancelled.threadId, false, 1);
   }, 90_000);
+
+  it.each(["completed", "failed"] as const)(
+    "uses the corresponding input display text for %s summaries and pushes without changing execution context",
+    async (status) => {
+      const { actor, runnerGroup } = await entitledChatActor();
+      const text = "Explain # Presentation Output Preference boundaries";
+      const hiddenInfo = "# Presentation Output Preference\nUse native PPTX.";
+      const summaryPrompts: string[] = [];
+      const notificationPrompts: string[] = [];
+      const followupPrompts: string[] = [];
+      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+      chatCallbacks.mockVertexCompletions((body) => {
+        const systemContent = body.messages[0]?.content ?? "";
+        const content = body.messages[1]?.content ?? "";
+        if (systemContent.includes("Generate a short, descriptive title")) {
+          return "Message boundaries";
+        }
+        if (systemContent.includes("recommended follow-up messages")) {
+          followupPrompts.push(content);
+          return JSON.stringify([
+            { prompt: "Check the next case", kind: "talk" },
+          ]);
+        }
+        if (systemContent.includes("one short notification sentence")) {
+          notificationPrompts.push(content);
+          return "The boundary review is complete";
+        }
+        summaryPrompts.push(content);
+        return "Reviewed message boundaries";
+      });
+      await chatCallbacks.registerPushSubscription(actor);
+      chatCallbacks.enableVapid();
+      const run = await startChatRun(actor, {
+        prompt: "unused legacy text",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "additional_info", text: hiddenInfo },
+            { type: "text", text },
+          ],
+        },
+      });
+      const execution = await readChatRunExecution(runnerGroup, run.runId);
+      expect(execution.prompt).toContain(hiddenInfo);
+      expect(execution.prompt).toContain(text);
+      const headers = { authorization: `Bearer ${execution.sandboxToken}` };
+      const steeredTexts = ["First steered request", "Second steered request"];
+      const steeringContext = "Private steering-only instructions";
+      for (const steeredText of steeredTexts) {
+        const steeredEventId = await queueChatEvent(actor, {
+          threadId: run.threadId,
+          prompt: "unused steering legacy text",
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "additional_info", text: steeringContext },
+              { type: "text", text: steeredText },
+            ],
+          },
+        });
+        await expect(
+          api.nextSteerableInput(execution.sandboxToken, run.runId),
+        ).resolves.toStrictEqual({
+          input: {
+            eventId: steeredEventId,
+            prompt: `${steeringContext}\n\n${steeredText}`,
+          },
+        });
+        await api.declareSteeredInput(
+          execution.sandboxToken,
+          run.runId,
+          steeredEventId,
+        );
+      }
+      const queuedText = "A different queued request";
+      await queueChatEvent(actor, {
+        threadId: run.threadId,
+        prompt: queuedText,
+      });
+      if (status === "completed") {
+        chatCallbacks.mockChatOutputEvents([
+          assistantEvent(0, "Boundary review result"),
+        ]);
+        await completeChatRunOk(run.runId, headers, { lastEventSequence: 0 });
+      } else {
+        await failChatRun(run.runId, headers, "Provider failed");
+      }
+      await flushWaitUntilForTest();
+
+      expect(
+        context.mocks.webpush.sendNotification.mock.calls.map(pushPayload),
+      ).toContainEqual(
+        expect.objectContaining({
+          title: text,
+          body:
+            status === "completed"
+              ? "The boundary review is complete"
+              : `Task failed: ${CHAT_RUN_TRANSIENT_ERROR_MESSAGE}`,
+        }),
+      );
+      if (status === "completed") {
+        expect(followupPrompts[0]).toContain(`user: ${text}`);
+        expect(followupPrompts[0]).toContain(
+          steeredTexts
+            .map((steeredText) => {
+              return `user: ${steeredText}`;
+            })
+            .join("\n\n"),
+        );
+        expect(followupPrompts[0]).not.toContain(hiddenInfo);
+        expect(followupPrompts[0]).not.toContain(steeringContext);
+        expect(followupPrompts[0]).not.toContain(queuedText);
+        expect(summaryPrompts).toContain(
+          `Context (user request):\n${text}\n\nResult:\nBoundary review result`,
+        );
+        expect(notificationPrompts).toStrictEqual([
+          `User request:\n${text}\n\nAssistant reply:\nBoundary review result`,
+        ]);
+      }
+      // The persisted execution prompt and failed-round continuation keep the
+      // full input even though user-facing copy excludes hidden context.
+      expect((await api.readRun(actor, run.runId)).prompt).toContain(
+        hiddenInfo,
+      );
+      if (status === "failed") {
+        const page = await chat.listThreadEvents(actor, run.threadId);
+        const queuedRunId = userMessages(page.events).find((event) => {
+          return event.runId !== undefined && event.runId !== run.runId;
+        })?.runId;
+        if (!queuedRunId) {
+          throw new Error(
+            "Expected the queued request to launch after failure",
+          );
+        }
+        const nextExecution = await readChatRunExecution(
+          runnerGroup,
+          queuedRunId,
+        );
+        expect(nextExecution.appendSystemPrompt).toContain(hiddenInfo);
+        expect(nextExecution.appendSystemPrompt).toContain(text);
+        expect(nextExecution.prompt).toContain(queuedText);
+      }
+    },
+  );
 
   it("pins the model, reasoning effort, and token budget of every fast-path completion", async () => {
     const { actor, runnerGroup } = await entitledChatActor();

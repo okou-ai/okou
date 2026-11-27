@@ -5,6 +5,7 @@ import {
 } from "./helpers/google-text";
 import { createRouteMocks } from "./helpers/route-test";
 import { randomUUID } from "node:crypto";
+import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -68,7 +69,10 @@ function request(
 async function summarize(actor: ApiTestUser, run: TestRun) {
   return (await accept(request(actor, run), [200])).body;
 }
-async function fixture(prompt = "Prepare a launch checklist") {
+async function fixture(
+  prompt = "Prepare a launch checklist",
+  userMessage?: UserMessageInputDocument,
+) {
   const actor = bdd.user();
   callbacks.acceptChatObjectStorage();
   callbacks.disableVapid();
@@ -83,6 +87,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
   const sent = await chat.sendAndLaunch(actor, {
     model: "claude-fable-5-1",
     prompt,
+    ...(userMessage === undefined ? {} : { userMessage }),
     clientEventId: randomUUID(),
   });
   const run = { runId: sent.runId, threadId: sent.threadId };
@@ -233,6 +238,73 @@ describe("thread activity summary", () => {
       status: "available",
     });
     expect(inputs).toHaveLength(1);
+  });
+
+  it("uses the launch input display text rather than hidden, steered, or queued execution context", async () => {
+    const text = "Explain # Presentation Output Preference boundaries";
+    const f = await fixture("unused legacy text", {
+      version: 1,
+      parts: [
+        {
+          type: "additional_info",
+          text: "# Presentation Output Preference\nUse native PPTX.",
+        },
+        { type: "text", text },
+      ],
+    });
+    for (const steeredText of [
+      "First steered request",
+      "Second steered request",
+    ]) {
+      const steeredEventId = randomUUID();
+      const steeringContext = "Private steering-only instructions";
+      await chat.requestSendEvent(
+        f.actor,
+        {
+          threadId: f.run.threadId,
+          prompt: "unused steering legacy text",
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "additional_info", text: steeringContext },
+              { type: "text", text: steeredText },
+            ],
+          },
+          clientEventId: steeredEventId,
+        },
+        [201],
+      );
+      await expect(
+        runs.nextSteerableInput(f.sandboxToken, f.run.runId),
+      ).resolves.toStrictEqual({
+        input: {
+          eventId: steeredEventId,
+          prompt: `${steeringContext}\n\n${steeredText}`,
+        },
+      });
+      await runs.declareSteeredInput(
+        f.sandboxToken,
+        f.run.runId,
+        steeredEventId,
+      );
+    }
+    await chat.requestSendEvent(
+      f.actor,
+      {
+        threadId: f.run.threadId,
+        prompt: "A different queued request",
+        clientEventId: randomUUID(),
+      },
+      [201],
+    );
+    const inputs = provider();
+    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
+      status: "available",
+      messages: [{ text: "Preparing the launch checklist" }],
+    });
+    expect(inputs[0]?.messages).toStrictEqual([
+      { role: "user", content: text },
+    ]);
   });
 
   it("returns and caches the complete message batch", async () => {

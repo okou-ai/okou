@@ -181,7 +181,7 @@ function chatCompletionContextMessage(
     return [
       {
         role,
-        content: projectUserMessage(userMessage).agentPrompt,
+        content: projectUserMessage(userMessage).displayText,
       },
     ];
   }
@@ -410,7 +410,7 @@ export const generateAndPersistChatThreadTitle$ = command(
       readonly threadId: string;
       readonly userId: string;
       readonly orgId: string;
-      readonly prompt: string;
+      readonly displayText: string;
       readonly voiceClipFileIds?: readonly string[];
       readonly integrationContext?: string;
       readonly includePriorRounds: boolean;
@@ -422,7 +422,7 @@ export const generateAndPersistChatThreadTitle$ = command(
     if (
       args.titled ||
       !gcpLlmConfiguration() ||
-      (!args.voiceClipFileIds && args.prompt.trim().length === 0)
+      (!args.voiceClipFileIds && args.displayText.trim().length === 0)
     ) {
       return;
     }
@@ -456,7 +456,7 @@ export const generateAndPersistChatThreadTitle$ = command(
               }
               return generateChatTitle(
                 {
-                  currentUserMessage: args.prompt,
+                  currentUserMessage: args.displayText,
                   audio,
                   integrationContext: args.integrationContext,
                   priorRounds: priorRounds.length > 0 ? priorRounds : undefined,

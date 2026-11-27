@@ -167,7 +167,10 @@ import {
   prepareChatEventReplacement,
   type LoadedChatEventReplacementTarget,
 } from "./chat-event.service";
-import { withRunModelAnnotation } from "./chat-user-message.service";
+import {
+  projectUserMessage,
+  withRunModelAnnotation,
+} from "./chat-user-message.service";
 import type {
   ChatQueueHeadContext,
   ChatQueueHeadRejection,
@@ -1243,13 +1246,15 @@ export function createThreadClaimRunObjects(
         throw new Error("A valid prompt model is missing session preparation");
       }
       const { triggerSource, delivery } = material.launch;
-      const parts = (await get(queuedInput$))?.userMessage.parts.filter(
-        (part) => {
-          return part.type !== "model";
-        },
-      );
+      const input = await get(queuedInput$);
+      if (!input) {
+        throw new Error("Prompt assembly is missing its input event");
+      }
+      const parts = input.userMessage.parts.filter((part) => {
+        return part.type !== "model" && part.type !== "additional_info";
+      });
       const voiceClipFileIds =
-        parts?.length &&
+        parts.length > 0 &&
         parts.every((part) => {
           return part.type === "voice";
         })
@@ -1286,7 +1291,7 @@ export function createThreadClaimRunObjects(
             userId: head.userId,
             orgId: args.orgId,
             threadId: args.threadId,
-            prompt: runPrompt.userPrompt,
+            displayText: projectUserMessage(input.userMessage).displayText,
             voiceClipFileIds,
             triggerSource,
             discordDelivery: delivery.discordDelivery,
