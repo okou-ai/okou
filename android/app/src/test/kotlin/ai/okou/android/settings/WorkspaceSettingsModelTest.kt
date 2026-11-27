@@ -21,7 +21,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
@@ -199,15 +198,25 @@ class WorkspaceSettingsModelTest {
                 model.visible(SettingsDestination.ModelAccounts)
                 model.uiState.first { it.accounts.value != null }
                 fixture.activationStatus = 400
-                val notice = async { model.notices.first() }
                 model.activate(SettingsApiFixture.alternateAccount)
-                assertEquals(SettingsNotice.ModelAccountSwitchFailed, notice.await())
+                val receipt =
+                    model.uiState.first { it.actionFailures.isNotEmpty() }.actionFailures.single()
+                assertEquals(SettingsNotice.ModelAccountSwitchFailed, receipt.value)
                 assertTrue(model.uiState.value.switching.isEmpty())
                 assertEquals(
                     SettingsApiFixture.primaryAccount,
                     model.uiState.value.accounts.value!!.first { it.isActive == true }.id,
                 )
-                assertEquals(listOf(SettingsApiFixture.alternateAccount), fixture.activations)
+                model.activate(SettingsApiFixture.alternateAccount)
+                val pending = model.uiState.first { it.actionFailures.size == 2 }.actionFailures
+                val later = pending.last()
+                assertSame(receipt, pending.first())
+                assertTrue(receipt.order < later.order)
+                model.dismissActionFailure(receipt)
+                assertEquals(listOf(later), model.uiState.value.actionFailures)
+                model.visible(null)
+                assertTrue(model.uiState.value.actionFailures.isEmpty())
+                assertEquals(List(2) { SettingsApiFixture.alternateAccount }, fixture.activations)
             }
         } finally {
             closeOwners(store)
@@ -285,6 +294,7 @@ class WorkspaceSettingsModelTest {
                                 .creditRefreshFailure,
                         )
                     assertNotSame(previousFailure, personalFailure)
+                    model.dismissRefreshFailure(personalFailure)
                     releaseWorkspaceRole.complete(Unit)
                     val failed =
                         model.uiState.first {
@@ -293,7 +303,7 @@ class WorkspaceSettingsModelTest {
                     runCurrent()
                     assertEquals(confirmed.usagePack.value, failed.usagePack.value)
                     assertEquals(confirmed.workspaceCredits.value, failed.workspaceCredits.value)
-                    assertSame(personalFailure, model.uiState.value.creditRefreshFailure)
+                    assertNull(model.uiState.value.creditRefreshFailure)
                     previousFailure = personalFailure
                     // The next visible refresh starts with successful, confirmed reads.
                     model.visible(null)

@@ -10,6 +10,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.140.2](https://github.com/okou-ai/okou/compare/api-v2.140.1...api-v2.140.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **api:** handle account deletion during chat connector selection ([#51496](https://github.com/okou-ai/okou/issues/51496)) ([fec30b8](https://github.com/okou-ai/okou/commit/fec30b8cef2ab7863fadcb720d8233b318c1db40))
+* keep presentation conversion cli-only for staff ([#51491](https://github.com/okou-ai/okou/issues/51491)) ([01e91b1](https://github.com/okou-ai/okou/commit/01e91b16ebf389c63c2d59b5406154d30369be86))
+
+
+### Refactoring
+
+* remove markdown-first output feature switch ([#51492](https://github.com/okou-ai/okou/issues/51492)) ([50510b8](https://github.com/okou-ai/okou/commit/50510b8e1d508dadfd4048f6ec16733edacafebb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.141.1
+    * @okouai/core bumped to 8.887.9
+    * @okouai/db bumped to 2.72.2
+    * @okouai/pi-agent-runtime bumped to 1.52.104
+
 ## [2.140.1](https://github.com/okou-ai/okou/compare/api-v2.140.0...api-v2.140.1) (2026-11-27)
 
 

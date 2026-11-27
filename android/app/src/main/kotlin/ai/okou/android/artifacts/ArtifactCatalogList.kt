@@ -4,10 +4,10 @@ import ai.okou.android.ContentReadFailure
 import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
+import ai.okou.android.WorkspaceSearchGroupHeading
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.WorkspaceToolDirectoryRowSkeleton
-import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.hasPendingSearchText
 import ai.okou.android.rememberContentReadSkeleton
@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,12 +47,12 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.maxLengthReject
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +60,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -259,13 +261,10 @@ internal fun ArtifactCatalogList(
                 groups.forEach { (day, rows) ->
                     if (day != ArtifactDay.Search) {
                         item(key = day.name) {
-                            Text(
+                            WorkspaceSearchGroupHeading(
                                 stringResource(day.label),
-                                Modifier.padding(start = rowStartPadding, top = 8.dp, bottom = 4.dp)
-                                    .semantics { heading() },
-                                style = artifactSmallText(),
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                Modifier.padding(start = rowStartPadding),
+                                topPadding = 8.dp,
                             )
                         }
                     }
@@ -479,7 +478,6 @@ private fun ArtifactEmpty(
             filtered -> R.string.artifact_empty_type
             else -> R.string.artifact_empty
         }
-    val actionModifier = Modifier.workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
     Column(
         Modifier.fillMaxWidth().padding(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -493,15 +491,20 @@ private fun ArtifactEmpty(
             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface,
         )
-        when {
-            hasKeyword ->
-                ChatListTextAction(
-                    R.string.artifact_clear_keyword,
-                    actionModifier,
-                    onClick = onClear,
+        if (hasKeyword || filtered) {
+            TextButton(
+                onClick = if (hasKeyword) onClear else onShowAll,
+                modifier =
+                    Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .workspaceSearchFocusOutline(ButtonDefaults.textShape),
+            ) {
+                Text(
+                    stringResource(
+                        if (hasKeyword) R.string.artifact_clear_keyword
+                        else R.string.artifact_show_all,
+                    ),
                 )
-            filtered ->
-                ChatListTextAction(R.string.artifact_show_all, actionModifier, onClick = onShowAll)
+            }
         }
     }
 }
@@ -555,14 +558,6 @@ internal fun ArtifactReadNotice(@StringRes label: Int, modifier: Modifier = Modi
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
-
-@Composable
-internal fun artifactSmallText() =
-    MaterialTheme.typography.bodyMedium.copy(
-        fontSize = 13.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.sp,
-    )
 
 internal enum class ArtifactDay(@param:StringRes val label: Int) {
     Today(R.string.artifact_today),

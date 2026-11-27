@@ -32,12 +32,13 @@ function readBaseIosPolicy(value: unknown): IosCompatibilityPolicy {
   return baseChannelPolicy.parse(value);
 }
 
-function above(left: string | null, right: string): boolean {
-  if (left === null) return false;
-  const a = parseStableVersion(left);
-  const b = parseStableVersion(right);
-  if (!a || !b) throw new Error("Expected validated stable iOS versions");
-  return compareVersions(a, b) > 0;
+export function iosFloorAbove(floor: string | null, version: string): boolean {
+  if (floor === null) return false;
+  const minimum = parseStableVersion(floor);
+  const target = parseStableVersion(version);
+  if (!minimum || !target)
+    throw new Error("Expected validated stable iOS versions");
+  return compareVersions(minimum, target) > 0;
 }
 
 export function iosGatePolicy(
@@ -61,15 +62,18 @@ export function iosGatePolicy(
       `App Store minimum ${store} needs public release verification for that exact marketing version.`,
     );
   }
-  if (store !== null && (beta === null || above(store, beta))) {
+  if (store !== null && (beta === null || iosFloorAbove(store, beta))) {
     errors.push("TestFlight minimum must be at least the App Store minimum.");
   }
   if (beta !== base.testFlightMinimumSupportedVersion) {
-    if (beta === null || above(base.testFlightMinimumSupportedVersion, beta)) {
+    if (
+      beta === null ||
+      iosFloorAbove(base.testFlightMinimumSupportedVersion, beta)
+    ) {
       errors.push("The TestFlight minimum may only rise.");
     } else if (
       !available.testflight ||
-      above(beta, available.testflight.version)
+      iosFloorAbove(beta, available.testflight.version)
     ) {
       errors.push(
         `TestFlight minimum ${beta} needs a verified, currently installable TestFlight replacement.`,

@@ -36,7 +36,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -68,24 +67,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import java.text.NumberFormat
-
-@Composable
-internal fun DefaultModelFeedback(model: DefaultModelSettings, snackbar: SnackbarHostState) {
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val rolledBack by rememberUpdatedState(stringResource(R.string.settings_model_save_rolled_back))
-    LaunchedEffect(model, lifecycle, snackbar) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            model.notices.collect {
-                snackbar.showSnackbar(rolledBack, duration = SnackbarDuration.Indefinite)
-            }
-        }
-    }
-}
 
 @Composable
 internal fun DefaultModelSetting(
@@ -103,11 +86,6 @@ internal fun DefaultModelSetting(
     val state by model.state.collectAsStateWithLifecycle()
     val options = state.options
     val record = state.record
-    SettingsRefreshFeedback(
-        snackbar,
-        state.settingsCatalogRefreshFailure,
-        R.string.settings_model_catalog_refresh_failed,
-    )
     if (options == null || record == null) {
         val status =
             when {

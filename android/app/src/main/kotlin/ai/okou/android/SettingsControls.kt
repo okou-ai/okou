@@ -685,21 +685,26 @@ internal fun SettingsSheetDescription(text: String) {
     )
 }
 
-private val buttonFocusOutlineTheme =
-    RippleThemeConfiguration(
-        focus =
-            RippleThemeConfiguration.Focus.InsetRing(
-                outerStrokeInset = 1.dp,
-                outerStrokeWidth = 2.dp,
-                innerStrokeInset = 0.dp,
-                innerStrokeWidth = 0.dp,
-            ),
-    )
-
 @Composable
-internal fun WithButtonFocusOutline(color: Color, content: @Composable () -> Unit) {
+internal fun WithButtonFocusOutline(
+    color: Color,
+    inset: Dp = 1.dp,
+    content: @Composable () -> Unit,
+) {
+    val theme =
+        remember(inset) {
+            RippleThemeConfiguration(
+                focus =
+                    RippleThemeConfiguration.Focus.InsetRing(
+                        outerStrokeInset = inset,
+                        outerStrokeWidth = 2.dp,
+                        innerStrokeInset = 0.dp,
+                        innerStrokeWidth = 0.dp,
+                    ),
+            )
+        }
     CompositionLocalProvider(
-        LocalRippleThemeConfiguration provides buttonFocusOutlineTheme,
+        LocalRippleThemeConfiguration provides theme,
         LocalRippleConfiguration provides
             RippleConfiguration(
                 focus =

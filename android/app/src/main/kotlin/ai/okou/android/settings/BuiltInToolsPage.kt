@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,18 +36,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 internal fun BuiltInToolsPage(
     workspace: String,
     model: BuiltInToolsSettings,
-    snackbar: SnackbarHostState,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     LifecycleResumeEffect(model) {
         model.show()
         onPauseOrDispose { model.hidePage() }
     }
-    SettingsRefreshFeedback(
-        snackbar,
-        state.catalog.refreshFailure,
-        R.string.settings_tools_unavailable,
-    )
     Text(
         stringResource(R.string.settings_tool_scope, workspace),
         style = MaterialTheme.typography.bodyMedium,

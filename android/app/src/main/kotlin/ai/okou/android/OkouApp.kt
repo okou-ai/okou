@@ -130,7 +130,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -401,10 +400,7 @@ internal fun OkouApp(
         }
     val conversationSnackbar = remember(chats) { SnackbarHostState() }
     val savedCodeVisit = rememberConversationCodeVisit()
-    val codeReading =
-        remember(savedCodeVisit, conversationSnackbar) {
-            ConversationCodeReading(savedCodeVisit, conversationSnackbar)
-        }
+    val codeReading = remember(savedCodeVisit) { ConversationCodeReading(savedCodeVisit) }
     val codeThread = (target as? WorkspaceTarget.Chat)?.id
     LaunchedEffect(chats, target) {
         if (chats != null) codeReading.retainChat(codeThread)
@@ -454,6 +450,16 @@ internal fun OkouApp(
         remember(chats) {
             mutableStateListOf<ConversationNavigationError>()
         }
+    val listNavigationErrors = remember(chats) { mutableStateListOf<FeedbackReceipt<String>>() }
+    val showListNavigationFeedback =
+        settings == null &&
+            !showWorkflows &&
+            !showingConnectors &&
+            !showArtifacts &&
+            (showChatList || target == WorkspaceTarget.List)
+    LaunchedEffect(showListNavigationFeedback) {
+        if (!showListNavigationFeedback) listNavigationErrors.clear()
+    }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val linkUnavailable = stringResource(R.string.conversation_link_unavailable)
@@ -1011,9 +1017,7 @@ internal fun OkouApp(
                 else if (chatFromWorkflows) returnToWorkflows()
                 else {
                     returnToList()
-                    scope.launch {
-                        snackbar.showSnackbar(missingChat, duration = SnackbarDuration.Indefinite)
-                    }
+                    listNavigationErrors.add(FeedbackReceipt(missingChat))
                 }
             }
         }
@@ -1198,17 +1202,19 @@ internal fun OkouApp(
     }
     val actionableThread = thread.takeUnless { conversationMissing }
     val visibleConversationId =
-        actionableThread?.id?.takeIf {
-            settings == null &&
-                !showWorkflows &&
-                !showingConnectors &&
-                !showArtifacts &&
-                resourcesId == null &&
-                inlineArtifactLink == null &&
-                codeVisit == null &&
-                !showingFind &&
-                (listWidth != null || !searchActive)
-        }
+        (actionableThread?.id
+                ?: provisionalId?.takeIf { it == controlThreadId && !conversationMissing })
+            ?.takeIf {
+                settings == null &&
+                    !showWorkflows &&
+                    !showingConnectors &&
+                    !showArtifacts &&
+                    resourcesId == null &&
+                    inlineArtifactLink == null &&
+                    codeVisit == null &&
+                    !showingFind &&
+                    (listWidth != null || !searchActive)
+            }
     // The transcript and complete source are destinations within the same live visit.
     val conversationReadVisit =
         if (
@@ -1227,11 +1233,17 @@ internal fun OkouApp(
     }
     if (visibleConversationId != null) {
         DisposableEffect(chats, visibleConversationId) {
+            codeReading.showFeedbackFor(visibleConversationId)
             onDispose {
                 // The destination can already have its own navigation error.
                 conversationNavigationErrors.removeAll { it.threadId == visibleConversationId }
+                codeReading.showFeedbackFor(null)
             }
         }
+    }
+    DisposableEffect(controls, visibleConversationId) {
+        controls?.showActionFeedbackFor(visibleConversationId)
+        onDispose { controls?.showActionFeedbackFor(null) }
     }
     if (renameFocus != null) {
         val originVisible =
@@ -1288,6 +1300,9 @@ internal fun OkouApp(
             snackbar,
             conversationSnackbar,
             showChatList,
+            listNavigationError =
+                listNavigationErrors.firstOrNull().takeIf { showListNavigationFeedback },
+            dismissListNavigationError = { listNavigationErrors.remove(it) },
             onFocusedListUndo = { listUndoFocus.returningFrom(it, InputMode.Keyboard) },
             onFocusedConversationUndo = { resourcesFocus.requestFocus() },
             provisionalChats = provisionalChats,
@@ -1295,6 +1310,10 @@ internal fun OkouApp(
             navigationError =
                 conversationNavigationErrors.firstOrNull { it.threadId == visibleConversationId },
             dismissNavigationError = { conversationNavigationErrors.remove(it) },
+            runControls = runActions,
+            codeFeedback =
+                codeReading.previewFeedback.takeIf { visibleConversationId != null }.orEmpty(),
+            dismissCodeFeedback = codeReading::dismissFeedback,
             showWorkflowFeedback = showWorkflows && workflowRoute.id != null,
             confirmingProjectDelete = confirmingProjectDelete,
             dismissProjectDelete = { confirmingProjectDelete = null },
@@ -1493,6 +1512,8 @@ internal fun OkouApp(
     val canOpenQueue = controlThreadId != null && navigation.chatResourcesId == null
     val queueOpenState = if (canOpenQueue) rememberConversationQueueFlag(controlThreadId) else null
     val queueOpen = queueOpenState?.value == true
+    // The queue can move a notice between windows without restarting its accessible timeout.
+    WorkspaceFeedbackTimeout(conversationSnackbar)
     val queuePosition = if (queueOpen) key(controlThreadId) { rememberLazyListState() } else null
     val queueTrigger = remember(controlThreadId) { FocusRequester() }
     var queueTriggerFocused by remember(controlThreadId) { mutableStateOf(false) }
@@ -2155,7 +2176,7 @@ internal fun OkouApp(
                                                 remember(composerTarget) {
                                                     mutableStateOf<String?>(null)
                                                 }
-                                            val canEdit =
+                                            val hasComposer =
                                                 composerTarget != null &&
                                                     pendingNewChat == null &&
                                                     composer != null &&
@@ -2169,17 +2190,23 @@ internal fun OkouApp(
                                                 historyAvailable = !awaitingCreatedChat,
                                                 controls = runActions,
                                                 stopPlacement = stopPlacement,
-                                                paneFeedbackVisible =
-                                                    visibleConversationId != null &&
-                                                        conversationSnackbar.currentSnackbarData !=
-                                                            null,
+                                                feedback =
+                                                    conversationSnackbar.takeIf {
+                                                        visibleConversationId == target.id
+                                                    },
+                                                feedbackBottomPadding =
+                                                    if (hasComposer) 8.dp - ChatComposerTopInset
+                                                    else 8.dp,
+                                                restorePaneFocus = {
+                                                    resourcesFocus.requestFocus()
+                                                },
                                                 queueOpen = queueOpen,
                                                 queuePosition = queuePosition,
                                                 dismissQueue = { queueOpenState?.value = false },
                                                 codeReading = codeReading,
                                                 readVisit = conversationReadVisit,
                                                 onFollowup =
-                                                    if (canEdit) { prompt -> followup = prompt }
+                                                    if (hasComposer) { prompt -> followup = prompt }
                                                     else null,
                                                 artifactActions =
                                                     thread?.let {
@@ -2231,27 +2258,10 @@ internal fun OkouApp(
                                                     )
                                                 else AssistantFailureText(failure.failureReason)
                                             }
-                                            val hasComposer =
-                                                composerTarget != null &&
-                                                    pendingNewChat == null &&
-                                                    composer != null &&
-                                                    controls != null
-                                            val feedbackGap =
-                                                if (hasComposer) 8.dp - ChatComposerTopInset
-                                                else 8.dp
                                             Column(
                                                 contentWidth.fillMaxWidth(),
                                                 horizontalAlignment = Alignment.CenterHorizontally,
                                             ) {
-                                                if (visibleConversationId != null)
-                                                    WorkspaceFeedbackHost(
-                                                        conversationSnackbar,
-                                                        Modifier.padding(bottom = feedbackGap)
-                                                            .testTag("conversation_feedback"),
-                                                        restorePaneFocus = {
-                                                            resourcesFocus.requestFocus()
-                                                        },
-                                                    )
                                                 if (hasComposer) {
                                                     val modelEdits by
                                                         remember(listState, actionableThread.id) {
@@ -2305,6 +2315,13 @@ internal fun OkouApp(
                                                     historyAvailable = provisionalChat != null,
                                                     controls = runActions,
                                                     stopPlacement = stopPlacement,
+                                                    feedback =
+                                                        conversationSnackbar.takeIf {
+                                                            visibleConversationId == provisionalId
+                                                        },
+                                                    restorePaneFocus = {
+                                                        resourcesFocus.requestFocus()
+                                                    },
                                                     artifactActions =
                                                         conversationArtifactActions(provisionalId),
                                                     queueOpen = queueOpen,

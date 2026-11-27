@@ -136,6 +136,14 @@ internal class BuiltInToolsSettings(
         }
     }
 
+    fun dismissCatalogFailure(failure: SettingsRefreshFailure) {
+        mutable.update {
+            if (it.catalog.refreshFailure === failure)
+                it.copy(catalog = it.catalog.copy(refreshFailure = null))
+            else it
+        }
+    }
+
     private suspend fun refreshToolPreferences() {
         if (state.value.disabled == null) {
             val saved = cache?.load(identity, disabledToolsCache, disabledToolsSerializer)
