@@ -362,7 +362,7 @@ export function ComposerRemoteDevicesMenu({
   const closeTarget = useSet(signals.connector.chatAccess.closeTarget$);
   const load = useLoadable(remoteDeviceDirectory$);
   const devices = useLastResolved(remoteDeviceDirectory$);
-  useGet(composerRemoteDeviceClock$);
+  const clock = useGet(composerRemoteDeviceClock$);
   const time = now();
   const showingDevices = ui.popoverPane === "devices";
   const allowed = devices?.filter((device) => {
@@ -381,7 +381,12 @@ export function ComposerRemoteDevicesMenu({
   return (
     <div ref={mount} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {nextExpiry && (
-        <time hidden dateTime={nextExpiry} key={nextExpiry} ref={mountExpiry} />
+        <time
+          hidden
+          dateTime={nextExpiry}
+          key={`${nextExpiry}:${clock}`}
+          ref={mountExpiry}
+        />
       )}
       <div
         className={cn(

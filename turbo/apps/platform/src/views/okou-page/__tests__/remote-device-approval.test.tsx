@@ -5,7 +5,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
-import { now } from "../../../lib/time.ts";
+import { mockNow, now } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   createMessageExperienceHelpers,
@@ -378,4 +378,42 @@ test("the chat device panel counts effective grants, filters devices and restore
   await expect(
     findFastControl("button", /Remote devices.*3 authorized/),
   ).resolves.toHaveFocus();
+});
+
+test("a temporary grant expires while the chat device panel is open", async () => {
+  enableRemoteDevices();
+  const start = Date.parse("2026-11-27T02:00:00Z");
+  const expiresAt = start + 100;
+  mockNow(start, context.signal);
+  context.mocks.api(remoteDevicesContract.list, ({ respond }) => {
+    return respond(200, {
+      devices: [
+        {
+          id: deviceId,
+          displayName: "Build Mac",
+          accessAllowed: true,
+          accessExpiresAt: new Date(expiresAt).toISOString(),
+          channels: [],
+        },
+      ],
+    });
+  });
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [],
+  });
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+  click(await findFastControl("button", "Connectors"));
+  click(await findFastControl("button", /Remote devices.*1 authorized/));
+  await findFastControl("button", /Build Mac access, Allow/);
+
+  mockNow(expiresAt, context.signal);
+
+  await expect(
+    findFastControl("button", /Build Mac access, Deny/),
+  ).resolves.toBeVisible();
+  click(await findFastControl("button", "Back"));
+  await expect(
+    findFastControl("button", /Remote devices.*0 authorized/),
+  ).resolves.toBeVisible();
 });

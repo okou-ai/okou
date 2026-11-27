@@ -22,8 +22,9 @@ const creation$ = state<{ readonly id: string; readonly name: string } | null>(
   null,
 );
 
-// The open composer schedules only the next grant expiry. Re-rendering at
-// that deadline updates both the count and rows without refetching the list.
+// Browsers cannot schedule a single timeout beyond this delay. The open
+// composer schedules the remaining time again if the grant is still active.
+const MAX_TIMEOUT_MS = 2_147_483_647;
 const remoteDeviceClock$ = state(0);
 export const composerRemoteDeviceClock$ = computed((get) => {
   return get(remoteDeviceClock$);
@@ -31,7 +32,8 @@ export const composerRemoteDeviceClock$ = computed((get) => {
 
 export const mountComposerRemoteDeviceExpiry$ = onRef(
   command(async ({ set }, element: HTMLTimeElement, signal: AbortSignal) => {
-    await delay(Math.max(0, Date.parse(element.dateTime) - now()), { signal });
+    const remaining = Date.parse(element.dateTime) - now();
+    await delay(Math.min(MAX_TIMEOUT_MS, Math.max(0, remaining)), { signal });
     signal.throwIfAborted();
     set(remoteDeviceClock$, (tick) => {
       return tick + 1;
