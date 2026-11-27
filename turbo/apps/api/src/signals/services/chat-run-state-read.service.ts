@@ -77,7 +77,11 @@ export function runLifecycleMarkerReadPlan(
   eventType: "run.completed" | "run.cancelled" | "run.failed",
 ) {
   return {
-    columns: { id: chatEvents.id, createdAt: chatEvents.createdAt },
+    columns: {
+      id: chatEvents.id,
+      createdAt: chatEvents.createdAt,
+      failureReason: chatEvents.failureReason,
+    },
     condition: and(
       eq(chatEvents.runId, runId),
       eq(chatEvents.eventType, eventType),
@@ -114,6 +118,10 @@ export interface ChatThreadForRunRow {
   readonly userId: string;
   readonly orgId: string;
   readonly title: string | null;
+  readonly archived: boolean;
+  readonly projectId: string | null;
+  readonly muted: boolean;
+  readonly hidden: boolean;
 }
 
 export interface ChatRunInfo {
@@ -121,92 +129,136 @@ export interface ChatRunInfo {
   readonly status: string;
   readonly failureReason: RunFailureReasonToken | null;
   readonly modelProvider: string | null;
+  readonly modelRuntimeProvider: string | null;
+  readonly selectedModel: string | null;
   readonly lastEventSequence: number | null;
   readonly cancellationRecoveryCompleted: boolean | null;
+  readonly autonomyBudget: number | null;
 }
 
-export const loadTerminalChatCallback$ = command(
+export type TerminalChatCallbackContext =
+  | { readonly kind: "not-chat-run" }
+  | { readonly kind: "missing-thread"; readonly persistedThreadId: string }
+  | {
+      readonly kind: "missing-source-callback";
+      readonly persistedThreadId: string;
+    }
+  | {
+      readonly kind: "ready";
+      readonly persistedThreadId: string;
+      readonly run: ChatRunInfo;
+      readonly chatThread: ChatThreadForRunRow;
+      readonly sourceCallbackId: string;
+    };
+
+export const loadTerminalChatCallbackContext$ = command(
   async (
     { get },
     args: {
       readonly runId: string;
       readonly callbackStatus: "completed" | "failed";
       readonly payloadThreadId: string;
+      readonly sourceCallbackId: string;
     },
     signal: AbortSignal,
-  ): Promise<{
-    readonly run: ChatRunInfo;
-    readonly chatThread: ChatThreadForRunRow;
-  } | null> => {
+  ): Promise<TerminalChatCallbackContext> => {
     const db = get(db$);
-    const [run] = await db
+    const [row] = await db
       .select({
+        chatThreadId: agentRuns.chatThreadId,
+        triggerSource: agentRuns.triggerSource,
         prompt: agentRuns.prompt,
         status: agentRuns.status,
         failureReason: agentRuns.failureReason,
         modelProvider: agentRuns.modelProvider,
+        modelRuntimeProvider: agentRuns.modelRuntimeProvider,
+        selectedModel: agentRuns.selectedModel,
         lastEventSequence: agentRuns.lastEventSequence,
         cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
+        autonomyBudget: agentRuns.autonomyBudget,
+        orgId: agentRuns.orgId,
+        joinedThreadId: chatThreads.id,
+        joinedUserId: chatThreads.userId,
+        joinedTitle: chatThreads.title,
+        joinedArchived: chatThreads.archived,
+        joinedProjectId: chatThreads.projectId,
+        joinedMuted: chatThreads.muted,
+        joinedHidden: chatThreads.hidden,
+        sourceCallbackId: agentRunCallbacks.id,
       })
       .from(agentRuns)
+      .leftJoin(
+        chatThreads,
+        and(
+          eq(agentRuns.chatThreadId, chatThreads.id),
+          eq(agentRuns.orgId, chatThreads.orgId),
+          eq(agentRuns.userId, chatThreads.userId),
+        ),
+      )
+      .leftJoin(
+        agentRunCallbacks,
+        and(
+          eq(agentRunCallbacks.id, args.sourceCallbackId),
+          eq(agentRunCallbacks.runId, agentRuns.id),
+          eq(agentRunCallbacks.internalKind, "chat"),
+        ),
+      )
       .where(eq(agentRuns.id, args.runId))
       .limit(1);
     signal.throwIfAborted();
 
-    if (!run) {
-      return null;
+    if (!row?.chatThreadId || row.triggerSource === null) {
+      return { kind: "not-chat-run" };
     }
 
-    const runId = args.runId;
-    const chatThread = await (async (): Promise<ChatThreadForRunRow | null> => {
-      const [row] = await db
-        .select({
-          chatThreadId: agentRuns.chatThreadId,
-          userId: chatThreads.userId,
-          orgId: agentRuns.orgId,
-          title: chatThreads.title,
-        })
-        .from(agentRuns)
-        .innerJoin(
-          chatThreads,
-          and(
-            eq(agentRuns.chatThreadId, chatThreads.id),
-            eq(agentRuns.orgId, chatThreads.orgId),
-            eq(agentRuns.userId, chatThreads.userId),
-          ),
-        )
-        .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
-        .limit(1);
-
-      if (!row?.chatThreadId) {
-        return null;
-      }
-      return {
-        chatThreadId: row.chatThreadId,
-        userId: row.userId,
-        orgId: row.orgId,
-        title: row.title,
-      };
-    })();
-    signal.throwIfAborted();
-    if (!chatThread) {
+    const persistedThreadId = row.chatThreadId;
+    if (!row.joinedThreadId || !row.joinedUserId) {
       log.debug("Skipping terminal chat callback for missing chat thread", {
         runId: args.runId,
         status: args.callbackStatus,
         payloadThreadId: args.payloadThreadId,
       });
-      return null;
+      return { kind: "missing-thread", persistedThreadId };
     }
 
-    if (chatThread.chatThreadId !== args.payloadThreadId) {
+    if (persistedThreadId !== args.payloadThreadId) {
       log.warn("Chat callback payload thread does not match run mapping", {
         runId: args.runId,
         payloadThreadId: args.payloadThreadId,
-        chatThreadId: chatThread.chatThreadId,
+        chatThreadId: persistedThreadId,
       });
     }
 
-    return { run, chatThread };
+    if (!row.sourceCallbackId) {
+      return { kind: "missing-source-callback", persistedThreadId };
+    }
+
+    return {
+      kind: "ready",
+      persistedThreadId,
+      run: {
+        prompt: row.prompt,
+        status: row.status,
+        failureReason: row.failureReason,
+        modelProvider: row.modelProvider,
+        modelRuntimeProvider: row.modelRuntimeProvider,
+        selectedModel: row.selectedModel,
+        lastEventSequence: row.lastEventSequence,
+        cancellationRecoveryCompleted: row.cancellationRecoveryCompleted,
+        autonomyBudget: row.autonomyBudget,
+      },
+      chatThread: {
+        chatThreadId: persistedThreadId,
+        userId: row.joinedUserId,
+        orgId: row.orgId,
+        title: row.joinedTitle,
+        archived: row.joinedArchived ?? false,
+        projectId: row.joinedProjectId,
+        muted: row.joinedMuted ?? false,
+        hidden: row.joinedHidden ?? false,
+      },
+      sourceCallbackId: row.sourceCallbackId,
+    };
   },
 );
 

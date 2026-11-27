@@ -428,7 +428,10 @@ const admitChatRunFinishedWithBindingRetry$ = command(
  */
 export const dispatchChatRunFinishedAutomationEvents$ = command(
   async ({ set }, event: ChatRunFinishedEvent, signal: AbortSignal) => {
-    const sourceBudget = await set(loadRunAutonomyBudget$, event.runId, signal);
+    const sourceBudget =
+      event.sourceAutonomyBudget !== undefined
+        ? event.sourceAutonomyBudget
+        : await set(loadRunAutonomyBudget$, event.runId, signal);
     signal.throwIfAborted();
     if (sourceBudget === null) {
       return;
@@ -439,6 +442,9 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (automationRows.length === 0) {
+      return;
+    }
 
     const admittedAutomationIds = await set(
       loadAdmittedChatRunFinishedAutomations$,
