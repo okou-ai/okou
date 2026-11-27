@@ -33,6 +33,9 @@ const callbackId = "123456789";
 const callbackAuthDate = "1700000000";
 const callbackNumericValues: readonly string[] = [callbackId, callbackAuthDate];
 
+// The recorded duration contains the callback auth date as a substring.
+const poolAcquireDurationMs = 0.06617000000005646;
+
 // Numeric callback fixtures can occur in SDK timestamps and random IDs. Keep
 // their assertions on content, including arbitrary nested payloads.
 const attributeContent = object({ attributes: zUnknown().optional() });
@@ -172,21 +175,6 @@ describe("callback export content assertions", () => {
     ]) {
       expect(content).toContain(ordinary);
     }
-  });
-
-  it("ignores fixture digits in a database pool acquire duration", () => {
-    const traces = traceExport({
-      name: "database query",
-      attributes: [
-        {
-          key: "vm0.db.pool.acquire.duration_ms",
-          value: { doubleValue: 0.06617000000005646 },
-        },
-      ],
-    });
-
-    expect(JSON.stringify(traces)).toContain(callbackAuthDate);
-    expect(exportedCallbackContent(traces, [])).not.toContain(callbackAuthDate);
   });
 
   it.each(callbackNumericValues)(
@@ -585,6 +573,10 @@ describe("API telemetry exports", () => {
     trace
       .getTracer("dependency-upgrade")
       .startActiveSpan("api-regression", (span) => {
+        span.setAttribute(
+          "vm0.db.pool.acquire.duration_ms",
+          poolAcquireDurationMs,
+        );
         Sentry.captureException(new Error("API error regression"));
         span.end();
       });
@@ -675,7 +667,15 @@ describe("API telemetry exports", () => {
               scopeSpans: expect.arrayContaining([
                 expect.objectContaining({
                   spans: expect.arrayContaining([
-                    expect.objectContaining({ name: "api-regression" }),
+                    expect.objectContaining({
+                      name: "api-regression",
+                      attributes: expect.arrayContaining([
+                        {
+                          key: "vm0.db.pool.acquire.duration_ms",
+                          value: { doubleValue: poolAcquireDurationMs },
+                        },
+                      ]),
+                    }),
                   ]),
                 }),
               ]),
