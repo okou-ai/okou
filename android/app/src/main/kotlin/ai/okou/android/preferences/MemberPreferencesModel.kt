@@ -293,10 +293,7 @@ class MemberPreferencesModel(
         if (!current() || request != null || recovery != null) return
         val state = mutable.value
         if (!state.canRefresh()) return
-        if (state.status != PreferenceStatus.SaveUnconfirmed) {
-            readFailures = 0
-            readRequested = true
-        }
+        if (state.status != PreferenceStatus.SaveUnconfirmed) readRequested = true
         synchronize()
     }
 
@@ -527,7 +524,6 @@ class MemberPreferencesModel(
     private fun clearRecovery() {
         recovery?.job?.cancel()
         recovery = null
-        readFailures = 0
     }
 
     private fun fail(error: Exception, saving: Boolean, sent: PreferenceChange?): Boolean {
@@ -578,8 +574,13 @@ class MemberPreferencesModel(
         if (!saving) {
             val waitingForRepair = state.pending?.isScheduleRepairOnly == true
             if (pending && !waitingForRepair) return true
-            val wait = if (recoverable) boundedRetryDelayMillis(readFailures++, error) else null
+            val wait = if (recoverable) boundedRetryDelayMillis(readFailures, error) else null
             val retry = wait != null
+            readFailures = if (retry) readFailures + 1 else 0
+            // A pause can cancel the retry job before the next attempt is due.
+            val now = monotonicMillis()
+            nextRefreshAt =
+                now + (wait ?: preferenceRefreshMillis).coerceAtMost(Long.MAX_VALUE - now)
             mutable.value =
                 state.copy(
                     status =
@@ -592,7 +593,6 @@ class MemberPreferencesModel(
                 )
             readRequested = retry
             if (wait != null) scheduleRecovery(wait)
-            else nextRefreshAt = monotonicMillis() + preferenceRefreshMillis
             return false
         }
         if (
