@@ -652,8 +652,8 @@ internal class ChatListDraftRootTest : ChatListRootTestFixture() {
             glyph.assertDoesNotExist()
             val before = title.getUnclippedBoundsInRoot()
             val rowBounds = row.getUnclippedBoundsInRoot()
-            assertEquals(12.dp, before.left - rowBounds.left)
-            assertEquals(52.dp, rowBounds.bottom - rowBounds.top)
+            assertEquals(16.dp, before.left - rowBounds.left)
+            assertEquals(56.dp, rowBounds.bottom - rowBounds.top)
             val activity = row.fetchSemanticsNode().config[SemanticsProperties.StateDescription]
 
             releaseIndex.countDown()
