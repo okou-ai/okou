@@ -27,8 +27,7 @@ export async function resolveWorkflowRef(ref: string): Promise<string> {
     throw new Error(`Workflow not found: "${ref}" in the current workspace`);
   }
 
-  // Private records visible to this caller are their own. Select within the
-  // ordinary namespace even when an older API marks it shadowed by an official.
+  // Private records visible to this caller are their own.
   const privateMatches = matches.filter((workflow) => {
     return workflow.visibility === "private";
   });

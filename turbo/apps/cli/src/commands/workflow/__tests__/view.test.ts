@@ -75,43 +75,6 @@ describe("okou workflow view command", () => {
   });
 
   describe("successful view", () => {
-    it("resolves an ordinary name even when an older API marks it shadowed by an official installation", async () => {
-      server.use(
-        http.get("http://localhost:3000/api/workflows", () => {
-          return HttpResponse.json([
-            workflowSummary({
-              shadowedBy: {
-                id: OFFICIAL_WORKFLOW_ID,
-                name: "tell-a-joke",
-                displayName: "Official joke",
-              },
-            }),
-            workflowSummary({
-              id: OFFICIAL_WORKFLOW_ID,
-              visibility: "private",
-              official: OFFICIAL_METADATA,
-              canManage: false,
-            }),
-          ]);
-        }),
-        http.get(`http://localhost:3000/api/workflows/${WORKFLOW_ID}`, () => {
-          return HttpResponse.json({
-            ...workflowSummary(),
-            instruction: "Use the ordinary instructions.",
-            files: [],
-            fileContents: [],
-            automations: [],
-          });
-        }),
-      );
-
-      await viewCommand.parseAsync(["node", "cli", "tell-a-joke"]);
-
-      expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-        "Use the ordinary instructions.",
-      );
-    });
-
     it("keeps explicit-ID access to an Official Workflow", async () => {
       server.use(
         http.get(
@@ -219,33 +182,6 @@ describe("okou workflow view command", () => {
   });
 
   describe("error handling", () => {
-    it("reports a missing user workflow for a legacy installation returned by an older API", async () => {
-      server.use(
-        http.get("http://localhost:3000/api/workflows", () => {
-          return HttpResponse.json([
-            workflowSummary({
-              id: OFFICIAL_WORKFLOW_ID,
-              visibility: "private",
-              official: OFFICIAL_METADATA,
-              canManage: false,
-            }),
-          ]);
-        }),
-      );
-
-      await expect(
-        viewCommand.parseAsync(["node", "cli", "tell-a-joke"]),
-      ).rejects.toThrow("process.exit called");
-
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("Workflow not found"),
-      );
-      expect(mockConsoleError).not.toHaveBeenCalledWith(
-        expect.stringContaining("Official Workflow"),
-      );
-      expect(mockExit).toHaveBeenCalledWith(1);
-    });
-
     it("should reject invalid workflow refs before sending requests", async () => {
       await expect(async () => {
         await viewCommand.parseAsync(["node", "cli", "/tell-a-joke"]);

@@ -34,10 +34,7 @@ export async function listWorkflows(): Promise<WorkflowSummary[]> {
   const client = initClient(workflowsCollectionContract, config);
   const result = await client.list({ query: { scope: "workspace" } });
   if (result.status === 200) {
-    // Older API versions included system installations in the workspace collection.
-    return result.body.filter((workflow) => {
-      return !workflow.official;
-    });
+    return result.body;
   }
   handleError(result, "Failed to list workflows");
 }
