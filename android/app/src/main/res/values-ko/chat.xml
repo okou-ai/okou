@@ -94,7 +94,6 @@
     <string name="chat_delete_pending">삭제 중…</string>
     <string name="chat_project_deleted">프로젝트를 삭제하고 채팅을 프로젝트 밖으로 이동했어요.</string>
     <string name="chat_project_delete_rejected">프로젝트를 삭제할 수 없어요.</string>
-    <string name="chat_project_delete_unconfirmed">프로젝트 삭제를 확인할 수 없어요.</string>
     <string name="chat_row_action_rejected_named">‘%1$s’을 완료하지 못했습니다.</string>
     <string name="chat_row_action_offline_named">‘%1$s’을 완료하지 못했습니다. 연결을 확인한 후 다시 시도하세요.</string>
     <string name="chat_rename_save_failed">저장하지 못했습니다. 변경 사항은 유지됩니다.</string>
