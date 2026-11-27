@@ -900,8 +900,10 @@ held-background independence, stale foreground/background publication and
 stop/restart/retirement. The warming owner cancels both active and queued
 recoveries on STOP or retirement.
 
-The native conversation uses canonical history to show reading progress. The
-workspace observes realtime transport independently of that UI. The generated empty-object
+The native conversation uses canonical history to show reading progress. Once
+history sync progress appears, it stays visible through retries and task
+activity until the read finishes or is canceled. The workspace observes realtime
+transport independently of that UI. The generated empty-object
 `POST /api/realtime/token` consumer uses the existing authenticated API transport
 and required-update handling. SDK callbacks obtain fresh single-use signed token
 requests for renewal; no API credentials are sent to Ably.
