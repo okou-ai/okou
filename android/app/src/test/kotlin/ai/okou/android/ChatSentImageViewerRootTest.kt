@@ -58,7 +58,16 @@ internal class ChatSentImageViewerRootTest : ArtifactCatalogRootTestFixture() {
         }
         awaitPage(1)
         awaitImage(fixture.first)
-        compose.waitUntil(10_000) { fixture.originalReads.contains(fixture.first) }
+        try {
+            compose.waitUntil(10_000) { fixture.originalReads.contains(fixture.first) }
+        } catch (failure: AssertionError) {
+            val preview = compose.runOnIdle { ready.chatArtifacts.state.value.preview }
+            throw AssertionError(
+                "Requests: ${fixture.resolves}; originals: ${fixture.originalReads}; " +
+                    "preview: ${preview?.problem} ${preview?.content?.javaClass?.simpleName}",
+                failure,
+            )
+        }
         assertEquals(fixture.first, fixture.originalReads.last())
 
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }

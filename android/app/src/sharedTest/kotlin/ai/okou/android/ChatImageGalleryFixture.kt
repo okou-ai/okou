@@ -27,6 +27,7 @@ internal class ChatImageGalleryFixture(
     val second = "Desert dusk.png"
     val originalReads = CopyOnWriteArrayList<String>()
     val thumbnailReads = CopyOnWriteArrayList<String>()
+    val resolves = CopyOnWriteArrayList<String>()
     @Volatile var denied: String? = null
     @Volatile var beforeOriginal: (String) -> Unit = {}
     private val images =
@@ -82,6 +83,7 @@ internal class ChatImageGalleryFixture(
             when {
                 path == "/api/web/file-url" -> {
                     val image = images.firstOrNull { it.id == url.queryParameter("file_id") }
+                    if (image != null) resolves += image.filename
                     when {
                         image == null -> previous(request)
                         image.filename == denied -> MockResponse().setResponseCode(404)
