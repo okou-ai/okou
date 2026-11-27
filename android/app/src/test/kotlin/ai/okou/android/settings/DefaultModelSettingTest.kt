@@ -62,7 +62,9 @@ class DefaultModelSettingTest {
 
     @Test
     fun fastUsesCatalogMultiplierAndResetsWhenSelectingAnotherModelOrAuto() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        instrumentation.setInTouchMode(false)
         try {
             ChatListApiFixture().use { api ->
                 val fixture =
@@ -153,15 +155,34 @@ class DefaultModelSettingTest {
                 gpt.performClick().assertIsSelected()
                 awaitSave(5)
                 fast.assertIsOff()
+                fast.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
                 setMultiplier(0.0)
                 compose.waitUntil("Invalid Fast multiplier is ignored", 10_000) {
                     compose.runOnIdle { model.state.value.selected?.fastMultiplier == null }
                 }
                 fast.assertDoesNotExist()
+                gpt.assertIsFocused()
+
+                setMultiplier(2.0)
+                compose.waitUntil("Fast returns with a valid multiplier", 10_000) {
+                    compose.runOnIdle { model.state.value.selected?.fastMultiplier == 2.0 }
+                }
+                fast.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+                compose.runOnIdle {
+                    model.foreground(false)
+                    fixture.planRestricted = true
+                    model.foreground(true)
+                }
+                compose.waitUntil("Selected model becomes unavailable", 10_000) {
+                    compose.runOnIdle { model.state.value.selected?.canSelect == false }
+                }
+                fast.assertDoesNotExist()
+                compose.onNodeWithContentDescription("Back").assertIsFocused()
                 assertEquals(5, fixture.writes.size)
             }
         } finally {
             scope.cancel()
+            instrumentation.resetInTouchMode()
         }
     }
 

@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -224,7 +225,20 @@ internal fun ModelPickerSheet(
     val fullScreen = windowHeight < 480
     val scroll = rememberScrollState()
     val selected = choices?.firstOrNull { it.id == selectedId }
+    val fastMultiplier = selected?.takeIf { it.canSelect }?.fastMultiplier
     val panel: @Composable (Boolean) -> Unit = { centered ->
+        val selectedFocus = remember { FocusRequester() }
+        val backFocus = remember { FocusRequester() }
+        var fastFocused by remember { mutableStateOf(false) }
+        // Capture focus before Compose detaches the hidden switch.
+        val restoreFocus = fastMultiplier == null && fastFocused
+        LaunchedEffect(fastMultiplier != null) {
+            if (restoreFocus) {
+                val selectedAvailable =
+                    choices != null && (selectedId == null || selected?.canSelect == true)
+                if (!selectedAvailable || !selectedFocus.requestFocus()) backFocus.requestFocus()
+            }
+        }
         val size =
             if (fullScreen) Modifier.fillMaxHeight()
             else
@@ -239,7 +253,10 @@ internal fun ModelPickerSheet(
                 .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = dismiss, modifier = Modifier.size(48.dp)) {
+                IconButton(
+                    onClick = dismiss,
+                    modifier = Modifier.size(48.dp).focusRequester(backFocus),
+                ) {
                     androidx.compose.material3.Icon(
                         androidx.compose.ui.res.painterResource(R.drawable.ic_arrow_back),
                         stringResource(R.string.back),
@@ -286,13 +303,18 @@ internal fun ModelPickerSheet(
                         reveal.bringIntoView()
                     }
                 }
+                fun rowFocus(id: String?, enabled: Boolean = true): Modifier {
+                    val initial = if (id == initialModel) initialRow else Modifier
+                    return if (id == selectedId && enabled) initial.focusRequester(selectedFocus)
+                    else initial
+                }
                 Column(Modifier.fillMaxWidth().selectableGroup()) {
                     SettingsRadioRow(
                         stringResource(R.string.settings_auto_model),
                         selected = selectedId == null,
                         enabled = true,
                         supportingText = stringResource(R.string.settings_auto_model_detail),
-                        modifier = if (initialModel == null) initialRow else Modifier,
+                        modifier = rowFocus(null),
                         onClick = { select(null) },
                     )
                     for (choice in choices) {
@@ -304,7 +326,7 @@ internal fun ModelPickerSheet(
                                 supportingText =
                                     if (choice.canSelect) null
                                     else stringResource(R.string.settings_model_plan_restricted),
-                                modifier = if (choice.id == initialModel) initialRow else Modifier,
+                                modifier = rowFocus(choice.id, choice.canSelect),
                                 onClick = { select(choice.id) },
                             )
                         }
@@ -312,7 +334,7 @@ internal fun ModelPickerSheet(
                 }
                 selected
                     ?.takeIf {
-                        it.canSelect && (it.efforts.isNotEmpty() || it.fastMultiplier != null)
+                        it.canSelect && (it.efforts.isNotEmpty() || fastMultiplier != null)
                     }
                     ?.let { choice ->
                         HorizontalDivider()
@@ -320,7 +342,7 @@ internal fun ModelPickerSheet(
                             if (choice.efforts.isNotEmpty()) {
                                 EffortMenu(choice.efforts, effort, selectEffort)
                             }
-                            choice.fastMultiplier?.let { multiplier ->
+                            fastMultiplier?.let { multiplier ->
                                 val usage = multiplier.toBigDecimal()
                                 val value =
                                     NumberFormat.getNumberInstance(
@@ -335,6 +357,8 @@ internal fun ModelPickerSheet(
                                     leading = {},
                                     checked = fast,
                                     onCheckedChange = selectFast,
+                                    modifier =
+                                        Modifier.onFocusChanged { fastFocused = it.isFocused },
                                     supportingText =
                                         stringResource(
                                             R.string.settings_model_fast_usage,
