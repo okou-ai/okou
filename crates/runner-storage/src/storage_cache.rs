@@ -127,7 +127,7 @@ const BODY_BUFFER_FALLBACK_CAPACITY: usize = 64 * 1024;
 /// Parallel (probe GET / full GET / flock / vsock) operations per `populate_cache` call.
 const CONCURRENCY: usize = 4;
 /// Idle transport retention, independent of the per-object request deadline.
-const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(4 * 60);
 /// Bound new connection establishment on the first fresh archive GET.
 const FRESH_DELIVERY_FIRST_CONNECT_TIMEOUT: Duration = Duration::from_millis(1500);
 /// Bound a stalled first response without shortening body or later-attempt allowance.
@@ -335,7 +335,7 @@ impl FreshDeliveryScanSummary {
 /// Staging completion or inline input encoding releases the original body and
 /// its permit. This bounds retained runner-owned archive bodies across runs.
 /// Clones also share one lazy same-origin HTTP pool with at most eight idle
-/// sockets and a 30-second idle timeout. Origin replacement releases the cached
+/// sockets and a four-minute idle timeout. Origin replacement releases the cached
 /// client; admitted fetches can retain its old pool until their owned tasks end.
 /// Runner teardown must call [`Self::shutdown`] after stopping job producers to
 /// join accepted bodies, including publications detached by a lost job owner.
