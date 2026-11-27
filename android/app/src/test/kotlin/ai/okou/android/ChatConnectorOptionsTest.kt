@@ -263,27 +263,33 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
-    fun anUnchangedReadKeepsTheChoicePendingUntilTheAccountIsUnavailable() {
+    fun anUnchangedReadKeepsARestorePendingUntilTheAccountIsUnavailable() {
         waitText("Personal chat")
         compose.onNodeWithText("Personal chat").performClick()
         waitForComposer()
         compose.onNodeWithTag("message_input").performTextReplacement("Read my calendar")
-        app.connectors.rejectChatOverride = 503
         openPicker()
         val account = compose.onNodeWithTag(primaryTag)
         account.assertIsOn().performClick()
+        waitTag("chat-connector-reset")
+        app.connectors.rejectChatOverride = 503
+        compose.onNodeWithTag("chat-connector-reset").performClick()
         waitText("The outcome is still unconfirmed.")
 
         val readback = CountDownLatch(1)
         app.connectors.chatOverrideReadReplyGate = readback
         try {
-            compose.onNodeWithText("Check result").performClick()
+            val check = compose.onNodeWithText("Check result").assertIsEnabled()
+            val readyBounds = check.getUnclippedBoundsInRoot()
+            check.performClick()
             waitText("Checking account…")
+            val checking = compose.onNodeWithText("Checking account…").assertIsNotEnabled()
+            assertEquals(readyBounds, checking.getUnclippedBoundsInRoot())
         } finally {
             readback.countDown()
         }
         waitText("The outcome is still unconfirmed.")
-        account.assertIsOff().assertIsNotEnabled()
+        account.assertIsOn().assertIsNotEnabled()
         closeOptions()
 
         val send = compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
@@ -300,7 +306,7 @@ class ChatConnectorOptionsTest {
             List(3) { CHAT_PERSONAL to CONNECTOR_CALENDAR },
             app.connectors.chatOverrideReads,
         )
-        assertEquals(1, app.connectors.chatOverrideRequests.size)
+        assertEquals(listOf(false, null), app.connectors.chatOverrideRequests.map { it.enabled })
     }
 
     @Test

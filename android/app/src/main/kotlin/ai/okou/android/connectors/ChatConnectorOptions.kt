@@ -312,12 +312,12 @@ internal class ChatConnectorOptions(
             val account = accounts.firstOrNull { it.connectionId == choice.connectionId }
             val result =
                 when {
-                    account?.overrideEnabled == choice.enabled -> null
                     account == null ->
                         ChatConnectorSave(
                             choice.connectionId,
                             ChatConnectorSavePhase.AccountUnavailable,
                         )
+                    account.overrideEnabled == choice.enabled -> null
                     // The original write can still land after an unchanged readback.
                     else -> save
                 }
