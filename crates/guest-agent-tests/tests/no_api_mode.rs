@@ -105,11 +105,8 @@ async fn no_api_mode_drains_background_webhook_users_without_network_client()
     let event_id = "60fca608-d174-4c1a-a1b2-57607b3adf46";
     let steered_log_path = tmp.path().join("active-input-steered-system.log");
     let steered_log_guard = SystemLogOverrideGuard::set(&steered_log_path);
-    let active_input = ActiveInputRuntime::new_enabled(
-        &runtime.config.run_id,
-        &runtime.config.prompt,
-        http.clone(),
-    );
+    let active_input =
+        ActiveInputRuntime::new(&runtime.config.run_id, &runtime.config.prompt, http.clone());
     let active_input_controller = active_input.controller();
     let mut active_input_writer = active_input.into_writer();
     assert_eq!(
@@ -136,7 +133,7 @@ async fn no_api_mode_drains_background_webhook_users_without_network_client()
     );
 
     let active_input =
-        ActiveInputRuntime::new_disabled(&runtime.config.run_id, &runtime.config.prompt);
+        ActiveInputRuntime::new(&runtime.config.run_id, &runtime.config.prompt, http.clone());
     let cli_result = tokio::time::timeout(
         Duration::from_secs(5),
         guest_agent::cli::execute_cli_with_active_input_for_config(

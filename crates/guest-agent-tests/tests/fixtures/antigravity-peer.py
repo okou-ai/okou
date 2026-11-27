@@ -1,62 +1,134 @@
 #!/usr/bin/python3
-"""Deterministic peer for the official Antigravity CLI protocol."""
+"""Deterministic peer for the Antigravity ACP JSON-RPC 2.0 protocol."""
 
 import json
 import os
-import signal
 import sys
 from pathlib import Path
 
 args = sys.argv[1:]
 
 
-def arg(key):
-    return args[args.index(key) + 1]
+def read_msg():
+    line = sys.stdin.readline()
+    if not line:
+        return None
+    return json.loads(line)
 
 
-def send(kind, data, **extra):
-    print(json.dumps({"event": kind, kind: data, **extra}), flush=True)
+def send_msg(obj):
+    print(json.dumps(obj), flush=True)
 
 
-model = "gemini-4-carbon-high"
+def send_result(req_id, result):
+    send_msg({"jsonrpc": "2.0", "id": req_id, "result": result})
+
+
+def send_error(req_id, code, message):
+    send_msg(
+        {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
+    )
+
+
+def send_update(session_id, update):
+    send_msg(
+        {
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {"sessionId": session_id, "update": update},
+        }
+    )
+
+
 session = "ec30d0a7-1690-4e41-9da9-34dbca47bb8a"
 mode = os.environ["AGY_TEST_CASE"]
 directory = Path(os.environ["AGY_TEST_DIR"])
-rules = Path(arg("--add-dir"))
+
+assert args[0] == "acp"
+assert "--dangerously-skip-permissions" in args
+assert "--disable-telemetry" in args
+add_dirs = [args[i + 1] for i, a in enumerate(args) if a == "--add-dir"]
+assert "/home/user/workspace" in add_dirs
+rules = Path(add_dirs[0])
 (directory / "rules-dir").write_text(str(rules))
 assert Path.cwd() == Path("/home/user/workspace")
-assert arg("--model") == model
-assert arg("--input-format") == arg("--output-format") == "stream-json"
-assert arg("--mode") == "accept-edits"
-assert "/home/user/workspace" in args and "--dangerously-skip-permissions" in args
-settings = json.loads(arg("--settings"))
+
+settings_path = Path(os.environ["HOME"]) / ".gemini" / "antigravity-cli" / "settings.json"
+settings = json.loads(settings_path.read_text())
 assert settings["modelProvider"] == "" and settings["useG1Credits"] is False
 assert settings["enableTerminalSandbox"] is False
 assert settings["toolPermission"] == "always-proceed"
 assert "GEMINI_API_KEY" not in os.environ
 assert "AGY_ADC_AUTH" not in os.environ
 assert os.environ["AGY_CLI_DISABLE_AUTO_UPDATE"] == "true"
-rule_text = (rules / "AGENTS.md").read_text()
-assert rule_text.startswith("Use the run-specific system rule.")
-if mode == "recovery":
-    assert "--conversation" not in args and "--continue" not in args
-    assert "Previous chat messages go here." in rule_text
-    mode = "success"
-assert json.load(sys.stdin) == {
-    "event": "user",
-    "message": {"content": 'First line\n"Second" line.'},
-}
+
 print("OAuth challenge provider-private-marker", file=sys.stderr, flush=True)
-if mode == "cancel":
-    (directory / "ready").write_text(str(os.getpid()))
-    signal.pause()
+
+# 1. initialize
+init_req = read_msg()
+assert init_req["method"] == "initialize"
+send_result(
+    init_req["id"],
+    {
+        "protocolVersion": 1,
+        "agentCapabilities": {},
+        "agentInfo": {"name": "agy-peer", "version": "1.5.18"},
+    },
+)
+
+# 2. session/new
+new_req = read_msg()
+assert new_req["method"] == "session/new"
+append_prompt = (
+    new_req["params"]
+    .get("_meta", {})
+    .get("antigravity", {})
+    .get("systemPrompt", {})
+    .get("append", "")
+)
+assert append_prompt.startswith("Use the run-specific system rule.")
+if mode == "recovery":
+    assert "Previous chat messages go here." in append_prompt
+    mode = "success"
+
 if mode == "auth":
-    send(
-        "result",
-        {"status": "ERROR", "error": "authentication failed provider-private-marker"},
-    )
+    send_error(new_req["id"], -32000, "Authentication required")
     sys.exit(0)
-send("init", {"model": model}, conversation_id=session)
+
+send_result(new_req["id"], {"sessionId": session})
+
+# 3. session/set_mode & session/set_config_option
+mode_req = read_msg()
+assert mode_req["method"] == "session/set_mode"
+assert mode_req["params"] == {"sessionId": session, "modeId": "accept-edits"}
+send_result(mode_req["id"], {})
+
+model_req = read_msg()
+assert model_req["method"] == "session/set_config_option"
+assert model_req["params"] == {
+    "sessionId": session,
+    "configId": "model",
+    "value": "gemini-4-carbon",
+}
+send_result(model_req["id"], {})
+
+effort_req = read_msg()
+assert effort_req["method"] == "session/set_config_option"
+assert effort_req["params"] == {
+    "sessionId": session,
+    "configId": "thought_level",
+    "value": "high",
+}
+send_result(effort_req["id"], {})
+
+# 4. initial session/prompt
+prompt_req = read_msg()
+assert prompt_req["method"] == "session/prompt"
+assert prompt_req["params"] == {
+    "sessionId": session,
+    "prompt": [{"type": "text", "text": 'First line\n"Second" line.'}],
+}
+
 if mode == "missing":
     sys.exit(0)
 if mode == "malformed":
@@ -64,39 +136,111 @@ if mode == "malformed":
     sys.exit(0)
 if mode == "nonzero":
     sys.exit(23)
-send("unknown", {"private_data": "provider-private-marker"})
-send(
-    "step_update",
-    {
-        "conversation_id": session,
-        "step_index": 1,
-        "step_type": "tool",
-        "state": "DONE",
-        "tool_info": {
-            "name": "run_command",
-            "parameters": {"CommandLine": "pwd"},
-            "output": "workspace",
-        },
-    },
-)
-for state, text in [("ACTIVE", "Answer: configured-"), ("DONE", "secret")]:
-    send(
-        "step_update",
+
+if mode == "cancel":
+    (directory / "ready").write_text(str(os.getpid()))
+    cancel_msg = read_msg()
+    assert cancel_msg["method"] == "session/cancel"
+    assert cancel_msg["params"] == {"sessionId": session}
+    send_result(prompt_req["id"], {"stopReason": "cancelled"})
+    read_msg()
+    sys.exit(0)
+
+if mode == "steer":
+    send_update(
+        session,
         {
-            "conversation_id": session,
-            "step_index": 2,
-            "step_type": "agent_response",
-            "state": state,
-            "text_delta": text,
+            "sessionUpdate": "tool_call",
+            "toolCallId": "tc-steer-1",
+            "name": "run_command",
+            "rawInput": {"CommandLine": "sleep 1"},
+            "status": "in_progress",
         },
     )
-send(
-    "result",
+    (directory / "ready").write_text(str(os.getpid()))
+    steer_req = read_msg()
+    assert steer_req["method"] == "session/prompt"
+    assert steer_req["params"] == {
+        "sessionId": session,
+        "prompt": [{"type": "text", "text": "Steer to the new answer."}],
+    }
+    # Hand off turn ownership: settle prompt #1 immediately with incremental usage.
+    send_result(
+        prompt_req["id"],
+        {
+            "stopReason": "end_turn",
+            "usage": {"inputTokens": 12, "outputTokens": 4, "totalTokens": 16},
+        },
+    )
+    send_update(
+        session,
+        {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "tc-steer-1",
+            "name": "run_command",
+            "status": "completed",
+            "rawOutput": {"output": "done", "exit_code": 0},
+        },
+    )
+    send_update(
+        session,
+        {
+            "sessionUpdate": "agent_message_chunk",
+            "content": {"type": "text", "text": "Steered answer"},
+        },
+    )
+    send_result(
+        steer_req["id"],
+        {
+            "stopReason": "end_turn",
+            "usage": {"inputTokens": 20, "outputTokens": 6, "totalTokens": 26},
+        },
+    )
+    read_msg()
+    sys.exit(0)
+
+# Default "success" scenario
+send_update(
+    session,
     {
-        "conversation_id": session,
-        "status": "SUCCESS",
-        "response": "Answer: configured-secret",
-        "num_turns": 1,
-        "usage": {"input_tokens": 12, "output_tokens": 4, "total_tokens": 16},
+        "sessionUpdate": "usage_update",
+        "used": 16,
+        "size": 1048576,
     },
 )
+send_update(
+    session,
+    {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "tc-1",
+        "name": "run_command",
+        "rawInput": {"CommandLine": "pwd"},
+        "status": "in_progress",
+    },
+)
+send_update(
+    session,
+    {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "tc-1",
+        "name": "run_command",
+        "status": "completed",
+        "rawOutput": {"output": "workspace", "exit_code": 0},
+    },
+)
+for chunk in ["Answer: configured-", "secret"]:
+    send_update(
+        session,
+        {
+            "sessionUpdate": "agent_message_chunk",
+            "content": {"type": "text", "text": chunk},
+        },
+    )
+send_result(
+    prompt_req["id"],
+    {
+        "stopReason": "end_turn",
+        "usage": {"inputTokens": 12, "outputTokens": 4, "totalTokens": 16},
+    },
+)
+read_msg()

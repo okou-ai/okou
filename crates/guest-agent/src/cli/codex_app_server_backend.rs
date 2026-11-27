@@ -433,7 +433,7 @@ async fn run_codex_app_server(
             canonical_thread_id: thread_identity.canonical_id.clone(),
             turn_id: turn_id.clone(),
         });
-        let mut active_input_open = active_input.is_enabled();
+        let mut active_input_open = true;
         let mut turn_started_observed = false;
         notification_state.allow_historical_usage = can_replay_historical_usage;
 

@@ -53,8 +53,8 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
     input["message"]["content"][0]["input"]["path"] = large_text_template("input");
     let mut output = json!({"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-1","is_error":true,"content":null}]}});
     output["message"]["content"][0]["content"] = large_text_template("output");
-    let mut image = json!({"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":null}}]}});
-    image["message"]["content"][0]["source"]["data"] =
+    let mut image = json!({"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-2","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":null}}]}]}});
+    image["message"]["content"][0]["content"][0]["source"]["data"] =
         Value::String(common::delivery_image::png_base64(1024, 1024)?);
     let mut irreducible = json!({"type":"assistant","message":{"id":null,"role":"assistant","content":[{"type":"text","text":"protected identity cannot be truncated"}]}});
     irreducible["message"]["id"] = Value::String("protected-identity-".repeat(LIMIT / 16));
@@ -198,7 +198,11 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
     );
     assert_eq!(delivered[4]["message"]["content"][0]["is_error"], true);
     assert_eq!(
-        delivered[5]["message"]["content"][0],
+        delivered[5]["message"]["content"][0]["tool_use_id"],
+        "tool-2"
+    );
+    assert_eq!(
+        delivered[5]["message"]["content"][0]["content"][0],
         json!({"type":"text","text":"[image omitted for delivery]"})
     );
     assert_eq!(
