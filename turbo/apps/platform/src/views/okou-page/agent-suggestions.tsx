@@ -506,6 +506,7 @@ export function AgentSuggestionCard({
   const { t } = useTranslation();
   const { item } = entry;
   const start = useSet(startAgentSuggestion$);
+  const submitFeedback = useSet(submitSuggestionFeedbackWithUndo$);
   const signal = useGet(pageSignal$);
   const simplified = useForYouSimplifiedDeck();
   return (
@@ -567,6 +568,30 @@ export function AgentSuggestionCard({
         {active && <SuggestionDirection entry={entry} />}
       </div>
       <SuggestionFeedback entry={entry} />
+      {/* The simplified deck closes a card only through the feedback row, so
+          the corner Dismiss stays on the original deck alone. It sits on the
+          card's corner, its icon on the content's right edge, and comes last
+          so ordinary paint order keeps it above the artwork. */}
+      {!simplified && (
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-sm"
+          showTooltip
+          aria-label={t(($) => {
+            return $.chat.agentSuggestions.dismiss;
+          })}
+          className="absolute top-5.5 right-5 sm:top-8.5 sm:right-8"
+          onClick={() => {
+            detach(
+              submitFeedback(item.id, "dismissed", signal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          <X />
+        </Button>
+      )}
     </article>
   );
 }

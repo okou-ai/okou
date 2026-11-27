@@ -1737,6 +1737,8 @@ test("Arrow keys page the deck without arrow controls, except while a direction 
   const edit = await within(region).findByRole("textbox", { name: /message/i });
   await appendDirection(edit, "Expedite shipping");
   await user.keyboard("{ArrowLeft}");
+  // The simplified deck has no corner Dismiss; the feedback row closes cards.
+  expect(queryFastControl("button", "Dismiss", card)).toBeNull();
   // Focus on another control keeps the direction open, so the keys still wait.
   const done = await findFastControl("button", "Done", card);
   act(() => {
@@ -1794,11 +1796,11 @@ test("Without the simplified deck, the arrows and progress steps page the deck",
   await appendDirection(edit, "Expedite shipping");
   await user.keyboard("{ArrowLeft}");
   // Focus on another control keeps the direction open, so the keys still wait.
-  const done = await findFastControl("button", "Done", card);
+  const dismiss = await findFastControl("button", "Dismiss", card);
   act(() => {
-    done.focus();
+    dismiss.focus();
   });
-  expect(done).toHaveFocus();
+  expect(dismiss).toHaveFocus();
   await user.keyboard("{ArrowRight}");
   await appendDirection(edit, " today");
 
