@@ -1192,7 +1192,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             val title = compose.onNodeWithText("No matching artifacts", useUnmergedTree = true)
             val list = compose.onNodeWithTag("artifact_list").getUnclippedBoundsInRoot()
             assertEquals(28.dp, title.getUnclippedBoundsInRoot().left - list.left)
-            compose.onNodeWithText("Clear keyword").assertHeightIsAtLeast(48.dp).performClick()
+            clickCatalogEmptyAction("Clear keyword")
             awaitText(fixture.checklist.title)
             query.assertIsFocused()
             assertEquals(
@@ -1204,12 +1204,28 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 
             compose.onNodeWithText("Videos").performClick()
             awaitText("No artifacts of this type")
-            compose.onNodeWithText("Show all").assertHeightIsAtLeast(48.dp).performClick()
+            clickCatalogEmptyAction("Show all")
             awaitText(fixture.checklist.title)
             compose.onNodeWithText("All").assertIsSelected().assertIsFocused()
         } finally {
             instrumentation.resetInTouchMode()
         }
+    }
+
+    private fun clickCatalogEmptyAction(label: String) {
+        val action = compose.onNodeWithText(label).assertHeightIsAtLeast(48.dp)
+        val text = compose.onNodeWithText(label, useUnmergedTree = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val style = layouts.single().layoutInput.style
+        assertEquals(14.sp, style.fontSize)
+        assertEquals(20.sp, style.lineHeight)
+        assertEquals(FontWeight.Medium, style.fontWeight)
+        assertEquals(
+            12.dp,
+            text.getUnclippedBoundsInRoot().left - action.getUnclippedBoundsInRoot().left,
+        )
+        action.performClick()
     }
 
     @Test
