@@ -6,13 +6,13 @@ import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ComposerPersistence
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.RunControlPhase
-import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.plainText
 import android.content.Intent
 import android.os.Looper
@@ -52,7 +52,6 @@ import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -131,19 +130,91 @@ class DraftModelRootApplication : ComposerRootApplication() {
     }
 }
 
+internal abstract class ChatComposerRootTestFixture {
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    protected var editorJob: Job? = null
+        private set
+
+    protected var listJob: Job? = null
+        private set
+
+    protected var editor: ChatComposerModel? = null
+        private set
+
+    protected var replacement: ActivityScenario<MainActivity>? = null
+    protected var cleanupApplication: ComposerRootApplication? = null
+
+    protected fun messageText(eventId: String, text: String) =
+        compose.onNode(
+            hasText(text) and hasAnyAncestor(hasTestTag("message_$eventId")),
+            useUnmergedTree = true,
+        )
+
+    protected fun messageDelivery(eventId: String, status: String) =
+        compose.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, status) and
+                hasAnyAncestor(hasTestTag("message_$eventId")),
+            useUnmergedTree = true,
+        )
+
+    protected fun awaitConversation(condition: () -> Boolean) {
+        compose.waitUntil(10_000) {
+            // Drive composition and Main-looper HTTP completions before reading the fixture.
+            compose.onAllNodesWithTag("conversation").fetchSemanticsNodes()
+            condition()
+        }
+    }
+
+    protected fun captureOwners(activity: MainActivity = compose.activity) {
+        compose.runOnIdle {
+            val state = ViewModelProvider(activity)[SessionModel::class.java].uiState.value
+            val opened = state.opening as? OpeningWorkspace.Authorized
+            val composer = checkNotNull(state.ready?.composer ?: opened?.composer)
+            val chats = checkNotNull(state.ready?.chats ?: opened?.chats)
+            editorJob = composer.viewModelScope.coroutineContext[Job]
+            editor = composer
+            listJob = chats.viewModelScope.coroutineContext[Job]
+        }
+    }
+
+    @After
+    fun close() {
+        val app = cleanupApplication ?: compose.activity.application as ComposerRootApplication
+        app.contextGate.countDown()
+        app.sendGate.countDown()
+        val failures = mutableListOf<Throwable>()
+        for (cleanup in
+            listOf<() -> Unit>(
+                { replacement?.close() },
+                { compose.activityRule.scenario.close() },
+                {
+                    compose.waitUntil(10_000) {
+                        // Finish cancellation callbacks on Robolectric's paused Main looper.
+                        shadowOf(Looper.getMainLooper()).idle()
+                        editorJob?.isCompleted != false && listJob?.isCompleted != false
+                    }
+                },
+                { runBlocking { checkNotNull(app.journalStore).close() } },
+                { app.fixture.close() },
+                { app.cacheSnapshot.restore() },
+            )) {
+            try {
+                cleanup()
+            } catch (error: Throwable) {
+                failures += error
+            }
+        }
+        MultipleFailureException.assertEmpty(failures)
+    }
+}
+
 @RunWith(RobolectricTestRunner::class)
 @Config(
     sdk = [35],
     qualifiers = "en-rUS-w400dp-h800dp",
     application = ComposerRootApplication::class,
 )
-class ChatComposerRootTest {
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
-    private var editorJob: Job? = null
-    private var listJob: Job? = null
-    private var editor: ai.okou.android.chat.ChatComposerModel? = null
-    private var replacement: ActivityScenario<MainActivity>? = null
-    private var cleanupApplication: ComposerRootApplication? = null
+internal class ChatComposerRootTest : ChatComposerRootTestFixture() {
 
     @Test
     @Config(application = DraftModelRootApplication::class)
@@ -519,39 +590,6 @@ class ChatComposerRootTest {
         assertEquals("medium", request["reasoningEffort"]?.jsonPrimitive?.content)
     }
 
-    private fun messageText(eventId: String, text: String) =
-        compose.onNode(
-            hasText(text) and hasAnyAncestor(hasTestTag("message_$eventId")),
-            useUnmergedTree = true,
-        )
-
-    private fun messageDelivery(eventId: String, status: String) =
-        compose.onNode(
-            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, status) and
-                hasAnyAncestor(hasTestTag("message_$eventId")),
-            useUnmergedTree = true,
-        )
-
-    private fun awaitConversation(condition: () -> Boolean) {
-        compose.waitUntil(10_000) {
-            // Drive composition and Main-looper HTTP completions before reading the fixture.
-            compose.onAllNodesWithTag("conversation").fetchSemanticsNodes()
-            condition()
-        }
-    }
-
-    private fun captureOwners(activity: MainActivity = compose.activity) {
-        compose.runOnIdle {
-            val state = ViewModelProvider(activity)[SessionModel::class.java].uiState.value
-            val opened = state.opening as? OpeningWorkspace.Authorized
-            val composer = checkNotNull(state.ready?.composer ?: opened?.composer)
-            val chats = checkNotNull(state.ready?.chats ?: opened?.chats)
-            editorJob = composer.viewModelScope.coroutineContext[Job]
-            editor = composer
-            listJob = chats.viewModelScope.coroutineContext[Job]
-        }
-    }
-
     @Test
     fun unversionedJournalShowsStorageFailureWithoutBlockingHistoryOrNavigation() {
         val app = compose.activity.application as ComposerRootApplication
@@ -845,132 +883,6 @@ class ChatComposerRootTest {
             create.countDown()
             list.countDown()
             history.countDown()
-        }
-    }
-
-    @Test
-    fun firstSendKeepsItsAcknowledgedBubbleWhenQueueStatusArrivesBeforeHistory() =
-        assertAcknowledgedSendStaysVisibleBeforeHistory(newChat = true)
-
-    @Test
-    fun existingChatKeepsItsAcknowledgedBubbleWhenQueueStatusArrivesBeforeHistory() =
-        assertAcknowledgedSendStaysVisibleBeforeHistory(newChat = false)
-
-    private fun assertAcknowledgedSendStaysVisibleBeforeHistory(newChat: Boolean) {
-        val app = compose.activity.application as ComposerRootApplication
-        val queueStatusRequested = CountDownLatch(1)
-        val releaseQueueStatus = CountDownLatch(1)
-        val historyRequested = CountDownLatch(1)
-        val releaseHistory = CountDownLatch(1)
-        val deliveredId = UUID.randomUUID().toString()
-        app.fixture.beforeInputStatusReturn = {
-            queueStatusRequested.countDown()
-            releaseQueueStatus.await()
-        }
-        val api = app.fixture.chats
-        api.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
-        val originalResponse = api.commandResponse
-        api.commandResponse = response@{ request ->
-            val url = checkNotNull(request.requestUrl)
-            if (!url.encodedPath.endsWith("/event-rows")) return@response originalResponse(request)
-            val (eventId, input) =
-                app.fixture.inputs.entries.singleOrNull()
-                    ?: return@response originalResponse(request)
-            val threadId = input.getValue("threadId").jsonPrimitive.content
-            val since = checkNotNull(url.queryParameter("sinceSeqId")).toLong()
-            if (url.pathSegments[2] != threadId || since >= 41)
-                return@response originalResponse(request)
-            historyRequested.countDown()
-            releaseHistory.await()
-            val payload = """{"userMessage":${input.getValue("userMessage")}}"""
-            val delivered =
-                historyEventWire(
-                    deliveredId,
-                    41,
-                    threadId,
-                    "input.prompt",
-                    payload,
-                    revoke = eventId,
-                )
-            val events = buildList {
-                if (since < 40) {
-                    add(
-                        historyEventWire(
-                            eventId,
-                            40,
-                            threadId,
-                            "input.prompt",
-                            payload,
-                            run = null,
-                        ),
-                    )
-                }
-                add(delivered)
-            }
-            jsonResponse(
-                """{"rows":[${events.joinToString(",")}],"cursor":{"lastEventId":"$deliveredId","lastSeqId":41},"hasMore":false}""",
-            )
-        }
-        app.contextGate.countDown()
-        try {
-            val title = if (newChat) "New chat" else "Personal chat"
-            compose.waitUntilExactlyOneExists(hasText(title), 10_000)
-            compose.onNodeWithText(title).performClick()
-            captureOwners()
-            val history = compose.runOnIdle {
-                val session =
-                    ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value
-                val opening = session.opening as? OpeningWorkspace.Authorized
-                checkNotNull(session.ready?.chats ?: opening?.chats).history
-            }
-            awaitConversation {
-                editor?.uiState?.value?.journal != null &&
-                    (newChat || history.uiState.value.phase == HistoryPhase.Ready)
-            }
-            val prompt = "Keep the acknowledged message visible"
-            compose.onNodeWithTag("message_input").performTextInput(prompt)
-            compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
-            awaitConversation { app.fixture.inputs.size == 1 }
-            val (eventId, input) = app.fixture.inputs.entries.single()
-            val target = ComposerTarget(input.getValue("threadId").jsonPrimitive.content)
-            messageText(eventId, prompt).assertIsDisplayed()
-            messageDelivery(eventId, "Sending…").assertIsDisplayed()
-
-            app.sendGate.countDown()
-            awaitConversation {
-                editor?.uiState?.value?.entry(target)?.receipt?.disposition ==
-                    TextDisposition.Accepted
-            }
-            messageDelivery(eventId, "Sending…").assertDoesNotExist()
-            val acknowledged =
-                messageText(eventId, prompt).assertIsDisplayed().getUnclippedBoundsInRoot()
-            compose.onNodeWithTag("open_conversation_queue").assertDoesNotExist()
-
-            if (!newChat) {
-                // The existing composer checks the last accepted send when its activity resumes.
-                compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
-                compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
-            }
-            awaitConversation { queueStatusRequested.count == 0L && historyRequested.count == 0L }
-            releaseQueueStatus.countDown()
-            compose.waitUntilExactlyOneExists(hasTestTag("open_conversation_queue"), 10_000)
-            compose
-                .onNodeWithContentDescription(app.getString(R.string.conversation_queue_count, 1))
-                .assertIsDisplayed()
-            val queued = messageText(eventId, prompt).assertIsDisplayed().getUnclippedBoundsInRoot()
-            assertEquals(acknowledged.left, queued.left)
-            assertEquals(acknowledged.right, queued.right)
-            messageDelivery(eventId, "Sending…").assertDoesNotExist()
-
-            releaseHistory.countDown()
-            compose.waitUntilExactlyOneExists(hasTestTag("message_$deliveredId"), 10_000)
-            messageText(deliveredId, prompt).assertIsDisplayed()
-            messageText(eventId, prompt).assertDoesNotExist()
-            compose.onNodeWithTag("open_conversation_queue").assertDoesNotExist()
-            assertEquals(1, app.fixture.inputs.size)
-        } finally {
-            releaseQueueStatus.countDown()
-            releaseHistory.countDown()
         }
     }
 
@@ -1673,35 +1585,5 @@ class ChatComposerRootTest {
         } finally {
             releaseList.countDown()
         }
-    }
-
-    @After
-    fun close() {
-        val app = cleanupApplication ?: compose.activity.application as ComposerRootApplication
-        app.contextGate.countDown()
-        app.sendGate.countDown()
-        val failures = mutableListOf<Throwable>()
-        for (cleanup in
-            listOf<() -> Unit>(
-                { replacement?.close() },
-                { compose.activityRule.scenario.close() },
-                {
-                    compose.waitUntil(10_000) {
-                        // Finish cancellation callbacks on Robolectric's paused Main looper.
-                        shadowOf(Looper.getMainLooper()).idle()
-                        editorJob?.isCompleted != false && listJob?.isCompleted != false
-                    }
-                },
-                { runBlocking { checkNotNull(app.journalStore).close() } },
-                { app.fixture.close() },
-                { app.cacheSnapshot.restore() },
-            )) {
-            try {
-                cleanup()
-            } catch (error: Throwable) {
-                failures += error
-            }
-        }
-        MultipleFailureException.assertEmpty(failures)
     }
 }
