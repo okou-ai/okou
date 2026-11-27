@@ -72,8 +72,8 @@ pub use sandbox::{
     SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome, SandboxFinalExecParkStage,
     SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
     SandboxFinalExecParkTransitionOutcome, SandboxGuestConnectionPhase, SandboxIdleAdmission,
-    SandboxParkNonReusableReason, SandboxParkOutcome, SandboxStartObserver, SandboxStartStage,
-    SevereMemoryRetentionDiagnostics,
+    SandboxParkNonReusableReason, SandboxParkOutcome, SandboxStartObserver, SandboxStartOutcome,
+    SandboxStartStage, SevereMemoryRetentionDiagnostics,
 };
 pub use snapshot::{
     PendingSnapshotPublish, SnapshotCreateConfig, SnapshotError, SnapshotOutput, SnapshotProvider,

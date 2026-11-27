@@ -9,8 +9,8 @@ use sandbox::{
     SandboxCreateObserver, SandboxCreateStage, SandboxError, SandboxFactory,
     SandboxGuestConnectionPhase, SandboxId, SandboxInitializationPhase, SandboxNbdCowCreateOutcome,
     SandboxNbdCowCreateStage, SandboxNbdNetlinkConnectStage, SandboxOperation,
-    SandboxOperationReason, SandboxOperationTimeoutStage, SandboxStartObserver, SandboxStartStage,
-    StartProcessRequest, WriteFileEntry,
+    SandboxOperationReason, SandboxOperationTimeoutStage, SandboxStartObserver,
+    SandboxStartOutcome, SandboxStartStage, StartProcessRequest, WriteFileEntry,
 };
 use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 
@@ -21,14 +21,17 @@ use super::super::telemetry::{
 };
 use super::super::{
     BlankPoolSelection, BlankPoolSelectionReason, ExecutionHooks, FinalizingHandoffOutcome,
-    FinalizingHandoffReason, NewSandboxDispatch, RunnerPreSpawnConcurrency, RunnerPreSpawnTiming,
-    SandboxReuseDisposition, SandboxReuseRejection, execute_job, execute_job_reuse_with_hooks,
-    execute_job_with_prepared_notifier,
+    FinalizingHandoffReason, JobParams, NewSandboxDispatch, RunnerPreSpawnConcurrency,
+    RunnerPreSpawnTiming, SandboxReuseDisposition, SandboxReuseRejection, execute_job,
+    execute_job_reuse_with_hooks, execute_job_with_prepared_notifier,
 };
+use super::sandbox_run_tests::codex_oauth_context;
 use super::support::{
-    context_with_env, default_params, make_reusable_idle_sandbox, minimal_context,
-    test_budget_lease, test_executor_config, test_executor_config_with_startup_api,
+    assert_proxy_registry_empty, context_with_env, default_params, make_reusable_idle_sandbox,
+    minimal_context, seed_home_image_cache, test_budget_lease, test_executor_config,
+    test_executor_config_with_startup_api,
 };
+use crate::home_image_cache::HomeImageCache;
 use crate::home_mount::ensure_home_drive_mounted;
 use crate::idle_pool::{
     IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult, ParkedIdleCandidate,
@@ -40,6 +43,7 @@ use crate::telemetry::{
     RunnerResourceBudgetUtilizationBucket, RunnerStartupPath,
 };
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
+use runner_host::paths::RunnerPaths;
 use runner_provider::RunCancellationSignals;
 use runner_provider::http::{HttpClient, HttpClientConfig};
 use runner_types::ids::RunId;
@@ -354,7 +358,7 @@ impl Sandbox for ObservedStartSandbox {
     async fn start_with_observer(
         &mut self,
         observer: &mut dyn SandboxStartObserver,
-    ) -> sandbox::Result<()> {
+    ) -> sandbox::Result<SandboxStartOutcome> {
         for (index, stage) in SandboxStartStage::ALL.iter().copied().enumerate() {
             if self.omit_optional_stages
                 && matches!(
@@ -411,7 +415,12 @@ impl Sandbox for ObservedStartSandbox {
                 });
             }
         }
-        self.inner.start().await
+        self.inner.start().await?;
+        Ok(if self.omit_optional_stages {
+            SandboxStartOutcome::HomeUnverified
+        } else {
+            SandboxStartOutcome::HomeMounted
+        })
     }
 
     async fn stop(&mut self) -> sandbox::Result<()> {
@@ -886,15 +895,79 @@ async fn execute_job_fresh_path_preserves_preparation_telemetry() {
 }
 
 #[tokio::test]
+async fn fresh_home_retries_after_guest_connection_loss_during_preparation() {
+    for failed_operation in [SandboxOperation::Exec, SandboxOperation::StartProcess] {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunnerPaths::new(dir.path().join("runner"));
+        let cache = HomeImageCache::new(paths.clone());
+        let mut config = test_executor_config(dir.path()).await;
+        config.home_cache = Some(cache.clone());
+        let params = JobParams {
+            home_disk_mb: 16,
+            restore_guest_state: true,
+            ..default_params()
+        };
+        let session_id = "00000000-0000-4000-8000-000000023426";
+        seed_home_image_cache(&cache, &paths, session_id, params.home_disk_mb).await;
+        let mut context = codex_oauth_context();
+        context.reuse_key = Some(format!("thread:home-cache-{session_id}"));
+
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        let closed = |operation| SandboxError::Operation {
+            operation,
+            reason: SandboxOperationReason::GuestConnectionUnavailable,
+            message: "guest connection closed".into(),
+        };
+        if failed_operation == SandboxOperation::Exec {
+            overrides.push_guest_state_restore_result(Err(closed(failed_operation)));
+        } else {
+            overrides.push_start_process_error(closed(failed_operation));
+        }
+        overrides.push_home_drive_mount_result(Err(closed(SandboxOperation::MountHomeDrive)));
+        let factory = ObservedMockSandboxFactory {
+            inner: MockSandboxFactory::with_overrides(Arc::clone(&overrides)),
+            ..ObservedMockSandboxFactory::new()
+        };
+        let (outcome, _) = execute_job(
+            &factory,
+            context,
+            NewSandboxDispatch {
+                id: SandboxId::new_v4(),
+                reuse_result: SandboxReuseResult::PoolMiss,
+            },
+            &config,
+            &params,
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(outcome.exit_code(), 0, "{failed_operation}");
+        let attempts = overrides.create_configs();
+        let [reused, blank] = attempts.as_slice() else {
+            panic!("expected a cached Home and one blank retry after {failed_operation}");
+        };
+        assert!(reused.home_drive.as_ref().unwrap().seed_image.is_some());
+        assert!(blank.home_drive.as_ref().unwrap().seed_image.is_none());
+        assert_eq!(overrides.home_drive_mount_calls(), 1);
+        assert_eq!(overrides.start_agent_process_calls().len(), 1);
+        assert_proxy_registry_empty(dir.path()).await;
+    }
+}
+
+#[tokio::test]
 async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
-    let factory = ObservedMockSandboxFactory::new();
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let factory = ObservedMockSandboxFactory {
+        inner: MockSandboxFactory::with_overrides(Arc::clone(&overrides)),
+        ..ObservedMockSandboxFactory::new()
+    };
     let mut context = minimal_context();
     context.api_start_time = Some(chrono::Utc::now().timestamp_millis().max(0) as u64);
 
     let cancel = tokio_util::sync::CancellationToken::new();
-    let (_outcome, telemetry) = execute_job_with_prepared_notifier(
+    let (outcome, telemetry) = execute_job_with_prepared_notifier(
         &factory,
         context,
         NewSandboxDispatch {
@@ -912,6 +985,9 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         },
     )
     .await;
+
+    assert_eq!(outcome.exit_code(), 0);
+    assert_eq!(overrides.home_drive_mount_calls(), 0);
 
     for action in [
         "runner_accepted_to_executor_start",
@@ -936,15 +1012,10 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         "runner_agent_bootstrap_ready_wait",
         "api_to_sandbox_start",
         "sandbox_create",
-        "home_drive_mount",
-        "home_drive_mount_guest_exec",
         "agent_execute",
     ] {
         assert_has_action(&telemetry, action);
     }
-
-    assert_action_duration(&telemetry, "home_drive_mount_guest_exec", 23);
-    assert_lacks_action(&telemetry, "home_drive_mount_guest_exec_unavailable");
 
     for action in FRESH_SANDBOX_FACTORY_STAGE_ACTIONS {
         assert_action_success(&telemetry, action, true);
@@ -1239,6 +1310,8 @@ async fn execute_job_omits_inapplicable_sandbox_start_stages() {
         "runner_fresh_sandbox_start_guest_dns_readiness_attempt",
     );
     assert_action_success(&telemetry, "runner_fresh_sandbox_start", true);
+    assert_action_success(&telemetry, "home_drive_mount", true);
+    assert_action_duration(&telemetry, "home_drive_mount_guest_exec", 23);
     for phase in GUEST_CONNECTION_PHASE_NAMES {
         for kind in ["full", "remaining"] {
             assert_lacks_action(
@@ -1312,6 +1385,8 @@ async fn execute_job_records_failed_sandbox_start_stage_timing() {
     }
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_start_guest_dns_readiness");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_start_runtime_finalize");
+    assert_lacks_action(&telemetry, "home_drive_mount");
+    assert_lacks_action(&telemetry, "runner_agent_start_process");
     assert_action_outcome(
         &telemetry,
         "runner_fresh_sandbox_start",
