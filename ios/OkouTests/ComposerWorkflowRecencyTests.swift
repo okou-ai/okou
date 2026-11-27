@@ -60,10 +60,103 @@ final class ComposerWorkflowRecencyTests: XCTestCase {
     XCTAssertEqual(source.recentIDs(), ["release"])
   }
 
+  func testMenuReadWhileUseIsUnconfirmedKeepsDevicePromotion() async throws {
+    let gate = HTTPResponseGate()
+    addTeardownBlock { gate.open() }
+    let started = expectation(description: "Accepted use reached HTTP")
+    let fixture = recencyFixture(recentWorkflows: { request in
+      if request.url?.path == "/api/workflows/recent/use" {
+        started.fulfill()
+        await gate.wait()
+      }
+      return nil
+    })
+    fixture.state.value.withLock { $0.recentWorkflowIDs = ["morning"] }
+    let storage = try deviceStorage(fixture, history: ["morning"])
+    let source = ComposerWorkflowSource(
+      client: fixture.http.client, storage: storage, didFail: { _ in })
+    defer { source.close() }
+
+    source.recordUse(["release"])
+    await fulfillment(of: [started], timeout: 3)
+    let order = try await slashMenu(source)
+    XCTAssertEqual(order, ["release", "morning"])
+    XCTAssertEqual(source.recentIDs(), ["release", "morning"])
+    gate.open()
+    try await eventually {
+      fixture.state.value.withLock { $0.recentWorkflowIDs } == ["release", "morning"]
+    }
+    let canonical = try await fixture.http.client.recentComposerWorkflowIDs()
+    XCTAssertEqual(canonical, ["release", "morning"])
+  }
+
+  func testLateHistoryReadCannotReplaceAConfirmedUse() async throws {
+    let use = HTTPResponseGate()
+    let read = HTTPResponseGate()
+    addTeardownBlock {
+      use.open()
+      read.open()
+    }
+    let writing = Mutex(false)
+    let useStarted = expectation(description: "Accepted use reached HTTP")
+    let readStarted = expectation(description: "Menu read captured history before the use")
+    let fixture = recencyFixture(recentWorkflows: { request in
+      if request.url?.path == "/api/workflows/recent/use" {
+        writing.withLock { $0 = true }
+        useStarted.fulfill()
+        await use.wait()
+      } else if request.httpMethod == "GET", writing.withLock({ $0 }) {
+        readStarted.fulfill()
+        await read.wait()
+        return ChatHTTPResponse(body: #"{"workflowIds":["morning"]}"#)
+      }
+      return nil
+    })
+    fixture.state.value.withLock { $0.recentWorkflowIDs = ["morning"] }
+    let storage = try deviceStorage(fixture, history: [])
+    let source = ComposerWorkflowSource(
+      client: fixture.http.client, storage: storage, didFail: { _ in })
+    defer { source.close() }
+
+    source.recordUse(["release"])
+    await fulfillment(of: [useStarted], timeout: 3)
+    let menu = Task { try await self.slashMenu(source) }
+    addTeardownBlock {
+      menu.cancel()
+      read.open()
+      _ = await menu.result
+    }
+    await fulfillment(of: [readStarted], timeout: 3)
+    use.open()
+    // Only the confirmed write can add the server's existing history to this device.
+    try await eventually { source.recentIDs() == ["release", "morning"] }
+    read.open()
+    let order = try await menu.value
+    XCTAssertEqual(order, ["release", "morning"])
+    XCTAssertEqual(source.recentIDs(), ["release", "morning"])
+  }
+
+  func testFirstAcceptedUseImportsDeviceHistoryBeforeInitializingServer() async throws {
+    let fixture = recencyFixture()
+    let storage = try deviceStorage(fixture, history: ["morning"])
+    let source = ComposerWorkflowSource(
+      client: fixture.http.client, storage: storage, didFail: { _ in })
+    defer { source.close() }
+
+    // A restored draft can send without ever opening the slash menu.
+    source.recordUse(["release"])
+    try await eventually {
+      fixture.state.value.withLock { $0.recentWorkflowIDs } == ["release", "morning"]
+    }
+    let canonical = try await fixture.http.client.recentComposerWorkflowIDs()
+    XCTAssertEqual(canonical, ["release", "morning"])
+    XCTAssertEqual(source.recentIDs(), ["release", "morning"])
+  }
+
   func testAcceptedUsesReachServerInOrderAfterAFailedWrite() async throws {
     let writes = RecencyWriteCount()
     let fixture = recencyFixture(recentWorkflows: { request in
-      guard request.httpMethod == "POST" else { return nil }
+      guard request.url?.path == "/api/workflows/recent/use" else { return nil }
       let attempt = writes.value.withLock {
         $0 += 1
         return $0

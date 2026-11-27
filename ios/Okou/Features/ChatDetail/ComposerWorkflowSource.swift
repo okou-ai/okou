@@ -21,6 +21,8 @@ final class ComposerWorkflowSource {
   /// Accepted uses that the single serial write sends in acceptance order.
   private var pendingUses: [[String]] = []
   private var recentWrite: Task<Void, Never>?
+  /// Set by the first successful history read, which may import this device's history.
+  private var hasReadHistory = false
   private(set) var isClosed = false
   private let didFail: @MainActor (Error) -> Void
 
@@ -100,6 +102,8 @@ final class ComposerWorkflowSource {
 
   /// One write at a time keeps the server's order equal to the acceptance order.
   private func writeRecentUses() async {
+    // Device history imports before a use can initialize the member's server history.
+    if !hasReadHistory { _ = await synchronizeRecent() }
     while !isClosed, !Task.isCancelled, !pendingUses.isEmpty {
       let ids = pendingUses.removeFirst()
       do {
@@ -117,13 +121,18 @@ final class ComposerWorkflowSource {
   /// fails.
   private func synchronizeRecent() async -> [String] {
     let revision = recentRevision
+    // The server may not have applied a use whose write is still running.
+    let confirmed = recentWrite == nil
     let local = recentIDs()
     do {
       var ids = try await client.recentComposerWorkflowIDs()
       // Only a never-initialized history imports this device's history; `[]` is initialized.
       if ids == nil, !local.isEmpty { ids = try await client.importComposerWorkflowHistory(local) }
-      // A use accepted during the read is newer than this response.
-      guard !isClosed, !Task.isCancelled, revision == recentRevision else { return recentIDs() }
+      hasReadHistory = true
+      // A use accepted before or during the read is newer than this response.
+      guard !isClosed, !Task.isCancelled, confirmed, revision == recentRevision else {
+        return recentIDs()
+      }
       let canonical = ids ?? []
       saveRecent(canonical)
       return canonical
