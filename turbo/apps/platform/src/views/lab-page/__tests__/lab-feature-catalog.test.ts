@@ -106,20 +106,23 @@ test("lab-page-002 Each staff-visible feature has exactly one switch under its r
   expect(getButtonByName("Reset all")).toBeEnabled();
 });
 
-test.each([
-  [FeatureSwitchKey.PresentationOutputFormat, "Beta"],
-] as const)("Staff see %s enabled by default in %s", async (key, stage) => {
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, {
-      switches: {},
-      effectiveSwitches: getAllFeatureStates({ userId: user.id, orgId }),
+test.each([[FeatureSwitchKey.PresentationOutputFormat, "Beta"]] as const)(
+  "Staff see %s enabled by default in %s",
+  async (key, stage) => {
+    context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+      return respond(200, {
+        switches: {},
+        effectiveSwitches: getAllFeatureStates({ userId: user.id, orgId }),
+      });
     });
-  });
-  await visitLab(false, true);
-  const row = screen.getByText(key, { exact: true }).closest("li")!;
-  expect(row.closest("section")?.querySelector("h2")).toHaveTextContent(stage);
-  expect(within(row).getByRole("switch")).toBeChecked();
-});
+    await visitLab(false, true);
+    const row = screen.getByText(key, { exact: true }).closest("li")!;
+    expect(row.closest("section")?.querySelector("h2")).toHaveTextContent(
+      stage,
+    );
+    expect(within(row).getByRole("switch")).toBeChecked();
+  },
+);
 
 test("lab-page-005 Filtering the Lab catalog preserves the All total and restores its full switch list", async () => {
   await visitLab();
