@@ -47,7 +47,6 @@
     <string name="settings_account_select">चुनें</string>
     <string name="settings_account_reconnect">दोबारा कनेक्ट करना होगा</string>
     <string name="settings_account_switching">बदला जा रहा है…</string>
-    <string name="settings_account_switch_unconfirmed">खाता बदलने की पुष्टि बाकी है</string>
     <string name="settings_account_switch_failed">मॉडल खाता बदला नहीं जा सका।</string>
     <string name="settings_quota">कोटा</string>
     <string name="settings_hour_quota">%1$d घंटे का कोटा</string>

@@ -47,7 +47,6 @@
     <string name="settings_account_select">Auswählen</string>
     <string name="settings_account_reconnect">Erneute Verbindung erforderlich</string>
     <string name="settings_account_switching">Wird gewechselt…</string>
-    <string name="settings_account_switch_unconfirmed">Wechsel unbestätigt</string>
     <string name="settings_account_switch_failed">Das Modellkonto konnte nicht gewechselt werden.</string>
     <string name="settings_quota">Kontingent</string>
     <string name="settings_hour_quota">%1$d-Stunden-Kontingent</string>

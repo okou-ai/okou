@@ -47,7 +47,6 @@
     <string name="settings_account_select">Selecionar</string>
     <string name="settings_account_reconnect">Reconexão necessária</string>
     <string name="settings_account_switching">Trocando…</string>
-    <string name="settings_account_switch_unconfirmed">Mudança não confirmada</string>
     <string name="settings_account_switch_failed">Não foi possível trocar de conta do modelo.</string>
     <string name="settings_quota">Cota</string>
     <string name="settings_hour_quota">Cota de %1$d h</string>

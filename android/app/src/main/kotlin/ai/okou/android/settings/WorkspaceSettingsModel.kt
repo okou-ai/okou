@@ -81,7 +81,6 @@ internal data class WorkspaceCreditSummary(
 internal enum class AccountSwitchPhase {
     Submitting,
     Confirming,
-    Unconfirmed,
 }
 
 internal data class AccountSwitch(val accountId: String, val phase: AccountSwitchPhase)
@@ -338,11 +337,9 @@ internal constructor(
             ) { result ->
                 val state = mutable.value
                 val incoming = result.value
+                val confirming =
+                    state.switching.filterValues { it.phase == AccountSwitchPhase.Confirming }
                 if (result.unavailable) {
-                    val confirming =
-                        state.switching.filterValues {
-                            it.phase == AccountSwitchPhase.Confirming
-                        }
                     mutable.value =
                         state.copy(
                             accounts =
@@ -356,36 +353,24 @@ internal constructor(
                                             SettingsRefreshFailure()
                                         else null,
                                 ),
-                            switching =
-                                state.switching.mapValues { (_, intent) ->
-                                    if (intent.phase == AccountSwitchPhase.Confirming)
-                                        intent.copy(phase = AccountSwitchPhase.Unconfirmed)
-                                    else intent
-                                },
+                            switching = state.switching - confirming.keys,
                         )
-                    confirming.values.forEach { _ ->
+                    repeat(confirming.size) {
                         reportActionFailure(SettingsNotice.ModelAccountSwitchFailed)
                     }
                 } else if (incoming == null) {
                     mutable.update { it.copy(accounts = result) }
                 } else {
-                    val verifying =
-                        state.switching.filterValues { it.phase != AccountSwitchPhase.Submitting }
                     val rejected =
-                        verifying
-                            .filterValues { intent ->
-                                intent.phase == AccountSwitchPhase.Confirming &&
-                                    incoming.none {
-                                        it.id == intent.accountId && it.isActive == true
-                                    }
-                            }
-                            .keys
+                        confirming.values.count { intent ->
+                            incoming.none { it.id == intent.accountId && it.isActive == true }
+                        }
                     mutable.value =
                         state.copy(
                             accounts = result,
-                            switching = state.switching - verifying.keys,
+                            switching = state.switching - confirming.keys,
                         )
-                    rejected.forEach { _ ->
+                    repeat(rejected) {
                         reportActionFailure(SettingsNotice.ModelAccountSwitchFailed)
                     }
                 }
