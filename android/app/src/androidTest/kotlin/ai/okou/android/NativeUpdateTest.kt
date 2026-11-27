@@ -452,15 +452,7 @@ class NativeUpdateTest {
                     scaledSearch,
                 )
             }
-            assertTrue(
-                device.wait(
-                    object : Condition<UiDevice, Boolean> {
-                        override fun apply(device: UiDevice): Boolean =
-                            device.findObject(updateSelector)?.visibleBounds == updateBounds
-                    },
-                    10_000,
-                ) == true,
-            )
+            device.enabledUpdateControl(updateSelector, expectedBounds = updateBounds)
             assertTrue(
                 device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000),
             )
@@ -814,7 +806,10 @@ private object EmptyUpdateStore : UpdateStore {
     override suspend fun save(record: UpdateRecord) = Unit
 }
 
-private fun UiDevice.enabledUpdateControl(label: BySelector): UiObject2 =
+private fun UiDevice.enabledUpdateControl(
+    label: BySelector,
+    expectedBounds: Rect? = null,
+): UiObject2 =
     checkNotNull(
         wait(
             object : Condition<UiDevice, UiObject2?> {
@@ -822,7 +817,10 @@ private fun UiDevice.enabledUpdateControl(label: BySelector): UiObject2 =
                     try {
                         generateSequence(device.findObject(label)) { it.parent }
                             .firstOrNull { it.isClickable }
-                            ?.takeIf { it.isEnabled }
+                            ?.takeIf {
+                                it.isEnabled &&
+                                    (expectedBounds == null || it.visibleBounds == expectedBounds)
+                            }
                     } catch (_: StaleObjectException) {
                         null
                     }
@@ -830,7 +828,8 @@ private fun UiDevice.enabledUpdateControl(label: BySelector): UiObject2 =
             10_000,
         ),
     ) {
-        "Expected enabled update control $label"
+        val bounds = expectedBounds?.let { " with visible bounds $it" }.orEmpty()
+        "Expected enabled update control $label$bounds"
     }
 
 private fun captureUpdate(device: UiDevice, name: String) {
