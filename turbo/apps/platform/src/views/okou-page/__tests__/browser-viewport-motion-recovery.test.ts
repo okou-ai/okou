@@ -69,7 +69,9 @@ async function admission(n: number, selected: string) {
 async function selectLast() {
   click(await findFastControl("button", "All tabs"));
   click(
-    await screen.findByText("Page 12", { selector: '[role="menuitem"] *' }),
+    await screen.findByText("Page 12", {
+      selector: '[role="menuitemradio"] *',
+    }),
   );
 }
 function owner(id: string) {

@@ -25,9 +25,16 @@ interface DispatchResult {
   readonly error?: string;
 }
 
+export interface PreloadedTerminalChatCallback {
+  readonly id: string;
+  readonly payload: unknown;
+  readonly runStatus: string;
+}
+
 interface DispatchRunCallbacksInput {
   readonly runId: string;
   readonly redriveChatCallbackId?: string;
+  readonly preloadedChatCallback?: PreloadedTerminalChatCallback;
   readonly skipChatCallback?: boolean;
 }
 
@@ -204,37 +211,47 @@ export const dispatchRunCallbacks$ = command(
     {
       runId,
       redriveChatCallbackId,
+      preloadedChatCallback,
       skipChatCallback,
     }: DispatchRunCallbacksInput,
     signal: AbortSignal,
   ): Promise<DispatchResult[]> => {
-    const callbacks = await get(db$)
-      .select({
-        id: agentRunCallbacks.id,
-        internalKind: agentRunCallbacks.internalKind,
-        payload: agentRunCallbacks.payload,
-        runStatus: agentRuns.status,
-      })
-      .from(agentRunCallbacks)
-      .innerJoin(agentRuns, eq(agentRuns.id, agentRunCallbacks.runId))
-      .where(
-        and(
-          eq(agentRunCallbacks.runId, runId),
-          inArray(agentRunCallbacks.status, ["pending", "failed"]),
-          inArray(
-            agentRunCallbacks.internalKind,
-            skipChatCallback
-              ? workflowAutomationRunCallbackKinds
-              : terminalRunCallbackKinds,
-          ),
-          redriveChatCallbackId === undefined
-            ? undefined
-            : and(
-                eq(agentRunCallbacks.id, redriveChatCallbackId),
-                eq(agentRunCallbacks.internalKind, "chat"),
+    const callbacks = preloadedChatCallback
+      ? [
+          {
+            id: preloadedChatCallback.id,
+            internalKind: "chat" as const,
+            payload: preloadedChatCallback.payload,
+            runStatus: preloadedChatCallback.runStatus,
+          },
+        ]
+      : await get(db$)
+          .select({
+            id: agentRunCallbacks.id,
+            internalKind: agentRunCallbacks.internalKind,
+            payload: agentRunCallbacks.payload,
+            runStatus: agentRuns.status,
+          })
+          .from(agentRunCallbacks)
+          .innerJoin(agentRuns, eq(agentRuns.id, agentRunCallbacks.runId))
+          .where(
+            and(
+              eq(agentRunCallbacks.runId, runId),
+              inArray(agentRunCallbacks.status, ["pending", "failed"]),
+              inArray(
+                agentRunCallbacks.internalKind,
+                skipChatCallback
+                  ? workflowAutomationRunCallbackKinds
+                  : terminalRunCallbackKinds,
               ),
-        ),
-      );
+              redriveChatCallbackId === undefined
+                ? undefined
+                : and(
+                    eq(agentRunCallbacks.id, redriveChatCallbackId),
+                    eq(agentRunCallbacks.internalKind, "chat"),
+                  ),
+            ),
+          );
     signal.throwIfAborted();
 
     const results: DispatchResult[] = [];

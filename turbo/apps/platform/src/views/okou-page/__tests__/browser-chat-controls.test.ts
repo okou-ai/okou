@@ -112,7 +112,7 @@ async function chooseLast() {
   click(await findFastControl("button", "All tabs"));
   click(
     (await screen.findByText("Page 12", { exact: true })).closest(
-      '[role="menuitem"]',
+      '[role="menuitemradio"]',
     )!,
   );
 }

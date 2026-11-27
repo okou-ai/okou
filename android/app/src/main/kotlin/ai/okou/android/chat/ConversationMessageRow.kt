@@ -104,6 +104,7 @@ internal fun ConversationMessageRow(
     artifactActions: ChatArtifactActions? = null,
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
+    code: ConversationCodeActions? = null,
     animateAvatarIn: LayoutBoundsHolder? = null,
     beforeEarlierRepliesResize: () -> Unit = {},
     failureContent: @Composable (HistoryMessage) -> Unit = {
@@ -169,11 +170,12 @@ internal fun ConversationMessageRow(
                             if (entry.earlier.any { it.id == targetId }) expanded = true
                         }
                     }
-                    val imageReply =
+                    val returningReply =
                         imageFocusReply(artifactActions?.restoreKey ?: links?.restoreKey)
-                    if (imageReply != null) {
-                        LaunchedEffect(imageReply) {
-                            if (entry.earlier.any { it.id == imageReply }) expanded = true
+                            ?: code?.returning?.target?.messageId
+                    if (returningReply != null) {
+                        LaunchedEffect(returningReply, entry.earlier) {
+                            if (entry.earlier.any { it.id == returningReply }) expanded = true
                         }
                     }
                     ConversationReplySummary(entry.summary, entry.earlier.size, expanded) {
@@ -195,6 +197,7 @@ internal fun ConversationMessageRow(
                                                 },
                                             links = links,
                                             beforeParsedLayout = beforeEarlierRepliesResize,
+                                            code = code,
                                         )
                                     }
                                 }
@@ -210,6 +213,7 @@ internal fun ConversationMessageRow(
                     artifactTurnKey = entry.key,
                     findHighlight = findHighlight?.takeIf { it.messageId == message.id },
                     links = links,
+                    code = code,
                 )
                 if (entry.earlier.isNotEmpty() && artifactActions != null) {
                     EarlierReplyArtifacts(entry, artifactActions, interactiveLinks = links != null)
@@ -461,6 +465,7 @@ private fun MessageBody(
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
     beforeParsedLayout: (() -> Unit)? = null,
+    code: ConversationCodeActions? = null,
 ) {
     val typography = MaterialTheme.typography
     val colors = MaterialTheme.colorScheme
@@ -468,8 +473,23 @@ private fun MessageBody(
     val bodyHighlight = findHighlight.takeUnless { markdownHighlight != null }
     val sourceFocus = artifactActions?.restoreKey ?: links?.restoreKey
     val imageRestore = imageFocusReply(sourceFocus) == message.id
+    val codeRestore = code?.returning?.takeIf { it.target.messageId == message.id }
     val replyFocus = remember { FocusRequester() }
     var restoredReplyFocus by remember { mutableStateOf(false) }
+    val restoreCodeReply: () -> Unit = {
+        if (code != null && codeRestore != null && replyFocus.requestFocus()) {
+            code.restored(codeRestore)
+        }
+    }
+    if (codeRestore != null) {
+        LaunchedEffect(codeRestore, message.blocks) {
+            if (
+                message.blocks.getOrNull(codeRestore.target.bodyIndex)?.kind !=
+                    HistoryBlockKind.Text
+            )
+                restoreCodeReply()
+        }
+    }
     val replyArtifacts =
         if (!imageRestore) artifactActions
         else
@@ -518,7 +538,7 @@ private fun MessageBody(
         Column(
             Modifier.conversationFindHighlight(bodyHighlight)
                 .then(
-                    if (imageRestore || restoredReplyFocus)
+                    if (imageRestore || codeRestore != null || restoredReplyFocus)
                         Modifier.focusRequester(replyFocus)
                             .onFocusChanged { restoredReplyFocus = it.isFocused }
                             .focusable()
@@ -548,6 +568,15 @@ private fun MessageBody(
                                 links,
                                 compactReply = earlierReply,
                                 beforeParsedLayout = beforeParsedLayout,
+                                code =
+                                    code?.let {
+                                        ConversationCodeBody(
+                                            it,
+                                            message.id,
+                                            index,
+                                            restoreCodeReply,
+                                        )
+                                    },
                             )
                         else Text(block.text, style = style, color = foreground)
                 }

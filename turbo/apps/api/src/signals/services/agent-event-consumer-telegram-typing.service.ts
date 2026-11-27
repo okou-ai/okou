@@ -60,6 +60,11 @@ function telegramTypingTargetForCallback(args: {
 // the already-returned 200 response.
 const refreshTelegramTypingForRun$ = command(
   async ({ get }, runId: string, _signal: AbortSignal): Promise<void> => {
+    const config = getOfficialTelegramBotConfig();
+    if (!config.botToken) {
+      return;
+    }
+
     const db = get(db$);
     const callbacks = await db
       .select({
@@ -85,10 +90,6 @@ const refreshTelegramTypingForRun$ = command(
       }
     }
 
-    const config = getOfficialTelegramBotConfig();
-    if (!config.botToken) {
-      return;
-    }
     for (const target of targets.values()) {
       if (!isOfficialTelegramBotId(target.installationId)) {
         continue;

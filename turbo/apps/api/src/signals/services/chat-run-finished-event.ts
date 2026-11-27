@@ -10,4 +10,6 @@ export interface ChatRunFinishedEvent {
   readonly failureReason: RunFailureReasonToken | null;
   readonly lastResultText: string | null;
   readonly sourceThreadTitle: string | null;
+  /** Optional already-loaded autonomy budget from the source run. */
+  readonly sourceAutonomyBudget?: number | null;
 }

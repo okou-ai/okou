@@ -154,6 +154,7 @@ import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-pla
 import {
   type PendingLaunchClaim,
   pendingLaunchClaimFenceSql,
+  pendingLaunchEmptyQueueDeleteSql,
   pendingLaunchMorningBriefBindingSql,
 } from "./pending-launch-claim-plan";
 import { pendingLaunchInsertSql } from "./pending-launch-sql";
@@ -281,6 +282,7 @@ export interface ThreadClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly claimId: string;
+  readonly queuedAt: Date;
 }
 
 const queueHeadRejectionResultSchema = strictObject({
@@ -2595,6 +2597,7 @@ export function createThreadClaimRunObjects(
             orgId: claim.orgId,
             chatThreadId: claim.chatThreadId,
             claimId: claim.claimId,
+            queuedAt: claim.queuedAt,
             ...(proactive
               ? {
                   proactive: {
@@ -3868,17 +3871,24 @@ function pendingLaunchPublicationCtes({
           AND input."eventType" = 'input.prompt' AND input."runId" IS NOT NULL
         RETURNING relation.message_event_id
       )`;
+  const fencePrerequisite = sql`EXISTS (SELECT 1 FROM inserted)
+              AND (SELECT ${count()} FROM launch_claim_relations) >= 0`;
+  const deleted = sql`, deleted_pending_token AS (${pendingLaunchEmptyQueueDeleteSql(
+    claim,
+    claimedInput.revokesEventId,
+    fencePrerequisite,
+  )})`;
   const released = sql`, released_pending_token AS (${pendingLaunchClaimFenceSql(
     claim,
-    sql`EXISTS (SELECT 1 FROM inserted)
-              AND (SELECT ${count()} FROM launch_claim_relations) >= 0`,
+    sql`NOT EXISTS (SELECT 1 FROM deleted_pending_token)
+              AND ${fencePrerequisite}`,
   )})`;
   const receipt = claim.proactive
     ? sql`, admitted_proactive AS (
     UPDATE proactive_occurrences SET run_id=${claimedInput.runId}::uuid,suggestions_enabled=${claim.proactive.suggestionsEnabled},card_delivery_enabled=${claim.proactive.cardDeliveryEnabled}
     WHERE id=${claim.proactive.id}::uuid AND EXISTS (SELECT 1 FROM inserted) RETURNING id)`
     : sql.empty();
-  return sql`${claimCtes}${receipt}${released}`;
+  return sql`${claimCtes}${receipt}${deleted}${released}`;
 }
 
 function pendingLaunchGuardedRunId(
@@ -3886,7 +3896,7 @@ function pendingLaunchGuardedRunId(
   thread: WithSubquery,
 ): SQL {
   const guards: SQL[] = [
-    sql`WHEN (SELECT ${count()} FROM released_pending_token) <> 1 THEN '__TX0263_TOKEN__'`,
+    sql`WHEN (SELECT ${count()} FROM deleted_pending_token) + (SELECT ${count()} FROM released_pending_token) <> 1 THEN '__TX0263_TOKEN__'`,
     sql`WHEN NOT EXISTS (SELECT 1 FROM ${thread}) THEN '__TX0263_THREAD__'`,
   ];
   const guard = sql`CASE ${sql.join(guards, sql` `)} ELSE '0' END`;

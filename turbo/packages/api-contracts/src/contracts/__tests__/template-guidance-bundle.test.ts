@@ -8,7 +8,6 @@ import {
 
 const template = {
   ownerKind: "user-template",
-  beforeMountPaths: [],
   templateId: "859550cb-28ad-47ef-8728-f6b3849f8c55",
   sha256: "a".repeat(64),
   archiveBytes: 40 * 1024 * 1024,
@@ -103,19 +102,16 @@ describe("template guidance execution and retained context", () => {
     expect(runContextArchiveSchema.parse(context)).not.toHaveProperty(
       "templateGuidanceBundles",
     );
-    const { beforeMountPaths: _beforeMountPaths, ...bundle } = template;
-    const withoutAnchors = {
-      ...bundle,
-      templateId: "f0fbad48-3d7f-4468-83d1-221e9a27a1a9",
-    };
     const parsed = runContextArchiveSchema.parse({
       ...context,
-      templateGuidanceBundles: [template, withoutAnchors],
+      templateGuidanceBundles: [
+        {
+          ...template,
+          beforeMountPaths: ["/home/user/.claude/skills/example"],
+        },
+      ],
     });
-    expect(parsed.templateGuidanceBundles).toStrictEqual([
-      template,
-      withoutAnchors,
-    ]);
+    expect(parsed.templateGuidanceBundles).toMatchObject([template]);
     expect(parsed.storageMounts).toEqual([]);
   });
 });

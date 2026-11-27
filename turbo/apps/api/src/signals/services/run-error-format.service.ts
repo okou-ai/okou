@@ -54,6 +54,35 @@ function formatLatestSessionProviderType(
   return parsed.success ? parsed.data : null;
 }
 
+export interface RunErrorRunSnapshot {
+  readonly status: string;
+  readonly modelProvider: string | null;
+  readonly modelRuntimeProvider: string | null;
+  readonly failureReason: RunFailureReasonToken | null;
+  readonly selectedModel: string | null;
+}
+
+function buildRunErrorProviderContext(
+  run: RunErrorRunSnapshot,
+): RunErrorProviderContext {
+  const modelProviderType = formatLatestSessionProviderType(run.modelProvider);
+  const modelRuntimeProviderType = formatLatestSessionProviderType(
+    run.modelRuntimeProvider,
+  );
+  const frameworkProviderType = modelRuntimeProviderType ?? modelProviderType;
+
+  return {
+    status: run.status,
+    modelProviderType,
+    failureReason: run.failureReason,
+    framework:
+      frameworkProviderType === null
+        ? null
+        : getFrameworkForType(frameworkProviderType),
+    selectedModel: run.selectedModel,
+  };
+}
+
 function runErrorProviderContext(
   runId: string,
 ): Computed<Promise<RunErrorProviderContext | undefined>> {
@@ -61,8 +90,8 @@ function runErrorProviderContext(
     const [run] = await get(db$)
       .select({
         status: agentRuns.status,
-        modelProviderType: agentRuns.modelProvider,
-        modelRuntimeProviderType: agentRuns.modelRuntimeProvider,
+        modelProvider: agentRuns.modelProvider,
+        modelRuntimeProvider: agentRuns.modelRuntimeProvider,
         failureReason: agentRuns.failureReason,
         selectedModel: agentRuns.selectedModel,
       })
@@ -74,24 +103,7 @@ function runErrorProviderContext(
       return undefined;
     }
 
-    const modelProviderType = formatLatestSessionProviderType(
-      run.modelProviderType,
-    );
-    const modelRuntimeProviderType = formatLatestSessionProviderType(
-      run.modelRuntimeProviderType,
-    );
-    const frameworkProviderType = modelRuntimeProviderType ?? modelProviderType;
-
-    return {
-      status: run.status,
-      modelProviderType,
-      failureReason: run.failureReason,
-      framework:
-        frameworkProviderType === null
-          ? null
-          : getFrameworkForType(frameworkProviderType),
-      selectedModel: run.selectedModel,
-    };
+    return buildRunErrorProviderContext(run);
   });
 }
 
@@ -155,10 +167,15 @@ export const formatRunErrorForRunOwner$ = command(
     params: Omit<
       FormatRunErrorLikeWebMessageParams,
       "failureReason" | "framework" | "modelProviderType"
-    > & { readonly externalSurface?: boolean },
+    > & {
+      readonly externalSurface?: boolean;
+      readonly runSnapshot?: RunErrorRunSnapshot;
+    },
     signal: AbortSignal,
   ): Promise<string> => {
-    const providerContext = await get(runErrorProviderContext(params.runId));
+    const providerContext = params.runSnapshot
+      ? buildRunErrorProviderContext(params.runSnapshot)
+      : await get(runErrorProviderContext(params.runId));
     signal.throwIfAborted();
     if (providerContext?.status === "cancelled") {
       return "Run cancelled";

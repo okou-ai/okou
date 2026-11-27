@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { Check } from "lucide-react";
 
 import { MENU_ROW_HEIGHT_CLASS } from "./menu-row";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
@@ -160,7 +161,52 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 });
 DropdownMenuCheckboxItem.displayName = "DropdownMenuCheckboxItem";
 
-const DropdownMenuCheckboxItemIndicator = MenuPrimitive.CheckboxItemIndicator;
+const DropdownMenuCheckboxItemIndicator = React.forwardRef<
+  HTMLSpanElement,
+  MenuPrimitive.CheckboxItemIndicator.Props
+>(({ children, className, ...props }, ref) => {
+  return (
+    <span
+      data-slot="dropdown-menu-checkbox-item-indicator"
+      className={cn(
+        "ml-auto flex size-4 shrink-0 items-center justify-center",
+        typeof className === "string" ? className : undefined,
+      )}
+    >
+      <MenuPrimitive.CheckboxItemIndicator
+        ref={ref}
+        className={typeof className === "function" ? className : undefined}
+        {...props}
+      >
+        {children ?? <Check aria-hidden="true" />}
+      </MenuPrimitive.CheckboxItemIndicator>
+    </span>
+  );
+});
+DropdownMenuCheckboxItemIndicator.displayName =
+  "DropdownMenuCheckboxItemIndicator";
+
+function DropdownMenuGroup(props: MenuPrimitive.Group.Props) {
+  return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />;
+}
+
+const DropdownMenuLabel = React.forwardRef<
+  HTMLDivElement,
+  MenuPrimitive.GroupLabel.Props
+>(({ className, ...props }, ref) => {
+  return (
+    <MenuPrimitive.GroupLabel
+      ref={ref}
+      data-slot="dropdown-menu-label"
+      className={cn(
+        "px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground/80",
+        className,
+      )}
+      {...props}
+    />
+  );
+});
+DropdownMenuLabel.displayName = "DropdownMenuLabel";
 
 function DropdownMenuRadioGroup(props: MenuPrimitive.RadioGroup.Props) {
   return (
@@ -190,7 +236,29 @@ const DropdownMenuRadioItem = React.forwardRef<
 });
 DropdownMenuRadioItem.displayName = "DropdownMenuRadioItem";
 
-const DropdownMenuRadioItemIndicator = MenuPrimitive.RadioItemIndicator;
+const DropdownMenuRadioItemIndicator = React.forwardRef<
+  HTMLSpanElement,
+  MenuPrimitive.RadioItemIndicator.Props
+>(({ children, className, ...props }, ref) => {
+  return (
+    <span
+      data-slot="dropdown-menu-radio-item-indicator"
+      className={cn(
+        "ml-auto flex size-4 shrink-0 items-center justify-center",
+        typeof className === "string" ? className : undefined,
+      )}
+    >
+      <MenuPrimitive.RadioItemIndicator
+        ref={ref}
+        className={typeof className === "function" ? className : undefined}
+        {...props}
+      >
+        {children ?? <Check aria-hidden="true" />}
+      </MenuPrimitive.RadioItemIndicator>
+    </span>
+  );
+});
+DropdownMenuRadioItemIndicator.displayName = "DropdownMenuRadioItemIndicator";
 
 const DropdownMenuSeparator = React.forwardRef<
   HTMLDivElement,
@@ -252,6 +320,8 @@ export {
   DropdownMenuPortal,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
   DropdownMenuCheckboxItemIndicator,

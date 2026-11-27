@@ -448,7 +448,10 @@ internal fun WorkflowEditor(
                         style = MaterialTheme.typography.headlineSmall,
                     )
                     if (activeRule != null)
-                        WorkflowSecondary(detail.displayName ?: detail.name, small = true)
+                        WorkflowSecondary(
+                            workflowDisplayTitle(detail.name, detail.displayName),
+                            small = true,
+                        )
                 }
                 when (editing) {
                     is WorkflowEditSession.Instructions -> {

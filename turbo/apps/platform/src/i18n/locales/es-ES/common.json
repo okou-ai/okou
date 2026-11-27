@@ -2656,6 +2656,7 @@
       "deleteTitle": "¿Eliminar el chat?",
       "draft": "Borrador",
       "empty": "Empieza una conversación y aparecerá aquí",
+      "filter": "Filtrar",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Bandeja de entrada",
       "inboxEmpty": "Tu bandeja de entrada está vacía",

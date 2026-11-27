@@ -3,7 +3,7 @@ use super::*;
 const TEMPLATE_ID: &str = "859550cb-28ad-47ef-8728-f6b3849f8c55";
 
 fn template(owner: &str) -> Value {
-    serde_json::json!({"ownerKind":owner,"templateId":TEMPLATE_ID,"beforeMountPaths":[],"sha256":"a".repeat(64),"archiveBytes":40*1024*1024,"downloadUrl":"https://example.test/template.tar.gz"})
+    serde_json::json!({"ownerKind":owner,"templateId":TEMPLATE_ID,"sha256":"a".repeat(64),"archiveBytes":40*1024*1024,"downloadUrl":"https://example.test/template.tar.gz"})
 }
 
 #[test]
@@ -72,15 +72,11 @@ fn publication_rejects_unsafe_template_owners_references_and_duplicate_mounts() 
 }
 
 #[test]
-fn publication_accepts_templates_from_both_writer_versions() {
+fn publication_applies_template_bundles_in_selection_order() {
     let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     let target = "/home/user/.codex/skills/fixture-skill";
-    let mut first = template("user-template");
-    let mut second = template("presentation-template");
-    // The preceding writer includes ordering metadata.
-    first["beforeMountPaths"] = serde_json::json!(["/missing-optional-volume", target]);
-    second.as_object_mut().unwrap().remove("beforeMountPaths");
-    body["startupInputs"]["contentBundles"]["templates"] = serde_json::json!([first, second]);
+    body["startupInputs"]["contentBundles"]["templates"] =
+        serde_json::json!([template("user-template"), template("presentation-template")]);
     let response = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
     let entries = response.storage_manifest.unwrap().storages;
     let first_index = entries

@@ -548,23 +548,31 @@ private fun HostedArtifactPreview(
                     modifier = Modifier.fillMaxSize(),
                     factory = {
                         val initialScroll = scrollY
+                        var scrolled = false
                         isolatedPreview(
-                            it,
-                            content.url,
-                            onFailure = attempt::recordFailure,
-                            onVisible = { view ->
-                                if (attempt.active) {
-                                    view.alpha = 1f
-                                    onVisible()
+                                it,
+                                content.url,
+                                onFailure = attempt::recordFailure,
+                                onVisible = { view ->
+                                    if (attempt.active) {
+                                        view.alpha = 1f
+                                        onVisible()
+                                    }
+                                },
+                                onLoaded = { view ->
+                                    if (attempt.active && !scrolled) {
+                                        view.scrollTo(0, initialScroll)
+                                    }
+                                },
+                            )
+                            .apply {
+                                setOnScrollChangeListener { _, _, y, _, previousY ->
+                                    if (attempt.active && y != previousY) {
+                                        scrolled = true
+                                        onScroll(y)
+                                    }
                                 }
-                            },
-                            onLoaded = { view ->
-                                if (attempt.active) {
-                                    view.scrollTo(0, initialScroll)
-                                    view.setOnScrollChangeListener { _, _, y, _, _ -> onScroll(y) }
-                                }
-                            },
-                        )
+                            }
                     },
                     onRelease = {
                         attempt.release()

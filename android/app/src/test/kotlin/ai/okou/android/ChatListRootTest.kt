@@ -94,6 +94,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -3223,9 +3224,12 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun markingReadInUnreadCanBeUndoneThroughCanonicalReadActions() {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
         val app = compose.activity.application as ChatListApplication
         val unread = AtomicBoolean(true)
         val commands = CopyOnWriteArrayList<String>()
+        val releaseUndo = CountDownLatch(1)
         app.fixture.indicators = {
             if (unread.get())
                 jsonResponse(
@@ -3241,8 +3245,9 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
                     jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""")
                 }
                 "/api/chat-threads/$CHAT_PERSONAL/mark-unread" -> {
-                    unread.set(true)
                     commands.add("unread")
+                    check(releaseUndo.await(10, TimeUnit.SECONDS))
+                    unread.set(true)
                     jsonResponse("""{"lastReadAt":null}""")
                 }
                 else -> null
@@ -3261,7 +3266,19 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
             compose.onAllNodesWithText("Chat marked as read").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag(rowTag).assertDoesNotExist()
-        compose.onNodeWithText("Undo").performClick()
+        val undo = compose.onNodeWithText("Undo")
+        try {
+            undo.performKeyInput { pressKey(Key.Tab) }
+            undo.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            undo.performKeyInput { pressKey(Key.Enter) }
+            compose.waitUntil(5_000) { commands.size == 2 }
+            compose.waitUntilExactlyOneExists(hasTestTag(rowTag) and isFocused(), 5_000)
+            compose.onNodeWithTag(rowTag).assertIsDisplayed()
+            undo.assertDoesNotExist()
+            assertFalse(unread.get())
+        } finally {
+            releaseUndo.countDown()
+        }
         compose.waitUntil(10_000) {
             unread.get() && commands.size == 2 && currentList()?.rowUndo == null
         }
@@ -3273,6 +3290,8 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun aCommittedArchiveSwipeOffersUndoAcrossFiltersAndRename() {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
         val app = compose.activity.application as ChatListApplication
         val events = app.fixture.rowEventTail()
         val commands = CopyOnWriteArrayList<RecordedRequest>()
@@ -3373,15 +3392,14 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         awaitRowActionSettled(CHAT_PERSONAL)
         assertEquals(2, commands.size)
         try {
-            undo.assertIsEnabled().performClick()
-            compose.waitUntil(10_000) {
-                compose
-                    .onAllNodesWithText("Checking undo result…")
-                    .fetchSemanticsNodes()
-                    .isNotEmpty()
-            }
-            undo.assertIsNotEnabled()
-            dismiss.assertIsDisplayed()
+            undo.assertIsEnabled().performKeyInput { pressKey(Key.Tab) }
+            undo.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            undo.performKeyInput { pressKey(Key.Enter) }
+            compose.waitUntil(5_000) { commands.size == 3 }
+            compose.waitUntilExactlyOneExists(hasTestTag("chat_list") and isFocused(), 5_000)
+            row.assertDoesNotExist()
+            undo.assertDoesNotExist()
+            compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
         } finally {
             releaseUndo.countDown()
         }

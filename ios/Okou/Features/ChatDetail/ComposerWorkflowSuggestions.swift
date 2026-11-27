@@ -60,7 +60,7 @@ final class ComposerWorkflowSuggestions {
     let opening = self.query == nil
     if self.query != query || self.view !== view || self.range != range {
       selectedIndex = query.isEmpty ? -1 : 0
-      resources.update(query: query, recent: source?.recentIDs() ?? [])
+      resources.update(query: query)
     }
     self.view = view
     self.range = range

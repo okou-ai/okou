@@ -1,12 +1,27 @@
 import { randomUUID } from "node:crypto";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import {
+  runsByIdContract,
+  runsCancelContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import { runnersSteerContract } from "@okouai/api-contracts/contracts/runners";
+import {
+  webhookCompleteContract,
+  webhookEventsContract,
+} from "@okouai/api-contracts/contracts/webhooks";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import {
   accept,
   testContext,
   type TestContext,
 } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import {
   TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
   TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
@@ -14,7 +29,19 @@ import {
 import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
+import { codexDeviceAuthRoutes } from "../codex-device-auth";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { onboardingCompleteRoutes } from "../onboarding-complete";
+import { runnersRoutes } from "../runners";
+import { runsRoutes } from "../runs";
+import { runsCancelRoutes } from "../runs-cancel";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksAgentEventsRoutes } from "../webhooks-agent-events";
+import { createBddApi } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
@@ -22,32 +49,172 @@ import {
   eventBackedContents,
   userMessages,
 } from "./helpers/chat-events-fixture";
-import { publicChatActor } from "./helpers/public-chat-actor";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
 
 const CHAT_RECOVERY_COMMAND_SNIPPET =
   "okou chat messages --output-dir /tmp/okou-chat-history";
 
-async function createPiCodexChatActor(context: TestContext) {
-  const fixture = createChatEventsFixture(context);
+const context = testContext();
+const bdd = createBddApi(context);
+const sharedFixture = createChatEventsFixture(context);
+const summaryClient = setupAppWithRoutes({
+  context,
+  routes: chatThreadActivitySummaryRoutes,
+})(chatThreadActivitySummaryContract);
+const warmupApp = setupApp({
+  context,
+  routes: [
+    ...chatEventsRoutes,
+    ...chatThreadRoutes,
+    ...codexDeviceAuthRoutes,
+    ...meModelProvidersUpsertRoutes,
+    ...onboardingCompleteRoutes,
+    ...runnersRoutes,
+    ...runsRoutes,
+    ...runsCancelRoutes,
+    ...webhooksAgentCompleteRoutes,
+    ...webhooksAgentEventsRoutes,
+  ],
+});
+const warmupChatEventsApi = warmupApp(chatEventsContract);
+const warmupThreadEventsApi = warmupApp(chatThreadEventsContract);
+const warmupCodexDeviceAuthApi = warmupApp(codexDeviceAuthContract);
+const warmupModelProvidersApi = warmupApp(personalModelProvidersMainContract);
+const warmupOnboardingApi = warmupApp(onboardingCompleteContract);
+const warmupRunnersSteerApi = warmupApp(runnersSteerContract);
+const warmupRunsByIdApi = warmupApp(runsByIdContract);
+const warmupRunsCancelApi = warmupApp(runsCancelContract);
+const warmupWebhookEventsApi = warmupApp(webhookEventsContract);
+const warmupWebhookCompleteApi = warmupApp(webhookCompleteContract);
+
+// File-level route & schema warm-up (unauthenticated 401s: zero DB access, zero side effects).
+beforeAll(async () => {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+  const warmupId = randomUUID();
+  await Promise.all([
+    accept(
+      warmupChatEventsApi.send({
+        headers: {},
+        body: {
+          prompt: "warmup",
+          hasTextContent: true,
+          clientEventId: randomUUID(),
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "warmup" }],
+          },
+        },
+      }),
+      [401],
+    ),
+    accept(
+      warmupThreadEventsApi.rows({
+        headers: {},
+        params: { threadId: warmupId },
+        query: { sinceSeqId: 0, limit: 1 },
+      }),
+      [401],
+    ),
+    accept(
+      warmupCodexDeviceAuthApi.start({
+        headers: {},
+        body: { scope: "personal" },
+      }),
+      [401],
+    ),
+    accept(
+      warmupCodexDeviceAuthApi.complete({
+        headers: {},
+        body: { sessionToken: "warmup" },
+      }),
+      [401],
+    ),
+    accept(
+      warmupModelProvidersApi.upsert({
+        headers: {},
+        body: { type: "claude-code-oauth-token", secret: "warmup" },
+      }),
+      [401],
+    ),
+    accept(warmupOnboardingApi.complete({ headers: {}, body: {} }), [401]),
+    accept(
+      summaryClient.summarize({
+        headers: {},
+        params: { id: warmupId },
+        body: { runId: warmupId },
+      }),
+      [401],
+    ),
+    accept(
+      warmupRunnersSteerApi.next({
+        headers: {},
+        params: { runId: warmupId },
+      }),
+      [401],
+    ),
+    accept(
+      warmupRunsByIdApi.getById({
+        headers: {},
+        params: { id: warmupId },
+      }),
+      [401],
+    ),
+    accept(
+      warmupRunsCancelApi.cancel({ headers: {}, params: { id: warmupId } }),
+      [401],
+    ),
+    accept(
+      warmupWebhookEventsApi.send({
+        headers: { authorization: "Bearer invalid-warmup-token" },
+        body: {
+          runId: warmupId,
+          events: [
+            {
+              type: "system",
+              subtype: "init",
+              session_id: warmupId,
+              sequenceNumber: 1,
+            },
+          ],
+        },
+      }),
+      [401],
+    ),
+    accept(
+      warmupWebhookCompleteApi.complete({
+        headers: { authorization: "Bearer invalid-warmup-token" },
+        body: { runId: warmupId, exitCode: 0 },
+      }),
+      [401],
+    ),
+  ]);
+});
+
+async function createPiCodexChatActor(
+  ctx: TestContext,
+  options: { readonly includePersonalClaude?: boolean } = {},
+) {
+  const fixture = sharedFixture;
   const actor = fixture.bdd.user();
-  let accepted = captureConnectorExternalState(context);
+  let accepted = captureConnectorExternalState(ctx);
   let previous: (() => void) | undefined;
   onTestFinished(() => {
     previous?.();
   });
-  const owner = publicRunOwner(context, actor, {
+  const owner = publicRunOwner(ctx, actor, {
     continueAcceptedOperations: true,
     restoreEnvironment: () => {
-      previous ??= captureConnectorExternalState(context);
+      previous ??= captureConnectorExternalState(ctx);
       accepted();
     },
   });
   function run<T>(operation: () => Promise<T>) {
     return owner.run(() => {
       const pending = settleIncludingAbort(operation);
-      accepted = captureConnectorExternalState(context);
+      accepted = captureConnectorExternalState(ctx);
       return pending.then((result) => {
         if (!result.ok) {
           throw result.error;
@@ -61,15 +228,23 @@ async function createPiCodexChatActor(context: TestContext) {
   fixture.api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   fixture.chatCallbacks.disableVapid();
-  const runnerGroupPromise = fixture.api.configureRunnerGroup();
-  await Promise.all([
-    runnerGroupPromise,
-    run(() => {
-      return fixture.api.grantProEntitlement(actor);
-    }),
-  ]);
+  if (options.includePersonalClaude) {
+    mockClaudeCodeTokenEndpoint();
+  }
   await run(() => {
-    return fixture.connectSubscriptionPiModel(actor);
+    return Promise.all([
+      fixture.api.configureRunnerGroup(),
+      bdd.bootstrapLimitedFreeOnboarding(actor),
+      fixture.connectSubscriptionPiModel(actor),
+      ...(options.includePersonalClaude
+        ? [
+            fixture.api.createPersonalModelProvider(actor, {
+              type: "claude-code-oauth-token",
+              secret: `claude-token-${randomUUID()}`,
+            }),
+          ]
+        : []),
+    ]);
   });
   return {
     actor,
@@ -94,11 +269,9 @@ async function createPiCodexChatActor(context: TestContext) {
 }
 
 describe("chat-events-pi-activity", () => {
-  const context = testContext();
-
   it(
-    "chat-events-pi-activity-001 (1/4) launches personal Codex in Pi, captures tool activity summary, preserves Memory version, and rejects conflicting completion writes",
-    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    "chat-events-pi-activity-001 (1/5) launches personal Codex in Pi, captures tool activity summary, and preserves Memory version",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
       const chatActor = await createPiCodexChatActor(context);
       const { actor, fixture } = chatActor;
@@ -224,10 +397,6 @@ describe("chat-events-pi-activity", () => {
       });
       await flushWaitUntilForTest();
 
-      const summaryClient = setupAppWithRoutes({
-        context,
-        routes: chatThreadActivitySummaryRoutes,
-      })(chatThreadActivitySummaryContract);
       const summary = await chatActor.run(() => {
         return accept(
           summaryClient.summarize({
@@ -246,18 +415,17 @@ describe("chat-events-pi-activity", () => {
       expect(summaryPrompts.join("\n")).toContain(cliCommand);
       expect(summaryPrompts.join("\n")).toContain(fileName);
 
-      const completion = {
-        cliAgentType: "pi" as const,
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryDisposition: "native_only" as const,
-      };
       const completed = await chatActor.run(() => {
         return fixture.webhooks.requestAgentComplete(
           {
             runId: run.runId,
             exitCode: 0,
             lastEventSequence: 5,
-            completion,
+            completion: {
+              cliAgentType: "pi",
+              cliAgentSessionId: run.threadId,
+              cliAgentSessionHistoryDisposition: "native_only",
+            },
           },
           sandboxHeaders,
           [200],
@@ -269,30 +437,10 @@ describe("chat-events-pi-activity", () => {
       });
       await flushWaitUntilForTest();
 
-      const threadEvents = await fixture.chat.listThreadEvents(
-        actor,
-        run.threadId,
-      );
-      const storedRun = await fixture.api.readRun(actor, run.runId);
-      const outputReplay = await chatActor.run(() => {
-        return fixture.webhooks.requestAgentRunOutputs(
-          { runId: run.runId, ...completion },
-          sandboxHeaders,
-          [200],
-        );
-      });
-      const completionReplay = await chatActor.run(() => {
-        return fixture.webhooks.requestAgentComplete(
-          {
-            runId: run.runId,
-            exitCode: 0,
-            lastEventSequence: 5,
-            completion,
-          },
-          sandboxHeaders,
-          [200],
-        );
-      });
+      const [threadEvents, storedRun] = await Promise.all([
+        fixture.chat.listThreadEvents(actor, run.threadId),
+        fixture.api.readRun(actor, run.runId),
+      ]);
 
       expect(
         eventBackedContents(threadEvents.events, run.runId).map((message) => {
@@ -312,6 +460,84 @@ describe("chat-events-pi-activity", () => {
           }),
         ],
       });
+    },
+  );
+
+  it(
+    "chat-events-pi-activity-001 (2/5) replays Pi completion and outputs idempotently while rejecting conflicting session or framework writes",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const chatActor = await createPiCodexChatActor(context);
+      const { actor, fixture } = chatActor;
+
+      const run = await chatActor.sendChatRun(actor, {
+        model: "gpt-6-luna",
+        prompt: "Complete Pi session and verify idempotent replays",
+      });
+      const { sandboxHeaders } = await chatActor.runExecution(run.runId);
+
+      await chatActor.run(() => {
+        return fixture.webhooks.requestAgentEvents(
+          {
+            runId: run.runId,
+            events: [
+              {
+                type: "system",
+                subtype: "init",
+                session_id: run.threadId,
+                sequenceNumber: 1,
+              },
+            ],
+          },
+          sandboxHeaders,
+          [200],
+        );
+      });
+
+      const completion = {
+        cliAgentType: "pi" as const,
+        cliAgentSessionId: run.threadId,
+        cliAgentSessionHistoryDisposition: "native_only" as const,
+      };
+      const completed = await chatActor.run(() => {
+        return fixture.webhooks.requestAgentComplete(
+          {
+            runId: run.runId,
+            exitCode: 0,
+            lastEventSequence: 1,
+            completion,
+          },
+          sandboxHeaders,
+          [200],
+        );
+      });
+      expect(completed.body).toStrictEqual({
+        success: true,
+        status: "completed",
+      });
+      await flushWaitUntilForTest();
+
+      const storedRun = await fixture.api.readRun(actor, run.runId);
+      const outputReplay = await chatActor.run(() => {
+        return fixture.webhooks.requestAgentRunOutputs(
+          { runId: run.runId, ...completion },
+          sandboxHeaders,
+          [200],
+        );
+      });
+      const completionReplay = await chatActor.run(() => {
+        return fixture.webhooks.requestAgentComplete(
+          {
+            runId: run.runId,
+            exitCode: 0,
+            lastEventSequence: 1,
+            completion,
+          },
+          sandboxHeaders,
+          [200],
+        );
+      });
+
       expect(outputReplay.body).toStrictEqual({
         success: true,
         status: "completed",
@@ -352,7 +578,7 @@ describe("chat-events-pi-activity", () => {
   );
 
   it(
-    "chat-events-pi-activity-001 (2/4) clears resumable Pi generation after uninitialized failure and cancellation while keeping recovery guidance and prompts",
+    "chat-events-pi-activity-001 (3/5) clears resumable Pi generation after uninitialized failure and cancellation while keeping recovery guidance and prompts",
     { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
       const chatActor = await createPiCodexChatActor(context);
@@ -420,7 +646,7 @@ describe("chat-events-pi-activity", () => {
   );
 
   it(
-    "chat-events-pi-activity-001 (3/4) records an initialized Pi failure, replays identically, and resumes its generation on the next Pi Run",
+    "chat-events-pi-activity-001 (4/5) records an initialized Pi failure, replays identically, and resumes its generation on the next Pi Run",
     { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
       const chatActor = await createPiCodexChatActor(context);
@@ -504,21 +730,20 @@ describe("chat-events-pi-activity", () => {
   );
 
   it(
-    "chat-events-pi-activity-001 (4/4) launches Claude Code on the same thread without Pi session fields and with Chat recovery guidance",
+    "chat-events-pi-activity-001 (5/5) launches Claude Code on the same thread without Pi session fields and with Chat recovery guidance",
     { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const owner = await publicChatActor(context);
-      const fixture = createChatEventsFixture(context);
-      await owner.run(() => {
-        return fixture.connectSubscriptionPiModel(owner.actor);
+      const chatActor = await createPiCodexChatActor(context, {
+        includePersonalClaude: true,
       });
+      const { actor, fixture } = chatActor;
 
-      const piRun = await owner.sendChatRun(owner.actor, {
+      const piRun = await chatActor.sendChatRun(actor, {
         model: "gpt-6-luna",
         prompt: "Start the thread on personal Codex via Pi",
       });
-      const piExec = await owner.runExecution(piRun.runId);
-      await owner.run(() => {
+      const piExec = await chatActor.runExecution(piRun.runId);
+      await chatActor.run(() => {
         return fixture.webhooks.requestAgentEvents(
           {
             runId: piRun.runId,
@@ -535,20 +760,20 @@ describe("chat-events-pi-activity", () => {
           [200],
         );
       });
-      await owner.run(() => {
+      await chatActor.run(() => {
         return fixture.completeChatRunOk(piRun.runId, piExec.sandboxHeaders, {
           cliAgentType: "pi",
           cliAgentSessionId: piRun.threadId,
         });
       });
-      await fixture.waitForRunStatus(owner.actor, piRun.runId, "completed");
+      await fixture.waitForRunStatus(actor, piRun.runId, "completed");
 
-      const claudeRun = await owner.sendChatRun(owner.actor, {
+      const claudeRun = await chatActor.sendChatRun(actor, {
         threadId: piRun.threadId,
         model: "claude-fable-5-1",
         prompt: "Switch the thread to Claude Code",
       });
-      const claudeExec = await owner.runExecution(claudeRun.runId);
+      const claudeExec = await chatActor.runExecution(claudeRun.runId);
 
       expect(claudeExec.execution.cliAgentType).toBe("claude-code");
       expect(claudeExec.execution.piSessionId).toBeUndefined();

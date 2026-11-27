@@ -55,6 +55,7 @@ class ConversationActivityTest {
                 { throw it },
                 {},
                 { null },
+                markRead = { service.markRead(it) },
             )
         try {
             visit.showRunActivity("run-a")

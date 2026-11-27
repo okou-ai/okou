@@ -18,6 +18,8 @@ final class AttachmentFlowFixture: Sendable {
     var accepted: Data?
     var draft = ComposerDraft()
     var composerDrafts: [String: ComposerDraft] = [:]
+    /// The member's server Workflow history; `nil` until a use or import initializes it.
+    var recentWorkflowIDs: [String]?
   }
   let state = AttachmentFlowState()
   let http: ChatHTTPFixture
@@ -30,6 +32,10 @@ final class AttachmentFlowFixture: Sendable {
     sending: @escaping @Sendable () async -> Void = {},
     draftRead: @escaping @Sendable () async -> Void = {},
     workflows: (@Sendable (URLRequest) async throws -> ChatHTTPResponse)? = nil,
+    // `nil` answers from the fixture's member history.
+    recentWorkflows: @escaping @Sendable (URLRequest) async throws -> ChatHTTPResponse? = { _ in
+      nil
+    },
     voiceInput: ChatHTTPFixture.Handler? = nil,
     attachment: ChatAttachment? = nil,
     threadList: ChatHTTPFixture.Handler? = nil,
@@ -59,9 +65,10 @@ final class AttachmentFlowFixture: Sendable {
         return try await voiceInput(request)
       case "/api/chat-threads/snapshot", "/api/chat-threads/events", "/api/indicators":
         return try await Self.navigationResponse(request, path: path, threadList: threadList)
-      case "/api/workflows/for-composer":
-        guard let workflows else { throw URLError(.unsupportedURL) }
-        return try await workflows(request)
+      case "/api/workflows/for-composer", "/api/workflows/recent", "/api/workflows/recent/use",
+        "/api/workflows/recent/import":
+        return try await Self.workflowResponse(
+          request, path: path, state: state, workflows: workflows, recent: recentWorkflows)
       case "/api/chat-threads/\(Self.threadID)/composer-draft":
         if request.httpMethod == "PATCH" {
           let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
@@ -108,6 +115,38 @@ final class AttachmentFlowFixture: Sendable {
       default: throw URLError(.unsupportedURL)
       }
     }
+  }
+
+  /// Recency mirrors the API's member history: a use moves its Workflows to the front, and an
+  /// import initializes only a history that was never initialized.
+  private static func workflowResponse(
+    _ request: URLRequest, path: String, state: AttachmentFlowState,
+    workflows: ChatHTTPFixture.Handler?,
+    recent: @Sendable (URLRequest) async throws -> ChatHTTPResponse?
+  ) async throws -> ChatHTTPResponse {
+    if path == "/api/workflows/for-composer" {
+      guard let workflows else { throw URLError(.unsupportedURL) }
+      return try await workflows(request)
+    }
+    if let response = try await recent(request) { return response }
+    struct History: Decodable { let workflowIds: [String] }
+    var ids = state.value.withLock { $0.recentWorkflowIDs }
+    if request.httpMethod == "POST" {
+      let used = try JSONDecoder().decode(History.self, from: chatRequestBody(request)).workflowIds
+      ids = state.value.withLock { value in
+        if path.hasSuffix("/use") {
+          var seen = Set<String>()
+          value.recentWorkflowIDs = (used + (value.recentWorkflowIDs ?? [])).filter {
+            seen.insert($0).inserted
+          }
+        } else if value.recentWorkflowIDs == nil {
+          value.recentWorkflowIDs = used
+        }
+        return value.recentWorkflowIDs
+      }
+    }
+    let json = try ids.map { try JSONEncoder().encodeString($0) } ?? "null"
+    return ChatHTTPResponse(body: #"{"workflowIds":"# + json + "}")
   }
 
   private static func settingsResponse(

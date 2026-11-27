@@ -178,7 +178,10 @@ export async function chooseProject(name: string) {
 
 export function projectMenuItem(name: string) {
   return waitFor(() => {
-    const item = queryAllByRoleFast("menuitem").find((row) => {
+    const item = [
+      ...queryAllByRoleFast("menuitem"),
+      ...queryAllByRoleFast("menuitemradio"),
+    ].find((row) => {
       return row.textContent?.trim() === name;
     });
     if (!item) {

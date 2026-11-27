@@ -289,7 +289,7 @@ class UpdateRootTest {
     @Test
     @Config(qualifiers = "en-rUS-w360dp-h640dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun extremelyShortUpdateDetailsScrollTheHeadingWithoutMovingEitherAction() {
+    fun extremelyShortUpdateDetailsRevealFailuresWithoutMovingEitherAction() {
         val originalQualifiers = RuntimeEnvironment.getQualifiers()
         val originalFontScale = RuntimeEnvironment.getFontScale()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -319,8 +319,20 @@ class UpdateRootTest {
             reader.performKeyInput { pressKey(Key.PageDown) }
             compose.waitUntil(5_000) { scroll.value() > initialOffset }
             assertTrue(title.getUnclippedBoundsInRoot().top < titleTop)
+            reader.performKeyInput { pressKey(Key.PageUp) }
+            compose.waitUntil(5_000) { scroll.value() == initialOffset }
+
+            compose.runOnIdle {
+                app.fixture.failCheck = true
+                app.updates.check()
+            }
+            compose.onNodeWithText(app.getString(R.string.updates_error_check)).assertIsDisplayed()
+            reader.assertIsFocused()
             assertEquals(closeBounds, close.assertIsDisplayed().getUnclippedBoundsInRoot())
-            assertEquals(downloadBounds, download.assertIsDisplayed().getUnclippedBoundsInRoot())
+            assertEquals(
+                downloadBounds,
+                download.assertIsDisplayed().assertIsEnabled().getUnclippedBoundsInRoot(),
+            )
             close.performClick()
             title.assertDoesNotExist()
         } finally {
@@ -489,9 +501,19 @@ class UpdateRootTest {
                 )
             installed.performScrollTo().assertIsDisplayed()
             assertEquals(bounds, action.assertIsDisplayed().getUnclippedBoundsInRoot())
+            compose.onNodeWithText(app.getString(R.string.updates_required_short)).performScrollTo()
             action.performClick()
             val preparing = compose.onNodeWithText(app.getString(R.string.updates_preparing))
             assertEquals(bounds, preparing.assertIsDisplayed().getUnclippedBoundsInRoot())
+            app.fixture.transfer.completeExceptionally(UpdateException(UpdateProblem.Integrity))
+            compose
+                .onNodeWithText(app.getString(R.string.updates_error_integrity))
+                .assertIsDisplayed()
+            val retry = compose.onNodeWithText(app.getString(R.string.updates_retry_download))
+            assertEquals(
+                bounds,
+                retry.assertIsDisplayed().assertIsEnabled().getUnclippedBoundsInRoot(),
+            )
         } finally {
             RuntimeEnvironment.setFontScale(originalFontScale)
         }

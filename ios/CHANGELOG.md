@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.73.0](https://github.com/okou-ai/okou/compare/ios-v0.72.0...ios-v0.73.0) (2026-11-27)
+
+
+### Features
+
+* **ios:** sync recent workflows with the server ([#51413](https://github.com/okou-ai/okou/issues/51413)) ([c3b0cef](https://github.com/okou-ai/okou/commit/c3b0cef6ccc1065beb156f836920882fe91b867b))
+
+## [0.72.0](https://github.com/okou-ai/okou/compare/ios-v0.71.2...ios-v0.72.0) (2026-11-27)
+
+
+### Features
+
+* **api,ios:** remove transitional client transforms and support google ai on ios ([#51397](https://github.com/okou-ai/okou/issues/51397)) ([837d89a](https://github.com/okou-ai/okou/commit/837d89a786d8b798eb44305ade70b8a17fd66c1d))
+
 ## [0.71.2](https://github.com/okou-ai/okou/compare/ios-v0.71.1...ios-v0.71.2) (2026-11-27)
 
 

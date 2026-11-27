@@ -58,7 +58,10 @@ async function workspace(
 }
 function menuChoice(label: string) {
   return waitFor(() => {
-    const opt = queryAllByRoleFast("menuitem").find((e) => {
+    const opt = [
+      ...queryAllByRoleFast("menuitem"),
+      ...queryAllByRoleFast("menuitemradio"),
+    ].find((e) => {
       return e.textContent?.trim().startsWith(label);
     });
     expect(opt).toBeDefined();
