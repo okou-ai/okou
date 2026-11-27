@@ -91,6 +91,8 @@
     <string name="updates_download_failed">Pengunduhan gagal</string>
     <string name="updates_check_compatible">Periksa versi</string>
     <string name="updates_required_incompatible">Perangkat ini tidak dapat memperbarui Okou</string>
+    <string name="updates_newer_android_required">Pembaruan ini memerlukan versi Android yang lebih baru.</string>
+    <string name="updates_required_incompatible_description">Versi Okou ini sudah tidak didukung. Perbarui Android, lalu periksa versi yang tersedia.</string>
     <string name="updates_required_incompatible_short">Tidak dapat memperbarui</string>
     <string name="updates_required_short">Pembaruan diperlukan</string>
     <string name="updates_ready">Lanjutkan instalasi</string>

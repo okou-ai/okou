@@ -91,6 +91,8 @@
     <string name="updates_download_failed">Échec du téléchargement</string>
     <string name="updates_check_compatible">Vérifier les versions</string>
     <string name="updates_required_incompatible">Cet appareil ne peut pas mettre à jour Okou</string>
+    <string name="updates_newer_android_required">Cette mise à jour nécessite une version plus récente d’Android.</string>
+    <string name="updates_required_incompatible_description">Cette version d’Okou n’est plus prise en charge. Mettez à jour Android, puis recherchez une version disponible.</string>
     <string name="updates_required_incompatible_short">Mise à jour impossible</string>
     <string name="updates_required_short">Mise à jour requise</string>
     <string name="updates_ready">Reprendre l’installation</string>
