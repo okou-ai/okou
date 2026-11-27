@@ -3,8 +3,7 @@ use super::super::*;
 use crate::storage_fingerprints::StorageFingerprints;
 use runner_host::paths::{HomePaths, RunnerPaths};
 use runner_types::ids::RunId;
-use std::io::{Seek, SeekFrom, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{FileExt, PermissionsExt};
 use std::path::Path;
 
 pub(super) const SIZE: u64 = 1024 * 1024;
@@ -146,16 +145,17 @@ pub(super) fn write_image(path: &Path, marker: &[u8], size: u64) {
 }
 
 pub(super) fn create_image(path: &Path, marker: &[u8], size: u64) -> std::fs::File {
-    let mut image = std::fs::OpenOptions::new()
+    let image = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create_new(true)
         .open(path)
         .unwrap();
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    image
+        .set_permissions(std::fs::Permissions::from_mode(0o600))
+        .unwrap();
     image.set_len(size).unwrap();
-    image.seek(SeekFrom::Start(4096)).unwrap();
-    image.write_all(marker).unwrap();
+    image.write_all_at(marker, 4096).unwrap();
     image
 }
 
