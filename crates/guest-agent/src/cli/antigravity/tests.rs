@@ -101,6 +101,7 @@ fn live_preview_masks_across_chunks_and_reconciles_to_one_durable_block() {
         preview.push_str(&chunk.delta);
     }
     assert!(preview.starts_with(prefix));
+    assert!(!preview.contains("configured-secret"));
     assert_eq!(durable["runEventId"], first.run_event_id);
     assert_eq!(durable["message"]["content"][0]["text"], preview);
 }

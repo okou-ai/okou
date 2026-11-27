@@ -58,6 +58,8 @@ settings = json.loads(settings_path.read_text())
 assert settings["modelProvider"] == "" and settings["useG1Credits"] is False
 assert settings["enableTerminalSandbox"] is False
 assert settings["toolPermission"] == "always-proceed"
+assert "GEMINI_API_KEY" not in os.environ
+assert "AGY_ADC_AUTH" not in os.environ
 assert os.environ["AGY_CLI_DISABLE_AUTO_UPDATE"] == "true"
 
 print("OAuth challenge provider-private-marker", file=sys.stderr, flush=True)

@@ -66,6 +66,8 @@ fn runtime(
         ("OKOU_ANTIGRAVITY_MODEL".into(), "gemini-4-carbon".into()),
         ("OKOU_REASONING_EFFORT".into(), "high".into()),
         ("OKOU_CHAT_THREAD_ID".into(), THREAD.into()),
+        ("GEMINI_API_KEY".into(), "must-not-reach-the-peer".into()),
+        ("AGY_ADC_AUTH".into(), "true".into()),
         ("AGY_TEST_CASE".into(), mode.into()),
         ("AGY_TEST_DIR".into(), dir.display().to_string()),
     ]);
@@ -155,6 +157,12 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
                         events[2]["message"]["content"][0]["tool_use_id"]
                     );
                     assert_eq!(events[4]["usage"]["total_tokens"], 16);
+                    assert!(
+                        !events[3]["message"]["content"][0]["text"]
+                            .as_str()
+                            .unwrap()
+                            .contains("configured-secret")
+                    );
                     assert_eq!(
                         events[4]["result"],
                         events[3]["message"]["content"][0]["text"]
@@ -205,6 +213,10 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
                 _ => return Err(format!("Unknown Antigravity fixture scenario: {mode}").into()),
             }
         }
+        let log = fs::read_to_string(runtime.paths.agent_log_file())?;
+        assert!(!log.contains("provider-private-marker"));
+        assert!(!log.contains("configured-secret"));
+        assert!(!Path::new(&fs::read_to_string(dir.join("rules-dir"))?).exists());
     }
     Ok(())
 }
