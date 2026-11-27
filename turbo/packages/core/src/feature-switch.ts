@@ -138,13 +138,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use Markdown for text-focused documents and HTML for visual or interactive deliverables, with structured Markdown previews and DOCX and PDF exports.",
     enabled: true,
   },
-  [FeatureSwitchKey.MarkdownArtifactQuote]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Copy or quote selected Markdown passages into the owning chat in desktop split view.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ChatThreadFork]: {
     maintainer: "ethan@okou.ai",
     description:

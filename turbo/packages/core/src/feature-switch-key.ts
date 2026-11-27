@@ -14,7 +14,6 @@ export enum FeatureSwitchKey {
   EmailIntegration = "emailIntegration",
   PresentationOutputFormat = "presentationOutputFormat",
   MarkdownFirstOutput = "markdownFirstOutput",
-  MarkdownArtifactQuote = "markdownArtifactQuote",
   ChatThreadFork = "chatThreadFork",
   HideEmptyForYou = "hideEmptyForYou",
   ChatListAllFilter = "chatListAllFilter",

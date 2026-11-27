@@ -80,7 +80,6 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.MemberConnectorAccountAccess,
     FeatureSwitchKey.ComposerVoiceMessages,
     FeatureSwitchKey.HideEmptyForYou,
-    FeatureSwitchKey.MarkdownArtifactQuote,
     FeatureSwitchKey.ArtifactLibrary,
     FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
@@ -502,9 +501,6 @@ describe("getFeatureSwitchMetadata", () => {
       "released",
     );
     expect(metadata[FeatureSwitchKey.ComposerVoiceMessages].rolloutStage).toBe(
-      "beta",
-    );
-    expect(metadata[FeatureSwitchKey.MarkdownArtifactQuote].rolloutStage).toBe(
       "beta",
     );
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
