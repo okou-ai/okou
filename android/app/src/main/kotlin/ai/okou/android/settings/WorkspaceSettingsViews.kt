@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -247,12 +246,8 @@ internal fun WorkspaceSettingsDataPage(
 
 @Composable
 internal fun SettingsWebAction(label: String, section: String) {
-    TextButton(
-        onClick = settingsWebClick(section),
-        colors =
-            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-    ) {
-        Text(label, fontWeight = FontWeight.SemiBold)
+    TextButton(onClick = settingsWebClick(section)) {
+        Text(label)
     }
 }
 
@@ -388,9 +383,12 @@ private fun ModelAccounts(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     SettingsDetailStatus(stringResource(R.string.settings_accounts_empty_help))
+                    SettingsWebAction(
+                        stringResource(R.string.settings_accounts_web_connect),
+                        "model",
+                    )
                 }
             }
-            SettingsWebAction(stringResource(R.string.settings_accounts_web_connect), "model")
         }
         else -> {
             for (provider in ModelAccountProvider.entries) {
