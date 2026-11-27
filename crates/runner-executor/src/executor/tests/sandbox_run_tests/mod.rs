@@ -84,7 +84,7 @@ fn storage_archive(content: &[u8]) -> Vec<u8> {
     tar.into_inner().unwrap().finish().unwrap()
 }
 
-fn codex_oauth_context() -> runner_types::types::ExecutionContext {
+pub(super) fn codex_oauth_context() -> runner_types::types::ExecutionContext {
     let mut context = minimal_context();
     context.cli_agent_type = "codex".into();
     context.firewall_token = Some("host-firewall-token".into());

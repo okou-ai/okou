@@ -331,6 +331,35 @@ async fn fresh_delivery_reuses_connections_across_runs_and_reconnects_after_serv
 }
 
 #[tokio::test]
+async fn fresh_delivery_reuses_across_longer_idle_gaps_and_still_expires() {
+    use raw_http_test_support::clock::advance_timer_phase;
+
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut server = ArchiveServer::start().await;
+
+    let first = download(&mut server, &home, &admission, "prime", false).await;
+
+    advance_timer_phase(Duration::from_secs(215)).await;
+    let (second, observation) =
+        download_observed(&mut server, &home, &admission, "after-gap", false).await;
+    assert_eq!(second, first);
+    assert_eq!(observation["archive_connection_attempt"]["started"], 0);
+
+    advance_timer_phase(Duration::from_secs(245)).await;
+    let (third, observation) =
+        download_observed(&mut server, &home, &admission, "after-expiry", false).await;
+    assert_ne!(third, second);
+    assert_eq!(observation["archive_connection_attempt"]["started"], 1);
+    assert_eq!(server.closed_connection().await, second);
+
+    drop(admission);
+    assert_eq!(server.closed_connection().await, third);
+    server.stop().await;
+}
+
+#[tokio::test]
 async fn fresh_delivery_first_headers_timeout_retires_a_stalled_pooled_connection() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);

@@ -202,6 +202,12 @@ impl StartedCodexModelCatalogPrefetch {
         Self::disabled_at(Instant::now())
     }
 
+    pub(super) fn start_failed(&self) -> bool {
+        self.outcome
+            .as_ref()
+            .is_some_and(|outcome| !outcome.success)
+    }
+
     pub(super) fn supervise(self, sandbox: &dyn Sandbox) -> CodexModelCatalogPrefetch<'_> {
         let process = self.process.map(|process| {
             let timeout = process

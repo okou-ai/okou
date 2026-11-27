@@ -289,7 +289,10 @@ export class RelayFixture {
     return response.json();
   }
 
-  async waitForHealth(test: TestContext, expected: object): Promise<void> {
+  async waitForHealth(
+    test: Pick<TestContext, "onTestFailed" | "signal" | "task">,
+    expected: object,
+  ): Promise<void> {
     let phase = "waiting for health headers";
     let lastStatus: number | null = null;
     let lastHealth: zInfer<typeof healthObservationSchema> | null = null;

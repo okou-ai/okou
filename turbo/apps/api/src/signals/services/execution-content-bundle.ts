@@ -15,26 +15,20 @@ import type {
   CapturedExecutionPackages,
   ExecutionPackageMounts,
 } from "./execution-workflow-selection";
-import { builtInWorkflowBundleUrl } from "./builtin-workflows";
 
 export function selectExecutionContentBundles(
   packages: CapturedExecutionPackages,
   context: ExecutionPackageMounts,
 ) {
   const workflowNames = new Set(
-    [...packages.workflows, ...context.officialWorkflowBundles].map(
-      ({ name }) => {
-        return name;
-      },
-    ),
+    packages.workflows.map(({ name }) => {
+      return name;
+    }),
   );
   const instructions = packages.instructionsBundle;
-  const preparedSkills = [
-    ...context.officialWorkflowBundles,
-    ...context.seedSkillBundles.filter(({ name }) => {
-      return !workflowNames.has(name);
-    }),
-  ];
+  const preparedSkills = context.seedSkillBundles.filter(({ name }) => {
+    return !workflowNames.has(name);
+  });
   const skills = [
     ...packages.workflows,
     ...preparedSkills.map(({ name, mount: { sha256, archiveBytes } }) => {
@@ -57,9 +51,7 @@ export function selectExecutionContentBundles(
     instructions,
     skills,
     templates,
-    hashes: hashes.filter((sha256) => {
-      return !builtInWorkflowBundleUrl(sha256);
-    }),
+    hashes,
   };
 }
 
@@ -110,9 +102,7 @@ export const signExecutionContentBundles$ = command(
     );
     const withDownloadUrl = <T extends ContentBundle>(reference: T) => {
       const request = requests.get(reference.sha256);
-      const url =
-        builtInWorkflowBundleUrl(reference.sha256) ??
-        (request && signed.results.get(request.cacheKey)?.url);
+      const url = request && signed.results.get(request.cacheKey)?.url;
       if (!url) {
         throw new Error("Execution Content Bundle URL is missing");
       }

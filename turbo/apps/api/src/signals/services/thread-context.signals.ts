@@ -34,15 +34,10 @@ import {
   createTelegramThreadContext,
 } from "./thread-run-context.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
-import {
-  createThreadWorkflowContext,
-  type ThreadWorkflowContext,
-} from "./thread-workflow-context.signals";
-
 type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one claimed Thread and its eventual picked event. */
-export interface ThreadContext extends ThreadWorkflowContext {
+export interface ThreadContext {
   readonly proactiveInput$: ReturnType<typeof createProactiveInput>;
   /** Background source acquisition; consumers join the individual nodes below. */
   readonly inputResources$: Computed<Promise<void>>;
@@ -112,18 +107,12 @@ export function createThreadContext(
     bootstrap,
     chatThreadId,
     pickedEvent$,
-    integrations.automationTarget$,
     dispatchTiming$,
   );
   const discord = createDiscordThreadContext(
     pickedEvent$,
     orgId,
     dispatchTiming$,
-  );
-  const workflowContext = createThreadWorkflowContext(
-    bootstrap,
-    pickedEvent$,
-    integrations.automationSnapshot$,
   );
   const templateOrgId$ = createThreadOrgId(orgId);
   const templates = createRunTemplates(
@@ -137,7 +126,6 @@ export function createThreadContext(
   const threadContinuation$ = createThreadContinuation(
     pickedEvent$,
     model.subscriptionSelection$,
-    integrations.automationTarget$,
     runIds$,
   );
   const connectedAccounts = createConnectedAccountsSignals(
@@ -182,7 +170,6 @@ export function createThreadContext(
     automationPayload$: integrations.automationPayload$,
     automationTarget$: integrations.automationTarget$,
     executionPackageSources$: integrations.executionPackageSources$,
-    officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
     templateSources$: templates.sources$,
     templates$: templates.templates$,
     modelSelection$: model.modelSelection$,
@@ -202,21 +189,15 @@ function createThreadModelContext(
   bootstrap: AgentRunContextSignals,
   chatThreadId: string,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
   dispatchTiming$: ThreadContext["dispatchTiming$"],
 ) {
   const proactiveInput$ = createProactiveInput(bootstrap, pickedEvent$);
   const effectiveSelection$ = computed(async (get) => {
-    const [event, target] = await Promise.all([
-      get(pickedEvent$),
-      get(automationTarget$),
-    ]);
+    const event = await get(pickedEvent$);
     if (!event) {
       return null;
     }
-    // Official Workflows always route through Auto.
-    return target?.workflow.officialDefinitionName ||
-      (event.contextType === "proactive" && (await get(proactiveInput$)))
+    return (await get(proactiveInput$))
       ? {
           selectedModel: AUTO_SELECTED_MODEL,
           codexServiceTier: null,
@@ -224,11 +205,9 @@ function createThreadModelContext(
         }
       : event.modelSelection;
   });
-  const creditsWaived$ = createOfficialWorkflowCreditWaiver(
-    proactiveInput$,
-    pickedEvent$,
-    automationTarget$,
-  );
+  const creditsWaived$ = computed(async (get) => {
+    return Boolean(await get(proactiveInput$));
+  });
   const model = createThreadModelSignals(
     bootstrap,
     chatThreadId,
@@ -370,31 +349,6 @@ function createThreadIntegrationContexts(
   };
 }
 
-/** Routing candidate only; exact accepted artifacts and installation ownership
- * are still validated before a Run can be committed. */
-function createOfficialWorkflowCreditWaiver(
-  proactiveInput$: ThreadContext["proactiveInput$"],
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationTarget$: ThreadContext["automationTarget$"],
-) {
-  return computed(async (get) => {
-    const [event, target] = await Promise.all([
-      get(pickedEvent$),
-      get(automationTarget$),
-    ]);
-    if (event?.contextType === "proactive") {
-      return Boolean(await get(proactiveInput$));
-    }
-    return (
-      event?.eventType === "input.automation" &&
-      event.contextType === "automation" &&
-      target !== null &&
-      target.workflow.officialDefinitionName !== null &&
-      target.automation.officialBlueprintKey !== null
-    );
-  });
-}
-
 function createThreadExecutionPackageSources(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
@@ -435,7 +389,6 @@ function createRunIds() {
 function createThreadContinuation(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   selection$: ThreadModels["subscriptionSelection$"],
-  automationTarget$: ThreadContext["automationTarget$"],
   runIds$: ThreadContext["runIds$"],
 ) {
   return computed(async (get): Promise<ChatThreadContinuation | null> => {
@@ -452,14 +405,10 @@ function createThreadContinuation(
     if ("status" in selection) {
       return null;
     }
-    const target =
-      event.contextType === "automation" ? await get(automationTarget$) : null;
     const identity = get(runIds$);
     return resolveChatThreadContinuation(event.thread, {
       cliAgentType: selection.cliAgentType,
-      officialWorkflow:
-        event.contextType === "proactive" ||
-        Boolean(target?.workflow.officialDefinitionName),
+      allowNativeResume: event.contextType !== "proactive",
       admission: {
         ...identity,
         finalizingSourceRunId: event.thread.frameworkSessionRunId,

@@ -443,6 +443,77 @@ function rawRequest(path: string, body: unknown, method = "POST") {
 }
 
 describe("VNC channel attachment", () => {
+  it("deletes dependent channels together and protects channels on other devices", async () => {
+    useSecretKmsProbe();
+    const actor = owner();
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.RemoteDevices]: true,
+    });
+    const devices = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    const sshDevice = { id: randomUUID(), displayName: "Gateway" };
+    const vncDevice = { id: randomUUID(), displayName: "Desktop" };
+    await accept(devices.create({ headers, body: sshDevice }), [201]);
+    await accept(devices.create({ headers, body: vncDevice }), [201]);
+    const { body: ssh } = await accept(
+      sshConnectionsClient().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          remoteDeviceId: sshDevice.id,
+          displayName: "Gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const { body: vnc } = await accept(
+      connections().create({
+        headers,
+        body: {
+          ...hostBody("127.0.0.1"),
+          remoteDeviceId: vncDevice.id,
+          transport: { type: "ssh", connectionId: ssh.id },
+        },
+      }),
+      [201],
+    );
+    const deletion = {
+      headers,
+      params: { deviceId: sshDevice.id },
+      body: undefined,
+    };
+    const blocked = await accept(devices.delete(deletion), [409]);
+    expect(blocked.body.error.message).toContain(
+      "dependency on the other device",
+    );
+    const before = await accept(devices.list({ headers }), [200]);
+    expect(before.body.devices).toHaveLength(2);
+    await accept(
+      devices.moveChannel({
+        headers,
+        params: { deviceId: sshDevice.id, kind: "vnc", channelId: vnc.id },
+        body: undefined,
+      }),
+      [204],
+    );
+
+    await accept(devices.delete(deletion), [204]);
+    const after = await accept(devices.list({ headers }), [200]);
+    expect(after.body.devices).toMatchObject([
+      { id: vncDevice.id, channels: [] },
+    ]);
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([]);
+    expect(
+      (await accept(sshConnectionsClient().list({ headers }), [200])).body
+        .connections,
+    ).toStrictEqual([]);
+  });
+
   it.each(["inline", "saved"] as const)(
     "attaches using a %s credential and rejects another member's device atomically",
     async (selection) => {

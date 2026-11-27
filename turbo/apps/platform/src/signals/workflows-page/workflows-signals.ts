@@ -806,7 +806,7 @@ export const reloadWorkflows$ = command(({ set }) => {
   set(reloadWorkflowData$);
 });
 
-/** Official Workflows are system-managed and never listed as user Workflows. */
+/** Older API deployments may still return system installations in collections. */
 function isOfficialWorkflow(
   workflow: Pick<WorkflowSummary, "official">,
 ): boolean {

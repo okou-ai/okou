@@ -1,11 +1,11 @@
 export const OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE =
-  "Official Workflow content and structure are read-only";
+  "Archived workflow content and structure are read-only";
 
-export const OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE =
-  "Official Workflows can only run through their automatic triggers";
+export const RETIRED_WORKFLOW_RUN_MESSAGE =
+  "This archived workflow can no longer run";
 
 export const OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE =
-  "Official Workflow automation structure is read-only";
+  "Archived workflow automations are read-only";
 
 export const OFFICIAL_AUTOMATION_CHANGED_MESSAGE =
-  "The Official Workflow automation changed. Retry the update.";
+  "The archived workflow automation changed. Retry the update.";

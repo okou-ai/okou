@@ -1481,23 +1481,9 @@ function artifactCatalogKeywordFilter(
     .replaceAll("\\", String.raw`\\`)
     .replaceAll("%", String.raw`\%`)
     .replaceAll("_", String.raw`\_`)}%`;
-  const qb = new QueryBuilder();
   return or(
     ilike(artifacts.title, pattern),
-    libraryQuery
-      ? exists(
-          qb
-            .select({ id: runUploadedFiles.id })
-            .from(runUploadedFiles)
-            .where(
-              and(
-                eq(runUploadedFiles.id, artifacts.projectionFileId),
-                eq(runUploadedFiles.orgId, artifacts.orgId),
-                ilike(runUploadedFiles.filename, pattern),
-              ),
-            ),
-        )
-      : undefined,
+    libraryQuery ? ilike(runUploadedFiles.filename, pattern) : undefined,
   );
 }
 
@@ -1506,6 +1492,40 @@ function artifactCatalogOrderBy(direction: ArtifactCatalogDirection): SQL[] {
     direction === "asc" ? asc(artifacts.createdAt) : desc(artifacts.createdAt),
     direction === "asc" ? asc(artifacts.id) : desc(artifacts.id),
   ];
+}
+
+function artifactLibraryOrderBy(
+  direction: ArtifactCatalogDirection,
+  merged = false,
+): SQL[] {
+  const createdAt = merged ? sql.identifier("created_at") : artifacts.createdAt;
+  const id = merged ? sql.identifier("artifact_id") : artifacts.id;
+  return direction === "asc"
+    ? [sql`${asc(createdAt)} NULLS FIRST`, sql`${asc(id)} NULLS FIRST`]
+    : [sql`${desc(createdAt)} NULLS LAST`, sql`${desc(id)} NULLS LAST`];
+}
+
+function artifactCatalogSelection() {
+  return {
+    id: artifacts.id,
+    entityId: artifacts.entityId,
+    kind: artifacts.kind,
+    logicalKey: artifacts.logicalKey,
+    displayKind: artifactCatalogEffectiveKind(),
+    aliasUrl: artifacts.aliasUrl,
+    sourceUrl: artifacts.sourceUrl,
+    videoSourceUrl: artifacts.videoSourceUrl,
+    title: artifacts.title,
+    thumbnail: artifacts.thumbnail,
+    createdAt: artifacts.createdAt,
+    updatedAt: artifacts.updatedAt,
+    // Preserve PostgreSQL microseconds in new keyset cursors; Date truncates
+    // them and can skip records sharing a millisecond at a page boundary.
+    cursorCreatedAt:
+      sql`to_char(${artifacts.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
+        pgTextDecoder,
+      ),
+  };
 }
 
 export const listArtifactCatalog$ = command(
@@ -1533,72 +1553,68 @@ export const listArtifactCatalog$ = command(
       args.keyword,
       libraryQuery,
     );
-    const selection = {
-      id: artifacts.id,
-      entityId: artifacts.entityId,
-      kind: artifacts.kind,
-      logicalKey: artifacts.logicalKey,
-      displayKind: artifactCatalogEffectiveKind(),
-      aliasUrl: artifacts.aliasUrl,
-      sourceUrl: artifacts.sourceUrl,
-      videoSourceUrl: artifacts.videoSourceUrl,
-      title: artifacts.title,
-      thumbnail: artifacts.thumbnail,
-      createdAt: artifacts.createdAt,
-      updatedAt: artifacts.updatedAt,
-      // Preserve PostgreSQL microseconds in new keyset cursors; Date truncates
-      // them and can skip records sharing a millisecond at a page boundary.
-      cursorCreatedAt:
-        sql`to_char(${artifacts.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
-          pgTextDecoder,
-        ),
-    };
+    const selection = artifactCatalogSelection();
     const category = artifactCatalogCategory();
-    const catalog = libraryQuery
-      ? db
-          .select({
-            ...selection,
-            category,
-            sourceChatThread: {
-              id: chatThreads.id,
-              title: chatThreads.title,
-            },
-          })
+    const filters = and(
+      eq(artifacts.orgId, args.orgId),
+      isNull(artifacts.deletedAt),
+      args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
+      args.category ? eq(category, args.category) : undefined,
+      args.chatThreadId
+        ? eq(artifacts.chatThreadId, args.chatThreadId)
+        : undefined,
+      keywordFilter,
+      cursorFilter,
+    );
+    const libraryCatalog = (authorUserId: string) => {
+      return db
+        .select({
+          ...selection,
+          // UNION ordering uses output names; distinguish this from the joined
+          // source thread's id without changing the response field.
+          id: sql`${artifacts.id}`.mapWith(artifacts.id).as("artifact_id"),
+          category,
+          sourceChatThread: {
+            id: chatThreads.id,
+            title: chatThreads.title,
+          },
+        })
+        .from(artifacts)
+        .leftJoin(
+          runUploadedFiles,
+          and(
+            eq(runUploadedFiles.id, artifacts.projectionFileId),
+            eq(runUploadedFiles.orgId, args.orgId),
+          ),
+        )
+        .leftJoin(
+          chatThreads,
+          and(
+            eq(chatThreads.id, artifacts.chatThreadId),
+            eq(chatThreads.orgId, args.orgId),
+            eq(chatThreads.userId, args.userId),
+            eq(chatThreads.hidden, false),
+          ),
+        )
+        .where(and(filters, eq(artifacts.authorUserId, authorUserId)))
+        .orderBy(...artifactLibraryOrderBy(direction))
+        .limit(limit + 1);
+    };
+    // Each author namespace has its own ordered index range. Bound both before
+    // merging, while keeping all filters and the cursor inside each range.
+    const rows: readonly ArtifactCatalogListRow[] = libraryQuery
+      ? await libraryCatalog(args.userId)
+          .unionAll(
+            libraryCatalog(sharedThreadArtifactAuthorUserId(args.userId)),
+          )
+          .orderBy(...artifactLibraryOrderBy(direction, true))
+          .limit(limit + 1)
+      : await db
+          .select(selection)
           .from(artifacts)
-          .leftJoin(
-            runUploadedFiles,
-            and(
-              eq(runUploadedFiles.id, artifacts.projectionFileId),
-              eq(runUploadedFiles.orgId, args.orgId),
-            ),
-          )
-          .leftJoin(
-            chatThreads,
-            and(
-              eq(chatThreads.id, artifacts.chatThreadId),
-              eq(chatThreads.orgId, args.orgId),
-              eq(chatThreads.userId, args.userId),
-              eq(chatThreads.hidden, false),
-            ),
-          )
-      : db.select(selection).from(artifacts);
-    const rows: readonly ArtifactCatalogListRow[] = await catalog
-      .where(
-        and(
-          eq(artifacts.orgId, args.orgId),
-          artifactCatalogOwnerFilter(args.userId),
-          isNull(artifacts.deletedAt),
-          args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
-          args.category ? eq(category, args.category) : undefined,
-          args.chatThreadId
-            ? eq(artifacts.chatThreadId, args.chatThreadId)
-            : undefined,
-          keywordFilter,
-          cursorFilter,
-        ),
-      )
-      .orderBy(...artifactCatalogOrderBy(direction))
-      .limit(limit + 1);
+          .where(and(filters, artifactCatalogOwnerFilter(args.userId)))
+          .orderBy(...artifactCatalogOrderBy(direction))
+          .limit(limit + 1);
     signal.throwIfAborted();
 
     const hasMore = rows.length > limit;

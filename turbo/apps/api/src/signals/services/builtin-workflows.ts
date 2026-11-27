@@ -20,7 +20,7 @@ import {
 import {
   MORNING_BRIEF_INSTRUCTION,
   PROACTIVE_SUGGESTIONS_INSTRUCTION,
-} from "./builtin-workflow-instructions";
+} from "./proactive-task-instructions";
 import { PROACTIVE_LEARNING_INSTRUCTION } from "./proactive-nightly-instructions";
 
 function scheduledWorkflow(args: {
@@ -40,7 +40,7 @@ function scheduledWorkflow(args: {
 }
 
 // Fingerprints identify the deployed schedules. The CDN archives contain only SKILL.md frontmatter.
-export const BUILTIN_WORKFLOWS = Object.freeze([
+const LEGACY_BUILTIN_WORKFLOWS = Object.freeze([
   scheduledWorkflow({
     name: PROACTIVE_LEARNING_DEFINITION_NAME,
     displayName: "Proactive Learning",
@@ -94,7 +94,7 @@ export function builtInWorkflow(name: string | null) {
     name === INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME
       ? MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
       : name;
-  return BUILTIN_WORKFLOWS.find((workflow) => {
+  return LEGACY_BUILTIN_WORKFLOWS.find((workflow) => {
     return workflow.name === canonicalName;
   });
 }
@@ -102,14 +102,6 @@ export function builtInWorkflow(name: string | null) {
 /** Compatibility representation of the single built-in cron in API responses and installation records. */
 export function builtinCronBindings(cronExpression: string) {
   return [{ key: "cron", value: cronExpression }];
-}
-
-export function builtInWorkflowBundleUrl(sha256: string) {
-  return BUILTIN_WORKFLOWS.some((workflow) => {
-    return workflow.contentBundle.sha256 === sha256;
-  })
-    ? `https://static.vm0.io/workflows/builtin-skills/${sha256}.tar.gz`
-    : undefined;
 }
 
 /** Built-ins use deployed code. Historical installations own their last readable snapshot. */

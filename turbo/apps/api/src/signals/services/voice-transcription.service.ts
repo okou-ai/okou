@@ -228,7 +228,7 @@ export const transcribeClips$ = command(
     }
     const credit = await set(checkBillableOperationCredits$, args, signal);
     if (credit === "closed") {
-      return resourceUnavailable("Official Workflow run is no longer active");
+      return resourceUnavailable("This platform-paid run is no longer active");
     }
     if (!credit) {
       return insufficientCredits();
