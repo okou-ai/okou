@@ -107,6 +107,10 @@ private struct ChatComposerContent: View {
   @State private var showsScanner = false
   @State private var sendFeedback = 0
   @State private var stopFeedback = 0
+  @State private var acceptFeedback = 0
+  /// Brief post-accept guard so a quick double tap on the shared bottom-right slot
+  /// cannot immediately send the newly inserted follow-up draft.
+  @State private var sendLockedUntil: ContinuousClock.Instant?
   @State private var mountedVoice: ComposerVoiceInputStore?
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -172,6 +176,9 @@ private struct ChatComposerContent: View {
       !followup.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else { return nil }
     return followup
+  }
+  private var showsAcceptFollowup: Bool {
+    !showsProgress && !showsStop && visibleFollowup != nil
   }
 
   var body: some View {
@@ -259,17 +266,12 @@ private struct ChatComposerContent: View {
           compactTrailingCount: draftState.voice == nil ? 1 : 2,
           showsBottomBar: voiceActive
         ) {
-          ZStack(alignment: .topLeading) {
-            textInput(id: inputID, followup: followup)
-              .frame(height: hidesEditor ? 0 : nil)
-              .opacity(hidesEditor ? 0 : 1)
-              .allowsHitTesting(!voiceActive)
-              .accessibilityHidden(hidesEditor)
-            if expandsInput, let followup {
-              followupSuggestion(followup)
-            }
-          }
-          .accessibilityIdentifier("message-input")
+          textInput(id: inputID, followup: followup)
+            .frame(height: hidesEditor ? 0 : nil)
+            .opacity(hidesEditor ? 0 : 1)
+            .allowsHitTesting(!voiceActive)
+            .accessibilityHidden(hidesEditor)
+            .accessibilityIdentifier("message-input")
         } leading: {
           HStack(spacing: 0) {
             Button {
@@ -346,6 +348,7 @@ private struct ChatComposerContent: View {
     }
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)
+    .sensoryFeedback(.selection, trigger: acceptFeedback)
     .sensoryFeedback(.error, trigger: error) { _, new in new != nil }
     .onChange(of: connectorSelection.map(ObjectIdentifier.init), initial: true) { _, _ in
       showsConnectors = false
@@ -383,6 +386,7 @@ private struct ChatComposerContent: View {
     .onChange(of: ObjectIdentifier(draftState), initial: true) { _, _ in
       mountedVoice?.suspend()
       mountedVoice = draftState.voice
+      sendLockedUntil = nil
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .background { mountedVoice?.suspend() }
@@ -396,6 +400,7 @@ private struct ChatComposerContent: View {
       showsScanner = false
       showsPhotos = false
       showsFiles = false
+      sendLockedUntil = nil
     }
     .onDisappear {
       draftState.editor.workflows.dismiss()
@@ -433,11 +438,10 @@ private struct ChatComposerContent: View {
       state: draftState, presentation: current, inputID: inputID,
       isFocused: $isFocused,
       acceptsImages: !isBusy && !needsUpgrade && !voiceActive,
-      placeholder: expandsInput && followup != nil ? "" : configuration.placeholder,
+      placeholder: configuration.placeholder,
       followup: followup,
       showsTrailingParagraph: showsTrailingFeedbackInput,
       expanded: showsEditingLayout,
-      showsFollowupPlaceholder: !expandsInput,
       mentionSource: mentionSource
     )
     .id(inputID)
@@ -450,24 +454,6 @@ private struct ChatComposerContent: View {
       && draftState.canEditVoice
   }
 
-  private func followupSuggestion(_ prompt: String) -> some View {
-    var text = AttributedString(prompt + " ")
-    var action = AttributedString(String(localized: "Accept"))
-    action.link = URL(string: "okou-followup:accept")
-    action.foregroundColor = OkouColor.foreground
-    text.append(action)
-    let accept = OpenURLAction { _ in
-      draftState.editor.acceptFollowup(prompt)
-      return .handled
-    }
-    return Text(text)
-      .font(.okou(.body))
-      .foregroundStyle(OkouColor.mutedForeground)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .environment(\.openURL, accept)
-  }
-
   private var trailingActions: some View {
     HStack(spacing: OkouSpace.xs) {
       if expandsInput, let modelSelection {
@@ -478,8 +464,20 @@ private struct ChatComposerContent: View {
       if let voice = draftState.voice {
         voiceInput(voice)
       }
-      primaryAction
-        .frame(width: actionSize, height: actionSize)
+      ChatComposerPrimaryAction(
+        showsAcceptFollowup: showsAcceptFollowup,
+        showsProgress: showsProgress,
+        showsStop: showsStop,
+        hasContent: hasContent,
+        canPerformPrimaryAction: canPerformPrimaryAction,
+        actionSize: actionSize,
+        reduceMotion: reduceMotion,
+        accept: {
+          if let followup = visibleFollowup { acceptFollowup(followup) }
+        },
+        performPrimary: performPrimaryAction
+      )
+      .frame(width: actionSize, height: actionSize)
     }
   }
 
@@ -488,36 +486,10 @@ private struct ChatComposerContent: View {
       .disabled(isBusy || needsUpgrade || voiceActive || !current.canEditVoice)
   }
 
-  private var primaryAction: some View {
-    Button(action: performPrimaryAction) {
-      Group {
-        if showsProgress {
-          ProgressView()
-            .controlSize(.small)
-            .tint(showsStop ? OkouColor.interruptForeground : OkouColor.primaryForeground)
-        } else if showsStop {
-          OkouIcon("square", size: OkouIconSize.inline)
-        } else {
-          OkouToolbarIcon("arrow-up")
-        }
-      }
-      .font(.okou(size: 16, weight: .semibold))
-      .foregroundStyle(
-        showsStop
-          ? OkouColor.interruptForeground
-          : hasContent ? OkouColor.primaryForeground : OkouColor.mutedForeground)
-    }
-    // A solid fill: the composer under it is already glass.
-    .buttonStyle(.borderedProminent)
-    .buttonBorderShape(.circle)
-    // An empty draft always disables send, so it takes the system's disabled fill.
-    .tint(showsStop ? OkouColor.interrupt : OkouColor.primary)
-    .disabled(!canPerformPrimaryAction)
-    .accessibilityLabel(showsStop ? "Stop" : "Send message")
-    .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
-    .frame(width: actionSize, height: actionSize)
-    .contentShape(Circle())
-    .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
+  private func acceptFollowup(_ prompt: String) {
+    guard showsAcceptFollowup, draftState.editor.acceptFollowup(prompt) else { return }
+    acceptFeedback += 1
+    sendLockedUntil = ContinuousClock.now + .milliseconds(300)
   }
 
   private func stopRun() async {
@@ -531,6 +503,7 @@ private struct ChatComposerContent: View {
   private func performPrimaryAction() {
     guard canPerformPrimaryAction else { return }
     let stopsRun = showsStop
+    if !stopsRun, let sendLockedUntil, ContinuousClock.now < sendLockedUntil { return }
     Task {
       if stopsRun {
         stopFeedback += 1
@@ -558,6 +531,63 @@ private struct ChatComposerContent: View {
     case .scan: showsScanner = true
     case .files: showsFiles = true
     case .connectors: showsConnectors = true
+    }
+  }
+}
+
+private struct ChatComposerPrimaryAction: View {
+  let showsAcceptFollowup: Bool
+  let showsProgress: Bool
+  let showsStop: Bool
+  let hasContent: Bool
+  let canPerformPrimaryAction: Bool
+  let actionSize: CGFloat
+  let reduceMotion: Bool
+  let accept: () -> Void
+  let performPrimary: () -> Void
+
+  var body: some View {
+    if showsAcceptFollowup {
+      Button(action: accept) {
+        OkouToolbarIcon("arrow-right-to-line")
+      }
+      .buttonStyle(.bordered)
+      .buttonBorderShape(.circle)
+      .tint(OkouColor.foreground)
+      .accessibilityLabel("Accept suggestion")
+      .accessibilityIdentifier("accept-followup")
+      .frame(width: actionSize, height: actionSize)
+      .contentShape(Circle())
+    } else {
+      Button(action: performPrimary) {
+        Group {
+          if showsProgress {
+            ProgressView()
+              .controlSize(.small)
+              .tint(showsStop ? OkouColor.interruptForeground : OkouColor.primaryForeground)
+          } else if showsStop {
+            OkouIcon("square", size: OkouIconSize.inline)
+          } else {
+            OkouToolbarIcon("arrow-up")
+          }
+        }
+        .font(.okou(size: 16, weight: .semibold))
+        .foregroundStyle(
+          showsStop
+            ? OkouColor.interruptForeground
+            : hasContent ? OkouColor.primaryForeground : OkouColor.mutedForeground)
+      }
+      // A solid fill: the composer under it is already glass.
+      .buttonStyle(.borderedProminent)
+      .buttonBorderShape(.circle)
+      // An empty draft always disables send, so it takes the system's disabled fill.
+      .tint(showsStop ? OkouColor.interrupt : OkouColor.primary)
+      .disabled(!canPerformPrimaryAction)
+      .accessibilityLabel(showsStop ? "Stop" : "Send message")
+      .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
+      .frame(width: actionSize, height: actionSize)
+      .contentShape(Circle())
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
     }
   }
 }
