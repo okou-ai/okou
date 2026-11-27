@@ -16,8 +16,10 @@ final class ComposerWorkflowSource {
   private let client: APIClient
   private let storage: ChatDraftStorage?
   private var recent: [String] = []
-  /// Advances with each accepted use so an older server order cannot replace its promotion.
+  /// Advances with each accepted use so an older server read cannot replace its promotion.
   private var recentRevision = 0
+  /// Accepted uses that the single serial write sends in acceptance order.
+  private var pendingUses: [[String]] = []
   private var recentWrite: Task<Void, Never>?
   private(set) var isClosed = false
   private let didFail: @MainActor (Error) -> Void
@@ -86,24 +88,29 @@ final class ComposerWorkflowSource {
     var seen = Set<String>()
     saveRecent((ids + recentIDs()).filter { seen.insert($0).inserted })
     recentRevision += 1
-    let revision = recentRevision
-    let previous = recentWrite
-    recentWrite = Task { [client, weak self] in
-      // The server applies accepted uses in their acceptance order.
-      await previous?.value
-      do {
-        let canonical = try await client.recordComposerWorkflowUse(ids)
-        guard let self, !self.isClosed, revision == self.recentRevision else { return }
-        self.saveRecent(canonical)
-      } catch {
-        self?.reportSynchronizationError(error)
-      }
-    }
+    pendingUses.append(ids)
+    guard recentWrite == nil else { return }
+    recentWrite = Task { [weak self] in await self?.writeRecentUses() }
   }
 
   func close() {
     isClosed = true
     recentWrite?.cancel()
+  }
+
+  /// One write at a time keeps the server's order equal to the acceptance order.
+  private func writeRecentUses() async {
+    while !isClosed, !Task.isCancelled, !pendingUses.isEmpty {
+      let ids = pendingUses.removeFirst()
+      do {
+        let canonical = try await client.recordComposerWorkflowUse(ids)
+        // A queued use is newer than this response; its own write caches the next order.
+        if !isClosed, pendingUses.isEmpty { saveRecent(canonical) }
+      } catch {
+        reportSynchronizationError(error)
+      }
+    }
+    recentWrite = nil
   }
 
   /// The server owns the history; this device's file caches it and orders the menu when a read
