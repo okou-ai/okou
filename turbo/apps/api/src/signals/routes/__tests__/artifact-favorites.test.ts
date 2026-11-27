@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactFavoritesContract } from "@okouai/api-contracts/contracts/artifact-favorites";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
@@ -18,6 +19,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { artifactFavoritesRoutes } from "../artifact-favorites";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactSharingRoutes } from "../artifact-sharing";
 import { artifactShareRoutes } from "../artifact-shares";
 import { hostRoutes } from "../host";
@@ -44,6 +46,7 @@ const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const routes: readonly RouteEntry[] = [
   ...artifactFavoritesRoutes,
+  ...artifactReferenceRoutes,
   ...artifactCatalogRoutes,
   ...artifactSharingRoutes,
   ...artifactShareRoutes,
@@ -80,7 +83,7 @@ async function upload(
 ) {
   const content = "favorite content";
   const prepared = await accept(
-    api(actor)(uploadsContract).prepare({
+    api(actor)(uploadsContract).preparePrivate({
       headers,
       body: {
         filename,
@@ -426,12 +429,41 @@ describe("artifact favorites", () => {
       [200],
     );
     const artifactId = catalog.body.artifacts[0]!.id;
+    const publicAlias = new URL(
+      new URL(complete.body.url).pathname.slice("/artifacts".length),
+      env("PUBLIC_ARTIFACT_SHARES_BASE_URL"),
+    ).href;
+    for (const url of [complete.body.url, publicAlias]) {
+      expect(
+        (
+          await accept(
+            api(viewer)(artifactFavoritesContract).resolve({
+              headers,
+              query: { url },
+            }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ artifactId, favorited: false });
+    }
+    const send = context.mocks.s3.send.getMockImplementation()!;
+    context.mocks.s3.send.mockImplementation((operation, ...args) => {
+      if (
+        operation instanceof GetObjectCommand &&
+        operation.input.Key?.startsWith("artifact-delivery/files/")
+      ) {
+        return Promise.reject(
+          Object.assign(new Error("No registry entry"), { name: "NoSuchKey" }),
+        );
+      }
+      return send(operation, ...args);
+    });
     expect(
       (
         await accept(
           api(viewer)(artifactFavoritesContract).resolve({
             headers,
-            query: { url: complete.body.url },
+            query: { url: publicAlias },
           }),
           [200],
         )
@@ -440,10 +472,11 @@ describe("artifact favorites", () => {
     await accept(
       api(viewer)(artifactFavoritesContract).create({
         headers,
-        body: { artifactId },
+        body: { url: publicAlias },
       }),
       [200],
     );
+    context.mocks.s3.send.mockImplementation(send);
     expect(
       (
         await accept(
@@ -700,6 +733,184 @@ describe("artifact favorites", () => {
     ).toStrictEqual([]);
   });
 
+  it("resolves and favorites a public file delivery URL, delivers authorized content, and observes revocation", async () => {
+    mockEnv("PUBLIC_ARTIFACT_SHARES_BASE_URL", "https://files.sites.vm7.io");
+    const owner = bdd.user();
+    const viewer = bdd.user();
+    await flags(owner);
+    await flags(viewer);
+    const file = await upload(owner, "public-report.md", "text/markdown");
+    directory([owner, viewer]);
+    const shared = await accept(
+      api(owner)(artifactSharesContract).update({
+        headers,
+        body: {
+          target: { kind: "file", id: file.fileId },
+          audience: "public",
+        },
+      }),
+      [200],
+    );
+    const url = shared.body.url;
+    if (!url) {
+      throw new Error("Expected public file URL");
+    }
+    expect(url).toMatch(/^https:\/\/files\.sites\.vm7\.io\/[a-z0-9]{10}\.md$/u);
+    const resolved = await accept(
+      api(viewer)(artifactFavoritesContract).resolve({
+        headers,
+        query: { url },
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual({
+      artifactId: file.artifactId,
+      favorited: false,
+    });
+    const created = await accept(
+      api(viewer)(artifactFavoritesContract).create({ headers, body: { url } }),
+      [200],
+    );
+    expect(created.body).toStrictEqual({
+      artifactId: file.artifactId,
+      favorited: true,
+    });
+    const detail = await accept(
+      api(viewer)(artifactFavoritesContract).get({
+        headers,
+        params: { artifactId: file.artifactId },
+      }),
+      [200],
+    );
+    expect(detail.body).toMatchObject({
+      id: file.artifactId,
+      title: "public-report.md",
+      isOwner: false,
+    });
+    if (!("file" in detail.body)) {
+      throw new Error("Expected file detail");
+    }
+    expect(new URL(detail.body.file.url).origin).toBe(
+      "https://attachment-storage.example",
+    );
+    expect(detail.body.sourceUrl).toBe(detail.body.file.url);
+    const delivered = await fetch(detail.body.file.url);
+    expect(delivered.status).toBe(200);
+    await expect(delivered.text()).resolves.toBe("favorite content");
+
+    const publicUrl = new URL(url);
+    const credentialUrl = new URL(url);
+    credentialUrl.username = "viewer";
+    for (const unsupported of [
+      `https://files.sites.vm7.io.lookalike.example${publicUrl.pathname}`,
+      `https://files.sites.vm7.io:8443${publicUrl.pathname}`,
+      new URL(publicUrl.pathname, env("APP_URL")).href,
+      credentialUrl.href,
+      new URL(`/artifacts${publicUrl.pathname}`, publicUrl).href,
+      `${url}/`,
+      url.replace(/\.md$/u, ".pdf"),
+    ]) {
+      await accept(
+        api(viewer)(artifactFavoritesContract).resolve({
+          headers,
+          query: { url: unsupported },
+        }),
+        [404],
+      );
+      await accept(
+        api(viewer)(artifactFavoritesContract).create({
+          headers,
+          body: { url: unsupported },
+        }),
+        [404],
+      );
+    }
+    expect(
+      (
+        await accept(
+          api(viewer)(artifactFavoritesContract).resolve({
+            headers,
+            query: { url },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ artifactId: file.artifactId, favorited: true });
+    await accept(
+      api(owner)(artifactSharesContract).update({
+        headers,
+        body: {
+          target: { kind: "file", id: file.fileId },
+          audience: "private",
+        },
+      }),
+      [200],
+    );
+    await accept(
+      api(viewer)(artifactFavoritesContract).resolve({
+        headers,
+        query: { url },
+      }),
+      [404],
+    );
+    for (const body of [{ url }, { artifactId: file.artifactId }]) {
+      await accept(
+        api(viewer)(artifactFavoritesContract).create({ headers, body }),
+        [404],
+      );
+    }
+    await accept(
+      api(viewer)(artifactFavoritesContract).get({
+        headers,
+        params: { artifactId: file.artifactId },
+      }),
+      [404],
+    );
+    expect(
+      (
+        await accept(
+          api(viewer)(artifactFavoritesContract).list({ headers, query: {} }),
+          [200],
+        )
+      ).body.favorites,
+    ).toStrictEqual([
+      {
+        artifactId: file.artifactId,
+        createdAt: expect.any(String),
+        artifact: null,
+      },
+    ]);
+    expect(
+      (
+        await accept(
+          api(viewer)(artifactFavoritesContract).status({
+            headers,
+            query: { artifactIds: file.artifactId },
+          }),
+          [200],
+        )
+      ).body.favorites,
+    ).toStrictEqual({ [file.artifactId]: true });
+    await accept(
+      api(viewer)(artifactFavoritesContract).remove({
+        headers,
+        params: { artifactId: file.artifactId },
+      }),
+      [200],
+    );
+    expect(
+      (
+        await accept(
+          api(viewer)(artifactFavoritesContract).status({
+            headers,
+            query: { artifactIds: file.artifactId },
+          }),
+          [200],
+        )
+      ).body.favorites,
+    ).toStrictEqual({ [file.artifactId]: false });
+  });
+
   it.each(["organization", "public"] as const)(
     "uses current %s file sharing authority, including membership revocation",
     async (audience) => {
@@ -767,11 +978,26 @@ describe("artifact favorites", () => {
       }),
       [200],
     );
+    directory([owner]);
+    const shared = await accept(
+      api(owner)(artifactSharesContract).update({
+        headers,
+        body: {
+          target: { kind: "file", id: file.fileId },
+          audience: "public",
+        },
+      }),
+      [200],
+    );
+    if (!shared.body.url) {
+      throw new Error("Expected public file URL");
+    }
     const storage = context.mocks.s3.send.getMockImplementation()!;
     context.mocks.s3.send.mockImplementation((operation, ...args) => {
       if (
         (operation instanceof GetObjectCommand &&
-          operation.input.Key?.startsWith("artifact-references/")) ||
+          (operation.input.Key?.startsWith("artifact-references/") ||
+            operation.input.Key?.startsWith("artifact-delivery/files/"))) ||
         (operation instanceof HeadObjectCommand &&
           operation.input.Key?.startsWith("private-artifacts/"))
       ) {
@@ -788,6 +1014,20 @@ describe("artifact favorites", () => {
     );
     await accept(
       api(owner)(artifactFavoritesContract).list({ headers, query: {} }),
+      [500],
+    );
+    await accept(
+      api(owner)(artifactFavoritesContract).resolve({
+        headers,
+        query: { url: shared.body.url },
+      }),
+      [500],
+    );
+    await accept(
+      api(owner)(artifactFavoritesContract).create({
+        headers,
+        body: { url: shared.body.url },
+      }),
       [500],
     );
     context.mocks.s3.send.mockImplementation(storage);
@@ -1085,21 +1325,29 @@ describe("artifact favorites", () => {
     )?.[0];
     expect(nested).toBeDefined();
     expect(nested).not.toBe(new URL(file.url).pathname);
+    const publishedNested = await accept(
+      api(viewer)(artifactReferencesContract).publicUrl({
+        params: { reference: nested!.slice("/artifacts/".length) },
+      }),
+      [200],
+    );
     for (const actor of [owner, viewer]) {
-      await accept(
-        api(actor)(artifactFavoritesContract).resolve({
-          headers,
-          query: { url: nested! },
-        }),
-        [404],
-      );
-      await accept(
-        api(actor)(artifactFavoritesContract).create({
-          headers,
-          body: { url: nested! },
-        }),
-        [404],
-      );
+      for (const nestedUrl of [nested!, publishedNested.body.url]) {
+        await accept(
+          api(actor)(artifactFavoritesContract).resolve({
+            headers,
+            query: { url: nestedUrl },
+          }),
+          [404],
+        );
+        await accept(
+          api(actor)(artifactFavoritesContract).create({
+            headers,
+            body: { url: nestedUrl },
+          }),
+          [404],
+        );
+      }
     }
     const privateFollowup =
       "Private follow-up must never enter the published selection";

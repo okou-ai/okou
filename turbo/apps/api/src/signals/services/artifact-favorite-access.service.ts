@@ -2,7 +2,9 @@ import { command } from "ccstate";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { uuid } from "zod";
 import type { ArtifactCatalogCategory } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { isArtifactDeliveryFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
 import type { ArtifactFavoriteDetail } from "@okouai/api-contracts/contracts/artifact-favorites";
+import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
   artifacts,
   imageArtifacts,
@@ -17,6 +19,10 @@ import {
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
 import { env } from "../../lib/env";
+import {
+  buildFileUrlFromKey,
+  canonicalOkouArtifactCatalogUrl,
+} from "../../lib/file-url";
 import { nowDate } from "../../lib/time";
 import {
   isSharedThreadArtifactLogicalKey,
@@ -29,6 +35,7 @@ import {
   artifactCatalogCategory,
   getArtifactCatalogEntry$,
 } from "./artifact-catalog.service";
+import { readArtifactDeliveryRecord$ } from "./artifact-delivery.service";
 import { artifactReferenceRecord$ } from "./artifact-reference.service";
 import { publicArtifactKeyFromUrl } from "./artifact-storage.service";
 import { messageArtifactAddress } from "./message-artifact.service";
@@ -446,7 +453,7 @@ const favoriteFileLocation$ = command(
         { kind: "file", id: args.fileId },
         signal,
       );
-      preview = published ? { url: published.url } : null;
+      preview = published ? { url: published.downloadUrl } : null;
     }
     signal.throwIfAborted();
     if (!preview) {
@@ -626,6 +633,41 @@ const favoriteSiteIdFromSlug$ = command(
   },
 );
 
+const favoritePublicFileReference$ = command(
+  async ({ set }, url: URL, signal: AbortSignal) => {
+    const record = await set(
+      readArtifactDeliveryRecord$,
+      { kind: "file", alias: url.pathname.slice(1) },
+      signal,
+    );
+    if (!record) {
+      // Durable CDN files can predate the delivery registry.
+      return { reference: null, urls: [] };
+    }
+    if (record.kind === "publication" && record.targetKind === "file") {
+      return {
+        reference: { id: record.shareId, hash: record.publicToken },
+        urls: [],
+      };
+    }
+    if (record.kind !== "legacy-file") {
+      // A conversation's nested resources are never standalone favorites.
+      return null;
+    }
+    const source = new URL(
+      buildFileUrlFromKey(
+        record.key,
+        linkLayoutFromSegment(record.publicBrand),
+      ),
+    );
+    const canonical = canonicalOkouArtifactCatalogUrl(source);
+    return {
+      reference: null,
+      urls: canonical ? [source.href, canonical] : [source.href],
+    };
+  },
+);
+
 /** Link parsing finds identity only. readFavoriteArtifact$ owns authorization. */
 export const favoriteArtifactIdFromUrl$ = command(
   async ({ get, set }, url: string, signal: AbortSignal) => {
@@ -636,19 +678,36 @@ export const favoriteArtifactIdFromUrl$ = command(
     let fileId: string | null | undefined = address.fileId;
     let siteId: string | undefined;
     let threadId: string | undefined;
-    if (address.reference) {
-      const identity = await set(
-        favoriteReferenceIdentity$,
-        address.reference,
+    let reference: {
+      readonly id: string | null;
+      readonly hash: string;
+    } | null = address.reference;
+    const publicFiles = env("PUBLIC_ARTIFACT_SHARES_BASE_URL");
+    const publicFile =
+      publicFiles &&
+      address.url.origin === new URL(publicFiles).origin &&
+      isArtifactDeliveryFilePath(address.url.pathname);
+    if (publicFile) {
+      const delivery = await set(
+        favoritePublicFileReference$,
+        address.url,
         signal,
       );
+      if (!delivery) {
+        return null;
+      }
+      reference = delivery.reference;
+      address.urls.push(...delivery.urls);
+    }
+    if (reference) {
+      const identity = await set(favoriteReferenceIdentity$, reference, signal);
       if (!identity) {
         return null;
       }
       fileId = identity.fileId;
       siteId = identity.siteId;
     }
-    if (address.siteSlug) {
+    if (address.siteSlug && !publicFile) {
       siteId = await set(favoriteSiteIdFromSlug$, address.siteSlug, signal);
     }
     const localThread = /^\/share\/threads\/([0-9a-f-]+)\/?$/u.exec(
