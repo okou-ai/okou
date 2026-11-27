@@ -5481,7 +5481,7 @@
     "rsaLogin": "{{login}} {{protection}} Usa RA2 o RA2_256 según los ajustes de VNC y la clave pública RSA de confianza que te haya proporcionado el administrador.",
     "rsaPassword": "Usa la contraseña configurada en el servicio VNC.",
     "sshAddress": "Si VNC y SSH se ejecutan en el mismo ordenador, usa 127.0.0.1. Para otro ordenador, pide al administrador una dirección accesible desde el ordenador SSH.",
-    "sshEmptyHelp": "Añade una conexión SSH en «Control remoto» y selecciónala aquí.",
+    "sshEmptyHelp": "Añade una conexión SSH en «{{directory}}» y selecciónala aquí.",
     "sshEmptyPlaceholder": "No hay conexiones SSH disponibles",
     "sshRoute": "Accede a la pantalla del dispositivo mediante una conexión SSH guardada.",
     "tailscaleRoute": "Para dispositivos que ya están conectados a Tailscale. Selecciona la red guardada y copia la dirección desde Tailscale en el dispositivo.",

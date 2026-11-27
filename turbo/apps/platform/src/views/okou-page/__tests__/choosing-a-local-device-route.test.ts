@@ -210,11 +210,9 @@ test("remote-control-guided-setup-044 The VNC network choice gates device fields
     .click(await screen.findByRole("option", { name: /SSH/ }));
   const ssh = await screen.findByRole("combobox", { name: /SSH host/ });
   expect(ssh).toBeDisabled();
-  await expect(
-    screen.findByText(
-      /no saved SSH|add an SSH connection first|no SSH connections/i,
-    ),
-  ).resolves.toBeVisible();
+  expect(ssh).toHaveAccessibleDescription(
+    "Add an SSH connection in “Remote devices”, then select it here.",
+  );
   expect(screen.queryByRole("textbox", { name: "Device address" })).toBeNull();
   expect(screen.queryByText("Advanced options")).toBeNull();
   await select("Connection method", "Tailscale");
