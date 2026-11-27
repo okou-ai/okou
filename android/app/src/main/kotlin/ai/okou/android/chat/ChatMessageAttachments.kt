@@ -52,6 +52,9 @@ import java.io.File
 
 private const val AttachmentImageAspectRatio = 4f / 3
 
+internal fun attachmentFocusMessage(key: String?): String? =
+    key?.takeIf { it.startsWith("chat-attachment/") }?.substringAfter('/')?.substringBeforeLast('/')
+
 @Composable
 internal fun ChatMessageAttachments(
     messageId: String,
@@ -61,6 +64,17 @@ internal fun ChatMessageAttachments(
 ) {
     val images = attachments.withIndex().filter { it.value.contentType.isAttachmentImage }
     val files = attachments.withIndex().filterNot { it.value.contentType.isAttachmentImage }
+    val openImages = actions?.openImages
+    fun openImage(index: Int, key: String) {
+        if (actions == null) return
+        if (openImages != null) {
+            val start = images.indexOfFirst { it.index == index }
+            openImages(
+                ChatSentImageVisit(actions.threadId, images.map { it.value }, start, localFiles),
+                key,
+            )
+        } else actions.open(attachments[index].attachmentPreviewId(), key)
+    }
     val shape = RoundedCornerShape(8.dp)
     val colors = MaterialTheme.colorScheme
     Column(
@@ -74,7 +88,7 @@ internal fun ChatMessageAttachments(
                 actions?.images,
                 actions?.threadId.orEmpty(),
                 localFiles[image.id],
-                Modifier.attachmentAction(messageId, index, image, actions)
+                Modifier.attachmentAction(messageId, index, image, actions) { openImage(index, it) }
                     .align(Alignment.CenterHorizontally)
                     .widthIn(max = 180.dp * AttachmentImageAspectRatio)
                     .fillMaxWidth()
@@ -92,7 +106,9 @@ internal fun ChatMessageAttachments(
                             actions?.images,
                             actions?.threadId.orEmpty(),
                             localFiles[image.id],
-                            Modifier.attachmentAction(messageId, index, image, actions)
+                            Modifier.attachmentAction(messageId, index, image, actions) {
+                                    openImage(index, it)
+                                }
                                 .weight(1f)
                                 .heightIn(max = 160.dp)
                                 .aspectRatio(AttachmentImageAspectRatio),
@@ -146,6 +162,7 @@ private fun Modifier.attachmentAction(
     index: Int,
     attachment: ChatAttachmentReference,
     actions: ChatArtifactActions?,
+    open: ((String) -> Unit)? = null,
 ): Modifier {
     if (actions == null) return this
     val key = "chat-attachment/$messageId/$index"
@@ -157,7 +174,7 @@ private fun Modifier.attachmentAction(
             }
         else Modifier
     return then(restoration).clickable(role = Role.Button) {
-        actions.open(attachment.attachmentPreviewId(), key)
+        if (open == null) actions.open(attachment.attachmentPreviewId(), key) else open(key)
     }
 }
 

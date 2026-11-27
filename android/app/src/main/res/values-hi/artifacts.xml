@@ -103,4 +103,7 @@
     <string name="artifact_link_who_can_view">कौन देख सकता है</string>
     <string name="artifact_workspace_link_hint">%1$s के सदस्य यह लिंक खोल सकते हैं।</string>
     <string name="artifact_public_link_hint">जिसके पास यह लिंक है, वह इसे खोल सकता है।</string>
+    <string name="artifact_image_page_description">%2$d में से %1$dवीं इमेज</string>
+    <string name="artifact_image_previous_page">पिछली इमेज</string>
+    <string name="artifact_image_next_page">अगली इमेज</string>
 </resources>
