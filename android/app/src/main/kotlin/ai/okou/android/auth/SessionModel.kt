@@ -54,6 +54,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -448,9 +449,10 @@ class SessionModel(
                 val role = fastAccess?.role ?: membership?.role
                 if (initialIdentity == null || role == null) {
                     entrySelection = null
-                    val browserFailure =
+                    val entryFeedback =
                         mutable.value.entryFailure?.takeIf {
-                            memberships.isEmpty() && it == SessionEntryFailure.Browser
+                            it == SessionEntryFailure.SignOut ||
+                                (memberships.isEmpty() && it == SessionEntryFailure.Browser)
                         }
                     publishSessionState(
                         SessionUiState(
@@ -458,7 +460,7 @@ class SessionModel(
                             SessionStage.ChooseWorkspace,
                             memberships,
                             entryFailure =
-                                selection?.let { SessionEntryFailure.Selection } ?: browserFailure,
+                                selection?.let { SessionEntryFailure.Selection } ?: entryFeedback,
                             entryPageGeneration = checkingFrom?.entryPageGeneration ?: generation,
                         ),
                     )
@@ -621,6 +623,10 @@ class SessionModel(
                             SessionStage.Unavailable,
                             cachedPreferences = state.cachedPreferences,
                             opening = initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
+                            entryFailure =
+                                state.entryFailure?.takeIf {
+                                    it == SessionEntryFailure.SignOut
+                                },
                             entryReadFailed = initialIdentity == null,
                         ),
                     )
@@ -720,7 +726,8 @@ class SessionModel(
                         )
                 }
                 delay(retryDelay)
-                foreground.first { it }
+                combine(foreground, mutable) { active, state -> active && !state.signingOut }
+                    .first { it }
             }
         }
     }
@@ -1129,9 +1136,11 @@ class SessionModel(
         val previous = mutable.value
         if (previous.signingOut || previous.workspaceSwitch?.failed == false) return
         val session = observed?.session
-        // Preserve workspace presentation and its pending work in case sign-out fails.
+        // Keep the current workspace or scheduled entry retry available if sign-out fails.
+        val readingEntry = previous.entryReadFailed && operation?.isActive == true
         if (
-            previous.ready == null &&
+            !readingEntry &&
+                previous.ready == null &&
                 previous.opening !is OpeningWorkspace.Authorized &&
                 previous.opening !is OpeningWorkspace.Cached
         ) {
@@ -1162,7 +1171,6 @@ class SessionModel(
                         mutable.value =
                             mutable.value.copy(
                                 signingOut = false,
-                                entryReadFailed = false,
                                 entryFailure = SessionEntryFailure.SignOut,
                             )
                     }

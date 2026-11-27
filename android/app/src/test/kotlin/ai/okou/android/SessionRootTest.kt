@@ -1,7 +1,13 @@
 package ai.okou.android
 
+import ai.okou.android.auth.SessionEntryScreen
+import ai.okou.android.auth.SessionStage
+import ai.okou.android.auth.SessionUiState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.ComposeUiTestConfig
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -9,6 +15,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -151,5 +158,53 @@ class SessionRootTest {
         } finally {
             check.complete(Unit)
         }
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "en-rUS", application = TestOkouApplication::class)
+class SessionEntryProgressTest {
+    private val motion =
+        object : MotionDurationScale {
+            private val scale = mutableFloatStateOf(1f)
+            private var observing = false
+
+            override val scaleFactor: Float
+                get() {
+                    if (!observing) {
+                        // The Android recomposer publishes the system value on first access.
+                        scale.floatValue = 0f
+                        observing = true
+                    }
+                    return scale.floatValue
+                }
+        }
+
+    @get:Rule val compose = createComposeRule(ComposeUiTestConfig(motion))
+
+    @Test
+    fun workspacePreparationSurvivesFirstMotionScaleRead() {
+        val app = ApplicationProvider.getApplicationContext<TestOkouApplication>()
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            SessionEntryScreen(
+                SessionUiState(
+                    generation = 0,
+                    stage = SessionStage.LoadingWorkspace,
+                    working = true,
+                ),
+                retry = {},
+                chooseWorkspace = {},
+                signOut = {},
+                openWorkspaceSetup = {},
+            )
+        }
+        compose.mainClock.advanceTimeByFrame()
+        val title = compose.onNodeWithText(app.getString(R.string.auth_preparing_workspace))
+        val bounds = title.assertIsDisplayed().getUnclippedBoundsInRoot()
+
+        compose.mainClock.advanceTimeBy(250)
+        title.assertIsDisplayed()
+        assertEquals(bounds, title.getUnclippedBoundsInRoot())
     }
 }
