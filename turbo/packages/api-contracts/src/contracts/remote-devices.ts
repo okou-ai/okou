@@ -89,6 +89,14 @@ export const remoteDevicesContract = c.router({
     body: c.noBody(),
     responses: { ...errors, 204: c.noBody() },
   },
+  delete: {
+    method: "DELETE",
+    path: "/api/remote-devices/:deviceId",
+    pathParams: devicePath,
+    headers: authHeadersSchema,
+    body: c.noBody(),
+    responses: { ...errors, 204: c.noBody(), 409: apiErrorSchema },
+  },
   setAccess: {
     method: "PUT",
     path: "/api/remote-devices/:deviceId/access",

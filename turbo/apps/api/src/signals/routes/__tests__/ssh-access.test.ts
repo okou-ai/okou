@@ -297,6 +297,62 @@ describe("live chat SSH Run inventory", () => {
     );
   }
 
+  it("deletes an owned device and its SSH channel and rejects new attachments", async () => {
+    const f = await publicInventoryRun();
+    const policy = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.RemoteDevices]: true,
+    });
+    authenticate(f);
+    const deviceId = randomUUID();
+    await accept(
+      policy.create({
+        headers,
+        body: { id: deviceId, displayName: "Build machine" },
+      }),
+      [201],
+    );
+    const channelInput = {
+      remoteDeviceId: deviceId,
+      displayName: "Build login",
+      host: "build.example.com",
+      credential: inlineSshKey("deploy", "test-private-key"),
+    };
+    await accept(
+      config().create({
+        headers,
+        body: { ...channelInput, id: randomUUID() },
+      }),
+      [201],
+    );
+
+    const other = { orgId: f.orgId, userId: `user_ssh_${randomUUID()}` };
+    await updateFeatureSwitchesForUser(context, other, {
+      [FeatureSwitchKey.RemoteDevices]: true,
+    });
+    authenticate(other);
+    await accept(
+      policy.delete({ headers, params: { deviceId }, body: undefined }),
+      [404],
+    );
+    authenticate(f);
+    await accept(
+      policy.delete({ headers, params: { deviceId }, body: undefined }),
+      [204],
+    );
+    const { body } = await accept(policy.list({ headers }), [200]);
+    expect(body.devices).toEqual([]);
+    await accept(
+      config().create({
+        headers,
+        body: { ...channelInput, id: randomUUID() },
+      }),
+      [404],
+    );
+  });
+
   it("attaches and moves a channel without changing its identity or either device's access", async () => {
     const f = await publicInventoryRun();
     const policy = setupApp({ context, routes: remoteDevicesRoutes })(

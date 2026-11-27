@@ -171,6 +171,67 @@ test("creates an empty device and moves an existing channel from the directory",
   ).not.toBeInTheDocument();
 });
 
+test("deletes a device from the detail header only after confirming", async () => {
+  enableRemoteDevices();
+  let devices = [
+    {
+      id: deviceId,
+      displayName: "Build Mac",
+      accessAllowed: false,
+      accessExpiresAt: null,
+      channels: [
+        {
+          id: "d0000000-0000-4000-8000-000000000001",
+          kind: "ssh" as const,
+          displayName: "Build login",
+          lastSeenAt: null,
+          sshDependencyIds: [],
+        },
+      ],
+    },
+  ];
+  context.mocks.api(remoteDevicesContract.list, ({ respond }) => {
+    return respond(200, { devices });
+  });
+  const deleted: string[] = [];
+  context.mocks.api(remoteDevicesContract.delete, ({ params, respond }) => {
+    deleted.push(params.deviceId);
+    devices = [];
+    return respond(204, undefined);
+  });
+  await setupPage({
+    context,
+    path: `/connectors?scope=remote-control&remoteDevice=${deviceId}`,
+  });
+
+  expect(
+    await screen.findByRole("group", { name: "Access for Build Mac, Off" }),
+  ).toBeVisible();
+  const trigger = await findFastControl("button", "Delete device");
+  const user = userEvent.setup({ delay: null });
+  await user.click(trigger);
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Delete Build Mac?",
+  });
+  expect(
+    within(confirmation).getByText(
+      "This permanently deletes the device and all its channels.",
+    ),
+  ).toBeVisible();
+  await user.click(await findFastControl("button", "Cancel", confirmation));
+  await waitFor(() => expect(confirmation).not.toBeInTheDocument());
+  expect(deleted).toEqual([]);
+
+  await user.click(trigger);
+  const reopened = await screen.findByRole("dialog", {
+    name: "Delete Build Mac?",
+  });
+  await user.click(await findFastControl("button", "Delete device", reopened));
+  await waitFor(() => expect(deleted).toEqual([deviceId]));
+  await screen.findByText("No remote devices yet.");
+  expect(window.location.search).toBe("?scope=remote-control");
+});
+
 test("device access changes after choosing a duration and can be denied from the card", async () => {
   enableRemoteDevices();
   let device = {

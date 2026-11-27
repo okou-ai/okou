@@ -5528,6 +5528,9 @@
     "username": "用户名："
   },
   "remoteDevices": {
+    "deleteDevice": "删除设备",
+    "deleteTitle": "删除「{{device}}」？",
+    "deleteDescription": "此操作将永久删除该设备及其所有通道。",
     "add": "添加设备",
     "addChannel": "添加通道",
     "addChannelTo": "向 {{device}} 添加通道",

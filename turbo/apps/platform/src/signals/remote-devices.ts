@@ -152,6 +152,27 @@ export const createRemoteDevice$ = command(
 
 const pendingDeviceAccess$ = state<ReadonlySet<string>>(new Set());
 
+export const deleteRemoteDevice$ = command(
+  async ({ get, set }, deviceId: string, signal: AbortSignal) => {
+    await accept(
+      get(apiClient$)(remoteDevicesContract).delete({
+        params: { deviceId },
+        body: undefined,
+        fetchOptions: { signal },
+      }),
+      [204],
+      signal,
+    );
+    signal.throwIfAborted();
+    set(invalidateRemoteDeviceDirectory$);
+    if (get(selectedRemoteDeviceId$) === deviceId) {
+      const params = new URLSearchParams(get(searchParams$));
+      params.delete("remoteDevice");
+      set(updateSearchParams$, params);
+    }
+  },
+);
+
 export const remoteDeviceAccessPending$ = computed((get) => {
   return get(pendingDeviceAccess$);
 });

@@ -40,6 +40,7 @@ function ownedDevices(owner: RemoteDeviceOwner) {
   return and(
     eq(remoteDevices.orgId, owner.orgId),
     eq(remoteDevices.userId, owner.userId),
+    isNull(remoteDevices.deletedAt),
     remoteDeviceMode(owner),
   );
 }

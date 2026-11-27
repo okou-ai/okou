@@ -5528,6 +5528,9 @@
     "username": "Nama pengguna:"
   },
   "remoteDevices": {
+    "deleteDevice": "Hapus perangkat",
+    "deleteTitle": "Hapus {{device}}?",
+    "deleteDescription": "Perangkat ini dan semua salurannya akan dihapus secara permanen.",
     "add": "Tambahkan perangkat",
     "addChannel": "Tambahkan saluran",
     "addChannelTo": "Tambahkan saluran ke {{device}}",

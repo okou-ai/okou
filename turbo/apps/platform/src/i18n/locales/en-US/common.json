@@ -5549,6 +5549,9 @@
     "username": "Username:"
   },
   "remoteDevices": {
+    "deleteDevice": "Delete device",
+    "deleteTitle": "Delete {{device}}?",
+    "deleteDescription": "This permanently deletes the device and all its channels.",
     "add": "Add device",
     "addChannel": "Add channel",
     "addChannelTo": "Add a channel to {{device}}",

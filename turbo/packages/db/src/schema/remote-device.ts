@@ -19,6 +19,7 @@ export const remoteDevices = pgTable(
     displayName: text("display_name").notNull(),
     accessAllowed: boolean("access_allowed").default(false).notNull(),
     accessExpiresAt: timestamp("access_expires_at"),
+    deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {

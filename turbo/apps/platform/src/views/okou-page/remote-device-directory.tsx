@@ -10,8 +10,10 @@ import {
   Card,
   Dialog,
   DialogBody,
+  DialogClose,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -39,6 +41,7 @@ import {
   Plus,
   Smartphone,
   Terminal,
+  Trash2,
 } from "lucide-react";
 import type { FormEvent } from "react";
 import { i18n } from "../../i18n/index.ts";
@@ -50,6 +53,7 @@ import { permissionGrantExpiryText } from "../../signals/permission-allow/permis
 import { enterRemoteSetup$ } from "../../signals/remote-control-setup.ts";
 import {
   createRemoteDevice$,
+  deleteRemoteDevice$,
   invalidateRemoteDeviceDirectory$,
   mountRemoteDeviceCreation$,
   moveRemoteDeviceChannel$,
@@ -596,6 +600,58 @@ function RemoteDeviceChannelRow({
   );
 }
 
+function DeleteRemoteDevice({
+  device,
+}: {
+  readonly device: RemoteDeviceDirectoryItem;
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const [deleting, remove] = useLoadableSet(deleteRemoteDevice$);
+  const pending = deleting.state === "loading";
+  const label = t(($) => $.remoteDevices.deleteDevice);
+  return (
+    <Dialog
+      onOpenChange={(open, details) => {
+        if (!open && pending) {
+          details.cancel();
+        }
+      }}
+    >
+      <DialogTrigger render={<Button variant="outline" size="xs" />}>
+        <Trash2 size={14} aria-hidden />
+        {label}
+      </DialogTrigger>
+      <DialogContent maxWidth="md" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>
+            {t(($) => $.remoteDevices.deleteTitle, {
+              device: device.displayName,
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {t(($) => $.remoteDevices.deleteDescription)}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" disabled={pending} />}>
+            {t(($) => $.remoteDevices.cancel)}
+          </DialogClose>
+          <Button
+            variant="destructive"
+            pending={pending}
+            onClick={() => {
+              detach(remove(device.id, signal), Reason.DomCallback);
+            }}
+          >
+            {label}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function RemoteDeviceDetails({
   device,
   devices,
@@ -624,7 +680,10 @@ function RemoteDeviceDetails({
         <h2 className="min-w-0 break-words text-lg font-semibold">
           {device.displayName}
         </h2>
-        <RemoteDevicePolicyControl device={device} />
+        <div className="flex flex-wrap items-center gap-2">
+          <RemoteDevicePolicyControl device={device} />
+          <DeleteRemoteDevice key={device.id} device={device} />
+        </div>
       </header>
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">

@@ -52,6 +52,18 @@ export const remoteDevicesContract: ClientDescriptor<
       404: true,
     },
   },
+  delete: {
+    method: "DELETE",
+    path: "/api/remote-devices/:deviceId",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
   setAccess: {
     method: "PUT",
     path: "/api/remote-devices/:deviceId/access",

@@ -68,6 +68,7 @@ export function ownedRemoteDevice(owner: RemoteDeviceOwner, deviceId: string) {
     eq(remoteDevices.id, deviceId),
     eq(remoteDevices.orgId, owner.orgId),
     eq(remoteDevices.userId, owner.userId),
+    isNull(remoteDevices.deletedAt),
     remoteDeviceMode(owner),
   );
 }
@@ -96,6 +97,7 @@ export function remoteDeviceAllowed(
           eq(remoteDevices.id, channel.remoteDeviceId),
           eq(remoteDevices.orgId, channel.orgId),
           eq(remoteDevices.userId, channel.userId),
+          isNull(remoteDevices.deletedAt),
           eq(remoteDevices.accessAllowed, true),
           or(
             isNull(remoteDevices.accessExpiresAt),

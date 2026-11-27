@@ -5528,6 +5528,9 @@
     "username": "ユーザー名："
   },
   "remoteDevices": {
+    "deleteDevice": "デバイスを削除",
+    "deleteTitle": "{{device}} を削除しますか？",
+    "deleteDescription": "このデバイスとすべてのチャンネルが完全に削除されます。",
     "add": "デバイスを追加",
     "addChannel": "チャネルを追加",
     "addChannelTo": "{{device}} にチャネルを追加",

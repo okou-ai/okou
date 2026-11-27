@@ -5551,6 +5551,9 @@
     "username": "Benutzername:"
   },
   "remoteDevices": {
+    "deleteDevice": "Gerät löschen",
+    "deleteTitle": "{{device}} löschen?",
+    "deleteDescription": "Das Gerät und alle zugehörigen Kanäle werden dauerhaft gelöscht.",
     "add": "Gerät hinzufügen",
     "addChannel": "Kanal hinzufügen",
     "addChannelTo": "Kanal zu {{device}} hinzufügen",
