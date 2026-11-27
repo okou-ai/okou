@@ -7,7 +7,7 @@ import progress_report as foreground
 import pressure_report as pressure
 import report
 import status_evidence
-from cleanup_report import COUNTS, accounting, exact_coverage, supplied_policy
+from cleanup_report import accounting, exact_coverage, supplied_policy, zero_accounting
 from report import exact, validate_evidence_uuid
 
 PREFIX = "NATIVE_LATER_PARKING_WITNESS "
@@ -109,7 +109,7 @@ def validate(directory):
             first, (second,), runners,
             "heartbeat runner changed or replayed",
         )
-        exact(waiting.get("accounting"), dict.fromkeys(COUNTS, 0) | {"closed": False}, "open accounting not settled")
+        exact(waiting.get("accounting"), zero_accounting(closed=False), "open accounting not settled")
         exact(waiting, {"io_released_ns": io_released, "status_wait_polled_ns": polled,
             "status_waits_before": before, "status_waits_after": after, "receiver_polled_pending": True,
             "original_exit_confirmed": True, "original_lease_released": True, "later_exit_polled_pending": True,

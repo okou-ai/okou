@@ -4,7 +4,7 @@
 import pathlib
 
 import progress_report as foreground
-from cleanup_report import COUNTS, accounting, coverage, supplied_policy
+from cleanup_report import accounting, coverage, supplied_policy
 import report
 import status_evidence
 from report import exact

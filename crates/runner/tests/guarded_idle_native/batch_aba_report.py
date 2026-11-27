@@ -8,7 +8,7 @@ import progress_report as foreground
 import pressure_report as pressure
 import report
 import status_evidence
-from cleanup_report import COUNTS, accounting, coverage, supplied_policy
+from cleanup_report import accounting, coverage, supplied_policy, zero_accounting
 from report import exact, validate_batch_phase_clock as clock
 
 PREFIX = "NATIVE_BATCH_ABA_WITNESS "
@@ -18,7 +18,7 @@ PHASES = ("admission_blocked", "pool_wait_progress", "admission_wait_progress", 
 
 
 def queued(value):
-    exact(value, dict.fromkeys(COUNTS, 0) | {"registered_operations": 2, "queued": 2, "closed": False},
+    exact(value, zero_accounting(closed=False) | {"registered_operations": 2, "queued": 2},
           "batch ABA did not preserve its two unused queued claims")
 
 
@@ -90,7 +90,7 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
             waiting.get("samples"), policy, resumed, polled
         )
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, events[3]["monotonic_ns"])
-        exact(waiting.get("accounting"), dict.fromkeys(COUNTS, 0) | {"closed": False}, "unused old claims did not settle")
+        exact(waiting.get("accounting"), zero_accounting(closed=False), "unused old claims did not settle")
         exact(waiting, {"source_resumed_ns": resumed, "status_wait_polled_ns": polled,
             "status_waits_before": before, "status_waits_after": after, "accounting": waiting["accounting"],
             "samples": waiting["samples"], "heartbeat": waiting["heartbeat"], "receiver_polled_pending": True,

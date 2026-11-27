@@ -36,7 +36,7 @@ class LaterParkingReportTests(unittest.TestCase):
                              monotonic_ns=at(offset), unix_ns=at(offset)+1000)
                 self.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
             self.events.extend(terminal)
-            zero = dict.fromkeys(cleanup.COUNTS, 0) | {"closed": False}
+            zero = cleanup.zero_accounting(closed=False)
             active = zero | {"registered_operations": 1, "started": 1, "tracked_tasks": 1,
                              "cleanup_growth_bytes": self.policy["tail_growth_bytes"]}
             coverage = {"allocated": [4,8192,2], "accounting": active,

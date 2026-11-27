@@ -10,6 +10,7 @@ import sys
 import unittest
 import uuid
 
+import cleanup_report as cleanup
 import observer_loss_report as loss
 import report
 import report_test
@@ -33,7 +34,7 @@ class ObserverLossReportTests(unittest.TestCase):
                 event.update(case=case, monotonic_ns=at(clock), unix_ns=at(clock)+1000)
                 self.samples.append(report_test.residency_sample_at(sample, at(clock) + 1))
             self.events.extend(terminal)
-            accounts = {k: 0 for k in loss.COUNTS} | {"closed": True}
+            accounts = cleanup.zero_accounting(closed=True)
             active = accounts | {"registered_operations": 1, "started": 1,
                                  "cleanup_growth_bytes": self.policy["tail_growth_bytes"], "tracked_tasks": 1}
             covered = {"allocated": [2,4096,1], "accounting": active,
