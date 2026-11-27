@@ -91,6 +91,7 @@ import { validatePermanentRegistryArchives } from "./test-registry-archives-perm
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-storage-permanent";
 import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
+import { validateProactiveInstallationRetirement } from "./test-proactive-installation-retirement";
 import { validateProactiveSchedulePreparation } from "./test-proactive-schedule-preparation";
 import { validateHostedDomainVerificationInvalidation } from "./test-hosted-domain-verification-invalidation";
 import { validateEmailIntegrationMigration } from "./test-email-integration-migration";
@@ -2937,6 +2938,19 @@ async function main(): Promise<void> {
     await resetDatabase(dbUrl1);
     await runMigrations(dbUrl1);
     console.log("   ✅ Consecutive database resets completed successfully\n");
+
+    const proactiveRetirementDb =
+      "migration_proactive_retirement_" + process.pid;
+    await executeOnPostgres(
+      `CREATE DATABASE ${proactiveRetirementDb} TEMPLATE ${TEST_DB_1}`,
+    );
+    try {
+      await validateProactiveInstallationRetirement(
+        createTestDbUrl(proactiveRetirementDb),
+      );
+    } finally {
+      await dropDatabase(proactiveRetirementDb);
+    }
 
     await validatePermanentRegistryArchives(dbUrl1);
 

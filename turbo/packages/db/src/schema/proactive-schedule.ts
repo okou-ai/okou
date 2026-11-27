@@ -134,6 +134,9 @@ export const proactiveDispatchHandoff = pgTable(
       .$type<"automation" | "draining" | "standalone">()
       .notNull(),
     changedAt: timestamp("changed_at").defaultNow().notNull(),
+    // The first verified API release with archive readers is a compatible rollback target.
+    archiveReaderRelease: text("archive_reader_release"),
+    archiveReaderVerifiedAt: timestamp("archive_reader_verified_at"),
   },
   (table) => {
     return [

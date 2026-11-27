@@ -33,10 +33,8 @@ export type WorkflowImportSource = "claudeCode" | "codex";
 export type OfficialWorkflowReconciliationStatus =
   "current" | "needs_reconfiguration" | "failed";
 
-/** Org-scoped Workflow definitions and their published content references. */
-export const workflows = pgTable(
-  "workflows",
-  {
+function workflowRecordColumns() {
+  return {
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
     name: varchar("name", { length: 64 }).notNull(),
@@ -68,7 +66,13 @@ export const workflows = pgTable(
     updatedBy: text("updated_by").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
+  };
+}
+
+/** Org-scoped Workflow definitions and their published content references. */
+export const workflows = pgTable(
+  "workflows",
+  workflowRecordColumns(),
   (table) => {
     return {
       importSessionIdx: index("idx_workflows_import_session").on(
@@ -116,6 +120,35 @@ export const workflows = pgTable(
         )`,
       ),
     };
+  },
+);
+
+/** Historical system installations, addressable by their original ID and owner. */
+export const archivedProactiveWorkflows = pgTable(
+  "archived_proactive_workflows",
+  {
+    ...workflowRecordColumns(),
+    chatThreadId: uuid("chat_thread_id").references(
+      () => {
+        return chatThreads.id;
+      },
+      {
+        onDelete: "set null",
+      },
+    ),
+  },
+  (table) => {
+    return [
+      index("idx_archived_proactive_workflow_thread").on(table.chatThreadId),
+      index("idx_archived_proactive_workflow_owner").on(
+        table.orgId,
+        table.ownerUserId,
+      ),
+      check(
+        "chk_archived_proactive_workflow_private",
+        sql`${table.visibility} = 'private' AND ${table.officialDefinitionName} IS NOT NULL`,
+      ),
+    ];
   },
 );
 

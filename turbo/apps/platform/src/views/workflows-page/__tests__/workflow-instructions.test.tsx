@@ -83,3 +83,28 @@ test("workflow-instructions-006 a discarded notes edit cannot be restored by und
     screen.findByText("You have unsaved changes"),
   ).resolves.toBeVisible();
 });
+
+test("opens a retired snapshot file from its original URL with read-only content", async () => {
+  const archived = salesWorkflow(context, {
+    name: "proactive-planning",
+    displayName: "Planning",
+    official: {
+      definitionName: "proactive-planning",
+      definitionLifecycle: "retired",
+      installationState: "installed",
+      readOnly: true,
+    },
+    canManage: false,
+    canPublish: false,
+    files: [{ path: "plan.txt", size: 13 }],
+    fileContents: [{ path: "plan.txt", content: "Original plan" }],
+  });
+  serveWorkflows(context, () => {
+    return [archived];
+  });
+  await setupPage({ context, path: `/workflows/${archived.id}?file=plan.txt` });
+  const file = await screen.findByLabelText("Workflow file content");
+  expect(file).toHaveValue("Original plan");
+  expect(file).toBeDisabled();
+  expect(screen.queryByText("Save")).toBeNull();
+});
