@@ -1,3 +1,4 @@
+import { OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE } from "./official-workflow-constants";
 import { command } from "ccstate";
 import { sql } from "drizzle-orm";
 import {
@@ -45,7 +46,7 @@ function workflowDeletionDatabaseError(error: unknown): Error {
     "constraint" in error.cause
   ) {
     if (error.cause.constraint === "workflow_deletion_official_protected") {
-      return new Error("Official Workflow installations are read-only");
+      return new Error(OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE);
     }
     if (error.cause.constraint === "workflow_deletion_attachment_owner") {
       return new Error("Workflow attachment package has a foreign owner");

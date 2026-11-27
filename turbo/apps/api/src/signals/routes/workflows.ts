@@ -918,9 +918,7 @@ const deleteWorkflowInner$ = command(
       return workflowNotFound(params.workflowId);
     }
     if (visible.workflow.officialDefinitionName !== null) {
-      return conflict(
-        "Uninstall Official Workflows through the Official installation endpoint",
-      );
+      return conflict(OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE);
     }
 
     const permissionError = requireWorkflowPermission(
