@@ -101,9 +101,10 @@ describe("Morning Brief preference", () => {
     await workspaceMember();
 
     const initial = await accept(morningBrief().get({ headers }), [200]);
-    expect(initial.body).toMatchObject({
+    expect(initial.body).toStrictEqual({
+      status: "paused",
       enabled: false,
-      unavailableReason: "missing-timezone",
+      unavailableReason: null,
     });
 
     const updated = await accept(
