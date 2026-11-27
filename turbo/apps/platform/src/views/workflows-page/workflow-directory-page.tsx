@@ -563,7 +563,10 @@ function WorkflowFilterBar({
       })}
       className="@container flex items-center gap-2"
     >
-      <div className="relative min-w-0 flex-1 @[520px]:max-w-sm">
+      <div
+        data-workflow-search
+        className="relative min-w-0 flex-1 @[520px]:max-w-sm"
+      >
         <Search
           size={15}
           aria-hidden
@@ -588,7 +591,13 @@ function WorkflowFilterBar({
             aria-label={t(($) => {
               return $.workflows.list.clearSearch;
             })}
-            onClick={() => {
+            onClick={(event) => {
+              // The button unmounts once the query is empty, so hand focus
+              // back to the field instead of letting it fall to the body.
+              event.currentTarget
+                .closest("[data-workflow-search]")
+                ?.querySelector("input")
+                ?.focus();
               setSearchQuery("");
             }}
           >
