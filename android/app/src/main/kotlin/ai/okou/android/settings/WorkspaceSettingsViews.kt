@@ -53,8 +53,10 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -235,7 +237,10 @@ internal fun SettingsReadError(
 }
 
 @Composable
-internal fun SettingsPlaceholder(loadingLabel: String? = null) {
+internal fun SettingsPlaceholder(
+    loadingLabel: String? = null,
+    layoutReference: (@Composable () -> Unit)? = null,
+) {
     val visible = rememberContentReadSkeleton()
     val semantics =
         if (visible && loadingLabel != null)
@@ -243,16 +248,23 @@ internal fun SettingsPlaceholder(loadingLabel: String? = null) {
         else Modifier
     Box(Modifier.alpha(if (visible) 1f else 0f).then(semantics)) {
         SettingsGroup {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (width in listOf(144.dp, 94.dp)) {
-                    Box(
-                        Modifier.width(width)
-                            .height(14.dp)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(8.dp),
-                            ),
-                    )
+            Box(contentAlignment = Alignment.CenterStart) {
+                if (layoutReference != null) {
+                    Box(Modifier.alpha(0f).clearAndSetSemantics { hideFromAccessibility() }) {
+                        layoutReference()
+                    }
+                }
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    for (width in listOf(144.dp, 94.dp)) {
+                        Box(
+                            Modifier.width(width)
+                                .height(14.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    RoundedCornerShape(8.dp),
+                                ),
+                        )
+                    }
                 }
             }
         }
