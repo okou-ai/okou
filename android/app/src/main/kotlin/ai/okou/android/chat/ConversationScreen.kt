@@ -666,19 +666,29 @@ internal fun ConversationRoute(
         }
         val sourceFocus = artifactActions?.restoreKey ?: linkFocusKey
         val imageReply = imageFocusReply(sourceFocus)
-        if (imageReply != null && readingReady) {
-            LaunchedEffect(sourceFocus, timeline) {
-                if (
-                    timeline.none { it is ConversationMessage && it.includes(imageReply) } &&
-                        timelineFocus.requestFocus()
-                ) {
+        val attachmentMessage = attachmentFocusMessage(sourceFocus)
+        val returnMessage = imageReply ?: attachmentMessage
+        if (returnMessage != null && readingReady) {
+            LaunchedEffect(sourceFocus, visibleTimeline) {
+                val index = visibleTimeline.indexOfFirst {
+                    it is ConversationMessage && it.includes(returnMessage)
+                }
+                if (index < 0 && timelineFocus.requestFocus()) {
                     if (artifactActions?.restoreKey != null) artifactActions.restored()
                     else onLinkFocusRestored()
+                } else if (
+                    attachmentMessage != null &&
+                        index >= 0 &&
+                        position.layoutInfo.visibleItemsInfo.none {
+                            it.key == visibleTimeline[index].key
+                        }
+                ) {
+                    position.scrollToItem(index + 1)
                 }
             }
         }
         val visibleArtifacts =
-            if (imageReply != null && !readingReady) artifactActions?.copy(restoreKey = null)
+            if (returnMessage != null && !readingReady) artifactActions?.copy(restoreKey = null)
             else artifactActions
         if (codeReading != null && returningCode != null && readingReady) {
             LaunchedEffect(returningCode, timeline) {

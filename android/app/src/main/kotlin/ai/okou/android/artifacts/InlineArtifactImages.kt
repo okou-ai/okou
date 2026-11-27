@@ -57,6 +57,19 @@ internal class InlineArtifactImages(
 
     fun get(request: InlineImageRequest): InlineImageState? = entries.value[request]
 
+    fun observeThumbnail(threadId: String, source: String) =
+        entries.map { it.thumbnail(threadId, source) }.distinctUntilChanged()
+
+    fun thumbnail(threadId: String, source: String): Bitmap? =
+        entries.value.thumbnail(threadId, source)
+
+    private fun Map<InlineImageRequest, InlineImageState>.thumbnail(
+        threadId: String,
+        source: String,
+    ): Bitmap? = entries.firstNotNullOfOrNull { (request, state) ->
+        state.bitmap.takeIf { request.threadId == threadId && request.source == source }
+    }
+
     fun retainVisible(request: InlineImageRequest) {
         visibleCounts[request] = (visibleCounts[request] ?: 0) + 1
         revalidateVisible(request)

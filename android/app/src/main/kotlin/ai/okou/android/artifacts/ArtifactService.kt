@@ -80,6 +80,8 @@ internal data class ArtifactSave(
     val contentType: String,
 )
 
+internal class ChatAttachmentAccessLost(val rejection: ApiFailure.Http) : Exception(rejection)
+
 internal data class ArtifactInfo(
     val item: ArtifactItem,
     val sourceChatId: String?,
@@ -237,7 +239,7 @@ internal constructor(
     internal suspend fun info(id: String): ArtifactInfo {
         if (id.startsWith(ExternalImagePreviewPrefix)) return externalImageInfo(id)
         chatAttachment(id)?.let { file ->
-            val grant = api.resolveChatUpload(file.id)
+            val grant = resolveChatUpload(file)
             val kind =
                 when {
                     file.contentType.isAttachmentImage -> ArtifactKind.Image
@@ -421,7 +423,7 @@ internal constructor(
     private suspend fun authorizeInlineImage(source: String): AuthorizedInlineImage {
         chatAttachment(source)?.let { file ->
             if (!file.contentType.isAttachmentImage) throw ApiFailure.IncompatibleResponse()
-            val grant = api.resolveChatUpload(file.id)
+            val grant = resolveChatUpload(file)
             val url = artifactHttpsUrl(grant.url) ?: throw ApiFailure.IncompatibleResponse()
             return AuthorizedInlineImage(InlineImageGrant(source, file.filename, file.id)) { width
                 ->
@@ -503,7 +505,7 @@ internal constructor(
     internal suspend fun save(file: ArtifactSave, destination: () -> OutputStream) {
         val attachment = chatAttachment(file.reference)
         val reference =
-            if (attachment != null) api.resolveChatUpload(attachment.id).downloadUrl
+            if (attachment != null) resolveChatUpload(attachment).downloadUrl
             else {
                 val grant =
                     api.artifactDownload(file.reference) as? ArtifactDownloadVariant1
@@ -513,6 +515,15 @@ internal constructor(
         val url = artifactHttpsUrl(reference) ?: throw ApiFailure.IncompatibleResponse()
         transfers.download(url) { source -> destination().use { output -> source.copyTo(output) } }
     }
+
+    private suspend fun resolveChatUpload(file: ChatAttachmentReference) =
+        try {
+            api.resolveChatUpload(file.id)
+        } catch (error: ApiFailure.Http) {
+            if (file.contentType.isAttachmentImage && (error.status == 403 || error.status == 404))
+                throw ChatAttachmentAccessLost(error)
+            throw error
+        }
 
     private suspend fun readBitmap(url: HttpUrl, edge: Int, limit: Long): Bitmap? {
         val bytes = transfers.download(url, limit)
@@ -545,6 +556,9 @@ private const val ChatAttachmentPreviewPrefix = "chat-attachment:"
 
 internal fun isGeneratedArtifactPreview(id: String): Boolean =
     !id.startsWith(ExternalImagePreviewPrefix) && chatAttachment(id) == null
+
+internal fun isChatAttachmentImage(id: String): Boolean =
+    chatAttachment(id)?.contentType?.isAttachmentImage == true
 
 internal fun ChatAttachmentReference.attachmentPreviewId(): String =
     ChatAttachmentPreviewPrefix +

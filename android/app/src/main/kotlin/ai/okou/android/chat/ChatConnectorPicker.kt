@@ -109,9 +109,9 @@ internal fun ChatConnectorOptionsButton(
     conversationModel: ConversationModelControls? = null,
     attachmentPickerActive: Boolean = false,
     pickAttachment: ((photos: Boolean) -> Unit)? = null,
+    buttonFocus: FocusRequester = remember { FocusRequester() },
 ) {
     var presentation by rememberComposerOptions(target.key)
-    val buttonFocus = remember { FocusRequester() }
     val entryFocus = remember { FocusRequester() }
     val modelFocus = remember { FocusRequester() }
     val accountFocus = remember { FocusRequester() }

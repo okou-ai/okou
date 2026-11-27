@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,7 +50,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -79,11 +83,21 @@ internal fun ChatDraftAttachments(
     openUploaded: ((ChatAttachmentReference) -> Unit)?,
     remoteImages: InlineArtifactImages?,
     threadId: String,
+    openLocalImage: (DraftChatAttachment, () -> Unit) -> Unit,
+    restoreImage: String?,
+    onImageFocusRestored: () -> Unit,
 ) {
     var previewKey by rememberDraftAttachmentPreview()
     val preview = attachments.firstOrNull { it.key == previewKey }
+    val panelFocus = remember { FocusRequester() }
+    val fallbackFocus =
+        if (restoreImage != null && attachments.none { it.key == restoreImage })
+            Modifier.focusRequester(panelFocus).focusable().onGloballyPositioned {
+                if (panelFocus.requestFocus()) onImageFocusRestored()
+            }
+        else Modifier
     LazyRow(
-        Modifier.fillMaxWidth().testTag("chat-draft-attachments"),
+        Modifier.fillMaxWidth().then(fallbackFocus).testTag("chat-draft-attachments"),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(attachments, key = { it.key }) { attachment ->
@@ -95,7 +109,13 @@ internal fun ChatDraftAttachments(
                 expanded,
                 remoteImages,
                 threadId,
-                open = { previewKey = attachment.key },
+                open = {
+                    if (local != null && attachment.contentType.isAttachmentImage)
+                        openLocalImage(attachment) { previewKey = attachment.key }
+                    else previewKey = attachment.key
+                },
+                restoreFocus = restoreImage == attachment.key,
+                onFocusRestored = onImageFocusRestored,
                 recover = {
                     when (attachment.failure) {
                         AttachmentFailure.SourceUnavailable -> reselect(attachment)
@@ -181,6 +201,8 @@ private fun ChatDraftAttachmentCard(
     remoteImages: InlineArtifactImages?,
     threadId: String,
     open: () -> Unit,
+    restoreFocus: Boolean,
+    onFocusRestored: () -> Unit,
     recover: () -> Unit,
     remove: () -> Unit,
 ) {
@@ -226,12 +248,20 @@ private fun ChatDraftAttachmentCard(
             )
         else Modifier
     if (attachment.contentType.isAttachmentImage) {
+        val focus = remember { FocusRequester() }
+        val imageFocus =
+            if (restoreFocus)
+                Modifier.focusRequester(focus).onGloballyPositioned {
+                    if (focus.requestFocus()) onFocusRestored()
+                }
+            else Modifier
         Box(card.width(132.dp).height(if (expanded) 104.dp else 80.dp)) {
             Box(
                 Modifier.matchParentSize()
                     .padding(4.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(colors.surfaceVariant)
+                    .then(imageFocus)
                     .clickable(onClick = open)
                     .semantics { contentDescription = attachment.filename },
                 contentAlignment = Alignment.Center,
