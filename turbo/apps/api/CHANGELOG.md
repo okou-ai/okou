@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.139.0](https://github.com/okou-ai/okou/compare/api-v2.138.7...api-v2.139.0) (2026-11-27)
+
+
+### Features
+
+* **api,ios:** remove transitional client transforms and support google ai on ios ([#51397](https://github.com/okou-ai/okou/issues/51397)) ([837d89a](https://github.com/okou-ai/okou/commit/837d89a786d8b798eb44305ade70b8a17fd66c1d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.138.0
+    * @okouai/core bumped to 8.887.5
+    * @okouai/db bumped to 2.71.12
+    * @okouai/pi-agent-runtime bumped to 1.52.100
+
 ## [2.138.7](https://github.com/okou-ai/okou/compare/api-v2.138.6...api-v2.138.7) (2026-11-27)
 
 

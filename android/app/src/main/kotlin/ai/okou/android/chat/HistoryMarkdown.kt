@@ -126,8 +126,9 @@ internal fun HistoryMarkdown(
     links: ConversationLinkActions? = null,
     compactReply: Boolean = false,
     beforeParsedLayout: (() -> Unit)? = null,
+    code: ConversationCodeBody? = null,
 ) =
-    key(messageId, artifacts != null, artifacts?.images != null, links != null) {
+    key(messageId, artifacts != null, artifacts?.images != null, links != null, code != null) {
         val inlineImages = artifacts?.images != null
         val blocks =
             rememberMarkdownLayout(source, beforeParsedLayout) {
@@ -136,6 +137,7 @@ internal fun HistoryMarkdown(
                     artifactCards = artifacts != null,
                     interactiveLinks = links != null,
                     inlineImages = inlineImages,
+                    showCode = code != null,
                 )
             }
         val hit = highlight?.target?.markdownBlockPath?.let(blocks::availableBlockPath)
@@ -158,6 +160,18 @@ internal fun HistoryMarkdown(
                     artifacts?.restoreReply?.invoke()
             }
         }
+        val returningCode =
+            code?.reader?.returning?.target?.takeIf {
+                it.messageId == code.messageId && it.bodyIndex == code.index
+            }
+        if (code != null && returningCode != null) {
+            LaunchedEffect(returningCode, blocks) {
+                val restored = blocks.codeAt(returningCode.path)
+                if (restored == null || restored.source.lineCount <= ConversationCodePreviewLines) {
+                    code.restoreReply()
+                }
+            }
+        }
         HistoryMarkdownBlocks(
             blocks,
             if (whole?.target?.highlighted == true)
@@ -172,6 +186,7 @@ internal fun HistoryMarkdown(
             links,
             compactReply,
             findImage,
+            code = code,
         )
     }
 
@@ -208,6 +223,7 @@ private fun HistoryMarkdownBlocks(
     findImage: String? = null,
     path: String = "",
     messageBlock: String = focusPrefix,
+    code: ConversationCodeBody? = null,
 ) {
     val showCards = artifacts != null && !compactReply
     Column(modifier) {
@@ -227,6 +243,34 @@ private fun HistoryMarkdownBlocks(
                 if (highlighted) style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer)
                 else style
             when (block) {
+                is HistoryMarkdownBlock.Code ->
+                    if (code != null)
+                        ConversationCodeCard(
+                            block.source,
+                            code.reader,
+                            ConversationCodeTarget(code.messageId, code.index, blockPath),
+                            blockModifier,
+                        )
+                is HistoryMarkdownBlock.Quote ->
+                    Row(blockModifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("│", style = contentStyle)
+                        HistoryMarkdownBlocks(
+                            block.blocks,
+                            contentStyle,
+                            artifacts,
+                            "$focusPrefix/$index",
+                            artifactTurnKey,
+                            Modifier.weight(1f),
+                            hit,
+                            highlight,
+                            links,
+                            compactReply,
+                            findImage,
+                            "$blockPath/",
+                            messageBlock,
+                            code,
+                        )
+                    }
                 is HistoryMarkdownBlock.Table ->
                     HistoryMarkdownTable(
                         block.rows,
@@ -286,6 +330,7 @@ private fun HistoryMarkdownBlocks(
                                     highlight = highlight,
                                     path = "$blockPath/$itemIndex/",
                                     messageBlock = messageBlock,
+                                    code = code,
                                 )
                             }
                         }
@@ -517,6 +562,10 @@ private sealed interface HistoryMarkdownBlock {
 
     data class Table(val rows: List<List<HistoryMarkdownCell>>) : HistoryMarkdownBlock
 
+    data class Code(val source: ConversationCodeSource) : HistoryMarkdownBlock
+
+    data class Quote(val blocks: List<HistoryMarkdownBlock>) : HistoryMarkdownBlock
+
     data class ListItems(val items: List<HistoryMarkdownListItem>) : HistoryMarkdownBlock {
         override val startsWithCard = items.firstOrNull()?.startsWithCard == true
         override val endsWithCard = items.lastOrNull()?.endsWithCard == true
@@ -572,6 +621,8 @@ private fun HistoryMarkdownBlock.startsWithImage(): Boolean =
         is HistoryMarkdownBlock.Paragraph -> content.startsWithImage()
         is HistoryMarkdownBlock.ListItems ->
             items.firstOrNull()?.blocks?.firstOrNull()?.startsWithImage() == true
+        is HistoryMarkdownBlock.Code,
+        is HistoryMarkdownBlock.Quote,
         is HistoryMarkdownBlock.Table -> false
     }
 
@@ -580,6 +631,8 @@ private fun HistoryMarkdownBlock.endsWithImage(): Boolean =
         is HistoryMarkdownBlock.Paragraph -> content.endsWithImage()
         is HistoryMarkdownBlock.ListItems ->
             items.lastOrNull()?.blocks?.lastOrNull()?.endsWithImage() == true
+        is HistoryMarkdownBlock.Code,
+        is HistoryMarkdownBlock.Quote,
         is HistoryMarkdownBlock.Table -> false
     }
 
@@ -589,8 +642,27 @@ private fun List<HistoryMarkdownBlock>.indexedImages(prefix: String = "") =
 private fun List<HistoryMarkdownBlock>.availableBlockPath(path: String): String? {
     val root = path.substringBefore('/')
     val block = root.toIntOrNull()?.let { getOrNull(it) } ?: return null
-    return if (path == root || block.indexedContents(root).any { (key, _) -> key == path }) path
+    return if (
+        path == root ||
+            block.indexedContents(root).any { (key, _) -> key == path } ||
+            codeAt(path) != null
+    )
+        path
     else root
+}
+
+private fun List<HistoryMarkdownBlock>.codeAt(path: String): HistoryMarkdownBlock.Code? {
+    val index = path.substringBefore('/').toIntOrNull() ?: return null
+    val rest = path.substringAfter('/', "")
+    return when (val block = getOrNull(index)) {
+        is HistoryMarkdownBlock.Code -> block.takeIf { rest.isEmpty() }
+        is HistoryMarkdownBlock.Quote -> block.blocks.codeAt(rest)
+        is HistoryMarkdownBlock.ListItems ->
+            rest.substringBefore('/').toIntOrNull()?.let { item ->
+                block.items.getOrNull(item)?.blocks?.codeAt(rest.substringAfter('/', ""))
+            }
+        else -> null
+    }
 }
 
 private fun HistoryMarkdownBlock.indexedImages(
@@ -605,6 +677,11 @@ private fun HistoryMarkdownBlock.indexedContents(
 ): Sequence<Pair<String, HistoryMarkdownContent>> =
     when (this) {
         is HistoryMarkdownBlock.Paragraph -> sequenceOf(path to content)
+        is HistoryMarkdownBlock.Code -> emptySequence()
+        is HistoryMarkdownBlock.Quote ->
+            blocks.asSequence().flatMapIndexed { index, block ->
+                block.indexedContents("$path/$index")
+            }
         is HistoryMarkdownBlock.ListItems ->
             items.asSequence().flatMapIndexed { itemIndex, item ->
                 item.blocks.asSequence().flatMapIndexed { blockIndex, child ->
@@ -622,6 +699,8 @@ private fun HistoryMarkdownBlock.indexedContents(
 private fun HistoryMarkdownBlock.findText(): String =
     when (this) {
         is HistoryMarkdownBlock.Paragraph -> text.text
+        is HistoryMarkdownBlock.Code -> source.text
+        is HistoryMarkdownBlock.Quote -> blocks.joinToString(" ") { it.findText() }
         is HistoryMarkdownBlock.Table ->
             rows.joinToString(" ") { row -> row.joinToString(" ") { it.content.text.text } }
         is HistoryMarkdownBlock.ListItems ->
@@ -680,6 +759,21 @@ private fun HistoryMarkdownContent.findPassages(
 private val historyMarkdownExtensions = listOf(TablesExtension.create())
 
 private val historyMarkdownParser = Parser.builder().extensions(historyMarkdownExtensions).build()
+
+private val codeMarkdownParser by lazy {
+    Parser.builder()
+        .extensions(historyMarkdownExtensions)
+        .includeSourceSpans(IncludeSourceSpans.BLOCKS)
+        .build()
+}
+
+internal fun conversationMarkdownCode(source: String, path: String): ConversationCodeSource? {
+    val target =
+        path.split('/').fold<String, Node?>(codeMarkdownParser.parse(source)) { parent, index ->
+            index.toIntOrNull()?.let { parent?.children()?.elementAtOrNull(it) }
+        } as? FencedCodeBlock
+    return target?.conversationCodeSource(source.markdownLineEndings())
+}
 
 private val workspaceSearchMarkdownParser by lazy {
     Parser.builder()
@@ -798,24 +892,52 @@ private fun historyMarkdownBlocks(
     artifactCards: Boolean,
     interactiveLinks: Boolean,
     inlineImages: Boolean = false,
+    showCode: Boolean = false,
 ): List<HistoryMarkdownBlock> {
-    val document = historyMarkdownParser.parse(source)
+    val fenced = showCode && ("~~~" in source || "```" in source)
+    val document = (if (fenced) codeMarkdownParser else historyMarkdownParser).parse(source)
+    val endings = if (fenced) lazy { source.markdownLineEndings() } else null
     val hasImageSyntax = inlineImages && "![" in source
     val seenArtifacts =
         if (!artifactCards) null
         else if (hasImageSyntax) document.inlineImageArtifacts().toMutableSet() else mutableSetOf()
     return document
         .children()
-        .map { it.historyMarkdownBlock(seenArtifacts, interactiveLinks, hasImageSyntax) }
+        .map { it.historyMarkdownBlock(seenArtifacts, interactiveLinks, hasImageSyntax, endings) }
         .toList()
 }
+
+private fun Node.containsCodeFence(): Boolean =
+    this is FencedCodeBlock || children().any(Node::containsCodeFence)
 
 private fun Node.historyMarkdownBlock(
     seenArtifacts: MutableSet<String>?,
     interactiveLinks: Boolean,
     inlineImages: Boolean,
-): HistoryMarkdownBlock =
-    when (this) {
+    lineEndings: Lazy<List<String>>?,
+): HistoryMarkdownBlock {
+    if (lineEndings != null) {
+        if (this is FencedCodeBlock) {
+            conversationCodeSource(lineEndings.value)?.let {
+                return HistoryMarkdownBlock.Code(it)
+            }
+        }
+        if (this is BlockQuote && containsCodeFence()) {
+            return HistoryMarkdownBlock.Quote(
+                children()
+                    .map {
+                        it.historyMarkdownBlock(
+                            seenArtifacts,
+                            interactiveLinks,
+                            inlineImages,
+                            lineEndings,
+                        )
+                    }
+                    .toList(),
+            )
+        }
+    }
+    return when (this) {
         is TableBlock ->
             HistoryMarkdownBlock.Table(historyMarkdownRows(this, interactiveLinks, inlineImages))
         is ListBlock -> {
@@ -833,6 +955,7 @@ private fun Node.historyMarkdownBlock(
                                         seenArtifacts,
                                         interactiveLinks,
                                         inlineImages,
+                                        lineEndings,
                                     )
                                 }
                                 .toList(),
@@ -859,6 +982,7 @@ private fun Node.historyMarkdownBlock(
             )
         }
     }
+}
 
 private fun Node.children(): Sequence<Node> = generateSequence(firstChild) { it.next }
 
@@ -924,6 +1048,8 @@ private fun HistoryMarkdownBlock.artifacts(): Sequence<ReplyArtifact> =
             items.asSequence().flatMap { item ->
                 item.blocks.asSequence().flatMap { it.artifacts() }
             }
+        is HistoryMarkdownBlock.Quote -> blocks.asSequence().flatMap { it.artifacts() }
+        is HistoryMarkdownBlock.Code,
         is HistoryMarkdownBlock.Table -> emptySequence()
     }
 

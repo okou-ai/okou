@@ -106,6 +106,7 @@ function createCapturedClaimObjects(
       orgId: claim.orgId,
       chatThreadId: claim.chatThreadId,
       claimId: claim.claimId,
+      queuedAt: claim.queuedAt,
     },
     context,
     claim.requestInput,
