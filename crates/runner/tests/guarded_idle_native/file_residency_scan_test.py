@@ -54,28 +54,33 @@ def original(root, size=SIZE):
 
 
 def _copy_original(source, destination):
-    # Keep a complete, independently writable replay copy without routing every
-    # payload through the generic sendfile fast path.
-    with source.open("rb") as reader, destination.open("wb") as writer:
-        remaining = os.fstat(reader.fileno()).st_size
-        while remaining:
-            try:
-                copied = os.copy_file_range(reader.fileno(), writer.fileno(), remaining)
-            except OSError as error:
-                # Kernel/filesystem range-copy support is optional. Continue at
-                # the actual cursors even if a prefix was already transferred.
-                if error.errno not in (
-                    errno.ENOSYS,
-                    errno.EXDEV,
-                    errno.EOPNOTSUPP,
-                    errno.EINVAL,
-                ):
-                    raise
-                shutil.copyfileobj(reader, writer)
-                return
-            if not copied:
-                raise OSError("original fixture copy stopped before EOF")
-            remaining -= copied
+    # Replay verifies all logical bytes. Keep holes in the independent copy
+    # when the filesystem can locate the source's data extents.
+    try:
+        with source.open("rb") as reader, destination.open("wb") as writer:
+            src, dst = reader.fileno(), writer.fileno()
+            size = os.fstat(src).st_size
+            offset = 0
+            while offset < size:
+                try:
+                    offset = os.lseek(src, offset, os.SEEK_DATA)
+                except OSError as error:
+                    if error.errno != errno.ENXIO:
+                        raise
+                    break
+                end = os.lseek(src, offset, os.SEEK_HOLE)
+                while offset < end:
+                    copied = os.copy_file_range(src, dst, end - offset, offset, offset)
+                    if not copied:
+                        raise OSError("original fixture copy stopped inside a data extent")
+                    offset += copied
+            os.ftruncate(dst, size)
+    except OSError as error:
+        if error.errno not in (errno.ENOSYS, errno.EXDEV, errno.EOPNOTSUPP, errno.EINVAL):
+            raise
+        # Restart with fresh cursors and truncate any partially copied extents.
+        with source.open("rb") as reader, destination.open("wb") as writer:
+            shutil.copyfileobj(reader, writer)
 
 
 class ScanTests(unittest.TestCase):
