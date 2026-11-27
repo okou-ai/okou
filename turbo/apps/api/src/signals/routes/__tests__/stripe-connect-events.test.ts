@@ -15,6 +15,10 @@ import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
+const connectWebhookClient = setupApp({
+  context,
+  routes: webhooksStripeConnectRoutes,
+})(webhookStripeConnectContract);
 
 const CONNECT_SECRET = "whsec_stripe_connect_events";
 const BILLING_SECRET = "whsec_stripe_billing_events";
@@ -90,9 +94,10 @@ function postConnectEvent(
   statuses: readonly (200 | 401 | 503)[],
 ) {
   return accept(
-    setupApp({ context, routes: webhooksStripeConnectRoutes })(
-      webhookStripeConnectContract,
-    ).post({ body: JSON.stringify(event), extraHeaders: headers }),
+    connectWebhookClient.post({
+      body: JSON.stringify(event),
+      extraHeaders: headers,
+    }),
     statuses,
   );
 }
@@ -108,12 +113,14 @@ describe("Stripe Connect account notifications", () => {
     const event = deauthorization(accountId);
     stripeSignsWith(BILLING_SECRET, event);
 
-    await postConnectEvent(
-      event,
-      { "stripe-signature": "t=1,v1=signed-with-billing-secret" },
-      [401],
-    );
-    await postConnectEvent(event, {}, [401]);
+    await Promise.all([
+      postConnectEvent(
+        event,
+        { "stripe-signature": "t=1,v1=signed-with-billing-secret" },
+        [401],
+      ),
+      postConnectEvent(event, {}, [401]),
+    ]);
     stripeSignsWith(CONNECT_SECRET, event);
     mockOptionalEnv("STRIPE_AUTOMATION_WEBHOOK_SECRET", undefined);
     await postConnectEvent(

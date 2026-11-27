@@ -183,15 +183,18 @@ describe("provider account identity on Add account", () => {
     const actor = createBddApi(context).user();
     provider("gmail", "returning-subject");
     const first = await connect(actor, "gmail");
-    await accept(
-      accounts.delete({
-        headers,
-        params: { connectionId: first },
-        body: { target: { kind: "builtin", connectorSlug: "gmail" } },
-      }),
-      [200],
-    );
-    const second = await connect(actor, "gmail");
+    const [, nextStart] = await Promise.all([
+      accept(
+        accounts.delete({
+          headers,
+          params: { connectionId: first },
+          body: { target: { kind: "builtin", connectorSlug: "gmail" } },
+        }),
+        [200],
+      ),
+      api.startOauth(actor, "gmail", "oauth"),
+    ]);
+    const second = await finish("gmail", nextStart);
     expect(second).not.toBe(first);
     expect((await list("gmail")).connections).toHaveLength(1);
   });

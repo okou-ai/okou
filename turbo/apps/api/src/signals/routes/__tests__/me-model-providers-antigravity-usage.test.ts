@@ -19,6 +19,14 @@ import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
+const deviceAuthClient = setupApp({
+  context,
+  routes: antigravityDeviceAuthRoutes,
+})(antigravityDeviceAuthContract);
+const providersListClient = setupApp({
+  context,
+  routes: meModelProvidersListRoutes,
+})(personalModelProvidersMainContract);
 // MSW reads ":name" in a path string as a parameter, so match the exact
 // Cloud Code method URLs with regular expressions.
 const LOAD_CODE_ASSIST =
@@ -93,11 +101,8 @@ async function connectGoogleAccount(): Promise<{
     [FeatureSwitchKey.GeminiAntigravity]: true,
   });
   mocks.clerk.session(actor.userId, actor.orgId);
-  const client = setupApp({ context, routes: antigravityDeviceAuthRoutes })(
-    antigravityDeviceAuthContract,
-  );
   const started = await accept(
-    client.start({ headers: authHeaders(), body: {} }),
+    deviceAuthClient.start({ headers: authHeaders(), body: {} }),
     [200],
   );
   const redirect = new URL("http://localhost:51121/oauth-callback");
@@ -107,7 +112,7 @@ async function connectGoogleAccount(): Promise<{
   );
   redirect.searchParams.set("code", "4/0AeaYSHB-code");
   await accept(
-    client.complete({
+    deviceAuthClient.complete({
       headers: authHeaders(),
       body: {
         sessionToken: started.body.sessionToken,
@@ -120,10 +125,10 @@ async function connectGoogleAccount(): Promise<{
 }
 
 async function listGoogleAccount() {
-  const client = setupApp({ context, routes: meModelProvidersListRoutes })(
-    personalModelProvidersMainContract,
+  const listed = await accept(
+    providersListClient.list({ headers: authHeaders() }),
+    [200],
   );
-  const listed = await accept(client.list({ headers: authHeaders() }), [200]);
   return listed.body.modelProviders.find((provider) => {
     return provider.type === "antigravity";
   });

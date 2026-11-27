@@ -159,76 +159,99 @@ function provider(slug: Provider, url: URL) {
   }
 }
 
+async function exchangeNativeCode(
+  slug: Provider,
+  options: {
+    readonly connectionId?: string;
+    readonly checkUnfinished?: boolean;
+  },
+) {
+  const started = await start(slug, true, options.connectionId);
+  const url = new URL(started.authorizationUrl);
+  const redirect =
+    slug === "dropbox"
+      ? "db-native-client://2/token"
+      : slug === "spotify"
+        ? "ai.okou.ios://connector-provider/spotify"
+        : "https://app.okou.ai/connectors/tiktok/callback";
+  expect(started.nativeAppAuthorization).toMatchObject({
+    provider: slug,
+    callbackUrl: redirect,
+  });
+  expect(url.searchParams.get("redirect_uri")).toBe(redirect);
+  expect(url.searchParams.get("state")).toMatch(/^ios-https-v1:/u);
+  if (slug === "tiktok") {
+    expect(url.searchParams.get("state")).toMatch(/^ios-https-v1:app-tiktok:/u);
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(url.searchParams.has("from")).toBeFalsy();
+  }
+  expect(started.authorizationUrl).not.toContain("server-secret");
+  expect(started.authorizationUrl).not.toContain("code_verifier");
+  if (options.checkUnfinished) {
+    expect((await completion(slug, started.oauthAttemptId)).status).toBe(404);
+  }
+  provider(slug, url);
+  const result = await accept(
+    client(builtinConnectorsSlugCallbackContract).callback({
+      params: { connectorSlug: slug },
+      query: {
+        state: url.searchParams.get("state")!,
+        code: "native-code",
+        responseMode: "json",
+      },
+    }),
+    [200],
+  );
+  expect(result.body.status).toBe("success");
+  expect(result.body.nativeAppReturn?.attemptId).toBe(started.oauthAttemptId);
+  const receipt = await completion(slug, started.oauthAttemptId);
+  expect(receipt.status).toBe(200);
+  if (receipt.status !== 200) {
+    throw new Error("Missing completion");
+  }
+  return receipt.body.connectionId;
+}
+
 test.each(providers)(
-  "exchanges %s native codes on the server and confirms add/reconnect to the exact account",
+  "exchanges %s native codes on the server and confirms adding the account",
   async (slug) => {
     await actor(true);
-    let connectionId: string | undefined;
-    for (const intent of ["add", "reconnect"]) {
-      const started = await start(slug, true, connectionId);
-      const url = new URL(started.authorizationUrl);
-      const redirect =
-        slug === "dropbox"
-          ? "db-native-client://2/token"
-          : slug === "spotify"
-            ? "ai.okou.ios://connector-provider/spotify"
-            : "https://app.okou.ai/connectors/tiktok/callback";
-      expect(started.nativeAppAuthorization).toMatchObject({
-        provider: slug,
-        callbackUrl: redirect,
-      });
-      expect(url.searchParams.get("redirect_uri")).toBe(redirect);
-      expect(url.searchParams.get("state")).toMatch(/^ios-https-v1:/u);
-      if (slug === "tiktok") {
-        expect(url.searchParams.get("state")).toMatch(
-          /^ios-https-v1:app-tiktok:/u,
-        );
-        expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-        expect(url.searchParams.has("from")).toBeFalsy();
-      }
-      expect(started.authorizationUrl).not.toContain("server-secret");
-      expect(started.authorizationUrl).not.toContain("code_verifier");
-      expect((await completion(slug, started.oauthAttemptId)).status).toBe(404);
-      provider(slug, url);
-      const result = await accept(
-        client(builtinConnectorsSlugCallbackContract).callback({
-          params: { connectorSlug: slug },
-          query: {
-            state: url.searchParams.get("state")!,
-            code: "native-code",
-            responseMode: "json",
-          },
-        }),
-        [200],
-      );
-      expect(result.body.status).toBe("success");
-      expect(result.body.nativeAppReturn?.attemptId).toBe(
-        started.oauthAttemptId,
-      );
-      const receipt = await completion(slug, started.oauthAttemptId);
-      expect(receipt.status).toBe(200);
-      if (receipt.status !== 200) {
-        throw new Error("Missing completion");
-      }
-      if (intent === "reconnect") {
-        expect(receipt.body.connectionId).toBe(connectionId);
-      }
-      connectionId = receipt.body.connectionId;
-      const account = await accept(
-        client(connectorAccountsContract).connection({
-          headers,
-          params: { connectionId },
-          query: { kind: "builtin", connectorSlug: slug },
-        }),
-        [200],
-      );
-      expect(account.body.target).toStrictEqual({
-        kind: "builtin",
-        connectorSlug: slug,
-      });
-      expect(account.body.connectionStatus).toBe("connected");
-      expect(JSON.stringify(account.body)).not.toContain("refresh-token");
-    }
+    const connectionId = await exchangeNativeCode(slug, {
+      checkUnfinished: true,
+    });
+    const account = await accept(
+      client(connectorAccountsContract).connection({
+        headers,
+        params: { connectionId },
+        query: { kind: "builtin", connectorSlug: slug },
+      }),
+      [200],
+    );
+    expect(account.body.target).toStrictEqual({
+      kind: "builtin",
+      connectorSlug: slug,
+    });
+    expect(account.body.connectionStatus).toBe("connected");
+    expect(JSON.stringify(account.body)).not.toContain("refresh-token");
+  },
+);
+
+test.each(providers)(
+  "exchanges %s native codes on the server and confirms reconnecting the exact account",
+  async (slug) => {
+    await actor(true);
+    const connectionId = await exchangeNativeCode(slug, {});
+    const reconnected = await exchangeNativeCode(slug, { connectionId });
+    expect(reconnected).toBe(connectionId);
+    const account = await accept(
+      client(connectorAccountsContract).connection({
+        headers,
+        params: { connectionId: reconnected },
+        query: { kind: "builtin", connectorSlug: slug },
+      }),
+      [200],
+    );
+    expect(account.body.connectionStatus).toBe("connected");
   },
 );
 
