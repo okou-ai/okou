@@ -4005,6 +4005,7 @@
       "recoveryScheduled": "An automatic recovery attempt was scheduled.",
       "switchFailed": "Couldn’t switch workspace. Try again or use the workspace switcher.",
       "switchWorkspace": "Switch workspace",
+      "systemManaged": "This automation is managed by the system. Its current status is shown below.",
       "systemSource": "System update",
       "title": "Automation paused",
       "unavailable": "Automation not found or you do not have access",

@@ -4065,6 +4065,7 @@
       "recoveryScheduled": "Se ha programado un intento de recuperación automática.",
       "switchFailed": "No se pudo cambiar de espacio de trabajo. Inténtalo de nuevo o usa el selector de espacios de trabajo.",
       "switchWorkspace": "Cambiar de espacio de trabajo",
+      "systemManaged": "El sistema gestiona esta automatización. Su estado actual se muestra a continuación.",
       "systemSource": "Aviso del sistema",
       "title": "Automatización en pausa",
       "unavailable": "No se encontró la automatización o no tienes acceso",

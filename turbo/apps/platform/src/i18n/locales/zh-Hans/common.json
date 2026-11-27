@@ -3989,6 +3989,7 @@
       "recoveryScheduled": "系统已安排一次自动恢复尝试。",
       "switchFailed": "无法切换工作区。请重试或使用工作区切换器。",
       "switchWorkspace": "切换工作区",
+      "systemManaged": "此自动化由系统管理。下方显示其当前状态。",
       "systemSource": "系统更新",
       "title": "自动化已暂停",
       "unavailable": "找不到此自动化，或你无权访问",

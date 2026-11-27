@@ -1096,6 +1096,7 @@ function WorkflowDetailContent() {
     return <DetailSkeleton />;
   }
 
+  const archived = detail?.official?.definitionLifecycle === "retired";
   return (
     <DetailPageShell>
       <WorkflowBreadcrumb detail={detail} />
@@ -1104,9 +1105,13 @@ function WorkflowDetailContent() {
           <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
             {workflowTitle(detail)}
           </h1>
-          {detail.description && (
+          {(!archived || detail.description) && (
             <p className="mt-2 text-sm text-muted-foreground">
-              {detail.description}
+              {archived
+                ? detail.description
+                : i18n.t(($) => {
+                    return $.feedEvents.automationDisabled.systemManaged;
+                  })}
             </p>
           )}
         </DetailPageHeader>
@@ -1119,8 +1124,10 @@ function WorkflowDetailContent() {
       )}
       <DetailPageMain>
         {detail ? (
-          detail.official ? (
+          archived ? (
             <WorkflowInstructionsTab detail={detail} />
+          ) : detail.official ? (
+            <AutomationsSection detail={detail} readOnly />
           ) : (
             <WorkflowTabContent activeTab={activeTab} detail={detail} />
           )
@@ -4210,8 +4217,10 @@ function CreateChatRunFinishedAutomationDialog({
 
 function AutomationsSection({
   detail,
+  readOnly = false,
 }: {
   readonly detail: WorkflowDetailResponse;
+  readonly readOnly?: boolean;
 }) {
   const createDialog = useGet(workflowAutomationCreateDialog$);
   const setCreateDialog = useSet(setWorkflowAutomationCreateDialog$);
@@ -4232,8 +4241,12 @@ function AutomationsSection({
                 <AutomationRow
                   key={automation.id}
                   automation={automation}
-                  canOperate={automation.ownerUserId === currentUserId}
-                  canEditStructure={automation.ownerUserId === currentUserId}
+                  canOperate={
+                    !readOnly && automation.ownerUserId === currentUserId
+                  }
+                  canEditStructure={
+                    !readOnly && automation.ownerUserId === currentUserId
+                  }
                   displayTimezone={displayTimezone}
                   showDivider={index < automations.length - 1}
                 />
@@ -4267,12 +4280,14 @@ function AutomationsSection({
           </div>
         )}
       </div>
-      <WorkflowAutomationCreateDialogs
-        workflowId={detail.id}
-        displayTimezone={displayTimezone}
-        createDialog={createDialog}
-        setCreateDialog={setCreateDialog}
-      />
+      {!readOnly && (
+        <WorkflowAutomationCreateDialogs
+          workflowId={detail.id}
+          displayTimezone={displayTimezone}
+          createDialog={createDialog}
+          setCreateDialog={setCreateDialog}
+        />
+      )}
     </section>
   );
 }

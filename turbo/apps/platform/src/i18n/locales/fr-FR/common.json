@@ -4065,6 +4065,7 @@
       "recoveryScheduled": "Une tentative de reprise automatique a été programmée.",
       "switchFailed": "Impossible de changer d’espace de travail. Réessayez ou utilisez le sélecteur d’espace de travail.",
       "switchWorkspace": "Changer d’espace de travail",
+      "systemManaged": "Cette automatisation est gérée par le système. Son état actuel est indiqué ci-dessous.",
       "systemSource": "Information système",
       "title": "Automatisation mise en pause",
       "unavailable": "Automatisation introuvable ou accès non autorisé",
