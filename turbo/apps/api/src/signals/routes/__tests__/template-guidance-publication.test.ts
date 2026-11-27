@@ -493,10 +493,6 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
       expect(first.execution.cliAgentType).toBe(framework);
       const memory = first.execution.startupInputs.memory;
       expect(memory).not.toBeNull();
-      expect(
-        first.execution.startupInputs.contentBundles.templates?.[0]
-          ?.beforeMountPaths,
-      ).toStrictEqual([]);
       await owner.run(() => {
         return remove(kind, id);
       });

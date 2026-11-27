@@ -31,14 +31,17 @@ import androidx.activity.viewModels
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.FileProvider
+import androidx.core.graphics.drawable.toDrawable
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -149,6 +152,12 @@ class MainActivity : AppCompatActivity() {
                     ?: cachedPreferences?.colorTheme
                     ?: UserPreferencesColorTheme.DEFAULT,
             ) {
+                val windowBackground = MaterialTheme.colorScheme.background.toArgb()
+                LaunchedEffect(windowBackground) {
+                    // The native window can expose its backdrop at the system insets after
+                    // recreation.
+                    window.setBackgroundDrawable(windowBackground.toDrawable())
+                }
                 val updateDetails = rememberUpdateDetailsOpen()
                 val attempt = updateInstall.attempt
                 val pending = updateInstall.automaticRelease

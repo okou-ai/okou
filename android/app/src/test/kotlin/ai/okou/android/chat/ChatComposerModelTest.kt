@@ -1127,12 +1127,29 @@ internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
         model.open(existing)
         runCurrent()
         model.edit(existing, "retry original")
-        service.write = { throw ApiFailure.Network(IOException("lost response")) }
-        service.read = { thread, event -> InputObservation(thread, event, null) }
+        service.write = {
+            val retryAfter = 1L.takeIf { service.requests.size == 1 }
+            throw ApiFailure.Http(503, null, null, retryAfter)
+        }
+        var observations = 0
+        service.read = { thread, event ->
+            assertEquals(service.requests.first().clientEventId, event)
+            observations++
+            if (observations == 1) throw ApiFailure.Http(429, null, null, 7)
+            InputObservation(thread, event, null)
+        }
         model.send(existing)
         runCurrent()
         val frozen = service.requests.single()
-        for ((index, seconds) in listOf(3L, 3L, 6L, 12L, 24L, 48L, 48L).withIndex()) {
+        // The failed status check uses its own delay without replaying the original send.
+        advanceTimeBy(999)
+        runCurrent()
+        assertEquals(0, observations)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(1, observations)
+        assertEquals(listOf(frozen), service.requests)
+        for ((index, seconds) in listOf(7L, 6L, 12L, 24L, 48L, 48L).withIndex()) {
             advanceTimeBy(seconds * 1_000 - 1)
             runCurrent()
             assertEquals(index + 1, service.requests.size)
