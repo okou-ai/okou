@@ -52,6 +52,7 @@ internal constructor(
     val phase: ChatReadPhase = ChatReadPhase.Idle,
     val source: ChatListSource? = null,
     val cacheUnavailable: Boolean = false,
+    internal val refreshFailureOrder: Long? = null,
     val renamingId: String? = null,
     val deletingId: String? = null,
     internal val unconfirmedRenameAttempts: Map<String, RenameSubmission> = emptyMap(),
@@ -86,6 +87,7 @@ internal class ProjectListOwner(
     private val dispatcher: CoroutineDispatcher,
     private val wallMillis: () -> Long,
     private val syncChatsAfterDelete: suspend () -> Unit,
+    private val visibleListReadScope: () -> Any?,
     private val readState: () -> ProjectListUiState,
     private val publish: (ProjectListUiState) -> Unit,
 ) {
@@ -608,6 +610,7 @@ internal class ProjectListOwner(
 
     fun refresh(verifyWrite: Boolean = false) {
         if (current() && projectsJob?.isActive != true) {
+            val feedbackScope = visibleListReadScope().takeUnless { verifyWrite }
             val retry = if (verifyWrite) null else ChatDependencyRetry()
             projectsRetry = retry
             state = state.copy(phase = ChatReadPhase.Loading)
@@ -707,6 +710,7 @@ internal class ProjectListOwner(
                         snapshot.copy(
                             phase = ChatReadPhase.Ready,
                             source = ChatListSource.Network,
+                            refreshFailureOrder = null,
                             renameRejection =
                                 snapshot.renameRejection.takeIf { resolvedRejection == null },
                             confirmedRenameIds = confirmedRenameIds,
@@ -730,12 +734,30 @@ internal class ProjectListOwner(
                             unresolvedProjectRenames.clear()
                             // Keep the confirmed checkpoint for catch-up and rename receipts.
                             publishProjects(
-                                state.copy(source = null, phase = ChatReadPhase.Failed),
+                                state.copy(
+                                    source = null,
+                                    phase = ChatReadPhase.Failed,
+                                    refreshFailureOrder = null,
+                                ),
                             )
                         }
                     } else if (current()) {
                         onFailure(error)
-                        if (current()) state = state.copy(phase = ChatReadPhase.Failed)
+                        if (current()) {
+                            val snapshot = state
+                            state =
+                                snapshot.copy(
+                                    phase = ChatReadPhase.Failed,
+                                    refreshFailureOrder =
+                                        if (
+                                            snapshot.source != null &&
+                                                feedbackScope != null &&
+                                                feedbackScope === visibleListReadScope()
+                                        )
+                                            nextChatFeedbackOrder()
+                                        else snapshot.refreshFailureOrder,
+                                )
+                        }
                     }
                 } finally {
                     projectsRetry = null

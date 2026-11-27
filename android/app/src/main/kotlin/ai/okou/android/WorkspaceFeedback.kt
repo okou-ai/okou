@@ -270,14 +270,24 @@ internal fun WorkspaceChatFeedback(
         !it.rejected && it.projectId != deleteProject?.id
     }
     val batchError = if (showChatList) batchResults.firstOrNull { it.rejected > 0 } else null
-    val refreshError = list.listRefreshFailureOrder.takeIf { showChatList }
+    val refreshError =
+        if (showChatList) {
+            listOfNotNull(
+                    list.listRefreshFailureOrder?.let { it to R.string.chat_list_sync_failed },
+                    list.indicatorsRefreshFailureOrder?.let { it to R.string.chat_refresh_failed },
+                    list.projectList.refreshFailureOrder?.let {
+                        it to R.string.chat_metadata_unavailable
+                    },
+                )
+                .minByOrNull { it.first }
+        } else null
     val listUndo = list.rowUndo?.takeIf { showChatList }
     val firstError =
         listOfNotNull(
                 rowError?.feedbackOrder,
                 projectError?.feedbackOrder,
                 batchError?.feedbackOrder,
-                refreshError,
+                refreshError?.first,
             )
             .minOrNull()
     val rowNotice = listFailures.firstOrNull()
@@ -290,13 +300,14 @@ internal fun WorkspaceChatFeedback(
             ProjectDeleteSnackbar(chats, projectError, list.canDeleteProject, listSnackbar)
         batchError != null && batchError.feedbackOrder == firstError ->
             MarkAllReadSnackbar(chats, batchError, listSnackbar)
-        refreshError != null && refreshError == firstError -> {
-            val message = stringResource(R.string.chat_list_sync_failed)
-            LaunchedEffect(chats, listSnackbar, refreshError, message) {
+        refreshError != null && refreshError.first == firstError -> {
+            val (order, messageId) = refreshError
+            val message = stringResource(messageId)
+            LaunchedEffect(chats, listSnackbar, order, message) {
                 try {
                     listSnackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
                 } finally {
-                    chats.dismissListRefreshFailure(refreshError)
+                    chats.dismissListRefreshFailure(order)
                 }
             }
         }

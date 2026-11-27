@@ -205,6 +205,7 @@ data class ChatListUiState(
     internal val indicatorsNonRetryableFailure: Boolean = false,
     internal val indicatorsConfirmedAt: Long? = null,
     internal val indicatorsRetryProgressVisible: Boolean = false,
+    internal val indicatorsRefreshFailureOrder: Long? = null,
     val filter: ChatListFilter = ChatListFilter.Inbox,
     val pendingRowActions: Map<String, ChatRowAction> = emptyMap(),
     internal val rowActionFailures: List<ChatRowActionFailure> = emptyList(),
@@ -303,6 +304,13 @@ internal val ChatListUiState.waitingForUnreadIndicators: Boolean
 
 internal val ChatListUiState.hasUsableList: Boolean
     get() = confirmedAt != null && !waitingForUnreadIndicators
+
+private fun ChatListUiState.clearRefreshFailures() =
+    copy(
+        listRefreshFailureOrder = null,
+        indicatorsRefreshFailureOrder = null,
+        projectList = projectList.copy(refreshFailureOrder = null),
+    )
 
 internal fun ChatListUiState.isUnread(threadId: String): Boolean {
     val serverUnreadAt = displayUnreadAt?.get(threadId)
@@ -435,6 +443,7 @@ class ChatListModel(
             dispatcher = dispatcher,
             wallMillis = wallMillis,
             syncChatsAfterDelete = { awaitListRead { true } },
+            visibleListReadScope = { listReadScope.takeIf { needsListRead } },
             readState = { mutable.value.projectList },
             publish = { reconcileProjectMoves(mutable.value.copy(projectList = it)) },
         )
@@ -653,7 +662,7 @@ class ChatListModel(
     fun selectFilter(value: ChatListFilter) {
         val state = mutable.value
         if (!current() || state.filter == value) return
-        mutable.value = state.copy(filter = value, listRefreshFailureOrder = null)
+        mutable.value = state.clearRefreshFailures().copy(filter = value)
         if (
             value == ChatListFilter.Unread &&
                 (state.indicators == null ||
@@ -667,10 +676,17 @@ class ChatListModel(
     }
 
     internal fun dismissListRefreshFailure(order: Long) {
+        if (!current()) return
         val state = mutable.value
-        if (current() && state.listRefreshFailureOrder == order) {
-            mutable.value = state.copy(listRefreshFailureOrder = null)
-        }
+        mutable.value =
+            when (order) {
+                state.listRefreshFailureOrder -> state.copy(listRefreshFailureOrder = null)
+                state.indicatorsRefreshFailureOrder ->
+                    state.copy(indicatorsRefreshFailureOrder = null)
+                state.projectList.refreshFailureOrder ->
+                    state.copy(projectList = state.projectList.copy(refreshFailureOrder = null))
+                else -> return
+            }
     }
 
     internal fun markAllRead() {
@@ -1782,20 +1798,21 @@ class ChatListModel(
         if (current()) {
             val state = mutable.value
             mutable.value =
-                state.copy(
-                    listPhase =
-                        if (listRefresh == null && state.listPhase == ChatReadPhase.Loading)
-                            state.listPhase
-                        else settledListPhase(state),
-                    listReadFailure = null,
-                    listRetryProgressVisible = false,
-                    listRefreshFailureOrder = null,
-                    indicatorsPhase =
-                        if (indicatorRefresh == null) state.indicatorsPhase
-                        else if (state.indicators != null) ChatReadPhase.Ready
-                        else ChatReadPhase.Idle,
-                    indicatorsRetryProgressVisible = false,
-                )
+                state
+                    .clearRefreshFailures()
+                    .copy(
+                        listPhase =
+                            if (listRefresh == null && state.listPhase == ChatReadPhase.Loading)
+                                state.listPhase
+                            else settledListPhase(state),
+                        listReadFailure = null,
+                        listRetryProgressVisible = false,
+                        indicatorsPhase =
+                            if (indicatorRefresh == null) state.indicatorsPhase
+                            else if (state.indicators != null) ChatReadPhase.Ready
+                            else ChatReadPhase.Idle,
+                        indicatorsRetryProgressVisible = false,
+                    )
         }
         listRefresh?.cancel()
         indicatorRefresh?.cancel()
@@ -2276,6 +2293,7 @@ class ChatListModel(
         afterWrite: Boolean = false,
     ) {
         if (!current() || indicatorsJob?.isCompleted == false) return
+        val feedbackScope = listReadScope.takeIf { !afterWrite && needsListRead }
         val retry = if (afterWrite) null else ChatDependencyRetry()
         indicatorsRetry = retry
         mutable.value =
@@ -2411,6 +2429,7 @@ class ChatListModel(
                             indicatorsPhase = ChatReadPhase.Ready,
                             indicatorsConfirmedAt = unreadConfirmedAt,
                             indicatorsRetryProgressVisible = false,
+                            indicatorsRefreshFailureOrder = null,
                             cachedUnread = null,
                             readIntents = state.readIntents - settledVisible,
                             rowActionFailures = failures,
@@ -2429,12 +2448,21 @@ class ChatListModel(
             } catch (error: Exception) {
                 val retryable = dependencyRetryAfterMillis(error) != null
                 val resumeListIndicators = afterWrite && retryable && needsListRead
-                fail(error) {
-                    it.copy(
+                fail(error) { state ->
+                    state.copy(
                         indicatorsPhase = ChatReadPhase.Failed,
                         indicatorsNonRetryableFailure = !retryable,
                         indicatorsRetryProgressVisible =
-                            resumeListIndicators && it.indicatorsRetryProgressVisible,
+                            resumeListIndicators && state.indicatorsRetryProgressVisible,
+                        indicatorsRefreshFailureOrder =
+                            if (
+                                !retryable &&
+                                    feedbackScope === listReadScope &&
+                                    needsListRead &&
+                                    state.hasUsableList
+                            )
+                                nextChatFeedbackOrder()
+                            else state.indicatorsRefreshFailureOrder,
                     )
                 }
                 if (resumeListIndicators && current()) requestIndicators(immediate = true)

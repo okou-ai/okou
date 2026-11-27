@@ -416,15 +416,9 @@ internal fun ChatListScreen(
                     row("list_cache_unavailable") { ChatNotice(R.string.chat_cache_unavailable) }
                 if (
                     state.confirmedAt != null &&
-                        !missingUnread &&
-                        state.indicatorsPhase == ChatReadPhase.Failed &&
-                        state.indicatorsNonRetryableFailure
-                ) {
-                    row("list_indicators_unavailable") {
-                        ChatListDependencyNotice(R.string.chat_refresh_failed)
-                    }
-                }
-                if (state.confirmedAt != null && state.projectsPhase == ChatReadPhase.Failed)
+                        !metadataUsable &&
+                        state.projectsPhase == ChatReadPhase.Failed
+                )
                     row("list_metadata_unavailable") {
                         ChatListDependencyNotice(R.string.chat_metadata_unavailable)
                     }

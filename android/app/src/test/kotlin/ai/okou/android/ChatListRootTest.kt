@@ -1441,7 +1441,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun recoverableIndicatorFailuresKeepInboxAndArchivedQuiet() {
+    fun indicatorRetriesStayQuietAndTerminalFailureKeepsTheConfirmedFilter() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
         awaitListAndNames()
@@ -1463,9 +1463,25 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
         compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithText("No archived chats").assertIsDisplayed()
+        val empty = compose.onNodeWithText("No archived chats")
+        empty.assertIsDisplayed()
+        val before = empty.getUnclippedBoundsInRoot()
         refreshFailure.assertDoesNotExist()
         syncBar.assertDoesNotExist()
+
+        app.fixture.indicators = { MockResponse().setResponseCode(400) }
+        shadowOf(Looper.getMainLooper()).idleFor(6, TimeUnit.SECONDS)
+        val message = compose.activity.getString(R.string.chat_refresh_failed)
+        compose.waitUntilExactlyOneExists(hasText(message), 10_000)
+        assertEquals(before, empty.getUnclippedBoundsInRoot())
+        val feedback = compose.onNodeWithTag("chat_list_feedback").getUnclippedBoundsInRoot()
+        assertTrue(
+            refreshFailure.getUnclippedBoundsInRoot().top > empty.getUnclippedBoundsInRoot().bottom,
+        )
+        assertTrue(feedback.top > empty.getUnclippedBoundsInRoot().bottom)
+        compose.onNodeWithText("Back to Inbox").performClick()
+        compose.waitUntilDoesNotExist(hasText(message), 10_000)
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
     }
 
     @Test
@@ -1528,7 +1544,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun aProjectRefreshFailureIsVisibleAboveTheFirstRowOfALongInbox() {
+    fun aProjectRefreshFailureOverlaysTheListWithoutMovingItsScrollAnchor() {
         val app = compose.activity.application as ChatListApplication
         val rows =
             (1..22).joinToString(",") { index ->
@@ -1546,15 +1562,23 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         }
         app.responseGate.countDown()
         awaitListAndNames()
-        val project = compose.onNodeWithText("Research")
-        val before = project.getUnclippedBoundsInRoot()
-        app.fixture.projectEvents = { MockResponse().setResponseCode(503) }
+        val list = compose.onNodeWithTag("chat_list")
+        list.performScrollToNode(hasText("Inbox row 12"))
+        val row = compose.onNodeWithText("Inbox row 12")
+        val before = row.getUnclippedBoundsInRoot()
+        val healthyProjects = app.fixture.projectEvents
+        app.fixture.projectEvents = { MockResponse().setResponseCode(400) }
         refreshWorkspaceChats()
         val message = "Project information is temporarily unavailable."
         compose.waitUntilExactlyOneExists(hasText(message), 10_000)
         compose.onNodeWithText(message).assertIsDisplayed()
-        project.assertIsDisplayed()
-        assertTrue(project.getUnclippedBoundsInRoot().top > before.top)
+        assertEquals(before, row.getUnclippedBoundsInRoot())
+        compose.onNodeWithTag("chat_list_feedback").assertIsDisplayed()
+
+        app.fixture.projectEvents = healthyProjects
+        refreshWorkspaceChats()
+        compose.waitUntilDoesNotExist(hasText(message), 10_000)
+        assertEquals(before, row.getUnclippedBoundsInRoot())
     }
 
     @Test
