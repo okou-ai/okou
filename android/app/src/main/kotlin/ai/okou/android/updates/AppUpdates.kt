@@ -265,9 +265,15 @@ class AppUpdates(
     }
 
     fun check(manual: Boolean = true) {
-        if (checkJob?.isActive == true) {
-            if (manual) checkRetry.advance()
-            return
+        val pendingCheck = checkJob
+        if (pendingCheck?.isActive == true) {
+            if (!manual) return
+            if (initialized.isCompleted) {
+                checkRetry.advance()
+                return
+            }
+            // No request has started yet. Preserve the manual action through initialization.
+            pendingCheck.cancel()
         }
         checkJob = scope.launch {
             initialized.await()
