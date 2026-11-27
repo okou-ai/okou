@@ -2,93 +2,21 @@
 """Synthetic original-file/CLI consumer checks, not native execution evidence."""
 
 import copy
-import hashlib
-import json
 import pathlib
 import subprocess
 import sys
 import unittest
 import uuid
 
-import cleanup_report as cleanup
 import report
 import report_test
 import speculative_fault_report as fault
-import status_failure_report_test as failure_test
-from progress_report_fixture import foreground_heartbeat, joined_observer
+import held_status_report_fixture as fixture
 
 
 class SpeculativeFaultReportTests(unittest.TestCase):
     def setUp(self):
-        failure_test.StatusFailureReportTests.setUp(self)
-        raw = self.collector["metadata"].pop("native_status_failure_policy_json")
-        self.collector["metadata"]["native_speculative_fault_policy_json"] = raw
-        original, sample = self.events[:6], self.samples[0]
-        self.events, self.samples, self.witnesses = [], [], []
-        for index, case in enumerate(sorted(fault.CASES)):
-            at = lambda offset: 10_000_000_000*(index+1)+offset*1_000_000
-            old, backing, history, operation, runner = [str(uuid.uuid4()) for _ in range(5)]
-            terminal = copy.deepcopy(original)
-            for event, offset in zip(terminal, (0,1,40,41,70,100)):
-                event.update(case=case, sandbox_id=old, backing_generation=backing,
-                             monotonic_ns=at(offset), unix_ns=at(offset)+1000)
-                self.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
-            self.events.extend(terminal)
-            mode = "panic" if case.startswith("SpeculativePanic-") else "drop"
-            reuse = "thread:native-guarded-"+history
-            initial = {"mode":"starting", "max_concurrent":1, "active_runs":[],
-                "started_at":"2026-10-19T01:00:00Z", "updated_at":"2026-10-19T01:00:01Z",
-                "idle_sandboxes":[{"reuse_key":reuse, "sandbox_id":old}]}
-            empty = {k:v for k,v in initial.items() if k != "idle_sandboxes"}
-            empty["updated_at"] = "2026-10-19T01:00:02Z"
-            zero = dict.fromkeys(cleanup.COUNTS,0) | {"closed":True}
-            active = zero | {"registered_operations":1, "started":1, "tracked_tasks":1,
-                "cleanup_growth_bytes":self.policy["tail_growth_bytes"], "closed":False}
-            coverage = {"allocated":[2,4096,1], "accounting":active,
-                        "original_lease_active":True, "io_release_withheld":True}
-            raw = history.encode()
-            digest = hashlib.sha256((raw*(65536//len(raw)+1))[:65536]).hexdigest()
-            values = (
-                {"policy":self.policy, "status_path":str(self.root/f"case-{index}"/"status.json"),
-                 "published_status":initial, "regular_file":True},
-                {"mode":mode, "history_run_id":history, "operation_run_id":operation, "reuse_key":reuse,
-                 "prepare_started_ns":at(5), "rpc_completed_ns":at(10), "payload_sha256":digest,
-                 "payload_bytes":65536, "production_restore_completed":True, "private_marker_verified":True,
-                 "ordinary_home_verified":True, "callback_polled_pending":True, "callback_release_withheld":True,
-                 "pool_empty":True, "original_full_lease_active":True, "original_exit_polled_pending":True,
-                 "allocated":[2,4096,1]},
-                {"failure_requested_ns":at(14), "failure_joined_ns":at(16), "mode":mode,
-                 "panic_caught":mode == "panic", "state":"Uncertain", "commit_refused":True,
-                 "repark_refused":True, "incoming_refused":True, "original_metadata_preserved":True,
-                 "original_full_lease_active":True, "original_exit_polled_pending":True,
-                 "pool_empty":True, "allocated":[2,4096,1]},
-                {"original_exit_confirmed":True, "receiver_polled_pending":True, "coverage":coverage},
-                {"pool_held_ns":at(46), "status_held_ns":at(47), "heartbeat_pending_ns":at(48),
-                 "heartbeat_polled_pending":True, "observer":joined_observer(at(49), at(50)),
-                 "coverage":coverage},
-                {"pool_released_ns":at(56), "status_held_ns":at(47),
-                 "heartbeat":foreground_heartbeat(runner, 1, at(57), at(58), (2, 4096)),
-                 "receiver_polled_pending":True, "coverage":coverage},
-                {"io_released_ns":at(66), "saving_joined_ns":at(72), "home_cache_promoted":True,
-                 "original_lease_released":True, "allocated":[0,0,0], "accounting":zero},
-                {"status_wait_polled_ns":at(76), "status_waits_before":0, "status_waits_after":1,
-                 "heartbeat":foreground_heartbeat(runner, 2, at(78), at(79), (0, 0)),
-                 "publication_polled_pending":True, "allocated":[0,0,0]},
-                {"status_released_ns":at(86), "publication_joined_ns":at(87), "published_status":empty,
-                 "regular_file":True, "allocated":[0,0,0]},
-                {"tracker_joined":True, "accounting_joined":True, "heartbeat_joined":True,
-                 "provider_joined":True, "peer_joined":True, "remaining_activation_owners":0,
-                 "remaining_finalizing_owners":0, "allocated":[0,0,0], "accounting":zero},
-            )
-            for phase, value, offset in zip(fault.PHASES, values, (3,12,20,45,55,65,75,85,90,95)):
-                self.witnesses.append(report_test.witness_receipt(
-                    case, phase,
-                    monotonic_ns=at(offset),
-                    unix_ns=at(offset)+1000,
-                    sandbox_id=old,
-                    backing_generation=backing,
-                    evidence=copy.deepcopy(value),
-                ))
+        fixture.prepare_speculative_fault(self)
 
     def event(self, phase):
         return report_test.witness_for_phase(self.witnesses, phase)

@@ -118,4 +118,5 @@
     <string name="inline_image_unavailable">इमेज उपलब्ध नहीं है</string>
     <string name="inline_image_view_original">मूल इमेज देखें</string>
     <string name="inline_image_open_link">लिंक खोलें</string>
+    <string name="chat_list_sync_failed">चैट सिंक नहीं हो सकीं।</string>
 </resources>

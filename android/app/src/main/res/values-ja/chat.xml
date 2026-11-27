@@ -116,4 +116,5 @@
     <string name="inline_image_unavailable">画像を表示できません</string>
     <string name="inline_image_view_original">元の画像を表示</string>
     <string name="inline_image_open_link">リンクを開く</string>
+    <string name="chat_list_sync_failed">チャットを同期できませんでした。</string>
 </resources>

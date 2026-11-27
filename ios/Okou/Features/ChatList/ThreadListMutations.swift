@@ -204,23 +204,16 @@ final class ThreadListMutations {
   }
 
   func settleOptimisticChanges(eventIDs: Set<String>) {
-    enum Field: Hashable {
-      case project(String)
-      case archive(String)
+    var confirmedMemberships: [String: Int] = [:]
+    for (index, event) in optimisticChanges.enumerated()
+    where event.change.kind == .projectUpdated && eventIDs.contains(event.id) {
+      confirmedMemberships[event.change.chatThreadId] = index
     }
-    var confirmedFields = Set<Field>()
-    // A persistent receipt also settles earlier edits to that field on the same chat.
-    optimisticChanges = optimisticChanges.reversed().filter { event in
-      let confirmed = eventIDs.contains(event.id)
-      let field: Field
-      switch event.change.kind {
-      case .projectUpdated: field = .project(event.change.chatThreadId)
-      case .archived, .unarchived: field = .archive(event.change.chatThreadId)
-      default: return !confirmed
-      }
-      if confirmed { confirmedFields.insert(field) }
-      return !confirmedFields.contains(field)
-    }.reversed()
+    optimisticChanges = optimisticChanges.enumerated().filter { index, event in
+      !eventIDs.contains(event.id)
+        && (event.change.kind != .projectUpdated
+          || index > (confirmedMemberships[event.change.chatThreadId] ?? -1))
+    }.map(\.element)
   }
 
   @discardableResult
@@ -274,11 +267,11 @@ final class ThreadListMutations {
   @discardableResult
   func setArchived(
     _ thread: ChatThread, archived: Bool, eventID: String = UUID().uuidString.lowercased(),
-    retry: Bool = false, onFailure: (@MainActor (String) -> Void)? = nil,
+    onFailure: (@MainActor (String) -> Void)? = nil,
     didBegin: @MainActor () -> Void = {}
   ) async -> Bool {
     guard canUpdate(thread.id), !Task.isCancelled else { return false }
-    if !retry, !optimisticChanges.contains(where: { $0.id == eventID }) {
+    if !optimisticChanges.contains(where: { $0.id == eventID }) {
       optimisticChanges.append(
         (
           eventID,
@@ -288,16 +281,10 @@ final class ThreadListMutations {
         ))
     }
     projectThreads(threads)
+    didBegin()
     return await updateThread(
-      thread.id, includingIndicators: true, onFailure: onFailure, didBegin: didBegin
-    ) { [self] in
-      if retry {
-        // A lost response may already have a confirmed event. Refresh before replaying its ID.
-        await refresh(waitForCurrent: true, includingIndicators: false)
-        try Task.checkCancellation()
-        guard !closed, !blocked else { throw CancellationError() }
-        guard optimisticChanges.contains(where: { $0.id == eventID }) else { return }
-      }
+      thread.id, includingIndicators: true, onFailure: onFailure
+    ) { [commands] in
       try await commands.setArchived(threadID: thread.id, archived: archived, eventID: eventID)
     }
   }

@@ -8,11 +8,9 @@ import pathlib
 import subprocess
 import sys
 import unittest
-from unittest.mock import patch
 import uuid
 
-import batch_replacement_report as replacement
-import batch_replacement_report_test as replacement_test
+import held_status_report_fixture as fixture
 import dual_history_report as dual
 import report
 import report_test
@@ -25,8 +23,7 @@ def session(thread, message):
 
 class DualHistoryReportTests(unittest.TestCase):
     def setUp(self):
-        with patch.object(replacement, "CASES", dual.CASES):
-            replacement_test.ReplacementReportTests.setUp(self)
+        fixture.prepare_batch_replacement(self, dual.CASES)
         metadata = self.collector["metadata"]
         metadata["native_dual_history_policy_json"] = metadata["native_batch_replacement_policy_json"]
         self.duals = []
@@ -94,7 +91,7 @@ class DualHistoryReportTests(unittest.TestCase):
         return report_test.witness_for_phase(self.duals, phase)
 
     def write(self):
-        replacement_test.ReplacementReportTests.write(self)
+        fixture.write_batch_replacement(self)
         with (self.root/"stdout.log").open("a") as stream:
             stream.write("\n"+"\n".join(dual.PREFIX+json.dumps(e) for e in self.duals))
 

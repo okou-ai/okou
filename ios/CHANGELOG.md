@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.70.2](https://github.com/okou-ai/okou/compare/ios-v0.70.1...ios-v0.70.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **ios:** restore the for you card when the keyboard closes ([#51262](https://github.com/okou-ai/okou/issues/51262)) ([a8675a3](https://github.com/okou-ai/okou/commit/a8675a39689a07ef203ab1e2b8527062648aeb3f))
+
 ## [0.70.1](https://github.com/okou-ai/okou/compare/ios-v0.70.0...ios-v0.70.1) (2026-11-26)
 
 

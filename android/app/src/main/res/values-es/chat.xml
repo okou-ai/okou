@@ -120,4 +120,5 @@
     <string name="inline_image_unavailable">Imagen no disponible</string>
     <string name="inline_image_view_original">Ver original</string>
     <string name="inline_image_open_link">Abrir enlace</string>
+    <string name="chat_list_sync_failed">No se pudieron sincronizar los chats.</string>
 </resources>

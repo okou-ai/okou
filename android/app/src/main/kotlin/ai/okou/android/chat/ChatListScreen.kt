@@ -1,5 +1,7 @@
 package ai.okou.android.chat
 
+import ai.okou.android.ContentReadFailure
+import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.WithButtonFocusOutline
@@ -22,6 +24,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -36,7 +39,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -309,9 +314,10 @@ internal fun ChatListScreen(
     val outline = MaterialTheme.colorScheme.outlineVariant
     val missingUnread = state.confirmedAt != null && state.waitingForUnreadIndicators
     val firstLoadFailed =
-        if (missingUnread) state.indicatorsNonRetryableFailure
-        else state.listReadFailure == ChatListReadFailure.NeedsRetry
-    val hasUsableList = state.confirmedAt != null && !missingUnread
+        !state.hasUsableList &&
+            if (missingUnread) state.indicatorsNonRetryableFailure
+            else state.listReadFailure == ChatListReadFailure.NeedsRetry
+    val hasUsableList = state.hasUsableList
     val skeletonVisible =
         rememberContentReadSkeleton(
             hasContent = hasUsableList || pendingByProject.isNotEmpty(),
@@ -403,18 +409,8 @@ internal fun ChatListScreen(
                         }
                     }
                 }
-                if (state.confirmedAt == null || missingUnread) {
-                    when {
-                        firstLoadFailed ->
-                            row("list_first_read") {
-                                ContentReadFeedback(
-                                    R.string.chat_list_first_load_failed,
-                                    Modifier.padding(start = 12.dp, top = 24.dp, end = 12.dp)
-                                        .testTag("chat_list_first_read_status"),
-                                )
-                            }
-                        skeletonVisible -> row("list_first_read") { ChatListSkeleton() }
-                    }
+                if (!hasUsableList && skeletonVisible) {
+                    row("list_first_read") { ChatListSkeleton() }
                 }
                 if (state.cacheUnavailable || state.projectCacheUnavailable)
                     row("list_cache_unavailable") { ChatNotice(R.string.chat_cache_unavailable) }
@@ -475,6 +471,10 @@ internal fun ChatListScreen(
                 }
             }
         }
+        val fillFailureViewport =
+            firstLoadFailed &&
+                pendingByProject.isEmpty() &&
+                groups.none { it.project != null || it.threads.isNotEmpty() }
         LazyColumn(
             Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
                 contentDescription = listLabel
@@ -487,7 +487,35 @@ internal fun ChatListScreen(
                 ),
             state = listState,
         ) {
-            items(leadingItems.size, key = { leadingItems[it].first }) { leadingItems[it].second() }
+            if (fillFailureViewport) {
+                item(key = "list_first_read") {
+                    Column(Modifier.fillParentMaxHeight().fillMaxWidth()) {
+                        leadingItems.forEach { (key, content) -> key(key) { content() } }
+                        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                            ContentReadFailure(
+                                R.string.chat_list_first_load_failed,
+                                Modifier.fillMaxWidth()
+                                    .verticalScroll(rememberScrollState())
+                                    .heightIn(min = maxHeight)
+                                    .testTag("chat_list_first_read_status"),
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(leadingItems.size, key = { leadingItems[it].first }) {
+                    leadingItems[it].second()
+                }
+                if (firstLoadFailed) {
+                    item(key = "list_first_read") {
+                        ContentReadFailure(
+                            R.string.chat_list_first_load_failed,
+                            Modifier.fillMaxWidth().testTag("chat_list_first_read_status"),
+                            failureLayout = ContentReadFailureLayout.Section,
+                        )
+                    }
+                }
+            }
             if (
                 state.confirmedAt != null ||
                     pendingByProject.isNotEmpty() ||

@@ -1313,13 +1313,16 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun aFailedRefreshKeepsAnEmptyFilterVisible() {
+    fun aTerminalRefreshNotifiesOnceAndKeepsAnEmptyFilterVisible() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
         awaitListAndNames()
         compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithText("No archived chats").assertExists()
+        val empty = compose.onNodeWithText("No archived chats")
+        val emptyBounds = empty.getUnclippedBoundsInRoot()
+        val notice = compose.activity.getString(R.string.chat_list_sync_failed)
+        val normalEvents = app.fixture.events
 
         app.fixture.events = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
         refreshWorkspaceChats()
@@ -1328,8 +1331,31 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Failed
         }
         compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
-        compose.onNodeWithText("No archived chats").assertExists()
+        empty.assertExists()
+        compose.onNodeWithText(notice).assertDoesNotExist()
         compose.onNodeWithContentDescription("Syncing chats…").assertDoesNotExist()
+
+        app.fixture.events = { MockResponse().setResponseCode(400) }
+        shadowOf(Looper.getMainLooper()).idleFor(3, TimeUnit.SECONDS)
+        compose.waitUntilExactlyOneExists(hasText(notice), 10_000)
+        assertEquals(emptyBounds, empty.getUnclippedBoundsInRoot())
+        compose.onNodeWithTag("chat_list_first_read_status").assertDoesNotExist()
+
+        app.fixture.events = normalEvents
+        refreshWorkspaceChats()
+        compose.waitUntilDoesNotExist(hasText(notice), 10_000)
+        assertEquals(emptyBounds, empty.getUnclippedBoundsInRoot())
+
+        app.fixture.events = { MockResponse().setResponseCode(400) }
+        refreshWorkspaceChats()
+        compose.waitUntilExactlyOneExists(hasText(notice), 10_000)
+        compose.onNodeWithText("Back to Inbox").performClick()
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+        compose.onNodeWithText(notice).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Archived").performClick()
+        empty.assertIsDisplayed()
+        compose.onNodeWithText(notice).assertDoesNotExist()
     }
 
     @Test
@@ -1467,14 +1493,21 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
             firstRead.countDown()
             awaitListAndNames()
-            val status = compose.onNodeWithTag("chat_list_first_read_status")
+            val status = compose.onNodeWithText(loadFailure)
+            val illustration = compose.onNodeWithTag("content-read-failure-illustration")
             status.assertIsDisplayed()
+            illustration.assertIsDisplayed().assertWidthIsEqualTo(160.dp)
             compose.onNodeWithContentDescription(loading).assertDoesNotExist()
             compose.onNodeWithText("No unread chats").assertDoesNotExist()
             compose.onNodeWithText("Try again").assertDoesNotExist()
             val statusBounds = status.getUnclippedBoundsInRoot()
-            assertEquals(heading.left, statusBounds.left)
-            assertEquals(28.dp, statusBounds.top - heading.bottom)
+            val illustrationBounds = illustration.getUnclippedBoundsInRoot()
+            assertTrue(illustrationBounds.top > heading.bottom)
+            assertEquals(16.dp, statusBounds.top - illustrationBounds.bottom)
+            val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
+            val listCenter = (listBounds.left + listBounds.right) / 2
+            val statusCenter = (statusBounds.left + statusBounds.right) / 2
+            assertTrue(kotlin.math.abs((listCenter - statusCenter).value) <= 1f)
             assertEquals(
                 LiveRegionMode.Polite,
                 status.fetchSemanticsNode().config[SemanticsProperties.LiveRegion],
@@ -1483,8 +1516,10 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             status.performSemanticsAction(SemanticsActions.GetTextLayoutResult) {
                 it(statusLayouts)
             }
-            assertEquals(14.sp, statusLayouts.single().layoutInput.style.fontSize)
-            assertEquals(20.sp, statusLayouts.single().layoutInput.style.lineHeight)
+            val style = statusLayouts.single().layoutInput.style
+            assertEquals(16.sp, style.fontSize)
+            assertEquals(24.sp, style.lineHeight)
+            assertEquals(FontWeight.Medium, style.fontWeight)
             assertEquals(toolbarBounds, filter.getUnclippedBoundsInRoot())
         } finally {
             firstRead.countDown()
