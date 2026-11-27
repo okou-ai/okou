@@ -705,6 +705,11 @@ describe("Standalone proactive dispatch", () => {
     let clockTime = Date.UTC(2030, 0, 2, 4);
     mockNow(clockTime);
     const owned = await publicChatActor(context, {
+      // This owner's hourly Suggestions slot falls at 06:59 UTC.
+      actor: bdd.user({
+        userId: "user_ts_ci_morning_5",
+        orgId: "org_ts_ci_morning_fixture",
+      }),
       clockTime: () => {
         return clockTime;
       },
@@ -770,8 +775,8 @@ describe("Standalone proactive dispatch", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    // Enable Suggestions just before the next morning tick to capture both permissions.
-    clockTime += 24 * 60 * 60_000 - 1000;
+    // Enable Suggestions at the dispatch time so its first slot is in the future.
+    clockTime += 24 * 60 * 60_000;
     mockNow(clockTime);
     await accept(
       suggestions.updateWithFeed({
@@ -780,12 +785,10 @@ describe("Standalone proactive dispatch", () => {
       }),
       [200],
     );
-    clockTime += 1000;
-    mockNow(clockTime);
     await owned.run(() => {
       return runs.registerDirectRunner(owned.runnerGroup);
     });
-    await scheduled.dispatch();
+    await expect(scheduled.dispatch()).resolves.toMatchObject({ enqueued: 1 });
     const second = await launchedAutomationRunId(actor, threadId);
     if (!second || second === first) {
       throw new Error(
