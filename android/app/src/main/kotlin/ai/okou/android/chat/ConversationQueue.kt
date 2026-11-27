@@ -222,9 +222,8 @@ internal fun ConversationQueueModal(
                     .padding(settingsPanelContentPadding(compactHeight = fullScreen)),
             ) {
                 val title = stringResource(R.string.conversation_queue_count, entries.size)
-                val titleModifier = Modifier.focusRequester(titleFocus).focusable()
                 if (fullScreen) {
-                    CompactPanelTopAppBar(title, back = onDismiss, titleModifier = titleModifier)
+                    CompactPanelTopAppBar(title, back = onDismiss, titleFocus = titleFocus)
                 } else
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 56.dp),
@@ -238,7 +237,7 @@ internal fun ConversationQueueModal(
                         }
                         Text(
                             title,
-                            Modifier.weight(1f).then(titleModifier).semantics {
+                            Modifier.weight(1f).focusRequester(titleFocus).focusable().semantics {
                                 heading()
                             },
                             style = MaterialTheme.typography.titleLarge,

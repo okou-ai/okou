@@ -238,7 +238,7 @@ internal fun ModelPickerSheet(
                 CompactPanelTopAppBar(
                     title,
                     back = dismiss,
-                    backModifier = Modifier.focusRequester(backFocus),
+                    backFocus = backFocus,
                 )
             } else
                 Row(verticalAlignment = Alignment.CenterVertically) {

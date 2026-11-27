@@ -555,22 +555,27 @@ internal fun CompactPanelTopAppBar(
     title: String,
     back: (() -> Unit)? = null,
     backEnabled: Boolean = true,
-    backModifier: Modifier = Modifier,
-    titleModifier: Modifier = Modifier,
+    backFocus: FocusRequester? = null,
+    titleFocus: FocusRequester? = null,
 ) {
     TopAppBar(
         modifier = Modifier.testTag("compact-panel-top-app-bar"),
         title = {
             Text(
                 title,
-                titleModifier.semantics { heading() },
+                Modifier.then(
+                        if (titleFocus != null) Modifier.focusRequester(titleFocus).focusable()
+                        else Modifier,
+                    )
+                    .semantics { heading() },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         },
         navigationIcon = {
             if (back != null) {
-                IconButton(back, backModifier.size(48.dp), enabled = backEnabled) {
+                val focus = if (backFocus == null) Modifier else Modifier.focusRequester(backFocus)
+                IconButton(back, focus.size(48.dp), enabled = backEnabled) {
                     Icon(
                         painterResource(R.drawable.ic_arrow_back),
                         stringResource(R.string.back),
