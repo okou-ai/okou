@@ -513,12 +513,13 @@ class ConversationRouteTest {
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
             val state by model.history.uiState.collectAsStateWithLifecycle()
+            val output by model.history.output.state.collectAsStateWithLifecycle()
             val queuedControls =
                 if (showQueue.value) {
                     val presentation =
                         conversationContent(
                             state.transcript,
-                            model.history.output.state.value,
+                            output,
                             CHAT_IN_PROJECT,
                             emptyList(),
                             emptySet(),
