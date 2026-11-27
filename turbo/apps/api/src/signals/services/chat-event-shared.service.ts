@@ -121,6 +121,16 @@ interface ChatThreadTouchOptions {
   readonly unarchive?: boolean;
   /** External notification delivery consumes unread state for the whole thread. */
   readonly markRead?: boolean;
+  /**
+   * Optional already-loaded thread identity and archived state. When present
+   * without `authorizedScope`, skips the redundant pre-update SELECT on
+   * `chat_threads`.
+   */
+  readonly threadSnapshot?: {
+    readonly id: string;
+    readonly userId: string;
+    readonly archived: boolean;
+  };
 }
 
 export const insertRecommendedFollowupsEvent$ = command(
@@ -242,25 +252,30 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
     const orgId = authorizedScope?.orgId ?? options.orgId;
     // Resolve identity before either independent write. Failure of the weak
     // timestamp update must not suppress the separate ordering event attempt.
-    const [thread] = await database
-      .select({
-        id: chatThreads.id,
-        userId: chatThreads.userId,
-        archived: chatThreads.archived,
-      })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, threadId),
-          authorizedScope
-            ? and(
-                eq(chatThreads.userId, authorizedScope.userId),
-                chatThreadOrganizationCondition(authorizedScope.orgId),
+    const thread =
+      !authorizedScope && options.threadSnapshot
+        ? options.threadSnapshot
+        : (
+            await database
+              .select({
+                id: chatThreads.id,
+                userId: chatThreads.userId,
+                archived: chatThreads.archived,
+              })
+              .from(chatThreads)
+              .where(
+                and(
+                  eq(chatThreads.id, threadId),
+                  authorizedScope
+                    ? and(
+                        eq(chatThreads.userId, authorizedScope.userId),
+                        chatThreadOrganizationCondition(authorizedScope.orgId),
+                      )
+                    : undefined,
+                ),
               )
-            : undefined,
-        ),
-      )
-      .limit(1);
+              .limit(1)
+          )[0];
     signal.throwIfAborted();
     if (!thread) {
       return;

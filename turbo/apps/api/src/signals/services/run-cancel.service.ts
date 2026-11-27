@@ -99,16 +99,19 @@ export const dispatchCancelSideEffects$ = command(
     if (!shouldDispatchCancelSideEffects(result)) {
       return;
     }
-    await set(notifyPhoneUseOwner$, result, signal);
     const recoveryRedrive = result.alreadyCancelled;
-    if (result.chatThreadId !== null) {
-      await publishDesktopShellAuthorizationChangedSafely(result.userId);
-      signal.throwIfAborted();
-    }
     const db = set(writeDb$);
-    await publishCancellationRecoveryEntered(result, signal);
-    await publishRunnerCancellation(result, signal);
-    await publishRunQueueChangedForOrgSafely(result.orgId);
+
+    // Independent realtime/phone-use notifications run concurrently.
+    await Promise.all([
+      set(notifyPhoneUseOwner$, result, signal),
+      result.chatThreadId !== null
+        ? publishDesktopShellAuthorizationChangedSafely(result.userId)
+        : Promise.resolve(),
+      publishCancellationRecoveryEntered(result, signal),
+      publishRunnerCancellation(result, signal),
+      publishRunQueueChangedForOrgSafely(result.orgId),
+    ]);
     signal.throwIfAborted();
 
     // A hard upgrade must not revive legacy terminal effects that were already suppressed.
@@ -141,42 +144,56 @@ export const dispatchCancelSideEffects$ = command(
         })()
       : undefined;
     signal.throwIfAborted();
-    if (!recoveryRedrive || redriveCallbackId !== undefined) {
-      await tapError(
-        set(
-          dispatchRunCallbacks$,
-          {
-            runId: result.runId,
-            ...(redriveCallbackId !== undefined
-              ? { redriveChatCallbackId: redriveCallbackId }
-              : {}),
-          },
-          signal,
-        ),
-        (error) => {
-          L.error("Failed to dispatch cancel callbacks", {
-            runId: result.runId,
-            error,
-          });
-        },
-      );
-      signal.throwIfAborted();
-    }
+
+    const dispatchCallbacksTask =
+      !recoveryRedrive || redriveCallbackId !== undefined
+        ? tapError(
+            set(
+              dispatchRunCallbacks$,
+              {
+                runId: result.runId,
+                ...(redriveCallbackId !== undefined
+                  ? { redriveChatCallbackId: redriveCallbackId }
+                  : {}),
+              },
+              signal,
+            ),
+            (error) => {
+              L.error("Failed to dispatch cancel callbacks", {
+                runId: result.runId,
+                error,
+              });
+            },
+          )
+        : Promise.resolve();
 
     if (recoveryRedrive) {
+      await dispatchCallbacksTask;
+      signal.throwIfAborted();
       return;
     }
 
     // A fresh cancellation always came from pending or running, so the
-    // cancelled run may have accumulated usage events.
-    await tapError(set(settleDataRouterRun$, result.runId, signal), (error) => {
-      L.error("Data Router cancellation billing failed; no retry scheduled", {
-        runId: result.runId,
-        error,
-      });
-    });
-    signal.throwIfAborted();
-    await set(processOrgUsageEvents$, result.orgId, signal);
+    // cancelled run may have accumulated usage events. Billing reconciliation
+    // is independent of terminal callback dispatch, so run both concurrently.
+    const billingTask = (async () => {
+      await tapError(
+        set(settleDataRouterRun$, result.runId, signal),
+        (error) => {
+          L.error(
+            "Data Router cancellation billing failed; no retry scheduled",
+            {
+              runId: result.runId,
+              error,
+            },
+          );
+        },
+      );
+      signal.throwIfAborted();
+      await set(processOrgUsageEvents$, result.orgId, signal);
+    })();
+
+    await Promise.all([dispatchCallbacksTask, billingTask]);
     signal.throwIfAborted();
   },
 );
