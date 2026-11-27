@@ -35,7 +35,10 @@ internal fun dependencyRetryDelayMillis(error: Exception, retries: Int): Long? =
     if (error is ApiFailure.IncompatibleResponse) null else chatReadRetryDelayMillis(error, retries)
 
 /** A post-write verification can take over without waiting for an older read's retry timer. */
-internal class ChatDependencyRetry {
+internal class ChatDependencyRetry(
+    private val previousFailures: Int = 0,
+    private val waitBeforeReadMillis: Long? = null,
+) {
     class Superseded : CancellationException("Read superseded by write verification")
 
     private val superseded = CompletableDeferred<Unit>()
@@ -50,8 +53,12 @@ internal class ChatDependencyRetry {
         onRetry: (Int) -> Unit = {},
         fetch: suspend () -> T,
     ): T {
-        var retries = 0
+        var retries = previousFailures.coerceAtMost(continuousRetryDelays.lastIndex)
         fun canRetry() = isCurrent() && (retries < ChatDependencyRetryCount || continuous)
+        if (waitBeforeReadMillis != null) {
+            awaitRetry(waitBeforeReadMillis)
+            if (!isCurrent()) throw CancellationException("Read no longer current")
+        }
         while (true) {
             try {
                 return fetch()
@@ -62,13 +69,15 @@ internal class ChatDependencyRetry {
                 if (!canRetry()) throw error
                 val wait = dependencyRetryDelayMillis(error, retries) ?: throw error
                 onRetry(retries + 1)
-                if (
-                    withTimeoutOrNull(wait) { superseded.await() } != null || superseded.isCompleted
-                )
-                    throw Superseded()
+                awaitRetry(wait)
                 if (!canRetry()) throw error
                 retries = (retries + 1).coerceAtMost(continuousRetryDelays.lastIndex)
             }
         }
+    }
+
+    private suspend fun awaitRetry(waitMillis: Long) {
+        if (withTimeoutOrNull(waitMillis) { superseded.await() } != null || superseded.isCompleted)
+            throw Superseded()
     }
 }
