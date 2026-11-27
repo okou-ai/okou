@@ -835,13 +835,13 @@ chat	src/signals/routes/__tests__/chat-events-session-continuity.test.ts	chat-ev
 chat	src/signals/routes/__tests__/chat-events-session-continuity.test.ts	chat-events-session-continuity-019	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-session-continuity.test.ts	chat-events-session-continuity-020	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-session-continuity.test.ts	chat-events-session-continuity-021	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-001	revisit		revisit: reclassify to a-run: claims the dispatched Run and verifies run-associated replacement event and Runner dispatch payload			d-other
-chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-004	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-005	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-007	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-010	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-012	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-014	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-001	rewritten	159.6	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	R31	d-other
+chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-004	rewritten	240.8	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-005	rewritten	442.3	split n=2: 1/2=235.6 (timeout=600); 2/2=442.3 (timeout=800)	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-007	rewritten	270.0	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-010	rewritten	277.2	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-012	rewritten	296.4	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-014	rewritten	253.5	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	R31	a-run
 chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-001	rewritten	218.5	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-steer.test.ts	R30	a-run
 chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-005	rewritten	244.2	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-steer.test.ts	R30	a-run
 chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-007	rewritten	263.1	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-steer.test.ts	R30	a-run
