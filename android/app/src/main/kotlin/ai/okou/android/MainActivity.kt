@@ -18,7 +18,6 @@ import ai.okou.android.updates.updateToolbarAction
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -42,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.FileProvider
+import androidx.core.graphics.drawable.toDrawable
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -156,7 +156,7 @@ class MainActivity : AppCompatActivity() {
                 LaunchedEffect(windowBackground) {
                     // The native window can expose its backdrop at the system insets after
                     // recreation.
-                    window.setBackgroundDrawable(ColorDrawable(windowBackground))
+                    window.setBackgroundDrawable(windowBackground.toDrawable())
                 }
                 val updateDetails = rememberUpdateDetailsOpen()
                 val attempt = updateInstall.attempt
