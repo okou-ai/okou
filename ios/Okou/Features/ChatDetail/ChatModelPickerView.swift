@@ -409,7 +409,8 @@ private struct ChatModelPickerContent: View {
   private func modelSections(_ configuration: ChatModelConfiguration) -> some View {
     List {
       ForEach(
-        ["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue), id: \.self
+        ["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue) + ["antigravity"],
+        id: \.self
       ) { type in
         let rows = configuration.models.filter {
           ($0.selectedModel == nil ? "built-in" : $0.memberEffective.providerType) == type
@@ -423,6 +424,14 @@ private struct ChatModelPickerContent: View {
               HStack(spacing: OkouSpace.sm) {
                 SubscriptionBrandIcon(type: provider)
                 Text(providerTitle(provider))
+              }
+              .okouSectionHeader()
+            } else if type == "antigravity" {
+              HStack(spacing: OkouSpace.sm) {
+                AuthProviderMark(provider: .google)
+                  .frame(width: OkouIconSize.providerMark, height: OkouIconSize.providerMark)
+                  .accessibilityHidden(true)
+                Text(verbatim: "Google AI")
               }
               .okouSectionHeader()
             }
@@ -482,7 +491,7 @@ private struct ChatModelPickerContent: View {
           // heading of their own.
           HStack(alignment: .firstTextBaseline, spacing: OkouSpace.sm) {
             Text(configuration.catalog.name(row.selectedModel))
-            if PersonalSubscriptionType(rawValue: row.memberEffective.providerType) == nil {
+            if row.memberEffective.providerType == "built-in" {
               Text("Okou credits")
                 .font(.okou(.subheadline))
                 .foregroundStyle(OkouColor.mutedForeground)
