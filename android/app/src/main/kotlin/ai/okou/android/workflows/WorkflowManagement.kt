@@ -72,6 +72,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -420,80 +421,84 @@ internal fun WorkflowEditor(
             saveFocus.requestFocus()
         }
     }
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.widthIn(max = 730.dp).fillMaxWidth().weight(1f)) {
-            Column(
-                Modifier.fillMaxSize()
-                    .testTag("workflow_editor_fields")
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = horizontalPadding, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                val heading =
-                    when (editor) {
-                        is WorkflowEdit.Instructions -> R.string.workflow_edit_instructions
-                        is WorkflowEdit.Rule ->
-                            if (editor.id == null) R.string.workflow_add_automation
-                            else R.string.workflow_edit_automation
+    WorkflowEditorLayout(
+        fields = {
+            Box(Modifier.fillMaxSize()) {
+                Column(
+                    Modifier.fillMaxSize()
+                        .testTag("workflow_editor_fields")
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = horizontalPadding, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    val heading =
+                        when (editor) {
+                            is WorkflowEdit.Instructions -> R.string.workflow_edit_instructions
+                            is WorkflowEdit.Rule ->
+                                if (editor.id == null) R.string.workflow_add_automation
+                                else R.string.workflow_edit_automation
+                        }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            stringResource(heading),
+                            Modifier.semantics { heading() },
+                            style = MaterialTheme.typography.headlineSmall,
+                        )
+                        if (activeRule != null)
+                            WorkflowSecondary(
+                                workflowDisplayTitle(detail.name, detail.displayName),
+                                small = true,
+                            )
                     }
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        stringResource(heading),
-                        Modifier.semantics { heading() },
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
-                    if (activeRule != null)
-                        WorkflowSecondary(
-                            workflowDisplayTitle(detail.name, detail.displayName),
-                            small = true,
-                        )
-                }
-                when (editing) {
-                    is WorkflowEditSession.Instructions -> {
-                        val value = editing.draft.value
-                        WorkflowField(
-                            R.string.workflow_name,
-                            editing.title,
-                            available,
-                            inputGuard,
-                            fieldFocus,
-                            validation =
-                                workflowValidation(
-                                    value.title,
-                                    WORKFLOW_DISPLAY_NAME_LIMIT,
-                                    stringResource(R.string.workflow_name_required),
-                                ),
-                        )
-                        WorkflowField(
-                            R.string.workflow_purpose,
-                            editing.purpose,
-                            available,
-                            inputGuard,
-                            fieldFocus,
-                            validation = workflowValidation(value.purpose, WORKFLOW_PURPOSE_LIMIT),
-                        )
-                        WorkflowField(
-                            R.string.workflow_instructions_heading,
-                            editing.instruction,
-                            available,
-                            inputGuard,
-                            fieldFocus,
-                            singleLine = false,
-                            validation =
-                                workflowValidation(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
-                        )
+                    when (editing) {
+                        is WorkflowEditSession.Instructions -> {
+                            val value = editing.draft.value
+                            WorkflowField(
+                                R.string.workflow_name,
+                                editing.title,
+                                available,
+                                inputGuard,
+                                fieldFocus,
+                                validation =
+                                    workflowValidation(
+                                        value.title,
+                                        WORKFLOW_DISPLAY_NAME_LIMIT,
+                                        stringResource(R.string.workflow_name_required),
+                                    ),
+                            )
+                            WorkflowField(
+                                R.string.workflow_purpose,
+                                editing.purpose,
+                                available,
+                                inputGuard,
+                                fieldFocus,
+                                validation =
+                                    workflowValidation(value.purpose, WORKFLOW_PURPOSE_LIMIT),
+                            )
+                            WorkflowField(
+                                R.string.workflow_instructions_heading,
+                                editing.instruction,
+                                available,
+                                inputGuard,
+                                fieldFocus,
+                                singleLine = false,
+                                validation =
+                                    workflowValidation(
+                                        value.instruction,
+                                        WORKFLOW_INSTRUCTION_LIMIT,
+                                    ),
+                            )
+                        }
+                        is WorkflowEditSession.Rule ->
+                            WorkflowRuleFields(editing, available, model, inputGuard, fieldFocus)
                     }
-                    is WorkflowEditSession.Rule ->
-                        WorkflowRuleFields(editing, available, model, inputGuard, fieldFocus)
                 }
+                Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
             }
-            Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
-        }
-        WorkflowDivider()
+        },
+    ) {
         Column(
-            Modifier.widthIn(max = 730.dp)
-                .fillMaxWidth()
-                .padding(horizontal = horizontalPadding, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = 8.dp),
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(OkouFormLayout.ActionGap),
         ) {
@@ -567,6 +572,43 @@ internal fun WorkflowEditor(
                             .testTag("workflow_save")
                             .then(pendingSemantics),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowEditorLayout(fields: @Composable () -> Unit, actions: @Composable () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        val viewport = maxHeight
+        Layout(
+            content = {
+                fields()
+                Column {
+                    WorkflowDivider()
+                    actions()
+                }
+            },
+            modifier =
+                Modifier.widthIn(max = 730.dp).fillMaxWidth().verticalScroll(rememberScrollState()),
+        ) { children, constraints ->
+            val loose = constraints.copy(minHeight = 0)
+            val footer = children[1].measure(loose)
+            val viewportHeight = viewport.roundToPx()
+            // Keep room for a labeled field. If the footer no longer fits, it scrolls into view.
+            val minimumFieldsHeight =
+                (OutlinedTextFieldDefaults.MinHeight +
+                        24.sp.toDp() +
+                        16.sp.toDp() +
+                        NativeAboveLabelPadding)
+                    .roundToPx()
+                    .coerceAtMost(viewportHeight)
+            val fieldsHeight = maxOf(viewportHeight - footer.height, minimumFieldsHeight)
+            val body =
+                children[0].measure(loose.copy(minHeight = fieldsHeight, maxHeight = fieldsHeight))
+            layout(constraints.maxWidth, body.height + footer.height) {
+                body.placeRelative(0, 0)
+                footer.placeRelative(0, body.height)
             }
         }
     }

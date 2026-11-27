@@ -1045,7 +1045,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
                     ),
                 )
 
-            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
             compose.onNodeWithText("Discard").performScrollTo().assertIsDisplayed().performClick()
             waitForTag("workflow_detail_title")
             compose
@@ -1525,6 +1525,38 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         waitFor("View connections")
         calendar.assertTextContains("test-calendar")
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortAutomationEditorKeepsTheDraftAndConnectionActionReachable() {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            openWorkflowDetail(WORKFLOW_SHARED)
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            compose.onNodeWithText("Add automation").performClick()
+            selectGmailTrigger()
+            val subject = compose.onNodeWithContentDescription("Subject contains")
+            subject.performScrollTo().performTextReplacement("Release summary")
+            waitFor("View connections")
+
+            RuntimeEnvironment.setQualifiers("en-rUS-w360dp-h230dp")
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            waitForTag("workflow_editor_fields")
+            val fields = compose.onNodeWithTag("workflow_editor_fields").getUnclippedBoundsInRoot()
+            assertTrue(
+                "Editor viewport: ${fields.bottom - fields.top}",
+                fields.bottom - fields.top >= 48.dp,
+            )
+            subject.performScrollTo().assertIsDisplayed().assertTextContains("Release summary")
+            compose.onNodeWithText("View connections").performScrollTo().assertIsEnabled()
+            compose.onNodeWithTag("workflow_save").performScrollTo().assertIsNotEnabled()
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
     }
 }
 
