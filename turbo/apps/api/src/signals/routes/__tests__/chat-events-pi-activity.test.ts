@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -9,7 +10,10 @@ import {
   runsByIdContract,
   runsCancelContract,
 } from "@okouai/api-contracts/contracts/run-routes";
-import { runnersSteerContract } from "@okouai/api-contracts/contracts/runners";
+import {
+  runnersHeartbeatContract,
+  runnersSteerContract,
+} from "@okouai/api-contracts/contracts/runners";
 import {
   webhookCompleteContract,
   webhookEventsContract,
@@ -29,6 +33,7 @@ import {
 import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
+import { billingStatusRoutes } from "../billing-status";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
@@ -65,6 +70,7 @@ const summaryClient = setupAppWithRoutes({
 const warmupApp = setupApp({
   context,
   routes: [
+    ...billingStatusRoutes,
     ...chatEventsRoutes,
     ...chatThreadRoutes,
     ...codexDeviceAuthRoutes,
@@ -77,11 +83,13 @@ const warmupApp = setupApp({
     ...webhooksAgentEventsRoutes,
   ],
 });
+const warmupBillingStatusApi = warmupApp(billingStatusContract);
 const warmupChatEventsApi = warmupApp(chatEventsContract);
 const warmupThreadEventsApi = warmupApp(chatThreadEventsContract);
 const warmupCodexDeviceAuthApi = warmupApp(codexDeviceAuthContract);
 const warmupModelProvidersApi = warmupApp(personalModelProvidersMainContract);
 const warmupOnboardingApi = warmupApp(onboardingCompleteContract);
+const warmupRunnersHeartbeatApi = warmupApp(runnersHeartbeatContract);
 const warmupRunnersSteerApi = warmupApp(runnersSteerContract);
 const warmupRunsByIdApi = warmupApp(runsByIdContract);
 const warmupRunsCancelApi = warmupApp(runsCancelContract);
@@ -190,6 +198,30 @@ beforeAll(async () => {
       }),
       [401],
     ),
+    accept(warmupBillingStatusApi.get({ headers: {} }), [401]),
+    accept(
+      warmupRunnersHeartbeatApi.heartbeat({
+        headers: {},
+        body: {
+          runnerId: warmupId,
+          group: "vm0/warmup",
+          snapshotGeneration: 1,
+          snapshotSequence: 1,
+          totalVcpu: 8,
+          totalMemoryMb: 16_384,
+          maxConcurrent: 2,
+          allocatedVcpu: 0,
+          allocatedMemoryMb: 0,
+          runningCount: 0,
+          admittableProfiles: ["vm0/default"],
+          heldSandboxStates: [],
+          heldHomeStates: [],
+          activeReuseProducers: [],
+          mode: "running",
+        },
+      }),
+      [401],
+    ),
   ]);
 });
 
@@ -269,6 +301,74 @@ async function createPiCodexChatActor(
 }
 
 describe("chat-events-pi-activity", () => {
+  it(
+    "chat-events-pi-activity-001 (3/5) clears resumable Pi generation after uninitialized failure and cancellation while keeping recovery guidance and prompts",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const chatActor = await createPiCodexChatActor(context);
+      const { actor, fixture } = chatActor;
+
+      const failedPrompt = "First prompt that fails before Pi init";
+      const run1 = await chatActor.sendChatRun(actor, {
+        model: "gpt-6-luna",
+        prompt: failedPrompt,
+      });
+      const exec1 = await chatActor.runExecution(run1.runId);
+      await chatActor.run(() => {
+        return fixture.webhooks.requestAgentComplete(
+          {
+            runId: run1.runId,
+            exitCode: 1,
+            error: "Sandbox failed before Pi init",
+            failureReason: "provider_server_error",
+          },
+          exec1.sandboxHeaders,
+          [200],
+        );
+      });
+      await fixture.waitForRunStatus(actor, run1.runId, "failed");
+
+      const cancelledPrompt = "Second prompt cancelled before Pi init";
+      const run2 = await chatActor.sendChatRun(actor, {
+        threadId: run1.threadId,
+        model: "gpt-6-luna",
+        prompt: cancelledPrompt,
+      });
+      const exec2 = await chatActor.runExecution(run2.runId);
+      await chatActor.run(() => {
+        return fixture.cancelChatRun(actor, run2.runId, exec2.sandboxHeaders);
+      });
+
+      const recoveryPrompt = "Third prompt after uninitialized turns";
+      const run3 = await chatActor.sendChatRun(actor, {
+        threadId: run1.threadId,
+        model: "gpt-6-luna",
+        prompt: recoveryPrompt,
+      });
+      const exec3 = await chatActor.runExecution(run3.runId);
+
+      expect(exec3.execution.cliAgentType).toBe("pi");
+      expect(exec3.execution.piSessionId).toBe(run1.threadId);
+      expect(exec3.execution.nativeContinuation.sessionId).toBeNull();
+      expect(exec3.execution.nativeContinuation.generationRunId).toBeNull();
+      expect(exec3.execution.nativeContinuation.recoveryPrompt).toContain(
+        CHAT_RECOVERY_COMMAND_SNIPPET,
+      );
+
+      const history = await fixture.chat.listThreadEvents(actor, run1.threadId);
+      const promptTexts = userMessages(history.events)
+        .filter((event) => {
+          return event.eventType === "input.prompt";
+        })
+        .map((event) => {
+          return chatEventDisplayText(event);
+        });
+      expect(promptTexts).toContain(failedPrompt);
+      expect(promptTexts).toContain(cancelledPrompt);
+      expect(promptTexts).toContain(recoveryPrompt);
+    },
+  );
+
   it(
     "chat-events-pi-activity-001 (1/5) launches personal Codex in Pi, captures tool activity summary, and preserves Memory version",
     { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
@@ -574,74 +674,6 @@ describe("chat-events-pi-activity", () => {
 
       const unchangedRun = await fixture.api.readRun(actor, run.runId);
       expect(unchangedRun.result).toStrictEqual(storedRun.result);
-    },
-  );
-
-  it(
-    "chat-events-pi-activity-001 (3/5) clears resumable Pi generation after uninitialized failure and cancellation while keeping recovery guidance and prompts",
-    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const chatActor = await createPiCodexChatActor(context);
-      const { actor, fixture } = chatActor;
-
-      const failedPrompt = "First prompt that fails before Pi init";
-      const run1 = await chatActor.sendChatRun(actor, {
-        model: "gpt-6-luna",
-        prompt: failedPrompt,
-      });
-      const exec1 = await chatActor.runExecution(run1.runId);
-      await chatActor.run(() => {
-        return fixture.webhooks.requestAgentComplete(
-          {
-            runId: run1.runId,
-            exitCode: 1,
-            error: "Sandbox failed before Pi init",
-            failureReason: "provider_server_error",
-          },
-          exec1.sandboxHeaders,
-          [200],
-        );
-      });
-      await fixture.waitForRunStatus(actor, run1.runId, "failed");
-
-      const cancelledPrompt = "Second prompt cancelled before Pi init";
-      const run2 = await chatActor.sendChatRun(actor, {
-        threadId: run1.threadId,
-        model: "gpt-6-luna",
-        prompt: cancelledPrompt,
-      });
-      const exec2 = await chatActor.runExecution(run2.runId);
-      await chatActor.run(() => {
-        return fixture.cancelChatRun(actor, run2.runId, exec2.sandboxHeaders);
-      });
-
-      const recoveryPrompt = "Third prompt after uninitialized turns";
-      const run3 = await chatActor.sendChatRun(actor, {
-        threadId: run1.threadId,
-        model: "gpt-6-luna",
-        prompt: recoveryPrompt,
-      });
-      const exec3 = await chatActor.runExecution(run3.runId);
-
-      expect(exec3.execution.cliAgentType).toBe("pi");
-      expect(exec3.execution.piSessionId).toBe(run1.threadId);
-      expect(exec3.execution.nativeContinuation.sessionId).toBeNull();
-      expect(exec3.execution.nativeContinuation.generationRunId).toBeNull();
-      expect(exec3.execution.nativeContinuation.recoveryPrompt).toContain(
-        CHAT_RECOVERY_COMMAND_SNIPPET,
-      );
-
-      const history = await fixture.chat.listThreadEvents(actor, run1.threadId);
-      const promptTexts = userMessages(history.events)
-        .filter((event) => {
-          return event.eventType === "input.prompt";
-        })
-        .map((event) => {
-          return chatEventDisplayText(event);
-        });
-      expect(promptTexts).toContain(failedPrompt);
-      expect(promptTexts).toContain(cancelledPrompt);
-      expect(promptTexts).toContain(recoveryPrompt);
     },
   );
 

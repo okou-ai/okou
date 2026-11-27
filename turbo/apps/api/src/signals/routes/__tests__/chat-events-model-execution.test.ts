@@ -536,6 +536,439 @@ async function postSignedAutomationWebhook(args: {
   return automationWebhookResponseSchema.parse(await response.json());
 }
 
+describe("Codex execution switch", () => {
+  it(
+    "chat-events-codex-execution-007 rotates native sessions and preserves visible context when switching both ways",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, runnerGroup } = await setupFreeMemberWithSubscriptions({
+        codex: { accountId: "acct-codex-rotate" },
+      });
+      const orgId = requireOrgId(actor);
+      const piAnswer = "PI_UNIQUE_ANSWER_ALPHA_719";
+      const codexAnswer = "CODEX_UNIQUE_ANSWER_BETA_823";
+
+      const turn1 = await sendPromptAndClaim(actor, runnerGroup, {
+        prompt: "Turn one on Pi",
+        model: "gpt-6-luna",
+      });
+      expect(turn1.execution.cliAgentType).toBe("pi");
+
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: actor.userId, orgId, orgRole: actor.orgRole },
+        { [FeatureSwitchKey.CodexExecution]: true },
+      );
+      await completeNativeRun({
+        runId: turn1.runId,
+        sandboxToken: turn1.execution.sandboxToken,
+        cliAgentType: "pi",
+        sessionId: turn1.threadId,
+        answer: piAnswer,
+      });
+
+      const turn2 = await sendPromptAndClaim(actor, runnerGroup, {
+        threadId: turn1.threadId,
+        prompt: "Turn two on native Codex",
+        model: "gpt-6-luna",
+      });
+      expect(turn2.execution.cliAgentType).toBe("codex");
+      expect(turn2.execution.nativeContinuation.sessionId).toBeNull();
+      expect(turn2.execution.nativeContinuation.generationRunId).toBeNull();
+      expect(turn2.execution.nativeContinuation.recoveryPrompt).toContain(
+        "okou chat messages --output-dir /tmp/okou-chat-history",
+      );
+      expect(turn2.execution.prompt).not.toContain(piAnswer);
+      expect(turn2.execution.appendSystemPrompt ?? "").not.toContain(piAnswer);
+
+      await completeNativeRun({
+        runId: turn2.runId,
+        sandboxToken: turn2.execution.sandboxToken,
+        cliAgentType: "codex",
+        sessionId: randomUUID(),
+        answer: codexAnswer,
+      });
+      const [run2Readback] = await Promise.all([
+        runs.readRun(actor, turn2.runId),
+        updateFeatureSwitchesForUser(
+          context,
+          { userId: actor.userId, orgId, orgRole: actor.orgRole },
+          { [FeatureSwitchKey.CodexExecution]: false },
+        ),
+      ]);
+      expect(run2Readback.status).toBe("completed");
+
+      const turn3 = await sendPromptAndClaim(actor, runnerGroup, {
+        threadId: turn1.threadId,
+        prompt: "Turn three back on Pi",
+        model: "gpt-6-luna",
+      });
+
+      expect(turn3.execution.cliAgentType).toBe("pi");
+      expect(turn3.execution.nativeContinuation.sessionId).toBeNull();
+      expect(turn3.execution.nativeContinuation.generationRunId).toBeNull();
+      expect(turn3.execution.nativeContinuation.recoveryPrompt).toContain(
+        "okou chat messages --output-dir /tmp/okou-chat-history",
+      );
+      expect(turn3.execution.prompt).not.toContain(codexAnswer);
+      expect(turn3.execution.appendSystemPrompt ?? "").not.toContain(
+        codexAnswer,
+      );
+    },
+  );
+
+  it(
+    "chat-events-codex-execution-002 routes native Codex for gpt-6.1-sol with tier fast when KMS decryption is unavailable",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const accountId = "acct-codex-sol-fast";
+      const { actor, runnerGroup, codexAccountSourceId } =
+        await setupFreeMemberWithSubscriptions({
+          codex: { accountId },
+          featureSwitches: { [FeatureSwitchKey.CodexExecution]: true },
+        });
+      if (!codexAccountSourceId) {
+        throw new Error("Expected connected Codex account source ID");
+      }
+
+      useSecretKmsProbe(undefined, () => {
+        return Promise.reject(new Error("KMS decryption unavailable"));
+      });
+
+      const { execution } = await sendPromptAndClaim(actor, runnerGroup, {
+        prompt: "Run fast GPT-6.1 Sol on native Codex",
+        model: "gpt-6.1-sol",
+        runOptions: { codexServiceTier: "fast", reasoningEffort: "high" },
+      });
+
+      expect(execution.cliAgentType).toBe("codex");
+      expect(execution.environment).toMatchObject({
+        OPENAI_MODEL: "gpt-6.1-sol",
+        CODEX_OAUTH_ACCOUNT_ID: accountId,
+      });
+      expect(execution.platformEnvironment).toMatchObject({
+        OKOU_CODEX_SERVICE_TIER: "fast",
+        OKOU_REASONING_EFFORT: "high",
+      });
+      expect(execution.secretConnectorMap).toMatchObject({
+        CHATGPT_ACCESS_TOKEN: "codex-oauth-token",
+      });
+      expect(execution.secretConnectorMetadataMap).toMatchObject({
+        CHATGPT_ACCESS_TOKEN: {
+          sourceType: "model-provider",
+          sourceUserId: actor.userId,
+          sourceId: codexAccountSourceId,
+          metadataKey: "codex-oauth-token",
+        },
+      });
+      expect(execution.piModelConfig).toBeUndefined();
+      expect(execution.piLaunchConfig).toBeUndefined();
+      expect(execution.piSessionId).toBeUndefined();
+      expect(execution.billableFirewalls).toStrictEqual([]);
+    },
+  );
+
+  it(
+    "chat-events-codex-execution-005 uses the switch when an event-triggered workflow launches a subscription chat",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const actor = bdd.user();
+      const orgId = requireOrgId(actor);
+      const accountId = "acct-codex-event-luna";
+      initRuntimeMocks();
+      const [codex, runnerGroup] = await Promise.all([
+        connectPersonalCodex(actor, { accountId }),
+        runs.configureRunnerGroup(),
+        runs.grantProEntitlement(actor, { tier: "team" }),
+        updateFeatureSwitchesForUser(
+          context,
+          { userId: actor.userId, orgId, orgRole: actor.orgRole },
+          { [FeatureSwitchKey.CodexExecution]: true },
+        ),
+      ]);
+      const [, thread] = await Promise.all([
+        runs.updateUserModelPreference(actor, "gpt-6-luna"),
+        chat.createThread(actor, { model: "gpt-6-luna" }),
+      ]);
+      const workflowId = await workflows.createWorkflow(actor, {
+        name: `event-codex-${randomUUID().slice(0, 8)}`,
+        chatThreadId: thread.id,
+      });
+      signIn(actor);
+      const created = await accept(
+        workflowAutomationsApi.create({
+          headers,
+          params: { workflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      );
+      const automation = created.body;
+      if (
+        automation.kind !== "event" ||
+        automation.eventType !== "webhook-received" ||
+        !automation.webhookUrl ||
+        !automation.webhookSecret
+      ) {
+        throw new Error("Expected a webhook automation");
+      }
+      await postSignedAutomationWebhook({
+        webhookUrl: automation.webhookUrl,
+        webhookSecret: automation.webhookSecret,
+        payload: "trigger codex switch event run",
+        timestamp: Math.floor(now() / 1000),
+      });
+      const execution = await runs.nextReceivedExecution(runnerGroup);
+
+      expect(execution.cliAgentType).toBe("codex");
+      expect(execution.environment).toMatchObject({
+        OPENAI_MODEL: "gpt-6-luna",
+        CODEX_OAUTH_ACCOUNT_ID: accountId,
+      });
+      expect(execution.secretConnectorMetadataMap).toMatchObject({
+        CHATGPT_ACCESS_TOKEN: {
+          sourceType: "model-provider",
+          sourceUserId: actor.userId,
+          sourceId: codex.accountSourceId,
+          metadataKey: "codex-oauth-token",
+        },
+      });
+      expect(execution.piLaunchConfig).toBeUndefined();
+      expect(execution.piModelConfig).toBeUndefined();
+      expect(execution.billableFirewalls).toStrictEqual([]);
+    },
+  );
+
+  it(
+    "chat-events-codex-execution-006 leaves Claude subscriptions on Claude Code",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, runnerGroup } = await setupFreeMemberWithSubscriptions({
+        claude: true,
+        featureSwitches: { [FeatureSwitchKey.CodexExecution]: true },
+      });
+
+      const { execution } = await sendPromptAndClaim(actor, runnerGroup, {
+        prompt: "Keep personal Claude Fable on Claude Code",
+        model: "claude-fable-5-1",
+      });
+
+      expect(execution.cliAgentType).toBe("claude-code");
+      expect(execution.environment).toMatchObject({
+        ANTHROPIC_MODEL: "claude-fable-5-1",
+      });
+      expect(execution.environment?.CLAUDE_CODE_OAUTH_TOKEN).toBeTruthy();
+      expect(execution.piModelConfig).toBeUndefined();
+    },
+  );
+});
+
+describe("new chat event member defaults", () => {
+  it(
+    "chat-events-member-defaults-002 (1/2) captures saved high effort and cloud browser true on the first thread and retains them on continuation",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, runnerGroup } = await setupFreeMemberWithSubscriptions({
+        claude: true,
+      });
+
+      signIn(actor);
+      await accept(
+        userModelPreferenceApi.update({
+          headers,
+          body: {
+            selectedModel: "claude-fable-5-1",
+            serviceTier: null,
+            modelSettingsPatch: {
+              model: "claude-fable-5-1",
+              effort: "high",
+            },
+          },
+        }),
+        [200],
+      );
+      await accept(
+        userPreferencesApi.update({
+          headers,
+          body: { cloudBrowserEnabledByDefault: true },
+        }),
+        [200],
+      );
+
+      const first = await sendPromptAndClaim(actor, runnerGroup, {
+        prompt: "First turn with saved defaults",
+      });
+      const firstMetadata = await chat.readThreadMetadata(
+        actor,
+        first.threadId,
+      );
+      expect(firstMetadata).toMatchObject({
+        modelSettings: { "claude-fable-5-1": { effort: "high" } },
+        cloudBrowserEnabled: true,
+      });
+
+      await completeNativeRun({
+        runId: first.runId,
+        sandboxToken: first.execution.sandboxToken,
+        cliAgentType: "claude-code",
+      });
+
+      signIn(actor);
+      await accept(
+        userModelPreferenceApi.update({
+          headers,
+          body: {
+            selectedModel: "claude-fable-5-1",
+            serviceTier: null,
+            modelSettingsPatch: {
+              model: "claude-fable-5-1",
+              effort: "low",
+            },
+          },
+        }),
+        [200],
+      );
+      await accept(
+        userPreferencesApi.update({
+          headers,
+          body: { cloudBrowserEnabledByDefault: false },
+        }),
+        [200],
+      );
+
+      await sendPromptAndClaim(actor, runnerGroup, {
+        threadId: first.threadId,
+        prompt: "Continue original thread after default change",
+      });
+      const continuedMetadata = await chat.readThreadMetadata(
+        actor,
+        first.threadId,
+      );
+
+      expect(continuedMetadata).toMatchObject({
+        modelSettings: { "claude-fable-5-1": { effort: "high" } },
+        cloudBrowserEnabled: true,
+      });
+    },
+  );
+
+  it(
+    "chat-events-member-defaults-001 uses empty model settings and enables cloud browser without a saved member preference",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const owner = bdd.user();
+      const orgId = requireOrgId(owner);
+      initRuntimeMocks();
+      const [runnerGroup] = await Promise.all([
+        runs.configureRunnerGroup(),
+        runs.grantProEntitlement(owner, { tier: "pro" }),
+      ]);
+
+      const member = bdd.user({ orgId, orgRole: "org:member" });
+      webhooks.configureClerkWebhookSecret();
+      webhooks.verifyNextClerkWebhook({
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: orgId },
+          public_user_data: { user_id: member.userId },
+          created_at: now(),
+        },
+      });
+      await Promise.all([
+        webhooks.requestClerkWebhook("{}", {}, [200]),
+        connectPersonalClaude(member),
+      ]);
+      await flushWaitUntilForTest();
+
+      signIn(member);
+      const preference = await accept(
+        userModelPreferenceApi.get({ headers }),
+        [200],
+      );
+      expect(preference.status).toBe(200);
+      expect(preference.body.updatedAt).toBeNull();
+
+      const { threadId } = await sendPromptAndClaim(member, runnerGroup, {
+        prompt: "Create thread with unsaved defaults",
+        model: "claude-fable-5-1",
+      });
+      const metadata = await chat.readThreadMetadata(member, threadId);
+
+      expect(metadata).toMatchObject({
+        modelSettings: {},
+        cloudBrowserEnabled: true,
+      });
+    },
+  );
+
+  it(
+    "chat-events-member-defaults-002 (2/2) captures updated low effort and cloud browser false on a newly created thread",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, runnerGroup } = await setupFreeMemberWithSubscriptions({
+        claude: true,
+      });
+
+      signIn(actor);
+      await accept(
+        userModelPreferenceApi.update({
+          headers,
+          body: {
+            selectedModel: "claude-fable-5-1",
+            serviceTier: null,
+            modelSettingsPatch: {
+              model: "claude-fable-5-1",
+              effort: "high",
+            },
+          },
+        }),
+        [200],
+      );
+      await accept(
+        userPreferencesApi.update({
+          headers,
+          body: { cloudBrowserEnabledByDefault: true },
+        }),
+        [200],
+      );
+      await accept(
+        userModelPreferenceApi.update({
+          headers,
+          body: {
+            selectedModel: "claude-fable-5-1",
+            serviceTier: null,
+            modelSettingsPatch: {
+              model: "claude-fable-5-1",
+              effort: "low",
+            },
+          },
+        }),
+        [200],
+      );
+      await accept(
+        userPreferencesApi.update({
+          headers,
+          body: { cloudBrowserEnabledByDefault: false },
+        }),
+        [200],
+      );
+
+      const nextThread = await sendPromptAndClaim(actor, runnerGroup, {
+        prompt: "Start a fresh thread with updated defaults",
+      });
+      const nextMetadata = await chat.readThreadMetadata(
+        actor,
+        nextThread.threadId,
+      );
+
+      expect(nextMetadata).toMatchObject({
+        modelSettings: { "claude-fable-5-1": { effort: "low" } },
+        cloudBrowserEnabled: false,
+      });
+    },
+  );
+});
+
 describe("CHAT effort: thread configuration", () => {
   it(
     "chat-events-effort-001 dispatches gpt-6-luna with xhigh as the default Pi effort",
@@ -820,439 +1253,6 @@ describe("CHAT effort: thread configuration", () => {
         "claude-fable-5-1": { effort: "extra" },
       });
       expect(metadata.serviceTier).toBeNull();
-    },
-  );
-});
-
-describe("Codex execution switch", () => {
-  it(
-    "chat-events-codex-execution-002 routes native Codex for gpt-6.1-sol with tier fast when KMS decryption is unavailable",
-    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const accountId = "acct-codex-sol-fast";
-      const { actor, runnerGroup, codexAccountSourceId } =
-        await setupFreeMemberWithSubscriptions({
-          codex: { accountId },
-          featureSwitches: { [FeatureSwitchKey.CodexExecution]: true },
-        });
-      if (!codexAccountSourceId) {
-        throw new Error("Expected connected Codex account source ID");
-      }
-
-      useSecretKmsProbe(undefined, () => {
-        return Promise.reject(new Error("KMS decryption unavailable"));
-      });
-
-      const { execution } = await sendPromptAndClaim(actor, runnerGroup, {
-        prompt: "Run fast GPT-6.1 Sol on native Codex",
-        model: "gpt-6.1-sol",
-        runOptions: { codexServiceTier: "fast", reasoningEffort: "high" },
-      });
-
-      expect(execution.cliAgentType).toBe("codex");
-      expect(execution.environment).toMatchObject({
-        OPENAI_MODEL: "gpt-6.1-sol",
-        CODEX_OAUTH_ACCOUNT_ID: accountId,
-      });
-      expect(execution.platformEnvironment).toMatchObject({
-        OKOU_CODEX_SERVICE_TIER: "fast",
-        OKOU_REASONING_EFFORT: "high",
-      });
-      expect(execution.secretConnectorMap).toMatchObject({
-        CHATGPT_ACCESS_TOKEN: "codex-oauth-token",
-      });
-      expect(execution.secretConnectorMetadataMap).toMatchObject({
-        CHATGPT_ACCESS_TOKEN: {
-          sourceType: "model-provider",
-          sourceUserId: actor.userId,
-          sourceId: codexAccountSourceId,
-          metadataKey: "codex-oauth-token",
-        },
-      });
-      expect(execution.piModelConfig).toBeUndefined();
-      expect(execution.piLaunchConfig).toBeUndefined();
-      expect(execution.piSessionId).toBeUndefined();
-      expect(execution.billableFirewalls).toStrictEqual([]);
-    },
-  );
-
-  it(
-    "chat-events-codex-execution-005 uses the switch when an event-triggered workflow launches a subscription chat",
-    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const actor = bdd.user();
-      const orgId = requireOrgId(actor);
-      const accountId = "acct-codex-event-luna";
-      initRuntimeMocks();
-      const [codex, runnerGroup] = await Promise.all([
-        connectPersonalCodex(actor, { accountId }),
-        runs.configureRunnerGroup(),
-        runs.grantProEntitlement(actor, { tier: "team" }),
-        updateFeatureSwitchesForUser(
-          context,
-          { userId: actor.userId, orgId, orgRole: actor.orgRole },
-          { [FeatureSwitchKey.CodexExecution]: true },
-        ),
-      ]);
-      const [, thread] = await Promise.all([
-        runs.updateUserModelPreference(actor, "gpt-6-luna"),
-        chat.createThread(actor, { model: "gpt-6-luna" }),
-      ]);
-      const workflowId = await workflows.createWorkflow(actor, {
-        name: `event-codex-${randomUUID().slice(0, 8)}`,
-        chatThreadId: thread.id,
-      });
-      signIn(actor);
-      const created = await accept(
-        workflowAutomationsApi.create({
-          headers,
-          params: { workflowId },
-          body: { kind: "event", eventType: "webhook-received" },
-        }),
-        [201],
-      );
-      const automation = created.body;
-      if (
-        automation.kind !== "event" ||
-        automation.eventType !== "webhook-received" ||
-        !automation.webhookUrl ||
-        !automation.webhookSecret
-      ) {
-        throw new Error("Expected a webhook automation");
-      }
-      await postSignedAutomationWebhook({
-        webhookUrl: automation.webhookUrl,
-        webhookSecret: automation.webhookSecret,
-        payload: "trigger codex switch event run",
-        timestamp: Math.floor(now() / 1000),
-      });
-      const execution = await runs.nextReceivedExecution(runnerGroup);
-
-      expect(execution.cliAgentType).toBe("codex");
-      expect(execution.environment).toMatchObject({
-        OPENAI_MODEL: "gpt-6-luna",
-        CODEX_OAUTH_ACCOUNT_ID: accountId,
-      });
-      expect(execution.secretConnectorMetadataMap).toMatchObject({
-        CHATGPT_ACCESS_TOKEN: {
-          sourceType: "model-provider",
-          sourceUserId: actor.userId,
-          sourceId: codex.accountSourceId,
-          metadataKey: "codex-oauth-token",
-        },
-      });
-      expect(execution.piLaunchConfig).toBeUndefined();
-      expect(execution.piModelConfig).toBeUndefined();
-      expect(execution.billableFirewalls).toStrictEqual([]);
-    },
-  );
-
-  it(
-    "chat-events-codex-execution-006 leaves Claude subscriptions on Claude Code",
-    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const { actor, runnerGroup } = await setupFreeMemberWithSubscriptions({
-        claude: true,
-        featureSwitches: { [FeatureSwitchKey.CodexExecution]: true },
-      });
-
-      const { execution } = await sendPromptAndClaim(actor, runnerGroup, {
-        prompt: "Keep personal Claude Fable on Claude Code",
-        model: "claude-fable-5-1",
-      });
-
-      expect(execution.cliAgentType).toBe("claude-code");
-      expect(execution.environment).toMatchObject({
-        ANTHROPIC_MODEL: "claude-fable-5-1",
-      });
-      expect(execution.environment?.CLAUDE_CODE_OAUTH_TOKEN).toBeTruthy();
-      expect(execution.piModelConfig).toBeUndefined();
-    },
-  );
-
-  it(
-    "chat-events-codex-execution-007 rotates native sessions and preserves visible context when switching both ways",
-    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const { actor, runnerGroup } = await setupFreeMemberWithSubscriptions({
-        codex: { accountId: "acct-codex-rotate" },
-      });
-      const orgId = requireOrgId(actor);
-      const piAnswer = "PI_UNIQUE_ANSWER_ALPHA_719";
-      const codexAnswer = "CODEX_UNIQUE_ANSWER_BETA_823";
-
-      const turn1 = await sendPromptAndClaim(actor, runnerGroup, {
-        prompt: "Turn one on Pi",
-        model: "gpt-6-luna",
-      });
-      expect(turn1.execution.cliAgentType).toBe("pi");
-
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId, orgRole: actor.orgRole },
-        { [FeatureSwitchKey.CodexExecution]: true },
-      );
-      await completeNativeRun({
-        runId: turn1.runId,
-        sandboxToken: turn1.execution.sandboxToken,
-        cliAgentType: "pi",
-        sessionId: turn1.threadId,
-        answer: piAnswer,
-      });
-
-      const turn2 = await sendPromptAndClaim(actor, runnerGroup, {
-        threadId: turn1.threadId,
-        prompt: "Turn two on native Codex",
-        model: "gpt-6-luna",
-      });
-      expect(turn2.execution.cliAgentType).toBe("codex");
-      expect(turn2.execution.nativeContinuation.sessionId).toBeNull();
-      expect(turn2.execution.nativeContinuation.generationRunId).toBeNull();
-      expect(turn2.execution.nativeContinuation.recoveryPrompt).toContain(
-        "okou chat messages --output-dir /tmp/okou-chat-history",
-      );
-      expect(turn2.execution.prompt).not.toContain(piAnswer);
-      expect(turn2.execution.appendSystemPrompt ?? "").not.toContain(piAnswer);
-
-      await completeNativeRun({
-        runId: turn2.runId,
-        sandboxToken: turn2.execution.sandboxToken,
-        cliAgentType: "codex",
-        sessionId: randomUUID(),
-        answer: codexAnswer,
-      });
-      const [run2Readback] = await Promise.all([
-        runs.readRun(actor, turn2.runId),
-        updateFeatureSwitchesForUser(
-          context,
-          { userId: actor.userId, orgId, orgRole: actor.orgRole },
-          { [FeatureSwitchKey.CodexExecution]: false },
-        ),
-      ]);
-      expect(run2Readback.status).toBe("completed");
-
-      const turn3 = await sendPromptAndClaim(actor, runnerGroup, {
-        threadId: turn1.threadId,
-        prompt: "Turn three back on Pi",
-        model: "gpt-6-luna",
-      });
-
-      expect(turn3.execution.cliAgentType).toBe("pi");
-      expect(turn3.execution.nativeContinuation.sessionId).toBeNull();
-      expect(turn3.execution.nativeContinuation.generationRunId).toBeNull();
-      expect(turn3.execution.nativeContinuation.recoveryPrompt).toContain(
-        "okou chat messages --output-dir /tmp/okou-chat-history",
-      );
-      expect(turn3.execution.prompt).not.toContain(codexAnswer);
-      expect(turn3.execution.appendSystemPrompt ?? "").not.toContain(
-        codexAnswer,
-      );
-    },
-  );
-});
-
-describe("new chat event member defaults", () => {
-  it(
-    "chat-events-member-defaults-001 uses empty model settings and enables cloud browser without a saved member preference",
-    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const owner = bdd.user();
-      const orgId = requireOrgId(owner);
-      initRuntimeMocks();
-      const [runnerGroup] = await Promise.all([
-        runs.configureRunnerGroup(),
-        runs.grantProEntitlement(owner, { tier: "pro" }),
-      ]);
-
-      const member = bdd.user({ orgId, orgRole: "org:member" });
-      webhooks.configureClerkWebhookSecret();
-      webhooks.verifyNextClerkWebhook({
-        type: "organizationMembership.created",
-        data: {
-          organization: { id: orgId },
-          public_user_data: { user_id: member.userId },
-          created_at: now(),
-        },
-      });
-      await Promise.all([
-        webhooks.requestClerkWebhook("{}", {}, [200]),
-        connectPersonalClaude(member),
-      ]);
-      await flushWaitUntilForTest();
-
-      signIn(member);
-      const preference = await accept(
-        userModelPreferenceApi.get({ headers }),
-        [200],
-      );
-      expect(preference.status).toBe(200);
-      expect(preference.body.updatedAt).toBeNull();
-
-      const { threadId } = await sendPromptAndClaim(member, runnerGroup, {
-        prompt: "Create thread with unsaved defaults",
-        model: "claude-fable-5-1",
-      });
-      const metadata = await chat.readThreadMetadata(member, threadId);
-
-      expect(metadata).toMatchObject({
-        modelSettings: {},
-        cloudBrowserEnabled: true,
-      });
-    },
-  );
-
-  it(
-    "chat-events-member-defaults-002 (1/2) captures saved high effort and cloud browser true on the first thread and retains them on continuation",
-    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const { actor, runnerGroup } = await setupFreeMemberWithSubscriptions({
-        claude: true,
-      });
-
-      signIn(actor);
-      await accept(
-        userModelPreferenceApi.update({
-          headers,
-          body: {
-            selectedModel: "claude-fable-5-1",
-            serviceTier: null,
-            modelSettingsPatch: {
-              model: "claude-fable-5-1",
-              effort: "high",
-            },
-          },
-        }),
-        [200],
-      );
-      await accept(
-        userPreferencesApi.update({
-          headers,
-          body: { cloudBrowserEnabledByDefault: true },
-        }),
-        [200],
-      );
-
-      const first = await sendPromptAndClaim(actor, runnerGroup, {
-        prompt: "First turn with saved defaults",
-      });
-      const firstMetadata = await chat.readThreadMetadata(
-        actor,
-        first.threadId,
-      );
-      expect(firstMetadata).toMatchObject({
-        modelSettings: { "claude-fable-5-1": { effort: "high" } },
-        cloudBrowserEnabled: true,
-      });
-
-      await completeNativeRun({
-        runId: first.runId,
-        sandboxToken: first.execution.sandboxToken,
-        cliAgentType: "claude-code",
-      });
-
-      signIn(actor);
-      await accept(
-        userModelPreferenceApi.update({
-          headers,
-          body: {
-            selectedModel: "claude-fable-5-1",
-            serviceTier: null,
-            modelSettingsPatch: {
-              model: "claude-fable-5-1",
-              effort: "low",
-            },
-          },
-        }),
-        [200],
-      );
-      await accept(
-        userPreferencesApi.update({
-          headers,
-          body: { cloudBrowserEnabledByDefault: false },
-        }),
-        [200],
-      );
-
-      await sendPromptAndClaim(actor, runnerGroup, {
-        threadId: first.threadId,
-        prompt: "Continue original thread after default change",
-      });
-      const continuedMetadata = await chat.readThreadMetadata(
-        actor,
-        first.threadId,
-      );
-
-      expect(continuedMetadata).toMatchObject({
-        modelSettings: { "claude-fable-5-1": { effort: "high" } },
-        cloudBrowserEnabled: true,
-      });
-    },
-  );
-
-  it(
-    "chat-events-member-defaults-002 (2/2) captures updated low effort and cloud browser false on a newly created thread",
-    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const { actor, runnerGroup } = await setupFreeMemberWithSubscriptions({
-        claude: true,
-      });
-
-      signIn(actor);
-      await accept(
-        userModelPreferenceApi.update({
-          headers,
-          body: {
-            selectedModel: "claude-fable-5-1",
-            serviceTier: null,
-            modelSettingsPatch: {
-              model: "claude-fable-5-1",
-              effort: "high",
-            },
-          },
-        }),
-        [200],
-      );
-      await accept(
-        userPreferencesApi.update({
-          headers,
-          body: { cloudBrowserEnabledByDefault: true },
-        }),
-        [200],
-      );
-      await accept(
-        userModelPreferenceApi.update({
-          headers,
-          body: {
-            selectedModel: "claude-fable-5-1",
-            serviceTier: null,
-            modelSettingsPatch: {
-              model: "claude-fable-5-1",
-              effort: "low",
-            },
-          },
-        }),
-        [200],
-      );
-      await accept(
-        userPreferencesApi.update({
-          headers,
-          body: { cloudBrowserEnabledByDefault: false },
-        }),
-        [200],
-      );
-
-      const nextThread = await sendPromptAndClaim(actor, runnerGroup, {
-        prompt: "Start a fresh thread with updated defaults",
-      });
-      const nextMetadata = await chat.readThreadMetadata(
-        actor,
-        nextThread.threadId,
-      );
-
-      expect(nextMetadata).toMatchObject({
-        modelSettings: { "claude-fable-5-1": { effort: "low" } },
-        cloudBrowserEnabled: false,
-      });
     },
   );
 });
