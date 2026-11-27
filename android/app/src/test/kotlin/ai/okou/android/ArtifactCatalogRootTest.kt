@@ -1221,10 +1221,13 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         assertEquals(14.sp, style.fontSize)
         assertEquals(20.sp, style.lineHeight)
         assertEquals(FontWeight.Medium, style.fontWeight)
-        assertEquals(
-            12.dp,
-            text.getUnclippedBoundsInRoot().left - action.getUnclippedBoundsInRoot().left,
-        )
+        val bounds = action.getUnclippedBoundsInRoot()
+        val labelBounds = text.getUnclippedBoundsInRoot()
+        val startInset = labelBounds.left - bounds.left
+        val endInset = bounds.right - labelBounds.right
+        assertTrue(startInset >= 12.dp)
+        assertTrue(endInset >= 12.dp)
+        assertTrue(abs((startInset - endInset).value) <= 1f)
         action.performClick()
     }
 
