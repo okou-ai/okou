@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 import { getModelRunOptions } from "../model-run-options";
 
 describe("model run options", () => {
+  it.each(["gpt-6.2-astra", "gpt-6.2-sol"])(
+    "publishes the GPT-6.2 Fast usage multiplier for %s",
+    (model) => {
+      expect(getModelRunOptions(model).fast).toStrictEqual({
+        chatGptUsageMultiplier: 2,
+      });
+    },
+  );
+
   it("keeps each subscription model's Fast usage multiplier", () => {
-    expect(getModelRunOptions("gpt-6.2-astra").fast).toStrictEqual({
-      chatGptUsageMultiplier: 2.5,
-    });
-    expect(getModelRunOptions("gpt-6.2-sol").fast).toStrictEqual({
-      chatGptUsageMultiplier: 2.5,
-    });
     expect(getModelRunOptions("gpt-6-astra").fast).toStrictEqual({
       chatGptUsageMultiplier: 2.5,
     });

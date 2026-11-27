@@ -327,7 +327,7 @@ internal fun ChatArtifactResources(
                         ResourceHeading(R.string.artifact_title)
                     }
                 if (showSkeleton) {
-                    items(3) { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
+                    items(3) { ArtifactRowPlaceholder(chatResources = true) }
                 }
                 if (failure == ArtifactCatalogFailure.Initial) {
                     item(key = "resource-read-failure") {
@@ -363,10 +363,9 @@ internal fun ChatArtifactResources(
                 }
                 if (failure == ArtifactCatalogFailure.More || reading == ArtifactCatalogRead.More) {
                     item(key = "resource-page-feedback") {
-                        ArtifactPageFeedback(
-                            failed = failure == ArtifactCatalogFailure.More,
-                            skeletonHeight = 72.dp,
-                            skeletonHorizontalPadding = 16.dp,
+                        ArtifactRowPlaceholder(
+                            chatResources = true,
+                            pageFailed = failure == ArtifactCatalogFailure.More,
                         )
                     }
                 }
@@ -408,7 +407,7 @@ internal fun ChatArtifactResources(
                     }
                     if (showWorkflowSkeleton)
                         item(key = "workflows-loading") {
-                            ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp)
+                            ArtifactRowPlaceholder(chatResources = true)
                         }
                     if (workflows?.failed == true)
                         item(key = "workflows-read-failure") {
@@ -463,7 +462,7 @@ internal fun ChatArtifactResources(
                     }
                     if (showRelatedSkeleton)
                         item(key = "related-loading") {
-                            ArtifactRowSkeleton(height = 56.dp, horizontalPadding = 16.dp)
+                            ArtifactRowPlaceholder(chatResources = true, hasSubtitle = false)
                         }
                     if (relatedError != null)
                         item(key = "related-read-failure") {

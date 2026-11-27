@@ -38,7 +38,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -58,7 +57,6 @@ import androidx.core.app.LocaleManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.repeatOnLifecycle
 import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
@@ -72,14 +70,6 @@ internal fun MemberPreferencesSettings(
     cachedPreferences: CachedMemberPreferences? = null,
 ) {
     val state = model?.uiState?.collectAsStateWithLifecycle()?.value
-    if (model != null) {
-        val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-        val active = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
-        DisposableEffect(model, active) {
-            model.settingsVisibilityChanged(active)
-            onDispose { model.settingsVisibilityChanged(false) }
-        }
-    }
     val theme = state?.theme ?: cachedPreferences?.theme ?: UserPreferencesTheme.SYSTEM
     val colorTheme =
         state?.colorTheme ?: cachedPreferences?.colorTheme ?: UserPreferencesColorTheme.DEFAULT

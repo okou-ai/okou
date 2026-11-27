@@ -192,6 +192,24 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
     }
 
     @Test
+    fun returningToAFreshFilterShowsItsMatchesWhileRevalidating() {
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            val email = ConnectorBrowseFilter(null, "email")
+            model.setFilter(email)
+            val cached = checkNotNull(model.await { it.matches?.entries?.data != null }.matches)
+            val entries = checkNotNull(cached.entries.data).entries
+            assertTrue(entries.isNotEmpty())
+            model.setFilter(null)
+            fixture.unavailableCatalogSlugs = entries.map { it.slug }.toSet()
+
+            model.setFilter(email)
+            assertEquals(cached, model.uiState.value.matches)
+            val updated = model.await { it.matches?.entries?.data?.entries?.isEmpty() == true }
+            assertEquals(email, updated.matches?.filter)
+        }
+    }
+
+    @Test
     fun returningToServiceKeepsPermissionsAndUsesTheLatestAccountOverview() {
         withModel(CONNECTOR_CALENDAR) { fixture, model ->
             model.showPermissions()

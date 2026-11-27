@@ -2,6 +2,7 @@ package ai.okou.android.connectors
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.retryBoundedRead
+import ai.okou.android.isFreshMemorySnapshot
 import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.UnknownHostException
@@ -19,7 +20,7 @@ internal enum class ConnectorReadFailure {
 internal data class ConnectorRead<T>(
     val data: T? = null,
     val failure: ConnectorReadFailure? = null,
-    val expiresAt: TimeMark? = null,
+    val confirmedAt: TimeMark? = null,
     val failureRound: Long? = null,
 ) {
     val isConfirmed: Boolean
@@ -30,7 +31,7 @@ internal data class ConnectorRead<T>(
         else copy(failure = null, failureRound = null)
 
     fun forEntry(): ConnectorRead<T> =
-        if (expiresAt?.hasPassedNow() == false) confirmed() else ConnectorRead()
+        if (confirmedAt.isFreshMemorySnapshot()) confirmed() else ConnectorRead()
 
     fun retaining(previous: ConnectorRead<T>?): ConnectorRead<T> =
         if (data != null || previous == null || failure == ConnectorReadFailure.Unavailable) this
@@ -38,7 +39,7 @@ internal data class ConnectorRead<T>(
         else
             copy(
                 data = previous.data,
-                expiresAt = previous.expiresAt,
+                confirmedAt = previous.confirmedAt,
             )
 }
 

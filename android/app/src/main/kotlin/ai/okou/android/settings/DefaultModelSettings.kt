@@ -490,13 +490,25 @@ internal class DefaultModelSettings(
         while (canSave()) {
             val retryMillis = preferenceRequests.withLock {
                 if (!canSave()) return
-                val save = checkNotNull(mutable.value.save)
-                val elapsed = save.lastFailureElapsedMillis?.let { monotonicMillis() - it }
-                val delay = save.retryDelayMillis
+                val current = mutable.value
+                val pending = checkNotNull(current.save)
+                val elapsed = pending.lastFailureElapsedMillis?.let { monotonicMillis() - it }
+                val delay = pending.retryDelayMillis
                 if (elapsed != null && delay != null && elapsed in 0 until delay) {
                     return@withLock delay - elapsed
                 }
                 val unresolved = unconfirmedWrite
+                val save =
+                    if (
+                        unresolved == null &&
+                            pending.request.serviceTier != null &&
+                            current.selected?.fastMultiplier == null
+                    ) {
+                        // The catalog can change while a save waits for its turn or retries.
+                        pending.copy(request = pending.request.copy(serviceTier = null)).also {
+                            mutable.value = current.copy(save = it)
+                        }
+                    } else pending
                 val request = unresolved ?: save.request
                 try {
                     val remote =

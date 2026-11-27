@@ -96,6 +96,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -273,6 +274,39 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         }
         awaitText("No artifacts of this type")
         assertTrue(skeletons.fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w720dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun catalogSkeletonReservesRoomForLargeText() {
+        val scale = RuntimeEnvironment.getFontScale()
+        val releaseCatalog = CountDownLatch(1)
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.beforeCatalog = { check(releaseCatalog.await(10, TimeUnit.SECONDS)) }
+        fixture.install()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            compose.activityRule.scenario.onActivity {
+                assertEquals(2f, it.resources.configuration.fontScale, 0f)
+            }
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+
+            val skeletons = compose.onAllNodes(hasTestTag("artifact_row_skeleton"))
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            compose.waitUntil(5_000) { skeletons.fetchSemanticsNodes().isNotEmpty() }
+            val first = skeletons[0].assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertTrue("Large-font skeleton height was ${first.height}", first.height > 80.dp)
+
+            releaseCatalog.countDown()
+            awaitText(fixture.checklist.title)
+            assertTrue(skeletons.fetchSemanticsNodes().isEmpty())
+        } finally {
+            releaseCatalog.countDown()
+            RuntimeEnvironment.setFontScale(scale)
+        }
     }
 
     @Test
@@ -2286,16 +2320,66 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
-    fun websiteDoesNotRetryNavigationAfterTheFirstDocumentCommits() {
+    fun websiteKeepsLoadingAcrossTheGrantAndStopsRetryingAfterTheFirstDocumentIsVisible() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
-        openWebsite(fixture)
-        val view = checkNotNull(websiteView())
-        compose.runOnIdle {
-            view.webViewClient.onPageCommitVisible(view, checkNotNull(shadowOf(view).lastLoadedUrl))
-        }
+        val releaseGrant = CountDownLatch(1)
+        fixture.beforeSitePreview = { check(releaseGrant.await(10, TimeUnit.SECONDS)) }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.site.title)
+        val placeholder = compose.onNodeWithTag("artifact_preview_loading")
+        val frame = compose.onNodeWithTag("artifact_preview_surface")
+        val view =
+            try {
+                compose.mainClock.autoAdvance = false
+                compose.onNodeWithText(fixture.site.title).performClick()
+                compose.mainClock.advanceTimeBy(160)
+                placeholder.assertDoesNotExist()
+                compose.mainClock.advanceTimeBy(160)
+                placeholder.assertIsDisplayed()
+                compose.waitUntil(10_000) {
+                    compose.mainClock.advanceTimeByFrame()
+                    compose
+                        .onAllNodesWithText("View source conversation")
+                        .fetchSemanticsNodes()
+                        .isNotEmpty()
+                }
+                val bounds = frame.getUnclippedBoundsInRoot()
+                assertNull(websiteView())
+
+                releaseGrant.countDown()
+                compose.waitUntil(10_000) {
+                    compose.mainClock.advanceTimeByFrame()
+                    loadedWebsiteUrl() != null
+                }
+                val web = checkNotNull(websiteView())
+                placeholder.assertIsDisplayed()
+                assertEquals(bounds, frame.getUnclippedBoundsInRoot())
+                compose.runOnIdle {
+                    assertEquals(0f, web.alpha, 0f)
+                    val url = checkNotNull(shadowOf(web).lastLoadedUrl)
+                    web.webViewClient.onPageCommitVisible(web, url)
+                    web.webViewClient.onPageFinished(web, url)
+                    assertEquals(1f, web.alpha, 0f)
+                    web.scrollTo(0, 48)
+                    web.webViewClient.onPageFinished(web, url)
+                    assertEquals(48, web.scrollY)
+                }
+                compose.mainClock.autoAdvance = true
+                compose.waitUntilDoesNotExist(hasTestTag("artifact_preview_loading"), 5_000)
+                assertEquals(bounds, frame.getUnclippedBoundsInRoot())
+                web
+            } finally {
+                releaseGrant.countDown()
+                compose.mainClock.autoAdvance = true
+            }
+        val bounds = frame.getUnclippedBoundsInRoot()
         failWebsiteDocument(view)
         awaitText("Temporarily unable to load preview")
+        assertEquals(bounds, frame.getUnclippedBoundsInRoot())
+        compose.onNodeWithText("View source conversation").assertIsEnabled()
         compose.mainClock.advanceTimeBy(6_000)
         assertNull(websiteView())
         assertEquals(1, fixture.requestedSiteGrants.size)
