@@ -3,6 +3,7 @@ use crate::process::CommandExecution;
 use crate::support::create_tar_gz;
 use cli_test_support::directory_permissions::DirectoryPermissions;
 use guest_contracts::storage_files::{self, StorageFile};
+use guest_contracts::storage_manifest::TARGET_UNAVAILABLE_EXIT_CODE;
 use serde_json::json;
 use std::fs;
 use std::os::unix::fs::symlink;
@@ -48,7 +49,7 @@ fn input_permission_failures_exit_nonzero_without_removing_existing_inputs() {
 
         assert_eq!(
             output.status.code(),
-            Some(1),
+            Some(TARGET_UNAVAILABLE_EXIT_CODE),
             "{phase}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -108,7 +109,7 @@ fn stale_path_cleanup_failure_stops_before_later_cleanup_and_download() {
             fixture.run_manifest_stdin(&manifest).unwrap()
         };
 
-        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(output.status.code(), Some(TARGET_UNAVAILABLE_EXIT_CODE));
         assert_eq!(
             fs::read(outside.join("stale/content")).unwrap(),
             b"outside content"

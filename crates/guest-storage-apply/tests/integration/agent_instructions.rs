@@ -1,7 +1,10 @@
 use guest_contracts::agent_instructions::{
     InstructionApplication, InstructionCheck, SOURCE_FILENAME, instruction_paths,
 };
-use guest_storage_apply::{apply_agent_instructions, check_agent_instructions, run_manifest_bytes};
+use guest_storage_apply::{
+    ApplyFailure, apply_agent_instructions, apply_agent_instructions_with_result,
+    check_agent_instructions, run_manifest_bytes,
+};
 use std::{fs, io, path::Path};
 
 fn stage(home: &Path, framework: &str, content: &[u8]) -> io::Result<std::path::PathBuf> {
@@ -69,10 +72,12 @@ fn storage_delivered_instructions_replace_exact_bytes_and_preserve_native_histor
 
 #[test]
 fn unsafe_or_missing_instruction_source_preserves_the_current_managed_file() {
-    for kind in ["missing", "directory", "symlink"] {
+    for kind in ["missing-staging", "missing", "directory", "symlink"] {
         let home = tempfile::tempdir().unwrap();
         let staging = instruction_paths(home.path(), "codex").unwrap().staging;
-        fs::create_dir_all(&staging).unwrap();
+        if kind != "missing-staging" {
+            fs::create_dir_all(&staging).unwrap();
+        }
         let target = home.path().join(".codex/AGENTS.md");
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(&target, b"current instructions").unwrap();
@@ -84,10 +89,10 @@ fn unsafe_or_missing_instruction_source_preserves_the_current_managed_file() {
             fs::write(&external, b"external").unwrap();
             std::os::unix::fs::symlink(external, &source).unwrap();
         }
-        assert!(!apply_agent_instructions(
-            home.path(),
-            &metadata("codex").unwrap()
-        ));
+        assert_eq!(
+            apply_agent_instructions_with_result(home.path(), &metadata("codex").unwrap()),
+            Err(ApplyFailure::Failed)
+        );
         assert_eq!(fs::read(target).unwrap(), b"current instructions");
     }
 }
@@ -99,10 +104,10 @@ fn instruction_application_refuses_symlinked_framework_parents() {
     fs::write(outside.path().join("AGENTS.md"), b"external").unwrap();
     std::os::unix::fs::symlink(outside.path(), home.path().join(".codex")).unwrap();
     stage(home.path(), "codex", b"replacement").unwrap();
-    assert!(!apply_agent_instructions(
-        home.path(),
-        &metadata("codex").unwrap()
-    ));
+    assert_eq!(
+        apply_agent_instructions_with_result(home.path(), &metadata("codex").unwrap()),
+        Err(ApplyFailure::TargetUnavailable)
+    );
     assert_eq!(
         fs::read(outside.path().join("AGENTS.md")).unwrap(),
         b"external"

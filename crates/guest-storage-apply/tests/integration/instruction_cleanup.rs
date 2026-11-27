@@ -46,7 +46,7 @@ fn instruction_cleanup_rejects_symlinked_pi_parent_before_later_work() {
 
         assert_eq!(
             output.status.code(),
-            Some(1),
+            Some(guest_contracts::storage_manifest::TARGET_UNAVAILABLE_EXIT_CODE),
             "instruction_only={instruction_only}, target files: {:?}, {:?}",
             fs::read(target.join("CLAUDE.md")),
             fs::read(target.join("AGENTS.md"))
@@ -208,7 +208,7 @@ fn instruction_cleanup_rejects_non_file_leaves_without_removing_them() {
 
         assert_eq!(
             fixture.run_manifest_stdin(&manifest).unwrap().status.code(),
-            Some(1)
+            Some(guest_contracts::storage_manifest::TARGET_UNAVAILABLE_EXIT_CODE)
         );
     }
 
@@ -218,6 +218,27 @@ fn instruction_cleanup_rejects_non_file_leaves_without_removing_them() {
     );
     assert!(socket_home.join("AGENTS.md").exists());
     drop(socket);
+}
+
+#[test]
+fn invalid_instruction_cleanup_filename_is_a_manifest_failure() {
+    let fixture = BinaryLoggingFixture::new("instruction-cleanup-invalid-filename").unwrap();
+    let home = fixture.dir.path().join("instruction-home");
+    fs::create_dir(&home).unwrap();
+    fs::write(home.join("AGENTS.md"), b"keep instructions").unwrap();
+    let manifest = serde_json::to_vec(&json!({
+        "storageMounts": [],
+        "instructionCleanups": [{"mountPath": home, "targetFilename": "notes.md"}]
+    }))
+    .unwrap();
+
+    let output = fixture.run_manifest_stdin(&manifest).unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        fs::read(home.join("AGENTS.md")).unwrap(),
+        b"keep instructions"
+    );
 }
 
 #[test]

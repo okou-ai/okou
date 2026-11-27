@@ -89,6 +89,38 @@ use std::time::Instant;
 
 const LOG_TAG: &str = "sandbox:guest-storage-apply";
 
+pub use guest_contracts::storage_manifest::TARGET_UNAVAILABLE_EXIT_CODE;
+
+/// Terminal result of a Guest Storage operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApplyFailure {
+    /// A local cleanup or write to a managed target could not be completed.
+    TargetUnavailable,
+    /// The input, its source, or the operation failed.
+    Failed,
+}
+
+impl ApplyFailure {
+    /// Classify an I/O error from a local destination operation.
+    pub fn from_target_io(error: &std::io::Error) -> Self {
+        use std::io::ErrorKind;
+        if matches!(
+            error.kind(),
+            ErrorKind::PermissionDenied
+                | ErrorKind::NotFound
+                | ErrorKind::NotADirectory
+                | ErrorKind::IsADirectory
+                | ErrorKind::AlreadyExists
+                | ErrorKind::DirectoryNotEmpty
+        ) || error.raw_os_error() == Some(libc::ELOOP)
+        {
+            Self::TargetUnavailable
+        } else {
+            Self::Failed
+        }
+    }
+}
+
 /// Apply the manifest read from `manifest_path`.
 ///
 /// Returns `true` when the manifest can be read and parsed and all required
@@ -98,25 +130,28 @@ const LOG_TAG: &str = "sandbox:guest-storage-apply";
 /// starts, `false` does not roll back completed filesystem changes. See the
 /// manifest application section in the [`crate`] documentation for details.
 pub fn run(manifest_path: &str) -> bool {
-    run_path_in_runtime(manifest_path, None)
+    run_path_in_runtime(manifest_path, None).is_ok()
 }
 
 /// Apply a manifest with discarded inputs owned by the existing runtime cleanup.
 /// Noncanonical runtime layouts retain synchronous cleanup.
-pub fn run_in_runtime(manifest_path: &str, runtime_dir: &Path) -> bool {
+pub fn run_in_runtime(manifest_path: &str, runtime_dir: &Path) -> Result<(), ApplyFailure> {
     run_path_in_runtime(manifest_path, Some(runtime_dir))
 }
 
-fn run_path_in_runtime(manifest_path: &str, runtime_dir: Option<&Path>) -> bool {
+fn run_path_in_runtime(
+    manifest_path: &str,
+    runtime_dir: Option<&Path>,
+) -> Result<(), ApplyFailure> {
     let manifest = match manifest::load(manifest_path) {
         Ok(manifest) => manifest,
         Err(ManifestLoadError::Read(e)) => {
             log_error!(LOG_TAG, "Failed to read manifest: {e}");
-            return false;
+            return Err(ApplyFailure::Failed);
         }
         Err(ManifestLoadError::Parse(e)) => {
             log_error!(LOG_TAG, "Failed to parse manifest: {e}");
-            return false;
+            return Err(ApplyFailure::Failed);
         }
     };
 
@@ -132,20 +167,26 @@ fn run_path_in_runtime(manifest_path: &str, runtime_dir: Option<&Path>) -> bool 
 /// back completed filesystem changes. See the manifest application section in
 /// the [`crate`] documentation for details.
 pub fn run_manifest_bytes(manifest_json: &[u8]) -> bool {
-    run_manifest_bytes_in_context(manifest_json, None)
+    run_manifest_bytes_in_context(manifest_json, None).is_ok()
 }
 
 /// Apply canonical manifest bytes with the captured per-Run cleanup lifetime.
-pub fn run_manifest_bytes_in_runtime(manifest_json: &[u8], runtime_dir: &Path) -> bool {
+pub fn run_manifest_bytes_in_runtime(
+    manifest_json: &[u8],
+    runtime_dir: &Path,
+) -> Result<(), ApplyFailure> {
     run_manifest_bytes_in_context(manifest_json, Some(runtime_dir))
 }
 
-fn run_manifest_bytes_in_context(manifest_json: &[u8], runtime_dir: Option<&Path>) -> bool {
+fn run_manifest_bytes_in_context(
+    manifest_json: &[u8],
+    runtime_dir: Option<&Path>,
+) -> Result<(), ApplyFailure> {
     let manifest = match manifest::parse(manifest_json) {
         Ok(manifest) => manifest,
         Err(e) => {
             log_error!(LOG_TAG, "Failed to parse manifest: {e}");
-            return false;
+            return Err(ApplyFailure::Failed);
         }
     };
 
@@ -154,15 +195,21 @@ fn run_manifest_bytes_in_context(manifest_json: &[u8], runtime_dir: Option<&Path
 
 /// Apply bounded binary storage input after validating all mount bindings and files.
 pub fn run_storage_files_bytes(input: &[u8]) -> bool {
-    run_storage_files_in_context(input, None)
+    run_storage_files_in_context(input, None).is_ok()
 }
 
 /// Apply a binary Storage input with the captured per-Run cleanup lifetime.
-pub fn run_storage_files_bytes_in_runtime(input: &[u8], runtime_dir: &Path) -> bool {
+pub fn run_storage_files_bytes_in_runtime(
+    input: &[u8],
+    runtime_dir: &Path,
+) -> Result<(), ApplyFailure> {
     run_storage_files_in_context(input, Some(runtime_dir))
 }
 
-fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> bool {
+fn run_storage_files_in_context(
+    input: &[u8],
+    runtime_dir: Option<&Path>,
+) -> Result<(), ApplyFailure> {
     use guest_contracts::storage_files::inline_archives;
     use input_telemetry::{InputPhase, measure_phase, record_payload_size};
 
@@ -205,7 +252,7 @@ fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> boo
         }
         Err(error) => {
             log_error!(LOG_TAG, "Invalid binary storage input: {error}");
-            false
+            Err(ApplyFailure::Failed)
         }
     }
 }
@@ -215,10 +262,10 @@ fn run_manifest_with_files_in_runtime(
     files: Vec<guest_contracts::storage_files::StorageFiles<&[u8]>>,
     archives: Option<std::collections::HashMap<&str, &[u8]>>,
     runtime_dir: Option<&Path>,
-) -> bool {
+) -> Result<(), ApplyFailure> {
     if archives.is_some() && manifest.archive_readiness.is_some() {
         log_error!(LOG_TAG, "Inline Storage archives cannot use readiness");
-        return false;
+        return Err(ApplyFailure::Failed);
     }
     if manifest
         .archive_readiness
@@ -228,11 +275,11 @@ fn run_manifest_with_files_in_runtime(
         return match readiness::Readiness::eligible(&manifest, runtime_dir) {
             Ok(eligible) => {
                 println!("{eligible}");
-                true
+                Ok(())
             }
             Err(error) => {
                 log_error!(LOG_TAG, "Archive readiness eligibility failed: {error}");
-                false
+                Err(ApplyFailure::Failed)
             }
         };
     }
@@ -242,7 +289,7 @@ fn run_manifest_with_files_in_runtime(
         Ok(readiness) => readiness,
         Err(error) => {
             log_error!(LOG_TAG, "Archive readiness preparation failed: {error}");
-            return false;
+            return Err(ApplyFailure::Failed);
         }
     };
     let plan_start = Instant::now();
@@ -256,7 +303,7 @@ fn run_manifest_with_files_in_runtime(
                 LOG_TAG,
                 "Inline Storage archive source missing from execution plan"
             );
-            return false;
+            return Err(ApplyFailure::Failed);
         }
     }
     if !bind_decoded_files(&mut plan.download_tasks, files) {
@@ -264,7 +311,7 @@ fn run_manifest_with_files_in_runtime(
             LOG_TAG,
             "Decoded storage target missing from execution plan"
         );
-        return false;
+        return Err(ApplyFailure::Failed);
     }
     let quarantine = match runtime_dir
         .map(|runtime| quarantine::Quarantine::for_manifest(&manifest, runtime))
@@ -273,7 +320,7 @@ fn run_manifest_with_files_in_runtime(
         Ok(quarantine) => quarantine.flatten(),
         Err(error) => {
             log_error!(LOG_TAG, "Failed to prepare private input cleanup: {error}");
-            return false;
+            return Err(ApplyFailure::Failed);
         }
     };
     record_sandbox_op(
@@ -300,29 +347,34 @@ fn run_manifest_with_files_in_runtime(
         .iter()
         .map(|entry| entry.mount_path.clone())
         .collect::<Vec<_>>();
-    let stale_cleanup = telemetry::CleanupPhase::StalePaths.measure(cleanup_paths.len(), || {
-        match quarantine.as_ref() {
-            Some(quarantine) => cleanup::cleanup_stale_paths_with_quarantine(
-                &cleanup_paths,
-                &preserved_paths,
-                &retained_roots,
-                quarantine,
-            ),
-            None => cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths, &retained_roots),
+    let (stale_cleanup, stale_result) =
+        telemetry::CleanupPhase::StalePaths.measure(cleanup_paths.len(), || {
+            match quarantine.as_ref() {
+                Some(quarantine) => cleanup::cleanup_stale_paths_with_quarantine(
+                    &cleanup_paths,
+                    &preserved_paths,
+                    &retained_roots,
+                    quarantine,
+                ),
+                None => {
+                    cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths, &retained_roots)
+                }
+            }
+        });
+    let (instruction_cleanup, cleanup_result) = match stale_result {
+        Ok(()) => {
+            let (observation, result) = telemetry::CleanupPhase::Instructions
+                .measure(instruction_cleanups.len(), || {
+                    instructions::cleanup_instruction_files(&instruction_cleanups)
+                });
+            (Some(observation), result)
         }
-    });
-    let instruction_cleanup = stale_cleanup.success().then(|| {
-        telemetry::CleanupPhase::Instructions.measure(instruction_cleanups.len(), || {
-            instructions::cleanup_instruction_files(&instruction_cleanups)
-        })
-    });
-    let cleanup_success = instruction_cleanup
-        .as_ref()
-        .is_some_and(|observation| observation.success());
+        Err(error) => (None, Err(error)),
+    };
     record_sandbox_op(
         "guest_storage_apply_cleanup",
         cleanup_start.elapsed(),
-        cleanup_success,
+        cleanup_result.is_ok(),
         None,
     );
     // Keep the new diagnostic writes outside the combined and phase timers.
@@ -330,9 +382,9 @@ fn run_manifest_with_files_in_runtime(
     if let Some(observation) = instruction_cleanup {
         observation.record();
     }
-    if !cleanup_success {
-        log_error!(LOG_TAG, "Required storage cleanup failed");
-        return false;
+    if let Err(error) = cleanup_result {
+        log_error!(LOG_TAG, "Required storage cleanup failed: {error}");
+        return Err(ApplyFailure::from_target_io(&error));
     }
 
     // Resolve all logical and physical target identities before downloads.
@@ -356,34 +408,30 @@ fn run_manifest_with_files_in_runtime(
                 None,
             );
             log_error!(LOG_TAG, "{e}");
-            return false;
+            return Err(e.failure);
         }
     };
-    if !prepare_empty_artifacts(&empty_artifacts) {
-        return false;
-    }
+    prepare_empty_artifacts(&empty_artifacts)?;
 
     let scheduler_start = Instant::now();
-    let success = download::download_all_parallel(download_tasks, readiness);
+    let result = download::download_all_parallel(download_tasks, readiness);
     record_sandbox_op(
         "guest_storage_apply_archive_scheduler",
         scheduler_start.elapsed(),
-        success,
+        result.is_ok(),
         None,
     );
-    if !success {
-        return false;
-    }
+    result?;
     // Temporary migration reader: shared immutable packages retain their source
     // names/layout. Normalize only the materialized Workflow, never the cache.
     // Retire once staff and external copies declare their own names in SKILL.md
     // and old readers have drained.
     // https://github.com/okou-ai/okou/issues/46783
     match workflow_document::apply(&manifest.storages) {
-        Ok(()) => true,
+        Ok(()) => Ok(()),
         Err(error) => {
             log_error!(LOG_TAG, "Workflow document materialization failed: {error}");
-            false
+            Err(ApplyFailure::from_target_io(&error))
         }
     }
 }
@@ -440,7 +488,7 @@ fn bind_unordered_files<'input>(
     false
 }
 
-fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> bool {
+fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> Result<(), ApplyFailure> {
     for entry in entries {
         let start = Instant::now();
         match fs::create_dir_all(&entry.mount_path) {
@@ -465,15 +513,17 @@ fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> bool {
                     Some(&failure_detail),
                 );
                 log_error!(LOG_TAG, "{failure_detail}");
-                return false;
+                return Err(ApplyFailure::from_target_io(&e));
             }
         }
     }
-    true
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests;
 
 mod agent_instructions;
-pub use agent_instructions::{apply_agent_instructions, check_agent_instructions};
+pub use agent_instructions::{
+    apply_agent_instructions, apply_agent_instructions_with_result, check_agent_instructions,
+};

@@ -134,29 +134,29 @@ pub(crate) enum WalkFilesError {
     Finalization {
         message: String,
         elapsed: std::time::Duration,
-        missing_root: bool,
+        root_unavailable: bool,
     },
 }
 
 impl WalkFilesError {
-    pub(crate) fn is_missing_root(&self) -> bool {
+    pub(crate) fn is_root_unavailable(&self) -> bool {
         matches!(
             self,
             Self::Finalization {
-                missing_root: true,
+                root_unavailable: true,
                 ..
             }
         )
     }
 
-    pub(crate) fn record_preserved_missing_root(self, storage_name: &str, mount_path: &str) {
+    pub(crate) fn record_preserved_unavailable_root(self, storage_name: &str, mount_path: &str) {
         if let Self::Finalization {
             message, elapsed, ..
         } = self
         {
             log_warn!(
                 LOG_TAG,
-                "Artifact root missing for '{}' at {}; preserving parent version: {message}",
+                "Artifact root unavailable for '{}' at {}; preserving parent version: {message}",
                 storage_name,
                 mount_path
             );
@@ -205,7 +205,7 @@ pub(crate) async fn walk_files_for_snapshot(
             return Err(WalkFilesError::Finalization {
                 message,
                 elapsed: hash_start.elapsed(),
-                missing_root: e.is_root_not_found(),
+                root_unavailable: e.is_root_unavailable(),
             });
         }
     };

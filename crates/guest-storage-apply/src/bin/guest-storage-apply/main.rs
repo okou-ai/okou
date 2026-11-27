@@ -1,5 +1,6 @@
 use guest_contracts::{env, runtime_paths, storage_files};
 use guest_storage_apply::input_telemetry::{InputPhase, record_payload_size, record_phase};
+use guest_storage_apply::{ApplyFailure, TARGET_UNAVAILABLE_EXIT_CODE};
 use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};
 use std::fs::File;
 #[cfg(unix)]
@@ -40,6 +41,7 @@ fn main() {
         match read_instruction_metadata(
             guest_contracts::agent_instructions::MAX_CHECK_METADATA_BYTES,
         )
+        .map_err(io::Error::other)
         .and_then(|metadata| {
             guest_storage_apply::check_agent_instructions(
                 std::path::Path::new("/home/user"),
@@ -49,22 +51,30 @@ fn main() {
             Ok(present) => println!("{present}"),
             Err(error) => {
                 log_error!(LOG_TAG, "Instruction file check failed: {error}");
-                std::process::exit(1);
+                std::process::exit(failure_exit_code(ApplyFailure::from_target_io(&error)));
             }
         }
         return;
     }
 
     let start = Instant::now();
-    let success = run(input, &runtime_dir);
+    let result = run(input, &runtime_dir);
     let elapsed = start.elapsed();
 
-    record_sandbox_op("download_total", elapsed, success, None);
-    if success {
-        log_info!(LOG_TAG, "Download completed in {}ms", elapsed.as_millis());
-    } else {
-        log_error!(LOG_TAG, "Download failed");
-        std::process::exit(1);
+    record_sandbox_op("download_total", elapsed, result.is_ok(), None);
+    match result {
+        Ok(()) => log_info!(LOG_TAG, "Download completed in {}ms", elapsed.as_millis()),
+        Err(failure) => {
+            log_error!(LOG_TAG, "Download failed");
+            std::process::exit(failure_exit_code(failure));
+        }
+    }
+}
+
+fn failure_exit_code(failure: ApplyFailure) -> i32 {
+    match failure {
+        ApplyFailure::TargetUnavailable => TARGET_UNAVAILABLE_EXIT_CODE,
+        ApplyFailure::Failed => 1,
     }
 }
 
@@ -130,15 +140,15 @@ fn read_instruction_metadata(limit: usize) -> io::Result<Vec<u8>> {
     Ok(metadata)
 }
 
-fn run(input: ManifestInput, runtime_dir: &Path) -> bool {
+fn run(input: ManifestInput, runtime_dir: &Path) -> Result<(), ApplyFailure> {
     match input {
         ManifestInput::InstructionsStdin { .. } => {
             let Ok(metadata) =
                 read_instruction_metadata(guest_contracts::agent_instructions::MAX_METADATA_BYTES)
             else {
-                return false;
+                return Err(ApplyFailure::Failed);
             };
-            guest_storage_apply::apply_agent_instructions(
+            guest_storage_apply::apply_agent_instructions_with_result(
                 std::path::Path::new("/home/user"),
                 &metadata,
             )
@@ -149,7 +159,7 @@ fn run(input: ManifestInput, runtime_dir: &Path) -> bool {
             record_phase(InputPhase::StaleCleanup, stale_start, stale_removed);
             if !stale_removed {
                 record_payload_size(None);
-                return false;
+                return Err(ApplyFailure::Failed);
             }
             let mut input = Vec::new();
             #[cfg(target_os = "linux")]
@@ -186,27 +196,27 @@ fn run(input: ManifestInput, runtime_dir: &Path) -> bool {
             let Some(bytes) = bytes else {
                 record_payload_size(None);
                 log_error!(LOG_TAG, "Failed to read bounded storage files input");
-                return false;
+                return Err(ApplyFailure::Failed);
             };
             guest_storage_apply::run_storage_files_bytes_in_runtime(bytes, runtime_dir)
         }
         ManifestInput::Path(manifest_path) => run_path(&manifest_path, runtime_dir),
         ManifestInput::Stdin => {
             if !remove_stale_manifest_file(runtime_paths::STORAGE_MANIFEST_PATH) {
-                return false;
+                return Err(ApplyFailure::Failed);
             }
 
             let mut manifest_json = Vec::new();
             if let Err(e) = std::io::stdin().read_to_end(&mut manifest_json) {
                 log_error!(LOG_TAG, "Failed to read manifest from stdin: {e}");
-                return false;
+                return Err(ApplyFailure::Failed);
             }
             guest_storage_apply::run_manifest_bytes_in_runtime(&manifest_json, runtime_dir)
         }
     }
 }
 
-fn run_path(manifest_path: &str, runtime_dir: &Path) -> bool {
+fn run_path(manifest_path: &str, runtime_dir: &Path) -> Result<(), ApplyFailure> {
     if manifest_path == runtime_paths::STORAGE_MANIFEST_PATH {
         run_manifest_file_and_remove(manifest_path, runtime_dir)
     } else {
@@ -214,18 +224,21 @@ fn run_path(manifest_path: &str, runtime_dir: &Path) -> bool {
     }
 }
 
-fn run_manifest_file_and_remove(manifest_path: &str, runtime_dir: &Path) -> bool {
+fn run_manifest_file_and_remove(
+    manifest_path: &str,
+    runtime_dir: &Path,
+) -> Result<(), ApplyFailure> {
     let manifest_json = match read_manifest_file(manifest_path) {
         Ok(manifest_json) => manifest_json,
         Err(e) => {
             log_error!(LOG_TAG, "Failed to read manifest: {e}");
             let _ = remove_manifest_file(manifest_path);
-            return false;
+            return Err(ApplyFailure::Failed);
         }
     };
 
     if !remove_manifest_file(manifest_path) {
-        return false;
+        return Err(ApplyFailure::Failed);
     }
 
     guest_storage_apply::run_manifest_bytes_in_runtime(&manifest_json, runtime_dir)

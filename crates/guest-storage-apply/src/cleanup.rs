@@ -27,7 +27,7 @@ pub(crate) fn cleanup_stale_paths(
     cleanup_paths: &[String],
     preserved: &[String],
     retained_roots: &[String],
-) -> bool {
+) -> io::Result<()> {
     let detector = CleanupMountPointDetector::new(cleanup_mountinfo);
     cleanup_stale_paths_with_options(
         cleanup_paths,
@@ -44,7 +44,7 @@ pub(crate) fn cleanup_stale_paths_with_quarantine(
     preserved: &[String],
     retained_roots: &[String],
     quarantine: &crate::quarantine::Quarantine,
-) -> bool {
+) -> io::Result<()> {
     let detector = CleanupMountPointDetector::new(cleanup_mountinfo);
     cleanup_stale_paths_with_options(
         cleanup_paths,
@@ -68,7 +68,7 @@ fn cleanup_stale_paths_with_mountinfo_loader<L>(
     cleanup_paths: &[String],
     preserved: &[String],
     load_mountinfo: L,
-) -> bool
+) -> io::Result<()>
 where
     L: Fn() -> io::Result<Vec<u8>>,
 {
@@ -88,7 +88,7 @@ fn cleanup_stale_paths_with_mount_detector<M>(
     cleanup_paths: &[String],
     preserved: &[String],
     is_mount_point: M,
-) -> bool
+) -> io::Result<()>
 where
     M: Fn(&Path) -> bool,
 {
@@ -109,7 +109,7 @@ fn cleanup_stale_paths_with_options<M, R, T>(
     is_mount_point: M,
     remove_entry: R,
     remove_tree: T,
-) -> bool
+) -> io::Result<()>
 where
     M: Fn(&Path) -> io::Result<bool>,
     R: Fn(&fs::DirEntry) -> io::Result<()>,
@@ -155,7 +155,7 @@ where
                         "Failed to classify cleanup path {}: {e}",
                         path.original.display()
                     );
-                    return false;
+                    return Err(e);
                 }
             }
         };
@@ -175,7 +175,7 @@ where
                     "Failed to safely clean {}: {e}",
                     path.original.display()
                 );
-                return false;
+                return Err(e);
             }
             if preserved_child_count > 0 {
                 log_info!(
@@ -208,13 +208,13 @@ where
                         "Failed to safely clean {}: {e}",
                         path.original.display()
                     );
-                    return false;
+                    return Err(e);
                 }
             }
         }
     }
     log_removed_paths(removed_paths);
-    true
+    Ok(())
 }
 
 fn log_removed_paths(count: usize) {
@@ -442,10 +442,9 @@ where
             .get_or_init(|| load_mountinfo().map(|mountinfo| MountSnapshot::parse(&mountinfo)))
         {
             Ok(mount_points) => Ok(mount_points),
-            Err(e) => Err(io::Error::new(
-                e.kind(),
-                format!("failed to read /proc/self/mountinfo: {e}"),
-            )),
+            Err(e) => Err(io::Error::other(format!(
+                "failed to read /proc/self/mountinfo: {e}"
+            ))),
         }
     }
 }
@@ -458,7 +457,9 @@ fn absolute_path_without_following_final_symlink(path: &Path) -> io::Result<Path
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        std::env::current_dir()?.join(path)
+        std::env::current_dir()
+            .map_err(io::Error::other)?
+            .join(path)
     };
     Ok(normalize_path(&absolute))
 }

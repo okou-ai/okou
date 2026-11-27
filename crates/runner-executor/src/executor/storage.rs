@@ -29,6 +29,19 @@ mod agent_instructions;
 pub(super) use agent_instructions::{
     InstructionReuse, apply_agent_instructions, check_instruction_reuse,
 };
+
+fn storage_helper_failure(failure: String, result: &sandbox::ExecResult) -> RunnerError {
+    if matches!(
+        result.termination,
+        sandbox::ExecTermination::Exited {
+            exit_code: guest_contracts::storage_manifest::TARGET_UNAVAILABLE_EXIT_CODE
+        }
+    ) {
+        RunnerError::StorageTargetUnavailable(failure)
+    } else {
+        RunnerError::Internal(failure)
+    }
+}
 pub(super) async fn publish_bootstrap_files(
     sandbox: &dyn Sandbox,
     files: &[sandbox::WriteFileEntry<'_>],
@@ -753,9 +766,10 @@ async fn apply_storage_input(
         *guest_duration_ms = result.guest_duration_ms;
 
         if !helper_exec_succeeded(&result) {
-            return Err(RunnerError::Internal(format_guest_storage_apply_failure(
+            return Err(storage_helper_failure(
+                format_guest_storage_apply_failure(&result),
                 &result,
-            )));
+            ));
         }
         Ok(())
     }
