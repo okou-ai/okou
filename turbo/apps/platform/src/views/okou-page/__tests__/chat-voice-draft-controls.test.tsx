@@ -469,7 +469,6 @@ test("voice-draft-audio-015 sends the recorded worklet samples as a playable voi
     "Meta+Shift+E Control+Shift+E",
   );
   click(voiceButton);
-  expect(screen.queryByText("Returning to composer")).toBeNull();
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const play = await findNamedButton("Play voice message", composer);
   const wav = await stored.promise;
@@ -596,14 +595,78 @@ test("voice-draft-audio-016 Text button and shortcut transcribe to text while Vo
   });
   expect(uploadRequests).toHaveLength(0);
 
-  // Voice button uploads and inserts into composer without "Returning to composer".
+  // Voice button uploads and inserts into composer with only the uploading status text.
   click(await findEnabledButton("Voice input"));
   click(await findEnabledButton("Voice"));
-  await screen.findByText("Uploading recording…");
-  expect(screen.queryByText("Returning to composer")).toBeNull();
+  const uploadingLabel = await screen.findByText("Uploading recording…");
+  expect(
+    uploadingLabel.closest("[data-composer-voice-tray]"),
+  ).toHaveTextContent(/^Uploading recording…$/u);
   uploadReady.resolve();
   await findNamedButton("Play voice message", editor);
   expect(uploadRequests).toHaveLength(1);
+});
+
+test("voice-draft-audio-017 keeps Text enabled on the recovery tray after a Voice upload failure", async () => {
+  createChatCapabilityHelpers(context).installCapabilityChat({
+    events: completedConversation("Ready for upload recovery."),
+  });
+  context.mocks.browser.voiceInput({ rms: 0.2 });
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, {
+      switches: {},
+      effectiveSwitches: { composerVoiceMessages: true },
+    });
+  });
+  context.mocks.api(uploadsContract.preparePrivate, ({ body, respond }) => {
+    return respond(200, {
+      id: "b0000000-0000-4000-a000-000000000620",
+      filename: "Voice recording.wav",
+      url: new URL(
+        artifactReferencePath(
+          "b0000000-0000-4000-a000-000000000620",
+          "Voice recording.wav",
+        ),
+        location.origin,
+      ).href,
+      contentType: body.contentType,
+      size: body.size,
+      uploadUrl: "https://storage.example.test/private-voice-017",
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.http.put(
+    "https://storage.example.test/private-voice-017",
+    () => {
+      return new HttpResponse(null, { status: 500 });
+    },
+  );
+  context.mocks.http.post("*" + voiceIoTranscribeContract.segment.path, () => {
+    return HttpResponse.json({
+      transcript: "recovered as text",
+      language: "en",
+    });
+  });
+  context.mocks.api(voiceIoPolishSegmentsContract.post, ({ respond }) => {
+    return respond(200, { text: "Recovered as text." });
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Ready for upload recovery.");
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+
+  click(await findEnabledButton("Voice input"));
+  click(await findEnabledButton("Voice"));
+
+  await expect(
+    screen.findByText("Your recording is saved."),
+  ).resolves.toBeInTheDocument();
+  const textButton = await findEnabledButton("Text");
+  click(textButton);
+
+  await waitFor(() => {
+    expect(editor.textContent).toBe("Recovered as text.");
+  });
 });
 
 test.each(["Backspace", "Delete"] as const)(

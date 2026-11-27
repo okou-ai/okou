@@ -2736,7 +2736,9 @@ function VoiceDraftFooter({
         recordingAvailable={recordingAvailable}
         voiceMessagesEnabled={voiceMessagesEnabled}
         voiceMessage={voiceMessage}
-        textActionFailed={operation.state === "hasError"}
+        textActionFailed={
+          operation.state === "hasError" && pendingAction === "transcribing"
+        }
         onDiscard={() => {
           detach(runVoice("discard", signal), Reason.DomCallback);
         }}
