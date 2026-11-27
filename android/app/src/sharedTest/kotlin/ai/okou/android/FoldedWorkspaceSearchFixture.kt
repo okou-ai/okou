@@ -4,7 +4,7 @@ import kotlinx.serialization.json.JsonPrimitive
 
 internal class FoldedWorkspaceSearchFixture(chats: ChatListApiFixture) {
     val keyword = "截止时间"
-    val hit = "把发布清单中的截止时间更新到周五。"
+    val hit = "“把发布清单的截止时间改到周五，原截止时间作废。”"
     val leadingParagraph = "已逐项和负责人核对发布清单。"
     val otherHit = "等确认截止时间后，再通知项目成员。"
     val otherEarlierReply = "先核对访谈记录与会议附件。"
@@ -17,7 +17,9 @@ internal class FoldedWorkspaceSearchFixture(chats: ChatListApiFixture) {
         val otherHitSequence = 23L
         val otherRun = "a9999999-9999-4999-8999-999999999999"
         val lastEvent = "a8888888-8888-4888-8888-888888888888"
-        val indexedBody = "$leadingParagraph\n\n$hit"
+        val linkedLead = leadingParagraph.replace("发布清单", "[发布清单](https://example.org/$keyword)")
+        val indexedHit = hit.replace("“", "&ldquo;").replace("”", "&rdquo;")
+        val indexedBody = "$linkedLead\n\n$indexedHit"
         chats.setHistoryEvents(
             CHAT_PERSONAL,
             listOf(
@@ -52,12 +54,15 @@ internal class FoldedWorkspaceSearchFixture(chats: ChatListApiFixture) {
     }
 
     private fun searchResult(text: String, sequence: Long): String {
-        val start = text.indexOf(keyword)
+        val ranges =
+            Regex.fromLiteral(keyword).findAll(text).joinToString(",") {
+                """{"start":${it.range.first},"end":${it.range.last + 1}}"""
+            }
         return """
             {"chatThreadId":"$CHAT_PERSONAL",
               "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
                 "content":${JsonPrimitive(text)},"createdAt":"$CHAT_DATE","seqId":$sequence,"runId":"$HISTORY_RUN"},
-              "matchedRanges":[{"start":$start,"end":${start + keyword.length}}]}
+              "matchedRanges":[$ranges]}
             """
             .trimIndent()
     }
