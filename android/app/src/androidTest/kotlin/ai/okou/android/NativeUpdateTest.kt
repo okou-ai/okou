@@ -548,7 +548,7 @@ class NativeUpdateTest {
                 exists(R.string.updates_retry_download)
                 captureState("details-short-retry-waiting")
             }
-            withShortWindowAndLargeText(width = 1000, height = 540) {
+            withShortWindowAndLargeText(width = 1000, height = 620) {
                 val retry =
                     By.pkg(app.packageName).text(app.getString(R.string.updates_retry_download))
                 val footer = button(close).visibleBounds to button(retry).visibleBounds
@@ -556,9 +556,10 @@ class NativeUpdateTest {
                 assertTrue(footer.first.height() >= minimumHeight)
                 assertTrue(footer.second.height() >= minimumHeight)
                 focusReadingRegion()
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_UP))
+                captureState("details-extreme-short")
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_DOWN))
                 assertEquals(footer, button(close).visibleBounds to button(retry).visibleBounds)
-                captureState("details-extreme-short")
             }
             click(R.string.updates_retry_download)
             assertNotNull(text(progressLabel))
@@ -574,7 +575,7 @@ class NativeUpdateTest {
             download.get().complete(file)
             exists(R.string.updates_open_settings)
             captureState("install-permission")
-            withShortWindowAndLargeText(width = 1000) {
+            withShortWindowAndLargeText(width = 1000, height = 900) {
                 exists(R.string.updates_allow_install)
                 val minTouchHeight = (48 * density).roundToInt() - 1
                 for (label in listOf(R.string.updates_later, R.string.updates_open_settings)) {
