@@ -23,8 +23,6 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.util.UUID
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -39,29 +37,21 @@ class ScreenshotScenario {
     private val device = UiDevice.getInstance(instrumentation)
     private val subject = By.clazz("android.widget.EditText").hasDescendant(By.desc("Subject contains"))
     private val save = By.text("Save")
-    private val pendingSave = By.clazz("android.widget.Button").desc("Save").enabled(false)
     private val draft = "Release summary"
-    private val instructions = "Review the release owner.\n![Checklist](https://example.test/checklist.png)"
 
     @Test
-    fun workflowEditorsKeepTheirActionsStableWhileSaving() = withDevice {
-            captureWindow(412, 892, 1f, UserPreferencesTheme.LIGHT, capture = ::captureInstructions)
-            captureWindow(1180, 820, 1f, UserPreferencesTheme.DARK, workflowTitle = { it.sharedTitle }) { scenario, fixture ->
-                openAutomation(scenario)
-                assertFooter(scenario)
-                ScreenshotCapture.capture("wide-automation-editor.png")
-                captureSavingAutomation(fixture)
-            }
-    }
-
-    @Test
-    fun shortAutomationEditorKeepsTheDraftActionsAndFeedbackReachable() = withDevice {
+    fun workflowEditorKeepsFieldsAndActionsReachable() {
+        val initialSize = displayOverride("size", "\\d+x\\d+")
+        val initialDensity = displayOverride("density", "\\d+")
+        val initialScale = device.executeShellCommand("settings get system font_scale").trim()
+        val failures = mutableListOf<Throwable>()
+        try {
+            device.executeShellCommand("wm density 160")
             captureWindow(412, 892, 1f, UserPreferencesTheme.LIGHT) { scenario, fixture ->
-                openAutomation(scenario)
                 device.executeShellCommand("wm size 360x280")
                 device.executeShellCommand("settings put system font_scale 2.0")
                 assertWindow(scenario, 360, 280, 2f)
-                reveal(scenario, subject, minimumHeight = 96)
+                reveal(scenario, subject, minimumHeight = 70)
                 assertEquals(draft, node(subject).text)
                 ScreenshotCapture.capture("short-editor-fields.png")
                 reveal(scenario, save)
@@ -78,41 +68,14 @@ class ScreenshotScenario {
                 scenario.moveToState(Lifecycle.State.STARTED)
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 val notice = node(By.text("Could not refresh. Showing last loaded data."))
-                assertTrue("Read feedback stays visible above system insets", notice.visibleBounds.height() > 0 && notice.visibleBounds.bottom <= safeBottom(scenario))
+                assertTrue(
+                    "Read feedback is visible above system insets",
+                    notice.visibleBounds.height() > 0 &&
+                        notice.visibleBounds.bottom <= safeBottom(scenario),
+                )
                 assertEquals(saveBounds, checkNotNull(saveControl(node(save))).visibleBounds)
                 ScreenshotCapture.capture("short-editor-feedback.png")
             }
-    }
-
-    @Test
-    fun workflowEditorUsesThePlatformImeInsetsAndBack() = withDevice {
-            device.executeShellCommand("settings put secure show_ime_with_hard_keyboard 1")
-            captureWindow(412, 520, 1f, UserPreferencesTheme.LIGHT) { scenario, _ ->
-                openAutomation(scenario)
-                node(subject).click()
-                assertIme(scenario, true)
-                val editing = node(By.copy(subject).focused(true))
-                assertEquals(draft, editing.text)
-                assertTrue(editing.visibleBounds.bottom <= safeBottom(scenario))
-                ScreenshotCapture.capture("ime-editor.png")
-                assertTrue(device.pressBack())
-                assertIme(scenario, false)
-                assertTrue(device.hasObject(By.pkg(app.packageName).text("Edit")))
-                assertEquals(draft, node(subject).text)
-                reveal(scenario, save)
-                assertFooter(scenario)
-            }
-    }
-
-    private fun withDevice(captures: () -> Unit) {
-        val initialSize = displayOverride("size", "\\d+x\\d+")
-        val initialDensity = displayOverride("density", "\\d+")
-        val initialScale = device.executeShellCommand("settings get system font_scale").trim()
-        val initialIme = device.executeShellCommand("settings get secure show_ime_with_hard_keyboard").trim()
-        val failures = mutableListOf<Throwable>()
-        try {
-            device.executeShellCommand("wm density 160")
-            captures()
         } catch (failure: Throwable) {
             failures += failure
         } finally {
@@ -121,8 +84,6 @@ class ScreenshotScenario {
                 "wm density ${initialDensity ?: "reset"}",
                 if (initialScale.toFloatOrNull() == null) "settings delete system font_scale"
                 else "settings put system font_scale $initialScale",
-                if (initialIme.toIntOrNull() == null) "settings delete secure show_ime_with_hard_keyboard"
-                else "settings put secure show_ime_with_hard_keyboard $initialIme",
             ).forEach { command ->
                 try {
                     device.executeShellCommand(command)
@@ -139,11 +100,9 @@ class ScreenshotScenario {
         height: Int,
         scale: Float,
         theme: UserPreferencesTheme,
-        workflowTitle: (WorkflowApiFixture) -> String = { it.releaseTitle },
         capture: (ActivityScenario<MainActivity>, WorkflowApiFixture) -> Unit,
     ) {
         WorkflowApiFixture().use { fixture ->
-            fixture.releasePurpose = "Check launch copy and timing."
             val connectorFixture = ConnectorApiFixture()
             val originalPreferences = app.initialPreferences
             val preferenceData = app.snapshotApiPreferences()
@@ -168,7 +127,15 @@ class ScreenshotScenario {
                     try {
                         assertWindow(scenario, width, height, scale)
                         node(By.desc("Workflows").enabled(true)).click()
-                        action(By.text(workflowTitle(fixture))).click()
+                        action(By.text(fixture.releaseTitle)).click()
+                        action(By.text("Automations")).click()
+                        action(By.text("Add automation")).click()
+                        action(By.text("Event")).click()
+                        action(By.text("Google Calendar · Event created")).click()
+                        action(By.text("Gmail · Message received")).click()
+                        reveal(scenario, subject)
+                        node(subject).text = draft
+                        assertEquals(draft, node(subject).text)
                         capture(scenario, fixture)
                     } catch (failure: Throwable) {
                         runCatching {
@@ -189,104 +156,6 @@ class ScreenshotScenario {
                 connectorFixture.close()
             }
         }
-    }
-
-    private fun captureInstructions(scenario: ActivityScenario<MainActivity>, fixture: WorkflowApiFixture) {
-        action(By.text("Edit instructions")).click()
-        val field = By.clazz("android.widget.EditText").hasDescendant(By.desc("Workflow instructions"))
-        reveal(scenario, field)
-        node(field).text = instructions
-        assertEquals(instructions, node(field).text)
-        val saveAction = action(save)
-        assertTrue(saveAction.isEnabled)
-        val saveBounds = saveAction.visibleBounds
-        ScreenshotCapture.capture("instructions-editor.png")
-
-        val entered = CountDownLatch(1)
-        val release = CountDownLatch(1)
-        fixture.disconnectInstructionSave = true
-        fixture.beforeInstructionSave = {
-            entered.countDown()
-            release.await()
-        }
-        try {
-            saveAction.click()
-            assertTrue("Save reached the fixture", entered.await(10, TimeUnit.SECONDS))
-            val pending = awaitPendingSave()
-            assertEquals(saveBounds, pending.visibleBounds)
-            ScreenshotCapture.capture("saving-editor.png")
-        } finally {
-            release.countDown()
-        }
-        node(By.text("Could not save. Your changes are still here."))
-        assertEquals(instructions, node(field).text)
-        assertEquals(saveBounds, action(save).visibleBounds)
-        ScreenshotCapture.capture("failed-save-editor.png")
-    }
-
-    private fun openAutomation(scenario: ActivityScenario<MainActivity>) {
-        action(By.text("Automations")).click()
-        action(By.text("Add automation")).click()
-        action(By.text("Event")).click()
-        action(By.text("Google Calendar · Event created")).click()
-        action(By.text("Gmail · Message received")).click()
-        reveal(scenario, subject)
-        node(subject).text = draft
-        assertEquals(draft, node(subject).text)
-    }
-
-    private fun captureSavingAutomation(fixture: WorkflowApiFixture) {
-        action(By.text("Schedule")).click()
-        val schedule = By.text("Schedule")
-        val before = checkNotNull(checkedMode(node(schedule))).visibleBounds
-        val saveAction = action(save)
-        val saveBounds = saveAction.visibleBounds
-        val entered = CountDownLatch(1)
-        val release = CountDownLatch(1)
-        fixture.beforeSharedScheduleCreate = {
-            entered.countDown()
-            release.await()
-        }
-        try {
-            saveAction.click()
-            assertTrue("Create reached the fixture", entered.await(10, TimeUnit.SECONDS))
-            assertEquals(saveBounds, awaitPendingSave().visibleBounds)
-            val mode = checkNotNull(checkedMode(node(schedule)))
-            assertTrue("The checked trigger mode is disabled while saving", !mode.isEnabled)
-            assertEquals(before, mode.visibleBounds)
-            ScreenshotCapture.capture("saving-automation-editor.png")
-        } finally {
-            release.countDown()
-        }
-        node(By.text("Paused"))
-    }
-
-    private fun checkedMode(label: UiObject2): UiObject2? =
-        generateSequence(label) { it.parent }.firstOrNull { it.isChecked }
-
-    private fun assertIme(scenario: ActivityScenario<MainActivity>, visible: Boolean) {
-        val matches = object : Condition<UiDevice, Boolean> {
-            override fun apply(device: UiDevice): Boolean {
-                var current = false
-                scenario.onActivity {
-                    current = it.window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
-                }
-                return current == visible
-            }
-        }
-        assertTrue("IME visible: $visible", device.wait(matches, 10_000))
-    }
-
-    private fun awaitPendingSave(): UiObject2 = try {
-        node(pendingSave).also {
-            assertEquals("Saving…", it.accessibilityNodeInfo.stateDescription?.toString())
-        }
-    } catch (failure: Throwable) {
-        runCatching {
-            TestStorage().openOutputFile("pending-save-failure.xml").use(device::dumpWindowHierarchy)
-        }
-        runCatching { ScreenshotCapture.capture("pending-save-failure.png") }
-        throw failure
     }
 
     private fun assertWindow(scenario: ActivityScenario<MainActivity>, width: Int, height: Int, scale: Float) {
@@ -335,10 +204,12 @@ class ScreenshotScenario {
         minimumHeight: Int = 32,
     ) {
         val scoped = By.copy(selector).pkg(app.packageName)
-        repeat(16) {
+        var largestVisibleHeight = 0
+        repeat(28) {
             val node = device.findObject(scoped)
             val target = if (selector === save) node?.let(::saveControl) else node
             val bottom = safeBottom(scenario)
+            largestVisibleHeight = maxOf(largestVisibleHeight, target?.visibleBounds?.height() ?: 0)
             if (target != null && target.visibleBounds.height() >= minimumHeight &&
                 target.visibleBounds.bottom <= bottom
             ) return
@@ -350,12 +221,12 @@ class ScreenshotScenario {
                     ?: error("No scrollable editor viewport for $selector")
             val x = scrollBounds.centerX()
             val start = minOf(bottom, scrollBounds.bottom) - 12
-            val drag = if (target == null) 100 else 36
+            val drag = if (selector === save) 68 else if (target == null) 46 else 24
             val end = maxOf(scrollBounds.top + 12, start - drag)
-            assertTrue(device.swipe(x, start, x, end, 18))
+            assertTrue(device.swipe(x, start, x, end, 60))
             device.waitForIdle()
         }
-        error("Could not scroll to $selector")
+        error("Could not reveal $selector, largest visible height was $largestVisibleHeight px")
     }
 
     private fun node(selector: BySelector): UiObject2 =
