@@ -34,6 +34,7 @@ import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
 import ai.okou.android.workflows.WorkflowService
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 
@@ -93,6 +94,7 @@ open class TestOkouApplication : OkouApplication() {
     var chatService: ChatListService = TestChatService()
     var workflows: WorkflowService? = null
     var initialPreferences: UserPreferences? = null
+    @Volatile var screenshotPreferencesGate: CompletableDeferred<Unit>? = null
     internal var preferenceWrite:
         suspend (UpdatePreferencesRequest, () -> UserPreferences) -> UserPreferences =
         { _, save ->
@@ -190,7 +192,10 @@ open class TestOkouApplication : OkouApplication() {
             override suspend fun organization() =
                 testOrganization(identity.workspaceId).copy(role = workspaceRole)
 
-            override suspend fun preferences() = stored()
+            override suspend fun preferences(): UserPreferences {
+                screenshotPreferencesGate?.await()
+                return stored()
+            }
 
             override suspend fun updatePreferences(
                 update: UpdatePreferencesRequest,
