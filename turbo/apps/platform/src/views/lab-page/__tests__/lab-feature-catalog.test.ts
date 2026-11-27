@@ -108,6 +108,7 @@ test("lab-page-002 Each staff-visible feature has exactly one switch under its r
 
 test.each([
   [FeatureSwitchKey.PresentationOutputFormat, "Beta"],
+  [FeatureSwitchKey.ChatListHoverPreview, "Beta"],
   [FeatureSwitchKey.MarkdownFirstOutput, "Released"],
 ] as const)("Staff see %s enabled by default in %s", async (key, stage) => {
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
@@ -189,7 +190,7 @@ test.each([
 
 test.each([
   [FeatureSwitchKey.PresentationOutputFormat, "Beta"],
-  [FeatureSwitchKey.ChatListHoverPreview, "Alpha"],
+  [FeatureSwitchKey.ChatListHoverPreview, "Beta"],
 ] as const)(
   "Any Lab tester can find %s in %s, opt in, and reset it",
   async (featureKey, stage) => {

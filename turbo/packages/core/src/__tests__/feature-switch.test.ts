@@ -22,13 +22,13 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it("defaults chat list hover previews to Bingjie and allows everyone to opt in", () => {
+  it("defaults chat list hover previews to Bingjie and staff and honors personal overrides", () => {
     const key = FeatureSwitchKey.ChatListHoverPreview;
-    for (const identity of [
-      { userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV" },
-      { email: "BINGJIE@OKOU.AI" },
+    for (const context of [
+      { userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV", orgId: "external-org" },
+      { email: "BINGJIE@OKOU.AI", orgId: "external-org" },
+      { userId: "staff-colleague", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
     ]) {
-      const context = { ...identity, orgId: "external-org" };
       expect(isFeatureSwitchAvailable(key, context)).toBe(true);
       expect(isFeatureEnabled(key, context)).toBe(true);
       expect(getAllFeatureStates(context)[key]).toBe(true);
@@ -39,7 +39,7 @@ describe("isFeatureEnabled", () => {
     for (const identity of [
       {},
       { userId: "external-user", orgId: "external-org" },
-      { userId: "staff-colleague", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { userId: "staff-colleague", orgId: "external-org" },
     ]) {
       expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
       expect(isFeatureEnabled(key, identity)).toBe(false);
