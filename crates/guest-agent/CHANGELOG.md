@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.113.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.10...guest-agent-v0.113.11) (2026-11-27)
+
+
+### Bug Fixes
+
+* **runner:** continue on reused home storage path conflicts ([#51209](https://github.com/okou-ai/okou/issues/51209)) ([3b5b850](https://github.com/okou-ai/okou/commit/3b5b850feefe88f6001e7ea90a8dcf48e20d568e))
+
 ## [0.113.10](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.9...guest-agent-v0.113.10) (2026-11-26)
 
 
