@@ -370,7 +370,8 @@ class BuiltInToolsSettingsTest {
 
         // The first read still sees the enabled value, and the earlier disable can commit later.
         assertEquals(listOf(false), writes)
-        assertEquals(mapOf(webSearchTool to true), settings.state.value.savingTools)
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
+        assertTrue(webSearchTool in settings.state.value.savingTools)
         fixture.setEnabled(webSearchTool, false)
         advanceTimeBy(3_000)
         runCurrent()
@@ -380,6 +381,39 @@ class BuiltInToolsSettingsTest {
         assertTrue(settings.state.value.savingTools.isEmpty())
         assertTrue(webSearchTool !in fixture.disabledTools())
         assertTrue(notices.isEmpty())
+    }
+
+    @Test
+    fun latestChoiceInAReopenedSettingsVisitReceivesItsSaveFailure() = runTest {
+        val fixture = ToolFixture()
+        val service =
+            object : BuiltInToolsService by fixture {
+                override suspend fun setEnabled(id: String, enabled: Boolean): Boolean {
+                    if (enabled) throw ApiFailure.Http(403, null, null, null)
+                    throw ApiFailure.Http(503, null, null, null)
+                }
+            }
+        val notices = mutableListOf<SettingsNotice>()
+        val settings = model(service, notice = { notices += it })
+        settings.show()
+        runCurrent()
+        settings.toggle(webSearchTool, false)
+        runCurrent()
+
+        settings.leaveSettings()
+        settings.show()
+        settings.toggle(webSearchTool, true)
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
+        assertTrue(webSearchTool in settings.state.value.savingTools)
+        assertTrue(notices.isEmpty())
+
+        fixture.setEnabled(webSearchTool, false)
+        advanceTimeBy(3_000)
+        runCurrent()
+
+        assertEquals(false, settings.state.value.enabled(webSearchTool))
+        assertTrue(settings.state.value.savingTools.isEmpty())
+        assertEquals(listOf(SettingsNotice.ToolSaveFailed), notices)
     }
 
     @Test
@@ -409,7 +443,8 @@ class BuiltInToolsSettingsTest {
         advanceTimeBy(3_000)
         runCurrent()
 
-        assertEquals(mapOf(webSearchTool to true), settings.state.value.savingTools)
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
+        assertTrue(webSearchTool in settings.state.value.savingTools)
         assertTrue(notices.isEmpty())
         advanceTimeBy(3_000)
         runCurrent()

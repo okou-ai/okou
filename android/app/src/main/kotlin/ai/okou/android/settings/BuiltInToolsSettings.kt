@@ -34,6 +34,8 @@ private sealed interface SettingWrite<out T> {
     data object NeedsReadback : SettingWrite<Nothing>
 }
 
+internal data class PendingToolChoice(val enabled: Boolean, val visit: Long)
+
 internal data class BuiltInToolsState(
     val catalog: SettingsRead<List<DataToolFamily>> = SettingsRead(),
     val disabled: Set<String>? = null,
@@ -43,12 +45,12 @@ internal data class BuiltInToolsState(
     val draftImage: String? = null,
     val savingImage: Boolean = false,
     val imageFailed: Boolean = false,
-    val savingTools: Map<String, Boolean> = emptyMap(),
+    val savingTools: Map<String, PendingToolChoice> = emptyMap(),
 ) {
     val displayedImage: String?
         get() = draftImage ?: confirmedImage
 
-    fun enabled(id: String): Boolean? = savingTools[id] ?: disabled?.let { id !in it }
+    fun enabled(id: String): Boolean? = savingTools[id]?.enabled ?: disabled?.let { id !in it }
 }
 
 /** One authorized workspace, with an image draft that lasts for one Settings visit. */
@@ -192,13 +194,13 @@ internal class BuiltInToolsSettings(
         val current = state.value
         val displayed = current.enabled(id)
         if (!visible || !authorized() || displayed == null || displayed == enabled) return
-        val currentVisit = visit
+        val choice = PendingToolChoice(enabled, visit)
         toolRevision++
-        mutable.update { it.copy(savingTools = it.savingTools + (id to enabled)) }
-        if (id !in current.savingTools) scope.launch { saveTool(id, enabled, currentVisit) }
+        mutable.update { it.copy(savingTools = it.savingTools + (id to choice)) }
+        if (id !in current.savingTools) scope.launch { saveTool(id, enabled) }
     }
 
-    private suspend fun saveTool(id: String, first: Boolean, currentVisit: Long) {
+    private suspend fun saveTool(id: String, first: Boolean) {
         var attempted = first
         while (authorized()) {
             val write = writeWithRetry { service.setEnabled(id, attempted) } ?: return
@@ -211,7 +213,8 @@ internal class BuiltInToolsSettings(
             currentCoroutineContext().ensureActive()
             if (!authorized()) return
             val latest = state.value.savingTools.getValue(id)
-            val followUp = confirmed != null && latest != attempted && latest != confirmed
+            val followUp =
+                confirmed != null && latest.enabled != attempted && latest.enabled != confirmed
             toolRevision++
             mutable.update { value ->
                 value.copy(
@@ -235,22 +238,23 @@ internal class BuiltInToolsSettings(
             }
             if (confirmed != null) state.value.disabled?.let(::cacheDisabled)
             if (!followUp) {
-                if (currentVisit == visit) {
+                if (latest.visit == visit) {
                     when {
                         confirmed == null && write != SettingWrite.Rejected ->
                             notice(SettingsNotice.ToolSaveUnconfirmed)
-                        state.value.enabled(id) != latest -> notice(SettingsNotice.ToolSaveFailed)
+                        state.value.enabled(id) != latest.enabled ->
+                            notice(SettingsNotice.ToolSaveFailed)
                     }
                 }
                 return
             }
-            attempted = latest
+            attempted = latest.enabled
         }
     }
 
     private suspend fun verifyToolWrite(id: String, attempted: Boolean): Boolean? = readResource {
         val observed = id !in service.disabledTools()
-        val latest = state.value.savingTools.getValue(id)
+        val latest = state.value.savingTools.getValue(id).enabled
         val evidence = settingReadback(attempted, latest) { it == observed }
         // A stale value cannot settle the write or release another PATCH for the same tool.
         observed.takeUnless { evidence == SettingReadback.Unconfirmed }
