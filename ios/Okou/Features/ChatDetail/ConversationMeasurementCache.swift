@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class ConversationMeasurementCache {
   struct Measurement: Equatable {
-    let row: ConversationCollectionRow
+    var row: ConversationCollectionRow
     let width: CGFloat
     let category: UIContentSizeCategory
     let environment: ConversationHeightDiskCache.Layout
@@ -26,10 +26,12 @@ final class ConversationMeasurementCache {
     for row: ConversationCollectionRow, width: CGFloat, category: UIContentSizeCategory,
     environment: ConversationHeightDiskCache.Layout
   ) -> Measurement? {
-    guard let value = entries[row.id], value.row == row, value.width == width,
-      value.category == category, value.environment == environment
+    guard let value = entries[row.id], value.row.hasSameMeasuredLayout(as: row),
+      value.width == width, value.category == category, value.environment == environment
     else { return nil }
-    return value
+    var matched = value
+    matched.row = row
+    return matched
   }
 
   func store(_ measurement: Measurement) {

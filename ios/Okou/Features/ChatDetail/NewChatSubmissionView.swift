@@ -65,19 +65,23 @@ struct NewChatSubmissionView: View {
 
   var body: some View {
     ScrollView {
-      UserMessageView(
-        message: submission.message.message, webURL: webURL, viewer: submission.viewer,
-        loadsAttachments: true, voicePlayback: submission.composer.voicePlayback,
-        sendTransition: submission.transition
-      ) {
-        if submission.isReadyForConversation, let conversation {
-          ConversationSendingIndicator(messageID: submission.message.id, conversation: conversation)
-        } else {
-          UserMessageSendingIndicator(sentAt: submission.message.createdAt)
+      VStack(alignment: .leading, spacing: 0) {
+        UserMessageView(
+          message: submission.message.message, webURL: webURL, viewer: submission.viewer,
+          loadsAttachments: true, voicePlayback: submission.composer.voicePlayback,
+          sendTransition: submission.transition
+        ) {
+          if submission.isReadyForConversation, let conversation {
+            ConversationSendingIndicator(
+              messageID: submission.message.id, conversation: conversation)
+          } else {
+            UserMessageSendingIndicator(sentAt: submission.message.createdAt)
+          }
         }
+        .padding(.horizontal, ConversationCollectionRow.messageHorizontalInset)
+        .padding(.top, OkouSpace.xl)
+        ConversationFooterView(state: .running, showsAvatar: true, avatarMotion: .animated)
       }
-      .padding(.horizontal, OkouSpace.xl)
-      .padding(.top, OkouSpace.xl)
     }
     .defaultScrollAnchor(.bottom, for: .initialOffset)
     .defaultScrollAnchor(.top, for: .alignment)

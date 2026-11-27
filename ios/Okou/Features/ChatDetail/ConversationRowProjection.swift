@@ -103,8 +103,16 @@ struct ConversationRowProjection {
           isSending: false))
       previousItem = item
     }
+    result.append(contentsOf: trailingRows(after: items))
+    return result
+  }
+
+  private func trailingRows(after items: [ConversationItem])
+    -> [ConversationCollectionRow.Content]
+  {
+    var rows: [ConversationCollectionRow.Content] = []
     let lastRunMessage = items.last { item in
-      guard let message = item.message, !message.isQueued else { return false }
+      guard let message = item.message else { return false }
       return history.latestRunID == nil || message.runID == nil
         || message.runID == history.latestRunID
     }
@@ -112,15 +120,30 @@ struct ConversationRowProjection {
     if let completion = transcript.completion {
       let source =
         models?.snapshot.usesFollowupPlaceholder == true ? nil : completion.recommendedFollowups
-      result.append(
+      rows.append(
         .finished(
           label: timeline.finishedLabel(
             completion, followups: source, finishedAt: history.latestRunFinishAt),
           followups: source, showsAvatar: statusNeedsAvatar))
     }
-    let showsActivity = history.executionState == .queued || history.executionState == .running
-    result.append(.footer(history.executionState, showsAvatar: showsActivity && statusNeedsAvatar))
-    return result
+    let hasOptimisticInput = transcript.pending.contains {
+      !$0.needsRetry && !history.persistedEventIDs.contains($0.id)
+    }
+    let footerState = Self.footerState(
+      executionState: history.executionState, hasOptimisticInput: hasOptimisticInput)
+    let showsActivity = ConversationFooterView.showsActivity(for: footerState)
+    rows.append(.footer(footerState, showsAvatar: showsActivity && statusNeedsAvatar))
+    return rows
+  }
+
+  /// A pending prompt without a delivery failure starts an optimistic running footer.
+  private static func footerState(
+    executionState: ChatExecutionState, hasOptimisticInput: Bool
+  ) -> ChatExecutionState {
+    if ConversationFooterView.showsActivity(for: executionState) {
+      return executionState
+    }
+    return hasOptimisticInput ? .running : executionState
   }
 
   private func continues(_ item: ConversationItem, after previous: ConversationItem) -> Bool {

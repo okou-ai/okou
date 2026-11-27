@@ -335,20 +335,9 @@ struct ChatDetailView: View {
           top: topSpacing, leading: ConversationCollectionRow.messageHorizontalInset,
           bottom: 0, trailing: ConversationCollectionRow.messageHorizontalInset))
     case .footer(let executionState, let showsAvatar):
-      VStack(alignment: .leading, spacing: OkouSpace.xxl) {
-        if executionState == .queued || executionState == .running {
-          HStack(spacing: OkouSpace.sm) {
-            if showsAvatar { assistantAvatar(motion) }
-            ConversationActivityLabel(
-              summary: conversation.activitySummary, state: executionState
-            )
-          }
-          .padding(.leading, showsAvatar ? 0 : OkouSpace.six)
-        }
-        Color.clear.frame(height: 1)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(EdgeInsets(top: 24, leading: 20, bottom: 20, trailing: 20))
+      ConversationFooterView(
+        state: executionState, showsAvatar: showsAvatar, avatarMotion: motion,
+        summary: conversation.activitySummary)
     case .usage(let runID, let answer):
       HStack(spacing: OkouSpace.sm) {
         if let answer { messageActions(for: answer) }

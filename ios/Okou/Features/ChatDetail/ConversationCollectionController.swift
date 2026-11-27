@@ -105,13 +105,17 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       scrolling.pendingScroll = nil
       collection.stopScrollingAndZooming()
       scrolling.animatesScroll = false
-      if let footer = dataSource.indexPath(for: "conversation-bottom"),
-        let frame = collection.layoutAttributesForItem(at: footer)?.frame
-      {
+      let insertion =
+        dataSource.indexPath(for: "conversation-finished")
+        ?? dataSource.indexPath(for: "conversation-bottom")
+      if let insertion, let frame = collection.layoutAttributesForItem(at: insertion)?.frame {
         let lastContent = source.rows.last(where: { $0.isMessageContent })
         let spacing: CGFloat =
           lastContent == nil ? 20 : (lastContent?.message?.role == .user ? 8 : 24)
-        source.sendTransition?.projectFlight(insertionY: frame.minY, topSpacing: spacing)
+        let footerHeight = Measurer.footerHeight(
+          state: .running, showsAvatar: true, traits: traitCollection)
+        source.sendTransition?.projectFlight(
+          insertionY: frame.minY, topSpacing: spacing, footerHeight: footerHeight)
       }
       source.phaseChanged(.animating)
     }
@@ -252,10 +256,13 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     let rows = source.rows
     var preparedMeasurements: [String: Measurement] = [:]
     for row in rows {
-      if let measured = measurements[row.id], measured.row == row, measured.width == width,
-        measured.category == category, measured.environment == environment
+      if let measured = measurements[row.id], measured.row.hasSameMeasuredLayout(as: row),
+        measured.width == width, measured.category == category,
+        measured.environment == environment
       {
-        preparedMeasurements[row.id] = measured
+        var updated = measured
+        updated.row = row
+        preparedMeasurements[row.id] = updated
       } else if let measured = source.measurements.measurement(
         for: row, width: width, category: category, environment: environment)
       {
@@ -277,7 +284,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
             && pendingRetry != true && message.role == .user && message.attachments.isEmpty
             && message.modelChange == nil && message.inputError == nil
             && message.userMessage?.parts.allSatisfy { $0.type == "text" } == true
-        case .footer(_, let showsAvatar): !showsAvatar
+        case .footer: true
         default: false
         }
       }
@@ -362,10 +369,12 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     var updatedMeasurements = prepared.measurements
     for row in rows {
       if let current = measurements[row.id], let prepared = updatedMeasurements[row.id],
-        current.row == prepared.row, current.width == prepared.width,
+        current.row.hasSameMeasuredLayout(as: prepared.row), current.width == prepared.width,
         current.category == prepared.category, current.environment == prepared.environment
       {
-        updatedMeasurements[row.id] = current
+        var preserved = current
+        preserved.row = prepared.row
+        updatedMeasurements[row.id] = preserved
       }
     }
     let changed = rows.filter {
