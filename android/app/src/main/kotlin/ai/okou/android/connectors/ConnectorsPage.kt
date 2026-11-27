@@ -66,7 +66,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -644,28 +643,28 @@ private fun ConnectorDirectoryRow(
     modifier: Modifier,
     open: () -> Unit,
 ) {
+    val hasDescription = entry.description.isNotBlank()
     WorkspaceToolDirectoryRow(
         title = entry.name,
         selected = selected,
         onClick = open,
         modifier = modifier,
         leading = { ConnectorMark(entry.icon, 20.dp) },
-    ) { supportingColor ->
-        if (entry.description.isNotBlank()) {
-            Text(
-                entry.description,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                style = connectorSmallType(),
-                color = supportingColor,
-            )
-        }
-        if (accounts.isNotEmpty()) ConnectorDirectoryStatus(accounts, supportingColor)
-    }
+        supportingContent =
+            if (hasDescription || accounts.isNotEmpty()) {
+                {
+                    Column {
+                        if (hasDescription)
+                            Text(entry.description, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (accounts.isNotEmpty()) ConnectorDirectoryStatus(accounts)
+                    }
+                }
+            } else null,
+    )
 }
 
 @Composable
-private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>, textColor: Color) {
+private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>) {
     val available = accounts.count { it.status == ConnectorAccountStatus.Connected }
     val attention = accounts.any { it.status.needsAttention }
     val message =
@@ -700,16 +699,7 @@ private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>, text
                     ),
             )
         }
-        Text(
-            message,
-            style =
-                MaterialTheme.typography.bodySmall.copy(
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    letterSpacing = 0.sp,
-                ),
-            color = textColor,
-        )
+        Text(message)
     }
 }
 

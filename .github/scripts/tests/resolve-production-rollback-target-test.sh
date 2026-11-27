@@ -41,9 +41,16 @@ set -euo pipefail
 printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
+  for-each-ref)
+    if [[ "$*" != *refs/tags/api-v* ]]; then exit 1; fi
+    if (( ${MOCK_PROACTIVE_READER_RELEASES:-2} >= 1 )); then echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; fi
+    if (( ${MOCK_PROACTIVE_READER_RELEASES:-2} >= 2 )); then echo bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; fi
+    ;;
   merge-base)
     if [ "${3:-}" = "${MOCK_CONNECTOR_IDENTITY_PREPARATION_COMMIT-c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3}" ]; then
       [ "${MOCK_CONNECTOR_IDENTITY_PREPARATION_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "a149a149a149a149a149a149a149a149a149a149" ]; then
+      [ "${MOCK_PROACTIVE_HISTORY_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eddbe0f4edae253b6a9240e0f312f25b36acad5b" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_STAFF_SINGLE_AGENT_RUNNER_VALID:-1}" = "1" ]
@@ -502,6 +509,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SSH_CANONICAL_TRANSPORT_COMMIT-4848484848484848484848484848484848484848}"
     elif [[ "$*" == *1382_retire_official_result_email_runtime.sql* ]]; then
       printf '%s\n' '4949494949494949494949494949494949494949'
+    elif [[ "$*" == *1653_archive_proactive_workflow_history.sql* ]]; then
+      echo a149a149a149a149a149a149a149a149a149a149
     elif [[ "$*" == *1638_retire_official_workflow_installation_state.sql* ]]; then
       printf '%s\n' '1638163816381638163816381638163816381638'
     elif [[ "$*" == *1386_drop_official_result_email_storage.sql* ]]; then
@@ -808,6 +817,13 @@ grep -Fxq "git merge-base --is-ancestor ${target_commit} ${target_commit}" "${tm
 
 # Staff activation must not select an API or Runner without the separately
 # deployed readers, even when the other artifact contains them.
+: >"${tmp_dir}/boundaries.log"
+# Expansion leaves the outgoing API eligible. Once two archive-capable API tags
+# exist, cleanup can have run and every rollback must preserve archive reads.
+run_resolver "${tmp_dir}/proactive-history-first.output" MOCK_PROACTIVE_READER_RELEASES=1 MOCK_PROACTIVE_HISTORY_READER_VALID=0 >"${tmp_dir}/proactive-history-first.log"
+assert_failure "Rollback target predates archived proactive workflow history" \
+  run_resolver "${tmp_dir}/proactive-history-retired.output" MOCK_PROACTIVE_READER_RELEASES=2 MOCK_PROACTIVE_HISTORY_READER_VALID=0
+
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates staff Single Agent preparation" \
   run_resolver "${tmp_dir}/staff-single-agent-api.output" MOCK_STAFF_SINGLE_AGENT_API_VALID=0

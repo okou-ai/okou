@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.66.4](https://github.com/okou-ai/okou/compare/android-v0.66.3...android-v0.66.4) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** scope loading feedback to the active read round ([#51483](https://github.com/okou-ai/okou/issues/51483)) ([6a7331e](https://github.com/okou-ai/okou/commit/6a7331ee6a4c57bc67dd102fa55e5983b2c3df1a))
+
 ## [0.66.3](https://github.com/okou-ai/okou/compare/android-v0.66.2...android-v0.66.3) (2026-11-27)
 
 

@@ -9,7 +9,6 @@ import type { infer as zInfer } from "zod";
 import { command } from "ccstate";
 import { and, asc, desc, eq, gt, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { feedItems } from "@okouai/db/schema/feed-item";
-import { workflows } from "@okouai/db/schema/workflow";
 import {
   FEED_PAGE_SIZE,
   SUGGESTION_RETENTION_MS,
@@ -27,7 +26,10 @@ import { safeJsonParse } from "../utils";
 import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { withSuggestionConsumeToken } from "./agent-suggestion-consumption-token";
-import { visibleWorkflowCondition } from "./workflow-visibility";
+import {
+  readableWorkflows,
+  visibleWorkflowCondition,
+} from "./workflow-visibility";
 import { builtInWorkflow } from "./builtin-workflows";
 
 interface Owner {
@@ -97,19 +99,19 @@ const feedAutomationDescriptions$ = command(
     }
     const rows = await get(db$)
       .select({
-        id: workflows.id,
-        definitionName: workflows.officialDefinitionName,
+        id: readableWorkflows.id,
+        definitionName: readableWorkflows.officialDefinitionName,
         description: sql`coalesce(
-          ${workflows.archivedOfficialSnapshot}#>>'{revision,definition,workflow,description}',
-          ${workflows.description}
+          ${readableWorkflows.archivedOfficialSnapshot}#>>'{revision,definition,workflow,description}',
+          ${readableWorkflows.description}
         )`.mapWith(nullableDriverValueDecoder(pgTextDecoder)),
       })
-      .from(workflows)
+      .from(readableWorkflows)
       .where(
         and(
-          eq(workflows.orgId, auth.orgId),
-          inArray(workflows.id, workflowIds),
-          visibleWorkflowCondition(auth.userId),
+          eq(readableWorkflows.orgId, auth.orgId),
+          inArray(readableWorkflows.id, workflowIds),
+          visibleWorkflowCondition(auth.userId, readableWorkflows),
         ),
       );
     signal.throwIfAborted();

@@ -121,8 +121,13 @@ internal fun ArtifactsRoute(
         if (current == null || searchArtifactId != null) {
             onClose()
         } else {
-            returnFocus.returningFrom(current, inputMode.inputMode)
+            returnFocus.returningFrom(
+                current,
+                inputMode.inputMode,
+                previousIndex = page.selectedRowIndex,
+            )
             page.selectedId = null
+            page.selectedRowIndex = null
             model.select(null)
         }
     }
@@ -153,6 +158,10 @@ internal fun ArtifactsRoute(
                 returnFocus = returnFocus,
                 onSelect = { item ->
                     returnFocus.cancel()
+                    page.selectedRowIndex =
+                        position.layoutInfo.visibleItemsInfo
+                            .firstOrNull { it.key == item.id }
+                            ?.index
                     if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     page.selectedId = item.id

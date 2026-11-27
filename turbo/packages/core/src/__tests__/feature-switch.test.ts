@@ -80,10 +80,10 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.MemberConnectorAccountAccess,
     FeatureSwitchKey.ComposerVoiceMessages,
     FeatureSwitchKey.HideEmptyForYou,
-    FeatureSwitchKey.MarkdownArtifactQuote,
     FeatureSwitchKey.ArtifactLibrary,
     FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
+    FeatureSwitchKey.PresentationConvert,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
@@ -256,26 +256,6 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults presentation conversion off for everyone else, including staff", () => {
-    for (const context of [
-      {},
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-      {
-        userId: "staff-colleague",
-        email: "ethan@okou.ai",
-        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      },
-      { userId: "external-user", orgId: "org_nonexistent" },
-    ]) {
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.PresentationConvert, context),
-      ).toBe(false);
-      expect(
-        getAllFeatureStates(context)[FeatureSwitchKey.PresentationConvert],
-      ).toBe(false);
-    }
-  });
-
   it("should return true for globally enabled switch", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Dummy, {})).toBe(true);
   });
@@ -382,7 +362,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.Lab]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
+    expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
@@ -487,11 +467,8 @@ describe("getFeatureSwitchMetadata", () => {
     expect(metadata[FeatureSwitchKey.ComposerVoiceMessages].rolloutStage).toBe(
       "beta",
     );
-    expect(metadata[FeatureSwitchKey.MarkdownArtifactQuote].rolloutStage).toBe(
-      "beta",
-    );
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
-      "alpha",
+      "beta",
     );
     expect(
       metadata[FeatureSwitchKey.PresentationOutputFormat].rolloutStage,

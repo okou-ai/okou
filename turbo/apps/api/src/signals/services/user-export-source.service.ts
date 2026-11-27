@@ -43,7 +43,7 @@ import {
   memberMemories,
   memoryVersions,
 } from "@okouai/db/schema/member-memory";
-import { workflows } from "@okouai/db/schema/workflow";
+import { readableWorkflows } from "./workflow-visibility";
 
 import { nowDate } from "../../lib/time";
 import {
@@ -805,29 +805,31 @@ const collectWorkflow$ = command(
     }
     const [workflow] = await db
       .select({
-        id: workflows.id,
-        orgId: workflows.orgId,
-        name: workflows.name,
-        displayName: workflows.displayName,
-        description: workflows.description,
-        instruction: workflows.instruction,
-        visibility: workflows.visibility,
-        officialDefinitionName: workflows.officialDefinitionName,
-        archivedOfficialSnapshot: workflows.archivedOfficialSnapshot,
-        createdAt: workflows.createdAt,
-        updatedAt: workflows.updatedAt,
+        id: readableWorkflows.id,
+        orgId: readableWorkflows.orgId,
+        name: readableWorkflows.name,
+        displayName: readableWorkflows.displayName,
+        description: readableWorkflows.description,
+        instruction: readableWorkflows.instruction,
+        visibility: readableWorkflows.visibility,
+        officialDefinitionName: readableWorkflows.officialDefinitionName,
+        archivedOfficialSnapshot: readableWorkflows.archivedOfficialSnapshot,
+        createdAt: readableWorkflows.createdAt,
+        updatedAt: readableWorkflows.updatedAt,
       })
-      .from(workflows)
+      .from(readableWorkflows)
       .where(
         and(
-          inArray(workflows.orgId, checkpoint.orgIds),
+          inArray(readableWorkflows.orgId, checkpoint.orgIds),
           // Export only workflows owned by the requester.
-          eq(workflows.ownerUserId, args.userId),
-          lte(workflows.createdAt, startedBefore(checkpoint)),
-          checkpoint.cursor ? gt(workflows.id, checkpoint.cursor) : undefined,
+          eq(readableWorkflows.ownerUserId, args.userId),
+          lte(readableWorkflows.createdAt, startedBefore(checkpoint)),
+          checkpoint.cursor
+            ? gt(readableWorkflows.id, checkpoint.cursor)
+            : undefined,
         ),
       )
-      .orderBy(asc(workflows.id))
+      .orderBy(asc(readableWorkflows.id))
       .limit(1);
     signal.throwIfAborted();
     if (!workflow) {

@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,6 +42,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -77,7 +77,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -329,24 +328,21 @@ private fun ArtifactAction(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(12.dp)
     OutlinedButton(
         onClick = onClick,
         modifier =
-            modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).workspaceSearchFocusOutline(shape),
+            modifier
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .workspaceSearchFocusOutline(ButtonDefaults.outlinedShape),
         enabled = enabled,
-        shape = shape,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
     ) {
         FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(ButtonDefaults.IconSpacing),
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
-            if (icon != null) Icon(painterResource(icon), null, Modifier.size(18.dp))
-            Text(
-                stringResource(label),
-                style = artifactSmallText().copy(fontWeight = FontWeight(550)),
-            )
+            if (icon != null)
+                Icon(painterResource(icon), null, Modifier.size(ButtonDefaults.IconSize))
+            Text(stringResource(label))
         }
     }
 }

@@ -75,9 +75,14 @@ export const setupWorkflowDetailPage$ = command(
       set(detachedNavigateTo$, ROUTES.workflows, { replace: true });
       return;
     }
-    // Official Workflows are system-managed: Morning Brief is configured in
-    // Settings, and no other Official Workflow has a user-facing page.
-    if (detail.official) {
+    // A direct link to a retained snapshot opens its read-only files. Old settings
+    // shortcuts without snapshot content keep their original destination.
+    const hasArchivedContent =
+      detail.official?.definitionLifecycle === "retired" &&
+      (!isMorningBriefDefinitionName(detail.official.definitionName) ||
+        Boolean(detail.instruction) ||
+        Boolean(detail.files?.length));
+    if (detail.official && !hasArchivedContent) {
       if (isMorningBriefDefinitionName(detail.official.definitionName)) {
         const searchParams = new URLSearchParams({
           settings: MORNING_BRIEF_PREFERENCES_SECTION,

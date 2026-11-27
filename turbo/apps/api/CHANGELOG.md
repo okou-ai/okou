@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.140.1](https://github.com/okou-ai/okou/compare/api-v2.140.0...api-v2.140.1) (2026-11-27)
+
+
+### Performance Improvements
+
+* **artifacts:** batch covers behind the library switch ([#51464](https://github.com/okou-ai/okou/issues/51464)) ([3462fe6](https://github.com/okou-ai/okou/commit/3462fe66da1741d8902e7f846e852ecca1775756))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.141.0
+    * @okouai/core bumped to 8.887.8
+    * @okouai/db bumped to 2.72.1
+    * @okouai/pi-agent-runtime bumped to 1.52.103
+
 ## [2.140.0](https://github.com/okou-ai/okou/compare/api-v2.139.1...api-v2.140.0) (2026-11-27)
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.251.40](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.39...runner-rs-v0.251.40) (2026-11-27)
+
+
+### Refactoring
+
+* **runner:** share model usage test terminal hooks ([#51473](https://github.com/okou-ai/okou/issues/51473)) ([d521866](https://github.com/okou-ai/okou/commit/d521866c6e1f9e1b2ff0a90d553a16abb7049c36))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.39](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.38...runner-rs-v0.251.39) (2026-11-27)
 
 ### Release Dependencies
