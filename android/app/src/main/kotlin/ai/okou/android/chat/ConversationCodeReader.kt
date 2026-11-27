@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.FeedbackReceipt
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.updates.updateFocusOutline
@@ -57,6 +58,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -91,11 +93,34 @@ internal data class ConversationCodeVisit(
 
 internal class ConversationCodeReading(
     private val saved: MutableState<ConversationCodeVisit?>,
-    val previewFeedback: SnackbarHostState,
 ) {
     val visit by saved
     var returning by mutableStateOf<ConversationCodeVisit?>(null)
         private set
+
+    var previewFeedback by mutableStateOf<List<FeedbackReceipt<Int>>>(emptyList())
+        private set
+
+    private var feedbackThreadId: String? = null
+
+    fun showFeedbackFor(threadId: String?) {
+        if (feedbackThreadId == threadId) return
+        feedbackThreadId = threadId
+        previewFeedback = emptyList()
+    }
+
+    fun reportFeedback(threadId: String, message: Int) {
+        if (feedbackThreadId != threadId) return
+        val pending =
+            if (message == R.string.conversation_code_copied)
+                previewFeedback.filterNot { it.value == message }
+            else previewFeedback
+        previewFeedback = pending + FeedbackReceipt(message)
+    }
+
+    fun dismissFeedback(receipt: FeedbackReceipt<Int>) {
+        previewFeedback = previewFeedback - receipt
+    }
 
     fun open(
         threadId: String,
@@ -130,7 +155,7 @@ internal data class ConversationCodeActions(
     val open: (ConversationCodeTarget, previewOffsetPx: Int) -> Unit,
     val returning: ConversationCodeVisit?,
     val restored: (ConversationCodeVisit) -> Unit,
-    val feedback: SnackbarHostState,
+    val feedback: (Int) -> Unit,
 )
 
 internal data class ConversationCodeBody(
@@ -325,7 +350,12 @@ private fun FullCodePage(
 ) {
     val colors = MaterialTheme.colorScheme
     val feedback = remember { SnackbarHostState() }
-    val copy = copyConversationCode(source?.text.orEmpty(), feedback)
+    val resources = LocalResources.current
+    val scope = rememberCoroutineScope()
+    val copy =
+        copyConversationCode(source?.text.orEmpty()) { message ->
+            scope.launch { feedback.showSnackbar(resources.getString(message)) }
+        }
     val backFocus = remember { FocusRequester() }
     val input = LocalInputModeManager.current
     var expansionFocused by remember { mutableStateOf(false) }
@@ -503,23 +533,21 @@ private fun CodeIconButton(
 }
 
 @Composable
-private fun copyConversationCode(source: String, feedback: SnackbarHostState): () -> Unit {
+private fun copyConversationCode(source: String, feedback: (Int) -> Unit): () -> Unit {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val copied = stringResource(R.string.conversation_code_copied)
-    val failed = stringResource(R.string.conversation_code_copy_failed)
     return {
         scope.launch {
             val message =
                 try {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(null, source)))
-                    copied.takeIf { Build.VERSION.SDK_INT < 33 }
+                    R.string.conversation_code_copied.takeIf { Build.VERSION.SDK_INT < 33 }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: RuntimeException) {
-                    failed
+                    R.string.conversation_code_copy_failed
                 }
-            if (message != null) feedback.showSnackbar(message)
+            message?.let(feedback)
         }
     }
 }

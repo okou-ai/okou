@@ -24,7 +24,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -47,6 +49,9 @@ import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DefaultModelSettingsTest {
+    private val DefaultModelSettings.notices
+        get() = state.mapNotNull { it.saveFeedback }.distinctUntilChanged().mapNotNull { it.value }
+
     @get:Rule val temporary = TemporaryFolder()
 
     private fun TestScope.model(
