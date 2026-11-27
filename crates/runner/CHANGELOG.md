@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.252.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.42...runner-rs-v0.252.0) (2026-11-27)
+
+
+### Features
+
+* carry builtin firewall placeholders to runner ([#51568](https://github.com/okou-ai/okou/issues/51568)) ([1491876](https://github.com/okou-ai/okou/commit/149187644f73ac84bce660e192eab03ad38c251f))
+
+
+### Refactoring
+
+* **runner:** centralize positive model usage checks ([#51605](https://github.com/okou-ai/okou/issues/51605)) ([6dc29c6](https://github.com/okou-ai/okou/commit/6dc29c6fac405727cdd1c1409bfa3387f2187932))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.42](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.41...runner-rs-v0.251.42) (2026-11-27)
 
 

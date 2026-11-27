@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/okou-ai/okou/compare/runner-types-v0.19.18...runner-types-v0.20.0) (2026-11-27)
+
+
+### Features
+
+* carry builtin firewall placeholders to runner ([#51568](https://github.com/okou-ai/okou/issues/51568)) ([1491876](https://github.com/okou-ai/okou/commit/149187644f73ac84bce660e192eab03ad38c251f))
+
 ## [0.19.18](https://github.com/okou-ai/okou/compare/runner-types-v0.19.17...runner-types-v0.19.18) (2026-11-27)
 
 ## [0.19.17](https://github.com/okou-ai/okou/compare/runner-types-v0.19.16...runner-types-v0.19.17) (2026-11-27)

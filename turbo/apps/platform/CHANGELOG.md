@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1197.0](https://github.com/okou-ai/okou/compare/app-v0.1196.3...app-v0.1197.0) (2026-11-27)
+
+
+### Features
+
+* **platform:** allow renaming remote devices ([#51545](https://github.com/okou-ai/okou/issues/51545)) ([da8e9a8](https://github.com/okou-ai/okou/commit/da8e9a8cf879e42a1a402c98d2b891a91703e404))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.142.0
+    * @okouai/connectors bumped to 3.27.0
+    * @okouai/core bumped to 8.887.11
+    * @okouai/ui bumped to 1.22.50
+
 ## [0.1196.3](https://github.com/okou-ai/okou/compare/app-v0.1196.2...app-v0.1196.3) (2026-11-27)
 
 
