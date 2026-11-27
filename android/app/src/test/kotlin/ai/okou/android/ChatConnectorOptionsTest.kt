@@ -330,6 +330,7 @@ class ChatConnectorOptionsTest {
         compose.onNodeWithTag(calendarTag).performClick()
         waitTag("chat-connector-selection-$replacementId")
         compose.onNodeWithTag(primaryTag).assertDoesNotExist()
+        compose.onNodeWithText("This account is no longer available.").assertDoesNotExist()
         val overviewRead = "/api/chat-connector-overview" to CHAT_PERSONAL
         val accountsRead = "/api/connector-accounts/connections" to CONNECTOR_CALENDAR
         assertEquals(2, app.connectors.chatConnectorReads.count { it == overviewRead })

@@ -504,6 +504,7 @@ internal fun ChatConnectorOptionsButton(
                                     ChatConnectorServiceRow(
                                         service,
                                         onClick = {
+                                            options.dismissFailure(target)
                                             presentation =
                                                 presentation.copy(
                                                     page = ComposerOptionsPage.ConnectorAccounts,
