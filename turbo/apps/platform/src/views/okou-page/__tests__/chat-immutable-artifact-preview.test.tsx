@@ -7,7 +7,6 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -158,7 +157,6 @@ async function setupPublication(
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     sharedWorkerTestTransport: "message-port",
-    featureSwitches: { [FeatureSwitchKey.MarkdownArtifactQuote]: true },
   });
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription(TOPIC)).toBeTruthy();
