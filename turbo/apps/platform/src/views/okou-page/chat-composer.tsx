@@ -2285,13 +2285,13 @@ function ConnectorsPopoverButton({
         collisionAvoidance={{ fallbackAxisSide: "none" }}
         positionerClassName={
           deviceMode
-            ? "max-sm:inset-x-2! max-sm:top-auto! max-sm:bottom-[max(.5rem,env(safe-area-inset-bottom))]! max-sm:transform-none!"
+            ? "max-sm:inset-x-2! max-sm:top-auto! max-sm:bottom-[max(.5rem,var(--okou-safe-b,0px),var(--okou-keyboard-scroll-reserve,0px))]! max-sm:transform-none!"
             : undefined
         }
         className={cn(
           "flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0",
           deviceMode &&
-            "h-96 w-80 max-w-[var(--available-width)] max-sm:max-h-[calc(100dvh-1rem-env(safe-area-inset-bottom))] max-sm:w-full max-sm:max-w-none",
+            "h-96 w-80 max-w-[var(--available-width)] max-sm:max-h-[calc(100dvh-.5rem-max(.5rem,var(--okou-safe-b,0px),var(--okou-keyboard-scroll-reserve,0px)))] max-sm:w-full max-sm:max-w-none",
         )}
       >
         {popoverOpen && (
