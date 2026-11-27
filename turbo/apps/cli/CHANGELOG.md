@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.44.23](https://github.com/okou-ai/okou/compare/cli-v10.44.22...cli-v10.44.23) (2026-11-27)
+
+
+### Bug Fixes
+
+* **platform:** rename remote control to remote devices ([#51289](https://github.com/okou-ai/okou/issues/51289)) ([536a7d9](https://github.com/okou-ai/okou/commit/536a7d9383f1baee74d2c12050476a2a5c688e3d))
+
 ## [10.44.22](https://github.com/okou-ai/okou/compare/cli-v10.44.21...cli-v10.44.22) (2026-11-27)
 
 

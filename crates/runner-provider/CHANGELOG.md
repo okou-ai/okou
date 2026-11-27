@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.25](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.24...runner-provider-v0.21.25) (2026-11-27)
+
+
+### Bug Fixes
+
+* **runner:** continue on reused home storage path conflicts ([#51209](https://github.com/okou-ai/okou/issues/51209)) ([3b5b850](https://github.com/okou-ai/okou/commit/3b5b850feefe88f6001e7ea90a8dcf48e20d568e))
+
 ## [0.21.24](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.23...runner-provider-v0.21.24) (2026-11-26)
 
 

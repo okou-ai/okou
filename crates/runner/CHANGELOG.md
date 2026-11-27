@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.251.30](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.29...runner-rs-v0.251.30) (2026-11-27)
+
+
+### Bug Fixes
+
+* **runner:** continue on reused home storage path conflicts ([#51209](https://github.com/okou-ai/okou/issues/51209)) ([3b5b850](https://github.com/okou-ai/okou/commit/3b5b850feefe88f6001e7ea90a8dcf48e20d568e))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.29](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.28...runner-rs-v0.251.29) (2026-11-27)
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.71.0](https://github.com/okou-ai/okou/compare/ios-v0.70.2...ios-v0.71.0) (2026-11-27)
+
+
+### Features
+
+* **ios:** accept follow-up suggestions from composer primary slot ([#51286](https://github.com/okou-ai/okou/issues/51286)) ([7ebaab9](https://github.com/okou-ai/okou/commit/7ebaab990143b3c9968a5ec37092e26abc6a4684))
+
+
+### Bug Fixes
+
+* **ios:** match web thread motion, completion and day dividers ([#51170](https://github.com/okou-ai/okou/issues/51170)) ([445c951](https://github.com/okou-ai/okou/commit/445c9518defb3bb86f104d8e26c06066dafb2ea0))
+
 ## [0.70.2](https://github.com/okou-ai/okou/compare/ios-v0.70.1...ios-v0.70.2) (2026-11-27)
 
 
