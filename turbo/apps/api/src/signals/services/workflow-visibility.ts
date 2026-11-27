@@ -1,13 +1,20 @@
-import { LEGACY_PROACTIVE_WORKFLOW_NAMES } from "./proactive-workflow-definitions";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, eq, isNull, notInArray, or, type SQLWrapper } from "drizzle-orm";
+import { and, eq, isNull, or, type SQLWrapper } from "drizzle-orm";
 
 /** Scope the surrounding query to the caller's workspace. */
 export function visibleWorkflowCondition(userId: string | SQLWrapper) {
   return or(
     eq(workflows.visibility, "public"),
     eq(workflows.ownerUserId, userId),
+  );
+}
+
+/** Collection and slash resolution expose only user-authored workflows. */
+export function userWorkflowCondition(userId: string) {
+  return and(
+    isNull(workflows.officialDefinitionName),
+    visibleWorkflowCondition(userId),
   );
 }
 
@@ -21,10 +28,5 @@ export function automationWorkflowJoinCondition() {
 }
 
 export function dispatchableWorkflowCondition() {
-  return or(
-    isNull(workflows.officialDefinitionName),
-    notInArray(workflows.officialDefinitionName, [
-      ...LEGACY_PROACTIVE_WORKFLOW_NAMES,
-    ]),
-  );
+  return isNull(workflows.officialDefinitionName);
 }

@@ -33,12 +33,12 @@ export function resolveChatThreadContinuation(
   thread: PickedChatThread,
   args: {
     readonly cliAgentType: string | null;
-    readonly officialWorkflow: boolean;
+    readonly allowNativeResume: boolean;
     readonly admission: ChatThreadContinuation["admission"];
   },
 ): ChatThreadContinuation {
   const reusable =
-    !args.officialWorkflow &&
+    args.allowNativeResume &&
     thread.framework !== null &&
     thread.framework === args.cliAgentType &&
     thread.frameworkSessionId !== null &&
@@ -50,7 +50,7 @@ export function resolveChatThreadContinuation(
     // having durable Chat messages. The Guest also recovers if native-file
     // validation prevents resuming an otherwise current binding.
     recoveryPrompt:
-      !args.officialWorkflow &&
+      args.allowNativeResume &&
       (thread.frameworkSessionRunId !== null ||
         thread.frameworkSessionId !== null)
         ? NATIVE_CONTEXT_RECOVERY_PROMPT

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.66.2](https://github.com/okou-ai/okou/compare/android-v0.66.1...android-v0.66.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** align connector account forms with shared design ([#51434](https://github.com/okou-ai/okou/issues/51434)) ([7bf19b0](https://github.com/okou-ai/okou/commit/7bf19b0a95514a626b9c83a9800900e5403855a3))
+* **android:** keep email subscription controls in place ([#51430](https://github.com/okou-ai/okou/issues/51430)) ([9b19266](https://github.com/okou-ai/okou/commit/9b192667bb1b83edf8a5eb2a62b15f67f6bd94d7))
+* **android:** keep the workspace palette behind system bars ([#51436](https://github.com/okou-ai/okou/issues/51436)) ([378b740](https://github.com/okou-ai/okou/commit/378b740a51d18cf4df388aad9dbe14c8951330fd))
+* **android:** preserve hosted artifact scroll during preview loading ([#51425](https://github.com/okou-ai/okou/issues/51425)) ([cc9d43f](https://github.com/okou-ai/okou/commit/cc9d43fd57593daba3a1cd0a9a61b88d92b07662))
+* **android:** share originals from chat file previews ([#51450](https://github.com/okou-ai/okou/issues/51450)) ([1cbc36a](https://github.com/okou-ai/okou/commit/1cbc36ac10712d010a3168558e09970799fe0bc6))
+
 ## [0.66.1](https://github.com/okou-ai/okou/compare/android-v0.66.0...android-v0.66.1) (2026-11-27)
 
 

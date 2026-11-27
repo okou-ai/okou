@@ -4,6 +4,7 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.AndroidUpdatesRelease
+import ai.okou.android.api.retryAfterDelayMillis
 import java.io.Closeable
 import java.io.EOFException
 import java.io.File
@@ -11,6 +12,7 @@ import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.SocketException
 import java.net.UnknownHostException
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
@@ -527,7 +529,7 @@ class AppUpdates(
 }
 
 private fun Exception.retryAfter() =
-    (this as? ApiFailure.Http)?.retryAfterSeconds?.takeIf { it >= 0 }?.seconds
+    retryAfterDelayMillis((this as? ApiFailure.Http)?.retryAfterSeconds)?.milliseconds
 
 private fun Exception.isTemporaryNetworkFailure(): Boolean =
     when (this) {

@@ -118,7 +118,7 @@ import {
 import type { RouteEntry } from "../route-entry";
 import { sendNormalEvent$ } from "../services/chat-events.command";
 import {
-  OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
+  RETIRED_WORKFLOW_RUN_MESSAGE,
   OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE,
 } from "../services/official-workflow-constants";
 
@@ -250,7 +250,7 @@ const listComposerWorkflowsInner$ = computed(async (get) => {
     body: workflows.flatMap((workflow) => {
       // A private override shadows the public workflow of the same name, so
       // only the override is a command the composer can offer.
-      return workflow.official || workflow.shadowedBy
+      return workflow.shadowedBy
         ? []
         : [
             {
@@ -918,9 +918,7 @@ const deleteWorkflowInner$ = command(
       return workflowNotFound(params.workflowId);
     }
     if (visible.workflow.officialDefinitionName !== null) {
-      return conflict(
-        "Uninstall Official Workflows through the Official installation endpoint",
-      );
+      return conflict(OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE);
     }
 
     const permissionError = requireWorkflowPermission(
@@ -1395,7 +1393,7 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const { workflow } = visible;
   if (workflow.officialDefinitionName !== null) {
-    return conflict(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE);
+    return conflict(RETIRED_WORKFLOW_RUN_MESSAGE);
   }
 
   const currentTime = nowDate();

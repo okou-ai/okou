@@ -6,20 +6,28 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import {
+  computerUseCommandAuditEvents,
+  computerUseCommands,
+} from "@okouai/db/schema/computer-use-host";
 import { remoteDevices } from "@okouai/db/schema/remote-device";
 import { and, eq, exists, getTableName, isNull, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { badRequestMessage, notFound } from "../../lib/error";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { array, boolean, object, uuid } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { isForeignKeyViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
+  publishPhoneUseDevicesChanged,
   publishRemoteDevicesChangedSafely,
+  publishUserSignal,
 } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
@@ -30,6 +38,7 @@ import {
   remoteDeviceMode$,
   remoteDeviceRunActive,
   remoteDeviceStatementTime,
+  type RemoteDeviceOwner,
 } from "../services/remote-device-access";
 import {
   channelTables,
@@ -37,6 +46,9 @@ import {
   remoteDeviceView,
 } from "../services/remote-device-directory";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
+import { publishRemoteRunnerInvalidation$ } from "../services/remote-runtime-wakeup.service";
+import { publishSshRuntimeInvalidation$ } from "../services/ssh-runtime-wakeup.service";
+import { publishVncNetworkReferenceChange } from "../services/vnc-connection.service";
 
 const missing = notFound("Remote device not found");
 const remoteDeviceFields = Object.freeze({
@@ -216,6 +228,113 @@ const setAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: remoteDeviceView(row) };
 });
 
+const deletionResult = object({
+  desktop_changed: boolean(),
+  ios_changed: boolean(),
+  ssh_ids: array(uuid()),
+  vnc_ids: array(uuid()),
+});
+
+async function deleteRemoteDeviceRows(
+  db: Db,
+  owner: RemoteDeviceOwner,
+  deviceId: string,
+) {
+  return parseRawRows(
+    deletionResult,
+    await db.execute(sql`
+    WITH target AS (
+      DELETE FROM ${remoteDevices}
+      WHERE ${ownedRemoteDevice(owner, deviceId)}
+      RETURNING id
+    ), desktop AS (
+      DELETE FROM ${channelTables.desktop}
+      WHERE remote_device_id = (SELECT id FROM target)
+      RETURNING id
+    ), desktop_commands AS (
+      DELETE FROM ${computerUseCommands}
+      WHERE host_id IN (SELECT id FROM desktop)
+      RETURNING id
+    ), desktop_audit AS (
+      DELETE FROM ${computerUseCommandAuditEvents}
+      WHERE EXISTS (SELECT FROM desktop)
+        AND org_id = ${owner.orgId} AND user_id = ${owner.userId}
+        AND (
+          host_id IN (SELECT id FROM desktop)
+          OR command_id IN (SELECT id FROM desktop_commands)
+        )
+    ), ios AS (
+      DELETE FROM ${channelTables.ios}
+      WHERE remote_device_id = (SELECT id FROM target)
+      RETURNING id
+    ), vnc AS (
+      DELETE FROM ${channelTables.vnc}
+      WHERE remote_device_id = (SELECT id FROM target)
+      RETURNING id
+    ), ssh AS (
+      DELETE FROM ${channelTables.ssh}
+      WHERE remote_device_id = (SELECT id FROM target)
+      RETURNING id
+    )
+    SELECT EXISTS (SELECT FROM desktop) AS desktop_changed,
+           EXISTS (SELECT FROM ios) AS ios_changed,
+           ARRAY(SELECT id FROM ssh) AS ssh_ids,
+           ARRAY(SELECT id FROM vnc) AS vnc_ids
+    FROM target
+  `),
+  );
+}
+
+const deleteDevice$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const owner = get(organizationAuthContext$);
+  const { deviceId } = get(pathParamsOf(remoteDevicesContract.delete));
+  const deleted = await settle(
+    deleteRemoteDeviceRows(set(writeDb$), owner, deviceId),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!deleted.ok) {
+    if (
+      isForeignKeyViolation(deleted.error, "vnc_connections_ssh_owner_fk") ||
+      isForeignKeyViolation(deleted.error, "vnc_connections_kdc_ssh_owner_fk")
+    ) {
+      return conflict(
+        "Remove the channel dependency on the other device before deleting this one.",
+      );
+    }
+    if (
+      isForeignKeyViolation(deleted.error) ||
+      safeSqlStateCode(deleted.error) === "40P01"
+    ) {
+      return conflict("The device changed. Try deleting it again.");
+    }
+    throw deleted.error;
+  }
+  const [result] = deleted.value;
+  if (!result) {
+    return missing;
+  }
+  await Promise.all([
+    publishRemoteDevicesChangedSafely(owner),
+    result.desktop_changed &&
+      publishUserSignal([owner.userId], "computerUseHostsChanged"),
+    result.ios_changed && publishPhoneUseDevicesChanged(owner),
+    result.ssh_ids.length > 0 &&
+      set(publishSshRuntimeInvalidation$, {
+        ...owner,
+        connectionIds: result.ssh_ids,
+      }),
+    set(
+      publishRemoteRunnerInvalidation$,
+      { ...owner, connectionIds: result.vnc_ids },
+      "vnc",
+    ),
+    result.vnc_ids.length > 0 && publishVncNetworkReferenceChange(owner),
+  ]);
+  signal.throwIfAborted();
+  return { status: 204 as const, body: undefined };
+});
+
 const approve$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = get(organizationAuthContext$);
   const { threadId } = get(pathParamsOf(remoteDevicesContract.approve));
@@ -282,6 +401,10 @@ export const remoteDevicesRoutes: readonly RouteEntry[] = [
   {
     route: remoteDevicesContract.setAccess,
     handler: authRoute(ownerAuth, setAccess$),
+  },
+  {
+    route: remoteDevicesContract.delete,
+    handler: authRoute(ownerAuth, deleteDevice$),
   },
   {
     route: remoteDevicesContract.approve,

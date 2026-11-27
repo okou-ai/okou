@@ -1,5 +1,7 @@
-import { officialWorkflowLifecycleSchema } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { visibleWorkflowCondition } from "./workflow-visibility";
+import {
+  userWorkflowCondition,
+  visibleWorkflowCondition,
+} from "./workflow-visibility";
 import { command, computed, type Computed } from "ccstate";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import type {
@@ -7,14 +9,10 @@ import type {
   WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, asc, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
 
 import { db$ } from "../external/db";
-import {
-  pgTextDecoder,
-  zodDriverValueDecoder,
-} from "../../lib/db-structured-result";
-import { builtInWorkflow } from "./builtin-workflows";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 
 export interface WorkflowMember {
   readonly userId: string;
@@ -190,13 +188,6 @@ function workflowRunPrioritySort(userId: string): SQL[] {
   ];
 }
 
-function injectableWorkflowCondition(userId: string): SQL {
-  return and(
-    isNull(workflows.officialDefinitionName),
-    or(eq(workflows.visibility, "public"), eq(workflows.ownerUserId, userId)),
-  ) as SQL;
-}
-
 function shadowWinnerFromRows(
   rows: readonly { readonly workflow: WorkflowSummaryRow }[],
   member: WorkflowMember,
@@ -261,7 +252,7 @@ export const readWorkflowShadowWinner$ = command(
         and(
           eq(workflows.orgId, args.orgId),
           eq(workflows.name, args.workflow.name),
-          injectableWorkflowCondition(args.member.userId),
+          userWorkflowCondition(args.member.userId),
         ),
       )
       .orderBy(...workflowRunPrioritySort(args.member.userId))
@@ -291,10 +282,6 @@ export function workflowList(args: {
           displayName: workflows.displayName,
           description: workflows.description,
           officialDefinitionName: workflows.officialDefinitionName,
-          archivedLifecycle:
-            sql`${workflows.archivedOfficialSnapshot}->>'lifecycle'`.mapWith(
-              zodDriverValueDecoder(officialWorkflowLifecycleSchema.nullable()),
-            ),
           importSource: workflows.importSource,
           createdAt: workflows.createdAt,
         },
@@ -303,7 +290,7 @@ export function workflowList(args: {
       .where(
         and(
           eq(workflows.orgId, args.orgId),
-          visibleWorkflowCondition(args.member.userId),
+          userWorkflowCondition(args.member.userId),
         ),
       )
       .orderBy(asc(workflows.name));
@@ -317,11 +304,6 @@ export function workflowList(args: {
         member: args.member,
         shadowedBy:
           winner && winner.id !== row.workflow.id ? winner : undefined,
-        officialDefinitionLifecycle: row.workflow.officialDefinitionName
-          ? (builtInWorkflow(row.workflow.officialDefinitionName)?.lifecycle ??
-            row.workflow.archivedLifecycle ??
-            "unavailable")
-          : undefined,
       });
     });
   });

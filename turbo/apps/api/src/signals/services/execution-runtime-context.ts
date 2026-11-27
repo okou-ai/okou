@@ -170,8 +170,7 @@ export const prepareExecutionRuntimeContext$ = command(
             ...executionModelConfiguration(
               run,
               model,
-              run.triggerSource === "proactive" ||
-                packages.officialWorkflowBundles.length > 0,
+              run.triggerSource === "proactive",
             ),
             featureFlags: facts.featureFlags,
             realAgentInPreview: facts.realAgentInPreview,
@@ -206,11 +205,7 @@ export const prepareExecutionRuntimeContext$ = command(
             seedSkillBundles: packages.seedSkillBundles.map(({ mount }) => {
               return mount;
             }),
-            officialWorkflowBundles: packages.officialWorkflowBundles.map(
-              ({ mount }) => {
-                return mount;
-              },
-            ),
+            officialWorkflowBundles: [],
             templateGuidanceBundles: packages.templateGuidanceBundles,
           };
           return {

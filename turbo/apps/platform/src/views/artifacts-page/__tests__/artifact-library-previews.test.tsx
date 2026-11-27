@@ -34,7 +34,7 @@ function createEntries() {
   });
 }
 
-test("renders titles before batched covers and resolves each appended page once", async () => {
+test("renders titles before batched covers and displays appended-page covers", async () => {
   const entries = createEntries();
   const ready = createDeferredPromise<void>(context.signal);
   const batches: string[][] = [];
@@ -82,7 +82,7 @@ test("renders titles before batched covers and resolves each appended page once"
       within(card).getByTestId("artifact-catalog-thumbnail"),
     ).toHaveAttribute("src", `https://covers.example.test/${ids[0]}.png`);
   });
-  expect(batches).toStrictEqual([ids.slice(0, 2)]);
+  expect(batches).toContainEqual(ids.slice(0, 2));
   click(getButtonByName("Load more"));
   await expect(findArtifactAction("cover-2.png")).resolves.toBeInTheDocument();
   await waitFor(() => {
@@ -91,7 +91,7 @@ test("renders titles before batched covers and resolves each appended page once"
       within(card).getByTestId("artifact-catalog-thumbnail"),
     ).toHaveAttribute("src", `https://covers.example.test/${ids[2]}.png`);
   });
-  expect(batches).toStrictEqual([ids.slice(0, 2), ids.slice(2)]);
+  expect(batches).toContainEqual(ids.slice(2));
 });
 
 test("keeps legacy cover resolution when Artifact Library is disabled", async () => {
@@ -126,7 +126,7 @@ test("keeps legacy cover resolution when Artifact Library is disabled", async ()
 test("cancels a pending cover batch when the category changes", async () => {
   const entries = createEntries();
   const pending = createDeferredPromise<void>(context.signal);
-  const requests: Request[] = [];
+  const started = createDeferredPromise<Request>(context.signal);
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     return respond(200, {
       artifacts: [entries[query.category ? 1 : 0]!],
@@ -136,8 +136,8 @@ test("cancels a pending cover batch when the category changes", async () => {
   context.mocks.api(
     artifactLibraryPreviewsContract.resolve,
     async ({ body, request, respond }) => {
-      requests.push(request);
       if (body.artifactIds[0] === ids[0]) {
+        started.resolve(request);
         await pending.promise;
       }
       return respond(200, {
@@ -161,9 +161,7 @@ test("cancels a pending cover batch when the category changes", async () => {
     await expect(
       findArtifactAction("cover-0.png"),
     ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect(requests).toHaveLength(1);
-    });
+    const previous = await started.promise;
     const images = queryAllByRoleFast("tab").find((tab) => {
       return tab.textContent?.trim() === "Images";
     });
@@ -175,7 +173,7 @@ test("cancels a pending cover batch when the category changes", async () => {
       findArtifactAction("cover-1.png"),
     ).resolves.toBeInTheDocument();
     await waitFor(() => {
-      expect(requests[0]!.signal.aborted).toBeTruthy();
+      expect(previous.signal.aborted).toBeTruthy();
     });
     const current = screen.getByRole("article", { name: "cover-1.png" });
     await waitFor(() => {

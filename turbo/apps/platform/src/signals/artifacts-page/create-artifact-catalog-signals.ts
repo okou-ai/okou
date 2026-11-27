@@ -188,28 +188,26 @@ export interface ArtifactCatalogSignals extends ArtifactCatalogViewSignals {
   readonly cancelQuery$: Command<void, []>;
 }
 
-const loadLibraryPreviews$ = command(
-  async ({ get }, artifactIds: string[], signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const response = await accept(
-      get(apiClient$)(artifactLibraryPreviewsContract).resolve({
-        body: { artifactIds },
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-      { showErrorToast: false },
-    );
-    return response.body.previews;
-  },
-);
+async function loadLibraryPreviews(
+  createClient: ApiClientFactory,
+  artifactIds: string[],
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const response = await accept(
+    createClient(artifactLibraryPreviewsContract).resolve({
+      body: { artifactIds },
+      fetchOptions: { signal },
+    }),
+    [200],
+    signal,
+    { showErrorToast: false },
+  );
+  return response.body.previews;
+}
 
 function artifactLibraryPageRequest(
   ownerSignal: AbortSignal,
-  loadPreviews: (
-    ids: string[],
-    signal: AbortSignal,
-  ) => Promise<ArtifactLibraryPreview[]>,
 ): CatalogPageRequest {
   return async (createClient, query, signal) => {
     const requestSignal = signal
@@ -244,7 +242,7 @@ function artifactLibraryPageRequest(
     const requestPreviews = () => {
       return artifactIds.length === 0
         ? Promise.resolve([])
-        : loadPreviews(artifactIds, requestSignal);
+        : loadLibraryPreviews(createClient, artifactIds, requestSignal);
     };
     return {
       ...result.body,
@@ -269,9 +267,7 @@ function createArtifactLibraryQuerySignals(
     signal.throwIfAborted();
     const requestSignal = set(resetRequests$, signal);
     set(internalRequest$, () => {
-      return artifactLibraryPageRequest(requestSignal, (ids, signal) => {
-        return set(loadLibraryPreviews$, ids, signal);
-      });
+      return artifactLibraryPageRequest(requestSignal);
     });
   });
   const debounceSearch$ = debounceCommand(

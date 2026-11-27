@@ -1,8 +1,8 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.NativeAboveLabelPadding
 import ai.okou.android.OkouFormActions
 import ai.okou.android.OkouFormFieldSupport
-import ai.okou.android.OkouFormLabel
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.RenameDraft
@@ -44,6 +44,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldLabelPosition
+import androidx.compose.material3.TextFieldLabelScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -109,6 +110,7 @@ internal fun ConnectorRenameSheet(
         stringResource(R.string.connector_rename_title),
         cancel,
         dismissible = action?.busy != true,
+        compactForm = true,
         feedback = readFeedback,
         actions = {
             OkouFormActions(
@@ -252,7 +254,7 @@ internal fun ConnectorAuthorizationSheet(
         title,
         cancel,
         dismissible = canDismiss,
-        expandInShortWindow = true,
+        compactForm = true,
         feedback = readFeedback,
         actions = {
             OkouFormActions(
@@ -536,13 +538,24 @@ private fun ConnectorInput(
         if (supportingText != null)
             okouFormSupportingTextHeight() + OkouFormLayout.SupportingTextGap
         else 0.dp
-    val shape = MaterialTheme.shapes.medium
-    val padding = OkouFormLayout.FieldPadding
+    val labelStyle = MaterialTheme.typography.bodySmall
+    val fieldLabel: (@Composable TextFieldLabelScope.() -> Unit)? =
+        if (showLabel) {
+            { Text(label, style = labelStyle) }
+        } else null
     val placeholderContent: (@Composable () -> Unit)? = placeholder?.let {
         { Text(it, style = connectorBodyType()) }
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val labelHeight = if (showLabel) okouFormLabelHeight(label, constraints.maxWidth) else 0.dp
+        val labelHeight =
+            if (showLabel)
+                okouFormLabelHeight(
+                    label,
+                    constraints.maxWidth,
+                    labelStyle,
+                    NativeAboveLabelPadding,
+                )
+            else 0.dp
         val field =
             modifier
                 .fillMaxWidth()
@@ -559,16 +572,11 @@ private fun ConnectorInput(
                 inputTransformation = InputTransformation { if (readOnly) revertAllChanges() },
                 textObfuscationMode = TextObfuscationMode.Hidden,
                 labelPosition = TextFieldLabelPosition.Above(),
-                label =
-                    if (showLabel) {
-                        { OkouFormLabel(label) }
-                    } else null,
+                label = fieldLabel,
                 isError = errorMessage != null,
                 supportingText = supportingText,
-                shape = shape,
                 textStyle = okouFormInputStyle(),
                 placeholder = placeholderContent,
-                contentPadding = padding,
             )
         } else {
             OutlinedTextField(
@@ -576,17 +584,12 @@ private fun ConnectorInput(
                 modifier = field,
                 readOnly = readOnly,
                 labelPosition = TextFieldLabelPosition.Above(),
-                label =
-                    if (showLabel) {
-                        { OkouFormLabel(label) }
-                    } else null,
+                label = fieldLabel,
                 isError = errorMessage != null,
                 supportingText = supportingText,
                 lineLimits = TextFieldLineLimits.SingleLine,
-                shape = shape,
                 textStyle = okouFormInputStyle(),
                 placeholder = placeholderContent,
-                contentPadding = padding,
             )
         }
     }

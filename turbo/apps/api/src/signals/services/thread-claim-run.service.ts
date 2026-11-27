@@ -40,9 +40,7 @@ import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
-import { createOfficialWorkflowSignal } from "./thread-official-workflow.signals";
-import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
-import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
+import { RETIRED_WORKFLOW_RUN_MESSAGE } from "./official-workflow-constants";
 import {
   checkRunServiceTier,
   type ThreadModelError,
@@ -146,10 +144,6 @@ import {
   recordQueuedPromptRunLaunch$,
 } from "./internal-chat-run-callback.service";
 import { FEISHU_RUN_FILE_INDEX_KIND } from "./feishu-run-file-index";
-import {
-  OfficialWorkflowRunAdmissionError,
-  type OfficialWorkflowObservation,
-} from "./official-workflow-run.service";
 import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
 import {
   type PendingLaunchClaim,
@@ -260,7 +254,6 @@ import { isWebChatContextId } from "./web-chat-queue-context.service";
 
 import {
   EVENT_POLICY,
-  type WorkflowAutomationEventType,
   type WorkflowAutomationEventPayload,
   workflowAutomationEventTypeSchema,
 } from "./workflow-automation-context.service";
@@ -375,9 +368,7 @@ function assertQueuedPromptContext(args: {
   readonly requiredOfficialWorkflowIds: readonly string[] | null;
 }): void {
   if (args.requiredOfficialWorkflowIds !== null) {
-    throw new QueuedPromptLaunchUnavailableError(
-      OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
-    );
+    throw new QueuedPromptLaunchUnavailableError(RETIRED_WORKFLOW_RUN_MESSAGE);
   }
   const hasWebContextId = isWebChatContextId(args.contextId);
   if (args.contextType === "web" && !hasWebContextId) {
@@ -443,7 +434,6 @@ type ChatQueueRunAssembly =
   | ({
       readonly kind: "assembled";
       readonly run: ThreadRunCommand;
-      readonly officialWorkflow: OfficialWorkflowObservation | undefined;
       readonly runPrompt: PreparedRunPrompt;
       readonly rejection: ClaimRejectionContext;
       readonly launchRecord: ClaimLaunchRecord;
@@ -504,7 +494,6 @@ type LaunchAutomation = ThreadAutomationTarget["automation"];
 
 function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   readonly workflowName: string | null;
-  readonly officialDefinitionName: string | null;
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
   readonly automation: LaunchAutomation;
@@ -522,13 +511,8 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
     callbacks: buildWorkflowAutomationCallbacks(
       args.automation,
       args.chatThreadId,
-      eventType,
     ),
     ...EVENT_POLICY[eventType],
-    ...(eventType === "manual" &&
-    proactiveWorkflowKind(args.officialDefinitionName) === "learning"
-      ? { recordLastRunId: false, recordLastRunAt: false }
-      : {}),
   };
 }
 
@@ -697,18 +681,9 @@ interface WorkflowAutomationQueuedLaunchMaterial {
 function buildWorkflowAutomationCallbacks(
   automation: LaunchAutomation,
   chatThreadId: string,
-  eventType: WorkflowAutomationEventType,
 ): RunLaunchCallbackRecord[] {
   const callbacks: RunLaunchCallbackRecord[] = [];
-  // Debug adds one delivery and never settles the daily schedule occurrence.
-  const nightlyManual =
-    eventType === "manual" &&
-    automation.officialBlueprintKey === "nightly-learning";
-  if (
-    automation.kind === "schedule" &&
-    eventType !== "morning-brief-debug" &&
-    !nightlyManual
-  ) {
+  if (automation.kind === "schedule") {
     if (automation.scheduleType === "loop") {
       callbacks.push({
         internalKind: "workflow-automation:loop",
@@ -1260,10 +1235,6 @@ export function createThreadClaimRunObjects(
       if ("error" in templates) {
         return reject(templates.error);
       }
-      const officialWorkflow = await get(officialWorkflow$);
-      if (isRouteError(officialWorkflow)) {
-        return reject(officialWorkflow.body.error);
-      }
       const runPrompt = await get(preparedRunPrompt$);
       if (isRouteError(runPrompt)) {
         return reject(runPrompt.body.error);
@@ -1306,7 +1277,6 @@ export function createThreadClaimRunObjects(
           ...(head.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
         },
         promptContinuation: session,
-        officialWorkflow,
         runPrompt,
         rejection: queuedPromptRejectionContext(args, delivery),
         launchRecord: {
@@ -1499,23 +1469,20 @@ export function createThreadClaimRunObjects(
       const autonomyBudget = await get(automationBudget$);
       const { event, target } = input;
       if (
-        target.workflow.officialDefinitionName !== null &&
-        event.eventType === "manual" &&
-        proactiveWorkflowKind(target.workflow.officialDefinitionName) !==
-          "learning"
+        target.workflow.officialDefinitionName !== null ||
+        target.automation.officialBlueprintKey !== null ||
+        event.eventType === "morning-brief-debug"
       ) {
         return {
           kind: "rejected",
           rejection: {
-            error: conflict(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE).body
-              .error,
+            error: conflict(RETIRED_WORKFLOW_RUN_MESSAGE).body.error,
             userId: head.userId,
           },
         };
       }
       const material = buildWorkflowAutomationQueuedLaunchMaterial({
         workflowName: event.workflowName,
-        officialDefinitionName: target.workflow.officialDefinitionName,
         eventType: event.eventType,
         eventPayload: await get(threadContext.automationPayload$),
         automation: target.automation,
@@ -1575,10 +1542,6 @@ export function createThreadClaimRunObjects(
       if ("status" in model) {
         return reject(model.body.error);
       }
-      const officialWorkflow = await get(officialWorkflow$);
-      if (isRouteError(officialWorkflow)) {
-        return reject(officialWorkflow.body.error);
-      }
       const runPrompt = await get(preparedRunPrompt$);
       if (isRouteError(runPrompt)) {
         return reject(runPrompt.body.error);
@@ -1599,7 +1562,6 @@ export function createThreadClaimRunObjects(
             launch.autonomyBudget,
           ),
         },
-        officialWorkflow,
         runPrompt,
         rejection: { userId: automation.ownerUserId },
         launchRecord: {
@@ -1700,7 +1662,6 @@ export function createThreadClaimRunObjects(
     return (
       gate ?? {
         args,
-        officialWorkflow: assembly.officialWorkflow,
         runPrompt: assembly.runPrompt,
         pricedBuiltInRoute: model.pricedBuiltInRoute,
       }
@@ -1713,6 +1674,10 @@ export function createThreadClaimRunObjects(
   );
   const preparedRunPrompt$ = computed(
     async (get): Promise<PreparedRunPrompt | CreateRunErrorResult> => {
+      const route = await get(threadContext.modelRoute$);
+      if (isRouteError(route)) {
+        return route;
+      }
       const result = await settle(get(promptResources.prompt$));
       if (!result.ok) {
         if (result.error instanceof RunPromptError) {
@@ -1720,9 +1685,6 @@ export function createThreadClaimRunObjects(
           return result.error.code === "BAD_REQUEST"
             ? badRequestMessage(result.error.message)
             : conflict(result.error.message);
-        }
-        if (result.error instanceof OfficialWorkflowRunAdmissionError) {
-          return conflict(result.error.message);
         }
         throw result.error;
       }
@@ -1749,10 +1711,6 @@ export function createThreadClaimRunObjects(
       get(connectorAdmission$),
     ]);
   });
-  const officialWorkflow$ = createOfficialWorkflowSignal(
-    pickedEvent$,
-    threadContext,
-  );
   const memoryOwner = { orgId: bootstrap.orgId, userId: bootstrap.userId };
   const memoryHeadAfterInitialization$ = createMemberMemoryHead(memoryOwner);
   const authorizedRunRoute$ = computed(async (get) => {
@@ -1833,7 +1791,7 @@ export function createThreadClaimRunObjects(
       if (!input || isRouteError(input)) {
         return input;
       }
-      const { args, officialWorkflow: officialWorkflowRun, runPrompt } = input;
+      const { args, runPrompt } = input;
       const usage = (async () => {
         const runtime = await get(runModelInputs$);
         if (
@@ -1912,7 +1870,6 @@ export function createThreadClaimRunObjects(
           content,
           selectedImageModel: runPrompt.selectedImageModel,
           launchSnapshot,
-          officialWorkflowProvenance: officialWorkflowRun?.provenance,
           modelProvider: persistedModelProvider(modelProvider),
         },
         runner: {
@@ -2148,16 +2105,12 @@ export function createThreadClaimRunObjects(
     };
   });
   const runnerPackages$ = computed(async (get) => {
-    const [route, officialWorkflow, automation] = await Promise.all([
+    const [route, automation] = await Promise.all([
       get(authorizedRunRoute$),
-      get(officialWorkflow$),
       get(isAutomation$),
     ]);
     if (isRouteError(route)) {
       return route;
-    }
-    if (isRouteError(officialWorkflow)) {
-      return officialWorkflow;
     }
     const timing = get(threadContext.dispatchTiming$);
     const [startupSources, packageSources, ordinaryAutomation] =
@@ -2170,21 +2123,16 @@ export function createThreadClaimRunObjects(
             return get(threadContext.executionPackageSources$);
           },
         ),
-        automation && !officialWorkflow?.definitions.length
-          ? get(threadContext.automationTarget$)
-          : null,
+        automation ? get(threadContext.automationTarget$) : null,
       ]);
     const { mounts, memoryMountPath } = prepareRunPackageMounts({
       framework: route.framework,
       sources: startupSources,
-      officialWorkflow,
     });
-    const selected = selectExecutionPackages(packageSources, {
-      officialWorkflowNames: mounts.officialWorkflowBundles.map(({ name }) => {
-        return name;
-      }),
+    const selected = selectExecutionPackages(
+      packageSources,
       ordinaryAutomation,
-    });
+    );
     if ("error" in selected) {
       return conflict(selected.error);
     }
@@ -2992,8 +2940,6 @@ interface ThreadRunPersistenceContext {
   readonly content: ThreadRunContent;
   readonly selectedImageModel: ImageModel | null;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
-  readonly officialWorkflowProvenance:
-    OfficialWorkflowObservation["provenance"] | undefined;
   readonly modelProvider: Pick<
     ResolvedModelProviderEnvironment,
     | "accountIdentity"
@@ -3028,7 +2974,6 @@ interface LaunchRunRowsArgs {
   readonly apiStartTime: number;
   readonly runnerGroup: string;
   readonly launchSnapshot: AgentRunLaunchSnapshot;
-  readonly officialWorkflowProvenance: ThreadRunPersistenceContext["officialWorkflowProvenance"];
 }
 
 function launchRunValues(
@@ -3047,7 +2992,6 @@ function launchRunValues(
     storageMounts: [args.memoryMount],
     runnerGroup: args.runnerGroup,
     launchSnapshot: args.launchSnapshot,
-    officialWorkflowProvenance: args.officialWorkflowProvenance ?? null,
     completedAt: null,
     ...metadata,
   };
@@ -3160,7 +3104,6 @@ function preparedLaunchRowsArgs(
     apiStartTime: commit.createArgs.apiStartTime,
     runnerGroup: commit.launch.runnerGroup,
     launchSnapshot: commit.context.launchSnapshot,
-    officialWorkflowProvenance: commit.context.officialWorkflowProvenance,
   };
 }
 
@@ -3746,10 +3689,7 @@ function pendingAtomicLaunchPlan(
     creditChargePolicy:
       context.rowsArgs.content.triggerSource === "proactive"
         ? "platform_proactive"
-        : context.rowsArgs.officialWorkflowProvenance &&
-            context.rowsArgs.agentRunMetadata.workflowAutomationId
-          ? "official_workflow_free"
-          : "standard",
+        : "standard",
   });
   const attribution = new QueryBuilder()
     .$with("inserted_launch_billing_attribution", {

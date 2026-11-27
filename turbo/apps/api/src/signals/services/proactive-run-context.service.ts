@@ -17,7 +17,7 @@ import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import {
   MORNING_BRIEF_INSTRUCTION,
   PROACTIVE_SUGGESTIONS_INSTRUCTION,
-} from "./builtin-workflow-instructions";
+} from "./proactive-task-instructions";
 import { PROACTIVE_LEARNING_INSTRUCTION } from "./proactive-nightly-instructions";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 

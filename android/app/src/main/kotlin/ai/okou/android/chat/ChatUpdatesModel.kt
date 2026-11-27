@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.api.continuousRetryDelays
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -72,11 +73,11 @@ class ChatUpdatesModel(
                 if (!current(ticket)) return
                 publishPhase(RealtimePhase.Unavailable)
                 onFailure(error)
-                val retryAfter = dependencyRetryAfterMillis(error) ?: return
+                val retryDelay = dependencyRetryDelayMillis(error, retryIndex) ?: return
                 // An active SDK observation handles its own reconnections. Start over only after
                 // it has ended and released its subscriptions and token request.
-                delay(maxOf(chatReadRetryDelays[retryIndex], retryAfter))
-                retryIndex = (retryIndex + 1).coerceAtMost(chatReadRetryDelays.lastIndex)
+                delay(retryDelay)
+                retryIndex = (retryIndex + 1).coerceAtMost(continuousRetryDelays.lastIndex)
             }
         }
     }

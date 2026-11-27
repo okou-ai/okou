@@ -219,7 +219,7 @@ describe("okou workflow view command", () => {
   });
 
   describe("error handling", () => {
-    it("guides an official-only name reference toward explicit-ID management", async () => {
+    it("reports a missing user workflow for a legacy installation returned by an older API", async () => {
       server.use(
         http.get("http://localhost:3000/api/workflows", () => {
           return HttpResponse.json([
@@ -240,10 +240,8 @@ describe("okou workflow view command", () => {
       expect(mockConsoleError).toHaveBeenCalledWith(
         expect.stringContaining("Workflow not found"),
       );
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "Use a Workflow ID to view or manage an Official Workflow",
-        ),
+      expect(mockConsoleError).not.toHaveBeenCalledWith(
+        expect.stringContaining("Official Workflow"),
       );
       expect(mockExit).toHaveBeenCalledWith(1);
     });

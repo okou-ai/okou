@@ -4,6 +4,8 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.AttachmentStorageRejection
 import ai.okou.android.api.MaxChatAttachmentBytes
 import ai.okou.android.api.boundedApiRetryDelayMillis
+import ai.okou.android.api.continuousRetryDelayMillis
+import ai.okou.android.api.continuousRetryDelays
 import ai.okou.android.api.generated.CanonicalInteger1
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.ResetSubscriptionResultOutcome
@@ -11,6 +13,8 @@ import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.SendRequestVariant1UserMessage
 import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant1
 import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant1Type
+import ai.okou.android.api.retryAfterDelayMillis
+import ai.okou.android.api.retryAfterSeconds
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.connectors.ChatConnectorOverride
 import ai.okou.android.connectors.ConnectorService
@@ -622,8 +626,7 @@ internal class ChatComposerOwner(
             is ApiFailure.Network -> ChatDependencyRetryDelayMillis
             is ApiFailure.Http ->
                 if (error.status in 500..599 || error.status in setOf(408, 425, 429))
-                    error.retryAfterSeconds?.coerceIn(0, Long.MAX_VALUE / 1_000)?.times(1_000)
-                        ?: ChatDependencyRetryDelayMillis
+                    retryAfterDelayMillis(error.retryAfterSeconds) ?: ChatDependencyRetryDelayMillis
                 else null
             else -> null
         }
@@ -1319,13 +1322,13 @@ internal class ChatComposerOwner(
     }
 
     private suspend fun deliverAutomatically(op: Operation) {
-        val retrySeconds = longArrayOf(3, 3, 6, 12, 24, 48)
         var failures = 0
         val first = checkNotNull(mutable.value.journal?.entries?.get(op.key)?.pending)
         op.connection.chatList?.showOutgoingActivity(first)
         while (true) {
             requireCurrent(op)
             val pending = checkNotNull(mutable.value.journal?.entries?.get(op.key)?.pending)
+            var retryAfterSeconds: Long? = null
             try {
                 if (pending.stage == TextStage.Sending) {
                     val observed =
@@ -1415,9 +1418,10 @@ internal class ChatComposerOwner(
                     } else settle(op, latest, TextDisposition.Rejected)
                     return
                 }
+                retryAfterSeconds = error.retryAfterSeconds()
             }
-            delay(retrySeconds[failures] * 1_000)
-            if (failures < retrySeconds.lastIndex) failures++
+            delay(continuousRetryDelayMillis(failures, retryAfterSeconds))
+            if (failures < continuousRetryDelays.lastIndex) failures++
         }
     }
 
