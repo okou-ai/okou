@@ -1761,7 +1761,7 @@ class ChatListModel(
         // Activity resume refreshes this owner even while workspace preferences are loading.
         restoreCache()
         requestListRead(resetCompletedActivity = true)
-        refreshMetadata()
+        if (listInForeground) refreshMetadata()
         refreshIndicators()
         refreshDraftIndex()
     }
