@@ -368,7 +368,7 @@ internal class ChatConnectorOptions(
         val details = snapshot.details[choice.slug]
         val existing = details?.accounts?.data
         val confirmedDetails =
-            if (hasNewAccounts) snapshot.details - choice.slug
+            if (hasNewAccounts || accounts.isEmpty()) snapshot.details - choice.slug
             else if (existing == null) snapshot.details
             else {
                 val rows =
