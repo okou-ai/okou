@@ -328,16 +328,22 @@ internal class DefaultModelSettings(
             }
             state.first { it.canApplyScheduledRead }
             try {
-                preferenceRequests.withLock {
+                val verification: Job? = preferenceRequests.withLock {
                     val before = mutable.value
-                    if (!before.canApplyScheduledRead) return@withLock
+                    if (!before.canApplyScheduledRead) return@withLock null
+                    val attempted = unconfirmedWrite
+                    if (attempted != null && !readbackBlocked) {
+                        // The active verifier owns retries of the same preference read.
+                        saving?.let {
+                            return@withLock it
+                        }
+                    }
                     val remote = service.defaultModelPreference()
                     currentCoroutineContext().ensureActive()
                     if (!authorized()) return
-                    if (before.save !== mutable.value.save) return@withLock
+                    if (before.save !== mutable.value.save) return@withLock null
                     val snapshot =
                         DefaultModelRecord(confirmed = remote, lastRefreshMillis = nowMillis())
-                    val attempted = unconfirmedWrite
                     if (attempted == null) {
                         clearSaveFailure()
                         publishConfirmed(snapshot, save = null)
@@ -346,11 +352,16 @@ internal class DefaultModelSettings(
                         saveWait?.cancel()
                         synchronizeSaves()
                     } else {
-                        // Refresh the confirmed cache without resolving a write we cannot verify.
+                        // Update the cache without resolving a write we cannot verify.
                         publishConfirmed(snapshot)
                     }
+                    null
                 }
                 failures = 0
+                if (verification != null) {
+                    verification.join()
+                    delay(preferenceRefreshMillis)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {

@@ -591,6 +591,65 @@ class DefaultModelSettingsTest {
     }
 
     @Test
+    fun scheduledRefreshLetsPendingReadbackHonorItsServerDelay() = runTest {
+        ChatListApiFixture().use { api ->
+            DefaultModelApiFixture(api)
+            val original = api.service.defaultModelPreference()
+            val catalog = api.service.recoveryCatalog()
+            val models = api.service.recoveryModels()
+            val reads = mutableListOf<Long>()
+            val writes = mutableListOf<Long>()
+            val remote =
+                object : WorkspaceSession by api.service {
+                    override suspend fun recoveryCatalog() = catalog
+
+                    override suspend fun recoveryModels() = models
+
+                    override suspend fun defaultModelPreference(): DefaultModelPreference {
+                        reads += currentTime
+                        return when (reads.size) {
+                            1 -> original
+                            2 -> throw ApiFailure.Http(429, null, null, 1L)
+                            else -> original.copy(selectedModel = "auto")
+                        }
+                    }
+
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference,
+                    ): DefaultModelPreference {
+                        writes += currentTime
+                        throw ApiFailure.Http(503, null, null, null)
+                    }
+                }
+            val model = model(api, service = remote, onFailure = {})
+            model.openAfterSync()
+            advanceTimeBy(596_500)
+            model.select(null)
+            runCurrent()
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(listOf(0L, 599_500L), reads)
+
+            model.showSettings(null)
+            advanceTimeBy(999)
+            runCurrent()
+            assertEquals(listOf(0L, 599_500L), reads)
+            assertTrue(model.state.value.pending != null)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 599_500L, 600_500L), reads)
+            assertEquals(listOf(596_500L), writes)
+            assertNull(model.state.value.pending)
+            assertEquals("auto", model.state.value.record?.confirmed?.selectedModel)
+
+            advanceTimeBy(600_000)
+            runCurrent()
+            assertEquals(listOf(0L, 599_500L, 600_500L, 1_200_500L), reads)
+        }
+    }
+
+    @Test
     fun rejectedReadbackReconcilesOnForegroundingWithoutRepeatingTheWrite() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
