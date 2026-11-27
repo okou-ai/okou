@@ -441,6 +441,7 @@ class MemberPreferencesModel(
                     currentCoroutineContext().ensureActive()
                     if (current()) {
                         if (change == null || verifying) {
+                            readFailures = 0
                             nextRefreshAt = monotonicMillis() + preferenceRefreshMillis
                         }
                         val state = mutable.value
@@ -498,7 +499,6 @@ class MemberPreferencesModel(
                                 pending?.includesAnyOf(failed) != true
                         )
                             saveFailures = 0
-                        readFailures = 0
                         if (finalReadback && saveNotice.value is PreferenceSaveNotice.Unconfirmed)
                             saveNotice.value = null
                         val settled =

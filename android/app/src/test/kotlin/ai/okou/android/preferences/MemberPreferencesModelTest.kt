@@ -913,6 +913,9 @@ class MemberPreferencesRefreshTest {
         assertEquals(listOf(600_000L), attempts)
 
         model.showSettings(true)
+        model.setCloudBrowser(true)
+        runCurrent()
+        assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
         advanceTimeBy(1_000)
         model.showSettings(false)
         runCurrent()
