@@ -5810,6 +5810,50 @@ const resolveNonCustomFirewallAuthMaterial$ = command(
   },
 );
 
+const resolveAntigravityFirewallAuthMaterial$ = command(
+  async (
+    { set },
+    auth: FirewallAuth,
+    prepared: PreparedAntigravityFirewallAuth,
+    signal: AbortSignal,
+  ): Promise<FirewallAuthMaterialResolution> => {
+    const grant = await settle(
+      set(
+        refreshAntigravityAccessToken$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          accountId: prepared.accountId,
+          featureSwitchContext: prepared.featureSwitchContext,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    if (!grant.ok) {
+      return {
+        ok: false,
+        response:
+          grant.error instanceof AntigravityAccountUnavailable
+            ? connectorNotConfigured()
+            : tokenRefreshFailed(["antigravity"], "upstream_provider"),
+      };
+    }
+    return {
+      ok: true,
+      material: {
+        secrets: { [ANTIGRAVITY_FIREWALL_SECRET]: grant.value.accessToken },
+        vars: {},
+        expiresAt:
+          Math.floor(grant.value.expiry.getTime() / 1000) - REFRESH_BUFFER_SECS,
+        refreshedConnectors: [],
+        refreshedSecrets: [],
+        missingSecretFailure: { kind: "connector-not-configured" },
+      },
+    };
+  },
+);
+
 const resolveFirewallAuthMaterial$ = command(
   async (
     { get, set },
@@ -5905,41 +5949,12 @@ const resolveFirewallAuthMaterial$ = command(
       };
     }
     if (args.prepared.kind === "antigravity") {
-      const grant = await settle(
-        set(
-          refreshAntigravityAccessToken$,
-          {
-            orgId: args.auth.orgId,
-            userId: args.auth.userId,
-            accountId: args.prepared.accountId,
-            featureSwitchContext: args.prepared.featureSwitchContext,
-          },
-          signal,
-        ),
+      return await set(
+        resolveAntigravityFirewallAuthMaterial$,
+        args.auth,
+        args.prepared,
+        signal,
       );
-      signal.throwIfAborted();
-      if (!grant.ok) {
-        return {
-          ok: false,
-          response:
-            grant.error instanceof AntigravityAccountUnavailable
-              ? connectorNotConfigured()
-              : tokenRefreshFailed(["antigravity"], "upstream_provider"),
-        };
-      }
-      return {
-        ok: true,
-        material: {
-          secrets: { [ANTIGRAVITY_FIREWALL_SECRET]: grant.value.accessToken },
-          vars: {},
-          expiresAt:
-            Math.floor(grant.value.expiry.getTime() / 1000) -
-            REFRESH_BUFFER_SECS,
-          refreshedConnectors: [],
-          refreshedSecrets: [],
-          missingSecretFailure: { kind: "connector-not-configured" },
-        },
-      };
     }
     if (args.prepared.kind === "custom") {
       const resolution = await set(resolveCustomFirewallAuthMaterial$, {
