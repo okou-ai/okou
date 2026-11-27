@@ -227,7 +227,7 @@ describe("SSH remote device channel management", () => {
       const dispatch = runs.receivedDispatches(runnerGroup).at(-1);
       const agentToken =
         dispatch?.executionContext.platformEnvironment.OKOU_TOKEN;
-      if (!dispatch || !agentToken) {
+      if (!dispatch || !agentToken || !("threadId" in sent.body)) {
         throw new Error("Expected a dispatched active Run");
       }
       const runId = dispatch.executionContext.runId;

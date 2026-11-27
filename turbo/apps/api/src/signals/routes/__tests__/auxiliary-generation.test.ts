@@ -75,7 +75,9 @@ describe("auxiliary generation outcomes", () => {
     events: Awaited<ReturnType<typeof readThreadLifecycleEvents>>,
   ): readonly string[] {
     return events.flatMap((event) => {
-      return event.kind === "renamed" ? [event.title] : [];
+      return event.kind === "renamed" && event.title !== null
+        ? [event.title]
+        : [];
     });
   }
 
@@ -473,6 +475,9 @@ describe("auxiliary generation outcomes", () => {
       const fixture = createChatEventsFixture(context);
       const member = await createBuiltInChatMember(fixture);
       const privateBucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
+      if (!privateBucket) {
+        throw new Error("Expected R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
+      }
 
       const uploadPrivateClip = async (
         filename: string,

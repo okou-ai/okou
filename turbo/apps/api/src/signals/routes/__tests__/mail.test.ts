@@ -1908,7 +1908,7 @@ describe("Active chat Run Gmail drafts", () => {
     await flushWaitUntilForTest();
     const dispatch = runs.receivedDispatches(runnerGroup).at(-1);
     const token = dispatch?.executionContext.platformEnvironment.OKOU_TOKEN;
-    if (!dispatch || !token) {
+    if (!dispatch || !token || !("threadId" in sent.body)) {
       throw new Error("Expected a dispatched active Run");
     }
     return {

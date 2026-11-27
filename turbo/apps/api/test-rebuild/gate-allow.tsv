@@ -82,3 +82,4 @@ voice-io-transcribe-019	Voice segment transcription failed	Given: Google returns
 voice-io-transcribe-020	Voice segment transcription failed	Given: Google returns 200-char invented transcript for 1s audio; the Then expects HTTP 502 VOICE_TRANSCRIPTION_FAILED
 voice-io-transcribe-031	Voice segment transcription failed	Given: Vertex generation endpoint fails at connection level; the Then expects HTTP 503 PROVIDER_UNAVAILABLE
 auxiliary-generation-009	Auxiliary generation failed	Given: title model returns "---", which strips to empty (unusable_output); Then expects thread remains untitled
+runners-run-lookups-001	Registered connector runtime targets have no catalog entry	Given: BDD explicitly requests runtime sync for a nonexistent built-in connector and expects state absent, reason connector-unavailable

@@ -599,6 +599,9 @@ describe("CHAT-02: web chat send and client ids (runs)", () => {
         },
         [201],
       );
+      if (!("threadId" in firstSend.body)) {
+        throw new Error("Expected accepted chat send body");
+      }
       expect(firstSend.body.threadId).toBe(clientThreadId);
       expect(firstSend.body.createdAt).toStrictEqual(expect.any(String));
       await flushWaitUntilForTest();

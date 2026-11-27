@@ -292,6 +292,9 @@ describe("CHAT-02: model-first routing", () => {
       ]);
 
       expect(metadata.selectedModel).toBe(AUTO_SELECTED_MODEL);
+      if (!("events" in lifecycle.body)) {
+        throw new Error("Expected thread lifecycle events");
+      }
       expect(lifecycle.body.events).toContainEqual(
         expect.objectContaining({
           kind: "created",
@@ -372,6 +375,9 @@ describe("CHAT-02: model-first routing", () => {
         fixture.chat.requestThreadEvents(actor, {}, [200]),
       ]);
       expect(metadataAfterAuto.selectedModel).toBe(AUTO_SELECTED_MODEL);
+      if (!("events" in lifecycleAfterAuto.body)) {
+        throw new Error("Expected thread lifecycle events after Auto");
+      }
       expect(lifecycleAfterAuto.body.events).toContainEqual(
         expect.objectContaining({
           kind: "model_selection_updated",
@@ -467,6 +473,9 @@ describe("CHAT-02: model-first routing", () => {
         {},
         [200],
       );
+      if (!("events" in lifecycleAfterClear.body)) {
+        throw new Error("Expected thread lifecycle events after clear");
+      }
       expect(lifecycleAfterClear.body.events).toContainEqual(
         expect.objectContaining({
           kind: "created",

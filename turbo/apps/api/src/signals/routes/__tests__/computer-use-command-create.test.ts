@@ -412,6 +412,9 @@ describe("Computer Use command creation", () => {
           [404],
           { kind: "app.open", app: "Safari", timeoutMs: 12_002 },
         );
+      if (!("error" in deniedByDevicePolicy.body)) {
+        throw new Error("Expected denied device policy error");
+      }
       expect(deniedByDevicePolicy.body.error.message).toBe(
         "No linked computer-use host found",
       );
@@ -567,7 +570,7 @@ describe("Computer Use command creation", () => {
           created.body.commandId,
           [404],
         );
-      expect(unreadableWhileDenied.body.error.message).toBe(
+      expect(unreadableWhileDenied.body.error?.message).toBe(
         "Computer-use command not found",
       );
 

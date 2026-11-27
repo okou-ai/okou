@@ -637,7 +637,7 @@ account-org	src/signals/routes/__tests__/built-in-generation.test.ts	built-in-ge
 connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-002	rewritten	125.6		src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	B02	
 connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-003	rewritten	113.8		src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	B02	
 connectors	src/signals/routes/__tests__/builtin-mcp-discovery.test.ts	builtin-mcp-discovery-001	planned					a-run
-connectors	src/signals/routes/__tests__/builtin-mcp-run.test.ts	builtin-mcp-run-001	planned					a-run
+connectors	src/signals/routes/__tests__/builtin-mcp-run.test.ts	builtin-mcp-run-001	rewritten	670.9	timeout=1000 (single-row cold JIT; #51189/#51339 startupInputs.contentBundles.skills; gate.py 670.9ms)	src/signals/routes/__tests__/builtin-mcp-run.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-activity-summary.test.ts	chat-activity-summary-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-activity-summary.test.ts	chat-activity-summary-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-activity-summary.test.ts	chat-activity-summary-003	planned					a-run
@@ -742,7 +742,7 @@ chat	src/signals/routes/__tests__/chat-events-attachments.test.ts	chat-events-at
 chat	src/signals/routes/__tests__/chat-events-attachments.test.ts	chat-events-attachments-039	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-attachments.test.ts	chat-events-attachments-041	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-attachments.test.ts	chat-events-attachments-042	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-auto-route.test.ts	chat-events-auto-route-001	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-auto-route.test.ts	chat-events-auto-route-001	rewritten	736.8	timeout=1000 (single-row cold JIT; gate.py 736.8ms)	src/signals/routes/__tests__/chat-events-auto-route.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-automations.test.ts	chat-events-automations-001	revisit		revisit: reclassify to a-run: requires completing an initial Claude Code Run and dispatching and completing Codex-backed Pi Runs on Luna		pilot	d-other
 chat	src/signals/routes/__tests__/chat-events-automations.test.ts	chat-events-automations-002	planned				pilot	a-run
 chat	src/signals/routes/__tests__/chat-events-automations.test.ts	chat-events-automations-004	planned				pilot	a-run
@@ -761,9 +761,9 @@ chat	src/signals/routes/__tests__/chat-events-codex-execution.test.ts	chat-event
 chat	src/signals/routes/__tests__/chat-events-codex-execution.test.ts	chat-events-codex-execution-006	revisit		revisit: reclassify to a-run: verifies Runner dispatch payload (Claude Code with Fable configured and no Pi model config)		pilot	d-other
 chat	src/signals/routes/__tests__/chat-events-codex-execution.test.ts	chat-events-codex-execution-007	planned				pilot	a-run
 chat	src/signals/routes/__tests__/chat-events-concurrency-prefetch.test.ts	chat-events-concurrency-prefetch-001	skipped		"slow-setup: lower bound - the Given requires a paid member with a dispatched Run (""one Run is holding the base slot""); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14"			a-run
-chat	src/signals/routes/__tests__/chat-events-connector-selection.test.ts	chat-events-connector-selection-001	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	chat-events-connector-snapshot-001	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	chat-events-connector-snapshot-002	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-connector-selection.test.ts	chat-events-connector-selection-001	rewritten	826.3	timeout=1000 (single-row cold JIT; gate.py 826.3-923.9ms)	src/signals/routes/__tests__/chat-events-connector-selection.test.ts	R26	a-run
+chat	src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	chat-events-connector-snapshot-001	rewritten	584.5	timeout=800 (cold first row; gate.py 584.5-644.5ms)	src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	R26	a-run
+chat	src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	chat-events-connector-snapshot-002	rewritten	326.4	timeout=400 (warm second row; gate.py 326.4-330.0ms)	src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-002	planned				pilot	a-run
 chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-004	revisit		revisit: reclassify to a-run: verifies selected OpenAI connection ID in Runner dispatch		pilot	d-other
 chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-005	revisit		revisit: reclassify to a-run: verifies OpenAI credential reference omitted/restored across Runner dispatches		pilot	d-other
@@ -771,7 +771,7 @@ chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-con
 chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-009	planned				pilot	a-run
 chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-011	revisit		revisit: reclassify to a-run: verifies Run still dispatches omitting unavailable custom connector target		pilot	d-other
 chat	src/signals/routes/__tests__/chat-events-context-batches.test.ts	chat-events-context-batches-002	skipped		slow-setup: Given+first When/Then 371 ms and 373 ms (warm lower bound that omits the Slack, custom connector and workflow Given steps: entitled Pro actor with personal Claude Fable 5.1 124/116 ms, Codex OAuth device-auth connect 72/79 ms, initial send dispatching the Run plus its Runner execution input 175/178 ms)		B07	d-other
-chat	src/signals/routes/__tests__/chat-events-custom-domains-prompt.test.ts	chat-events-custom-domains-prompt-002	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-custom-domains-prompt.test.ts	chat-events-custom-domains-prompt-002	rewritten	481.3	timeout=600 (single-row cold JIT; gate.py 481.3ms)	src/signals/routes/__tests__/chat-events-custom-domains-prompt.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-002	planned		reclassified to a-run in round 16: the Given needs a dispatched Run; kept planned until the a-run decision		B11	a-run
 chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-003	planned		reclassified to a-run in round 16: the Given needs a dispatched Run; kept planned until the a-run decision		B11	a-run
@@ -798,23 +798,23 @@ chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-
 chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-007	rewritten	336.1	timeout=400 (gate.py 336.1ms; idle median pending post-wave)	src/signals/routes/__tests__/chat-events-model-routing.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-008	rewritten	192.8		src/signals/routes/__tests__/chat-events-model-routing.test.ts		d-other
 chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-012	rewritten	412.3	timeout=600 (gate.py 412.3ms; idle median pending post-wave)	src/signals/routes/__tests__/chat-events-model-routing.test.ts	R26	a-run
-chat	src/signals/routes/__tests__/chat-events-model-snapshot.test.ts	chat-events-model-snapshot-001	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-model-snapshot.test.ts	chat-events-model-snapshot-001	rewritten	661.0	timeout=800 (single-row cold JIT; gate.py 661.0-698.4ms)	src/signals/routes/__tests__/chat-events-model-snapshot.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-model-source-context.test.ts	chat-events-model-source-context-002	rewritten	180.2		src/signals/routes/__tests__/chat-events-model-source-context.test.ts		d-other
 chat	src/signals/routes/__tests__/chat-events-model-source-context.test.ts	chat-events-model-source-context-004	rewritten	334.0	timeout=400 (gate.py 334.0ms; idle median pending post-wave)	src/signals/routes/__tests__/chat-events-model-source-context.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-native-routes.test.ts	chat-events-native-routes-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-native-routes.test.ts	chat-events-native-routes-002	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-pi-activity.test.ts	chat-events-pi-activity-001	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-pi-activity.test.ts	chat-events-pi-activity-001	rewritten	702.3	split 1->4: (1/4) timeout=800 (702.3ms cold), (2/4) timeout=800 (593.6ms), (3/4) timeout=600 (418.7ms), (4/4) timeout=600 (404.0ms); #51189 startupInputs.memory	src/signals/routes/__tests__/chat-events-pi-activity.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	chat-events-pi-codex-credentials-001	skipped		slow-setup: Given+first When/Then 355 ms and 375 ms (warm, after a warm-up test; the Given alone is 219 ms and 210 ms: entitled Pro actor 133/121 ms, Codex device-auth connect 70/73 ms, account delete 16/16 ms; send, background admission and event read 136/164 ms; the written test passed at 519 ms as the file's first test)		B07	d-other
 chat	src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	chat-events-pi-codex-credentials-002	skipped		slow-setup: Given+first When/Then 404 ms and 271 ms (lower bound without the decryption-outage boundary: entitled Pro actor 155/110 ms, ChatGPT device-auth connect 72/43 ms, Luna send dispatching the Run 177/118 ms)		B07	d-other
 chat	src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	chat-events-pi-codex-credentials-006	rewritten	190.5	split n=2: 1/2=135.3; 2/2=190.5; accepted by the non-first median rule	src/signals/routes/__tests__/chat-events-pi-codex-credentials.test.ts	B07	d-other
 chat	src/signals/routes/__tests__/chat-events-pi-delegation.test.ts	chat-events-pi-delegation-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-pi-failed-history.test.ts	chat-events-pi-failed-history-002	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-pi-failures.test.ts	chat-events-pi-failures-002	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-pi-failures.test.ts	chat-events-pi-failures-002	rewritten	849.2	timeout=1000 (single-row 2 Runs + steer; gate.py 849.2-882.6ms)	src/signals/routes/__tests__/chat-events-pi-failures.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-pi-handoff.test.ts	chat-events-pi-handoff-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-pi-handoff.test.ts	chat-events-pi-handoff-004	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-pi-handoff.test.ts	chat-events-pi-handoff-005	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-pi-preparation.test.ts	chat-events-pi-preparation-001	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-pi-responses.test.ts	chat-events-pi-responses-001	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-pi-preparation.test.ts	chat-events-pi-preparation-001	rewritten	734.5	timeout=1000 (single-row 2 Runs; gate.py 734.5-765.2ms)	src/signals/routes/__tests__/chat-events-pi-preparation.test.ts	R26	a-run
+chat	src/signals/routes/__tests__/chat-events-pi-responses.test.ts	chat-events-pi-responses-001	rewritten	780.3	split 1->2: (1/2) timeout=1000 (780.3ms cold 2 Runs), (2/2) timeout=600 (490.7ms warm 2 Runs)	src/signals/routes/__tests__/chat-events-pi-responses.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-pi-session.test.ts	chat-events-pi-session-002	skipped		slow-setup: Given+first When/Then 358 ms and 357 ms (warm lower bound up to the first Luna dispatch, before completing the turn: entitled Pro actor with personal Claude model 120/113 ms, ChatGPT device-auth connect for Luna 69/78 ms, Luna send dispatching the Run plus its execution input 169/166 ms)		B07	d-other
 chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-004	planned					a-run
@@ -872,10 +872,10 @@ chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-
 chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-004	rewritten	185.8	extension after sandbox reset	src/signals/routes/__tests__/chat-remote-access.test.ts	B01	
 chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-002	rewritten	69.3		src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts		d-other
 chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-003	rewritten	59.3		src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts		d-other
-chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-004	planned					a-run
-chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-005	planned					a-run
-chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-006	planned					a-run
-chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-011	planned					a-run
+chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-004	rewritten	506.6	timeout=800 (3 Runs: 1 watched + 2 triggered; gate.py 506.6ms)	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	R26	a-run
+chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-005	rewritten	461.3	timeout=600 (2 Runs; gate.py 461.3ms)	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	R26	a-run
+chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-006	rewritten	399.4	timeout=600 (2 Runs; gate.py 399.4ms)	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	R26	a-run
+chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-011	rewritten	358.0	timeout=800 (2 Runs; gate.py 599.4ms cold #1 / ~358ms warm)	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-thread-connector-selection.ownership.test.ts	chat-thread-connector-selection.ownership-001	rewritten	168.5	split n=6: 1/6=168.5; 2/6=127.6; 3/6=108.5; 4/6=71.8; 5/6=100.0; 6/6=99.0	src/signals/routes/__tests__/chat-connector-execution.test.ts	B03	
 chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-001	rewritten	52.7	extension after sandbox reset	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	pilot	
 chat	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	chat-thread-draft-store-004	rewritten	45.2	extension after sandbox reset	src/signals/routes/__tests__/chat-thread-draft-store.test.ts	pilot	
@@ -2507,12 +2507,12 @@ runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	ru
 runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-003	planned				pilot	a-run
 runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-004	planned				pilot	a-run
 runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-005	planned				pilot	a-run
-runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-001	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-003	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-004	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-005	planned					a-run
+runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-001	rewritten	183.3	200ms non-Run (0 Runs dispatched; unloaded 183.3ms)	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	R26	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-003	rewritten	380.9	split 1->2: (1/2) timeout=400 (211.7ms), (2/2) timeout=600 (380.9ms)	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	R26	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-004	rewritten	294.1	timeout=600 (gate.py 294.1ms)	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	R26	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-005	rewritten	153.4	split 1->2: both 200ms non-Run (71.8ms / 153.4ms)	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	R26	a-run
 runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-007	rewritten	154.4	split n=4: 1/4=88.4; 2/4=149.2; 3/4=154.4; 4/4=92.1	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts		d-other
-runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-008	planned					a-run
+runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-008	rewritten	325.7	timeout=600 (gate.py 325.7ms)	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	R26	a-run
 runs	src/signals/routes/__tests__/run-lifecycle-automatic.bdd.test.ts	run-lifecycle-automatic.bdd-001	planned					a-run
 runs	src/signals/routes/__tests__/run-lifecycle-automatic.bdd.test.ts	run-lifecycle-automatic.bdd-002	planned					a-run
 runs	src/signals/routes/__tests__/run-lifecycle-billing.bdd.test.ts	run-lifecycle-billing.bdd-001	revisit		revisit: reclassify to a-run: requires assigned Runs submitting GPT Image and Nano Banana usage, failing, and settling			d-other
@@ -2676,8 +2676,8 @@ runs	src/signals/routes/__tests__/runner-vnc.test.ts	runner-vnc-036	skipped		"sl
 runs	src/signals/routes/__tests__/runner-vnc.test.ts	runner-vnc-037	skipped		"slow-setup: lower bound - the Given requires a paid member with a dispatched Run (""has a running chat run on an official Runner""); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14"			a-run
 runs	src/signals/routes/__tests__/runner-vnc.test.ts	runner-vnc-038	rewritten	275.4	split 1->4: all timeout=400 (gate.py 233.8ms / 275.4ms / 214.6ms / 216.1ms); idle median pending post-wave	src/signals/routes/__tests__/runner-vnc.test.ts	R26	a-run
 runs	src/signals/routes/__tests__/runner-vnc.test.ts	runner-vnc-040	skipped		"slow-setup: lower bound - the Given requires a paid member with a dispatched Run (""has a running chat run on an official Runner""); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14"			a-run
-runs	src/signals/routes/__tests__/runners-built-in-execution.test.ts	runners-built-in-execution-001	planned					a-run
-runs	src/signals/routes/__tests__/runners-built-in-execution.test.ts	runners-built-in-execution-003	planned					a-run
+runs	src/signals/routes/__tests__/runners-built-in-execution.test.ts	runners-built-in-execution-001	rewritten	462.0	timeout=800 (cold row #1; gate.py 462.0-489.4ms)	src/signals/routes/__tests__/runners-built-in-execution.test.ts	R26	a-run
+runs	src/signals/routes/__tests__/runners-built-in-execution.test.ts	runners-built-in-execution-003	rewritten	308.4	timeout=400 (warm row #2; gate.py 308.4-335.2ms)	src/signals/routes/__tests__/runners-built-in-execution.test.ts	R26	a-run
 runs	src/signals/routes/__tests__/runners-builtin-firewalls.test.ts	runners-builtin-firewalls-002	planned					a-run
 runs	src/signals/routes/__tests__/runners-builtin-firewalls.test.ts	runners-builtin-firewalls-003	planned					a-run
 runs	src/signals/routes/__tests__/runners-builtin-firewalls.test.ts	runners-builtin-firewalls-004	planned					a-run
@@ -2695,16 +2695,16 @@ runs	src/signals/routes/__tests__/runners-direct-dispatch.test.ts	runners-direct
 runs	src/signals/routes/__tests__/runners-direct-dispatch.test.ts	runners-direct-dispatch-020	planned					a-run
 runs	src/signals/routes/__tests__/runners-direct-dispatch.test.ts	runners-direct-dispatch-021	planned					a-run
 runs	src/signals/routes/__tests__/runners-direct-dispatch.test.ts	runners-direct-dispatch-023	planned					a-run
-runs	src/signals/routes/__tests__/runners-execution-defaults.test.ts	runners-execution-defaults-001	planned					a-run
-runs	src/signals/routes/__tests__/runners-member-instructions.test.ts	runners-member-instructions-001	planned					a-run
-runs	src/signals/routes/__tests__/runners-member-instructions.test.ts	runners-member-instructions-003	planned					a-run
-runs	src/signals/routes/__tests__/runners-personal-instructions.test.ts	runners-personal-instructions-001	planned					a-run
-runs	src/signals/routes/__tests__/runners-personal-instructions.test.ts	runners-personal-instructions-003	planned					a-run
-runs	src/signals/routes/__tests__/runners-run-lookups.test.ts	runners-run-lookups-001	planned					a-run
+runs	src/signals/routes/__tests__/runners-execution-defaults.test.ts	runners-execution-defaults-001	rewritten	609.5	timeout=1000 (single-row 2 Runs; gate.py 609.5-743.6ms)	src/signals/routes/__tests__/runners-execution-defaults.test.ts	R26	a-run
+runs	src/signals/routes/__tests__/runners-member-instructions.test.ts	runners-member-instructions-001	rewritten	657.7	timeout=1000 (2 concurrent Pro Runs; #51189/#51339 startupInputs.contentBundles.instructions; gate.py 657.7-698.0ms)	src/signals/routes/__tests__/runners-member-instructions.test.ts	R26	a-run
+runs	src/signals/routes/__tests__/runners-member-instructions.test.ts	runners-member-instructions-003	revisit		deferred in R26 before deadline: S3 HeadObjectCommand verification gate during POST /api/chat/events timed out after prepareUpload/completeUpload; resume by inspecting HeadObject mock hook		R26	a-run
+runs	src/signals/routes/__tests__/runners-personal-instructions.test.ts	runners-personal-instructions-001	rewritten	463.9	timeout=600 (cold row #1; gate.py 463.9-479.6ms)	src/signals/routes/__tests__/runners-personal-instructions.test.ts	R26	a-run
+runs	src/signals/routes/__tests__/runners-personal-instructions.test.ts	runners-personal-instructions-003	rewritten	440.6	split 1->2: (1/2) timeout=400 (213.0-228.0ms), (2/2) timeout=600 (440.6-465.1ms)	src/signals/routes/__tests__/runners-personal-instructions.test.ts	R26	a-run
+runs	src/signals/routes/__tests__/runners-run-lookups.test.ts	runners-run-lookups-001	rewritten	512.1	timeout=800 (single-row cold JIT; gate.py 512.1-540.1ms)	src/signals/routes/__tests__/runners-run-lookups.test.ts	R26	a-run
 runs	src/signals/routes/__tests__/runners-thread-binding.test.ts	runners-thread-binding-001	planned					a-run
 runs	src/signals/routes/__tests__/runners-thread-binding.test.ts	runners-thread-binding-002	planned					a-run
 runs	src/signals/routes/__tests__/runners-thread-binding.test.ts	runners-thread-binding-005	planned					a-run
-runs	src/signals/routes/__tests__/runners-unavailable-execution.test.ts	runners-unavailable-execution-001	planned					a-run
+runs	src/signals/routes/__tests__/runners-unavailable-execution.test.ts	runners-unavailable-execution-001	rewritten	524.5	timeout=800 (single-row cold JIT; gate.py 524.5-526.2ms)	src/signals/routes/__tests__/runners-unavailable-execution.test.ts	R26	a-run
 billing	src/signals/routes/__tests__/runtime-credit-balance.test.ts	runtime-credit-balance-001	skipped		slow-setup: Given+first When/Then over 200 ms in two runs: the active Run alone (createRunExecutionCredentials dispatch) 488/428 ms plus one sandbox usage-event settlement 30/16 ms = 518/444 ms in-test, 675/580 ms Vitest, first row of the file; the free-plan funding to exactly 0 credits and the firewall/image requests not yet included		B05	
 billing	src/signals/routes/__tests__/runtime-credit-balance.test.ts	runtime-credit-balance-002	skipped		slow-setup: Given+first When/Then over 200 ms in two runs: the active Run alone (warm, second row) 228/195 ms plus one sandbox usage-event settlement 8/8 ms = 236/202 ms in-test, 361/311 ms Vitest; the free-plan funding to -1 credits and the firewall/image requests not yet included		B05	
 chat	src/signals/routes/__tests__/shared-thread-artifacts.test.ts	shared-thread-artifacts-001	revisit		revisit: reclassify to a-run: Given requires durable visible Thread message(s) containing custom file URLs; POST /api/chat-events schedules waitUntil(publishEnqueuedNormalSend$) -> pickChatThread$ which revokes queued input.prompt via input.rejected (causing NO_SHAREABLE_MESSAGES) unless a Run is dispatched			d-other

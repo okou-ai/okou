@@ -127,9 +127,11 @@ describe("current Run phase timing", () => {
       }),
       [200],
     );
-    return response.body.effectiveSwitches[
-      FeatureSwitchKey.ArtifactThreePointTiming
-    ];
+    return Boolean(
+      response.body.effectiveSwitches[
+        FeatureSwitchKey.ArtifactThreePointTiming
+      ],
+    );
   }
 
   async function startTimingRun(

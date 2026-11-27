@@ -141,6 +141,39 @@ function extractTrailingPathSegment(url: string): string {
   return decodeURIComponent(segment);
 }
 
+function expectShellAuth<T extends { readonly id: string }>(response: {
+  readonly body: T | { readonly error: { readonly code: string } };
+}): T {
+  if ("id" in response.body) {
+    return response.body;
+  }
+  throw new Error(
+    `Expected Desktop Shell authorization body, got ${response.body.error.code}`,
+  );
+}
+
+function expectShellQueued<T extends { readonly commandId: string }>(response: {
+  readonly body: T | { readonly error: { readonly code: string } };
+}): T {
+  if ("commandId" in response.body) {
+    return response.body;
+  }
+  throw new Error(
+    `Expected queued Shell command body, got ${response.body.error.code}`,
+  );
+}
+
+function expectApiError(response: {
+  readonly body:
+    | { readonly error: { readonly code: string; readonly message: string } }
+    | object;
+}): { readonly code: string; readonly message: string } {
+  if ("error" in response.body) {
+    return response.body.error;
+  }
+  throw new Error("Expected API error body");
+}
+
 /** Lightweight Desktop Shell scenario using built-in limited-free Runs and one direct runner. */
 function createDesktopShellFixture(context: TestContext) {
   const bdd = createBddApi(context);
@@ -313,7 +346,14 @@ describe("Desktop Shell command pipeline", () => {
       ).list({ headers: {} }),
       setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
         headers: {},
-        body: { prompt: "warmup" },
+        body: {
+          prompt: "warmup",
+          hasTextContent: true,
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "warmup" }],
+          },
+        },
       }),
     ]);
   });
@@ -350,7 +390,7 @@ describe("Desktop Shell command pipeline", () => {
       await fixture.cancelRun(run1.runId, run1.sandboxToken);
       await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth1.body.id,
+        expectShellAuth(auth1).id,
         "approve",
         [200],
       );
@@ -359,7 +399,7 @@ describe("Desktop Shell command pipeline", () => {
       const sleepCommand =
         await fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run2.token },
-          { kind: "shell.cmd", command: "sleep 300" },
+          { kind: "shell.cmd", command: "sleep 300", waitMs: 10_000 },
           [200],
         );
       const claimedSleep =
@@ -369,35 +409,37 @@ describe("Desktop Shell command pipeline", () => {
         );
       expect(claimedSleep.status).toBe("command");
       if (claimedSleep.status === "command") {
-        expect(claimedSleep.command.id).toBe(sleepCommand.body.commandId);
+        expect(claimedSleep.command.id).toBe(
+          expectShellQueued(sleepCommand).commandId,
+        );
       }
 
       const queuedStatus =
         await fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run2.token },
-          { kind: "shell.status", sessionId },
+          { kind: "shell.status", sessionId, waitMs: 10_000 },
           [200],
         );
 
       // Revoking twice is idempotent and fails only queued commands.
       const firstRevoke = await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth1.body.id,
+        expectShellAuth(auth1).id,
         "revoke",
         [200],
       );
       const secondRevoke = await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth1.body.id,
+        expectShellAuth(auth1).id,
         "revoke",
         [200],
       );
-      expect(firstRevoke.body.status).toBe("revoked");
-      expect(secondRevoke.body.status).toBe("revoked");
+      expect(expectShellAuth(firstRevoke).status).toBe("revoked");
+      expect(expectShellAuth(secondRevoke).status).toBe("revoked");
 
       await fixture.computerUse.completeComputerUseCommandWith(
         host.connection,
-        sleepCommand.body.commandId,
+        expectShellQueued(sleepCommand).commandId,
         {
           status: "succeeded",
           result: {
@@ -413,11 +455,11 @@ describe("Desktop Shell command pipeline", () => {
       const [completedSleep, failedQueued] = await Promise.all([
         fixture.computerUse.readComputerUseCommand(
           { bearer: run2.token },
-          sleepCommand.body.commandId,
+          expectShellQueued(sleepCommand).commandId,
         ),
         fixture.computerUse.readComputerUseCommand(
           { bearer: run2.token },
-          queuedStatus.body.commandId,
+          expectShellQueued(queuedStatus).commandId,
         ),
       ]);
       expect(completedSleep).toMatchObject({
@@ -434,17 +476,17 @@ describe("Desktop Shell command pipeline", () => {
       await Promise.all([
         fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run2.token },
-          { kind: "shell.list" },
+          { kind: "shell.list", waitMs: 10_000 },
           [403],
         ),
         fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run2.token },
-          { kind: "shell.close", all: true },
+          { kind: "shell.close", all: true, waitMs: 10_000 },
           [403],
         ),
         fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run2.token },
-          { kind: "shell.cmd", sessionId, input: "yes\n" },
+          { kind: "shell.cmd", sessionId, input: "yes\n", waitMs: 10_000 },
           [403],
         ),
       ]);
@@ -454,16 +496,16 @@ describe("Desktop Shell command pipeline", () => {
         { bearer: run2.token },
         "Resume existing terminal",
       );
-      expect(auth2.body.id).not.toBe(auth1.body.id);
+      expect(expectShellAuth(auth2).id).not.toBe(expectShellAuth(auth1).id);
 
       await fixture.cancelRun(run2.runId, run2.sandboxToken);
       const renewed = await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth2.body.id,
+        expectShellAuth(auth2).id,
         "approve",
         [200],
       );
-      expect(renewed.body.status).toBe("approved");
+      expect(expectShellAuth(renewed).status).toBe("approved");
 
       const run3 = await fixture.launchRun(host.hostId, run1.threadId);
       await expect(
@@ -476,7 +518,7 @@ describe("Desktop Shell command pipeline", () => {
       const terminalInput =
         await fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run3.token },
-          { kind: "shell.cmd", sessionId, input: "yes\n" },
+          { kind: "shell.cmd", sessionId, input: "yes\n", waitMs: 10_000 },
           [200],
         );
       const claimedInput =
@@ -486,7 +528,9 @@ describe("Desktop Shell command pipeline", () => {
         );
       expect(claimedInput.status).toBe("command");
       if (claimedInput.status === "command") {
-        expect(claimedInput.command.id).toBe(terminalInput.body.commandId);
+        expect(claimedInput.command.id).toBe(
+          expectShellQueued(terminalInput).commandId,
+        );
         expect(claimedInput.command.payload).toMatchObject({
           sessionId,
           input: "yes\n",
@@ -557,7 +601,7 @@ describe("Desktop Shell command pipeline", () => {
       });
       await fixture.computerUse.requestCreateDesktopShellCommand(
         { bearer: run1.token },
-        { hostId: host.hostId, kind: "shell.list" },
+        { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
         [404],
       );
 
@@ -578,10 +622,12 @@ describe("Desktop Shell command pipeline", () => {
       const missingGrant =
         await fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run1.token },
-          { hostId: host.hostId, kind: "shell.list" },
+          { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
           [403],
         );
-      expect(missingGrant.body.error.code).toBe("SHELL_AUTHORIZATION_REQUIRED");
+      expect(expectApiError(missingGrant).code).toBe(
+        "SHELL_AUTHORIZATION_REQUIRED",
+      );
 
       const requested = await fixture.run(() => {
         return accept(
@@ -643,7 +689,7 @@ describe("Desktop Shell command pipeline", () => {
         "approve",
         [200],
       );
-      expect(approved.body.status).toBe("approved");
+      expect(expectShellAuth(approved).status).toBe("approved");
 
       // With both Remote Device policy and Shell grant active, a follow-up Run
       // dispatches and the Desktop host claims the Shell command.
@@ -651,7 +697,7 @@ describe("Desktop Shell command pipeline", () => {
       const firstCommand =
         await fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run2.token },
-          { hostId: host.hostId, kind: "shell.list" },
+          { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
           [200],
         );
       const claimed = await fixture.computerUse.claimNextComputerUseCommand(
@@ -660,11 +706,13 @@ describe("Desktop Shell command pipeline", () => {
       );
       expect(claimed.status).toBe("command");
       if (claimed.status === "command") {
-        expect(claimed.command.id).toBe(firstCommand.body.commandId);
+        expect(claimed.command.id).toBe(
+          expectShellQueued(firstCommand).commandId,
+        );
       }
       await fixture.computerUse.completeComputerUseCommandWith(
         host.connection,
-        firstCommand.body.commandId,
+        expectShellQueued(firstCommand).commandId,
         { status: "succeeded", result: { sessions: [] } },
       );
 
@@ -673,10 +721,10 @@ describe("Desktop Shell command pipeline", () => {
       const queuedBeforeDeny =
         await fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run2.token },
-          { hostId: host.hostId, kind: "shell.list" },
+          { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
           [200],
         );
-      expect(queuedBeforeDeny.body.status).toBe("queued");
+      expect(expectShellQueued(queuedBeforeDeny).status).toBe("queued");
 
       await fixture.run(() => {
         return accept(
@@ -698,7 +746,7 @@ describe("Desktop Shell command pipeline", () => {
 
       await fixture.computerUse.requestCreateDesktopShellCommand(
         { bearer: run2.token },
-        { hostId: host.hostId, kind: "shell.list" },
+        { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
         [404],
       );
     },
@@ -745,7 +793,7 @@ describe("Desktop Shell command pipeline", () => {
 
       const ready = await fixture.computerUse.readDesktopShellAccess(
         member,
-        shellRequest.body.id,
+        expectShellAuth(shellRequest).id,
       );
       expect(ready.body).toMatchObject({
         status: "pending",
@@ -761,9 +809,11 @@ describe("Desktop Shell command pipeline", () => {
           return Promise.resolve(undefined);
         }
         const observed = fixture.computerUse
-          .readDesktopShellAccess(member, shellRequest.body.id)
+          .readDesktopShellAccess(member, expectShellAuth(shellRequest).id)
           .then((snapshot) => {
-            observedBlockedReasons.push(snapshot.body.approvalBlockedReason);
+            observedBlockedReasons.push(
+              expectShellAuth(snapshot).approvalBlockedReason,
+            );
           });
         pendingObservations.push(observed);
         return observed;
@@ -784,7 +834,7 @@ describe("Desktop Shell command pipeline", () => {
 
       await fixture.computerUse.actDesktopShellAccess(
         member,
-        shellRequest.body.id,
+        expectShellAuth(shellRequest).id,
         "approve",
         [409],
       );
@@ -827,7 +877,7 @@ describe("Desktop Shell command pipeline", () => {
       });
       await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth1.body.id,
+        expectShellAuth(auth1).id,
         "approve",
         [409],
       );
@@ -835,17 +885,18 @@ describe("Desktop Shell command pipeline", () => {
       await fixture.cancelRun(run1.runId, run1.sandboxToken);
       const approved = await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth1.body.id,
+        expectShellAuth(auth1).id,
         "approve",
         [200],
       );
-      expect(approved.body.status).toBe("approved");
-      if (!approved.body.approvedAt || !approved.body.grantExpiresAt) {
+      const approvedAuth = expectShellAuth(approved);
+      expect(approvedAuth.status).toBe("approved");
+      if (!approvedAuth.approvedAt || !approvedAuth.grantExpiresAt) {
         throw new Error("Expected approval and grant expiry timestamps");
       }
       expect(
-        Date.parse(approved.body.grantExpiresAt) -
-          Date.parse(approved.body.approvedAt),
+        Date.parse(approvedAuth.grantExpiresAt) -
+          Date.parse(approvedAuth.approvedAt),
       ).toBe(ONE_HOUR_MS);
 
       const run2 = await fixture.launchRun(host.hostId, run1.threadId);
@@ -853,18 +904,18 @@ describe("Desktop Shell command pipeline", () => {
 
       await fixture.computerUse.readDesktopShellAccess(
         otherMember,
-        auth1.body.id,
+        expectShellAuth(auth1).id,
         [404],
       );
       await fixture.computerUse.actDesktopShellAccess(
         otherMember,
-        auth1.body.id,
+        expectShellAuth(auth1).id,
         "revoke",
         [404],
       );
       await fixture.computerUse.actDesktopShellAccess(
         { bearer: run2.token },
-        auth1.body.id,
+        expectShellAuth(auth1).id,
         "approve",
         [403],
       );
@@ -875,12 +926,12 @@ describe("Desktop Shell command pipeline", () => {
       );
       await fixture.computerUse.requestCreateDesktopShellCommand(
         member,
-        { kind: "shell.list" },
+        { kind: "shell.list", waitMs: 10_000 },
         [403],
       );
       await fixture.computerUse.requestCreateDesktopShellCommand(
         { bearer: cliToken.token },
-        { kind: "shell.list" },
+        { kind: "shell.list", waitMs: 10_000 },
         [403],
       );
     },
@@ -913,7 +964,7 @@ describe("Desktop Shell command pipeline", () => {
       await fixture.cancelRun(run1.runId, run1.sandboxToken);
       await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth1.body.id,
+        expectShellAuth(auth1).id,
         "approve",
         [200],
       );
@@ -923,10 +974,10 @@ describe("Desktop Shell command pipeline", () => {
       const crossChatCommand =
         await fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run2.token },
-          { kind: "shell.list" },
+          { kind: "shell.list", waitMs: 10_000 },
           [403],
         );
-      expect(crossChatCommand.body.error.code).toBe(
+      expect(expectApiError(crossChatCommand).code).toBe(
         "SHELL_AUTHORIZATION_REQUIRED",
       );
 
@@ -957,7 +1008,7 @@ describe("Desktop Shell command pipeline", () => {
 
       const movedRead = await fixture.computerUse.readDesktopShellAccess(
         member,
-        auth2.body.id,
+        expectShellAuth(auth2).id,
       );
       expect(movedRead.body).toMatchObject({
         status: "pending",
@@ -966,20 +1017,20 @@ describe("Desktop Shell command pipeline", () => {
 
       await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth2.body.id,
+        expectShellAuth(auth2).id,
         "approve",
         [409],
       );
       const denied = await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth2.body.id,
+        expectShellAuth(auth2).id,
         "deny",
         [200],
       );
-      expect(denied.body.status).toBe("denied");
+      expect(expectShellAuth(denied).status).toBe("denied");
       await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth2.body.id,
+        expectShellAuth(auth2).id,
         "approve",
         [409],
       );
@@ -1020,14 +1071,15 @@ describe("Desktop Shell command pipeline", () => {
       await fixture.cancelRun(run1.runId, run1.sandboxToken);
       const approved = await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth1.body.id,
+        expectShellAuth(auth1).id,
         "approve",
         [200],
       );
-      if (!approved.body.grantExpiresAt) {
+      const approvedAuth = expectShellAuth(approved);
+      if (!approvedAuth.grantExpiresAt) {
         throw new Error("Expected grantExpiresAt on approved authorization");
       }
-      const grantExpiresAtMs = Date.parse(approved.body.grantExpiresAt);
+      const grantExpiresAtMs = Date.parse(approvedAuth.grantExpiresAt);
 
       const run2 = await fixture.launchRun(host.hostId, run1.threadId);
 
@@ -1040,7 +1092,7 @@ describe("Desktop Shell command pipeline", () => {
       const queuedBeforeExpiry =
         await fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run2.token },
-          { kind: "shell.list" },
+          { kind: "shell.list", waitMs: 10_000 },
           [200],
         );
 
@@ -1056,7 +1108,7 @@ describe("Desktop Shell command pipeline", () => {
 
       const expiredCommand = await fixture.computerUse.readComputerUseCommand(
         { bearer: run2.token },
-        queuedBeforeExpiry.body.commandId,
+        expectShellQueued(queuedBeforeExpiry).commandId,
       );
       expect(expiredCommand).toMatchObject({
         status: "failed",
@@ -1065,13 +1117,13 @@ describe("Desktop Shell command pipeline", () => {
 
       const expiredGrant = await fixture.computerUse.readDesktopShellAccess(
         member,
-        auth1.body.id,
+        expectShellAuth(auth1).id,
       );
-      expect(expiredGrant.body.status).toBe("expired");
+      expect(expectShellAuth(expiredGrant).status).toBe("expired");
 
       await fixture.computerUse.requestCreateDesktopShellCommand(
         { bearer: run2.token },
-        { kind: "shell.list" },
+        { kind: "shell.list", waitMs: 10_000 },
         [403],
       );
 
@@ -1079,21 +1131,21 @@ describe("Desktop Shell command pipeline", () => {
         { bearer: run2.token },
         "Replacement request",
       );
-      expect(auth2.body.id).not.toBe(auth1.body.id);
+      expect(expectShellAuth(auth2).id).not.toBe(expectShellAuth(auth1).id);
 
       await fixture.cancelRun(run2.runId, run2.sandboxToken);
 
       // Advance to the unapproved request's expiry and attempt approval.
-      mockNow(Date.parse(auth2.body.requestExpiresAt));
+      mockNow(Date.parse(expectShellAuth(auth2).requestExpiresAt));
       await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth2.body.id,
+        expectShellAuth(auth2).id,
         "approve",
         [410],
       );
       const expiredRequest = await fixture.computerUse.readDesktopShellAccess(
         member,
-        auth2.body.id,
+        expectShellAuth(auth2).id,
       );
       expect(expiredRequest.body).toMatchObject({
         status: "expired",
@@ -1123,7 +1175,7 @@ describe("Desktop Shell command pipeline", () => {
       // With Desktop Shell switch off, member command gets 403 and host stays idle.
       await fixture.computerUse.requestCreateDesktopShellCommand(
         member,
-        { kind: "shell.list" },
+        { kind: "shell.list", waitMs: 10_000 },
         [403],
       );
       await expect(
@@ -1143,10 +1195,12 @@ describe("Desktop Shell command pipeline", () => {
       const unauthorized =
         await fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run1.token },
-          { kind: "shell.list" },
+          { kind: "shell.list", waitMs: 10_000 },
           [403],
         );
-      expect(unauthorized.body.error.code).toBe("SHELL_AUTHORIZATION_REQUIRED");
+      expect(expectApiError(unauthorized).code).toBe(
+        "SHELL_AUTHORIZATION_REQUIRED",
+      );
       await expect(
         fixture.computerUse.claimNextComputerUseCommand(
           host.connection,
@@ -1161,7 +1215,7 @@ describe("Desktop Shell command pipeline", () => {
       await fixture.cancelRun(run1.runId, run1.sandboxToken);
       await fixture.computerUse.actDesktopShellAccess(
         member,
-        auth.body.id,
+        expectShellAuth(auth).id,
         "approve",
         [200],
       );
@@ -1190,14 +1244,14 @@ describe("Desktop Shell command pipeline", () => {
         member.userId,
         memberIdentity.orgId,
         host.hostId,
-        host.connectionGeneration,
+        host.connection.connectionGeneration,
       );
       const expectedResultChannel = computerUseCommandResultChannelName(
         member.userId,
         memberIdentity.orgId,
-        pwdCreated.body.commandId,
+        expectShellQueued(pwdCreated).commandId,
       );
-      expect(pwdCreated.body.realtime).toMatchObject({
+      expect(expectShellQueued(pwdCreated).realtime).toMatchObject({
         channelName: expectedResultChannel,
         eventName: computerUseCommandResultChangedEvent,
       });
@@ -1212,7 +1266,7 @@ describe("Desktop Shell command pipeline", () => {
       expect(claimedPwd.status).toBe("command");
       if (claimedPwd.status === "command") {
         expect(claimedPwd.command).toMatchObject({
-          id: pwdCreated.body.commandId,
+          id: expectShellQueued(pwdCreated).commandId,
           hostId: host.hostId,
           kind: "shell.cmd",
           timeoutMs: 16_000,
@@ -1227,13 +1281,13 @@ describe("Desktop Shell command pipeline", () => {
       // Invalid completion returns HTTP 400 and leaves the command running.
       await fixture.computerUse.requestCompleteComputerUseCommand(
         host.connection,
-        pwdCreated.body.commandId,
+        expectShellQueued(pwdCreated).commandId,
         { status: "succeeded", result: { nextCursor: -1 } },
         [400],
       );
       const stillRunning = await fixture.computerUse.readComputerUseCommand(
         { bearer: run2.token },
-        pwdCreated.body.commandId,
+        expectShellQueued(pwdCreated).commandId,
       );
       expect(stillRunning.status).toBe("running");
 
@@ -1243,7 +1297,7 @@ describe("Desktop Shell command pipeline", () => {
       context.mocks.ably.publish.mockClear();
       await fixture.computerUse.completeComputerUseCommandWith(
         host.connection,
-        pwdCreated.body.commandId,
+        expectShellQueued(pwdCreated).commandId,
         {
           status: "succeeded",
           result: {
@@ -1257,7 +1311,7 @@ describe("Desktop Shell command pipeline", () => {
 
       const completedPwd = await fixture.computerUse.readComputerUseCommand(
         { bearer: run2.token },
-        pwdCreated.body.commandId,
+        expectShellQueued(pwdCreated).commandId,
       );
       expect(completedPwd).toMatchObject({
         status: "succeeded",
@@ -1276,7 +1330,7 @@ describe("Desktop Shell command pipeline", () => {
       const queuedList =
         await fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run2.token },
-          { kind: "shell.list" },
+          { kind: "shell.list", waitMs: 10_000 },
           [200],
         );
 
@@ -1288,7 +1342,7 @@ describe("Desktop Shell command pipeline", () => {
       const failedAfterSwitchOff =
         await fixture.computerUse.readComputerUseCommand(
           { bearer: run2.token },
-          queuedList.body.commandId,
+          expectShellQueued(queuedList).commandId,
         );
       expect(failedAfterSwitchOff).toMatchObject({
         status: "failed",
@@ -1314,7 +1368,7 @@ describe("Desktop Shell command pipeline", () => {
       });
       await fixture.computerUse.requestCreateDesktopShellCommand(
         { bearer: run2.token },
-        { kind: "shell.list" },
+        { kind: "shell.list", waitMs: 10_000 },
         [403],
       );
     },
