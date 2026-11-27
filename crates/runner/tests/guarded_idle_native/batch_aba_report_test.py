@@ -14,13 +14,13 @@ import batch_aba_report as aba
 import cleanup_report as cleanup
 import report
 import report_test
-import status_failure_report_test as failure_test
+import held_status_report_fixture as fixture
 from progress_report_fixture import foreground_heartbeat, joined_observer, memory_read_receipt
 
 
 class BatchAbaReportTests(unittest.TestCase):
     def setUp(self):
-        failure_test.StatusFailureReportTests.setUp(self)
+        fixture.prepare_status_failure(self)
         raw = json.dumps(self.policy)
         self.collector["metadata"].pop("native_status_failure_policy_json")
         self.collector["metadata"]["native_batch_aba_policy_json"] = raw
