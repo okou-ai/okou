@@ -2102,6 +2102,43 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    fun workflowIntroductionClosesWhenRecreationDiscardsTheQuery() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        val originalTitle = app.fixture.releaseTitle
+        val details = compose.onNodeWithText("View workflow details")
+
+        scope.performClick()
+        query.performTextReplacement("checklist".padEnd(257))
+        waitFor(originalTitle)
+        compose.onNodeWithText(originalTitle).performClick()
+        details.assertIsDisplayed()
+
+        compose.activityRule.scenario.recreate()
+
+        waitForTag("chat_search_query")
+        query.assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")),
+        )
+        details.assertDoesNotExist()
+
+        scope.performClick()
+        query.performTextReplacement("checklist")
+        waitFor(originalTitle)
+        details.assertDoesNotExist()
+
+        compose.onNodeWithText(originalTitle).performClick()
+        details.assertIsDisplayed()
+        compose.activityRule.scenario.recreate()
+
+        waitFor("View workflow details")
+        query.assertTextContains("checklist")
+        scope.assertIsSelected()
+    }
+
+    @Test
     fun workflowIntroRestoresResultsFocusWhileOtherSearchTypesAreLoading() {
         val messagesRequested = CountDownLatch(1)
         val releaseMessages = CountDownLatch(1)

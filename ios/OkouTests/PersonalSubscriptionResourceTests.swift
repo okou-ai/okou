@@ -166,4 +166,24 @@ final class PersonalSubscriptionResourceTests: XCTestCase {
     XCTAssertEqual(store.accounts.first?.accountEmail, "fresh@example.invalid")
     XCTAssertEqual(reads.withLock { $0 }, 2)
   }
+
+  func testGroupsIncludeGoogleAIAccountStatus() async throws {
+    let antigravityJSON = """
+      {"subscriptions":[{"id":"00000000-0000-4000-8000-0000000000aa","type":"antigravity","isActive":true,"accountEmail":"pilot@example.invalid","planType":"pro","needsReconnect":false,"subscriptionUsage":{"fiveHour":{"usedPercent":25,"remainingPercent":75,"windowSeconds":18000}}}]}
+      """
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertEqual(request.url?.path, "/api/me/3rd-party-subscriptions")
+      return ChatHTTPResponse(body: antigravityJSON)
+    }
+    let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
+    defer { store.close() }
+    let refreshed = await store.refresh()
+    XCTAssertTrue(refreshed)
+    let groups = try await store.stateStore.get(store.resources.groups).value
+    let google = try XCTUnwrap(groups.first { $0.type == .antigravity })
+    XCTAssertEqual(google.accounts.map(\.accountEmail), ["pilot@example.invalid"])
+    XCTAssertEqual(google.accounts.first?.planType, "pro")
+    XCTAssertEqual(google.accounts.first?.usageWindows.first?.window.remaining, 75)
+    XCTAssertFalse(PersonalSubscriptionType.antigravity.supportsDeviceAuth)
+  }
 }

@@ -3099,6 +3099,16 @@
       "loading": "Carregando contas…",
       "loadMore": "Carregar mais",
       "managerTitle": "Gerenciar contas do {{connector}}",
+      "namePresetCustom": "Personalizado",
+      "namePresets": {
+        "company": "Empresa",
+        "customer": "Cliente",
+        "personal": "Pessoal",
+        "primary": "Principal",
+        "secondary": "Secundária",
+        "work": "Trabalho"
+      },
+      "namePromptCustomHint": "Deixe em branco para salvar sem nome.",
       "namePromptDescription": "Você pode pular esta etapa e nomear a conta mais tarde.",
       "namePromptTitle": "Nomeie sua conta do {{connector}}",
       "noAccounts": "Nenhuma conta",
@@ -6492,7 +6502,6 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
-      "hide": "Ocultar conformidade",
       "link": "Detalhes de segurança",
       "status": {
         "aligned": "Alinhado",

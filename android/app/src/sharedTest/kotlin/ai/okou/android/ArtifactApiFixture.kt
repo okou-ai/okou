@@ -27,7 +27,7 @@ internal class ArtifactApiFixture(
     private val imageBody: ByteArray? = null,
     includeVideo: Boolean = false,
     private val imageDownloadAllowed: Boolean? = null,
-    private val imageThumbnailUrl: String? = null,
+    imageThumbnailUrl: String? = null,
 ) {
     data class Item(val id: String, val kind: String, val title: String, val date: String)
 
@@ -92,6 +92,10 @@ internal class ArtifactApiFixture(
     var beforeCatalog: (RecordedRequest) -> Unit = {}
     var beforeDownload: () -> Unit = {}
     @Volatile var beforeSitePreview: () -> Unit = {}
+    @Volatile
+    var imageThumbnailUrl: String? =
+        imageThumbnailUrl ?: api.server.url("/artifact-bytes/image").toString()
+
     @Volatile
     var imageResponse: () -> MockResponse = {
         MockResponse().setBody(Buffer().write(imageBody ?: sampleImage()))
@@ -185,9 +189,9 @@ internal class ArtifactApiFixture(
         }
     }
 
-    private fun sampleImage(): ByteArray {
+    fun sampleImage(color: Int = Color.rgb(220, 190, 164)): ByteArray {
         val bitmap = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(Color.rgb(220, 190, 164))
+        bitmap.eraseColor(color)
         try {
             val output = ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
@@ -253,12 +257,8 @@ internal class ArtifactApiFixture(
         put(
             "thumbnail",
             if (item == image)
-                buildJsonObject {
-                    put(
-                        "url",
-                        imageThumbnailUrl ?: api.server.url("/artifact-bytes/image").toString(),
-                    )
-                }
+                imageThumbnailUrl?.let { url -> buildJsonObject { put("url", url) } }
+                    ?: kotlinx.serialization.json.JsonNull
             else kotlinx.serialization.json.JsonNull,
         )
     }

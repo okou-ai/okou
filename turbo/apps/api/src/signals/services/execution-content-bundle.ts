@@ -4,6 +4,7 @@ import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bund
 import { presignedGetUrlSignerForBucket } from "../external/s3";
 import {
   contentBundleUrlCacheRequest,
+  rememberContentBundleUrls,
   type ContentBundleUrlCacheSnapshot,
 } from "./content-bundle-presigned-url-cache";
 import {
@@ -89,6 +90,16 @@ export const signExecutionContentBundles$ = command(
       sign: get(presignedGetUrlSignerForBucket(cache.context.bucket)),
     });
     signal.throwIfAborted();
+    rememberContentBundleUrls(
+      cache.context,
+      signed.freshValues.map((value) => {
+        return {
+          sha256: value.storageVersionId,
+          url: value.presignedUrl,
+          expiresAtMs: value.expiresAt.getTime(),
+        };
+      }),
+    );
     const withDownloadUrl = <T extends ContentBundle>(reference: T) => {
       const request = requests.get(reference.sha256);
       const url = request && signed.results.get(request.cacheKey)?.url;

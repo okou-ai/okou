@@ -154,6 +154,124 @@ async fn run_in_sandbox_hands_warm_archives_with_artifact_to_blank_apply() {
 }
 
 #[tokio::test]
+async fn prepared_blank_applies_a_small_fresh_artifact_inline_or_stages_it_for_a_custom_mount() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let archive = extracted_archive();
+    for (mount, version, inline) in [
+        ("/home/user/artifact", "inline", true),
+        ("/mnt/custom", "staged", false),
+    ] {
+        let ordinary_dir = config.home.storage_cache_dir("ordinary", version);
+        std::fs::create_dir_all(&ordinary_dir).unwrap();
+        std::fs::write(ordinary_dir.join("archive.tar.gz"), &archive).unwrap();
+        drop(
+            runner_host::lock::open_lock_file(&config.home.storage_lock("ordinary", version))
+                .unwrap(),
+        );
+        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(http_response(
+            "200 OK", &archive,
+        ))])
+        .await;
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        // If population requests early eligibility, decline it so both
+        // publication orderings exercise the completed handoff.
+        overrides.push_storage_manifest_result(Ok(ExecResult::new(
+            0,
+            b"false\n".to_vec(),
+            Vec::new(),
+        )));
+        let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+        let mut ctx = minimal_context();
+        let mut artifact = api_artifact("fresh", mount, "fresh-id", version, &server.url());
+        artifact.archive_size = Some(archive.len() as u64);
+        ctx.storage_manifest = Some(StorageManifest {
+            storages: vec![api_storage(
+                "ordinary",
+                "/home/user/ordinary",
+                version,
+                "https://r2.example/archive",
+            )],
+            artifacts: vec![artifact],
+        });
+        let mut telemetry = test_telemetry(&config, &ctx);
+        let mut controls = RunControls::new(tokio_util::sync::CancellationToken::new(), None);
+        controls.prepared_storage = crate::executor::sandbox_run::prepare_storage(
+            &ctx,
+            None,
+            &config,
+            &controls.cancel,
+            &mut telemetry,
+        )
+        .await
+        .unwrap();
+        assert!(controls.prepared_storage.is_some());
+        run_in_sandbox(
+            sandbox.as_ref(),
+            &ctx,
+            &config,
+            RunStart {
+                sandbox_startup_path: SandboxStartupPath::Blank,
+                restore_guest_state: false,
+                reuse_result: SandboxReuseResult::PoolMiss,
+                home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
+                prev_storage: None,
+            },
+            &mut telemetry,
+            controls,
+        )
+        .await
+        .unwrap();
+        server.assert_finished().await;
+
+        let calls = overrides.storage_manifest_calls();
+        let applied = &calls.last().unwrap().manifest_json;
+        let (json, attached) = if inline {
+            let (json, payload) = storage_files::split_input(applied).unwrap();
+            (
+                json,
+                storage_files::inline_archives::decode(payload).unwrap(),
+            )
+        } else {
+            (applied.as_slice(), HashMap::new())
+        };
+        let manifest: Manifest = serde_json::from_slice(json).unwrap();
+        assert!(manifest.archive_readiness.is_none());
+        let path = |url: &Option<String>| {
+            url.as_deref()
+                .unwrap()
+                .strip_prefix("file://")
+                .unwrap()
+                .to_owned()
+        };
+        let ordinary_path = path(&manifest.storages[0].archive_url);
+        let artifact_path = path(&manifest.artifacts[0].archive_url);
+        let staged = overrides
+            .write_files_calls()
+            .into_iter()
+            .flat_map(|batch| batch.files)
+            .collect::<Vec<_>>();
+        assert_eq!(staged[0].path, ordinary_path);
+        assert_eq!(staged[0].content, archive);
+        if inline {
+            assert_eq!(staged.len(), 1);
+            assert_eq!(
+                attached.get(artifact_path.as_str()),
+                Some(&archive.as_slice())
+            );
+        } else {
+            assert_eq!(staged.len(), 2);
+            assert_eq!(staged[1].path, artifact_path);
+            assert_eq!(staged[1].content, archive);
+        }
+        assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    }
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
+    config.fresh_archive_delivery.shutdown().await;
+}
+
+#[tokio::test]
 async fn run_in_sandbox_applies_decoded_artifact_before_agent_spawn() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;

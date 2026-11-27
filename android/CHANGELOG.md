@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.66.0](https://github.com/okou-ai/okou/compare/android-v0.65.5...android-v0.66.0) (2026-11-27)
+
+
+### Features
+
+* **android:** adopt the v409 adaptive launcher icon ([#51403](https://github.com/okou-ai/okou/issues/51403)) ([f60a532](https://github.com/okou-ai/okou/commit/f60a5325036fd559976ecb031c0d10e2a6ba9137))
+
+
+### Bug Fixes
+
+* **android:** show workflow purpose matches in workspace search ([#51392](https://github.com/okou-ai/okou/issues/51392)) ([3d719a2](https://github.com/okou-ai/okou/commit/3d719a226e394a3627929ad8036d7cc07e5e9a4e))
+
+## [0.65.5](https://github.com/okou-ai/okou/compare/android-v0.65.4...android-v0.65.5) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** align artifact catalog and hosted preview loading ([#51363](https://github.com/okou-ai/okou/issues/51363)) ([cd92668](https://github.com/okou-ai/okou/commit/cd92668bd984b35536ea8c2464f1afecebf30503))
+* **android:** align settings sync and fast mode ([#51323](https://github.com/okou-ai/okou/issues/51323)) ([c544757](https://github.com/okou-ai/okou/commit/c5447578549200f84162117bdfeac281447274ea))
+* **android:** keep update actions reachable in short windows ([#51361](https://github.com/okou-ai/okou/issues/51361)) ([332ed02](https://github.com/okou-ai/okou/commit/332ed027ec517f427aa4cb0edfd06c7fe684b105))
+
 ## [0.65.4](https://github.com/okou-ai/okou/compare/android-v0.65.3...android-v0.65.4) (2026-11-27)
 
 

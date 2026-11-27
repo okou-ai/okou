@@ -1,7 +1,6 @@
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$ } from "../external/db";
 import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
-import { iosChatUltrafastTransforms } from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -70,7 +69,6 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
 export const chatThreadGetRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadMetadataContract.get,
-    responseTransforms: [iosChatUltrafastTransforms.metadata],
     handler: authRoute(
       {
         requireOrganization: true,

@@ -123,7 +123,7 @@ final class PersonalSubscriptionAuthorization {
     do { try await store.set(submitCommand).value } catch { didFail(error) }
   }
   private func begin(type: PersonalSubscriptionType, accountID: String? = nil) {
-    guard !closed else { return }
+    guard !closed, type.supportsDeviceAuth else { return }
     cancelFlow()
     authType = type
     authAccountID = accountID

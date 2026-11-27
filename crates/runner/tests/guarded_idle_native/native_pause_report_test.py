@@ -33,12 +33,12 @@ class NativePauseReportTests(unittest.TestCase):
             if event["phase"] == "resume_captured":
                 event["phase"] = "pause_captured"
                 raw = 'PATCH /vm HTTP/1.1\r\nContent-Length: 18\r\n\r\n{"state":"Paused"}'
-                history = value["history_run_id"].encode()
+                history = value["history_run_id"]
                 value.update(request_raw=raw, request_sha256=hashlib.sha256(raw.encode()).hexdigest(),
                     front_socket=value["front_socket"].replace("unpark-proof.sock", "pause-proof.sock"),
                     restore_callback_reached=True, data_verified_ns=value["prepare_started_ns"]+1,
                     repark_started_ns=value["prepare_started_ns"]+2, payload_bytes=65536,
-                    payload_sha256=hashlib.sha256((history*(65536//len(history)+1))[:65536]).hexdigest(),
+                    payload_sha256=hashlib.sha256(report.history_payload(history)).hexdigest(),
                     production_restore_completed=True, private_history_verified=True, ordinary_home_verified=True)
             elif event["phase"] == "resume_accepted_waiting":
                 event["phase"] = "pause_accepted_waiting"

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.71.2](https://github.com/okou-ai/okou/compare/ios-v0.71.1...ios-v0.71.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **ios:** show google ai models in the model picker ([#51365](https://github.com/okou-ai/okou/issues/51365)) ([90e5c77](https://github.com/okou-ai/okou/commit/90e5c7752f976704692e584b03827e4c5e332400))
+
 ## [0.71.1](https://github.com/okou-ai/okou/compare/ios-v0.71.0...ios-v0.71.1) (2026-11-27)
 
 
