@@ -1988,7 +1988,6 @@
         "documentPlaceholder": "Que souhaitez-vous inclure dans votre document ?",
         "imagePlaceholder": "Décrivez l’image à créer…",
         "presentationPlaceholder": "Quel est le sujet de votre présentation ?",
-        "presentationPlaceholderWithDefault": "De quoi parle votre présentation ? ({{format}} par défaut)",
         "slideCount": "Nombre de diapositives",
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
@@ -2000,16 +1999,6 @@
       "message": "Message",
       "modelForThisChat": "Modèle pour cette discussion",
       "placeholder": "Demandez-moi d’automatiser des workflows, de gérer des tâches...",
-      "presentationFormatSetup": {
-        "htmlDescription": "Un lien qui s’ouvre dans n’importe quel navigateur",
-        "htmlLabel": "Diapositives web",
-        "openSettings": "Ouvrir les paramètres",
-        "pptxDescription": "Un fichier .pptx modifiable",
-        "pptxLabel": "PowerPoint",
-        "savedDefault": "{{format}} est désormais votre format par défaut pour les présentations",
-        "settingsHint": "Utilisé pour chaque nouvelle présentation. Vous pouvez le modifier dans les paramètres.",
-        "title": "Choisissez un format par défaut pour commencer"
-      },
       "selectedModelUnavailable": "Le modèle sélectionné n'est pas disponible. Configurez-le avant d'envoyer.",
       "selectedModelUnavailableToast": "Le modèle sélectionné n'est pas disponible",
       "selectModel": "Sélectionner le modèle",
@@ -2709,6 +2698,11 @@
       "unsupported": "La réinitialisation manuelle n’est pas prise en charge ; l’utilisation se rétablit naturellement."
     },
     "taskChips": {
+      "presentationFormat": "Format de présentation",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
       "shelf": {
@@ -6173,14 +6167,6 @@
           "title": "Modèle par défaut"
         },
         "description": "Choisissez les paramètres par défaut des nouvelles discussions et le mode d’envoi des messages.",
-        "presentationFormat": {
-          "htmlDescription": "Les nouvelles présentations s’ouvrent sous forme de lien dans le navigateur",
-          "pptxDescription": "Les nouvelles présentations arrivent sous forme de fichier .pptx modifiable",
-          "saveFailed": "Impossible d’enregistrer le format par défaut. Réessayez.",
-          "title": "Format de présentation par défaut",
-          "unavailable": "Impossible de charger votre format par défaut",
-          "unsetDescription": "Nous vous le demanderons lors de votre première présentation"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

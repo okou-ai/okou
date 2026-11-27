@@ -74,34 +74,6 @@ describe("presentation runbook packages", () => {
   });
 
   it.each(["html", "pptx"] as const)(
-    "preserves the legacy %s packet when the format policy is disabled or omitted",
-    async (outputFormat) => {
-      const pkg = findPresentationRunbookPackage(
-        "template:html-ppt-schoolhouse",
-        outputFormat,
-      );
-      if (!pkg) {
-        throw new Error(`Missing ${outputFormat} Schoolhouse package`);
-      }
-      const args = {
-        runbookPackage: pkg,
-        colorSystemToken: "bauhaus-primary",
-        imageGenerationEnabled: false,
-      };
-      const legacy = buildPresentationRunbookInstructionLines(args);
-      expect(
-        buildPresentationRunbookInstructionLines({
-          ...args,
-          presentationOutputFormatEnabled: false,
-        }),
-      ).toEqual(legacy);
-      await expect(legacy.join("\n")).toMatchFileSnapshot(
-        `./__snapshots__/presentation-runbook-packages-legacy-${outputFormat}.txt`,
-      );
-    },
-  );
-
-  it.each(["html", "pptx"] as const)(
     "uses the matching %s package directory and authoring workflow",
     (outputFormat) => {
       const pkg = findPresentationRunbookPackage(
@@ -115,7 +87,6 @@ describe("presentation runbook packages", () => {
         runbookPackage: pkg,
         colorSystemToken: "bauhaus-primary",
         imageGenerationEnabled: false,
-        presentationOutputFormatEnabled: true,
       }).join("\n");
       const resourceDir =
         outputFormat === "pptx"
@@ -134,28 +105,13 @@ describe("presentation runbook packages", () => {
       );
       if (outputFormat === "pptx") {
         expect(instructions).toContain(
-          "For a new deck with resolved PPTX output, author an editable native PPTX",
-        );
-        expect(instructions).toContain(
-          "Follow its export and verification workflow, render and inspect the slides",
-        );
-        expect(instructions).toContain(
-          "upload the .pptx with this integration's upload-file command and return its exact URL",
+          "Author an editable native PPTX directly",
         );
         expect(instructions).not.toContain("okou host");
         expect(instructions).not.toContain("index.html");
       } else {
         expect(instructions).toContain(
           "Keep all slides and visible content in index.html",
-        );
-        expect(instructions).toContain(
-          "use the enabled HTML-to-PPTX conversion workflow without another conversion request and deliver the converted PPTX",
-        );
-        expect(instructions).toContain(
-          "If conversion is unavailable or fails, report the blocker instead of changing format or style",
-        );
-        expect(instructions).toContain(
-          "For HTML delivery only, follow the preview and hosting steps below",
         );
         expect(instructions).toContain("okou host");
       }

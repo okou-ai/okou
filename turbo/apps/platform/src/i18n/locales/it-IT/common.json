@@ -1988,7 +1988,6 @@
         "documentPlaceholder": "Cosa vorresti includere nel tuo documento?",
         "imagePlaceholder": "Descrivi l’immagine che vuoi creare…",
         "presentationPlaceholder": "Di cosa tratta la tua presentazione?",
-        "presentationPlaceholderWithDefault": "Di cosa parla la tua presentazione? ({{format}} predefinito)",
         "slideCount": "Numero di diapositive",
         "slideCountAuto": "Automatico",
         "slideCountRange": "{{range}} diapositive"
@@ -2000,16 +1999,6 @@
       "message": "Messaggio",
       "modelForThisChat": "Modello per questa chat",
       "placeholder": "Chiedimi di automatizzare i flussi di lavoro, gestire le attività...",
-      "presentationFormatSetup": {
-        "htmlDescription": "Un link che si apre in qualsiasi browser",
-        "htmlLabel": "Slide web",
-        "openSettings": "Apri impostazioni",
-        "pptxDescription": "Un file .pptx modificabile",
-        "pptxLabel": "PowerPoint",
-        "savedDefault": "{{format}} è ora il tuo formato predefinito per le presentazioni",
-        "settingsHint": "Usato per ogni nuova presentazione. Puoi cambiarlo nelle Impostazioni.",
-        "title": "Scegli un formato predefinito per iniziare"
-      },
       "selectedModelUnavailable": "Il modello selezionato non è disponibile. Configuralo prima dell'invio.",
       "selectedModelUnavailableToast": "Il modello selezionato non è disponibile",
       "selectModel": "Seleziona modello",
@@ -2709,6 +2698,11 @@
       "unsupported": "Il ripristino manuale non è supportato; l’utilizzo si ripristina automaticamente."
     },
     "taskChips": {
+      "presentationFormat": "Formato della presentazione",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Modelli di presentazione",
       "removeTask": "Rimuovi {{task}}",
       "shelf": {
@@ -6173,14 +6167,6 @@
           "title": "Modello predefinito"
         },
         "description": "Scegli le impostazioni predefinite per le nuove chat e come inviare i messaggi.",
-        "presentationFormat": {
-          "htmlDescription": "Le nuove presentazioni si aprono come link nel browser",
-          "pptxDescription": "Le nuove presentazioni arrivano come file .pptx modificabile",
-          "saveFailed": "Impossibile salvare il formato predefinito. Riprova.",
-          "title": "Formato predefinito per le presentazioni",
-          "unavailable": "Impossibile caricare il formato predefinito",
-          "unsetDescription": "Te lo chiederemo la prima volta che crei una presentazione"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

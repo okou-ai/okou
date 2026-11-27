@@ -126,7 +126,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.PresentationOutputFormat]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Choose HTML or PPTX for presentations and remember your default in this workspace.",
+      "Choose HTML or PPTX for presentations and remember the preference on this device.",
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
