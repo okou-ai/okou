@@ -346,7 +346,7 @@ test("A presentation format preference does not change another Chart output type
   expect(instructions?.text).not.toContain("PPTX");
 });
 
-test("Peers cannot enable presentation format through a stored opt-in", async () => {
+test("An opted-in peer can select a presentation format without changing the rollout default", async () => {
   const capture = mockTemplateChat();
   await setupPage({
     context,
@@ -361,16 +361,25 @@ test("Peers cannot enable presentation format through a stored opt-in", async ()
   const shelf = await screen.findByRole("group", {
     name: "Presentation templates",
   });
-  expect(screen.queryByRole("group", { name: "Output format" })).toBeNull();
+  const formats = await screen.findByRole("group", {
+    name: "Output format",
+  });
+  expect(button("HTML", formats)).toHaveAttribute("aria-pressed", "true");
+  click(button("PPTX", formats));
   await fill(editor, "Prepare our deck");
   click(button(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title, shelf));
   click(button("Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
   });
-  expect(capture.selectedTemplates[0]).not.toHaveProperty(
-    "selection.outputFormat",
-  );
+  expect(capture.selectedTemplates[0]).toMatchObject({
+    type: "presentation",
+    selection: { outputFormat: "pptx" },
+  });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining("- Output format: PPTX format"),
+  });
 });
 
 test("An untagged message submits only the user's request with a saved presentation default", async () => {

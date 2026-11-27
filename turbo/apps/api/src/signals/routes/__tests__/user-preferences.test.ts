@@ -370,7 +370,7 @@ test("opting out hides and ignores presentation preferences without erasing the 
   expect(restored.body.theme).toBe("dark");
 });
 
-test("out-of-audience callers retain legacy preferences without saving a presentation default", async () => {
+test("non-opted-in callers retain legacy preferences without saving a presentation default", async () => {
   newMember();
   const initialized = await accept(
     client().initialize({ headers: headers(), body: { locale: "en-US" } }),
@@ -393,6 +393,67 @@ test("out-of-audience callers retain legacy preferences without saving a present
     }),
     [400],
   );
+});
+
+test("ordinary members can opt in and save HTML and PPTX presentation preferences", async () => {
+  mocks.clerk.session(
+    `user_${randomUUID()}`,
+    `org_${randomUUID()}`,
+    "org:member",
+  );
+  const initialSwitches = await accept(
+    featureClient().get({ headers: headers() }),
+    [200],
+  );
+  expect(initialSwitches.body.effectiveSwitches).toMatchObject({
+    [presentationFormatKey]: false,
+  });
+  const initialized = await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(initialized.body).not.toHaveProperty("presentationFormat");
+
+  const optedIn = await accept(
+    featureClient().update({
+      headers: headers(),
+      body: { switches: { [presentationFormatKey]: true } },
+    }),
+    [200],
+  );
+  expect(optedIn.body.effectiveSwitches).toMatchObject({
+    [presentationFormatKey]: true,
+  });
+  const enabled = await accept(
+    featureClient().get({ headers: headers() }),
+    [200],
+  );
+  expect(enabled.body.effectiveSwitches).toMatchObject({
+    [presentationFormatKey]: true,
+  });
+  const unchosen = await accept(client().get({ headers: headers() }), [200]);
+  expect(unchosen.body.presentationFormat).toBeNull();
+
+  const html = await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "html" },
+    }),
+    [200],
+  );
+  expect(html.body.presentationFormat).toBe("html");
+  const savedHtml = await accept(client().get({ headers: headers() }), [200]);
+  expect(savedHtml.body.presentationFormat).toBe("html");
+  const pptx = await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "pptx" },
+    }),
+    [200],
+  );
+  expect(pptx.body.presentationFormat).toBe("pptx");
+  const savedPptx = await accept(client().get({ headers: headers() }), [200]);
+  expect(savedPptx.body.presentationFormat).toBe("pptx");
 });
 
 test("cli PATs retain legacy preference access but cannot save the enabled presentation preference", async () => {

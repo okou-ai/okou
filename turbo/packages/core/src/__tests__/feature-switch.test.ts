@@ -149,7 +149,7 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("keeps presentation format unavailable outside its rollout audience even with an opt-in override", () => {
+  it("lets every Lab tester opt into presentation format without enabling it for everyone", () => {
     const key = FeatureSwitchKey.PresentationOutputFormat;
     for (const identity of [
       {},
@@ -160,11 +160,13 @@ describe("isFeatureEnabled", () => {
         orgId: "external-org",
       },
     ]) {
-      expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
-      for (const overrides of [{}, { [key]: true }]) {
-        const context = { ...identity, overrides };
-        expect(isFeatureEnabled(key, context)).toBe(false);
-        expect(getAllFeatureStates(context)[key]).toBe(false);
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
+      expect(isFeatureEnabled(key, identity)).toBe(false);
+      expect(getAllFeatureStates(identity)[key]).toBe(false);
+      for (const enabled of [true, false]) {
+        const context = { ...identity, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
       }
     }
   });
