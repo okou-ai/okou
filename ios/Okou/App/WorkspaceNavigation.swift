@@ -4,7 +4,7 @@ import UIKit
 /// Workspace pages keep their own chrome and share one UIKit navigation stack.
 struct WorkspaceNavigation<Sidebar: View, ForYou: View, Chat: View>: UIViewControllerRepresentable {
   let sidebar: SidebarInteraction
-  let forYouBusy: Bool
+  let forYouState: ForYouStore.NavigationState
   @ViewBuilder let list: () -> Sidebar
   @ViewBuilder let forYou: () -> ForYou
   @ViewBuilder let chat: () -> Chat
@@ -25,8 +25,8 @@ struct WorkspaceNavigation<Sidebar: View, ForYou: View, Chat: View>: UIViewContr
     let coordinator = context.coordinator
     updatePages(coordinator, environment: context.environment)
     let onDeck = sidebar.path.last == .forYou
-    navigation.popPan.requiresLeadingEdge = onDeck
-    navigation.popPan.isEnabled = !(onDeck && forYouBusy)
+    navigation.popPan.requiresLeadingEdge = onDeck && forYouState == .showingCard
+    navigation.popPan.isEnabled = !(onDeck && forYouState == .busy)
     // Reconcile in UIKit's layout lifecycle, outside SwiftUI's update transaction.
     navigation.view.setNeedsLayout()
   }
