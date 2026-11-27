@@ -236,10 +236,13 @@ const COMPOSER_CONTROL_FOCUS_CLASS =
  */
 export type ComposerLayout = "default" | "home" | "card";
 
+type ComposerRadius = "default" | "compact";
+
 interface ChatComposerProps {
   readonly signals: ComposerSignals;
   readonly showPendingItems?: boolean;
   readonly layout?: ComposerLayout;
+  readonly radius?: ComposerRadius;
   readonly discovery?: ReactNode;
 }
 
@@ -3937,9 +3940,11 @@ function containsFiles(dataTransfer: DataTransfer): boolean {
 function ComposerCard({
   signals,
   layout,
+  radius,
 }: {
   signals: ComposerSignals;
   layout: ComposerLayout;
+  radius: ComposerRadius;
 }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions();
@@ -3960,6 +3965,7 @@ function ComposerCard({
       surface="composer"
       className={cn(
         "z-10",
+        radius === "compact" && "rounded-xl",
         "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
         layout === "card" &&
           "[&_.ProseMirror_p]:pl-0 [&_[data-feedback-item]]:min-h-0",
@@ -4022,6 +4028,7 @@ export function ChatComposer({
   signals,
   showPendingItems = true,
   layout = "default",
+  radius = "default",
   discovery,
 }: ChatComposerProps) {
   const setLifecycleRef = useSet(signals.setLifecycleRef$);
@@ -4044,7 +4051,7 @@ export function ChatComposer({
         <ComposerNoticeSlot signals={signals} />
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
         {discovery}
-        <ComposerCard signals={signals} layout={layout} />
+        <ComposerCard signals={signals} layout={layout} radius={radius} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>
     </>

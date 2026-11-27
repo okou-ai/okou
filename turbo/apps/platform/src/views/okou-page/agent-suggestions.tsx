@@ -353,7 +353,8 @@ function SuggestionDirectionComposer({
   const composer =
     prepared.state === "hasData" && prepared.data ? prepared.data : null;
   const ready = composer !== null || prepared.state === "hasError";
-  const radius = suggestionRowRadius(useForYouSimplifiedDeck());
+  const simplified = useForYouSimplifiedDeck();
+  const radius = suggestionRowRadius(simplified);
   return (
     <section
       aria-label={t(($) => {
@@ -420,6 +421,7 @@ function SuggestionDirectionComposer({
                 signals={composer}
                 showPendingItems={false}
                 layout="card"
+                radius={simplified ? "compact" : "default"}
               />
             </div>
           ) : null}
