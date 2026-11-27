@@ -114,7 +114,7 @@ class ScreenshotScenario {
                     fixture.active.set(wide)
                     val command = "release-review"
                     ActivityScenario.launch(MainActivity::class.java).use {
-                        tap(clickableBounds(By.pkg(app.packageName).desc(label(R.string.workspace_workflows))))
+                        tap(bounds(By.pkg(app.packageName).desc(label(R.string.workspace_workflows))))
                         assertTrue(clickableBounds(text(command)).height() >= 80)
                         val search = bounds(By.pkg(app.packageName).clazz("android.widget.EditText"))
                         assertEquals(48, search.height())
