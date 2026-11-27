@@ -3,13 +3,22 @@ import { describe, expect, it } from "vitest";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { phoneUseContract } from "@okouai/api-contracts/contracts/phone-use";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow } from "../../../lib/time";
+import { TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
+import { mockOptionalEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { phoneUseRoutes } from "../phone-use";
+import { remoteDevicesRoutes } from "../remote-devices";
+import { createBddApi } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { deliverOrganizationCreated } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 
@@ -304,4 +313,251 @@ describe("Phone Use chat consent", () => {
     const revoked = await accept(readGrant(), [200]);
     expect(revoked.body.selection).toBeNull();
   });
+
+  it(
+    "pf-112 admits the current Run after device approval and checks the policy again at native claim",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const owner = phoneUser();
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const chats = createChatFilesBddApi(context);
+      const actor = bdd.user({
+        userId: owner.userId,
+        orgId: owner.orgId,
+        orgRole: "org:admin",
+      });
+      bdd.acceptStorageWrites();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
+      const remoteDevicesApi = setupApp({
+        context,
+        routes: remoteDevicesRoutes,
+      })(remoteDevicesContract);
+
+      nativeSession(owner);
+      const [runnerGroup] = await Promise.all([
+        runs.configureRunnerGroup(),
+        deliverOrganizationCreated(context, actor),
+        accept(
+          featureSwitchesApi().update({
+            headers,
+            body: {
+              switches: {
+                [FeatureSwitchKey.PhoneUse]: true,
+                [FeatureSwitchKey.RemoteDevices]: true,
+              },
+            },
+          }),
+          [200],
+        ),
+      ]);
+
+      const installationId = randomUUID();
+      const registered = await accept(registration(installationId), [200]);
+      const device = registered.body;
+      const [, directory] = await Promise.all([
+        accept(
+          phoneUseApi().heartbeat({
+            headers,
+            params: { deviceId: device.id },
+            body: { generation: device.generation, ready: true },
+          }),
+          [200],
+        ),
+        accept(remoteDevicesApi.list({ headers }), [200]),
+      ]);
+      const remoteDevice = directory.body.devices.find((entry) => {
+        return entry.channels.some((channel) => {
+          return channel.kind === "ios" && channel.id === device.id;
+        });
+      });
+      if (!remoteDevice) {
+        throw new Error("Expected registered phone to publish a remote device");
+      }
+      expect(remoteDevice.accessAllowed).toBeFalsy();
+
+      const sent = await chats.requestSendEvent(
+        actor,
+        { prompt: "Use my iPhone", clientEventId: randomUUID(), model: null },
+        [201],
+      );
+      await flushWaitUntilForTest();
+      const dispatch = runs.receivedDispatches(runnerGroup).at(-1);
+      const agentToken =
+        dispatch?.executionContext.platformEnvironment.OKOU_TOKEN;
+      if (!dispatch || !agentToken) {
+        throw new Error("Expected a dispatched active Run");
+      }
+      const runId = dispatch.executionContext.runId;
+      const threadId = sent.body.threadId;
+      const agentHeaders = { authorization: `Bearer ${agentToken}` };
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      context.mocks.ably.presenceGet.mockResolvedValue({
+        items: [{ clientId: owner.userId }],
+      });
+      context.mocks.ably.createTokenRequest.mockResolvedValue({
+        keyName: "test.key",
+        timestamp: now(),
+        capability: "{}",
+        clientId: owner.userId,
+        nonce: randomUUID(),
+        mac: "test-mac",
+      });
+
+      nativeSession(owner);
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+      const [hiddenDevices, deniedCreate] = await Promise.all([
+        accept(phoneUseApi().devices({ headers: agentHeaders }), [200]),
+        accept(
+          phoneUseApi().create({
+            headers: agentHeaders,
+            body: {
+              id: randomUUID(),
+              deviceId: device.id,
+              action: { kind: "observe" },
+            },
+          }),
+          [403],
+        ),
+      ]);
+      expect(hiddenDevices.body.devices).toStrictEqual([]);
+      expect(deniedCreate.body.error.message).toContain("current access");
+
+      webSession(owner);
+      const approved = await accept(
+        remoteDevicesApi.approve({
+          headers,
+          params: { threadId },
+          body: { deviceId: remoteDevice.id },
+        }),
+        [200],
+      );
+      expect(approved.body).toMatchObject({
+        id: remoteDevice.id,
+        accessAllowed: true,
+        accessExpiresAt: expect.any(String),
+      });
+
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+      const operationId = randomUUID();
+      const [visibleDevices, queued] = await Promise.all([
+        accept(phoneUseApi().devices({ headers: agentHeaders }), [200]),
+        accept(
+          phoneUseApi().create({
+            headers: agentHeaders,
+            body: {
+              id: operationId,
+              deviceId: device.id,
+              action: { kind: "observe" },
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(visibleDevices.body.devices).toMatchObject([
+        { id: device.id, generation: device.generation, online: true },
+      ]);
+      expect(queued.body).toMatchObject({
+        id: operationId,
+        deviceId: device.id,
+        runId,
+        grantId: device.id,
+        status: "queued",
+      });
+
+      webSession(owner);
+      await accept(
+        remoteDevicesApi.setAccess({
+          headers,
+          params: { deviceId: remoteDevice.id },
+          body: { mode: "denied" },
+        }),
+        [200],
+      );
+
+      nativeSession(owner);
+      const blockedClaim = await accept(
+        phoneUseApi().next({
+          headers,
+          params: { deviceId: device.id },
+          body: { generation: device.generation },
+        }),
+        [200],
+      );
+      expect(blockedClaim.body.operation).toBeNull();
+
+      webSession(owner);
+      await accept(
+        remoteDevicesApi.setAccess({
+          headers,
+          params: { deviceId: remoteDevice.id },
+          body: { mode: "always" },
+        }),
+        [200],
+      );
+
+      nativeSession(owner);
+      const claimed = await accept(
+        phoneUseApi().next({
+          headers,
+          params: { deviceId: device.id },
+          body: { generation: device.generation },
+        }),
+        [200],
+      );
+      expect(claimed.body.operation).toMatchObject({
+        id: operationId,
+        deviceId: device.id,
+        runId,
+        grantId: device.id,
+        status: "running",
+      });
+
+      webSession(owner);
+      await accept(
+        remoteDevicesApi.setAccess({
+          headers,
+          params: { deviceId: remoteDevice.id },
+          body: { mode: "denied" },
+        }),
+        [200],
+      );
+      nativeSession(owner);
+      await accept(
+        phoneUseApi().validate({
+          headers,
+          params: { deviceId: device.id },
+          body: { generation: device.generation, operationId },
+        }),
+        [403],
+      );
+
+      webSession(owner);
+      await accept(
+        remoteDevicesApi.setAccess({
+          headers,
+          params: { deviceId: remoteDevice.id },
+          body: { mode: "always" },
+        }),
+        [200],
+      );
+      nativeSession(owner);
+      const replaced = await accept(registration(installationId), [200]);
+      expect(replaced.body.generation).toBe(device.generation + 1);
+      await accept(
+        phoneUseApi().validate({
+          headers,
+          params: { deviceId: device.id },
+          body: { generation: replaced.body.generation, operationId },
+        }),
+        [403],
+      );
+    },
+  );
 });

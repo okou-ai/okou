@@ -9,18 +9,26 @@ import {
   chatThreadConnectorSelectionContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
+import { mailDraftChangedEvent } from "@okouai/api-contracts/contracts/realtime";
+import { runWebhookContract } from "@okouai/api-contracts/contracts/webhooks";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
 import { chatThreadDeleteRoutes } from "../chat-threads-delete";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mailRoutes } from "../mail";
+import { webhooksAgentGmailDraftUpdatedRoutes } from "../webhooks-agent-gmail-draft-updated";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -28,8 +36,14 @@ import {
   manualHttpCustomConnectorCreateBody,
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
 import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { countPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -1858,4 +1872,366 @@ describe("Outlook mail in chat", () => {
     });
     expect(recorder.deletes).toStrictEqual(["outlook-draft-15"]);
   });
+});
+
+describe("Active chat Run Gmail drafts", () => {
+  const runs = createRunsApi(context);
+  const webhooks = createWebhookCallbackApi(context);
+  const gmailDraftUpdatedWebhook = setupApp({
+    context,
+    routes: webhooksAgentGmailDraftUpdatedRoutes,
+  })(runWebhookContract);
+
+  function unauthenticatedClerk(): void {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+  }
+
+  async function launchGmailRun() {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    bdd.acceptStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
+    const actor = bdd.user();
+    const [gmail, runnerGroup] = await Promise.all([
+      connectGmail(actor),
+      runs.configureRunnerGroup(),
+      deliverOrganizationCreated(context, actor),
+    ]);
+    const sent = await chats.requestSendEvent(
+      actor,
+      { prompt: "Draft an email", clientEventId: randomUUID(), model: null },
+      [201],
+    );
+    await flushWaitUntilForTest();
+    const dispatch = runs.receivedDispatches(runnerGroup).at(-1);
+    const token = dispatch?.executionContext.platformEnvironment.OKOU_TOKEN;
+    if (!dispatch || !token) {
+      throw new Error("Expected a dispatched active Run");
+    }
+    return {
+      actor,
+      gmail,
+      runId: dispatch.executionContext.runId,
+      threadId: sent.body.threadId,
+      token,
+      sandboxToken: dispatch.executionContext.sandboxToken,
+    };
+  }
+
+  async function finishRun(run: {
+    readonly actor: ApiTestUser;
+    readonly runId: string;
+    readonly sandboxToken: string;
+  }) {
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    await runs.requestCancelRun(run.actor, run.runId, [200]);
+    await webhooks.requestAgentComplete(
+      { runId: run.runId, exitCode: 1, error: "Run cancelled" },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+  }
+
+  it(
+    "mail-036 links without injecting a duplicate card and sends without rebuilding MIME",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const run = await launchGmailRun();
+      const { actor, gmail } = run;
+      const [otherThread, eventsBefore] = await Promise.all([
+        chats.createThread(actor, { model: null }),
+        chats.listThreadEvents(actor, run.threadId),
+      ]);
+      const pngBytes = new Uint8Array([
+        137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3,
+      ]);
+      const pdfBytes = new Uint8Array(Buffer.from("%PDF-1.4 mail-036 report"));
+      const htmlBody =
+        '<p>Please review <img src="cid:inline-logo" alt="Company logo" /></p>';
+      const draftResource = {
+        id: "r-draft-36",
+        message: {
+          id: "r-draft-36-message",
+          threadId: "r-draft-36-thread",
+          payload: {
+            partId: "",
+            mimeType: "multipart/mixed",
+            filename: "",
+            headers: [
+              { name: "From", value: "sender@example.com" },
+              { name: "To", value: "recipient@example.com" },
+              { name: "Cc", value: "cc@example.com" },
+              { name: "Subject", value: "Attachment review" },
+            ],
+            body: { size: 0 },
+            parts: [
+              {
+                partId: "0",
+                mimeType: "multipart/alternative",
+                filename: "",
+                headers: [
+                  { name: "Content-Type", value: "multipart/alternative" },
+                ],
+                body: { size: 0 },
+                parts: [
+                  textPart(
+                    "0.0",
+                    "text/plain",
+                    "Please review the attachment.",
+                  ),
+                  textPart("0.1", "text/html", htmlBody),
+                ],
+              },
+              {
+                partId: "2",
+                mimeType: "image/png",
+                filename: "logo.png",
+                headers: [{ name: "Content-ID", value: "<inline-logo>" }],
+                body: { size: pngBytes.length, data: base64Url(pngBytes) },
+              },
+              {
+                partId: "3",
+                mimeType: "application/pdf",
+                filename: "report.pdf",
+                headers: [{ name: "Content-Type", value: "application/pdf" }],
+                body: { size: pdfBytes.length, data: base64Url(pdfBytes) },
+              },
+            ],
+          },
+        },
+      };
+
+      const draftReads: string[] = [];
+      const recorder = mockGmail(gmail.token, {
+        "r-draft-36": () => {
+          draftReads.push("r-draft-36");
+          return HttpResponse.json(draftResource);
+        },
+      });
+      const runHeaders = { authorization: `Bearer ${run.token}` };
+
+      unauthenticatedClerk();
+      const foreignThreadLink = await accept(
+        mail.linkDraft({
+          headers: runHeaders,
+          body: { threadId: otherThread.id, gmailDraftId: "r-draft-36" },
+        }),
+        [404],
+      );
+      expect(foreignThreadLink.status).toBe(404);
+      expect(draftReads).toStrictEqual([]);
+
+      const linkedByRun = await accept(
+        mail.linkDraft({
+          headers: runHeaders,
+          body: { threadId: run.threadId, gmailDraftId: "r-draft-36" },
+        }),
+        [200],
+      );
+      const { mailDraftId, mailDraftUrl } = linkedByRun.body;
+      expect(mailDraftUrl).toBe(
+        `https://app.okou.ai/mail/drafts/${mailDraftId}`,
+      );
+
+      const [duplicateLink, draft, partResponse] = await Promise.all([
+        linked(actor, run.threadId, "r-draft-36"),
+        draftOf(actor, mailDraftId),
+        accept(
+          mail.getAttachment({
+            headers: as(actor),
+            params: { mailDraftId, partId: "2" },
+          }),
+          [200],
+        ),
+      ]);
+      expect(duplicateLink).toStrictEqual(linkedByRun.body);
+      expect(draft).toMatchObject({
+        version: 3,
+        provider: "gmail",
+        gmailDraftId: "r-draft-36",
+        from: "sender@example.com",
+        to: ["recipient@example.com"],
+        cc: ["cc@example.com"],
+        subject: "Attachment review",
+        body: "Please review the attachment.",
+        bodyHtml: htmlBody,
+        inlineImages: [
+          { contentId: "inline-logo", partId: "2", alt: "Company logo" },
+        ],
+        attachments: [
+          {
+            filename: "report.pdf",
+            contentType: "application/pdf",
+            size: pdfBytes.length,
+            partId: "3",
+          },
+        ],
+      });
+      if (!(partResponse.body instanceof Blob)) {
+        throw new Error("Expected image attachment bytes");
+      }
+      expect(partResponse.headers.get("content-type")).toBe("image/png");
+      expect(partResponse.headers.get("content-disposition")).toContain(
+        "attachment",
+      );
+      expect(
+        new Uint8Array(await partResponse.body.arrayBuffer()),
+      ).toStrictEqual(pngBytes);
+
+      const firstSend = await send(actor, mailDraftId);
+      expect(firstSend.status).toBe(200);
+      expect(firstSend.body).toMatchObject({
+        mailDraft: {
+          status: "sent",
+          sentGmailMessageId: "sent-message",
+        },
+      });
+      expect(recorder.sends).toStrictEqual([{ id: "r-draft-36" }]);
+
+      const [secondSend, eventsAfter] = await Promise.all([
+        send(actor, mailDraftId),
+        chats.listThreadEvents(actor, run.threadId),
+      ]);
+      expect(secondSend.status).toBe(409);
+      expect(secondSend.body).toMatchObject({
+        error: { message: expect.stringContaining("can no longer be sent") },
+      });
+      expect(recorder.sends).toStrictEqual([{ id: "r-draft-36" }]);
+      expect(eventsAfter).toStrictEqual(eventsBefore);
+
+      await finishRun(run);
+    },
+  );
+
+  it(
+    "pf-092 links and refreshes the active chat draft and sends without rebuilding MIME",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const run = await launchGmailRun();
+      const { actor, gmail } = run;
+      const runHeaders = { authorization: `Bearer ${run.token}` };
+      const sandboxHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+      const channel = `user-org:${actor.userId}:${actor.orgId}`;
+      let current = gmailDraftResource("r-draft-92", {
+        subject: "Initial draft",
+        body: "First draft body",
+      });
+      const recorder = mockGmail(gmail.token, {
+        "r-draft-92": () => {
+          return HttpResponse.json(current);
+        },
+      });
+
+      await Promise.all([
+        accept(
+          gmailDraftUpdatedWebhook.gmailDraftUpdated({
+            headers: sandboxHeaders,
+            body: {
+              runId: randomUUID(),
+              connectionId: gmail.connectionId,
+              gmailDraftId: "r-draft-92",
+            },
+          }),
+          [401],
+        ),
+        accept(
+          gmailDraftUpdatedWebhook.gmailDraftUpdated({
+            headers: sandboxHeaders,
+            body: {
+              runId: run.runId,
+              connectionId: gmail.connectionId,
+              gmailDraftId: "r-draft-92",
+            },
+          }),
+          [204],
+        ),
+      ]);
+      await flushWaitUntilForTest();
+
+      unauthenticatedClerk();
+      const linkedDraft = await accept(
+        mail.linkDraft({
+          headers: runHeaders,
+          body: { threadId: run.threadId, gmailDraftId: "r-draft-92" },
+        }),
+        [200],
+      );
+      const { mailDraftId } = linkedDraft.body;
+      const topic = mailDraftChangedEvent(mailDraftId);
+      expect(countPublishedTo(context.mocks, { channel, topic })).toBe(0);
+      await expect(draftOf(actor, mailDraftId)).resolves.toMatchObject({
+        subject: "Initial draft",
+        body: "First draft body",
+        status: "draft",
+      });
+
+      current = gmailDraftResource("r-draft-92", {
+        subject: "Refreshed draft",
+        body: "Updated body from active Run",
+      });
+      await Promise.all([
+        accept(
+          gmailDraftUpdatedWebhook.gmailDraftUpdated({
+            headers: sandboxHeaders,
+            body: {
+              runId: run.runId,
+              connectionId: gmail.connectionId,
+              gmailDraftId: "r-draft-92",
+            },
+          }),
+          [204],
+        ),
+        accept(
+          gmailDraftUpdatedWebhook.gmailDraftUpdated({
+            headers: sandboxHeaders,
+            body: {
+              runId: run.runId,
+              connectionId: randomUUID(),
+              gmailDraftId: "r-draft-92",
+            },
+          }),
+          [204],
+        ),
+      ]);
+      await flushWaitUntilForTest();
+      expect(countPublishedTo(context.mocks, { channel, topic })).toBe(1);
+
+      await expect(draftOf(actor, mailDraftId)).resolves.toMatchObject({
+        subject: "Refreshed draft",
+        body: "Updated body from active Run",
+        status: "draft",
+      });
+
+      const sent = await send(actor, mailDraftId);
+      expect(sent.status).toBe(200);
+      expect(sent.body).toMatchObject({
+        mailDraft: {
+          status: "sent",
+          subject: "Refreshed draft",
+          sentGmailMessageId: "sent-message",
+        },
+      });
+      expect(recorder.sends).toStrictEqual([{ id: "r-draft-92" }]);
+
+      await accept(
+        gmailDraftUpdatedWebhook.gmailDraftUpdated({
+          headers: sandboxHeaders,
+          body: {
+            runId: run.runId,
+            connectionId: gmail.connectionId,
+            gmailDraftId: "r-draft-92",
+          },
+        }),
+        [204],
+      );
+      await flushWaitUntilForTest();
+      expect(countPublishedTo(context.mocks, { channel, topic })).toBe(1);
+
+      await finishRun(run);
+    },
+  );
 });

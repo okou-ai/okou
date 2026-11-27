@@ -81,3 +81,4 @@ voice-io-transcribe-006	Voice segment transcription failed	Given: Google returns
 voice-io-transcribe-019	Voice segment transcription failed	Given: Google returns 147-char hallucinated transcript for 0.1s audio; the Then expects HTTP 502
 voice-io-transcribe-020	Voice segment transcription failed	Given: Google returns 200-char invented transcript for 1s audio; the Then expects HTTP 502 VOICE_TRANSCRIPTION_FAILED
 voice-io-transcribe-031	Voice segment transcription failed	Given: Vertex generation endpoint fails at connection level; the Then expects HTTP 503 PROVIDER_UNAVAILABLE
+auxiliary-generation-009	Auxiliary generation failed	Given: title model returns "---", which strips to empty (unusable_output); Then expects thread remains untitled
