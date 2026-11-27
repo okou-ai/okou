@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.138.2](https://github.com/okou-ai/okou/compare/api-v2.138.1...api-v2.138.2) (2026-11-27)
+
+
+### Refactoring
+
+* **api:** retire legacy proactive workflow dispatch ([#51313](https://github.com/okou-ai/okou/issues/51313)) ([32982c1](https://github.com/okou-ai/okou/commit/32982c12436b34f6d1c99eb69f1f78aa0078a39b)) [#50929](https://github.com/okou-ai/okou/issues/50929)
+
 ## [2.138.1](https://github.com/okou-ai/okou/compare/api-v2.138.0...api-v2.138.1) (2026-11-27)
 
 
