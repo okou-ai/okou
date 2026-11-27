@@ -4,6 +4,8 @@ use super::*;
 use guest_contracts::storage_manifest::{ArchiveReadiness, Manifest};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+const MAX_LATE_INLINE_ARTIFACT_BYTES: usize = 64 * 1024;
+
 /// One transport phase. StoragePlan remains the only semantic planner.
 pub struct GuestStorageBatch {
     pub manifest: Manifest,
@@ -16,6 +18,7 @@ pub struct GuestStorageBatch {
 pub struct GuestStorageInput {
     pub initial: GuestStorageBatch,
     pub decoded_tail: Option<GuestStorageBatch>,
+    pub pending_archives: PendingGuestArchives,
 }
 
 impl GuestStorageInput {
@@ -27,6 +30,7 @@ impl GuestStorageInput {
                 files,
             },
             decoded_tail: None,
+            pending_archives: PendingGuestArchives::default(),
         }
     }
 
@@ -118,6 +122,8 @@ pub struct GuestApplication {
     host_failed: Arc<AtomicBool>,
     pending: Option<ArchiveReadiness>,
     published: HashSet<usize>,
+    blank_startup: bool,
+    pending_archives: PendingGuestArchives,
 }
 
 impl GuestApplication {
@@ -149,7 +155,44 @@ impl GuestApplication {
             host_failed,
             pending: None,
             published: HashSet::new(),
+            blank_startup: false,
+            pending_archives: PendingGuestArchives::default(),
         })
+    }
+
+    /// Permit the late handoff to use the existing Blank inline archive path.
+    pub fn with_blank_startup(mut self) -> Self {
+        self.blank_startup = true;
+        self
+    }
+
+    pub(super) fn retain_small_fresh_artifact(
+        &mut self,
+        ready: &mut Vec<FreshArchiveResolved>,
+    ) -> Option<(CacheTargetGroup, TargetOutcome)> {
+        let [entry] = ready.as_slice() else {
+            return None;
+        };
+        if !self.blank_startup
+            || !entry.group.representative.handle.is_artifact()
+            || !entry.group.additional_targets.is_empty()
+            || entry.archive.bytes.len() > MAX_LATE_INLINE_ARTIFACT_BYTES
+        {
+            return None;
+        }
+        let FreshArchiveResolved {
+            group,
+            archive: FreshArchivePublished { bytes, permit },
+        } = ready.pop()?;
+        self.pending_archives.batch.push(GuestStageWrite {
+            guest_path: guest_archive_path(
+                &group.representative.name,
+                &group.representative.version,
+            ),
+            bytes,
+        });
+        self.pending_archives.fresh_permit = Some(permit);
+        Some((group, TargetOutcome::Hit))
     }
 
     fn send(&mut self, input: GuestStorageInput) -> RunnerResult<()> {
@@ -365,7 +408,9 @@ pub async fn populate_cache_for_guest(
                         Err(error) => Err(error.into()),
                     }
                 } else {
-                    application.send(GuestStorageInput::from_plan(prepared.plan.clone()))?;
+                    let mut input = GuestStorageInput::from_plan(prepared.plan.clone());
+                    input.pending_archives = std::mem::take(&mut application.pending_archives);
+                    application.send(input)?;
                     Ok(deferred)
                 }
             }

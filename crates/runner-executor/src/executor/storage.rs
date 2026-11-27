@@ -192,6 +192,7 @@ pub(super) async fn download_storages_with_files_until_cancelled(
     files: &[(String, Arc<CachedFiles>)],
     telemetry: &mut JobTelemetry,
     cancel: &tokio_util::sync::CancellationToken,
+    pending_archives: PendingGuestArchives,
 ) -> RunnerResult<()> {
     download_storages_with_files_inner(
         sandbox,
@@ -200,7 +201,7 @@ pub(super) async fn download_storages_with_files_until_cancelled(
         files,
         telemetry,
         Some(cancel),
-        PendingGuestArchives::default(),
+        pending_archives,
     )
     .await
 }
@@ -229,17 +230,20 @@ async fn download_storages_with_files_inner(
     );
     let mut inputs = inputs?;
     if !pending_archives.is_empty() {
+        if cancel.is_some_and(tokio_util::sync::CancellationToken::is_cancelled) {
+            return Err(RunnerError::Cancelled);
+        }
         if allow_inline
             && let Some(first) = inputs.first_mut()
             && first.attach_archives(&pending_archives)
         {
+            let action = if pending_archives.is_fresh() {
+                "storage_cache_fresh_delivery_inlined"
+            } else {
+                "storage_cache_warm_archives_inlined"
+            };
             drop(pending_archives);
-            telemetry.record(
-                "storage_cache_warm_archives_inlined",
-                Duration::ZERO,
-                true,
-                None,
-            );
+            telemetry.record(action, Duration::ZERO, true, None);
         } else {
             pending_archives.stage(sandbox, telemetry).await?;
         }

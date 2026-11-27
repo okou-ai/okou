@@ -4,6 +4,147 @@ use sandbox_mock::MockSandboxOverrides;
 use std::sync::atomic::AtomicBool;
 
 #[tokio::test]
+async fn late_blank_handoff_carries_only_a_small_fresh_artifact_and_its_permit() {
+    let mut state = 24301_u32;
+    let content = (0..96 * 1024)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state as u8
+        })
+        .collect::<Vec<_>>();
+    let oversized = tarball_with_contents(&content);
+    assert!(oversized.len() > 64 * 1024);
+    let small = tarball_bytes();
+
+    for (blank, archive, retain) in [
+        (true, &small, true),
+        (false, &small, false),
+        (true, &oversized, false),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let cache = decoded::DecodedCache::new(home.clone());
+        let admission = FreshArchiveDeliveryAdmission::new();
+        let mut telemetry = new_telemetry();
+        let server = MockServer::start_async().await;
+        let get = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/fresh.tar.gz");
+                then.status(200).body(archive.clone());
+            })
+            .await;
+        write_cached_archive(&home, "ordinary", "v1", &small);
+        let mut fresh = artifact_entry(
+            "/home/user/artifact".into(),
+            server.url("/fresh.tar.gz"),
+            "fresh",
+            "v1",
+        );
+        fresh.archive_size = Some(archive.len() as u64);
+        let mut plan = plan_from_entries(
+            vec![storage_entry(
+                "/home/user/ordinary".into(),
+                "https://example.test/ordinary".into(),
+                "ordinary",
+                "v1",
+            )],
+            vec![fresh],
+            None,
+        );
+        let delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &CancellationToken::new(),
+            &mut telemetry,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+        let mut prepared = PreparedStorage { plan, delivery };
+        let sandbox = MockSandbox::new("late-artifact");
+        // If ordinary staging wins the race with publication, the Guest
+        // declines early application. Either ordering uses the late handoff.
+        sandbox.push_exec_result(Ok(sandbox::ExecResult::new(
+            0,
+            b"false\n".to_vec(),
+            Vec::new(),
+        )));
+        let (send, receive) = oneshot::channel();
+        let application = GuestApplication::new(
+            send,
+            temp.path().join("runtime"),
+            "late-artifact".into(),
+            Duration::from_secs(5),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        let application = if blank {
+            application.with_blank_startup()
+        } else {
+            application
+        };
+        populate_cache_for_guest(
+            &mut prepared,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            &cache,
+            application,
+        )
+        .await
+        .unwrap();
+        get.assert_calls_async(1).await;
+
+        let input = receive.await.unwrap();
+        assert!(input.initial.manifest.archive_readiness.is_none());
+        let fresh_path = guest_archive_path("fresh", "v1");
+        assert_eq!(
+            input.initial.manifest.artifacts[0].archive_url.as_deref(),
+            Some(format!("file://{fresh_path}").as_str()),
+        );
+        let paths = |sandbox: &MockSandbox| {
+            sandbox
+                .write_files_calls()
+                .into_iter()
+                .flat_map(|call| call.files.into_iter().map(|file| file.path))
+                .collect::<Vec<_>>()
+        };
+        let ordinary_path = guest_archive_path("ordinary", "v1");
+        assert_eq!(input.pending_archives.is_fresh(), retain);
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT - usize::from(retain),
+        );
+        if retain {
+            assert_eq!(paths(&sandbox), std::slice::from_ref(&ordinary_path));
+            let manifest = serde_json::to_vec(&input.initial.manifest).unwrap();
+            let encoded = input.pending_archives.inline_input(&manifest).unwrap();
+            let (_, payload) = guest_contracts::storage_files::split_input(&encoded).unwrap();
+            let sources = guest_contracts::storage_files::inline_archives::decode(payload).unwrap();
+            assert_eq!(sources.get(fresh_path.as_str()), Some(&archive.as_slice()));
+            // Exercise the same owner when the executor needs the staged path.
+            input
+                .pending_archives
+                .stage(&sandbox, &mut telemetry)
+                .await
+                .unwrap();
+        } else {
+            assert!(input.pending_archives.is_empty());
+        }
+        assert_eq!(paths(&sandbox), [ordinary_path, fresh_path]);
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
+        );
+        cache.shutdown().await;
+        admission.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn saturated_delivery_reuses_staged_slots_before_remaining_fresh_bodies() {
     for (cache_state, guest_eligible, abort) in [
         ("missing", true, false),

@@ -179,17 +179,29 @@ pub(super) async fn prepare_mixed(
                 }
                 check_cancel(Some(&cancel_fresh))?;
                 if !ready.is_empty() {
-                    let staged = stage_fresh_archives(std::mem::take(&mut ready), stage).await?;
-                    // An accepted staging write settles before cancellation
-                    // stops admission of a new readiness publication.
-                    check_cancel(Some(&cancel_fresh))?;
-                    if let Some(early) = early.as_mut() {
-                        early
-                            .application
-                            .publish_staged(stage.sandbox, &staged)
-                            .await?;
+                    if complete
+                        && !incremental
+                        && fresh.is_empty()
+                        && matches!(&ordinary, OrdinaryPreparation::Staged(_))
+                        && let Some(early) = early.as_mut()
+                        && let Some(outcome) =
+                            early.application.retain_small_fresh_artifact(&mut ready)
+                    {
+                        fresh.push(outcome);
+                    } else {
+                        let staged =
+                            stage_fresh_archives(std::mem::take(&mut ready), stage).await?;
+                        // An accepted staging write settles before cancellation
+                        // stops admission of a new readiness publication.
+                        check_cancel(Some(&cancel_fresh))?;
+                        if let Some(early) = early.as_mut() {
+                            early
+                                .application
+                                .publish_staged(stage.sandbox, &staged)
+                                .await?;
+                        }
+                        fresh.extend(staged);
                     }
-                    fresh.extend(staged);
                 }
                 if complete {
                     let ordinary = match ordinary {
@@ -374,7 +386,7 @@ pub(super) async fn prepare_ordinary(
             && !stage.metrics.attempted
             && batch.content_bytes >= 1024 * 1024
         {
-            pending.0 = batch;
+            pending.batch = batch;
         } else {
             flush_guest_stage_batch(&mut batch, stage).await?;
         }

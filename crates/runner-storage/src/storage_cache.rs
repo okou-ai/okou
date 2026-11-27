@@ -1047,21 +1047,29 @@ struct GuestStageBatch {
     content_bytes: usize,
 }
 
-/// A single warm batch still owned by Blank startup. The caller attaches it
-/// to its ordinary apply or settles it through the existing file writer.
+/// A batch still owned by Blank startup. The caller attaches it to its
+/// ordinary apply or settles it through the existing file writer.
 #[derive(Default)]
-pub struct PendingGuestArchives(GuestStageBatch);
+pub struct PendingGuestArchives {
+    batch: GuestStageBatch,
+    fresh_permit: Option<FreshArchivePermit>,
+}
 
 impl PendingGuestArchives {
     /// Whether the caller has any archive delivery work to settle.
     pub fn is_empty(&self) -> bool {
-        self.0.writes.is_empty()
+        self.batch.writes.is_empty()
+    }
+
+    /// Whether this batch owns admission for a published fresh body.
+    pub fn is_fresh(&self) -> bool {
+        self.fresh_permit.is_some()
     }
 
     /// Try attaching the held sources within the existing binary input limit.
     pub fn inline_input(&self, manifest: &[u8]) -> Option<Vec<u8>> {
         let sources = self
-            .0
+            .batch
             .writes
             .iter()
             .map(|write| (write.guest_path.as_str(), write.bytes.as_ref()))
@@ -1077,7 +1085,7 @@ impl PendingGuestArchives {
     ) -> RunnerResult<()> {
         let mut metrics = StorageCacheStageMetrics::start();
         let result = flush_guest_stage_batch(
-            &mut self.0,
+            &mut self.batch,
             &mut GuestStageRecorder {
                 sandbox,
                 guest_writes: &GuestWriteLocks::default(),
@@ -1087,6 +1095,14 @@ impl PendingGuestArchives {
         )
         .await;
         metrics.record_total(telemetry);
+        if result.is_ok() && self.is_fresh() {
+            telemetry.record(
+                STORAGE_CACHE_FRESH_DELIVERY_STAGED,
+                Duration::ZERO,
+                true,
+                None,
+            );
+        }
         result
     }
 }
