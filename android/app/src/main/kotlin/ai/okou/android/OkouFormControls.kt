@@ -137,9 +137,9 @@ internal fun OkouActionButton(
     treatment: OkouActionTreatment = OkouActionTreatment.Primary,
     layoutLabels: List<String> = emptyList(),
     retainDisabledFocus: Boolean = false,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
 ) {
     val size = modifier.minimumInteractiveComponentSize().heightIn(min = 48.dp)
-    val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
     val style = MaterialTheme.typography.labelLarge
     val text: @Composable () -> Unit = {
         if (layoutLabels.isEmpty()) Text(label, style = style, textAlign = TextAlign.Center)
@@ -162,7 +162,7 @@ internal fun OkouActionButton(
                 onClick,
                 size,
                 enabled,
-                contentPadding = padding,
+                contentPadding = contentPadding,
                 content = { text() },
             )
         OkouActionTreatment.Outline ->
@@ -170,7 +170,7 @@ internal fun OkouActionButton(
                 onClick,
                 size,
                 enabled,
-                contentPadding = padding,
+                contentPadding = contentPadding,
                 content = { text() },
             )
         OkouActionTreatment.Primary -> {
@@ -192,7 +192,7 @@ internal fun OkouActionButton(
                             contentColor = defaults.disabledContentColor,
                         )
                     else defaults,
-                contentPadding = padding,
+                contentPadding = contentPadding,
                 content = { text() },
             )
         }
