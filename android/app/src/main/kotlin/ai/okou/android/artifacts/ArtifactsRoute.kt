@@ -262,6 +262,7 @@ internal fun ArtifactSelectionPreview(
         var sharing by remember { mutableStateOf(false) }
         val original = preview?.access?.save
         val generated = showArtifactImageViewer && isGeneratedArtifactPreview(id)
+        val canShareOriginal = generated || chatAttachment(id) != null
         val source =
             preview?.info?.sourceChatId?.let { sourceId ->
                 threads.firstOrNull { it.id == sourceId && it.hidden != true }
@@ -269,7 +270,7 @@ internal fun ArtifactSelectionPreview(
         val saveEnabled = !state.saving && page.pickerArtifactId == null && !sharing
         val onShare: (() -> Unit)? =
             original
-                ?.takeIf { generated }
+                ?.takeIf { canShareOriginal }
                 ?.let { file ->
                     {
                         if (
