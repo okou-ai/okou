@@ -91,6 +91,7 @@ internal class ProjectListOwner(
     private val dispatcher: CoroutineDispatcher,
     private val wallMillis: () -> Long,
     private val syncChatsAfterDelete: suspend () -> Unit,
+    private val isListPaneOpen: () -> Boolean,
     private val visibleListFeedbackScope: () -> Any?,
     private val readState: () -> ProjectListUiState,
     private val publish: (ProjectListUiState) -> Unit,
@@ -387,19 +388,15 @@ internal class ProjectListOwner(
                     snapshot.copy(
                         deletingId = id.takeIf { status == ProjectDeleteStatus.Confirmed },
                         deleteFeedback =
-                            if (
-                                status == ProjectDeleteStatus.Confirmed ||
-                                    visibleListFeedbackScope() != null
-                            ) {
+                            if (status == ProjectDeleteStatus.Confirmed || isListPaneOpen()) {
                                 snapshot.deleteFeedback + ProjectDeleteFeedback(id, eventId, status)
                             } else snapshot.deleteFeedback,
                     )
-                // Catch up after acknowledgement so the folder can disappear with its contents
-                // already in the outside group. Failed attempts settle from the write result.
                 if (status == ProjectDeleteStatus.Confirmed) {
+                    // Catch up chats first, then use the normal retrying Project read.
                     syncChatsAfterDelete()
                     requireCurrent()
-                    refreshAfterWrite()
+                    invalidate()
                 }
             } finally {
                 if (current() && state.deletingId == id) state = state.copy(deletingId = null)

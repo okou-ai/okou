@@ -489,6 +489,7 @@ class ChatListModel(
             dispatcher = dispatcher,
             wallMillis = wallMillis,
             syncChatsAfterDelete = { awaitListRead { true } },
+            isListPaneOpen = { listFeedbackScope != null },
             visibleListFeedbackScope = { visibleListFeedbackScope },
             readState = { mutable.value.projectList },
             publish = { reconcileProjectMoves(mutable.value.copy(projectList = it)) },
