@@ -14,6 +14,8 @@ import ai.okou.android.chat.ChatAttachmentReference
 import ai.okou.android.chat.ChatComposerField
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatComposerTopInset
+import ai.okou.android.chat.ChatImageViewer
+import ai.okou.android.chat.ChatImageVisit
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListReadFailure
@@ -22,8 +24,6 @@ import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ChatRowAction
-import ai.okou.android.chat.ChatSentImageViewer
-import ai.okou.android.chat.ChatSentImageVisit
 import ai.okou.android.chat.ComposerPrefillResult
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
@@ -474,10 +474,10 @@ internal fun OkouApp(
     val missingMessage = stringResource(R.string.chat_search_message_unavailable)
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    fun openChatArtifact(link: String, focusKey: String?, visit: ChatSentImageVisit? = null) {
+    fun openChatArtifact(link: String, focusKey: String?, visit: ChatImageVisit? = null) {
         focus.clearFocus()
         keyboard?.hide()
-        chatArtifacts?.showSentImages(visit)
+        chatArtifacts?.showChatImages(visit)
         navigation = navigation.copy(chatArtifactLink = link, chatArtifactFocusKey = focusKey)
     }
     fun conversationArtifactActions(threadId: String): ChatArtifactActions? =
@@ -571,7 +571,7 @@ internal fun OkouApp(
                     chatArtifactFocusKey = navigation.chatArtifactFocusKey.takeIf { returnToCard },
                 )
             chatArtifacts?.select(null)
-            chatArtifacts?.showSentImages(null)
+            chatArtifacts?.showChatImages(null)
             inlineArtifactPageState.removeState("chat-artifact-link")
         }
         if (!returnToCard && navigation.chatArtifactFocusKey != null) {
@@ -1108,7 +1108,7 @@ internal fun OkouApp(
                     openChat(
                         provisionalChat,
                         keepAttachmentVisit =
-                            chatArtifacts?.sentImageVisit?.threadId == provisionalId ||
+                            chatArtifacts?.chatImageVisit?.threadId == provisionalId ||
                                 (navigation.chatArtifactLink == null &&
                                     attachmentFocusMessage(navigation.chatArtifactFocusKey) !=
                                         null),
@@ -2053,13 +2053,13 @@ internal fun OkouApp(
                                     "chat-artifact-link",
                                 ) {
                                     val visit =
-                                        chatArtifacts.sentImageVisit?.takeIf {
+                                        chatArtifacts.chatImageVisit?.takeIf {
                                             it.initialLink == inlineArtifactLink &&
                                                 it.threadId == (thread?.id ?: provisionalId)
                                         }
                                     val close = { closeResources(returnToCard = true) }
                                     if (visit != null) {
-                                        ChatSentImageViewer(
+                                        ChatImageViewer(
                                             chatArtifacts,
                                             visit,
                                             listWidth != null,

@@ -6,7 +6,6 @@ import ai.okou.android.artifacts.ArtifactPreviewState
 import ai.okou.android.artifacts.ImageViewerGroup
 import ai.okou.android.artifacts.ImageViewerPage
 import ai.okou.android.artifacts.ImageViewerToolbar
-import ai.okou.android.artifacts.attachmentPreviewId
 import ai.okou.android.artifacts.isImageUnavailable
 import ai.okou.android.artifacts.rememberArtifactExportControls
 import ai.okou.android.artifacts.rememberArtifactSaveLauncher
@@ -21,30 +20,35 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.File
 
-internal data class ChatSentImageVisit(
+internal data class ChatImagePage(
+    val source: String,
+    val description: String,
+    val localFile: File? = null,
+)
+
+internal data class ChatImageVisit(
     val threadId: String,
-    val images: List<ChatAttachmentReference>,
+    val images: List<ChatImagePage>,
     val start: Int,
-    val localFiles: Map<String, File>,
 ) {
-    val initialLink = images[start].attachmentPreviewId()
+    val initialLink = images[start].source
 }
 
 @Composable
-internal fun ChatSentImageViewer(
+internal fun ChatImageViewer(
     model: ArtifactCatalogModel,
-    visit: ChatSentImageVisit,
+    visit: ChatImageVisit,
     wide: Boolean,
     onBack: () -> Unit,
 ) {
-    val ids = remember(visit) { visit.images.map { it.attachmentPreviewId() } }
+    val ids = remember(visit) { visit.images.map { it.source } }
     val pager = rememberPagerState(visit.start) { ids.size }
     val selected = ids[pager.settledPage]
     val state by model.state.collectAsStateWithLifecycle()
     val page = rememberArtifactPageState()
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val current = state.preview?.takeIf { it.id == selected }
-    val revoked = model.sentImageProblem(selected)
+    val revoked = model.chatImageProblem(selected)
     val original = current?.access?.save.takeIf { revoked == null }
     val export =
         rememberArtifactExportControls(model, state, page, selected, saveLauncher, original)
@@ -86,16 +90,16 @@ internal fun ChatSentImageViewer(
                 }
                 .collectAsStateWithLifecycle(model.inlineImages.thumbnail(visit.threadId, id))
         val preview =
-            model.sentImageProblem(id)?.let { ArtifactPreviewState(id, null, problem = it) }
+            model.chatImageProblem(id)?.let { ArtifactPreviewState(id, null, problem = it) }
                 ?: state.preview?.takeIf { active && it.id == id }
         ImageViewerPage(
             preview,
             model,
-            image.filename,
+            image.description.ifBlank { preview?.item?.title.orEmpty() },
             zoom,
             viewer,
             modifier,
-            localFile = visit.localFiles[image.id],
+            localFile = image.localFile,
             thumbnail = thumbnail,
             keyboardPaging = ids.size > 1,
             saveResult = export.result.takeIf { active },

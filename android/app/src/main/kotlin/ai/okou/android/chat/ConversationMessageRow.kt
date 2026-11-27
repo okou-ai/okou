@@ -507,7 +507,7 @@ private fun MessageBody(
                 restoreCodeReply()
         }
     }
-    val replyArtifacts =
+    val returnActions =
         if (!imageRestore) artifactActions
         else
             artifactActions?.let { actions ->
@@ -520,7 +520,7 @@ private fun MessageBody(
                     },
                 )
             }
-    if (imageRestore && replyArtifacts != null) {
+    if (imageRestore && returnActions != null) {
         LaunchedEffect(sourceFocus, message.blocks) {
             val section =
                 sourceFocus
@@ -528,7 +528,26 @@ private fun MessageBody(
                     ?.substringBefore('/')
                     ?.toIntOrNull()
             if (section == null || message.blocks.getOrNull(section)?.kind != HistoryBlockKind.Text)
-                replyArtifacts.restoreReply()
+                returnActions.restoreReply()
+        }
+    }
+    var requestedImage by remember(message.id) { mutableStateOf<Pair<String, String>?>(null) }
+    val openImages = returnActions?.openImages
+    val images = returnActions?.images
+    val replyArtifacts =
+        if (openImages != null && images != null && message.role == HistoryRole.Assistant)
+            returnActions.copy(openInlineImage = { source, key -> requestedImage = source to key })
+        else returnActions
+    LaunchedEffect(message, requestedImage) {
+        val (source, key) = requestedImage ?: return@LaunchedEffect
+        if (openImages == null || images == null) return@LaunchedEffect
+        val candidates = withContext(Dispatchers.Default) { message.replyImagePages() }
+        val unavailable = images.unavailableSources(returnActions.threadId)
+        val pages = candidates.filter { (_, page) -> page.source !in unavailable }
+        val start = pages.indexOfFirst { (focus, page) -> focus == key && page.source == source }
+        requestedImage = null
+        if (start >= 0) {
+            openImages(ChatImageVisit(returnActions.threadId, pages.map { it.second }, start), key)
         }
     }
     val foreground =
