@@ -1,44 +1,55 @@
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { command, computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { db$ } from "../external/db";
-import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
+import {
+  dispatchRunCallbacks$,
+  type PreloadedTerminalChatCallback,
+} from "./agent-run-callback.service";
 
 export type RequiredTerminalChatCallbackResult =
   | { readonly success: true }
   | { readonly success: false; readonly error: string };
 
-function createUndeliveredChatCallbackId(runId: string) {
-  return computed(async (get): Promise<string | undefined> => {
-    const [callback] = await get(db$)
-      .select({ id: agentRunCallbacks.id })
-      .from(agentRunCallbacks)
-      .where(
-        and(
-          eq(agentRunCallbacks.runId, runId),
-          eq(agentRunCallbacks.internalKind, "chat"),
-          inArray(agentRunCallbacks.status, ["pending", "failed"]),
-        ),
-      )
-      .limit(1);
-    return callback?.id;
-  });
+function createUndeliveredChatCallback(runId: string) {
+  return computed(
+    async (get): Promise<PreloadedTerminalChatCallback | undefined> => {
+      const [callback] = await get(db$)
+        .select({
+          id: agentRunCallbacks.id,
+          payload: agentRunCallbacks.payload,
+          runStatus: agentRuns.status,
+        })
+        .from(agentRunCallbacks)
+        .innerJoin(agentRuns, eq(agentRuns.id, agentRunCallbacks.runId))
+        .where(
+          and(
+            eq(agentRunCallbacks.runId, runId),
+            eq(agentRunCallbacks.internalKind, "chat"),
+            inArray(agentRunCallbacks.status, ["pending", "failed"]),
+          ),
+        )
+        .limit(1);
+      return callback;
+    },
+  );
 }
 
 /** One completion request owns one required dispatch and its two observations. */
 export function createRequiredTerminalChatCallback(runId: string) {
-  const beforeDispatch$ = createUndeliveredChatCallbackId(runId);
-  const afterDispatch$ = createUndeliveredChatCallbackId(runId);
+  const beforeDispatch$ = createUndeliveredChatCallback(runId);
+  const afterDispatch$ = createUndeliveredChatCallback(runId);
 
   const dispatch$ = command(
     async (
       { get, set },
       signal: AbortSignal,
     ): Promise<RequiredTerminalChatCallbackResult> => {
-      const chatCallbackId = await get(beforeDispatch$);
+      const chatCallback = await get(beforeDispatch$);
       signal.throwIfAborted();
-      if (chatCallbackId === undefined) {
+      if (chatCallback === undefined) {
         return { success: true };
       }
 
@@ -46,7 +57,8 @@ export function createRequiredTerminalChatCallback(runId: string) {
         dispatchRunCallbacks$,
         {
           runId,
-          redriveChatCallbackId: chatCallbackId,
+          redriveChatCallbackId: chatCallback.id,
+          preloadedChatCallback: chatCallback,
         },
         signal,
       );

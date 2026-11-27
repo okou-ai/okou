@@ -414,10 +414,10 @@ private fun UpdateSheet(
             val scrollHeading =
                 maxHeight <
                     actions.height + headingGap + contentSpacing + titleHeight + bodyLineHeight
-            val revealResult = short && !scrollHeading
             val requiresNewerAndroid = state.requiresNewerAndroid
             val problemMessage = state.updateProblemMessage(requiresNewerAndroid)
-            val revealCheckResult = revealResult && !requiresNewerAndroid && problemMessage == null
+            val revealCheckResult =
+                short && !scrollHeading && !requiresNewerAndroid && problemMessage == null
             val heading: @Composable () -> Unit = {
                 Text(
                     title,
@@ -460,7 +460,7 @@ private fun UpdateSheet(
                         UpdateProblemText(
                             R.string.updates_android_unsupported.takeIf { requiresNewerAndroid },
                             problemMessage,
-                            revealResult = revealResult,
+                            revealResult = short || scrollHeading,
                         )
                     }
                 }
@@ -607,7 +607,7 @@ private fun RequiredUpdateContent(
                     R.string.updates_newer_android_required.takeIf { requiresNewerAndroid },
                     state.updateProblemMessage(requiresNewerAndroid),
                     Modifier.padding(bottom = 8.dp),
-                    revealResult = !scrollHeading,
+                    revealResult = true,
                     textAlign = TextAlign.Center,
                 )
                 Text(
@@ -680,7 +680,7 @@ private fun UpdateProblemText(
     @StringRes incompatibility: Int?,
     @StringRes message: Int?,
     modifier: Modifier = Modifier,
-    revealResult: Boolean = false,
+    revealResult: Boolean,
     textAlign: TextAlign = TextAlign.Unspecified,
 ) {
     if (incompatibility != null) {
@@ -752,8 +752,6 @@ private fun UpdateAction(
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
     val shape = if (state.required) ButtonDefaults.shape else RoundedCornerShape(12.dp)
-    val foreground = if (state.required) colors.onPrimary else colors.inverseOnSurface
-    val background = if (state.required) colors.primary else colors.inverseSurface
     val contentPadding =
         if (state.required)
             PaddingValues(requiredUpdateActionHorizontalPadding, updateActionVerticalPadding)
@@ -787,7 +785,7 @@ private fun UpdateAction(
             .then(focus.modifier)
             .updateFocusOutline(
                 shape,
-                if (showingProgress) colors.onSurface else foreground,
+                if (showingProgress) colors.onSurface else colors.onPrimary,
             )
     if (progress != null) {
         val fraction = downloadPercent?.let { it / 100f }
@@ -801,7 +799,7 @@ private fun UpdateAction(
                 .clip(shape)
                 .background(
                     if (useDisabledColors) disabledColors.disabledContainerColor
-                    else colors.surfaceVariant,
+                    else colors.surfaceContainerHigh,
                 )
                 .semantics(
                     mergeDescendants = true,
@@ -821,7 +819,7 @@ private fun UpdateAction(
                 modifier = Modifier.padding(contentPadding),
                 color =
                     if (useDisabledColors) disabledColors.disabledContentColor
-                    else colors.onBackground,
+                    else colors.onSurface,
                 style = updateProgressStyle(),
                 textAlign = TextAlign.Center,
             )
@@ -867,17 +865,8 @@ private fun UpdateAction(
         modifier = controlModifier,
         shape = shape,
         contentPadding = contentPadding,
-        colors =
-            ButtonDefaults.buttonColors(
-                containerColor = background,
-                contentColor = foreground,
-            ),
     ) {
-        Text(
-            stringResource(label),
-            style = updateActionLabelStyle(state.required),
-            textAlign = TextAlign.Center,
-        )
+        Text(stringResource(label), textAlign = TextAlign.Center)
     }
 }
 
@@ -922,10 +911,8 @@ private fun ActionText(label: String, action: () -> Unit, modifier: Modifier = M
                 .heightIn(min = updateActionMinHeight)
                 .updateFocusOutline(ButtonDefaults.shape, MaterialTheme.colorScheme.onSurface),
         contentPadding = updateActionPadding,
-        colors =
-            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        Text(label, style = updateActionLabelStyle(), textAlign = TextAlign.Center)
+        Text(label, textAlign = TextAlign.Center)
     }
 }
 
@@ -936,12 +923,6 @@ private val updateActionVerticalPadding = 8.dp
 private val updateSheetActionGap = 8.dp
 private val updateActionPadding =
     PaddingValues(updateActionHorizontalPadding, updateActionVerticalPadding)
-
-@Composable
-private fun updateActionLabelStyle(required: Boolean = false): TextStyle {
-    val style = MaterialTheme.typography.labelLarge
-    return if (required) style else style.copy(fontWeight = FontWeight(550))
-}
 
 @Composable
 private fun updateProgressStyle() =
@@ -973,7 +954,7 @@ private fun measureUpdateActions(width: Dp, required: Boolean): UpdateActionSize
             stringResource(R.string.updates_installing),
             stringResource(R.string.updates_waiting_to_install),
         )
-    val labelStyle = updateActionLabelStyle(required)
+    val labelStyle = MaterialTheme.typography.labelLarge
     val progressStyle = updateProgressStyle()
     return with(LocalDensity.current) {
         val dismissWidth =

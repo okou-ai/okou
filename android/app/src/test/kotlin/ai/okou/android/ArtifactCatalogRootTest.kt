@@ -2415,11 +2415,13 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
                     assertEquals(0f, web.alpha, 0f)
                     val url = checkNotNull(shadowOf(web).lastLoadedUrl)
                     web.webViewClient.onPageCommitVisible(web, url)
-                    web.webViewClient.onPageFinished(web, url)
-                    assertEquals(1f, web.alpha, 0f)
                     web.scrollTo(0, 48)
                     web.webViewClient.onPageFinished(web, url)
+                    assertEquals(1f, web.alpha, 0f)
                     assertEquals(48, web.scrollY)
+                    web.scrollTo(0, 72)
+                    web.webViewClient.onPageFinished(web, url)
+                    assertEquals(72, web.scrollY)
                 }
                 compose.mainClock.autoAdvance = true
                 compose.waitUntilDoesNotExist(hasTestTag("artifact_preview_loading"), 5_000)
@@ -2470,6 +2472,11 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
             assertEquals(surfaceWidth.value * 9f / 16f, surfaceHeight.value, 1f)
 
             val initialUrl = loadedWebsiteUrl()
+            val initialView = checkNotNull(websiteView())
+            compose.runOnIdle {
+                initialView.webViewClient.onPageCommitVisible(initialView, checkNotNull(initialUrl))
+                initialView.scrollTo(0, 48)
+            }
             source.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
             source.assertIsFocused()
 
@@ -2490,6 +2497,13 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
 
             releaseGrant.countDown()
             compose.waitUntil(10_000) { loadedWebsiteUrl() == fixture.requestedSiteGrants.last() }
+            val refreshedView = checkNotNull(websiteView())
+            compose.runOnIdle {
+                val url = fixture.requestedSiteGrants.last()
+                refreshedView.webViewClient.onPageCommitVisible(refreshedView, url)
+                refreshedView.webViewClient.onPageFinished(refreshedView, url)
+                assertEquals(48, refreshedView.scrollY)
+            }
             assertEquals(surfaceBounds, surface.getUnclippedBoundsInRoot())
             assertEquals(titleBounds, title.getUnclippedBoundsInRoot())
             assertEquals(sourceBounds, source.assertIsFocused().getUnclippedBoundsInRoot())
