@@ -197,6 +197,7 @@ data class ChatListUiState(
     val threads: List<ConfirmedChat> = emptyList(),
     val listPhase: ChatReadPhase = ChatReadPhase.Idle,
     val listReadFailure: ChatListReadFailure? = null,
+    internal val listReadStartedAt: Long? = null,
     val listRetryProgressVisible: Boolean = false,
     internal val listRefreshFailureOrder: Long? = null,
     val confirmedAt: Long? = null,
@@ -209,6 +210,7 @@ data class ChatListUiState(
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     internal val indicatorsNonRetryableFailure: Boolean = false,
     internal val indicatorsConfirmedAt: Long? = null,
+    internal val indicatorsReadStartedAt: Long? = null,
     internal val indicatorsRetryProgressVisible: Boolean = false,
     internal val indicatorsRefreshFailureOrder: Long? = null,
     val filter: ChatListFilter = ChatListFilter.Inbox,
@@ -309,8 +311,24 @@ internal fun ChatListUiState.projectDestinations(
 internal val ChatListUiState.displayUnreadAt: Map<String, String>?
     get() = indicators?.unreadAt ?: cachedUnread?.unreadAt
 
-internal val ChatListUiState.unreadConfirmedAt: Long?
+private val ChatListUiState.unreadConfirmedAt: Long?
     get() = indicatorsConfirmedAt ?: cachedUnread?.confirmedAt
+
+private fun cacheWasStaleAtReadStart(confirmedAt: Long?, startedAt: Long?): Boolean =
+    confirmedAt != null &&
+        startedAt != null &&
+        chatSyncNoticeDelayMillis(confirmedAt, startedAt) == 0L
+
+private val ChatListUiState.listReadStartedStale: Boolean
+    get() = cacheWasStaleAtReadStart(confirmedAt, listReadStartedAt)
+
+internal val ChatListUiState.listRefreshProgressVisible: Boolean
+    get() = listReadStartedStale || listRetryProgressVisible
+
+internal val ChatListUiState.indicatorsRefreshProgressVisible: Boolean
+    get() =
+        cacheWasStaleAtReadStart(unreadConfirmedAt, indicatorsReadStartedAt) ||
+            indicatorsRetryProgressVisible
 
 internal val ChatListUiState.waitingForUnreadIndicators: Boolean
     get() =
@@ -1891,11 +1909,13 @@ class ChatListModel(
                                 state.listPhase
                             else settledListPhase(state),
                         listReadFailure = null,
+                        listReadStartedAt = null,
                         listRetryProgressVisible = false,
                         indicatorsPhase =
                             if (indicatorRefresh == null) state.indicatorsPhase
                             else if (state.indicators != null) ChatReadPhase.Ready
                             else ChatReadPhase.Idle,
+                        indicatorsReadStartedAt = null,
                         indicatorsRetryProgressVisible = false,
                     )
         }
@@ -2098,6 +2118,7 @@ class ChatListModel(
                 listPhase = ChatReadPhase.Loading,
                 listReadFailure =
                     previous.listReadFailure?.takeIf { it == ChatListReadFailure.Retrying },
+                listReadStartedAt = previous.listReadStartedAt ?: wallMillis(),
             )
         return try {
             // A normal catch-up still needs the sort event. Resume or an explicit refresh can
@@ -2133,6 +2154,7 @@ class ChatListModel(
                     resetListReadFailures()
                     failed.copy(
                         listReadFailure = ChatListReadFailure.NeedsRetry,
+                        listReadStartedAt = null,
                         listRetryProgressVisible = false,
                         listRefreshFailureOrder =
                             if (
@@ -2152,10 +2174,10 @@ class ChatListModel(
                             state.confirmedAt != null &&
                                 (state.listRetryProgressVisible ||
                                     listFailures >= listRetryProgressThreshold ||
-                                    staleListRead(state)),
+                                    state.listReadStartedStale),
                     )
                 } else {
-                    state.copy(listPhase = settledListPhase(state))
+                    state.copy(listPhase = settledListPhase(state), listReadStartedAt = null)
                 }
             }
             false
@@ -2164,10 +2186,6 @@ class ChatListModel(
 
     private fun settledListPhase(state: ChatListUiState) =
         if (state.source == ChatListSource.Network) ChatReadPhase.Ready else ChatReadPhase.Idle
-
-    private fun staleListRead(state: ChatListUiState): Boolean =
-        state.listPhase == ChatReadPhase.Loading &&
-            state.confirmedAt?.let { chatSyncNoticeDelayMillis(it, wallMillis()) == 0L } == true
 
     private fun resetListReadFailures() {
         listRetry?.cancel()
@@ -2252,6 +2270,7 @@ class ChatListModel(
                 source = ChatListSource.Network,
                 listPhase = ChatReadPhase.Ready,
                 listReadFailure = null,
+                listReadStartedAt = null,
                 listRetryProgressVisible = false,
                 listRefreshFailureOrder = null,
                 rowUndo = previousState.rowUndo.retainIfUnsettled(),
@@ -2384,10 +2403,13 @@ class ChatListModel(
         val feedbackScope = visibleListFeedbackScope.takeUnless { afterWrite }
         val retry = if (afterWrite) null else ChatDependencyRetry()
         indicatorsRetry = retry
+        val previous = mutable.value
         mutable.value =
-            mutable.value.copy(
+            previous.copy(
                 indicatorsPhase = ChatReadPhase.Loading,
                 indicatorsNonRetryableFailure = false,
+                // Write verification can take over the active indicator read during backoff.
+                indicatorsReadStartedAt = previous.indicatorsReadStartedAt ?: wallMillis(),
             )
         indicatorsJob = viewModelScope.launch {
             var verifyInvalidatedCursors = false
@@ -2518,6 +2540,7 @@ class ChatListModel(
                             indicators = reconciled,
                             indicatorsPhase = ChatReadPhase.Ready,
                             indicatorsConfirmedAt = unreadConfirmedAt,
+                            indicatorsReadStartedAt = null,
                             indicatorsRetryProgressVisible = false,
                             indicatorsRefreshFailureOrder = null,
                             cachedUnread = null,
@@ -2542,6 +2565,10 @@ class ChatListModel(
                     state.copy(
                         indicatorsPhase = ChatReadPhase.Failed,
                         indicatorsNonRetryableFailure = !retryable,
+                        indicatorsReadStartedAt =
+                            state.indicatorsReadStartedAt.takeIf {
+                                resumeListIndicators
+                            },
                         indicatorsRetryProgressVisible =
                             resumeListIndicators && state.indicatorsRetryProgressVisible,
                         indicatorsRefreshFailureOrder =
