@@ -1,11 +1,14 @@
 import { createDeferredPromise } from "../../utils";
-import { now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import {
   createHash,
   randomUUID,
   generateKeyPairSync,
   verify as verifySignature,
 } from "node:crypto";
+import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
+import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -89,6 +92,7 @@ function domainProvider() {
         release: ReturnType<typeof createDeferredPromise<void>>;
       }
     | undefined;
+  let routeGate: typeof createGate;
   let mode: "cname" | "loop" | "apex" = "cname";
   interface DomainProvider {
     id: string;
@@ -283,7 +287,11 @@ function domainProvider() {
     ),
     http.get(
       "https://connect.okou.app/.okou/domain-verification",
-      ({ request }) => {
+      async ({ request }) => {
+        if (routeGate) {
+          routeGate.entered.resolve(undefined);
+          await routeGate.release.promise;
+        }
         return HttpResponse.json(
           {
             proof: new URL(request.url).searchParams.get("proof"),
@@ -317,6 +325,13 @@ function domainProvider() {
     },
     rejectCreate: (status: 400 | 403 | null) => {
       rejectCreateStatus = status;
+    },
+    holdRoute: () => {
+      routeGate = {
+        entered: createDeferredPromise<void>(context.signal),
+        release: createDeferredPromise<void>(context.signal),
+      };
+      return routeGate;
     },
     holdCreate: () => {
       const gate = {
@@ -398,6 +413,109 @@ async function add(
     )
   ).body;
 }
+test.each(["ready", "timed_out"] as const)(
+  "the background worker publishes %s without a browser and leaves the sharing address intact",
+  async (outcome) => {
+    const fixture = await scenario();
+    const external = domainProvider();
+    const added = await add(fixture);
+    const domain = added.domains[0]!;
+    external.setTxt(domain.records[0]!.value);
+    const clock = now();
+    mockNow(clock - (outcome === "ready" ? 60_000 : 31 * 60_000));
+    const verify = () => {
+      return accept(
+        fixture.api.verifySiteDomain({
+          headers,
+          params: { siteId: added.siteId, domainId: domain.id },
+          body: { expectedRevision: domain.revision },
+        }),
+        [200],
+      );
+    };
+    const pending = (await verify()).body.domains[0]!.verification!;
+    expect(pending.automatic).toMatchObject({ status: "checking" });
+    expect(
+      Date.parse(pending.automatic!.expiresAt) - Date.parse(pending.checkedAt),
+    ).toBe(30 * 60_000);
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    const queries = external.queries();
+    mockNow(clock);
+    const routeGate = outcome === "ready" ? external.holdRoute() : null;
+    if (routeGate) {
+      external.ready();
+    }
+    mockEnv("CRON_SECRET", "domain-recheck-test");
+    const cron = setupAppWithRoutes({
+      context,
+      routes: cronProcessBackgroundJobsRoutes,
+    })(cronProcessBackgroundJobsContract);
+    const wake = () => {
+      return accept(
+        cron.process({
+          headers: { authorization: "Bearer domain-recheck-test" },
+        }),
+        [200],
+      );
+    };
+    const wakeup = wake();
+    if (routeGate) {
+      await routeGate.entered.promise;
+      const live = (
+        await accept(
+          fixture.api.siteDomains({
+            headers,
+            params: { siteId: added.siteId },
+          }),
+          [200],
+        )
+      ).body;
+      routeGate.release.resolve(undefined);
+      expect(live.domains[0]!.verification).toMatchObject({
+        automatic: pending.automatic,
+        checks: {
+          provider: { status: "passed" },
+          certificate: { status: "passed" },
+          route: { status: "pending" },
+        },
+      });
+    }
+    await wakeup;
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      `hostedSiteDomainsChanged:${added.siteId}`,
+      null,
+    );
+    const updated = (
+      await accept(
+        fixture.api.siteDomains({ headers, params: { siteId: added.siteId } }),
+        [200],
+      )
+    ).body;
+    expect(updated.effectiveUrl).toBe(added.defaultUrl);
+    expect(updated.selectedDomainId).toBeNull();
+    expect(updated.domains[0]!.ready).toBe(outcome === "ready");
+    if (outcome === "timed_out") {
+      expect(updated.domains[0]!.verification?.automatic).toMatchObject({
+        id: pending.automatic!.id,
+        status: "timed_out",
+      });
+      expect(external.queries()).toBe(queries);
+      await wake();
+      expect(external.queries()).toBe(queries);
+      const restarted = (await verify()).body.domains[0]!.verification!
+        .automatic!;
+      expect(restarted.status).toBe("checking");
+      expect(restarted.id).not.toBe(pending.automatic!.id);
+      expect(Date.parse(restarted.expiresAt)).toBe(clock + 30 * 60_000);
+    } else {
+      expect(updated.domains[0]!.verification?.automatic).toBeUndefined();
+      expect(external.creates()).toBe(1);
+    }
+  },
+);
+
 test("manual verification returns pending once, then makes the complete hostname selectable without applying it", async () => {
   const fixture = await scenario();
   const external = domainProvider();

@@ -10,6 +10,9 @@ import {
 } from "../external/hosted-domain-request";
 import { settle, settleIncludingAbort } from "../utils";
 import { availableForSite$ } from "./hosted-site-url-availability.service";
+import { isDeepStrictEqual } from "node:util";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
+import { publishUserSignal } from "../external/realtime";
 import { randomBytes, randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, exists, isNotNull, isNull, sql } from "drizzle-orm";
@@ -23,7 +26,7 @@ import {
 import { hostedSites, hostedDeployments } from "@okouai/db/runtime/hosted-site";
 import { hostedSiteBrowserSessions } from "@okouai/db/schema/hosted-site-browser-session";
 import { env } from "../../lib/env";
-import { nowDate } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import {
   normalizeHostedSiteHostname,
@@ -347,7 +350,17 @@ export const readHostedSiteDomains$ = command(
           revision: domain.revision,
           ready: hostedDomainReady(domain),
           removing: domain.revokedAt !== null,
-          verification: domain.verification,
+          verification:
+            domain.verification?.automatic?.status === "checking" &&
+            Date.parse(domain.verification.automatic.expiresAt) <= now()
+              ? {
+                  ...domain.verification,
+                  automatic: {
+                    ...domain.verification.automatic,
+                    status: "timed_out" as const,
+                  },
+                }
+              : domain.verification,
           records: domainRecords(domain),
         };
       }),
@@ -763,17 +776,6 @@ const checkHostedDomain$ = command(
           message: "Website routing will be checked when HTTPS is ready",
         };
       }
-      if (
-        [
-          verification.checks.dns,
-          verification.checks.provider,
-          verification.checks.certificate,
-        ].every((check) => {
-          return check.status === "passed";
-        })
-      ) {
-        await verifyHostedDomainIngress(domain, verification, bounded);
-      }
     }
   },
 );
@@ -809,9 +811,34 @@ function applyHostedDomainVerificationFailure(
       "We couldn’t finish checking your domain. Click Verify to try again.";
   }
 }
+export const HOSTED_DOMAIN_JOB_KIND = "hosted-domain-verification";
+const VERIFICATION_WINDOW_MS = 30 * 60_000;
+export const DOMAIN_RECHECK_MS = 30_000;
+export const DOMAIN_ATTEMPT_TIMEOUT_MS = 8000;
+
+function verificationProgress(verification: HostedDomainVerification | null) {
+  if (!verification) {
+    return null;
+  }
+  // Each probe has a new timestamp. Only user-visible changes invalidate the panel.
+  return {
+    checks: verification.checks,
+    status: verification.status,
+    automatic: verification.automatic,
+    eligible: verification.eligibleForSelection,
+    validationRecords: verification.validationRecords,
+    records: verification.recordChecks.map(
+      ({ type, name, value, status, message, observedValues }) => {
+        return { type, name, value, status, message, observedValues };
+      },
+    ),
+  };
+}
+
 const persistHostedDomainVerification$ = command(
   async (
     { set },
+    owner: Owner,
     domain: Domain,
     verification: HostedDomainVerification,
     signal: AbortSignal,
@@ -823,27 +850,44 @@ const persistHostedDomainVerification$ = command(
         !Object.values(verification.checks).some((check) => {
           return check.status === "failed" || check.status === "pending";
         }));
+    const db = set(writeDb$);
+    const update = db
+      .update(hostedSiteDomains)
+      .set({
+        verification,
+        verifiedAt:
+          verification.status === "ready"
+            ? (domain.verifiedAt ?? nowDate())
+            : domain.verifiedAt,
+      })
+      .where(
+        and(
+          eq(hostedSiteDomains.id, domain.id),
+          eq(hostedSiteDomains.revision, domain.revision),
+          domain.verification === null
+            ? isNull(hostedSiteDomains.verification)
+            : eq(hostedSiteDomains.verification, domain.verification),
+          isNull(hostedSiteDomains.revokedAt),
+        ),
+      )
+      .returning({ id: hostedSiteDomains.id });
+    const automatic = verification.automatic;
+    const updated = db.$with("verified_domain").as(update);
+    // Persist the first pending snapshot and its wakeup in one statement.
+    const queued =
+      automatic?.status === "checking" &&
+      automatic.id !== domain.verification?.automatic?.id
+        ? db.$with("queued_check", {}).as(sql`INSERT INTO ${backgroundJobs}
+          (id, kind, handler_version, user_id, org_id, input, available_at)
+          SELECT ${automatic.id}::uuid, ${HOSTED_DOMAIN_JOB_KIND}, 1, ${owner.userId}, ${owner.orgId},
+            ${sql.param({ siteId: domain.siteId, domainId: domain.id, expectedRevision: domain.revision }, backgroundJobs.input)},
+            ${new Date(now() + DOMAIN_RECHECK_MS).toISOString()}::timestamptz AT TIME ZONE 'UTC'
+          FROM ${updated} RETURNING id`)
+        : null;
     const persisted = await settle(
-      set(writeDb$)
-        .update(hostedSiteDomains)
-        .set({
-          verification,
-          verifiedAt:
-            verification.status === "ready"
-              ? (domain.verifiedAt ?? nowDate())
-              : domain.verifiedAt,
-        })
-        .where(
-          and(
-            eq(hostedSiteDomains.id, domain.id),
-            eq(hostedSiteDomains.revision, domain.revision),
-            domain.verification === null
-              ? isNull(hostedSiteDomains.verification)
-              : eq(hostedSiteDomains.verification, domain.verification),
-            isNull(hostedSiteDomains.revokedAt),
-          ),
-        )
-        .returning({ id: hostedSiteDomains.id }),
+      queued
+        ? db.with(updated, queued).select({ id: updated.id }).from(updated)
+        : update,
       signal,
     );
     signal.throwIfAborted();
@@ -865,16 +909,52 @@ const persistHostedDomainVerification$ = command(
         "The domain changed while verification was running",
       );
     }
+    if (
+      !isDeepStrictEqual(
+        verificationProgress(domain.verification),
+        verificationProgress(verification),
+      )
+    ) {
+      await publishUserSignal(
+        [owner.userId],
+        `hostedSiteDomainsChanged:${domain.siteId}`,
+      );
+    }
   },
 );
-export const verifyHostedSiteDomain$ = command(
-  async ({ set }, args: DomainArgs, signal: AbortSignal) => {
-    const { domain, started } = await set(
-      prepareHostedDomainVerification$,
-      args,
-      signal,
-    );
-    signal.throwIfAborted();
+function needsBackgroundVerification(verification: HostedDomainVerification) {
+  return (
+    verification.status === "incomplete" &&
+    verification.checks.ownership.status === "passed" &&
+    verification.checks.dns.status === "passed" &&
+    !Object.values(verification.checks).some((check) => {
+      return check.status === "failed" || check.status === "unavailable";
+    }) &&
+    verification.recordChecks.every((record) => {
+      return record.status === "passed";
+    })
+  );
+}
+function routingPrerequisitesPassed(
+  checks: HostedDomainVerification["checks"],
+) {
+  return (
+    checks.dns.status === "passed" &&
+    checks.provider.status === "passed" &&
+    checks.certificate.status === "passed"
+  );
+}
+const checkAndSaveDomain$ = command(
+  async (
+    { set },
+    args: DomainArgs,
+    {
+      domain,
+      started,
+      background,
+    }: { domain: Domain; started: Date; background: boolean },
+    signal: AbortSignal,
+  ) => {
     const verification: HostedDomainVerification = {
       status: "incomplete",
       eligibleForSelection: false,
@@ -889,7 +969,19 @@ export const verifyHostedSiteDomain$ = command(
         route: notChecked(),
       },
     };
-    const bounded = AbortSignal.any([signal, AbortSignal.timeout(8000)]);
+    const previous = domain.verification?.automatic;
+    const continuing =
+      previous?.status === "checking" &&
+      (background || Date.parse(previous.expiresAt) > started.getTime());
+    const deadline = continuing
+      ? Date.parse(previous.expiresAt)
+      : started.getTime() + VERIFICATION_WINDOW_MS;
+    const bounded = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(
+        Math.max(1, Math.min(DOMAIN_ATTEMPT_TIMEOUT_MS, deadline - now())),
+      ),
+    ]);
     const attempt = await settleIncludingAbort(
       set(checkHostedDomain$, domain, verification, bounded, signal),
     );
@@ -897,7 +989,7 @@ export const verifyHostedSiteDomain$ = command(
     if (!attempt.ok) {
       applyHostedDomainVerificationFailure(verification, attempt.error);
     }
-    const records = domainRecords({ ...domain, verification });
+    const records = domainRecords(domain);
     verification.recordChecks = await Promise.all(
       records.map(async (record) => {
         const checked = await settleIncludingAbort(
@@ -920,9 +1012,170 @@ export const verifyHostedSiteDomain$ = command(
       }),
     );
     signal.throwIfAborted();
-    await set(persistHostedDomainVerification$, domain, verification, signal);
+    let lastSnapshot = domain;
+    if (routingPrerequisitesPassed(verification.checks)) {
+      if (
+        background &&
+        previous &&
+        domain.verification &&
+        !routingPrerequisitesPassed(domain.verification.checks)
+      ) {
+        // The browser can now distinguish an actual routing probe from one
+        // waiting for TLS. A lost worker resumes from this durable checkpoint.
+        const routing: HostedDomainVerification = {
+          ...verification,
+          automatic: previous,
+          checks: {
+            ...verification.checks,
+            route: { status: "pending", message: "Checking website routing" },
+          },
+        };
+        await set(
+          persistHostedDomainVerification$,
+          args,
+          domain,
+          routing,
+          signal,
+        );
+        signal.throwIfAborted();
+        lastSnapshot = { ...domain, verification: routing };
+      }
+      const probe = await settleIncludingAbort(
+        verifyHostedDomainIngress(domain, verification, bounded),
+      );
+      signal.throwIfAborted();
+      if (!probe.ok) {
+        applyHostedDomainVerificationFailure(verification, probe.error);
+      }
+    }
+    if (background && verification.status === "unavailable") {
+      // Keep the last confirmed progress through a transient dependency outage.
+      return previous;
+    }
+    if (needsBackgroundVerification(verification)) {
+      verification.automatic = {
+        id: continuing ? previous.id : randomUUID(),
+        expiresAt: new Date(deadline).toISOString(),
+        status: now() >= deadline ? "timed_out" : "checking",
+      };
+    }
+    await set(
+      persistHostedDomainVerification$,
+      args,
+      lastSnapshot,
+      verification,
+      signal,
+    );
+    signal.throwIfAborted();
+    return verification.automatic;
+  },
+);
+export const verifyHostedSiteDomain$ = command(
+  async ({ set }, args: DomainArgs, signal: AbortSignal) => {
+    const { domain, started } = await set(
+      prepareHostedDomainVerification$,
+      args,
+      signal,
+    );
+    signal.throwIfAborted();
+    await set(
+      checkAndSaveDomain$,
+      args,
+      { domain, started, background: false },
+      signal,
+    );
     signal.throwIfAborted();
     return set(readHostedSiteDomains$, args, signal);
+  },
+);
+
+export const recheckHostedDomain$ = command(
+  async (
+    { get, set },
+    args: DomainArgs,
+    jobId: string,
+    signal: AbortSignal,
+  ) => {
+    const [domain] = await get(db$)
+      .select()
+      .from(hostedSiteDomains)
+      .where(
+        and(
+          eq(hostedSiteDomains.id, args.domainId),
+          eq(hostedSiteDomains.siteId, args.siteId),
+          eq(hostedSiteDomains.revision, args.expectedRevision),
+          isNull(hostedSiteDomains.revokedAt),
+          isNull(hostedSiteDomains.releasedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const snapshot = domain?.verification;
+    const automatic = snapshot?.automatic;
+    if (
+      !domain ||
+      !snapshot ||
+      automatic?.id !== jobId ||
+      automatic.status !== "checking"
+    ) {
+      return null;
+    }
+    if (now() >= Date.parse(automatic.expiresAt)) {
+      await set(
+        persistHostedDomainVerification$,
+        args,
+        domain,
+        {
+          ...snapshot,
+          automatic: { ...automatic, status: "timed_out" },
+        },
+        signal,
+      );
+      return null;
+    }
+    // Recheck ownership, entitlement and publication on every provider attempt.
+    const access = await settle(
+      set(prepareHostedDomainVerification$, args, signal),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!access.ok) {
+      if (!(access.error instanceof HostedDomainError)) {
+        throw access.error;
+      }
+      if (access.error.status === 503) {
+        return automatic;
+      }
+      const stopped = {
+        ...snapshot,
+        status: "unavailable" as const,
+        automatic: undefined,
+        checks: {
+          ...snapshot.checks,
+          provider: {
+            status: "unavailable" as const,
+            message: access.error.message,
+          },
+        },
+      };
+      await set(
+        persistHostedDomainVerification$,
+        args,
+        domain,
+        stopped,
+        signal,
+      );
+      return null;
+    }
+    if (!isDeepStrictEqual(access.value.domain.verification, snapshot)) {
+      return automatic;
+    }
+    return set(
+      checkAndSaveDomain$,
+      args,
+      { domain, started: access.value.started, background: true },
+      signal,
+    );
   },
 );
 export const selectHostedSiteDomain$ = command(

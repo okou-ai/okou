@@ -324,6 +324,37 @@ function WebsiteUrlStatus({
   );
 }
 
+function DomainChoiceStatus({
+  domain,
+}: {
+  readonly domain: zInfer<typeof hostedDomainSettingsSchema>["domains"][number];
+}) {
+  const { t } = useTranslation();
+  return (
+    <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+      {domain.ready ? (
+        t(($) => {
+          return $.artifacts.customDomain.httpsReady;
+        })
+      ) : domain.verification?.automatic?.status === "checking" ? (
+        <>
+          <Loader2 size={12} aria-hidden className="motion-safe:animate-spin" />
+          {t(($) => {
+            return $.artifacts.customDomain.connecting;
+          })}
+        </>
+      ) : domain.verification?.automatic?.status === "timed_out" ? (
+        t(($) => {
+          return $.artifacts.customDomain.timedOut;
+        })
+      ) : (
+        t(($) => {
+          return $.artifacts.customDomain.needsSetup;
+        })
+      )}
+    </span>
+  );
+}
 function WebsiteDomainChoices({
   session,
   saving,
@@ -376,7 +407,7 @@ function WebsiteDomainChoices({
                   aria-current={selected ? "true" : undefined}
                   disabled={saving || domain.removing}
                   onClick={() => {
-                    return manageDomain(domain.id, signal);
+                    return manageDomain(domain.id);
                   }}
                 >
                   <span
@@ -389,15 +420,7 @@ function WebsiteDomainChoices({
                     <span className="block break-all text-sm font-medium">
                       {domain.hostname}
                     </span>
-                    <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                      {domain.ready
-                        ? t(($) => {
-                            return $.artifacts.customDomain.httpsReady;
-                          })
-                        : t(($) => {
-                            return $.artifacts.customDomain.needsSetup;
-                          })}
-                    </span>
+                    <DomainChoiceStatus domain={domain} />
                   </span>
                   <ChevronRight size={14} aria-hidden />
                 </Button>
@@ -672,6 +695,7 @@ function WebsiteUrlEditor({
   const domainSettings = useLoadable(session.domains.settings$);
   const previousDomainSettings = useLastResolved(session.domains.settings$);
   const addressMode = useGet(session.domains.addressMode$);
+  const mountCustomTab = useSet(session.domains.mountCustomTab$);
   const changeAddressMode = useSet(session.domains.changeMode$);
   const features = useLastResolved(featureSwitches$);
   const domainOpen = useGet(session.domains.open$);
@@ -740,7 +764,7 @@ function WebsiteUrlEditor({
         <TabsContent value="platform" className="mt-4">
           {platformForm}
         </TabsContent>
-        <TabsContent value="custom" className="mt-4">
+        <TabsContent value="custom" className="mt-4" ref={mountCustomTab}>
           {domainOpen ? (
             <HostedSiteDomains
               session={session}

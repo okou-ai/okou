@@ -1,3 +1,4 @@
+import { now } from "../../../lib/time.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   hostedDomainSettingsSchema,
@@ -37,6 +38,13 @@ import {
 import { openResources } from "./chat-resources-test-helpers.ts";
 
 const context = testContext();
+function checking(id: string) {
+  return {
+    id,
+    expiresAt: new Date(now() + 30 * 60_000).toISOString(),
+    status: "checking" as const,
+  };
+}
 const title = "Quarterly launch report";
 const original = "launch-recap";
 const address = (slug: string) => {
@@ -410,7 +418,7 @@ test("custom domain verification stays manual and saves directly from the verifi
   ).toBeInTheDocument();
   expect(verifies).toBe(0);
   click(getNamedButton("Verify", menu));
-  await within(menu).findByText("Domain verified. Save to use this address.");
+  await within(menu).findByRole("heading", { name: "Domain ready" });
   expect(verifies).toBe(1);
   expect(saves).toBe(0);
   expect(within(menu).queryByText("Continue")).not.toBeInTheDocument();
@@ -569,7 +577,7 @@ test("a workspace without an active subscription cannot select an existing verif
   ).toBeEnabled();
 });
 
-test("the domain wizard keeps two DNS records visible while HTTPS activates and copies the verified address before saving", async () => {
+test("the timeline separates DNS actions from automatic progress and applies the ready address only on Save", async () => {
   const hostname = "www.customer-example.net";
   const domainId = "00000000-0000-4000-8000-000000000091";
   const revision = "00000000-0000-4000-8000-000000000092";
@@ -640,7 +648,7 @@ test("the domain wizard keeps two DNS records visible while HTTPS activates and 
     return respond(200, settings);
   });
   let verifiedOnce = false;
-  let readyForSelection = false;
+
   const verificationStarted = context.mocks.deferred<void>();
   const finishVerification = context.mocks.deferred<void>();
   context.mocks.api(hostContract.verifySiteDomain, async ({ respond }) => {
@@ -648,7 +656,7 @@ test("the domain wizard keeps two DNS records visible while HTTPS activates and 
       verificationStarted.resolve();
       await finishVerification.promise;
     }
-    const ready = readyForSelection;
+    const ready = false;
     verifiedOnce = true;
     settings = {
       ...settings,
@@ -660,6 +668,7 @@ test("the domain wizard keeps two DNS records visible while HTTPS activates and 
             ...domain.verification!,
             status: ready ? "ready" : "incomplete",
             eligibleForSelection: ready,
+            automatic: checking(domainId),
             checks: {
               ...domain.verification!.checks,
               certificate: ready
@@ -702,16 +711,10 @@ test("the domain wizard keeps two DNS records visible while HTTPS activates and 
   );
   click(await findNamedButton(`Manage ${hostname}`, menu));
   await within(menu).findByText("Set up DNS records");
-  expect(getNamedButton("DNS setup", menu)).toHaveAttribute(
-    "aria-current",
-    "step",
-  );
-  expect(getNamedButton("Verification", menu)).toBeEnabled();
-  expect(getNamedButton("Enable", menu)).toBeDisabled();
   expect(within(menu).getAllByText("Passed")).toHaveLength(1);
   expect(within(menu).getByText("okou-verification=demo")).toBeVisible();
   expect(within(menu).getByText("connect.okou.app")).toBeVisible();
-  expect(getNamedButton("Verify", menu)).toBeEnabled();
+  expect(getNamedButton("Verify again", menu)).toBeEnabled();
   expect(
     queryAllByRoleFast("button", menu).find((button) => {
       return button.textContent === "Save";
@@ -735,58 +738,96 @@ test("the domain wizard keeps two DNS records visible while HTTPS activates and 
     }),
   ).toBeUndefined();
   const user = userEvent.setup({ delay: null, writeToClipboard: false });
-  await user.click(getNamedButton("Verify", menu));
+  await user.click(getNamedButton("Verify again", menu));
   await verificationStarted.promise;
-  await within(menu).findByRole("heading", { name: "Domain verification" });
-  expect(within(menu).getAllByText("Checking…")).toHaveLength(5);
-  expect(getNamedButton("Back to DNS setup", menu)).toBeDisabled();
+  expect(within(menu).getByRole("img", { name: "Checking…" })).toBeVisible();
+  expect(getNamedButton("Verify again", menu)).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   finishVerification.resolve();
-  expect(getNamedButton("Verification", menu)).toHaveAttribute(
-    "aria-current",
-    "step",
+  const connection = await findNamedButton("Connecting domain", menu);
+  expect(connection).toHaveAttribute("aria-expanded", "true");
+  expect(within(menu).getAllByRole("img", { name: "Checking…" })).toHaveLength(
+    3,
   );
-  await within(menu).findByText(
-    "HTTPS setup usually takes a few minutes. We check every 30 seconds. No additional DNS records are needed.",
+  const route = within(menu).getByText("Website routing").closest("li")!;
+  expect(within(route).getByRole("img", { name: "Waiting" })).toBeVisible();
+  click(connection);
+  expect(connection).toHaveAttribute("aria-expanded", "false");
+  expect(within(menu).getAllByRole("img", { name: "Checking…" })).toHaveLength(
+    1,
   );
-  expect(getNamedButton("Verify again", menu)).toHaveFocus();
-  expect(within(menu).getAllByText("Passed")).toHaveLength(2);
-  expect(within(menu).getAllByText("Waiting")).toHaveLength(2);
-  expect(within(menu).getByText("Domain activation")).toBeInTheDocument();
-  expect(within(menu).getByText("Website routing")).toBeInTheDocument();
   expect(
-    within(menu).getByText(
-      "Your domain is still activating. Wait, then click Verify again.",
-    ),
-  ).toBeInTheDocument();
-  expect(getNamedButton("Enable", menu)).toBeDisabled();
-  expect(
-    queryAllByRoleFast("button", menu).filter((button) => {
-      return button.getAttribute("aria-label")?.startsWith("Copy TXT");
+    queryAllByRoleFast("button", menu).some((button) => {
+      return button.textContent === "Verify again";
     }),
-  ).toHaveLength(0);
-  click(getNamedButton("Back to DNS setup", menu));
+  ).toBeFalsy();
+  click(getNamedButton("DNS is configured", menu));
   await within(menu).findByText("okou-verification=demo");
   expect(within(menu).getByText("connect.okou.app")).toBeVisible();
-  expect(within(menu).getAllByText("Passed")).toHaveLength(2);
-  expect(getNamedButton("Verify", menu)).toBeEnabled();
-  readyForSelection = true;
-  click(getNamedButton("Verify", menu));
-  await within(menu).findByText("Domain verified. Save to use this address.");
-  expect(getNamedButton("Enable", menu)).toHaveAttribute(
-    "aria-current",
-    "step",
-  );
+  const topic = `hostedSiteDomainsChanged:${siteId}`;
+  await waitFor(() => {
+    return expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+  });
+  click(connection);
+  settings = {
+    ...settings,
+    domains: settings.domains.map((domain) => {
+      return {
+        ...domain,
+        verification: {
+          ...domain.verification!,
+          checks: {
+            ...domain.verification!.checks,
+            provider: passed,
+            certificate: passed,
+            route: { status: "pending", message: "Checking website routing" },
+          },
+        },
+      };
+    }),
+  };
+  await act(() => {
+    return context.mocks.ably.trigger(topic);
+  });
+  await waitFor(() => {
+    const routing = within(menu).getByText("Website routing").closest("li")!;
+    expect(
+      within(routing).getByRole("img", { name: "Checking…" }),
+    ).toBeVisible();
+  });
+  settings = {
+    ...settings,
+    domains: settings.domains.map((domain) => {
+      return {
+        ...domain,
+        ready: true,
+        verification: {
+          ...domain.verification!,
+          automatic: undefined,
+          status: "ready",
+          eligibleForSelection: true,
+          checks: {
+            ownership: passed,
+            dns: passed,
+            provider: passed,
+            certificate: passed,
+            route: passed,
+          },
+        },
+      };
+    }),
+  };
+  await act(() => {
+    return context.mocks.ably.trigger(topic);
+  });
+  await findNamedButton("Save", menu);
   expect(within(menu).getByText(`https://${hostname}`)).toBeInTheDocument();
   click(getNamedButton("Copy to clipboard", menu));
   await waitFor(() => {
     return expect(clipboard.writes.at(-1)).toBe(`https://${hostname}`);
   });
-  click(getNamedButton("DNS setup", menu));
-  click(await findNamedButton("Continue", menu));
-  await within(menu).findByText(
-    "All checks passed. Continue to enable your domain.",
-  );
-  click(getNamedButton("Continue", menu));
   click(await findNamedButton("Save", menu));
   await waitFor(() => {
     expect(getNamedButton("Copy link", menu)).toBeEnabled();
@@ -797,7 +838,7 @@ test("the domain wizard keeps two DNS records visible while HTTPS activates and 
   });
 });
 
-test("unavailable verification stays in the verification stage until DNS changes are confirmed", async () => {
+test("DNS lookup errors retain the records and retry action until background verification starts", async () => {
   const hostname = "retry.customer-example.net";
   const domainId = "00000000-0000-4000-8000-000000000095";
   const revision = "00000000-0000-4000-8000-000000000096";
@@ -876,6 +917,7 @@ test("unavailable verification stays in the verification stage until DNS changes
           records,
           verification: {
             status: "incomplete",
+            automatic: checking(domainId),
             eligibleForSelection: false,
             checkedAt,
             validationRecords: [],
@@ -918,56 +960,30 @@ test("unavailable verification stays in the verification stage until DNS changes
     }),
   );
   click(await findNamedButton(`Manage ${hostname}`, menu));
-  await within(menu).findByRole("heading", { name: "Domain verification" });
-  expect(within(menu).getAllByText("Could not check")).toHaveLength(5);
-  expect(getNamedButton("Verification", menu)).toHaveAttribute(
-    "aria-current",
-    "step",
-  );
-  expect(getNamedButton("DNS setup", menu)).not.toHaveAttribute(
-    "aria-description",
-  );
-  expect(getNamedButton("Enable", menu)).toBeDisabled();
+  await within(menu).findByRole("heading", { name: "Set up DNS records" });
+  expect(within(menu).getByText("okou-verification=retry")).toBeVisible();
   click(getNamedButton("Verify again", menu));
   await within(menu).findByText(
     "DNS lookup is temporarily unavailable. Try again.",
   );
-  expect(getNamedButton("Verification", menu)).toHaveAttribute(
-    "aria-current",
-    "step",
-  );
-  expect(getNamedButton("Verify again", menu)).toBeEnabled();
-  click(getNamedButton("DNS setup", menu));
-  await within(menu).findByRole("heading", { name: "Set up DNS records" });
-  expect(within(menu).getByText("okou-verification=retry")).toBeInTheDocument();
-  click(getNamedButton("Verify", menu));
-  await within(menu).findByText("HTTPS is being configured automatically");
-  expect(getNamedButton("Verification", menu)).toHaveAttribute(
-    "aria-current",
-    "step",
-  );
-  expect(getNamedButton("Verify again", menu)).toBeEnabled();
-  click(getNamedButton("Back to DNS setup", menu));
-  await within(menu).findByText("okou-verification=retry");
-  expect(within(menu).getByText("connect.okou.app")).toBeVisible();
-  expect(within(menu).getAllByText("Passed")).toHaveLength(2);
-  expect(getNamedButton("DNS setup", menu)).toHaveAttribute(
-    "aria-current",
-    "step",
-  );
-  click(getNamedButton("Cancel", menu));
-  await within(menu).findByRole("list", { name: "Connected domains" });
-  click(getNamedButton("Cancel", menu));
+  click(getNamedButton("Verify again", menu));
+  await findNamedButton("Connecting domain", menu);
+  click(getNamedButton("DNS is configured", menu));
+  await expect(
+    within(menu).findByText("connect.okou.app"),
+  ).resolves.toBeVisible();
+  click(getNamedButton("Close", menu));
+  const reopened = await openHostedSiteShare(preview);
   await waitFor(() => {
-    expect(getNamedButton("Copy link", menu)).toBeEnabled();
+    expect(getNamedButton("Copy link", reopened)).toBeEnabled();
   });
-  click(getNamedButton("Copy link", menu));
+  click(getNamedButton("Copy link", reopened));
   await waitFor(() => {
     expect(clipboard.writes.at(-1)).toBe(address(original));
   });
 });
 
-test("HTTPS activation resumes automatic refresh after reopening and still requires Save", async () => {
+test("reopening catches up without a verification POST, and an expired attempt can be retried", async () => {
   const hostname = "automatic.customer-example.net";
   const domainId = "00000000-0000-4000-8000-000000000097";
   const revision = "00000000-0000-4000-8000-000000000098";
@@ -1003,18 +1019,10 @@ test("HTTPS activation resumes automatic refresh after reopening and still requi
     return respond(200, settings);
   });
   let requests = 0;
-  const refreshStarted = context.mocks.deferred<void>();
-  const finishRefresh = context.mocks.deferred<void>();
   const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(hostContract.verifySiteDomain, async ({ respond }) => {
-    requests += 1;
-    if (requests >= 2) {
-      if (requests === 2) {
-        refreshStarted.resolve();
-      }
-      await finishRefresh.promise;
-    }
-    const ready = requests >= 2;
+  context.mocks.api(hostContract.verifySiteDomain, ({ respond }) => {
+    requests++;
+    const ready = requests === 2;
     const passed = { status: "passed" as const, message: "Verified" };
     const pending = {
       status: "pending" as const,
@@ -1029,6 +1037,7 @@ test("HTTPS activation resumes automatic refresh after reopening and still requi
           verification: {
             status: ready ? "ready" : "incomplete",
             checkedAt,
+            automatic: ready ? undefined : checking(domainId),
             eligibleForSelection: ready,
             validationRecords: [],
             recordChecks: records.map((record) => {
@@ -1062,27 +1071,45 @@ test("HTTPS activation resumes automatic refresh after reopening and still requi
   );
   click(await findNamedButton(`Manage ${hostname}`, menu));
   click(await findNamedButton("Verify", menu));
-  await within(menu).findByText(
-    "HTTPS setup usually takes a few minutes. We check every 30 seconds. No additional DNS records are needed.",
-  );
-  await refreshStarted.promise;
-  click(getNamedButton("Back to DNS setup", menu));
-  await within(menu).findByRole("heading", { name: "DNS is configured" });
-  click(getNamedButton("Cancel", menu));
-  await within(menu).findByRole("list", { name: "Connected domains" });
-  click(getNamedButton(`Manage ${hostname}`, menu));
-  await within(menu).findByRole("heading", { name: "Domain verification" });
-  finishRefresh.resolve();
-  await within(menu).findByText("Domain verified. Save to use this address.");
-  expect(getNamedButton("Save", menu)).toBeEnabled();
-  click(getNamedButton("Cancel", menu));
-  click(getNamedButton("Cancel", menu));
+  await findNamedButton("Connecting domain", menu);
+  click(getNamedButton("Close", menu));
   await waitFor(() => {
-    expect(getNamedButton("Copy link", menu)).toBeEnabled();
+    return expect(menu).not.toBeInTheDocument();
   });
-  click(getNamedButton("Copy link", menu));
+  settings = {
+    ...settings,
+    domains: settings.domains.map((domain) => {
+      return {
+        ...domain,
+        verification: {
+          ...domain.verification!,
+          automatic: { ...checking(domainId), status: "timed_out" },
+        },
+      };
+    }),
+  };
+  const reopened = await openHostedSiteShare(preview);
+  click(getNamedButton("Customize URL", reopened));
+  click(
+    await waitFor(() => {
+      return tabNamed("Custom domain", reopened);
+    }),
+  );
+  click(await findNamedButton(`Manage ${hostname}`, reopened));
+  await findNamedButton("Verification timed out", reopened);
+  expect(within(reopened).queryByRole("img", { name: "Checking…" })).toBeNull();
+  expect(requests).toBe(1);
+  click(getNamedButton("Verify again", reopened));
+  await findNamedButton("Save", reopened);
+  expect(requests).toBe(2);
+  click(getNamedButton("Cancel", reopened));
+  click(getNamedButton("Cancel", reopened));
   await waitFor(() => {
-    expect(clipboard.writes.at(-1)).toBe(address(original));
+    return expect(getNamedButton("Copy link", reopened)).toBeEnabled();
+  });
+  click(getNamedButton("Copy link", reopened));
+  await waitFor(() => {
+    return expect(clipboard.writes.at(-1)).toBe(address(original));
   });
 });
 
