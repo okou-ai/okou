@@ -38,6 +38,7 @@ import {
 import { createConnectorAdmissionSignals } from "./thread-connector-environment.signals";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import { createOfficialWorkflowSignal } from "./thread-official-workflow.signals";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
@@ -1832,7 +1833,10 @@ export function createThreadClaimRunObjects(
       const { args, officialWorkflow: officialWorkflowRun, runPrompt } = input;
       const usage = (async () => {
         const runtime = await get(runModelInputs$);
-        if (isRouteError(runtime)) {
+        if (
+          isRouteError(runtime) ||
+          !isBuiltInModelProviderType(runtime.modelProvider.type)
+        ) {
           return runtime;
         }
         const [catalog, modelPricing] = await Promise.all([

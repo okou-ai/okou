@@ -561,7 +561,6 @@ export const preloadAgentRunContext$ = command(
       signals.featureSwitches$,
       signals.disabledPaidTools$,
       signals.managedModelKeys$,
-      signals.modelPricing$,
     ];
     for (const node of nodes) {
       waitUntil(settle(get(node)));
