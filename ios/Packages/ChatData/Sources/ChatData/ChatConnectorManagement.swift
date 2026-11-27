@@ -14,10 +14,33 @@ extension ChatComposerAccess {
     return result.connector
   }
 
+  /// Fetch the visible rows and their saved account identities together.
+  public func managedConnectorOverview(memberAccess: Bool) async throws -> [ChatComposerConnector] {
+    struct Entry: Decodable, Sendable {
+      let target: ChatConnectorTarget
+      let label: String
+      let icon: ChatConnectorIcon?
+      let hasPermissions: Bool
+      let accounts: [ChatConnectorAccess.Account]
+      let currentConnectionId: String?
+    }
+    let entries: [Entry] = try await client.request("/api/chat-connector-overview")
+    return entries.filter { $0.target.kind == "builtin" }.map { entry in
+      let access = ChatConnectorAccess(
+        target: entry.target, accounts: entry.accounts,
+        currentConnectionId: entry.currentConnectionId,
+        available: entry.currentConnectionId != nil)
+      return ChatComposerConnector(
+        target: entry.target, label: entry.label, hasPermissions: entry.hasPermissions,
+        icon: entry.icon,
+        access: memberAccess ? access : access.pending(overrides: [], selections: []))
+    }
+  }
+
   /// Inspect every saved account, including accounts disabled by default.
-  public func managedConnectors(
-    memberAccess: Bool = false
-  ) async throws -> [ChatComposerConnector] {
+  public func reconnectAccountIDs(for overview: [ChatComposerConnector]) async throws
+    -> Set<String>
+  {
     struct Inspection: Decodable, Sendable {
       let kind: String
       let connectionId: String
@@ -26,10 +49,7 @@ extension ChatComposerAccess {
     }
     struct Body: Encodable { let selections: [ChatConnectorSelection] }
     struct Response: Decodable, Sendable { let results: [Inspection] }
-    var connectors = try await connectors(memberAccess: memberAccess).filter {
-      $0.target.kind == "builtin"
-    }
-    let selections = connectors.flatMap { connector in
+    let selections = overview.flatMap { connector in
       connector.access.accounts.map {
         ChatConnectorSelection(target: connector.target, connectionId: $0.connectionId)
       }
@@ -53,12 +73,7 @@ extension ChatComposerAccess {
           $0.kind == "available" && $0.connectionStatus == "reconnect-required"
         }.map(\.connectionId))
     }
-    for index in connectors.indices {
-      connectors[index].reconnectAccountIDs = connectors[index].access.accounts.compactMap {
-        reconnect.contains($0.connectionId) ? $0.connectionId : nil
-      }
-    }
-    return connectors
+    return reconnect
   }
 
   public func renameAccount(

@@ -8,26 +8,82 @@ import XCTest
 final class ChatConnectorManagementTests: XCTestCase {
   private typealias Fixture = ConnectorHTTPFixtures
 
-  func testManagementInspectsDisabledAccountsAndNeverReadsRemoteSettings() async throws {
+  func testSettingsOverviewKeepsBuiltinRowsAndRespectsBothAccessModes() async throws {
     let fixture = managementFixture()
-    let entries = try await ChatComposerAccess(client: fixture.client).managedConnectors()
+    let service = ChatComposerAccess(client: fixture.client)
+    let entries = try await service.managedConnectorOverview(memberAccess: true)
+    XCTAssertEqual(entries.map(\.target), [.builtin("slack")])
     let connector = try XCTUnwrap(entries.first)
-    XCTAssertEqual(connector.target, .builtin("slack"))
-    XCTAssertEqual(connector.reconnectAccountIDs, [Fixture.siblingID])
-    XCTAssertTrue(connector.needsAttention)
-    XCTAssertFalse(try XCTUnwrap(connector.access.accounts.last).enabled)
+    XCTAssertEqual(connector.label, "Slack")
+    XCTAssertEqual(connector.icon?.url.lastPathComponent, "slack.svg")
+    XCTAssertTrue(connector.hasPermissions)
+    XCTAssertEqual(connector.access.accounts.count, 2)
+    XCTAssertFalse(connector.access.available)
+    XCTAssertTrue(connector.access.accounts.allSatisfy { !$0.enabled })
+    let reconnect = try await service.reconnectAccountIDs(for: entries)
+    XCTAssertEqual(reconnect, [Fixture.siblingID])
+
+    let legacy = try await service.managedConnectorOverview(memberAccess: false)
+    let access = try XCTUnwrap(legacy.first?.access)
+    XCTAssertEqual(access.currentConnectionId, Fixture.accountID)
+    XCTAssertEqual(access.accounts.filter(\.enabled).map(\.id), [Fixture.accountID])
+  }
+
+  func testLargeSettingsListUsesOneOverviewAndBoundedInspectionBatches() async throws {
+    struct Body: Decodable { let selections: [ChatConnectorSelection] }
+    let selections = (0..<257).map { index in
+      ChatConnectorSelection(
+        target: .builtin("connector-\(index)"), connectionId: UUID().uuidString)
+    }
+    let rows = selections.enumerated().map { index, selection in
+      """
+      {"target":{"kind":"builtin","connectorSlug":"connector-\(index)"},"label":"Connector \(index)",
+       "hasPermissions":false,"accounts":[{"connectionId":"\(selection.connectionId)",
+       "defaultEnabled":false,"isDefault":true,"enabled":false}],"currentConnectionId":null}
+      """
+    }
+    let sizes = Mutex<[Int]>([])
+    let fixture = ChatHTTPFixture { request in
+      switch request.url!.path {
+      case "/api/chat-connector-overview":
+        sizes.withLock { $0.append(0) }
+        return ChatHTTPResponse(body: "[" + rows.joined(separator: ",") + "]")
+      case "/api/connector-accounts/inspect":
+        let batch = try JSONDecoder().decode(Body.self, from: chatRequestBody(request)).selections
+        sizes.withLock { $0.append(batch.count) }
+        let results = try batch.map { selection in
+          let target = try JSONEncoder().encodeString(selection.target)
+          return """
+            {"kind":"available","connectionId":"\(selection.connectionId)","target":\(target),
+             "connectionStatus":"reconnect-required"}
+            """
+        }
+        return ChatHTTPResponse(body: #"{"results":["# + results.joined(separator: ",") + "]}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let service = ChatComposerAccess(client: fixture.client)
+    let entries = try await service.managedConnectorOverview(memberAccess: true)
+    XCTAssertEqual(entries.map(\.target), selections.map(\.target))
+    let reconnect = try await service.reconnectAccountIDs(for: entries)
+    XCTAssertEqual(reconnect, Set(selections.map(\.connectionId)))
+    XCTAssertEqual(sizes.withLock { $0 }, [0, 256, 1])
   }
 
   func testUnavailableInspectionDoesNotTurnAnAccountIntoAReconnectTarget() async throws {
     let fixture = managementFixture(kind: "unavailable")
-    let entries = try await ChatComposerAccess(client: fixture.client).managedConnectors()
-    XCTAssertFalse(try XCTUnwrap(entries.first).needsAttention)
+    let service = ChatComposerAccess(client: fixture.client)
+    let entries = try await service.managedConnectorOverview(memberAccess: false)
+    let reconnect = try await service.reconnectAccountIDs(for: entries)
+    XCTAssertTrue(reconnect.isEmpty)
   }
 
   func testInspectionRejectsAnAccountReturnedForAnotherConnector() async throws {
     let fixture = managementFixture(slug: "gmail")
+    let service = ChatComposerAccess(client: fixture.client)
+    let entries = try await service.managedConnectorOverview(memberAccess: false)
     do {
-      _ = try await ChatComposerAccess(client: fixture.client).managedConnectors()
+      _ = try await service.reconnectAccountIDs(for: entries)
       XCTFail("A mismatched inspection was accepted")
     } catch let error as APIClientError {
       guard case .invalidResponse = error else { return XCTFail("Unexpected error: \(error)") }
@@ -76,29 +132,10 @@ final class ChatConnectorManagementTests: XCTestCase {
   {
     ChatHTTPFixture { request in
       switch request.url?.path {
-      case "/api/connectors/connected":
-        return ChatHTTPResponse(
-          body:
-            #"{"builtinConnectors":[{"slug":"slack","label":"Slack","hasPermissions":true}],"customConnectors":[]}"#
-        )
-      case "/api/connector-account-access/defaults":
-        return ChatHTTPResponse(
-          body: """
-            [{"connectionId":"\(Fixture.accountID)","defaultEnabled":true,"isDefault":true},
-             {"connectionId":"\(Fixture.siblingID)","defaultEnabled":false,"isDefault":false}]
-            """)
-      case "/api/connector-accounts/\(Fixture.accountID)":
-        return ChatHTTPResponse(body: Fixture.account())
+      case "/api/chat-connector-overview":
+        return ChatHTTPResponse(body: Fixture.managedOverview)
       case "/api/connector-accounts/inspect":
-        let status = kind == "available" ? ",\"connectionStatus\":\"reconnect-required\"" : ""
-        return ChatHTTPResponse(
-          body: """
-            {"results":[
-              {"kind":"available","connectionId":"\(Fixture.accountID)",
-               "target":{"kind":"builtin","connectorSlug":"slack"},"connectionStatus":"connected"},
-              {"kind":"\(kind)","connectionId":"\(Fixture.siblingID)",
-               "target":{"kind":"builtin","connectorSlug":"\(slug)"}\(status)}]}
-            """)
+        return ChatHTTPResponse(body: Fixture.managedInspection(kind: kind, slug: slug))
       default: throw URLError(.unsupportedURL)
       }
     }

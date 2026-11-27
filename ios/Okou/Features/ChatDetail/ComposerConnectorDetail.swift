@@ -61,14 +61,15 @@ struct ComposerConnectorDetail: View {
   }
 
   private func management(_ current: ChatComposerConnector) -> some View {
-    VStack(spacing: 0) {
-      if current.needsAttention {
+    let reconnectIDs = snapshot.reconnectAccountIDs(for: current)
+    return VStack(spacing: 0) {
+      if !reconnectIDs.isEmpty {
         HStack(spacing: OkouSpace.sm) {
           Label("Reconnect required", okouSymbol: "triangle-alert", iconSize: OkouIconSize.inline)
             .font(.okou(.footnote)).foregroundStyle(OkouStatusColor.warning).lineLimit(1)
           Spacer(minLength: 0)
           Button("Reconnect") {
-            if current.reconnectAccountIDs.count == 1, let id = current.reconnectAccountIDs.first {
+            if reconnectIDs.count == 1, let id = reconnectIDs.first {
               store.connect(target: current.target, accountID: id)
             } else {
               accountDestination = store.openAccounts(current, managesDefaults: true)
