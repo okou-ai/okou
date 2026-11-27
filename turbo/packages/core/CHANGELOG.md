@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.888.0](https://github.com/okou-ai/okou/compare/core-v8.887.11...core-v8.888.0) (2026-11-27)
+
+
+### Features
+
+* **artifacts:** add unified artifact access api, files dual-write, and client migration ([#51416](https://github.com/okou-ai/okou/issues/51416)) ([2980f4b](https://github.com/okou-ai/okou/commit/2980f4b5f176b0fa5cd871b71a1c5a9a90717eb5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.143.0
+
 ## [8.887.11](https://github.com/okou-ai/okou/compare/core-v8.887.10...core-v8.887.11) (2026-11-27)
 
 

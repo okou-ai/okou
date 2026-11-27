@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.45.0](https://github.com/okou-ai/okou/compare/cli-v10.44.33...cli-v10.45.0) (2026-11-27)
+
+
+### Features
+
+* **artifacts:** add unified artifact access api, files dual-write, and client migration ([#51416](https://github.com/okou-ai/okou/issues/51416)) ([2980f4b](https://github.com/okou-ai/okou/commit/2980f4b5f176b0fa5cd871b71a1c5a9a90717eb5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.143.0
+    * @okouai/core bumped to 8.888.0
+    * @okouai/pi-agent-runtime bumped to 1.52.107
+
 ## [10.44.33](https://github.com/okou-ai/okou/compare/cli-v10.44.32...cli-v10.44.33) (2026-11-27)
 
 
