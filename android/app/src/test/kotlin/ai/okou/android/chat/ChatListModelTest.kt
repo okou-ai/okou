@@ -5097,6 +5097,67 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
             Dispatchers.resetMain()
         }
     }
+
+    @Test
+    fun failedIndicatorWriteReadbackContinuesTheExistingBackoff() = runTest {
+        val unread = Indicators(emptyMap(), mapOf(CHAT_PERSONAL to CHAT_DATE))
+        val confirmedRead = Indicators(emptyMap(), emptyMap())
+        val attempts = mutableListOf<Long>()
+        val service =
+            object : Service() {
+                    override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+                }
+                .apply { statusRead = { unread } }
+        withCatchUpModel(service, wallMillis = { 1_000L }) { model ->
+            model.refresh()
+            model.selectFilter(ChatListFilter.Unread)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            val startedAt = testScheduler.currentTime
+            service.statusRead = {
+                attempts.add(testScheduler.currentTime - startedAt)
+                when (attempts.size) {
+                    1,
+                    2,
+                    4 -> throw ApiFailure.Http(503, null, null, null)
+                    3 -> throw ApiFailure.Http(429, null, null, 5)
+                    else -> confirmedRead
+                }
+            }
+
+            model.refreshIndicators()
+            runCurrent()
+            advanceTimeBy(4_000)
+            assertEquals(listOf(0L, 3_000L), attempts)
+            assertFalse(model.uiState.value.indicatorsRefreshProgressVisible)
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+
+            assertEquals(listOf(0L, 3_000L, 4_000L), attempts)
+            assertTrue(model.uiState.value.indicatorsRefreshProgressVisible)
+            assertFalse(model.uiState.value.listRefreshProgressVisible)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertFalse(CHAT_PERSONAL in model.uiState.value.pendingRowActions)
+            model.selectFilter(ChatListFilter.Archived)
+            model.selectFilter(ChatListFilter.Unread)
+            advanceTimeBy(4_999)
+            runCurrent()
+            assertEquals(3, attempts.size)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 4_000L, 9_000L), attempts)
+
+            advanceTimeBy(11_999)
+            runCurrent()
+            assertEquals(4, attempts.size)
+            assertTrue(model.uiState.value.indicatorsRefreshProgressVisible)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 4_000L, 9_000L, 21_000L), attempts)
+            assertEquals(emptyMap<String, String>(), model.uiState.value.displayUnreadAt)
+            assertFalse(model.uiState.value.indicatorsRefreshProgressVisible)
+        }
+    }
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)

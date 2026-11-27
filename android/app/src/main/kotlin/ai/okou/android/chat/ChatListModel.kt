@@ -503,6 +503,8 @@ class ChatListModel(
 
     private var confirmedDraftIndexVersion = 0L
     private var indicatorsRetry: ChatDependencyRetry? = null
+    private var indicatorFailures = 0
+    private var indicatorRetryAt: Long? = null
     private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
     private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
     private var batchReadIntents: Map<String, ChatReadIntent>? = null
@@ -1896,6 +1898,7 @@ class ChatListModel(
         readyListRebase = null
         pendingListRead?.refresh = false
         resetListReadFailures()
+        resetIndicatorReadFailures()
         indicatorsInvalidated = false
         immediateIndicators = false
         readCursorChanged = false
@@ -2199,12 +2202,15 @@ class ChatListModel(
     }
 
     private fun recordListReadFailure(delayMillis: Long) {
-        val now = monotonicMillis()
         listFailures = (listFailures + 1).coerceAtMost(continuousRetryDelays.size)
-        val maxDelay = Long.MAX_VALUE - now.coerceAtLeast(0L)
-        val retryAt = now + minOf(delayMillis, maxDelay)
+        val retryAt = retryDeadlineMillis(delayMillis)
         listRetryAt = retryAt
         scheduleListRetry(retryAt)
+    }
+
+    private fun retryDeadlineMillis(delayMillis: Long): Long {
+        val now = monotonicMillis()
+        return now + minOf(delayMillis, Long.MAX_VALUE - now.coerceAtLeast(0L))
     }
 
     private fun startListRebase(checkpoint: ChatCheckpoint) {
@@ -2356,6 +2362,11 @@ class ChatListModel(
         }
     }
 
+    private fun resetIndicatorReadFailures() {
+        indicatorFailures = 0
+        indicatorRetryAt = null
+    }
+
     private fun refreshDraftIndex() {
         if (!current() || draftIndexRead != null) return
         val read = DraftIndexRead()
@@ -2404,7 +2415,14 @@ class ChatListModel(
     ) {
         if (!current() || indicatorsJob?.isCompleted == false) return
         val feedbackScope = visibleListFeedbackScope.takeUnless { afterWrite }
-        val retry = if (afterWrite) null else ChatDependencyRetry()
+        val retry =
+            if (afterWrite) null
+            else
+                ChatDependencyRetry(
+                    previousFailures = indicatorFailures,
+                    waitBeforeReadMillis =
+                        indicatorRetryAt?.let { (it - monotonicMillis()).coerceAtLeast(0L) },
+                )
         indicatorsRetry = retry
         val previous = mutable.value
         mutable.value =
@@ -2420,6 +2438,7 @@ class ChatListModel(
                 suspend fun fetch(): Pair<Map<String, ReadConfirmation>, Indicators> {
                     if (!afterWrite) {
                         // A retry also covers invalidations received before this request.
+                        indicatorRetryAt = null
                         verifyInvalidatedCursors = verifyInvalidatedCursors || readCursorChanged
                         indicatorsInvalidated = false
                         readCursorChanged = false
@@ -2436,6 +2455,7 @@ class ChatListModel(
                         isCurrent = { needsListRead && current() },
                         continuous = true,
                         onRetry = { failures ->
+                            indicatorFailures = failures
                             val state = mutable.value
                             if (
                                 failures >= listRetryProgressThreshold &&
@@ -2537,6 +2557,7 @@ class ChatListModel(
                             (undo.threadId in settledVisible ||
                                 undo.threadId in reconciled.unreadAt)
                     }
+                resetIndicatorReadFailures()
                 mutable.value =
                     state
                         .copy(
@@ -2556,27 +2577,32 @@ class ChatListModel(
                 unreadCacheWrites.trySend(CachedUnread(unreadConfirmedAt, reconciled.unreadAt))
             } catch (superseded: ChatDependencyRetry.Superseded) {
                 // A verification for another write cannot consume a realtime cursor signal.
-                if (verifyInvalidatedCursors)
+                if (verifyInvalidatedCursors || readCursorChanged)
                     requestIndicators(immediate = true, verifyReadCursors = true)
                 throw superseded
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                val retryable = dependencyRetryDelayMillis(error, 0) != null
-                val resumeListIndicators = afterWrite && retryable && needsListRead
+                val retryDelay = dependencyRetryDelayMillis(error, indicatorFailures)
                 fail(error) { state ->
+                    if (afterWrite && retryDelay != null && needsListRead) {
+                        indicatorFailures =
+                            (indicatorFailures + 1).coerceAtMost(continuousRetryDelays.size)
+                        indicatorRetryAt = retryDeadlineMillis(retryDelay)
+                    } else resetIndicatorReadFailures()
+                    val resumeListIndicators = indicatorRetryAt != null
                     state.copy(
                         indicatorsPhase = ChatReadPhase.Failed,
-                        indicatorsNonRetryableFailure = !retryable,
+                        indicatorsNonRetryableFailure = retryDelay == null,
                         indicatorsReadStartedAt =
                             state.indicatorsReadStartedAt.takeIf {
                                 resumeListIndicators
                             },
                         indicatorsRetryProgressVisible =
-                            resumeListIndicators && state.indicatorsRetryProgressVisible,
+                            resumeListIndicators && indicatorFailures >= listRetryProgressThreshold,
                         indicatorsRefreshFailureOrder =
                             if (
-                                !retryable &&
+                                retryDelay == null &&
                                     feedbackScope != null &&
                                     feedbackScope === visibleListFeedbackScope
                             )
@@ -2584,7 +2610,7 @@ class ChatListModel(
                             else state.indicatorsRefreshFailureOrder,
                     )
                 }
-                if (resumeListIndicators && current()) requestIndicators(immediate = true)
+                if (indicatorRetryAt != null) requestIndicators(immediate = true)
             } finally {
                 indicatorsRetry = null
                 indicatorReadReceipts.clear()
