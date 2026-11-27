@@ -483,8 +483,9 @@ fn catalog(name: &str) -> BuiltinFirewallCatalog {
         catalog_version: "test-catalog".to_string(),
         firewalls: BTreeMap::from([(
             name.to_string(),
-            Firewall {
+            BuiltinFirewall {
                 name: name.to_string(),
+                placeholders: None,
                 apis: vec![FirewallApi {
                     network_intent: None,
                     id: String::new(),
@@ -522,6 +523,30 @@ fn catalog_with_auth(auth: serde_json::Value) -> BuiltinFirewallCatalog {
     catalog.firewalls.get_mut("auth-strategy").unwrap().apis[0].auth =
         serde_json::from_value(auth).unwrap();
     catalog
+}
+
+#[tokio::test]
+async fn initial_refresh_preserves_declared_firewall_placeholders() {
+    let mut response = serde_json::to_value(catalog("github")).unwrap();
+    response["firewalls"]["github"]["placeholders"] =
+        serde_json::json!({"GITHUB_TOKEN": "fixture-github-token"});
+    let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+        "200 OK",
+        &response.to_string(),
+    ))])
+    .await;
+
+    let fixture = RefreshFixture::new(&server).await;
+    server.assert_finished().await;
+
+    let cached = read_catalog_cache(&fixture.cache_path)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        cached.firewalls["github"].placeholders.as_ref().unwrap()["GITHUB_TOKEN"],
+        "fixture-github-token"
+    );
 }
 
 #[tokio::test]

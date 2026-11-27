@@ -12,11 +12,11 @@ pub mod runners {
         /// Generated decode-path schemas under `runners::builtin_firewalls::resolve`.
         pub mod resolve {
             const NODES: &[crate::decode_path::DecodePathNode] = &[
-                crate::decode_path::DecodePathNode::Object(24, 3),
+                crate::decode_path::DecodePathNode::Object(25, 3),
                 crate::decode_path::DecodePathNode::Leaf,
                 crate::decode_path::DecodePathNode::Leaf,
                 crate::decode_path::DecodePathNode::DynamicMap(4),
-                crate::decode_path::DecodePathNode::Object(22, 2),
+                crate::decode_path::DecodePathNode::Object(22, 3),
                 crate::decode_path::DecodePathNode::Sequence(6),
                 crate::decode_path::DecodePathNode::Object(17, 5),
                 crate::decode_path::DecodePathNode::Object(3, 4),
@@ -48,6 +48,8 @@ pub mod runners {
                 crate::decode_path::DecodePathNode::Sequence(34),
                 crate::decode_path::DecodePathNode::Leaf,
                 crate::decode_path::DecodePathNode::Leaf,
+                crate::decode_path::DecodePathNode::DynamicMap(37),
+                crate::decode_path::DecodePathNode::Leaf,
             ];
 
             const FIELDS: &[crate::decode_path::DecodePathField] = &[
@@ -75,6 +77,7 @@ pub mod runners {
                 crate::decode_path::DecodePathField::new("permissions", 29),
                 crate::decode_path::DecodePathField::new("apis", 5),
                 crate::decode_path::DecodePathField::new("name", 35),
+                crate::decode_path::DecodePathField::new("placeholders", 36),
                 crate::decode_path::DecodePathField::new("catalogDigest", 1),
                 crate::decode_path::DecodePathField::new("catalogVersion", 2),
                 crate::decode_path::DecodePathField::new("firewalls", 3),

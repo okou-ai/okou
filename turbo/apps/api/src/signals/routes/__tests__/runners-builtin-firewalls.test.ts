@@ -99,7 +99,12 @@ describe("runner builtin firewall resolver", () => {
       client().resolve({
         headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
         body: {
-          names: ["github", "github", "model-provider:claude-code-oauth-token"],
+          names: [
+            "github",
+            "gitlab",
+            "gitlab",
+            "model-provider:claude-code-oauth-token",
+          ],
         },
       }),
       [200],
@@ -114,9 +119,19 @@ describe("runner builtin firewall resolver", () => {
     );
     expect(Object.keys(body.firewalls).sort()).toStrictEqual([
       "github",
+      "gitlab",
       "model-provider:claude-code-oauth-token",
     ]);
     expect(body.firewalls.github?.name).toBe("github");
+    expect(body.firewalls.github).not.toHaveProperty("placeholders");
+    expect(body.firewalls.gitlab?.placeholders).toStrictEqual({
+      GITLAB_TOKEN: "fixture-gitlab-token",
+    });
+    expect(
+      body.firewalls["model-provider:claude-code-oauth-token"]?.placeholders,
+    ).toStrictEqual(
+      MODEL_PROVIDER_FIREWALL_CONFIGS["claude-code-oauth-token"].placeholders,
+    );
     expect(
       body.firewalls["model-provider:claude-code-oauth-token"]?.apis[0],
     ).toStrictEqual({

@@ -76,7 +76,7 @@ use crate::error::{
     ApiBodyReadError, ApiTransportCause, ApiTransportError, ProviderError, ProviderResult,
 };
 use runner_host::lock;
-use runner_types::types::Firewall;
+use runner_types::types::BuiltinFirewall;
 
 pub(super) const BUILTIN_FIREWALL_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const BUILTIN_FIREWALL_CATALOG_INITIAL_RETRY_DELAYS: [Duration; 2] =
@@ -86,7 +86,7 @@ const BUILTIN_FIREWALL_CATALOG_INITIAL_RETRY_DELAYS: [Duration; 2] =
 pub(super) struct BuiltinFirewallCatalog {
     pub(super) catalog_digest: String,
     pub(super) catalog_version: String,
-    pub(super) firewalls: BTreeMap<String, Firewall>,
+    pub(super) firewalls: BTreeMap<String, BuiltinFirewall>,
 }
 
 impl BuiltinFirewallCatalog {
@@ -106,7 +106,7 @@ pub(super) struct BuiltinFirewallCatalogCache {
     catalog_digest: String,
     catalog_version: String,
     updated_at: String,
-    firewalls: BTreeMap<String, Firewall>,
+    firewalls: BTreeMap<String, BuiltinFirewall>,
 }
 
 impl BuiltinFirewallCatalogCache {
@@ -646,7 +646,7 @@ async fn read_catalog_cache(
     Ok(Some(cache))
 }
 
-fn validate_firewall_map(firewalls: &BTreeMap<String, Firewall>) -> Result<(), String> {
+fn validate_firewall_map(firewalls: &BTreeMap<String, BuiltinFirewall>) -> Result<(), String> {
     if firewalls.is_empty() {
         return Err("firewalls must be non-empty".to_string());
     }
