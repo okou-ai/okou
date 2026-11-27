@@ -5119,30 +5119,42 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
 
     @Test
     fun listRetriesUseTheDesignScheduleAndResetAfterSuccess() = runTest {
+        var now = 1_000L
         val service = Service()
-        withCatchUpModel(service) { model ->
+        withCatchUpModel(service, wallMillis = { now }) { model ->
             model.refresh()
             runCurrent()
             val cachedRows = model.uiState.value.threads
             assertTrue(cachedRows.isNotEmpty())
 
+            val firstAttempt = CompletableDeferred<ChatEvents>()
             val recovery = CompletableDeferred<ChatEvents>()
+            val unavailable = ApiFailure.Http(503, null, null, null)
             val attempts = mutableListOf<Long>()
             val retryTimes =
                 listOf(3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 96_000L, 144_000L, 192_000L)
             val startedAt = testScheduler.currentTime
             service.listRead = {
                 attempts.add(testScheduler.currentTime - startedAt)
-                if (attempts.size <= retryTimes.size) throw ApiFailure.Http(503, null, null, null)
-                recovery.await()
+                when (attempts.size) {
+                    1 -> firstAttempt.await()
+                    in 2..retryTimes.size -> throw unavailable
+                    else -> recovery.await()
+                }
             }
+            now += 600_000L
             model.refreshList()
             runCurrent()
             assertEquals(listOf(0L), attempts)
+            assertFalse(model.uiState.value.listRefreshProgressVisible)
+            now++
+            assertFalse(model.uiState.value.listRefreshProgressVisible)
+            firstAttempt.completeExceptionally(unavailable)
+            runCurrent()
             for ((index, time) in retryTimes.withIndex()) {
                 val state = model.uiState.value
                 assertEquals(ChatListReadFailure.Retrying, state.listReadFailure)
-                assertEquals(index >= 2, state.listRetryProgressVisible)
+                assertEquals(index >= 2, state.listRefreshProgressVisible)
                 assertEquals(cachedRows, state.threads)
 
                 advanceTimeBy(startedAt + time - testScheduler.currentTime - 1)
@@ -5189,14 +5201,14 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             val confirmed = model.uiState.value
             assertEquals(now, confirmed.confirmedAt)
             assertTrue(confirmed.threads.isEmpty())
-            now += 600_000L
+            now += 600_001L
 
             service.listRead = { firstAttempt.await() }
             model.refreshList()
             runCurrent()
             assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.listRefreshProgressVisible)
 
-            now++
             service.listRead = { recovery.await() }
             firstAttempt.completeExceptionally(ApiFailure.Http(503, null, null, null))
             runCurrent()
@@ -5213,7 +5225,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             runCurrent()
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertEquals(now, model.uiState.value.confirmedAt)
-            assertFalse(model.uiState.value.listRetryProgressVisible)
+            assertFalse(model.uiState.value.listRefreshProgressVisible)
         }
     }
 
@@ -5383,8 +5395,11 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
 
     @Test
     fun switchingFiltersKeepsIndicatorBackoffUntilTheFourthAttemptSucceeds() = runTest {
+        var now = 1_000L
         val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
         val refreshedUnread = Indicators(emptyMap(), unread)
+        val firstAttempt = CompletableDeferred<Indicators>()
+        val unavailable = ApiFailure.Http(503, null, null, null)
         val attempts = mutableListOf<Long>()
         var failing = false
         val service =
@@ -5392,20 +5407,27 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
                 statusRead = {
                     if (failing) {
                         attempts.add(testScheduler.currentTime)
-                        if (attempts.size <= 3)
-                            throw ApiFailure.Http(503, null, null, 1L.takeIf { attempts.size == 1 })
+                        if (attempts.size == 1) firstAttempt.await()
+                        if (attempts.size <= 3) throw unavailable
                     }
                     refreshedUnread
                 }
             }
-        withCatchUpModel(service) { model ->
+        withCatchUpModel(service, wallMillis = { now }) { model ->
             model.refresh()
             runCurrent()
             assertEquals(unread, model.uiState.value.displayUnreadAt)
             val start = testScheduler.currentTime
             failing = true
+            now += 600_000L
             model.refreshIndicators()
             runCurrent()
+            assertFalse(model.uiState.value.indicatorsRefreshProgressVisible)
+            now++
+            assertFalse(model.uiState.value.indicatorsRefreshProgressVisible)
+            firstAttempt.completeExceptionally(ApiFailure.Http(503, null, null, 1L))
+            runCurrent()
+            assertFalse(model.uiState.value.indicatorsRefreshProgressVisible)
             advanceTimeBy(500)
             model.selectFilter(ChatListFilter.Archived)
             advanceTimeBy(1_500)
@@ -5413,10 +5435,10 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             advanceTimeBy(1_999)
             runCurrent()
             assertEquals(listOf(start, start + 1_000), attempts)
-            assertFalse(model.uiState.value.indicatorsRetryProgressVisible)
+            assertFalse(model.uiState.value.indicatorsRefreshProgressVisible)
             advanceTimeBy(1)
             runCurrent()
-            assertTrue(model.uiState.value.indicatorsRetryProgressVisible)
+            assertTrue(model.uiState.value.indicatorsRefreshProgressVisible)
             assertEquals(unread, model.uiState.value.displayUnreadAt)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
             model.selectFilter(ChatListFilter.Muted)
@@ -5428,7 +5450,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             runCurrent()
             assertEquals(listOf(start, start + 1_000, start + 4_000, start + 10_000), attempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
-            assertFalse(model.uiState.value.indicatorsRetryProgressVisible)
+            assertFalse(model.uiState.value.indicatorsRefreshProgressVisible)
         }
     }
 
@@ -5495,6 +5517,8 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
 
     @Test
     fun rowWriteVerificationDoesNotWaitForBackgroundIndicatorRetry() = runTest {
+        var now = 1_000L
+        val verification = CompletableDeferred<Indicators>()
         val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
         var attempts = 0
         val service =
@@ -5503,26 +5527,33 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
                     when (++attempts) {
                         1 -> Indicators(emptyMap(), unread)
                         2 -> throw ApiFailure.Http(503, null, null, null)
-                        else -> Indicators(emptyMap(), emptyMap())
+                        else -> verification.await()
                     }
 
                 override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
             }
-        withCatchUpModel(service) { model ->
+        withCatchUpModel(service, wallMillis = { now }) { model ->
             model.refresh()
             runCurrent()
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            now += 600_001L
             model.refreshIndicators()
             runCurrent()
             assertEquals(2, attempts)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            assertTrue(model.uiState.value.indicatorsRefreshProgressVisible)
+            assertFalse(model.uiState.value.listRefreshProgressVisible)
 
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
             runCurrent()
             assertEquals(3, attempts)
+            assertTrue(model.uiState.value.indicatorsRefreshProgressVisible)
+            verification.complete(Indicators(emptyMap(), emptyMap()))
+            runCurrent()
             assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
             assertNull(model.uiState.value.failedRowAction)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+            assertFalse(model.uiState.value.indicatorsRefreshProgressVisible)
             advanceTimeBy(6_000)
             runCurrent()
             assertEquals(3, attempts)
