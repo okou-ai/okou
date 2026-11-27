@@ -94,3 +94,4 @@ chat-input-status-004	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliber
 chat-events-private-attachments-012	Unhandled request error: User-message attachment not found	Given: BDD deliberately deletes a private artifact before POST /api/chat/events and expects HTTP 500
 chat-events-private-attachments-014	Unhandled request error: User-message attachment not found	Given: BDD deliberately sends a prepared upload whose storage object was never written and expects HTTP 500
 chat-events-private-attachments-015	Unhandled request error: User-message attachment not found	Given: BDD deliberately sends a file set containing a foreign owner upload and expects HTTP 500
+runner-ssh-011	\[WARN\]\[RunnerAuth\] Invalid official runner secret	Given: BDD deliberately sends a wrong official Runner secret to POST /api/runners/runs/:runId/ssh/observations and expects HTTP 401
