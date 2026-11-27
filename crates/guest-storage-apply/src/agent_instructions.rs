@@ -1,11 +1,16 @@
 //! Inspect or apply Storage-delivered instructions without replacing native homes.
 
 use crate::cleanup_directory::CleanupDirectory;
-use guest_contracts::agent_instructions::{
-    InstructionApplication, InstructionCheck, InstructionPaths, MAX_CHECK_METADATA_BYTES,
-    MAX_METADATA_BYTES, SOURCE_FILENAME, instruction_paths,
-};
 use guest_contracts::storage_paths::normalize_path;
+use guest_contracts::{
+    agent_instructions::{
+        InstructionApplication, InstructionCheck, InstructionCheckResult, InstructionPaths,
+        MAX_CHECK_METADATA_BYTES, MAX_METADATA_BYTES, SOURCE_FILENAME, instruction_paths,
+    },
+    env::CliAgentTypeSelection,
+    home_mount::HOME_DIR,
+    storage_manifest::member_memory_mount,
+};
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -49,8 +54,11 @@ fn input(home: &Path, metadata: &[u8]) -> io::Result<(InstructionApplication, In
 }
 
 /// Inspect the final file without reading content, creating paths or following symlinks.
-/// Missing or affected targets return `false`; unsafe targets and inspection failures are errors.
-pub fn check_agent_instructions(home: &Path, metadata: &[u8]) -> io::Result<bool> {
+/// After a successful Instructions check, optionally observe the framework's Memory root.
+pub fn check_agent_instructions(
+    home: &Path,
+    metadata: &[u8],
+) -> io::Result<InstructionCheckResult> {
     if metadata.len() > MAX_CHECK_METADATA_BYTES {
         return Err(io::Error::other("Instruction check metadata exceeds bound"));
     }
@@ -58,6 +66,25 @@ pub fn check_agent_instructions(home: &Path, metadata: &[u8]) -> io::Result<bool
         .map_err(|_| io::Error::other("Invalid instruction check"))?;
     let paths = instruction_paths(home, &check.framework)
         .ok_or_else(|| io::Error::other("Unsupported instruction framework"))?;
+    let instructions_current = check_instruction_target(home, paths, &check)?;
+    let memory_root_present = check.check_memory_root && instructions_current && {
+        let framework = CliAgentTypeSelection::parse(&check.framework).framework();
+        let mount = Path::new(member_memory_mount(framework));
+        let relative = mount.strip_prefix(HOME_DIR).map_err(io::Error::other)?;
+        // Match Storage Apply's directory check. On a miss, Runner still runs repair.
+        home.join(relative).is_dir()
+    };
+    Ok(InstructionCheckResult {
+        instructions_current,
+        memory_root_present,
+    })
+}
+
+fn check_instruction_target(
+    home: &Path,
+    paths: InstructionPaths,
+    check: &InstructionCheck,
+) -> io::Result<bool> {
     let parent = paths
         .target
         .parent()
@@ -73,7 +100,7 @@ pub fn check_agent_instructions(home: &Path, metadata: &[u8]) -> io::Result<bool
         .ok_or_else(|| io::Error::other("Missing target name"))?;
     match fs::symlink_metadata(directory.proc_path().join(filename)) {
         Ok(metadata) if metadata.is_file() => {
-            for mount in check.preserved_download_mounts {
+            for mount in &check.preserved_download_mounts {
                 if paths
                     .target
                     .starts_with(resolve_existing_root(&home.join(mount))?)

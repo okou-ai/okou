@@ -1,6 +1,9 @@
 //! Materialize renamed Workflow documents without mutating their shared R2 package.
 
-use guest_contracts::{storage_files::StorageFile, storage_manifest::StorageEntry};
+use guest_contracts::{
+    storage_files::StorageFile,
+    storage_manifest::{StorageEntry, needs_workflow_document},
+};
 use serde_yaml_ng::{Mapping, Value};
 use std::{
     fs::OpenOptions,
@@ -13,7 +16,11 @@ const MAX_DOCUMENT_BYTES: u64 = 32 * 1024 * 1024;
 
 pub(crate) fn apply(entries: &[StorageEntry]) -> io::Result<()> {
     for entry in entries {
-        if entry.vas_storage_name.as_deref() != Some("workflow") {
+        if !entry
+            .vas_storage_name
+            .as_deref()
+            .is_some_and(|name| needs_workflow_document(name, &entry.mount_path))
+        {
             continue;
         }
         let root = Path::new(&entry.mount_path);
@@ -21,9 +28,6 @@ pub(crate) fn apply(entries: &[StorageEntry]) -> io::Result<()> {
             .file_name()
             .and_then(|value| value.to_str())
             .ok_or_else(|| io::Error::other("Workflow mount has no name"))?;
-        if !name.contains("--wf-") && !name.ends_with("--instruction") {
-            continue;
-        }
         if name.is_empty()
             || name.len() > 64
             || name.starts_with('-')

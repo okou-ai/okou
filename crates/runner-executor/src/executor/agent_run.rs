@@ -1645,9 +1645,15 @@ async fn prepare_guest_storage(
         }
         Err(error) => return Err(error),
     };
+    let memory_root_present = matches!(
+        &reuse,
+        Some(super::storage::InstructionReuse::Reused {
+            memory_root_present: true,
+        })
+    );
     let instructions = match &reuse {
         None => InstructionPreparation::Unavailable,
-        Some(super::storage::InstructionReuse::Reused) => InstructionPreparation::Ready,
+        Some(super::storage::InstructionReuse::Reused { .. }) => InstructionPreparation::Ready,
         Some(_) if context.instruction_file.is_some() => InstructionPreparation::Apply,
         Some(_) => InstructionPreparation::Ready,
     };
@@ -1675,7 +1681,7 @@ async fn prepare_guest_storage(
                 planning_started,
                 telemetry,
             );
-            let has_work = prepared.plan.requires_guest_work();
+            let has_work = !memory_root_present && prepared.plan.requires_guest_work();
             telemetry.record(
                 "runner_storage_manifest_has_work",
                 Duration::ZERO,
@@ -1734,7 +1740,7 @@ async fn prepare_guest_storage(
                 planning_started,
                 telemetry,
             );
-            let has_work = plan.requires_guest_work();
+            let has_work = !memory_root_present && plan.requires_guest_work();
             telemetry.record(
                 "runner_storage_manifest_has_work",
                 Duration::ZERO,

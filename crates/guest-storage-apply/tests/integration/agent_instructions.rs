@@ -120,12 +120,20 @@ fn instruction_presence_checks_preserve_local_files_and_do_not_create_missing_pa
         let home = tempfile::tempdir().unwrap();
         let paths = instruction_paths(home.path(), framework).unwrap();
         let input = metadata(framework).unwrap();
-        assert!(!check_agent_instructions(home.path(), &input).unwrap());
+        assert!(
+            !check_agent_instructions(home.path(), &input)
+                .unwrap()
+                .instructions_current
+        );
         assert!(!paths.target.parent().unwrap().exists());
         fs::create_dir_all(paths.target.parent().unwrap()).unwrap();
         fs::write(&paths.target, b"local edit").unwrap();
         let before = fs::metadata(&paths.target).unwrap().modified().unwrap();
-        assert!(check_agent_instructions(home.path(), &input).unwrap());
+        assert!(
+            check_agent_instructions(home.path(), &input)
+                .unwrap()
+                .instructions_current
+        );
         assert_eq!(fs::read(&paths.target).unwrap(), b"local edit");
         assert_eq!(
             fs::metadata(&paths.target).unwrap().modified().unwrap(),
@@ -133,7 +141,11 @@ fn instruction_presence_checks_preserve_local_files_and_do_not_create_missing_pa
         );
         assert!(!paths.staging.exists());
         fs::remove_file(&paths.target).unwrap();
-        assert!(!check_agent_instructions(home.path(), &input).unwrap());
+        assert!(
+            !check_agent_instructions(home.path(), &input)
+                .unwrap()
+                .instructions_current
+        );
     }
 }
 
@@ -179,14 +191,49 @@ fn instruction_presence_checks_resolve_preserved_mount_aliases_without_writes() 
         let input = serde_json::to_vec(&InstructionCheck {
             framework: "codex".into(),
             preserved_download_mounts: vec![mount],
+            check_memory_root: false,
         })
         .unwrap();
         assert_eq!(
-            check_agent_instructions(home.path(), &input).unwrap(),
+            check_agent_instructions(home.path(), &input)
+                .unwrap()
+                .instructions_current,
             reusable
         );
         assert_eq!(fs::read(&paths.target).unwrap(), b"local instruction edit");
         assert!(!home.path().join("unrelated").exists());
         assert!(!paths.staging.exists());
     }
+}
+
+#[test]
+fn reused_instructions_report_memory_root_without_creating_it() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = instruction_paths(home.path(), "codex").unwrap();
+    fs::create_dir_all(paths.target.parent().unwrap()).unwrap();
+    fs::write(&paths.target, b"local instructions").unwrap();
+    let memory = home.path().join(".codex/memories");
+    let input = serde_json::to_vec(&InstructionCheck {
+        framework: "codex".into(),
+        preserved_download_mounts: Vec::new(),
+        check_memory_root: true,
+    })
+    .unwrap();
+
+    let missing = check_agent_instructions(home.path(), &input).unwrap();
+    assert!(missing.instructions_current);
+    assert!(!missing.memory_root_present);
+    assert!(!memory.exists());
+
+    fs::write(&memory, b"local conflict").unwrap();
+    assert!(
+        !check_agent_instructions(home.path(), &input)
+            .unwrap()
+            .memory_root_present
+    );
+    fs::remove_file(&memory).unwrap();
+    fs::create_dir(&memory).unwrap();
+    let present = check_agent_instructions(home.path(), &input).unwrap();
+    assert!(present.instructions_current);
+    assert!(present.memory_root_present);
 }
