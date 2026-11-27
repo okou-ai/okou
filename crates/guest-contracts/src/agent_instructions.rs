@@ -69,7 +69,7 @@ pub struct InstructionApplication {
     pub framework: String,
 }
 
-/// Inspect the managed file and mutable mounts whose existing roots survive cleanup.
+/// Inspect the managed file and any startup roots needed for reuse.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstructionCheck {
@@ -78,4 +78,16 @@ pub struct InstructionCheck {
     /// Downloads below cached mounts can retain symlinks to the managed target.
     #[serde(default)]
     pub preserved_download_mounts: Vec<String>,
+    /// Observe the selected framework's canonical Memory root when Instructions can be reused.
+    #[serde(default)]
+    pub check_memory_root: bool,
+}
+
+/// Reuse observations from the bounded Guest Instructions helper.
+#[derive(Serialize, Deserialize)]
+pub struct InstructionCheckResult {
+    /// The local Instructions file can be preserved.
+    pub instructions_current: bool,
+    /// A requested Memory directory was present during this check.
+    pub memory_root_present: bool,
 }

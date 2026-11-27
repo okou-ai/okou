@@ -47,8 +47,10 @@ fn main() {
                 std::path::Path::new("/home/user"),
                 &metadata,
             )
-        }) {
-            Ok(present) => println!("{present}"),
+        })
+        .and_then(|checked| serde_json::to_string(&checked).map_err(io::Error::other))
+        {
+            Ok(checked) => println!("{checked}"),
             Err(error) => {
                 log_error!(LOG_TAG, "Instruction file check failed: {error}");
                 std::process::exit(failure_exit_code(ApplyFailure::from_target_io(&error)));

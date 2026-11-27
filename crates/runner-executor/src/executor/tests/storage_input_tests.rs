@@ -119,6 +119,14 @@ fn apply_guest_storage(
                 }
             }
         }
+        for entry in &mut manifest.artifacts {
+            entry.mount_path = guest_path(root, &entry.mount_path).to_str().unwrap().into();
+            if let Some(url) = &mut entry.archive_url
+                && let Some(path) = url.strip_prefix("file://")
+            {
+                *url = format!("file://{}", guest_path(root, path).display());
+            }
+        }
         for path in &mut manifest.cleanup_paths {
             *path = guest_path(root, path).to_str().unwrap().into();
         }
@@ -177,6 +185,7 @@ fn instruction_check_with_mounts(
             .iter()
             .map(|path| guest_path(root, path).to_str().unwrap().into())
             .collect(),
+        check_memory_root: false,
     })
     .unwrap();
     let checked =
@@ -964,6 +973,113 @@ async fn large_workflow_archive_downloads_through_ordinary_guest_passthrough() {
 }
 
 #[tokio::test]
+async fn home_restored_memory_reuses_a_present_root_and_repairs_a_missing_root() {
+    use crate::home_image_cache::HomeImageCache;
+    use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
+    use runner_host::paths::RunnerPaths;
+    use runner_types::storage_manifest::ArtifactEntry;
+
+    let memory_mount = "/home/user/.codex/memories";
+    for present in [true, false] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = super::support::test_executor_config(directory.path()).await;
+        let paths = RunnerPaths::new(directory.path().join("runner"));
+        let home = HomeImageCache::new(paths.clone());
+        config.home_cache = Some(home.clone());
+        let mut current = instruction_context(&"a".repeat(64), 128, "codex", "home-memory");
+        let session = "22222222-2222-4222-8222-222222222222";
+        current.reuse_key = Some(format!("thread:home-cache-{session}"));
+        current
+            .storage_manifest
+            .as_mut()
+            .unwrap()
+            .artifacts
+            .push(ArtifactEntry {
+                mount_path: memory_mount.into(),
+                vas_storage_name: "memory".into(),
+                vas_storage_id: "member-memory".into(),
+                vas_version_id: "version-1".into(),
+                archive_url: Some("file:///tmp/memory.tar.gz".into()),
+                archive_size: None,
+                empty: None,
+                missing_root_policy: Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion),
+            });
+        let fingerprints = current.storage_fingerprints();
+        seed_home_image_cache_with_fingerprints(&home, &paths, session, 16, &fingerprints).await;
+
+        let guest = tempfile::tempdir().unwrap();
+        let root = guest.path();
+        let target = guest_path(root, "/home/user/.codex/AGENTS.md");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, b"local instructions").unwrap();
+        let memory = guest_path(root, memory_mount);
+        if present {
+            fs::create_dir(&memory).unwrap();
+            fs::write(memory.join("MEMORY.md"), b"local memory").unwrap();
+        } else {
+            let source = guest_path(root, "/tmp/memory.tar.gz");
+            fs::create_dir_all(source.parent().unwrap()).unwrap();
+            fs::write(source, archive(&[("MEMORY.md", b"published memory")])).unwrap();
+        }
+
+        let input = InstructionCheck {
+            framework: "codex".into(),
+            preserved_download_mounts: Vec::new(),
+            check_memory_root: true,
+        };
+        let checked = guest_storage_apply::check_agent_instructions(
+            &guest_path(root, "/home/user"),
+            &serde_json::to_vec(&input).unwrap(),
+        )
+        .unwrap();
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        overrides.add_exec_result_matcher(
+            " --instructions-check-stdin",
+            sandbox::ExecResult::new(0, serde_json::to_vec(&checked).unwrap(), Vec::new()),
+        );
+        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+        let params = super::super::JobParams {
+            home_disk_mb: 16,
+            ..default_params()
+        };
+        let (outcome, _) = execute_job(
+            &factory,
+            current,
+            NewSandboxDispatch {
+                id: SandboxId::new_v4(),
+                reuse_result: SandboxReuseResult::PoolMiss,
+            },
+            &config,
+            &params,
+            CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
+        assert_eq!(outcome.storage_fingerprints, fingerprints);
+        let checks = overrides.agent_instructions_calls();
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].operation, InstructionOperation::Check);
+        let input: InstructionCheck = serde_json::from_slice(&checks[0].metadata).unwrap();
+        assert!(input.check_memory_root);
+        assert_eq!(
+            overrides.storage_manifest_calls().len(),
+            usize::from(!present)
+        );
+        apply_guest_storage(&overrides, root, 0, None);
+        let expected: &[u8] = if present {
+            b"local memory"
+        } else {
+            b"published memory"
+        };
+        assert_eq!(fs::read(memory.join("MEMORY.md")).unwrap(), expected);
+        assert_eq!(fs::read(&target).unwrap(), b"local instructions");
+        config.background_fill.shutdown().await;
+        config.decoded_cache.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn home_restored_instruction_reuse_checks_target_and_repairs_missing_or_tainted_files() {
     use crate::home_image_cache::HomeImageCache;
     use runner_host::paths::RunnerPaths;
@@ -1284,7 +1400,7 @@ async fn instruction_reuse_checks_all_preserved_mounts_in_bounded_guest_requests
     overrides.add_persistent_exec_matcher(sandbox_mock::ExecMatcher {
         pattern: " --instructions-check-stdin".into(),
         exit_code: 0,
-        stdout: b"true".to_vec(),
+        stdout: br#"{"instructions_current":true,"memory_root_present":false}"#.to_vec(),
         stderr: Vec::new(),
     });
     let sandbox =
@@ -1301,7 +1417,9 @@ async fn instruction_reuse_checks_all_preserved_mounts_in_bounded_guest_requests
     .unwrap();
     assert!(matches!(
         reused,
-        super::super::storage::InstructionReuse::Reused
+        super::super::storage::InstructionReuse::Reused {
+            memory_root_present: false,
+        }
     ));
     let calls = overrides.agent_instructions_calls();
     assert!(calls.len() > 1);
@@ -1309,7 +1427,11 @@ async fn instruction_reuse_checks_all_preserved_mounts_in_bounded_guest_requests
     for call in calls {
         let metadata = call.metadata;
         assert!(metadata.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES);
-        assert!(guest_storage_apply::check_agent_instructions(&home, &metadata).unwrap());
+        assert!(
+            guest_storage_apply::check_agent_instructions(&home, &metadata)
+                .unwrap()
+                .instructions_current
+        );
         let input: InstructionCheck = serde_json::from_slice(&metadata).unwrap();
         checked.extend(input.preserved_download_mounts);
     }
