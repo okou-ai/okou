@@ -344,8 +344,9 @@ private fun WorkspaceSettingsContent(
             AccountSettings(account, state.entryFailure == SessionEntryFailure.SignOut, signOut)
         SettingsDestination.BuiltInTools -> {
             val tools = ready?.settings?.builtInTools
-            if (ready != null && tools != null) BuiltInToolsPage(ready.organization.name, tools)
-            else WorkspaceSettingsPreparation(state, retry)
+            if (ready != null && tools != null) {
+                BuiltInToolsPage(ready.organization.name, tools, snackbar, onFeedbackInOverlay)
+            } else WorkspaceSettingsPreparation(state, retry)
         }
         SettingsDestination.ProactiveServices -> {
             val proactive = ready?.settings?.proactive

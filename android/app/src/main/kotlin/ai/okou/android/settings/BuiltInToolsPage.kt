@@ -17,10 +17,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -38,6 +41,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 internal fun BuiltInToolsPage(
     workspace: String,
     model: BuiltInToolsSettings,
+    snackbar: SnackbarHostState,
+    onFeedbackInOverlay: (Boolean) -> Unit,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     LifecycleResumeEffect(model) {
@@ -97,7 +102,7 @@ internal fun BuiltInToolsPage(
                 model,
             )
             HorizontalDivider()
-            ImageModelPicker(state, model)
+            ImageModelPicker(state, model, snackbar, onFeedbackInOverlay)
         }
     }
     if (state.preferencesUnavailable && state.disabled == null)
@@ -132,7 +137,12 @@ private fun ToolSwitch(
 }
 
 @Composable
-private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettings) {
+private fun ImageModelPicker(
+    state: BuiltInToolsState,
+    model: BuiltInToolsSettings,
+    snackbar: SnackbarHostState,
+    onFeedbackInOverlay: (Boolean) -> Unit,
+) {
     val title = stringResource(R.string.settings_tool_image_model)
     val selectedModel = state.displayedImage
     val selected = imageToolOptions.firstOrNull { it.id == selectedModel }
@@ -148,16 +158,25 @@ private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettin
                 enabled = enabled,
                 modifier = if (enabled) Modifier else Modifier.alpha(0.38f),
             ) { dismiss ->
+                val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
+                DisposableEffect(Unit) {
+                    routeFeedback(true)
+                    onDispose { routeFeedback(false) }
+                }
+                // Keep an older saved model available until its replacement is confirmed.
+                val legacy = imageToolOptions.firstOrNull {
+                    (it.id == state.confirmedImage || it.id == selectedModel) &&
+                        it !in publicImageToolOptions
+                }
                 val options =
-                    if (selected != null && selected !in publicImageToolOptions)
-                        publicImageToolOptions + selected
-                    else publicImageToolOptions
+                    if (legacy == null) publicImageToolOptions else publicImageToolOptions + legacy
                 SettingsChoiceSheet(
                     title,
                     dismiss,
                     options,
                     options.indexOf(selected),
                     { it.id },
+                    snackbar = snackbar,
                 ) { option, position ->
                     SettingsChoiceRow(
                         option.title,

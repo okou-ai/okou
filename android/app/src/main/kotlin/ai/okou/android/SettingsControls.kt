@@ -568,6 +568,7 @@ internal fun SettingsSheet(
     showBack: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
     snackbar: SnackbarHostState? = null,
+    manageSnackbarTimeout: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compactHeight = isShortSettingsPanelWindow()
@@ -667,7 +668,11 @@ internal fun SettingsSheet(
                     Box(
                         Modifier.align(Alignment.BottomCenter).padding(bottom = actionInset + 8.dp),
                     ) {
-                        WorkspaceFeedbackHost(snackbar, Modifier)
+                        WorkspaceFeedbackHost(
+                            snackbar,
+                            Modifier,
+                            manageTimeout = manageSnackbarTimeout,
+                        )
                     }
                 }
             }
@@ -913,6 +918,7 @@ internal fun <T> SettingsChoiceSheet(
     options: List<T>,
     selectedIndex: Int,
     optionKey: (T) -> String,
+    snackbar: SnackbarHostState? = null,
     choice: @Composable (T, Modifier) -> Unit,
 ) {
     val initialIndex = remember { if (selectedIndex in options.indices) selectedIndex else 0 }
@@ -922,6 +928,7 @@ internal fun <T> SettingsChoiceSheet(
         dismiss,
         initialKey = options.getOrNull(initialIndex)?.let(optionKey),
         isAvailable = { key -> options.any { optionKey(it) == key } },
+        snackbar = snackbar,
     ) { position ->
         LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = scroll) {
             items(options, key = optionKey) { option ->
@@ -937,11 +944,18 @@ internal fun SettingsChoicePanel(
     dismiss: () -> Unit,
     initialKey: String?,
     isAvailable: (String) -> Boolean,
+    snackbar: SnackbarHostState? = null,
     content: @Composable ((String) -> Modifier) -> Unit,
 ) {
     var focusedKey by rememberSettingsChoiceFocus()
     val inputMode = LocalInputModeManager.current
-    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+    SettingsSheet(
+        title,
+        dismiss,
+        scroll = SettingsSheetScroll.None,
+        snackbar = snackbar,
+        manageSnackbarTimeout = false,
+    ) {
         // Reattach focus when resizing replaces the bottom sheet with a dialog or vice versa.
         val openingKey = remember { focusedKey?.takeIf(isAvailable) ?: initialKey }
         val focus = remember { FocusRequester() }
