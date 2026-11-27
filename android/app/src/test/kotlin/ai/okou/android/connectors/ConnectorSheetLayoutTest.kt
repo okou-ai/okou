@@ -455,6 +455,7 @@ class ConnectorSheetLayoutTest {
                 val message = "Could not save. Your changes are still here."
                 input.performTextReplacement(draft)
                 input.performTextInputSelection(selection)
+                val fieldBounds = input.getUnclippedBoundsInRoot()
                 save.performClick()
                 compose.waitUntilAtLeastOneExists(checking, 10_000)
                 repeat(2) {
@@ -477,6 +478,7 @@ class ConnectorSheetLayoutTest {
                         ),
                     )
                 save.assertIsEnabled()
+                assertEquals(fieldBounds, input.getUnclippedBoundsInRoot())
                 assertEquals(1, fixture.renameRequests.get())
             }
         }
