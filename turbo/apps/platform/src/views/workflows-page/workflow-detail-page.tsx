@@ -1097,6 +1097,7 @@ function WorkflowDetailContent() {
     return <DetailSkeleton />;
   }
 
+  const archived = detail?.official?.definitionLifecycle === "retired";
   return (
     <DetailPageShell>
       <WorkflowBreadcrumb detail={detail} />
@@ -1105,11 +1106,15 @@ function WorkflowDetailContent() {
           <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
             {workflowTitle(detail)}
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {i18n.t(($) => {
-              return $.feedEvents.automationDisabled.systemManaged;
-            })}
-          </p>
+          {(!archived || detail.description) && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {archived
+                ? detail.description
+                : i18n.t(($) => {
+                    return $.feedEvents.automationDisabled.systemManaged;
+                  })}
+            </p>
+          )}
         </DetailPageHeader>
       ) : (
         <DetailHeader
@@ -1120,7 +1125,9 @@ function WorkflowDetailContent() {
       )}
       <DetailPageMain>
         {detail ? (
-          detail.official ? (
+          archived ? (
+            <WorkflowInstructionsTab detail={detail} />
+          ) : detail.official ? (
             <AutomationsSection detail={detail} readOnly />
           ) : (
             <WorkflowTabContent activeTab={activeTab} detail={detail} />

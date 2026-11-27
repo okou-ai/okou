@@ -8,14 +8,18 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { workflows } from "@okouai/db/schema/workflow";
+import { archivedProactiveWorkflowRuns } from "@okouai/db/schema/archived-proactive-workflow-run";
 import { computed } from "ccstate";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { iso, object, uuid, type infer as zInfer } from "zod";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 import { safeJsonParse } from "../utils";
-import { visibleWorkflowCondition } from "./workflow-visibility";
+import {
+  readableWorkflows,
+  visibleWorkflowCondition,
+} from "./workflow-visibility";
 
 const PAGE_SIZE = 30;
 const positionSchema = object({
@@ -56,53 +60,89 @@ function historyEntry(
   };
 }
 
-export function workflowRunHistory(args: {
+interface WorkflowHistoryArgs {
   readonly workflowId: string;
   readonly orgId: string;
   readonly userId: string;
   readonly before: RunPosition | undefined;
-}) {
+}
+
+function workflowRunPage(args: WorkflowHistoryArgs) {
+  const query = new QueryBuilder();
+  // Resolve the immutable trigger ID from the original FK or the archive inside the
+  // same snapshot. Keep workspace/user ownership and microsecond cursor semantics.
+  const runFields = {
+    id: agentRuns.id,
+    createdAt: agentRuns.createdAt,
+    cursorTime:
+      sql`to_char(${agentRuns.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+        .mapWith(pgTextDecoder)
+        .as("cursor_time"),
+    status: agentRuns.status,
+    sourceThreadId: agentRuns.chatThreadId,
+  };
+  const ownedRun = and(
+    eq(agentRuns.orgId, args.orgId),
+    eq(agentRuns.userId, args.userId),
+    inArray(agentRuns.triggerSource, [
+      "automation-schedule",
+      "automation-event",
+    ]),
+    args.before
+      ? sql`(${agentRuns.createdAt}, ${agentRuns.id}) < (${args.before.createdAt}::timestamp, ${args.before.id}::uuid)`
+      : undefined,
+  );
+  const links = query
+    .select({
+      ...runFields,
+      automationId: sql`${workflowAutomations.id}`
+        .mapWith(pgTextDecoder)
+        .as("original_automation_id"),
+    })
+    .from(workflowAutomations)
+    .innerJoin(
+      agentRuns,
+      eq(agentRuns.workflowAutomationId, workflowAutomations.id),
+    )
+    .where(
+      and(
+        eq(workflowAutomations.workflowId, args.workflowId),
+        eq(workflowAutomations.orgId, args.orgId),
+        eq(workflowAutomations.ownerUserId, args.userId),
+        ownedRun,
+      ),
+    )
+    .unionAll(
+      query
+        .select({
+          ...runFields,
+          automationId: archivedProactiveWorkflowRuns.automationId,
+        })
+        .from(archivedProactiveWorkflowRuns)
+        .innerJoin(
+          agentRuns,
+          eq(agentRuns.id, archivedProactiveWorkflowRuns.runId),
+        )
+        .where(
+          and(
+            eq(archivedProactiveWorkflowRuns.workflowId, args.workflowId),
+            ownedRun,
+          ),
+        ),
+    )
+    .as("workflow_run_links");
+  return query
+    .select()
+    .from(links)
+    .orderBy(desc(links.createdAt), desc(links.id))
+    .limit(PAGE_SIZE + 1)
+    .as("workflow_run_page");
+}
+
+export function workflowRunHistory(args: WorkflowHistoryArgs) {
   return computed(async (get) => {
     const db = get(db$);
-    const page = db
-      .select({
-        id: agentRuns.id,
-        createdAt: agentRuns.createdAt,
-        // Keep PostgreSQL's microseconds in the cursor even when the UI uses a Date.
-        cursorTime:
-          sql`to_char(${agentRuns.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
-            .mapWith(pgTextDecoder)
-            .as("cursor_time"),
-        status: agentRuns.status,
-        sourceThreadId: agentRuns.chatThreadId,
-        automationId: agentRuns.workflowAutomationId,
-      })
-      .from(workflowAutomations)
-      .innerJoin(
-        agentRuns,
-        and(
-          eq(agentRuns.workflowAutomationId, workflowAutomations.id),
-          eq(agentRuns.orgId, args.orgId),
-          eq(agentRuns.userId, args.userId),
-        ),
-      )
-      .where(
-        and(
-          eq(workflowAutomations.workflowId, workflows.id),
-          eq(workflowAutomations.orgId, args.orgId),
-          eq(workflowAutomations.ownerUserId, args.userId),
-          inArray(agentRuns.triggerSource, [
-            "automation-schedule",
-            "automation-event",
-          ]),
-          args.before
-            ? sql`(${agentRuns.createdAt}, ${agentRuns.id}) < (${args.before.createdAt}::timestamp, ${args.before.id}::uuid)`
-            : undefined,
-        ),
-      )
-      .orderBy(desc(agentRuns.createdAt), desc(agentRuns.id))
-      .limit(PAGE_SIZE + 1)
-      .as("workflow_run_page");
+    const page = workflowRunPage(args);
     const trigger = db
       .select({ eventType: chatAutomationContext.eventType })
       .from(chatEvents)
@@ -136,7 +176,7 @@ export function workflowRunHistory(args: {
         chatThreadId: chatThreads.id,
         eventType: trigger.eventType,
       })
-      .from(workflows)
+      .from(readableWorkflows)
       .leftJoinLateral(page, sql`true`)
       .leftJoin(
         chatThreads,
@@ -150,9 +190,9 @@ export function workflowRunHistory(args: {
       .leftJoinLateral(trigger, sql`true`)
       .where(
         and(
-          eq(workflows.id, args.workflowId),
-          eq(workflows.orgId, args.orgId),
-          visibleWorkflowCondition(args.userId),
+          eq(readableWorkflows.id, args.workflowId),
+          eq(readableWorkflows.orgId, args.orgId),
+          visibleWorkflowCondition(args.userId, readableWorkflows),
         ),
       )
       .orderBy(desc(page.createdAt), desc(page.id));

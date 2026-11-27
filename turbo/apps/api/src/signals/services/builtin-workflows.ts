@@ -34,7 +34,7 @@ function scheduledWorkflow(args: {
 }) {
   return {
     ...args,
-    lifecycle: "active" as const,
+    lifecycle: "retired" as const,
     revision: createHash("sha256").update(args.prompt).digest("hex"),
   };
 }
@@ -109,7 +109,10 @@ export function installedOfficialWorkflow(source: {
   readonly officialDefinitionName: string | null;
   readonly archivedOfficialSnapshot: OfficialWorkflowArchivedSnapshot | null;
 }) {
-  const builtin = builtInWorkflow(source.officialDefinitionName);
+  const builtin =
+    source.archivedOfficialSnapshot === null
+      ? builtInWorkflow(source.officialDefinitionName)
+      : undefined;
   if (builtin) {
     return {
       kind: "builtin" as const,

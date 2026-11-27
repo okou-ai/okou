@@ -789,6 +789,20 @@ if ! git merge-base --is-ancestor "$official_storage_retirement_commit" "$TARGET
   fail "Rollback target predates the Official Workflow storage retirement: ${official_storage_retirement_commit}."
 fi
 
+# The first API release with archive readers only prepares storage. Physical
+# retirement requires a second distinct verified API release and a drained writer.
+proactive_history_reader=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- turbo/packages/db/src/migrations/1653_archive_proactive_workflow_history.sql | sed -n '1p')
+if [[ ! "$proactive_history_reader" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the proactive history reader on main."
+fi
+proactive_reader_releases=$(git for-each-ref --contains="$proactive_history_reader" --merged=origin/main \
+  --format='%(objectname) %(*objectname)' 'refs/tags/api-v*' \
+  | awk '{ commits[($2 ? $2 : $1)] = 1 } END { print length(commits) }')
+if (( proactive_reader_releases >= 2 )) && ! git merge-base --is-ancestor "$proactive_history_reader" "$TARGET_COMMIT"; then
+  fail "Rollback target predates archived proactive workflow history: ${proactive_history_reader}."
+fi
+
 # Physical needs_rebind contraction requires the independently released runtime
 # preparation. Earlier canonical APIs still name it in implicit ORM statements.
 ssh_needs_rebind_independent_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \

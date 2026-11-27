@@ -13,12 +13,22 @@ use tokio::{
 };
 
 fn compress_with(stream: &mut Compress, data: &[u8]) -> Vec<u8> {
-    let before = stream.total_in();
     let mut output = Vec::with_capacity(data.len() + 4096);
+    append_compressed(stream, data, &mut output, FlushCompress::Sync);
+    output
+}
+
+fn append_compressed(
+    stream: &mut Compress,
+    data: &[u8],
+    output: &mut Vec<u8>,
+    flush: FlushCompress,
+) {
+    let before = stream.total_in();
     loop {
         let consumed = usize::try_from(stream.total_in() - before).unwrap();
         stream
-            .compress_vec(&data[consumed..], &mut output, FlushCompress::Sync)
+            .compress_vec(&data[consumed..], output, flush)
             .unwrap();
         // A full output buffer can leave the sync flush incomplete.
         if output.len() < output.capacity() {
@@ -27,7 +37,6 @@ fn compress_with(stream: &mut Compress, data: &[u8]) -> Vec<u8> {
         output.reserve_exact(64 * 1024);
     }
     assert_eq!(stream.total_in() - before, data.len() as u64);
-    output
 }
 
 fn compress(data: &[u8]) -> Vec<u8> {
@@ -837,28 +846,38 @@ async fn decode_high_entropy_zrle(width: usize, height: usize, memory_limit: usi
         [value as u8, (value >> 8) as u8, (value >> 16) as u8]
     }
 
-    let mut tiles =
-        Vec::with_capacity(width * height * 3 + width.div_ceil(64) * height.div_ceil(64));
+    let raw_len = width * height * 3 + width.div_ceil(64) * height.div_ceil(64);
+    let mut tiles = Vec::with_capacity(width * height.min(64) * 3 + width.div_ceil(64));
+    let mut compressed = Vec::with_capacity(raw_len + 4096);
+    let mut stream = Compress::new(Compression::fast(), true);
     // Fill each row before appending it instead of zeroing the full tile.
     let mut row_pixels = [[0; 3]; 64];
     for tile_y in (0..height).step_by(64) {
+        let band_end = (tile_y + 64).min(height);
         for tile_x in (0..width).step_by(64) {
             tiles.push(0); // Raw ZRLE tile, with three-byte RGB CPIXEL values.
             let tile_width = (width - tile_x).min(64);
-            let tile_height = (height - tile_y).min(64);
             let row = &mut row_pixels[..tile_width];
-            for y in 0..tile_height {
-                let row_start = (tile_y + y) * width + tile_x;
+            for y in tile_y..band_end {
+                let row_start = y * width + tile_x;
                 for (x, pixel) in row.iter_mut().enumerate() {
                     *pixel = color(row_start + x);
                 }
                 tiles.extend_from_slice(row.as_flattened());
             }
         }
+        // Keep a single ZRLE stream and sync-flush only after the last band.
+        let flush = if band_end == height {
+            FlushCompress::Sync
+        } else {
+            FlushCompress::None
+        };
+        append_compressed(&mut stream, &tiles, &mut compressed, flush);
+        tiles.clear();
     }
-    // Encoding effort is fixture setup; retain all high-entropy bytes for decoding.
-    let mut compressed = compress_with(&mut Compress::new(Compression::fast(), true), &tiles);
+    assert_eq!(stream.total_in(), raw_len as u64);
     drop(tiles);
+    drop(stream);
     compressed.shrink_to_fit();
     assert!(compressed.len() > 16 * 1024 * 1024);
 

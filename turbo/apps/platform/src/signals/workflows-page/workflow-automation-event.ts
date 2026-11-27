@@ -76,10 +76,18 @@ export const workflowAutomationEventAccess$ = computed(async (get) => {
     undefined,
     { showErrorToast: false },
   );
-  if (response.status !== 200) {
+  if (response.status === 403) {
     return { status: "unavailable" } as const;
   }
   const detail = await get(currentWorkflowDetail$);
+  if (response.status === 404) {
+    // A retired installation can outlive its automation. An authorized workflow
+    // snapshot is the only content available on this historical event link.
+    return detail?.id === target.workflowId &&
+      detail.official?.definitionLifecycle === "retired"
+      ? ({ status: "ready" } as const)
+      : ({ status: "unavailable" } as const);
+  }
   if (
     !detail ||
     !detail.automations.some((automation) => {

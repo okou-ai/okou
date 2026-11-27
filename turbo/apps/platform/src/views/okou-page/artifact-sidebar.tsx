@@ -29,7 +29,6 @@ import {
   useLastLoadable,
   useLastResolved,
   useLoadable,
-  useResolved,
   useSet,
 } from "ccstate-react";
 import {
@@ -227,10 +226,7 @@ function useMarkdownArtifactSelection(
   fullscreen: boolean,
 ): ArtifactMarkdownSelection | undefined {
   const splitView = useMediaQuery(THREAD_SIDEBAR_SPLIT_MEDIA_QUERY);
-  const enabled =
-    useResolved(featureSwitches$)?.[FeatureSwitchKey.MarkdownArtifactQuote] ===
-    true;
-  return enabled && splitView && !fullscreen ? selection : undefined;
+  return splitView && !fullscreen ? selection : undefined;
 }
 
 export function ArtifactSidebarContent({

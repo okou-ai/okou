@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1196.1](https://github.com/okou-ai/okou/compare/app-v0.1196.0...app-v0.1196.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **platform:** darken the composer follow-up tab keycap ([#51435](https://github.com/okou-ai/okou/issues/51435)) ([e80d58f](https://github.com/okou-ai/okou/commit/e80d58f227210f210934a41163babb1b31ad3ca2))
+
+
+### Performance Improvements
+
+* **artifacts:** batch covers behind the library switch ([#51464](https://github.com/okou-ai/okou/issues/51464)) ([3462fe6](https://github.com/okou-ai/okou/commit/3462fe66da1741d8902e7f846e852ecca1775756))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.141.0
+    * @okouai/core bumped to 8.887.8
+    * @okouai/ui bumped to 1.22.47
+
 ## [0.1196.0](https://github.com/okou-ai/okou/compare/app-v0.1195.2...app-v0.1196.0) (2026-11-27)
 
 

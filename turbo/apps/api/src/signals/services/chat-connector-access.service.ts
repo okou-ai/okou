@@ -11,6 +11,7 @@ import { and, asc, eq, not } from "drizzle-orm";
 import { boolean, object, string, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
@@ -340,12 +341,29 @@ export const setChatConnectorCurrent$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    const rows = parseRawRows(
-      object({ connector_id: uuid() }),
-      await db.execute(saveChatConnectorCurrentSql(owner, connectionId)),
+    const saved = await settle(
+      (async () => {
+        return parseRawRows(
+          object({ connector_id: uuid() }),
+          await db.execute(saveChatConnectorCurrentSql(owner, connectionId)),
+        );
+      })(),
+      signal,
     );
-    signal.throwIfAborted();
-    if (rows.length === 0) {
+    if (!saved.ok) {
+      // A concurrent deletion can win after the statement has read the account.
+      if (
+        owner.target.kind === "custom" &&
+        isForeignKeyViolation(
+          saved.error,
+          "fk_chat_thread_connector_selections_custom_connector",
+        )
+      ) {
+        return false;
+      }
+      throw saved.error;
+    }
+    if (saved.value.length === 0) {
       return false;
     }
     await set(synchronizeChatConnectorAutomationAccounts$, owner, signal);

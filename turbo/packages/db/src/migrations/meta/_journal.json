@@ -4019,6 +4019,13 @@
       "when": 1795769520191,
       "tag": "1652_add_artifact_favorites",
       "breakpoints": true
+    },
+    {
+      "idx": 1653,
+      "version": "7",
+      "when": 1795772552297,
+      "tag": "1653_archive_proactive_workflow_history",
+      "breakpoints": true
     }
   ]
 }

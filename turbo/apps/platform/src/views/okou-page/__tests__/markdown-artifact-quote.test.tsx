@@ -1,8 +1,6 @@
 import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   act,
   fireEvent,
@@ -147,9 +145,6 @@ test("Quote the real Markdown files despite authored provenance markers", async 
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.MarkdownArtifactQuote]: true,
-    },
   });
   await openMarkdown();
   await selectPassage(PASSAGE);
@@ -249,9 +244,6 @@ test.each(["notification", "reconnect"] as const)(
       context,
       path: `/chats/${ATTACHMENT_THREAD_ID}`,
       sharedWorkerTestTransport: "message-port",
-      featureSwitches: {
-        [FeatureSwitchKey.MarkdownArtifactQuote]: true,
-      },
     });
     await openMarkdown();
     await selectPassage(PASSAGE);
@@ -341,55 +333,41 @@ test.each(["notification", "reconnect"] as const)(
   },
 );
 
-test.each([
-  { enabled: undefined, wide: true },
-  { enabled: false, wide: true },
-  { enabled: true, wide: false },
-])(
-  "Ignore authored quote markers outside desktop split view: %j",
-  async ({ enabled, wide }) => {
-    context.mocks.browser.matchMedia((query) => {
-      return wide && query === SPLIT_QUERY;
-    });
-    const user = userEvent.setup({ delay: null });
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    mockMarkdown();
-    mockAttachmentChat(context, {
-      chatEvents: markdownEvents(),
-      artifacts: [markdownFile("plan.md", FILE_ID)],
-      draft: draftForAttachment(
-        draftAttachment("notes.png"),
-        "Keep this draft.",
-      ),
-    });
-    await setupPage({
-      context,
-      path: `/chats/${ATTACHMENT_THREAD_ID}`,
-      featureSwitches:
-        enabled === undefined
-          ? {}
-          : { [FeatureSwitchKey.MarkdownArtifactQuote]: enabled },
-    });
-    const composer = await screen.findByRole("textbox", { name: "Message" });
-    const attachment = getNamedButton("Open image preview for notes.png");
-    click(await findNamedLink("Launch plan"));
-    const preview = await screen.findByTestId("artifact-sidebar");
-    await within(preview).findByText(PASSAGE);
-    within(preview).getByRole("document").focus();
-    selectDocumentText(preview);
-    await user.keyboard("cq");
-    expect(quoteAction()).toBeUndefined();
-    expect(queryNamedButton("Copy")).toBeNull();
-    expect(clipboard.writes).toStrictEqual([]);
-    expect(
-      screen.queryByRole("textbox", { name: "Ask or comment on this quote" }),
-    ).not.toBeInTheDocument();
-    expect(composer).toHaveTextContent("Keep this draft.");
-    expect(attachment).toBeInTheDocument();
-  },
-);
+test("Ignore authored quote markers outside desktop split view", async () => {
+  context.mocks.browser.matchMedia(() => {
+    return false;
+  });
+  const user = userEvent.setup({ delay: null });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  mockMarkdown();
+  mockAttachmentChat(context, {
+    chatEvents: markdownEvents(),
+    artifacts: [markdownFile("plan.md", FILE_ID)],
+    draft: draftForAttachment(draftAttachment("notes.png"), "Keep this draft."),
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+  });
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  const attachment = getNamedButton("Open image preview for notes.png");
+  click(await findNamedLink("Launch plan"));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  await within(preview).findByText(PASSAGE);
+  within(preview).getByRole("document").focus();
+  selectDocumentText(preview);
+  await user.keyboard("cq");
+  expect(quoteAction()).toBeUndefined();
+  expect(queryNamedButton("Copy")).toBeNull();
+  expect(clipboard.writes).toStrictEqual([]);
+  expect(
+    screen.queryByRole("textbox", { name: "Ask or comment on this quote" }),
+  ).not.toBeInTheDocument();
+  expect(composer).toHaveTextContent("Keep this draft.");
+  expect(attachment).toBeInTheDocument();
+});
 
-test("Keep Markdown quotes out of public modal previews when enabled", async () => {
+test("Keep Markdown quotes out of public modal previews", async () => {
   context.mocks.browser.matchMedia((query) => {
     return query === SPLIT_QUERY;
   });
@@ -427,7 +405,6 @@ test("Keep Markdown quotes out of public modal previews when enabled", async () 
     auth: {
       user: { id: "markdown-modal-viewer", fullName: "Markdown Modal Viewer" },
     },
-    featureSwitches: { [FeatureSwitchKey.MarkdownArtifactQuote]: true },
   });
   click(await screen.findByTestId("markdown-artifact-preview-markdown"));
   const preview = await screen.findByRole("dialog");
@@ -441,112 +418,6 @@ test("Keep Markdown quotes out of public modal previews when enabled", async () 
   expect(
     screen.queryByRole("textbox", { name: "Message" }),
   ).not.toBeInTheDocument();
-});
-
-test("Disabling Markdown quotes in Lab preserves drafts and keeps actions off during refresh", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === SPLIT_QUERY || query === "(min-width: 48rem)";
-  });
-  const user = userEvent.setup({ delay: null });
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const refreshStarted = context.mocks.deferred<void>();
-  const refreshed = context.mocks.deferred<void>();
-  let refreshing = false;
-  let switches: Record<string, boolean> = {
-    [FeatureSwitchKey.Lab]: true,
-    [FeatureSwitchKey.MarkdownArtifactQuote]: true,
-  };
-  context.mocks.api(featureSwitchesContract.get, async ({ respond }) => {
-    if (refreshing) {
-      refreshStarted.resolve();
-      await refreshed.promise;
-    }
-    return respond(200, { switches, effectiveSwitches: switches });
-  });
-  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
-    switches = { ...switches, ...body.switches };
-    refreshing = true;
-    return respond(200, { switches, effectiveSwitches: switches });
-  });
-  mockMarkdown();
-  const draft = draftForAttachment(
-    draftAttachment("notes.png"),
-    "Keep this draft.",
-  );
-  draft.draftUserMessage = {
-    version: 1,
-    parts: [
-      ...(draft.draftUserMessage?.parts ?? []),
-      {
-        type: "feedback",
-        quote: "Keep this saved quote.",
-        note: [],
-        source: {
-          type: "artifact",
-          fileId: FILE_ID,
-          filenameSnapshot: "plan.md",
-        },
-      },
-    ],
-  };
-  mockAttachmentChat(context, {
-    chatEvents: markdownEvents(),
-    artifacts: [markdownFile("plan.md", FILE_ID)],
-    draft,
-  });
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  await openMarkdown();
-  await selectPassage(PASSAGE);
-  await expect(findButton("Copy")).resolves.toBeInTheDocument();
-  await user.keyboard("c");
-  await expect(screen.findByText("Copied")).resolves.toBeInTheDocument();
-  expect(clipboard.writes).toStrictEqual([PASSAGE]);
-  await selectPassage(PASSAGE);
-
-  click(await findButton("Test User"));
-  click(await screen.findByText("Lab"));
-  await screen.findByRole("heading", { name: "Lab" });
-  click(await screen.findByText("bingjie"));
-  const toggle = await screen.findByRole("switch", {
-    name: FeatureSwitchKey.MarkdownArtifactQuote,
-  });
-  expect(toggle).toBeChecked();
-  click(toggle);
-  await refreshStarted.promise;
-
-  click(await findNamedLink("Attachment chat"));
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toHaveTextContent("Keep this draft.");
-  expect(quoteAction()).toBeUndefined();
-  expect(queryNamedButton("Copy")).toBeNull();
-  expect(
-    getNamedButton("Open image preview for notes.png"),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole("textbox", { name: "Ask or comment on this quote" }),
-  ).toHaveTextContent("Keep this saved quote.");
-
-  await act(async () => {
-    refreshed.resolve();
-    await refreshed.promise;
-  });
-  const sidebar = await openMarkdown();
-  within(sidebar).getByRole("document").focus();
-  selectDocumentText(sidebar);
-  await user.keyboard("cq");
-  expect(quoteAction()).toBeUndefined();
-  expect(queryNamedButton("Copy")).toBeNull();
-  expect(clipboard.writes).toStrictEqual([PASSAGE]);
-  expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-    "Keep this draft.",
-  );
-  expect(
-    getNamedButton("Open image preview for notes.png"),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole("textbox", { name: "Ask or comment on this quote" }),
-  ).toHaveTextContent("Keep this saved quote.");
 });
 
 test("Keep authored Markdown from restoring fullscreen or narrow actions", async () => {
@@ -563,9 +434,6 @@ test("Keep authored Markdown from restoring fullscreen or narrow actions", async
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.MarkdownArtifactQuote]: true,
-    },
   });
   const sidebar = await openMarkdown();
   await selectPassage(PASSAGE);
@@ -618,9 +486,6 @@ test("Ignore authored destination markers and quote into the viewing chat", asyn
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}?sidebar=${SECOND_ATTACHMENT_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.MarkdownArtifactQuote]: true,
-    },
   });
   await openMarkdown();
   await selectPassage(PASSAGE);

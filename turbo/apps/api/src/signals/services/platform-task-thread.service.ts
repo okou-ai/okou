@@ -42,6 +42,8 @@ export function platformTaskThreadCondition(owner: {
       WHERE chat_thread_id = ${owner.threadId}::uuid AND org_id = ${owner.orgId} AND user_id = ${owner.userId})
     OR EXISTS (SELECT 1 FROM proactive_occurrences
       WHERE chat_thread_id = ${owner.threadId}::uuid AND org_id = ${owner.orgId} AND user_id = ${owner.userId})
+    OR EXISTS (SELECT 1 FROM archived_proactive_workflows
+      WHERE chat_thread_id = ${owner.threadId}::uuid AND org_id = ${owner.orgId} AND owner_user_id = ${owner.userId})
     OR ${installed}
   )`.mapWith(pgBooleanDecoder);
 }
