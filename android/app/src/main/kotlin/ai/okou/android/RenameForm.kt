@@ -33,8 +33,10 @@ internal class RenameDraft(
         return replaceInput
     }
 
-    fun form(name: String, enabled: Boolean, maxLength: Int?): RenameForm =
-        renameForm(if (pristine) name else input.text, name, enabled, maxLength)
+    fun form(name: String?, enabled: Boolean, maxLength: Int?): RenameForm {
+        val baseline = name ?: confirmed
+        return renameForm(if (pristine) baseline else input.text, baseline, enabled, maxLength)
+    }
 }
 
 internal fun renameForm(
