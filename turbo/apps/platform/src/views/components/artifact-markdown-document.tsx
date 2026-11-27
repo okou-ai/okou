@@ -1,10 +1,7 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cn } from "@okouai/ui";
-import { useLastResolved } from "ccstate-react";
 import type { Root } from "hast";
 import type { RefCallback } from "react";
 import type { FeedbackSource } from "../../signals/okou-page/chat-feedback.ts";
-import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { MarkdownEventBody } from "./markdown.tsx";
 
 export interface ArtifactMarkdownSelection {
@@ -21,11 +18,6 @@ export function ArtifactMarkdownDocument({
   readonly tree: Root;
   readonly selection?: ArtifactMarkdownSelection;
 }) {
-  const typographyEnabled =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.MarkdownFirstOutput
-    ] === true;
-
   return (
     <div
       ref={selection?.ref}
@@ -37,10 +29,7 @@ export function ArtifactMarkdownDocument({
       data-feedback-source-filename={selection?.source.filenameSnapshot}
       data-feedback-source-artifact-id={selection?.source.artifactId}
       data-feedback-source-thread-id={selection?.threadId}
-      className={cn(
-        "h-full overflow-auto p-6 outline-none",
-        typographyEnabled && "text-base leading-[1.75]",
-      )}
+      className="h-full overflow-auto p-6 text-base leading-[1.75] outline-none"
       onKeyDown={(event) => {
         if (
           event.key === "Escape" &&
@@ -54,15 +43,13 @@ export function ArtifactMarkdownDocument({
     >
       <MarkdownEventBody
         className={cn(
-          typographyEnabled && [
-            // Important utilities override the unlayered Markdown typography;
-            // embedded UI keeps ownership of its own headings.
-            "[&_:is(h1,h2,h3,h4,h5,h6):not(:where([data-markdown-ui]_*))]:mb-3! [&_:is(h1,h2,h3,h4,h5,h6):not(:where([data-markdown-ui]_*))]:leading-[1.4]! [&_:is(h1,h2,h3,h4,h5,h6):not(:where([data-markdown-ui]_*))]:text-foreground! [&_:is(h1,h2,h3,h4,h5,h6):not(:where([data-markdown-ui]_*))]:[overflow-wrap:anywhere]",
-            "[&_:is(h1,h2):not(:where([data-markdown-ui]_*))]:mt-8! [&_:is(h3,h4,h5,h6):not(:where([data-markdown-ui]_*))]:mt-6!",
-            "[&_h1:not(:where([data-markdown-ui]_*))]:text-[2em]! [&_h1:not(:where([data-markdown-ui]_*))]:font-bold! [&_:is(h2,h3,h4,h5):not(:where([data-markdown-ui]_*))]:font-semibold! [&_h6:not(:where([data-markdown-ui]_*))]:font-medium!",
-            "[&_h2:not(:where([data-markdown-ui]_*))]:text-[1.5em]! [&_h3:not(:where([data-markdown-ui]_*))]:text-[1.25em]! [&_h4:not(:where([data-markdown-ui]_*))]:text-[1.125em]! [&_:is(h5,h6):not(:where([data-markdown-ui]_*))]:text-[1em]!",
-            "[&>*:first-child]:mt-0! [&>*:last-child]:mb-0! [&_blockquote:not(:where([data-markdown-ui]_*))>*:first-child]:mt-0! [&_blockquote:not(:where([data-markdown-ui]_*))>*:last-child]:mb-0!",
-          ],
+          // Important utilities override the unlayered Markdown typography;
+          // embedded UI keeps ownership of its own headings.
+          "[&_:is(h1,h2,h3,h4,h5,h6):not(:where([data-markdown-ui]_*))]:mb-3! [&_:is(h1,h2,h3,h4,h5,h6):not(:where([data-markdown-ui]_*))]:leading-[1.4]! [&_:is(h1,h2,h3,h4,h5,h6):not(:where([data-markdown-ui]_*))]:text-foreground! [&_:is(h1,h2,h3,h4,h5,h6):not(:where([data-markdown-ui]_*))]:[overflow-wrap:anywhere]",
+          "[&_:is(h1,h2):not(:where([data-markdown-ui]_*))]:mt-8! [&_:is(h3,h4,h5,h6):not(:where([data-markdown-ui]_*))]:mt-6!",
+          "[&_h1:not(:where([data-markdown-ui]_*))]:text-[2em]! [&_h1:not(:where([data-markdown-ui]_*))]:font-bold! [&_:is(h2,h3,h4,h5):not(:where([data-markdown-ui]_*))]:font-semibold! [&_h6:not(:where([data-markdown-ui]_*))]:font-medium!",
+          "[&_h2:not(:where([data-markdown-ui]_*))]:text-[1.5em]! [&_h3:not(:where([data-markdown-ui]_*))]:text-[1.25em]! [&_h4:not(:where([data-markdown-ui]_*))]:text-[1.125em]! [&_:is(h5,h6):not(:where([data-markdown-ui]_*))]:text-[1em]!",
+          "[&>*:first-child]:mt-0! [&>*:last-child]:mb-0! [&_blockquote:not(:where([data-markdown-ui]_*))>*:first-child]:mt-0! [&_blockquote:not(:where([data-markdown-ui]_*))>*:last-child]:mb-0!",
         )}
         tree={tree}
         mediaPreview={false}

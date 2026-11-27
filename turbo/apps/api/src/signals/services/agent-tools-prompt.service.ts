@@ -24,18 +24,10 @@ const suggestionsFeedbackGuidance =
  * messaging and file rules live in `# Integration Note`, next to the
  * `# Current Integration` block they describe.
  */
-function buildIntegrationToolsPrompt(
-  markdownFirstOutputEnabled: boolean,
-): readonly string[] {
+function buildIntegrationToolsPrompt(): readonly string[] {
   const localFileContext = [
-    markdownFirstOutputEnabled
-      ? "Honor the user's explicitly requested delivery format. Otherwise, choose the format based on the content: use Markdown for text-focused documents and reports, and HTML for visual or interactive deliverables. Do not create DOCX or PDF copies unless requested, exported by the user, or required by a selected generation template. Decide the format before choosing production and delivery tools."
-      : "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
-    ...(markdownFirstOutputEnabled
-      ? [
-          "For Markdown deliverables, use portable Markdown with `#` for the document title, `##` for sections, and `###` for subsections as needed. Do not skip heading levels or use bold text instead of headings. Use concise lists and simple tables. Avoid raw HTML unless the content requires a rich visual layout. Keep Markdown as the source of truth and let the user export DOCX or PDF from the artifact actions when they need those formats.",
-        ]
-      : []),
+    "Honor the user's explicitly requested delivery format. Otherwise, choose the format based on the content: use Markdown for text-focused documents and reports, and HTML for visual or interactive deliverables. Do not create DOCX or PDF copies unless requested, exported by the user, or required by a selected generation template. Decide the format before choosing production and delivery tools.",
+    "For Markdown deliverables, use portable Markdown with `#` for the document title, `##` for sections, and `###` for subsections as needed. Do not skip heading levels or use bold text instead of headings. Use concise lists and simple tables. Avoid raw HTML unless the content requires a rich visual layout. Keep Markdown as the source of truth and let the user export DOCX or PDF from the artifact actions when they need those formats.",
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
@@ -60,7 +52,6 @@ export interface AgentToolsPromptInputs {
   readonly larkOfficialEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
-  readonly markdownFirstOutputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly remoteDevicesEnabled: boolean;
   readonly artifactThreePointTimingEnabled: boolean;
@@ -97,10 +88,6 @@ export function buildAgentToolsPromptInputs(args: {
     ),
     presentationConvertEnabled: isFeatureEnabled(
       FeatureSwitchKey.PresentationConvert,
-      context,
-    ),
-    markdownFirstOutputEnabled: isFeatureEnabled(
-      FeatureSwitchKey.MarkdownFirstOutput,
       context,
     ),
     cloudBrowserEnabled: args.cloudBrowserEnabled,
@@ -240,7 +227,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",
         ]
       : []),
-    ...buildIntegrationToolsPrompt(args.markdownFirstOutputEnabled),
+    ...buildIntegrationToolsPrompt(),
     ...(args.hostedSiteCustomDomainsEnabled
       ? [
           "- Custom website domains: when the user asks to connect their domain, read `okou host domain --help`. These commands use the same custom-domain feature switch and paid-subscription requirement as Customize URL in the App. Use the owned website's platform Site slug and one exact hostname, not a wildcard. Run `okou host domain add <site> <hostname>`, configure every returned DNS record through an authorized DNS provider or have the user configure them, then run `okou host domain verify <site> <hostname>` once. Verification may return additional certificate TXT records; apply them, allow DNS/HTTPS provisioning to finish, and explicitly verify again. Do not poll or guess DNS targets. Only after all checks are ready, run `okou host domain select <site> <hostname>` and return the saved effective URL. Pending/failed verification prints checks and exits 1. Use `okou host domain list <site> --json` to inspect or recover current state. `select <site> --default` restores the platform sharing URL while keeping connected domains active; `remove <site> <hostname>` revokes the binding and its sessions, then its DNS records can be removed. Preserve the website's existing visibility and private sign-in. After a conflict or uncertain mutation, inspect current settings before retrying; never automatically replay add, verify, select, or remove.",

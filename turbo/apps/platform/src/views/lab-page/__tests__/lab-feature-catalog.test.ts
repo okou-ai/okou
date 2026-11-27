@@ -109,7 +109,6 @@ test("lab-page-002 Each staff-visible feature has exactly one switch under its r
 test.each([
   [FeatureSwitchKey.PresentationOutputFormat, "Beta"],
   [FeatureSwitchKey.ChatListHoverPreview, "Beta"],
-  [FeatureSwitchKey.MarkdownFirstOutput, "Released"],
 ] as const)("Staff see %s enabled by default in %s", async (key, stage) => {
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, {
@@ -138,18 +137,8 @@ test("lab-page-005 Filtering the Lab catalog preserves the All total and restore
   expect(screen.getAllByRole("switch")).toHaveLength(original);
 });
 
-test.each([
-  [
-    "lab-page-006 Reset all restores the test OAuth connector's original off state",
-    FeatureSwitchKey.TestOauthConnector,
-    false,
-  ],
-  [
-    "A member can disable Markdown-first output in Lab and reset the override",
-    FeatureSwitchKey.MarkdownFirstOutput,
-    true,
-  ],
-] as const)("%s", async (_title, featureKey, defaultEnabled) => {
+test("lab-page-006 Reset all restores the test OAuth connector's original off state", async () => {
+  const featureKey = FeatureSwitchKey.TestOauthConnector;
   let overrides: Partial<Record<FeatureSwitchKey, boolean>> = {};
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, { switches: overrides, effectiveSwitches: overrides });
@@ -167,13 +156,10 @@ test.each([
     "label",
   )!;
   const toggle = within(label).getByRole("switch");
-  expect(toggle).toHaveAttribute("aria-checked", String(defaultEnabled));
+  expect(toggle).toHaveAttribute("aria-checked", "false");
   click(toggle);
   await waitFor(() => {
-    return expect(toggle).toHaveAttribute(
-      "aria-checked",
-      String(!defaultEnabled),
-    );
+    return expect(toggle).toHaveAttribute("aria-checked", "true");
   });
   const reset = getButtonByName("Reset all");
   await waitFor(() => {
@@ -181,10 +167,7 @@ test.each([
   });
   click(reset);
   await waitFor(() => {
-    return expect(toggle).toHaveAttribute(
-      "aria-checked",
-      String(defaultEnabled),
-    );
+    return expect(toggle).toHaveAttribute("aria-checked", "false");
   });
 });
 

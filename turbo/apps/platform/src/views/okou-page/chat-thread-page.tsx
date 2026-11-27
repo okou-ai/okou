@@ -8486,10 +8486,6 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
   const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openArtifact = useSet(openMarkdownArtifact$);
-  const featureSwitches = useLastResolved(featureSwitches$);
-  const showMarkdownExport =
-    card.signals.kind === "markdown" &&
-    featureSwitches?.[FeatureSwitchKey.MarkdownFirstOutput] === true;
   const name = relatedArtifactDisplayName(card);
   const host = relatedArtifactHost(card.signals.url);
   const kind = artifactFallbackSubtitle(
@@ -8530,7 +8526,7 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
     </Button>
   );
   const previewAction = <DialogClose render={row} />;
-  if (!showMarkdownExport) {
+  if (card.signals.kind !== "markdown") {
     return previewAction;
   }
   return (

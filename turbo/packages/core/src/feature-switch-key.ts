@@ -13,7 +13,6 @@ export enum FeatureSwitchKey {
   RemoteDevices = "remoteDevices",
   EmailIntegration = "emailIntegration",
   PresentationOutputFormat = "presentationOutputFormat",
-  MarkdownFirstOutput = "markdownFirstOutput",
   MarkdownArtifactQuote = "markdownArtifactQuote",
   ChatThreadFork = "chatThreadFork",
   HideEmptyForYou = "hideEmptyForYou",
