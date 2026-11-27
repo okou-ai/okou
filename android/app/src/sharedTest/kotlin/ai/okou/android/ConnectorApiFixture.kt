@@ -84,6 +84,10 @@ internal class ConnectorApiFixture(
     @Volatile var memberAccess = false
     @Volatile var denyPolicyReads = false
     @Volatile var policyReadReplyGate: CountDownLatch? = null
+    val policyReadReplyStarted = CountDownLatch(1)
+    @Volatile var policyWriteReplyGate: CountDownLatch? = null
+    @Volatile var rejectPolicyWrite: Int? = null
+    val policyWriteReplyStarted = CountDownLatch(1)
     @Volatile var overviewReplyGate: CountDownLatch? = null
     @Volatile var failChatOverview = false
     val chatConnectorReads = CopyOnWriteArrayList<Pair<String, String?>>()
@@ -228,8 +232,10 @@ internal class ConnectorApiFixture(
                     }
                     if (url.encodedPath == "/api/chat-connector-overview")
                         overviewReplyGate?.await()
-                    if (url.encodedPath == "/api/connector-account-access/policies")
+                    if (url.encodedPath == "/api/connector-account-access/policies") {
+                        policyReadReplyStarted.countDown()
                         policyReadReplyGate?.await()
+                    }
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
                         discoveryRequested.countDown()
                         discoveryGate?.await()
@@ -305,6 +311,14 @@ internal class ConnectorApiFixture(
                             url.pathSegments.getOrNull(3) == "connector-access"
                     )
                         chatOverrideReplyGate?.await()
+                    if (
+                        request.method == "PUT" &&
+                            url.pathSegments.getOrNull(1) == "connector-account-access" &&
+                            url.pathSegments.last() == "policy"
+                    ) {
+                        policyWriteReplyStarted.countDown()
+                        policyWriteReplyGate?.await()
+                    }
                     return response
                 }
             }
@@ -565,6 +579,9 @@ internal class ConnectorApiFixture(
                         requestBody["target"] != target(account.slug)
                 )
                     return rejected(403)
+                rejectPolicyWrite?.let {
+                    return rejected(it)
+                }
                 val choice = requestBody["policy"]?.jsonPrimitive?.contentOrNull
                 val hours =
                     when (choice) {
@@ -819,6 +836,7 @@ internal class ConnectorApiFixture(
         detailReplyGate?.countDown()
         overviewReplyGate?.countDown()
         policyReadReplyGate?.countDown()
+        policyWriteReplyGate?.countDown()
         devicePollReplyGate?.countDown()
         externalCodeReplyGate?.countDown()
         externalAccountReplyGate?.countDown()

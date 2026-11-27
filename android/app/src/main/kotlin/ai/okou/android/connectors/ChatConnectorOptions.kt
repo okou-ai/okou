@@ -1,9 +1,12 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatConnectorAccessAccountsItem
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.api.generated.ConnectorOverviewItemAccountsItem
 import ai.okou.android.chat.ComposerTarget
+import ai.okou.android.isFreshMemorySnapshot
+import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +14,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
@@ -70,7 +74,7 @@ internal data class ChatConnectorOptionsState(
     val policySave: ChatConnectorSave? = null,
 ) {
     val save: ChatConnectorSave?
-        get() = chatSaves[target] ?: policySave
+        get() = policySave?.takeIf { it.saving } ?: chatSaves[target] ?: policySave
 
     fun blockingPhase(key: String): ChatConnectorSavePhase? =
         chatSaves[key]?.takeIf { it.blocksSend }?.phase
@@ -79,7 +83,12 @@ internal data class ChatConnectorOptionsState(
         copy(chatSaves = if (save == null) chatSaves - key else chatSaves + (key to save))
 }
 
-/** The workspace owns writes and keeps confirmed reads for the active composer. */
+private data class ConfirmedMemberPolicy(
+    val value: ConnectorMemberPolicy?,
+    val confirmedAt: TimeMark,
+)
+
+/** The workspace owns member policies and the reads for the active composer. */
 internal class ChatConnectorOptions(
     private val service: ConnectorService,
     private val scope: CoroutineScope,
@@ -92,6 +101,7 @@ internal class ChatConnectorOptions(
     private var overviewRequest: Job? = null
     private val accountRequests = mutableMapOf<String, Job>()
     private val policyRequests = mutableMapOf<String, Job>()
+    private val recentPolicies = mutableMapOf<String, Map<String, ConfirmedMemberPolicy>>()
     private var targetGeneration = 0L
     private var readFailureRound = 0L
 
@@ -103,22 +113,22 @@ internal class ChatConnectorOptions(
         overviewRequest = null
         accountRequests.values.forEach { it.cancel() }
         accountRequests.clear()
-        policyRequests.values.forEach { it.cancel() }
-        policyRequests.clear()
         mutable.value =
             ChatConnectorOptionsState(
                 target = key,
                 revision = previous.revision + 1,
                 chatSaves = previous.chatSaves.filterValues { it.blocksSend },
+                policySave = previous.policySave?.takeIf { it.saving },
             )
     }
 
-    fun invalidate(slug: String) {
+    fun invalidate(slug: String, changedConnection: String? = null) {
+        changedConnection?.let { forgetPolicy(slug, it) }
+        cancelDetails(slug)
         val previous = mutable.value
         if (previous.target == null) return
         overviewRequest?.cancel()
         overviewRequest = null
-        cancelDetails(slug)
         mutable.value =
             previous.copy(
                 overview = previous.overview.copy(confirmedAt = null),
@@ -159,12 +169,17 @@ internal class ChatConnectorOptions(
                     if (next.data != null || next.failure == ConnectorReadFailure.Unavailable) {
                         val incoming = next.data.orEmpty().associateBy { it.entry.slug }
                         val old = previous.orEmpty().associateBy { it.entry.slug }
+                        if (next.data != null) {
+                            retainOverviewPolicies(incoming)
+                            for (slug in policyRequests.keys - incoming.keys) policyRequests
+                                .remove(slug)
+                                ?.cancel()
+                        }
                         val changed =
-                            (snapshot.details.keys + accountRequests.keys + policyRequests.keys)
-                                .filter {
-                                    incoming[it] == null || incoming[it] != old[it]
-                                }
-                        for (slug in changed) cancelDetails(slug)
+                            (snapshot.details.keys + accountRequests.keys).filter {
+                                incoming[it] == null || incoming[it] != old[it]
+                            }
+                        for (slug in changed) accountRequests.remove(slug)?.cancel()
                         snapshot.details - changed
                     } else snapshot.details
                 mutable.value =
@@ -182,9 +197,19 @@ internal class ChatConnectorOptions(
         val summary = snapshot.overview.data?.find { it.entry.slug == slug } ?: return
         val previous = snapshot.details[slug] ?: ChatConnectorDetails()
         val visible =
-            if (opening)
-                ChatConnectorDetails(previous.accounts.forEntry(), previous.policies.forEntry())
-            else previous
+            if (opening) {
+                val accounts = previous.accounts.forEntry()
+                val rows = accounts.data
+                val policies =
+                    if (rows?.memberAccess == false) ConnectorRead()
+                    else
+                        cachedPolicies(
+                            slug,
+                            rows?.accounts?.map { it.account.id }
+                                ?: summary.accounts.map { it.connectionId },
+                        )
+                ChatConnectorDetails(accounts, policies)
+            } else previous
         if (visible != previous) updateDetails(slug) { visible }
         if (visible.accounts.data != null) {
             showPolicies(target, slug)
@@ -205,14 +230,29 @@ internal class ChatConnectorOptions(
                     onError = onError,
                     publish = { next ->
                         val accounts = next.cached()
-                        val discardPolicies =
-                            next.data?.memberAccess == false ||
-                                next.failure == ConnectorReadFailure.Unavailable
-                        if (discardPolicies) policyRequests.remove(slug)?.cancel()
+                        if (next.data?.memberAccess == false) {
+                            recentPolicies.clear()
+                            policyRequests.values.toList().forEach { it.cancel() }
+                            policyRequests.clear()
+                        } else if (next.failure == ConnectorReadFailure.Unavailable) {
+                            recentPolicies.remove(slug)
+                            policyRequests.remove(slug)?.cancel()
+                        }
                         updateDetails(slug) {
+                            val policies =
+                                when {
+                                    next.failure == ConnectorReadFailure.Unavailable ||
+                                        next.data?.memberAccess == false -> ConnectorRead()
+                                    next.data != null ->
+                                        cachedPolicies(
+                                            slug,
+                                            next.data.accounts.map { it.account.id },
+                                        )
+                                    else -> it.policies
+                                }
                             it.copy(
                                 accounts = accounts.retaining(it.accounts),
-                                policies = if (discardPolicies) ConnectorRead() else it.policies,
+                                policies = policies,
                             )
                         }
                     },
@@ -226,22 +266,94 @@ internal class ChatConnectorOptions(
     private fun showPolicies(target: ComposerTarget, slug: String) {
         if (!canRead(target) || policyRequests[slug]?.isActive == true) return
         val details = mutable.value.details[slug] ?: return
-        if (details.accounts.data?.memberAccess != true || details.policies.data != null) return
+        val accounts = details.accounts.data ?: return
+        if (
+            !accounts.memberAccess ||
+                accounts.accounts.isEmpty() ||
+                details.policies.confirmedAt != null
+        )
+            return
+        val ids = accounts.accounts.map { it.account.id }
         val request =
             scope.launch(start = CoroutineStart.LAZY) {
-                retryConnectorRead(
-                    read = { service.accountPolicies(slug) },
-                    canRead = { canRead(target) },
-                    onError = onError,
-                    publish = { next ->
-                        updateDetails(slug) {
-                            it.copy(policies = next.cached().retaining(it.policies))
-                        }
-                    },
-                )
+                try {
+                    retryConnectorRead(
+                        read = { service.accountPolicies(slug) },
+                        canRead = authorized,
+                        onError = onError,
+                        publish = { publishPolicies(slug, ids, it.cached()) },
+                    )
+                } finally {
+                    if (policyRequests[slug] === coroutineContext.job) policyRequests.remove(slug)
+                }
             }
         policyRequests[slug] = request
         request.start()
+    }
+
+    private fun publishPolicies(
+        slug: String,
+        requestedIds: List<String>,
+        read: ConnectorRead<Map<String, ConnectorMemberPolicy>>,
+    ) {
+        val current = mutable.value.details[slug]?.accounts?.data?.takeIf { it.memberAccess }
+        val ids = current?.accounts?.map { it.account.id } ?: requestedIds
+        val values = read.data
+        if (values != null) {
+            val confirmedAt = checkNotNull(read.confirmedAt)
+            recentPolicies[slug] = ids.associateWith {
+                ConfirmedMemberPolicy(values[it], confirmedAt)
+            }
+        } else if (read.failure == ConnectorReadFailure.Unavailable) {
+            recentPolicies.remove(slug)
+        }
+        if (current != null) {
+            updateDetails(slug) {
+                val policies =
+                    if (values == null) read.retaining(it.policies)
+                    else read.copy(data = values.filterKeys(ids.toSet()::contains))
+                it.copy(policies = policies)
+            }
+        }
+    }
+
+    private fun cachedPolicies(
+        slug: String,
+        ids: List<String>,
+    ): ConnectorRead<Map<String, ConnectorMemberPolicy>> {
+        val saved = recentPolicies[slug] ?: return ConnectorRead()
+        val fresh = ids.mapNotNull { id ->
+            saved[id]?.takeIf { it.confirmedAt.isFreshMemorySnapshot() }?.let { id to it }
+        }
+        val values = fresh.mapNotNull { (id, policy) -> policy.value?.let { id to it } }.toMap()
+        val confirmedAt =
+            fresh
+                .takeIf { it.size == ids.size }
+                ?.maxByOrNull { it.second.confirmedAt.elapsedNow() }
+                ?.second
+                ?.confirmedAt
+        return ConnectorRead(
+            data = values.takeIf { it.isNotEmpty() || confirmedAt != null },
+            confirmedAt = confirmedAt,
+        )
+    }
+
+    private fun retainOverviewPolicies(incoming: Map<String, ChatConnectorSummary>) {
+        recentPolicies.entries.removeAll { entry ->
+            val ids = incoming[entry.key]?.accounts.orEmpty().mapTo(HashSet()) { it.connectionId }
+            val retained =
+                entry.value.filter { (id, policy) ->
+                    id in ids && policy.confirmedAt.isFreshMemorySnapshot()
+                }
+            if (retained.isNotEmpty()) entry.setValue(retained)
+            retained.isEmpty()
+        }
+    }
+
+    private fun forgetPolicy(slug: String, connectionId: String) {
+        val saved = recentPolicies[slug] ?: return
+        val retained = saved - connectionId
+        if (retained.isEmpty()) recentPolicies.remove(slug) else recentPolicies[slug] = retained
     }
 
     private fun cancelDetails(slug: String) {
@@ -406,24 +518,50 @@ internal class ChatConnectorOptions(
                     throw error
                 } catch (error: Exception) {
                     onError(error)
-                    if (active()) {
+                    if (authorized()) {
+                        if (error is ApiFailure.Http && error.status in 403..404) {
+                            forgetPolicy(slug, connectionId)
+                            if (mutable.value.details[slug] != null)
+                                updateDetails(slug) {
+                                    it.copy(
+                                        policies =
+                                            it.policies.copy(
+                                                data = it.policies.data?.minus(connectionId),
+                                                confirmedAt = null,
+                                            ),
+                                    )
+                                }
+                        }
                         mutable.value =
                             mutable.value.copy(
-                                policySave = saving.copy(phase = ChatConnectorSavePhase.Failed),
+                                policySave =
+                                    saving.copy(phase = ChatConnectorSavePhase.Failed).takeIf {
+                                        active()
+                                    },
                             )
                     }
                     return@launch
                 }
-            if (!active()) return@launch
-            updateDetails(slug) {
-                it.copy(
-                    policies =
-                        it.policies.copy(
-                            data = it.policies.data.orEmpty() + (connectionId to saved),
-                        ),
-                )
-            }
+            if (!authorized()) return@launch
+            applyPolicyReceipt(slug, connectionId, saved)
             mutable.value = mutable.value.copy(policySave = null)
+        }
+    }
+
+    fun applyPolicyReceipt(slug: String, connectionId: String, value: ConnectorMemberPolicy) {
+        if (!authorized()) return
+        policyRequests.remove(slug)?.cancel()
+        recentPolicies[slug] =
+            recentPolicies[slug].orEmpty() +
+                (connectionId to ConfirmedMemberPolicy(value, clock.markNow()))
+        val accounts = mutable.value.details[slug]?.accounts?.data ?: return
+        if (!accounts.memberAccess || accounts.accounts.none { it.account.id == connectionId })
+            return
+        updateDetails(slug) {
+            it.copy(
+                policies =
+                    it.policies.copy(data = it.policies.data.orEmpty() + (connectionId to value)),
+            )
         }
     }
 

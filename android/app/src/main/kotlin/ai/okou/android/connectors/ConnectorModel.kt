@@ -587,6 +587,7 @@ class ConnectorModel(
         change(target) {
             val saved = service.setAccountPolicy(target.slug, id, choice)
             replaceAccount(target, id) { it.copy(policy = saved) }
+            chatOptions.applyPolicyReceipt(target.slug, id, saved)
         }
     }
 
@@ -1156,7 +1157,11 @@ class ConnectorModel(
     private fun complete(target: ConnectorAccountTarget, result: ConnectorResult?) {
         authorizationDeadline = null
         verificationFailures = 0
-        chatOptions.invalidate(target.slug)
+        val changedConnection =
+            target.connectionId.takeIf {
+                result == ConnectorResult.Authorized || result == ConnectorResult.Disconnected
+            }
+        chatOptions.invalidate(target.slug, changedConnection)
         mutableState.update { it.copy(action = ConnectorAction(target, result = result)) }
     }
 
