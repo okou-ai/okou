@@ -348,7 +348,7 @@ internal fun ArtifactToolbar(
     ) {
         IconButton(
             onClick = onBack,
-            modifier = backModifier.size(48.dp).workspaceSearchFocusOutline(CircleShape),
+            modifier = backModifier.workspaceSearchFocusOutline(CircleShape),
         ) {
             Icon(painterResource(R.drawable.ic_arrow_back), stringResource(back))
         }

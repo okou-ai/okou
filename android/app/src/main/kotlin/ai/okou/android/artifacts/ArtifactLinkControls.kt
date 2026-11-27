@@ -159,10 +159,7 @@ internal fun ArtifactOverflowMenu(
                 links?.refresh?.invoke()
                 expanded = true
             },
-            modifier =
-                Modifier.size(48.dp).focusRequester(focus).onFocusChanged {
-                    focused = it.isFocused
-                },
+            modifier = Modifier.focusRequester(focus).onFocusChanged { focused = it.isFocused },
         ) {
             Icon(
                 painterResource(R.drawable.ic_more_vert),
