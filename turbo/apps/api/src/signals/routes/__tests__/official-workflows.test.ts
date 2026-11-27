@@ -797,6 +797,11 @@ describe("Standalone proactive dispatch", () => {
     }
     const { execution, sandboxHeaders } = await owned.runExecution(second);
     expect(execution.piSessionId).toBe(second);
+    expect(execution.nativeContinuation).toStrictEqual({
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    });
     expect(execution.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(threadId);
     const agentHeaders = {
       authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,

@@ -16,10 +16,7 @@ Examples:
   )
   .action(
     withErrorHandler(async () => {
-      // Official Workflows are system-managed and never listed as user Workflows.
-      const workflows = (await listWorkflows()).filter((workflow) => {
-        return !workflow.official;
-      });
+      const workflows = await listWorkflows();
 
       if (workflows.length === 0) {
         console.log(chalk.dim("No workflows found"));

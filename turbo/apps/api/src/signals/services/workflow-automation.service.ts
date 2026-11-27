@@ -176,7 +176,10 @@ import {
   workflowSummary,
   type WorkflowMember,
 } from "./workflow-data.service";
-import { visibleWorkflowCondition } from "./workflow-visibility";
+import {
+  userWorkflowCondition,
+  visibleWorkflowCondition,
+} from "./workflow-visibility";
 import {
   type WorkflowThreadPreparation,
   workflowUserAutomationThreadOwnerCondition,
@@ -1235,7 +1238,6 @@ export const listWorkspaceWorkflowAutomations$ = command(
       })
       .from(workflowAutomations)
       .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-
       .leftJoin(
         workflowUserAutomationThreads,
         and(
@@ -1255,7 +1257,7 @@ export const listWorkspaceWorkflowAutomations$ = command(
           eq(workflowAutomations.orgId, args.orgId),
           eq(workflowAutomations.ownerUserId, args.member.userId),
           eq(workflows.orgId, args.orgId),
-          visibleWorkflowCondition(args.member.userId),
+          userWorkflowCondition(args.member.userId),
         ),
       )
       .orderBy(asc(workflowAutomations.createdAt), asc(workflowAutomations.id));
@@ -1267,8 +1269,8 @@ export const listWorkspaceWorkflowAutomations$ = command(
           rowToPublicSummary$,
           row.automation,
           {
-            officialDefinitionName: row.workflow.officialDefinitionName,
-            chatThreadId: row.chatThreadId ?? null,
+            chatThreadId: row.chatThreadId,
+            officialDefinitionName: null,
           },
           signal,
         );
@@ -1280,12 +1282,6 @@ export const listWorkspaceWorkflowAutomations$ = command(
           workflow: workflowSummary({
             workflow: row.workflow,
             member: args.member,
-            officialDefinitionLifecycle: row.workflow.officialDefinitionName
-              ? (builtInWorkflow(row.workflow.officialDefinitionName)
-                  ?.lifecycle ??
-                row.workflow.archivedOfficialSnapshot?.lifecycle ??
-                "unavailable")
-              : undefined,
           }),
           automation,
         };
