@@ -157,7 +157,6 @@ import * as hostedSiteSchema from "./runtime/hosted-site";
 import * as hostedSiteBrowserSessionSchema from "./schema/hosted-site-browser-session";
 import * as artifactSchema from "./schema/artifact";
 import * as sharedThreadSchema from "./schema/shared-thread";
-import * as userArtifactFavoriteSchema from "./schema/user-artifact-favorite";
 import * as builtInGenerationJobSchema from "./schema/built-in-generation-job";
 import * as openaiImageWebhookReceiptSchema from "./schema/openai-image-webhook-receipt";
 import * as bankingSchema from "./schema/banking";
@@ -342,7 +341,6 @@ export const schema = {
   ...hostedSiteBrowserSessionSchema,
   ...artifactSchema,
   ...sharedThreadSchema,
-  ...userArtifactFavoriteSchema,
   ...builtInGenerationJobSchema,
   ...openaiImageWebhookReceiptSchema,
   ...bankingSchema,
