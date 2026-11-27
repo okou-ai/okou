@@ -27,6 +27,7 @@ internal class ArtifactApiFixture(
     private val imageBody: ByteArray? = null,
     includeVideo: Boolean = false,
     private val imageDownloadAllowed: Boolean? = null,
+    private val imageThumbnailUrl: String? = null,
 ) {
     data class Item(val id: String, val kind: String, val title: String, val date: String)
 
@@ -252,7 +253,12 @@ internal class ArtifactApiFixture(
         put(
             "thumbnail",
             if (item == image)
-                buildJsonObject { put("url", api.server.url("/artifact-bytes/image").toString()) }
+                buildJsonObject {
+                    put(
+                        "url",
+                        imageThumbnailUrl ?: api.server.url("/artifact-bytes/image").toString(),
+                    )
+                }
             else kotlinx.serialization.json.JsonNull,
         )
     }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -137,6 +139,7 @@ internal fun ArtifactOverflowMenu(
     modifier: Modifier = Modifier,
     focus: FocusRequester = remember { FocusRequester() },
     previewItems: List<WorkspaceMenuItem> = emptyList(),
+    iconColor: Color = Color.Unspecified,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
@@ -150,6 +153,7 @@ internal fun ArtifactOverflowMenu(
     }
     Box(modifier) {
         IconButton(
+            colors = IconButtonDefaults.iconButtonColors(contentColor = iconColor),
             onClick = {
                 restoreFocus = focused
                 links?.refresh?.invoke()
