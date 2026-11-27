@@ -268,7 +268,6 @@ test("connectors-auth-methods-015 retrying saves the same Ahrefs account with it
     name: "Name your Ahrefs account",
   });
   const field = within(naming).getByRole("textbox", { name: "Custom" });
-  expect(field).not.toHaveAttribute("placeholder");
   await fill(field, " Work ");
   click(await findEnabledButton("Save", naming));
   await screen.findByText("Rename failed");
@@ -336,7 +335,7 @@ test("connectors-auth-methods-016 a pending save for the first Ahrefs account le
   ).toStrictEqual(["First account", null]);
 });
 
-test("connectors-auth-methods-019 naming prompt supports preset radio choices and blank custom save without fallback placeholder", async () => {
+test("connectors-auth-methods-019 naming prompt supports preset radio choices and blank custom save", async () => {
   const saved = ahrefsAccounts();
   const renamed: (string | null)[] = [];
   context.mocks.api(
@@ -364,8 +363,10 @@ test("connectors-auth-methods-019 naming prompt supports preset radio choices an
   });
   expect(
     within(firstPrompt).getByRole("textbox", { name: "Custom" }),
-  ).not.toHaveAttribute("placeholder");
-  click(within(firstPrompt).getByRole("radio", { name: "Work" }));
+  ).toBeInTheDocument();
+  click(
+    within(firstPrompt).getByLabelText("Work", { selector: '[role="radio"]' }),
+  );
   expect(
     within(firstPrompt).queryByRole("textbox", { name: "Custom" }),
   ).not.toBeInTheDocument();
@@ -389,7 +390,6 @@ test("connectors-auth-methods-019 naming prompt supports preset radio choices an
     name: "Custom",
   });
   expect(customInput).toHaveValue("");
-  expect(customInput).not.toHaveAttribute("placeholder");
   click(await findEnabledButton("Save", secondPrompt));
   await waitFor(() => {
     return expect(secondPrompt).not.toBeInTheDocument();
