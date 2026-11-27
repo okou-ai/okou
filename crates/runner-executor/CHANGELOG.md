@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.17...runner-executor-v0.24.18) (2026-11-27)
+
+
+### Performance Improvements
+
+* **runner-storage:** inline small fresh artifacts on blank startup ([#51388](https://github.com/okou-ai/okou/issues/51388)) ([14bb67e](https://github.com/okou-ai/okou/commit/14bb67e2e1267daf8ec0cd511adfb77c8415970c))
+
 ## [0.24.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.16...runner-executor-v0.24.17) (2026-11-27)
 
 ## [0.24.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.15...runner-executor-v0.24.16) (2026-11-27)
