@@ -1138,6 +1138,38 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    @Config(qualifiers = "de-rDE-w360dp-h840dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun automationHeadingAndActionStayReadableInANarrowWindowAtLargeText() {
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            compose.activityRule.scenario.onActivity {
+                assertEquals(360, it.resources.configuration.screenWidthDp)
+                assertEquals(2f, it.resources.configuration.fontScale, 0f)
+            }
+            openWorkflowDetail()
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            val title = compose.onNodeWithText("Auslöseregeln", useUnmergedTree = true)
+            val add = compose.onNodeWithText("Automatisierung hinzufügen")
+            val layouts = mutableListOf<TextLayoutResult>()
+            title.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            assertEquals(
+                "Heading ${layout.size} and action ${add.getUnclippedBoundsInRoot()}",
+                1,
+                layout.lineCount,
+            )
+            title.assertIsDisplayed()
+            add.assertIsDisplayed().assertIsEnabled().performClick()
+            compose.onNodeWithTag("workflow_save").assertIsDisplayed()
+        } finally {
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
+    }
+
+    @Test
     fun pendingRuleKeepsTheConfirmedStatusAndFocusedActionUntilTheReceipt() = withHardwareKeyboard {
         val fixture = app.fixture
         fixture.active.set(true)
