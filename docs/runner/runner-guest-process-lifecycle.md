@@ -66,8 +66,8 @@ Fixed instruction check and application use `Sandbox::run_agent_instructions`
 and the existing storage worker. The Guest chooses the canonical storage helper
 and one of its two instruction flags, installs only the run/runtime environment,
 and launches directly as the sandbox user in an ordinary Workload cgroup.
-Instruction metadata remains bounded to 64 KiB for checks and 4 KiB for application;
-stdout/stderr retain independent 64 KiB bounds. This bypasses shell/profile/env-script
+Both actions bound instruction metadata to 4 KiB and each output stream to
+64 KiB. This bypasses shell/profile/env-script
 setup without changing file permission, symlink, repair or publication semantics.
 The same worker owns timeout/disconnect cleanup and releases admission and the
 operation guard at the terminal-response boundary. Staging success is still

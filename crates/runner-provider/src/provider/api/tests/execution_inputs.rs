@@ -159,7 +159,11 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
 }
 
 #[test]
-fn publication_binds_member_memory_and_skill_to_the_admitted_framework() {
+fn publication_binds_disjoint_startup_mounts_to_the_admitted_framework() {
+    use super::template_guidance::template;
+    use guest_contracts::agent_instructions::instruction_paths;
+    use std::path::Path;
+
     let claude_memory = "/home/user/.claude/projects/-home-user-workspace/memory";
     for (framework, skill_root, memory_path) in [
         ("claude-code", "/home/user/.claude/skills", claude_memory),
@@ -178,6 +182,13 @@ fn publication_binds_member_memory_and_skill_to_the_admitted_framework() {
         let skill_path = format!("{skill_root}/fixture-skill");
         let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
         body["cliAgentType"] = serde_json::json!(framework);
+        let bundles = &mut body["startupInputs"]["contentBundles"];
+        bundles["templates"] =
+            serde_json::json!([template("user-template"), template("presentation-template")]);
+        let skills = bundles["skills"].as_array_mut().unwrap();
+        let mut other_skill = skills[0].clone();
+        other_skill["name"] = serde_json::json!("fixture-skill-extra");
+        skills.push(other_skill);
         body["startupInputs"]["memory"] = serde_json::json!({
             "storageId": "member-memory-id",
             "versionId": "accepted-memory-version",
@@ -209,6 +220,26 @@ fn publication_binds_member_memory_and_skill_to_the_admitted_framework() {
             context.instruction_file.unwrap().storage_mount,
             format!("/home/user/.vm0/agent-instructions/{framework}"),
         );
+
+        let final_instructions = instruction_paths(Path::new("/home/user"), framework)
+            .unwrap()
+            .target;
+        let mounts: Vec<_> = manifest
+            .storages
+            .iter()
+            .map(|entry| Path::new(&entry.mount_path))
+            .chain(std::iter::once(Path::new(&memory.mount_path)))
+            .collect();
+        assert_eq!(mounts.len(), 6);
+        for (index, mount) in mounts.iter().enumerate() {
+            assert!(!final_instructions.starts_with(mount));
+            for other in &mounts[index + 1..] {
+                assert!(
+                    !mount.starts_with(other) && !other.starts_with(mount),
+                    "{framework} has overlapping startup mounts {mount:?} and {other:?}"
+                );
+            }
+        }
     }
 }
 

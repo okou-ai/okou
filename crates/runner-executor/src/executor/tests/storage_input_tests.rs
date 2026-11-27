@@ -170,21 +170,8 @@ fn apply_guest_instructions(overrides: &MockSandboxOverrides, root: &Path, first
 }
 
 fn instruction_check(overrides: &MockSandboxOverrides, root: &Path, framework: &str) {
-    instruction_check_with_mounts(overrides, root, framework, &[]);
-}
-
-fn instruction_check_with_mounts(
-    overrides: &MockSandboxOverrides,
-    root: &Path,
-    framework: &str,
-    mounts: &[&str],
-) {
     let metadata = serde_json::to_vec(&InstructionCheck {
         framework: framework.into(),
-        preserved_download_mounts: mounts
-            .iter()
-            .map(|path| guest_path(root, path).to_str().unwrap().into())
-            .collect(),
         check_memory_root: false,
     })
     .unwrap();
@@ -1024,7 +1011,6 @@ async fn home_restored_memory_reuses_a_present_root_and_repairs_a_missing_root()
 
         let input = InstructionCheck {
             framework: "codex".into(),
-            preserved_download_mounts: Vec::new(),
             check_memory_root: true,
         };
         let checked = guest_storage_apply::check_agent_instructions(
@@ -1349,103 +1335,90 @@ async fn instruction_reuse_repairs_equivalent_parent_paths() {
 }
 
 #[tokio::test]
-async fn instruction_reuse_repairs_preserved_symlink_alias_writes() {
-    instruction_reuse_with_parent_reconciliation(InstructionParentCase::ReplacedSymlink).await;
-}
-
-#[tokio::test]
-async fn instruction_reuse_checks_all_preserved_mounts_in_bounded_guest_requests() {
+async fn instruction_reuse_preserves_edits_when_cleanup_replaces_a_symlink_mount() {
     let directory = tempfile::tempdir().unwrap();
     let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
     let guest = tempfile::tempdir().unwrap();
-    let home = guest_path(guest.path(), "/home/user");
-    let target = home.join(".codex/AGENTS.md");
-    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
+    let mount = "/home/user/.codex/skills/example";
+    let skill_dir = guest_path(guest.path(), mount);
+    fs::create_dir_all(skill_dir.parent().unwrap()).unwrap();
     fs::write(&target, b"local instruction edit").unwrap();
+    std::os::unix::fs::symlink(target.parent().unwrap(), &skill_dir).unwrap();
+
+    let skill = archive(&[
+        ("SKILL.md", b"published skill"),
+        ("AGENTS.md", b"skill instructions"),
+    ]);
+    let version = hex::encode(Sha256::digest(&skill));
+    let cache = config
+        .home
+        .storage_cache_dir(WORKFLOW_STORAGE_NAME, &version);
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("archive.tar.gz"), &skill).unwrap();
+
     let mut current = instruction_context(&"a".repeat(64), 10, "codex", "instructions");
+    let mut skill_entry = api_storage(
+        WORKFLOW_STORAGE_NAME,
+        mount,
+        &version,
+        "https://unreachable.invalid/skill",
+    );
+    skill_entry.archive_size = Some(skill.len() as u64);
     current
         .storage_manifest
         .as_mut()
         .unwrap()
         .storages
-        .push(super::support::api_storage(
-            "home",
-            home.to_str().unwrap(),
-            "v1",
-            "https://unreachable.invalid/home",
-        ));
-    let previous = current.storage_fingerprints();
-    let mounts = (0..128)
-        .map(|index| {
-            home.join(format!("check-{index}/{}/leaf", "long-prefix/".repeat(70)))
-                .to_str()
-                .unwrap()
-                .to_owned()
-        })
-        .collect::<Vec<_>>();
-    for mount in &mounts {
-        current
-            .storage_manifest
-            .as_mut()
-            .unwrap()
-            .storages
-            .push(super::support::api_storage(
-                "settings",
-                mount,
-                "v2",
-                "https://unreachable.invalid/settings",
-            ));
-    }
+        .push(skill_entry);
+    let mut previous = current.storage_fingerprints();
+    previous.storages.insert(
+        mount.into(),
+        StorageFingerprint::new(WORKFLOW_STORAGE_NAME, "b".repeat(64)),
+    );
+
     let overrides = Arc::new(MockSandboxOverrides::new());
-    overrides.add_persistent_exec_matcher(sandbox_mock::ExecMatcher {
-        pattern: " --instructions-check-stdin".into(),
-        exit_code: 0,
-        stdout: br#"{"instructions_current":true,"memory_root_present":false}"#.to_vec(),
-        stderr: Vec::new(),
-    });
-    let sandbox =
-        sandbox_mock::MockSandbox::with_overrides("bounded-check", Arc::clone(&overrides));
-    let mut telemetry = super::support::test_telemetry(&config, &current);
-    let reused = super::super::storage::check_instruction_reuse(
-        &sandbox,
-        &current,
-        Some(&previous),
-        None,
-        &mut telemetry,
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    let source_ip = sandbox.source_ip().to_string();
+    let (idle, _lease) = make_reusable_idle_sandbox_with_fingerprints(
+        sandbox,
+        source_ip,
+        "instruction-skill-alias",
+        previous,
     )
-    .await
-    .unwrap();
-    assert!(matches!(
-        reused,
-        super::super::storage::InstructionReuse::Reused {
-            memory_root_present: false,
-        }
-    ));
-    let calls = overrides.agent_instructions_calls();
-    assert!(calls.len() > 1);
-    let mut checked = Vec::new();
-    for call in calls {
-        let metadata = call.metadata;
-        assert!(metadata.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES);
-        assert!(
-            guest_storage_apply::check_agent_instructions(&home, &metadata)
-                .unwrap()
-                .instructions_current
-        );
-        let input: InstructionCheck = serde_json::from_slice(&metadata).unwrap();
-        checked.extend(input.preserved_download_mounts);
+    .await;
+    instruction_check(&overrides, guest.path(), "codex");
+    let (mut next, _) = execute_job_reuse(
+        idle,
+        current,
+        &config,
+        &default_params(),
+        CancellationToken::new(),
+    )
+    .await;
+    assert_eq!(next.exit_code(), 0, "{:?}", next.error());
+    if let Some(report) = next.startup_report.take() {
+        report.finish().await;
     }
-    assert_eq!(checked, mounts);
+    let calls = overrides.agent_instructions_calls();
+    let [check] = calls.as_slice() else {
+        panic!("expected a single Instructions check");
+    };
+    assert_eq!(check.operation, InstructionOperation::Check);
+
+    apply_guest_storage(&overrides, guest.path(), 0, None);
+    assert!(!fs::symlink_metadata(&skill_dir).unwrap().is_symlink());
+    assert_eq!(
+        fs::read(skill_dir.join("SKILL.md")).unwrap(),
+        b"published skill"
+    );
+    assert_eq!(
+        fs::read(skill_dir.join("AGENTS.md")).unwrap(),
+        b"skill instructions"
+    );
     assert_eq!(fs::read(&target).unwrap(), b"local instruction edit");
-    assert!(!home.join("check-0").exists());
     config.background_fill.shutdown().await;
     config.decoded_cache.shutdown().await;
-}
-
-#[tokio::test]
-async fn instruction_reuse_preserves_edits_when_cleanup_replaces_a_symlink_mount() {
-    instruction_reuse_with_parent_reconciliation(InstructionParentCase::ReplacedUnpreservedSymlink)
-        .await;
 }
 
 #[tokio::test]
@@ -1460,34 +1433,22 @@ async fn instruction_reuse_preserves_files_with_cached_sibling() {
 
 enum InstructionParentCase {
     ReplacedAlias,
-    ReplacedSymlink,
-    ReplacedUnpreservedSymlink,
     CachedRoot,
     CachedChild,
 }
 
 async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCase) {
     let aliased_parent = matches!(&case, InstructionParentCase::ReplacedAlias);
-    let preserved_symlink = matches!(&case, InstructionParentCase::ReplacedSymlink);
-    let symlink_parent = matches!(
-        &case,
-        InstructionParentCase::ReplacedSymlink | InstructionParentCase::ReplacedUnpreservedSymlink
-    );
-    let changed_parent = aliased_parent || symlink_parent;
     let directory = tempfile::tempdir().unwrap();
     let (config, _api) = test_executor_config_with_startup_api(directory.path()).await;
     let guest = tempfile::tempdir().unwrap();
     fs::create_dir_all(guest_path(guest.path(), "/home/user/alias")).unwrap();
     let instructions = archive(&[(SOURCE_FILENAME, b"published instructions")]);
     let hash = hex::encode(Sha256::digest(&instructions));
-    let mut settings_files: Vec<(&str, &[u8])> = vec![
+    let settings = archive(&[
         ("config.toml", b"settings"),
         ("native-history", b"preserved"),
-    ];
-    if symlink_parent {
-        settings_files.push(("AGENTS.md", b"other Storage input"));
-    }
-    let settings = archive(&settings_files);
+    ]);
     let home = archive(&[("parent-data", b"other Storage input")]);
     for (name, version, bytes) in [
         (INSTRUCTION_STORAGE_NAME, hash.as_str(), &instructions),
@@ -1508,17 +1469,15 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
             "framework-settings",
             if matches!(&case, InstructionParentCase::CachedChild) {
                 "/home/user/.codex/memories"
-            } else if symlink_parent {
-                "/home/user/settings-alias"
             } else if aliased_parent {
                 "/home/user/alias/../.codex"
             } else {
                 "/home/user/.codex"
             },
-            if changed_parent && !first { "v2" } else { "v1" },
+            if aliased_parent && !first { "v2" } else { "v1" },
             "https://unreachable.invalid/settings",
         ));
-        if preserved_symlink || !changed_parent && first {
+        if !aliased_parent && first {
             manifest.storages.push(super::support::api_storage(
                 "home-extra",
                 "/home/user",
@@ -1550,11 +1509,6 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
     apply_guest_instructions(&overrides, guest.path(), 0);
     let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
     assert_eq!(fs::read(&target).unwrap(), b"published instructions");
-    if symlink_parent {
-        let alias = guest_path(guest.path(), "/home/user/settings-alias");
-        fs::remove_dir_all(&alias).unwrap();
-        std::os::unix::fs::symlink(target.parent().unwrap(), alias).unwrap();
-    }
     fs::write(
         target.parent().unwrap().join("native-history"),
         b"preserved",
@@ -1568,16 +1522,7 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
         first.storage_fingerprints,
     )
     .await;
-    instruction_check_with_mounts(
-        &overrides,
-        guest.path(),
-        "codex",
-        if preserved_symlink {
-            &["/home/user/settings-alias"]
-        } else {
-            &[]
-        },
-    );
+    instruction_check(&overrides, guest.path(), "codex");
     let first_storage = overrides.storage_manifest_calls().len();
     let first_exec = overrides.agent_instructions_calls().len();
     let (mut next, _) = execute_job_reuse(
@@ -1589,23 +1534,6 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
     )
     .await;
     assert_eq!(next.exit_code(), 0, "{:?}", next.error());
-    if symlink_parent {
-        let calls = overrides.agent_instructions_calls();
-        let check = calls
-            .iter()
-            .skip(first_exec)
-            .find(|call| call.operation == InstructionOperation::Check)
-            .unwrap();
-        let input: InstructionCheck = serde_json::from_slice(&check.metadata).unwrap();
-        assert_eq!(
-            input.preserved_download_mounts,
-            if preserved_symlink {
-                vec!["/home/user/settings-alias"]
-            } else {
-                Vec::<&str>::new()
-            }
-        );
-    }
     if let Some(report) = next.startup_report.take() {
         report.finish().await;
     }
@@ -1613,7 +1541,7 @@ async fn instruction_reuse_with_parent_reconciliation(case: InstructionParentCas
     apply_guest_instructions(&overrides, guest.path(), first_exec);
     assert_eq!(
         fs::read(&target).expect("the final instruction file must remain available"),
-        if aliased_parent || preserved_symlink {
+        if aliased_parent {
             b"published instructions".as_slice()
         } else {
             b"local instruction edit".as_slice()

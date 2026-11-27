@@ -374,30 +374,6 @@ pub fn build_storage_plan(
 }
 
 impl StoragePlan {
-    /// Download roots retained by an unchanged cached ancestor during cleanup.
-    ///
-    /// Guest extraction resolves these roots after cleanup, so surviving symlinks
-    /// need a filesystem check before reusing a file outside their logical paths.
-    pub fn preserved_download_mounts(&self) -> Vec<String> {
-        let preserved = self.preserved_mounts().collect::<Vec<_>>();
-        self.storages
-            .iter()
-            .filter(|entry| matches!(&entry.action, StorageAction::Download { .. }))
-            .map(|entry| &entry.mount_path)
-            .chain(
-                self.artifacts
-                    .iter()
-                    .filter(|entry| matches!(&entry.action, ArtifactAction::Download { .. }))
-                    .map(|entry| &entry.mount_path),
-            )
-            .filter(|mount| {
-                let logical = normalize_path(Path::new(mount));
-                preserved.iter().any(|root| logical.starts_with(root))
-            })
-            .cloned()
-            .collect()
-    }
-
     fn preserved_mounts(&self) -> impl Iterator<Item = PathBuf> + '_ {
         self.storages
             .iter()

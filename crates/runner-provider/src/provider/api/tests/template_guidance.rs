@@ -2,7 +2,7 @@ use super::*;
 
 const TEMPLATE_ID: &str = "859550cb-28ad-47ef-8728-f6b3849f8c55";
 
-fn template(owner: &str) -> Value {
+pub(super) fn template(owner: &str) -> Value {
     serde_json::json!({"ownerKind":owner,"templateId":TEMPLATE_ID,"sha256":"a".repeat(64),"archiveBytes":40*1024*1024,"downloadUrl":"https://example.test/template.tar.gz"})
 }
 
