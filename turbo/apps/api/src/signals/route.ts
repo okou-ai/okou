@@ -14,6 +14,7 @@ import { composerDraftRoutes } from "./routes/composer-draft";
 import { feedRoutes } from "./routes/feed";
 import { instructionsRoutes } from "./routes/instructions";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
+import { artifactFavoritesRoutes } from "./routes/artifact-favorites";
 import { artifactDownloadRoutes } from "./routes/artifact-downloads";
 import { artifactReferenceRoutes } from "./routes/artifact-references";
 import { artifactOgRoutes } from "./routes/artifact-og";
@@ -335,6 +336,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...feedRoutes,
   ...instructionsRoutes,
   ...artifactCatalogRoutes,
+  ...artifactFavoritesRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
   ...billingConcurrencyCheckoutRoutes,

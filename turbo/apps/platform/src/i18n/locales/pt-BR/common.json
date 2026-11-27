@@ -587,6 +587,21 @@
       "success": "Artefato excluído",
       "title": "Excluir {{title}}?"
     },
+    "favorites": {
+      "add": "Adicionar aos favoritos",
+      "added": "Adicionado aos favoritos",
+      "collections": "Coleções de artefatos",
+      "continueBrowsing": "Carregue mais para continuar navegando pelos seus favoritos.",
+      "emptyDescription": "Salve artefatos nos favoritos pelo menu de mais opções para encontrá-los aqui.",
+      "emptyTitle": "Ainda não há favoritos",
+      "favorited": "Salvo nos favoritos",
+      "remove": "Remover dos favoritos",
+      "removed": "Removido dos favoritos",
+      "title": "Favoritos",
+      "unavailable": "Artefato indisponível",
+      "view": "Ver favoritos",
+      "yourArtifacts": "Seus artefatos"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "ÁUD",

@@ -15,6 +15,7 @@ import {
   List,
   Loader2,
   Search,
+  Star,
   X,
 } from "lucide-react";
 import {
@@ -50,6 +51,8 @@ import {
   artifactCatalogPagingState$,
   artifactCatalogSearch$,
   artifactCatalogDirection$,
+  artifactLibraryCollection$,
+  setArtifactLibraryCollection$,
   loadMoreArtifactCatalog$,
   openArtifact$,
   reloadArtifactCatalog$,
@@ -66,7 +69,13 @@ import {
   setArtifactLibraryView$,
   type ArtifactLibraryView as LibraryView,
 } from "../../signals/artifacts-page/artifact-library-view.ts";
-import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
+import type {
+  CatalogArtifact,
+  CatalogFavorite,
+} from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
+import { artifactFavoritesEnabled$ } from "../../signals/artifact-favorites.ts";
+import { ArtifactDeleteMoreMenu } from "../okou-page/artifact-deletion.tsx";
+import { ArtifactFavoriteMenuItem } from "../okou-page/artifact-favorite-menu-item.tsx";
 import { userPreferences$ } from "../../signals/okou-page/settings/user-preferences.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -280,13 +289,19 @@ function ArtifactLibraryCard({
         </button>
       )}
       <div className="col-start-2 row-start-2 mr-4">
-        <ArtifactCatalogRowActions artifact={artifact} />
+        <ArtifactCatalogRowActions
+          artifact={artifact}
+          favoriteOnly={artifact.favoritedAt !== undefined}
+        />
       </div>
       <div className="col-span-2 row-start-3 mx-4 mb-3 mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
         <span className="truncate">{kindLabel}</span>
         <span aria-hidden="true">·</span>
         <span className="shrink-0">
-          <ArtifactTimestamp value={artifact.createdAt} timezone={timezone} />
+          <ArtifactTimestamp
+            value={artifact.favoritedAt ?? artifact.createdAt}
+            timezone={timezone}
+          />
         </span>
       </div>
     </article>
@@ -372,7 +387,10 @@ function ArtifactLibraryRow({
         )}
       </TableCell>
       <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground @3xl:table-cell">
-        <ArtifactTimestamp value={artifact.createdAt} timezone={timezone} />
+        <ArtifactTimestamp
+          value={artifact.favoritedAt ?? artifact.createdAt}
+          timezone={timezone}
+        />
       </TableCell>
       <TableCell className="hidden truncate px-3 py-3 text-xs text-muted-foreground @4xl:table-cell">
         {kindLabel}
@@ -384,7 +402,10 @@ function ArtifactLibraryRow({
           event.stopPropagation();
         }}
       >
-        <ArtifactCatalogRowActions artifact={artifact} />
+        <ArtifactCatalogRowActions
+          artifact={artifact}
+          favoriteOnly={artifact.favoritedAt !== undefined}
+        />
       </TableCell>
     </TableRow>
   );
@@ -530,6 +551,87 @@ function ArtifactLibraryViewToggle({ view }: { readonly view: LibraryView }) {
   );
 }
 
+function ArtifactLibraryCollectionToggle() {
+  const { t } = useTranslation();
+  const enabled = useLoadable(artifactFavoritesEnabled$);
+  const collection = useGet(artifactLibraryCollection$);
+  const setCollection = useSet(setArtifactLibraryCollection$);
+  if (enabled.state !== "hasData" || !enabled.data) {
+    return null;
+  }
+  return (
+    <ToggleGroup<"all" | "favorites">
+      value={[collection]}
+      aria-label={t(($) => {
+        return $.artifacts.favorites.collections;
+      })}
+      className="w-fit gap-1"
+      onValueChange={(values) => {
+        const next = values[0];
+        if (next) {
+          setCollection(next);
+        }
+      }}
+    >
+      <Toggle value="all" variant="filter">
+        {t(($) => {
+          return $.artifacts.favorites.yourArtifacts;
+        })}
+      </Toggle>
+      <Toggle value="favorites" variant="filter">
+        <Star aria-hidden="true" className="size-4" />
+        {t(($) => {
+          return $.artifacts.favorites.title;
+        })}
+      </Toggle>
+    </ToggleGroup>
+  );
+}
+
+function UnavailableFavorite({
+  favorite,
+  view,
+}: {
+  readonly favorite: CatalogFavorite;
+  readonly view: LibraryView;
+}) {
+  const { t } = useTranslation();
+  const title = t(($) => {
+    return $.artifacts.favorites.unavailable;
+  });
+  const actions = (
+    <ArtifactDeleteMoreMenu>
+      <ArtifactFavoriteMenuItem artifactId={favorite.artifactId} favorited />
+    </ArtifactDeleteMoreMenu>
+  );
+  if (view === "list") {
+    return (
+      <TableRow aria-label={title} className="hover:bg-state-hover/60">
+        <TableCell className="px-3 py-3 text-sm text-muted-foreground">
+          <span className="flex items-center gap-3">
+            <File aria-hidden="true" className="size-5" />
+            {title}
+          </span>
+        </TableCell>
+        <TableCell className="hidden @3xl:table-cell" />
+        <TableCell className="hidden @4xl:table-cell" />
+        <TableCell className="px-2 py-2 text-right">{actions}</TableCell>
+      </TableRow>
+    );
+  }
+  return (
+    <article aria-label={title} className="min-w-0 rounded-surface p-1">
+      <div className="flex aspect-[16/10] items-center justify-center rounded-surface bg-gray-50 text-muted-foreground">
+        <File aria-hidden="true" className="size-9" />
+      </div>
+      <div className="mt-3 flex h-8 items-center gap-3 px-4 text-sm text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        {actions}
+      </div>
+    </article>
+  );
+}
+
 function ArtifactLibraryToolbar({
   loading,
   view,
@@ -540,6 +642,7 @@ function ArtifactLibraryToolbar({
   const { t } = useTranslation();
   const options = useCategoryOptions();
   const legacyKind = useGet(selectedArtifactCatalogKind$);
+  const collection = useGet(artifactLibraryCollection$);
   const setCategory = useSet(setArtifactCatalogCategory$);
   return (
     <div className="sticky top-0 z-10 space-y-5 bg-background pb-4 pt-1">
@@ -551,8 +654,18 @@ function ArtifactLibraryToolbar({
         </h1>
         <ArtifactLibrarySearch loading={loading} />
         <ArtifactLibraryViewToggle view={view} />
-        <ArtifactLibrarySort />
+        {collection === "favorites" ? (
+          <span className="flex h-9 items-center gap-1.5 px-2 text-sm text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.favorites.favorited;
+            })}
+            <ArrowDown aria-hidden="true" className="size-3.5" />
+          </span>
+        ) : (
+          <ArtifactLibrarySort />
+        )}
       </div>
+      <ArtifactLibraryCollectionToggle />
       <div className="min-w-0 overflow-x-auto pb-1">
         <TabsList
           aria-label={t(($) => {
@@ -585,11 +698,13 @@ function ArtifactLibraryToolbar({
 
 function ArtifactLibraryTable({
   artifacts,
+  favorites,
   selectedId,
   scrollTargetId,
   timezone,
 }: {
   readonly artifacts: readonly CatalogArtifact[];
+  readonly favorites?: readonly CatalogFavorite[];
   readonly selectedId: string | null;
   readonly scrollTargetId?: string | null;
   readonly timezone: string;
@@ -612,11 +727,19 @@ function ArtifactLibraryTable({
             })}
           </TableHead>
           <TableHead
-            aria-sort={direction === "asc" ? "ascending" : "descending"}
+            aria-sort={
+              favorites
+                ? "descending"
+                : direction === "asc"
+                  ? "ascending"
+                  : "descending"
+            }
             className="hidden px-3 text-xs font-normal text-muted-foreground @3xl:table-cell"
           >
             {t(($) => {
-              return $.artifacts.library.created;
+              return favorites
+                ? $.artifacts.favorites.favorited
+                : $.artifacts.library.created;
             })}
           </TableHead>
           <TableHead className="hidden px-3 text-xs font-normal text-muted-foreground @4xl:table-cell">
@@ -634,7 +757,26 @@ function ArtifactLibraryTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {artifacts.map((artifact) => {
+        {(
+          favorites ??
+          artifacts.map((artifact) => {
+            return {
+              artifactId: artifact.id,
+              createdAt: artifact.createdAt,
+              artifact,
+            };
+          })
+        ).map((favorite) => {
+          const artifact = favorite.artifact;
+          if (!artifact) {
+            return (
+              <UnavailableFavorite
+                key={favorite.artifactId}
+                favorite={favorite}
+                view="list"
+              />
+            );
+          }
           return (
             <ArtifactLibraryRow
               key={artifact.id}
@@ -658,6 +800,7 @@ function ArtifactLibraryEmpty() {
   const setCategory = useSet(setArtifactCatalogCategory$);
   const setSearch = useSet(setArtifactCatalogSearch$);
   const signal = useGet(pageSignal$);
+  const collection = useGet(artifactLibraryCollection$);
   const filtered = Boolean(category || kind || search);
   return (
     <div
@@ -671,7 +814,9 @@ function ArtifactLibraryEmpty() {
       />
       <h2 className="text-sm font-medium">
         {t(($) => {
-          return $.artifacts.library.emptyTitle;
+          return collection === "favorites"
+            ? $.artifacts.favorites.emptyTitle
+            : $.artifacts.library.emptyTitle;
         })}
       </h2>
       <p className="text-sm text-muted-foreground">
@@ -680,7 +825,9 @@ function ArtifactLibraryEmpty() {
               return $.artifacts.library.emptyDescription;
             })
           : t(($) => {
-              return $.artifacts.catalog.emptyDescription;
+              return collection === "favorites"
+                ? $.artifacts.favorites.emptyDescription
+                : $.artifacts.catalog.emptyDescription;
             })}
       </p>
       {filtered && (
@@ -767,52 +914,20 @@ function ArtifactLibraryLoading({ view }: { readonly view: LibraryView }) {
   );
 }
 
-function ArtifactLibraryResults({
+function ArtifactLibraryDateGroups({
+  artifacts,
+  selectedId,
   scrollTargetId,
   view,
+  timezone,
 }: {
+  readonly artifacts: readonly CatalogArtifact[];
+  readonly selectedId: string | null;
   readonly scrollTargetId?: string | null;
   readonly view: LibraryView;
+  readonly timezone: string;
 }) {
   const { t } = useTranslation();
-  const catalog = useLastLoadable(artifactCatalog$);
-  const reload = useSet(reloadArtifactCatalog$);
-  const open = useGet(artifactCatalogSidebar.open$);
-  const detail = useLastLoadable(artifactCatalogSidebar.detail$);
-  const preferences = useLastResolved(userPreferences$);
-  const timezone =
-    preferences?.timezone ??
-    new Intl.DateTimeFormat().resolvedOptions().timeZone;
-  if (catalog.state === "loading") {
-    return <ArtifactLibraryLoading view={view} />;
-  }
-  if (catalog.state === "hasError") {
-    return (
-      <div
-        role="alert"
-        className="flex min-h-48 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
-      >
-        <p>
-          {t(($) => {
-            return $.artifacts.catalog.error;
-          })}
-        </p>
-        <Button
-          variant="neutral"
-          onClick={() => {
-            reload();
-          }}
-        >
-          {t(($) => {
-            return $.artifacts.library.retry;
-          })}
-        </Button>
-      </div>
-    );
-  }
-  if (catalog.data.artifacts.length === 0) {
-    return <ArtifactLibraryEmpty />;
-  }
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     calendar: "gregory",
@@ -827,9 +942,7 @@ function ArtifactLibraryResults({
     dateStyle: "long",
   });
   // The catalog already accumulates pages in server order for this query.
-  const groups = groupArtifactsByDate(catalog.data.artifacts, formatter);
-  const selectedId =
-    open && detail.state === "hasData" ? (detail.data?.id ?? null) : null;
+  const groups = groupArtifactsByDate(artifacts, formatter);
   return (
     <TooltipProvider delay={300}>
       <div data-artifact-library-results className="space-y-7">
@@ -876,6 +989,113 @@ function ArtifactLibraryResults({
         })}
       </div>
     </TooltipProvider>
+  );
+}
+
+function ArtifactLibraryResults({
+  scrollTargetId,
+  view,
+}: {
+  readonly scrollTargetId?: string | null;
+  readonly view: LibraryView;
+}) {
+  const { t } = useTranslation();
+  const catalog = useLastLoadable(artifactCatalog$);
+  const reload = useSet(reloadArtifactCatalog$);
+  const open = useGet(artifactCatalogSidebar.open$);
+  const detail = useLastLoadable(artifactCatalogSidebar.detail$);
+  const preferences = useLastResolved(userPreferences$);
+  const timezone =
+    preferences?.timezone ??
+    new Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (catalog.state === "loading") {
+    return <ArtifactLibraryLoading view={view} />;
+  }
+  if (catalog.state === "hasError") {
+    return (
+      <div
+        role="alert"
+        className="flex min-h-48 flex-col items-center justify-center gap-3 text-sm text-muted-foreground"
+      >
+        <p>
+          {t(($) => {
+            return $.artifacts.catalog.error;
+          })}
+        </p>
+        <Button
+          variant="neutral"
+          onClick={() => {
+            reload();
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.library.retry;
+          })}
+        </Button>
+      </div>
+    );
+  }
+  if (catalog.data.artifacts.length === 0 && !catalog.data.favorites?.length) {
+    return catalog.data.favorites && catalog.data.nextCursor ? (
+      <p
+        role="status"
+        className="flex min-h-48 items-center justify-center text-sm text-muted-foreground"
+      >
+        {t(($) => {
+          return $.artifacts.favorites.continueBrowsing;
+        })}
+      </p>
+    ) : (
+      <ArtifactLibraryEmpty />
+    );
+  }
+  const selectedId =
+    open && detail.state === "hasData" ? (detail.data?.id ?? null) : null;
+  if (catalog.data.favorites) {
+    return (
+      <TooltipProvider delay={300}>
+        <div data-artifact-library-results>
+          {view === "grid" ? (
+            <div className={LIBRARY_GRID_CLASS_NAME}>
+              {catalog.data.favorites.map((favorite) => {
+                return favorite.artifact ? (
+                  <ArtifactLibraryCard
+                    key={favorite.artifactId}
+                    artifact={favorite.artifact}
+                    selected={selectedId === favorite.artifactId}
+                    scrollIntoView={scrollTargetId === favorite.artifactId}
+                    timezone={timezone}
+                  />
+                ) : (
+                  <UnavailableFavorite
+                    key={favorite.artifactId}
+                    favorite={favorite}
+                    view="grid"
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <ArtifactLibraryTable
+              artifacts={catalog.data.artifacts}
+              favorites={catalog.data.favorites}
+              selectedId={selectedId}
+              scrollTargetId={scrollTargetId}
+              timezone={timezone}
+            />
+          )}
+        </div>
+      </TooltipProvider>
+    );
+  }
+  return (
+    <ArtifactLibraryDateGroups
+      artifacts={catalog.data.artifacts}
+      selectedId={selectedId}
+      scrollTargetId={scrollTargetId}
+      view={view}
+      timezone={timezone}
+    />
   );
 }
 

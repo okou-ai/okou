@@ -3,6 +3,8 @@ import { expect, test } from "vitest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactFavoritesContract } from "@okouai/api-contracts/contracts/artifact-favorites";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -115,10 +117,18 @@ function rights(
   );
   return ownerUrl;
 }
-async function route(other = false) {
+async function route(other = false, favorites = false) {
   await setupPage({
     context,
     host: "app.okou.ai",
+    ...(favorites
+      ? {
+          featureSwitches: {
+            [FeatureSwitchKey.ArtifactLibrary]: true,
+            [FeatureSwitchKey.Star]: true,
+          },
+        }
+      : {}),
     path:
       "/chats/" +
       ATTACHMENT_THREAD_ID +
@@ -131,6 +141,7 @@ async function page(
     owner?: Hold;
     title?: string;
     filename?: string;
+    favorites?: boolean;
     meta?: Hold;
     readOnly?: boolean;
     onOwnerReturned?: () => void;
@@ -154,7 +165,7 @@ async function page(
   }
   const ownerUrl = rights(r, options);
   options.configureRights?.(r);
-  await route();
+  await route(false, options.favorites);
   const button = await findAction("link", r.item.title);
   click(button);
   const panel = await screen.findByTestId("artifact-sidebar");
@@ -176,6 +187,38 @@ async function ready(panel: HTMLElement) {
     await expect(findAction("button", name, panel)).resolves.toBeVisible();
   }
 }
+test("A chat artifact favorites its resolved catalog identity through the existing more menu", async () => {
+  const entry = await page({
+    favorites: true,
+    configureRights: (resource) => {
+      context.mocks.api(artifactFavoritesContract.resolve, ({ respond }) => {
+        return respond(200, { artifactId: resource.item.id, favorited: false });
+      });
+      context.mocks.api(
+        artifactFavoritesContract.create,
+        ({ body, respond }) => {
+          expect(body).toStrictEqual({ artifactId: resource.item.id });
+          return respond(200, {
+            artifactId: resource.item.id,
+            favorited: true,
+          });
+        },
+      );
+    },
+  });
+  await ready(entry.panel);
+  click(await findAction("button", "More artifact actions", entry.panel));
+  click(await findNamedMenuItem("Add to favorites"));
+  await expect(
+    screen.findByText("Added to favorites"),
+  ).resolves.toBeInTheDocument();
+  expect(location.pathname).toBe(`/chats/${ATTACHMENT_THREAD_ID}`);
+  click(await findAction("button", "More artifact actions", entry.panel));
+  await expect(
+    findNamedMenuItem("Remove from favorites"),
+  ).resolves.toBeInTheDocument();
+});
+
 test("chat-artifact-action-group-001 a second thread cannot inherit the first preview's ready actions", async () => {
   const earlier = resource("Glacier inventory"),
     next = resource("Estuary inventory");

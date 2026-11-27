@@ -1438,6 +1438,7 @@ function ArtifactPreviewDialogActions({
         />
         <ArtifactDeleteButton
           artifactId={artifact?.artifactId}
+          favoriteUrl={preview.url}
           origin={{ kind: "preview-dialog" }}
           iconSize={18}
           menu

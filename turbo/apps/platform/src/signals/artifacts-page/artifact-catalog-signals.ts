@@ -20,6 +20,7 @@ import {
 import { ROUTES } from "../route-paths.ts";
 import { onRef } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
+import type { ArtifactLibraryCollection } from "./create-artifact-catalog-signals.ts";
 import { artifactCatalogViewport$ } from "../artifact-deletion.ts";
 
 // Route defaults and serialization follow the mode installed by page setup.
@@ -77,6 +78,7 @@ export const initializeArtifactCatalogQueryFromRoute$ = command(
     { set },
     params: URLSearchParams,
     libraryEnabled: boolean,
+    favoritesEnabled: boolean,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
@@ -94,6 +96,10 @@ export const initializeArtifactCatalogQueryFromRoute$ = command(
           : artifactCatalogKindFromSearchParams(params, libraryEnabled),
         search: libraryEnabled ? (params.get("q") ?? "") : "",
         direction: params.get("direction") === "asc" ? "asc" : "desc",
+        collection:
+          favoritesEnabled && params.get("collection") === "favorites"
+            ? "favorites"
+            : "all",
       },
       signal,
     );
@@ -105,6 +111,11 @@ const writeArtifactCatalogQueryToRoute$ = command(
     const next = new URLSearchParams(get(searchParams$));
     const kind = get(pageCatalog.selectedKind$);
     if (get(routeLibraryMode$)) {
+      if (get(pageCatalog.collection$) === "favorites") {
+        next.set("collection", "favorites");
+      } else {
+        next.delete("collection");
+      }
       const category = get(pageCatalog.selectedCategory$);
       if (category) {
         next.set("category", category);
@@ -167,6 +178,15 @@ export const setArtifactCatalogKind$ = command(
 export const setArtifactCatalogCategory$ = command(
   ({ set }, category: ArtifactCatalogCategory | null) => {
     set(pageCatalog.setCategory$, category);
+    set(writeArtifactCatalogQueryToRoute$, false);
+  },
+);
+
+export const artifactLibraryCollection$ = pageCatalog.collection$;
+
+export const setArtifactLibraryCollection$ = command(
+  ({ set }, collection: ArtifactLibraryCollection) => {
+    set(pageCatalog.setCollection$, collection);
     set(writeArtifactCatalogQueryToRoute$, false);
   },
 );

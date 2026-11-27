@@ -6,6 +6,8 @@ import {
 } from "../attachment-resource-url.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
+import { artifactFavoritesContract } from "@okouai/api-contracts/client/artifact-favorites";
+import type { ArtifactFavorite } from "@okouai/api-contracts/contracts/artifact-favorites";
 import type {
   ArtifactCatalogCategory,
   ArtifactCatalogDirection,
@@ -26,6 +28,10 @@ import {
 import { artifactDetailPreview } from "./artifact-catalog-preview.ts";
 import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { pageSignal$ } from "../page-signal.ts";
+import {
+  artifactFavoritesEnabled$,
+  artifactFavoritesRevision$,
+} from "../artifact-favorites.ts";
 import { debounceCommand, resetSignal } from "../utils.ts";
 
 // Every page uses the same query and page size for its cursor session.
@@ -33,7 +39,14 @@ const ARTIFACT_CATALOG_PAGE_SIZE = 60;
 const ARTIFACT_CATALOG_SEARCH_DEBOUNCE_MS = 300;
 const ARTIFACT_CARD_THUMBNAIL_WIDTH_PX = 640;
 
+export type ArtifactLibraryCollection = "all" | "favorites";
+export type CatalogArtifactDetail = ArtifactDetail & {
+  readonly isOwner?: boolean;
+};
+
 export type CatalogArtifact = ArtifactSummary & {
+  readonly favorited?: boolean;
+  readonly favoritedAt?: string;
   /**
    * Load state of the thumbnail, created when the page's data arrives. A
    * reload replaces the page and its signals; an already-broken thumbnail
@@ -46,9 +59,21 @@ export type CatalogArtifact = ArtifactSummary & {
   readonly videoUrl$: Computed<Promise<string | null>>;
 };
 
+export interface CatalogFavorite {
+  readonly artifactId: string;
+  readonly createdAt: string;
+  readonly artifact: CatalogArtifact | null;
+}
+
 export interface ArtifactCatalogPage {
   readonly artifacts: readonly CatalogArtifact[];
   readonly nextCursor: string | null;
+  readonly favorites?: readonly CatalogFavorite[];
+}
+
+interface CatalogPageResponse extends ArtifactCatalogListResponse {
+  readonly favorites?: readonly ArtifactFavorite[];
+  readonly favoriteStatuses?: Readonly<Record<string, boolean>>;
 }
 
 export interface ArtifactCatalogQuery {
@@ -56,17 +81,27 @@ export interface ArtifactCatalogQuery {
   readonly kind: ArtifactCatalogKind | null;
   readonly search: string;
   readonly direction: ArtifactCatalogDirection;
+  readonly collection?: ArtifactLibraryCollection;
 }
+
+type FavoriteDetailRequest = (
+  createClient: ApiClientFactory,
+  artifactId: string,
+) => Promise<CatalogArtifactDetail | null>;
 
 type CatalogPageRequest = (
   createClient: ApiClientFactory,
   query: ArtifactCatalogListClientQuery,
+  favoritesEnabled: boolean,
+  collection: ArtifactLibraryCollection,
   signal?: AbortSignal,
-) => Promise<ArtifactCatalogListResponse>;
+) => Promise<CatalogPageResponse>;
 
 interface CatalogQuerySnapshot {
   readonly query: ArtifactCatalogListClientQuery;
   readonly request: CatalogPageRequest | null;
+  readonly favoritesEnabled: boolean;
+  readonly collection: ArtifactLibraryCollection;
 }
 
 interface CatalogIdentity {
@@ -86,38 +121,54 @@ interface CatalogPagingOperation {
 }
 
 function withThumbnailLoad(
-  page: {
-    readonly artifacts: readonly ArtifactSummary[];
-    readonly nextCursor: string | null;
-  },
+  page: CatalogPageResponse,
   identity: CatalogIdentity,
 ): LoadedArtifactCatalogPage {
+  const artifacts = page.artifacts.map((artifact): CatalogArtifact => {
+    const videoPreview = artifact.videoSourceUrl
+      ? createAttachmentPreviewSignals(artifact.videoSourceUrl)
+      : null;
+    const thumbnailPreview = artifact.thumbnail
+      ? createAttachmentPreviewSignals(artifact.thumbnail.url, {
+          thumbnailSize: { width: ARTIFACT_CARD_THUMBNAIL_WIDTH_PX },
+        })
+      : null;
+    return {
+      ...artifact,
+      favorited: page.favoriteStatuses?.[artifact.id],
+      favoritedAt: page.favorites?.find((favorite) => {
+        return favorite.artifactId === artifact.id;
+      })?.createdAt,
+      thumbnailLoad: createImageLoadSignals(),
+      thumbnailUrl$: computed(async (get) => {
+        return thumbnailPreview
+          ? await get(thumbnailPreview.thumbnailUrl$)
+          : null;
+      }),
+      videoPreview,
+      videoUrl$: computed(async (get) => {
+        return videoPreview ? await get(videoPreview.resourceUrl$) : null;
+      }),
+    };
+  });
   return {
     identity,
-    artifacts: page.artifacts.map((artifact) => {
-      const videoPreview = artifact.videoSourceUrl
-        ? createAttachmentPreviewSignals(artifact.videoSourceUrl)
-        : null;
-      const thumbnailPreview = artifact.thumbnail
-        ? createAttachmentPreviewSignals(artifact.thumbnail.url, {
-            thumbnailSize: { width: ARTIFACT_CARD_THUMBNAIL_WIDTH_PX },
-          })
-        : null;
-      return {
-        ...artifact,
-        thumbnailLoad: createImageLoadSignals(),
-        thumbnailUrl$: computed(async (get) => {
-          return thumbnailPreview
-            ? await get(thumbnailPreview.thumbnailUrl$)
-            : null;
-        }),
-        videoPreview,
-        videoUrl$: computed(async (get) => {
-          return videoPreview ? await get(videoPreview.resourceUrl$) : null;
-        }),
-      };
-    }),
+    artifacts,
     nextCursor: page.nextCursor,
+    ...(page.favorites
+      ? {
+          favorites: page.favorites.map((favorite) => {
+            return {
+              artifactId: favorite.artifactId,
+              createdAt: favorite.createdAt,
+              artifact:
+                artifacts.find((artifact) => {
+                  return artifact.id === favorite.artifactId;
+                }) ?? null,
+            };
+          }),
+        }
+      : {}),
   };
 }
 
@@ -129,7 +180,9 @@ interface ArtifactCatalogSelection {
     Promise<AttachmentPreviewSignals | null>,
     [string, AbortSignal]
   >;
-  readonly selectedArtifactDetail$: Computed<Promise<ArtifactDetail | null>>;
+  readonly selectedArtifactDetail$: Computed<
+    Promise<CatalogArtifactDetail | null>
+  >;
   readonly selectedArtifactPreview$: Computed<AttachmentPreviewSignals | null>;
 }
 
@@ -142,6 +195,8 @@ export interface ArtifactCatalogViewSignals extends ArtifactCatalogSelection {
 }
 
 export interface ArtifactCatalogSignals extends ArtifactCatalogViewSignals {
+  readonly collection$: Computed<ArtifactLibraryCollection>;
+  readonly setCollection$: Command<void, [ArtifactLibraryCollection]>;
   readonly selectedCategory$: Computed<ArtifactCatalogCategory | null>;
   readonly setCategory$: Command<void, [ArtifactCatalogCategory | null]>;
   readonly selectedKind$: Computed<ArtifactCatalogKind | null>;
@@ -157,11 +212,38 @@ export interface ArtifactCatalogSignals extends ArtifactCatalogViewSignals {
 function artifactLibraryPageRequest(
   ownerSignal: AbortSignal,
 ): CatalogPageRequest {
-  return async (createClient, query, signal) => {
+  return async (createClient, query, favoritesEnabled, collection, signal) => {
     const requestSignal = signal
       ? AbortSignal.any([ownerSignal, signal])
       : ownerSignal;
     requestSignal.throwIfAborted();
+    if (favoritesEnabled && collection === "favorites") {
+      const result = await accept(
+        createClient(artifactFavoritesContract).list({
+          query: {
+            limit: 50,
+            ...(query.cursor ? { cursor: query.cursor } : {}),
+            ...(query.category ? { category: query.category } : {}),
+            ...(query.keyword ? { keyword: query.keyword } : {}),
+          },
+          fetchOptions: { signal: requestSignal },
+        }),
+        [200],
+        requestSignal,
+      );
+      return {
+        artifacts: result.body.favorites.flatMap((favorite) => {
+          return favorite.artifact ? [favorite.artifact] : [];
+        }),
+        nextCursor: result.body.nextCursor,
+        favorites: result.body.favorites,
+        favoriteStatuses: Object.fromEntries(
+          result.body.favorites.map((favorite) => {
+            return [favorite.artifactId, true];
+          }),
+        ),
+      };
+    }
     const result = await accept(
       createClient(artifactCatalogContract).list({
         query,
@@ -171,17 +253,36 @@ function artifactLibraryPageRequest(
       requestSignal,
     );
     requestSignal.throwIfAborted();
-    return result.body;
+    if (!favoritesEnabled || result.body.artifacts.length === 0) {
+      return result.body;
+    }
+    const statuses = await accept(
+      createClient(artifactFavoritesContract).status({
+        query: {
+          artifactIds: result.body.artifacts
+            .map((artifact) => {
+              return artifact.id;
+            })
+            .join(","),
+        },
+        fetchOptions: { signal: requestSignal },
+      }),
+      [200],
+      requestSignal,
+    );
+    return { ...result.body, favoriteStatuses: statuses.body.favorites };
   };
 }
 
 function createArtifactLibraryQuerySignals(
   enabled$: Computed<Promise<boolean>>,
 ) {
+  const internalCollection$ = state<ArtifactLibraryCollection>("all");
   const internalSearch$ = state("");
   const internalKeyword$ = state(Promise.resolve(""));
   const internalDirection$ = state<ArtifactCatalogDirection>("desc");
   const internalRequest$ = state<CatalogPageRequest | null>(null);
+  const internalDetailRequest$ = state<FavoriteDetailRequest | null>(null);
   const resetRequests$ = resetSignal();
   const resetSearch$ = resetSignal();
   const restartRequests$ = command(({ set }, signal: AbortSignal) => {
@@ -189,6 +290,19 @@ function createArtifactLibraryQuerySignals(
     const requestSignal = set(resetRequests$, signal);
     set(internalRequest$, () => {
       return artifactLibraryPageRequest(requestSignal);
+    });
+    set(internalDetailRequest$, () => {
+      return async (createClient: ApiClientFactory, artifactId: string) => {
+        const result = await accept(
+          createClient(artifactFavoritesContract).get({
+            params: { artifactId },
+            fetchOptions: { signal: requestSignal },
+          }),
+          [200, 404],
+          requestSignal,
+        );
+        return result.status === 404 ? null : result.body;
+      };
     });
   });
   const debounceSearch$ = debounceCommand(
@@ -229,6 +343,7 @@ function createArtifactLibraryQuerySignals(
     ({ set }, query: ArtifactCatalogQuery, signal: AbortSignal) => {
       signal.throwIfAborted();
       set(resetSearch$);
+      set(internalCollection$, query.collection ?? "all");
       set(internalSearch$, query.search);
       set(internalKeyword$, Promise.resolve(query.search.trim()));
       set(setDirection$, query.direction);
@@ -239,10 +354,19 @@ function createArtifactLibraryQuerySignals(
     set(resetSearch$);
     set(resetRequests$);
     set(internalRequest$, null);
+    set(internalDetailRequest$, null);
     set(internalKeyword$, Promise.resolve(get(internalSearch$).trim()));
   });
   return {
     enabled$,
+    collection$: computed((get) => {
+      return get(internalCollection$);
+    }),
+    setCollection$: command(
+      ({ set }, collection: ArtifactLibraryCollection) => {
+        set(internalCollection$, collection);
+      },
+    ),
     search$: computed((get) => {
       return get(internalSearch$);
     }),
@@ -254,6 +378,9 @@ function createArtifactLibraryQuerySignals(
     }),
     request$: computed((get) => {
       return get(internalRequest$);
+    }),
+    detailRequest$: computed((get) => {
+      return get(internalDetailRequest$);
     }),
     setSearch$,
     setDirection$,
@@ -278,6 +405,8 @@ function createCatalogSource(
     const keyword = library ? get(library.keyword$) : "";
     const direction = library ? get(library.direction$) : null;
     const request = library ? get(library.request$) : null;
+    const favoritesEnabled = library ? get(artifactFavoritesEnabled$) : false;
+    const collection = library ? get(library.collection$) : "all";
     const libraryEnabled = await enabled;
     const trimmedKeyword = libraryEnabled ? (await keyword).trim() : "";
     return {
@@ -290,24 +419,28 @@ function createCatalogSource(
         ...(trimmedKeyword ? { keyword: trimmedKeyword } : {}),
       },
       request,
+      favoritesEnabled: await favoritesEnabled,
+      collection,
     };
   });
   const identity$ = computed((get): CatalogIdentity => {
     return {
       revision: get(artifactCatalogRevision$),
-      reloadVersion: get(reloadVersion$),
+      reloadVersion:
+        get(reloadVersion$) + (library ? get(artifactFavoritesRevision$) : 0),
       query: get(query$),
     };
   });
   const firstPage$ = computed(
     async (get): Promise<LoadedArtifactCatalogPage> => {
       const identity = get(identity$);
-      const { query, request } = await identity.query;
+      const { query, request, favoritesEnabled, collection } =
+        await identity.query;
       const createClient = get(apiClient$);
       if (library) {
         // Route setup installs the request owner before mounting this catalog.
         const page = request
-          ? await request(createClient, query)
+          ? await request(createClient, query, favoritesEnabled, collection)
           : { artifacts: [], nextCursor: null };
         return withThumbnailLoad(page, identity);
       }
@@ -321,6 +454,7 @@ function createCatalogSource(
   return {
     chatThreadId,
     driveAccountRevision$,
+    library,
     kind$,
     category$,
     reloadVersion$,
@@ -330,6 +464,26 @@ function createCatalogSource(
 }
 
 type CatalogSource = ReturnType<typeof createCatalogSource>;
+
+function mergeCatalogPages(
+  firstPage: ArtifactCatalogPage,
+  appendedPages: readonly ArtifactCatalogPage[],
+): ArtifactCatalogPage {
+  const pages = [firstPage, ...appendedPages];
+  return {
+    artifacts: pages.flatMap((page) => {
+      return page.artifacts;
+    }),
+    nextCursor: (appendedPages.at(-1) ?? firstPage).nextCursor,
+    ...(firstPage.favorites
+      ? {
+          favorites: pages.flatMap((page) => {
+            return page.favorites ?? [];
+          }),
+        }
+      : {}),
+  };
+}
 
 function createCatalogPagingSignals({ identity$, firstPage$ }: CatalogSource) {
   const pages$ = state<readonly LoadedArtifactCatalogPage[]>([]);
@@ -358,16 +512,7 @@ function createCatalogPagingSignals({ identity$, firstPage$ }: CatalogSource) {
     const appendedPages = get(pages$).filter((page) => {
       return page.identity === firstPage.identity;
     });
-    const lastPage = appendedPages.at(-1) ?? firstPage;
-    return {
-      artifacts: [
-        ...firstPage.artifacts,
-        ...appendedPages.flatMap((page) => {
-          return page.artifacts;
-        }),
-      ],
-      nextCursor: lastPage.nextCursor,
-    };
+    return mergeCatalogPages(firstPage, appendedPages);
   });
 
   const loadPage$ = command(
@@ -394,7 +539,13 @@ function createCatalogPagingSignals({ identity$, firstPage$ }: CatalogSource) {
       const query = { ...snapshot.query, cursor };
       const createClient = get(apiClient$);
       const page = snapshot.request
-        ? await snapshot.request(createClient, query, signal)
+        ? await snapshot.request(
+            createClient,
+            query,
+            snapshot.favoritesEnabled,
+            snapshot.collection,
+            signal,
+          )
         : (
             await accept(
               createClient(artifactCatalogContract).list({
@@ -456,7 +607,12 @@ function createCatalogPagingSignals({ identity$, firstPage$ }: CatalogSource) {
 
 function createCatalogSelectionSignals(
   catalog$: Computed<Promise<ArtifactCatalogPage>>,
-  { reloadVersion$, chatThreadId, driveAccountRevision$ }: CatalogSource,
+  {
+    reloadVersion$,
+    chatThreadId,
+    driveAccountRevision$,
+    library,
+  }: CatalogSource,
 ): ArtifactCatalogSelection {
   const previews = createAttachmentPreviewRegistry();
   const internalDetailVersion$ = state(0);
@@ -479,7 +635,7 @@ function createCatalogSelectionSignals(
   });
 
   const selectedArtifactDetail$ = computed(
-    async (get): Promise<ArtifactDetail | null> => {
+    async (get): Promise<CatalogArtifactDetail | null> => {
       get(reloadVersion$);
       get(artifactCatalogRevision$);
       get(internalDetailVersion$);
@@ -489,6 +645,17 @@ function createCatalogSelectionSignals(
       const artifactId = get(internalSelectedArtifactId$);
       if (!artifactId) {
         return null;
+      }
+      const favoritesEnabled = library
+        ? await get(artifactFavoritesEnabled$)
+        : false;
+      if (
+        favoritesEnabled &&
+        library &&
+        get(library.collection$) === "favorites"
+      ) {
+        const request = get(library.detailRequest$);
+        return request ? await request(get(apiClient$), artifactId) : null;
       }
       const client = get(apiClient$)(artifactCatalogContract);
       const result = await accept(
@@ -679,6 +846,18 @@ export function createArtifactCatalogSignals(
   );
   return {
     ...view,
+    collection$: library.collection$,
+    setCollection$: command(
+      ({ get, set }, collection: ArtifactLibraryCollection) => {
+        if (get(library.collection$) === collection) {
+          return;
+        }
+        set(library.setCollection$, collection);
+        set(source.kind$, null);
+        set(library.restartRequests$, get(pageSignal$));
+        set(resetPages$);
+      },
+    ),
     selectedCategory$: computed((get) => {
       return get(source.category$);
     }),

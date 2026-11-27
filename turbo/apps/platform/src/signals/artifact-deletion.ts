@@ -20,6 +20,10 @@ type PreviewDeletionIdentity = Computed<
   Promise<ArtifactDeletionIdentity | null>
 >;
 
+export const emptyArtifactDeletionDetail$ = computed(() => {
+  return Promise.resolve<ArtifactSummary | null>(null);
+});
+
 const internalArtifactCatalogRevision$ = state(0);
 export const artifactCatalogRevision$ = computed((get) => {
   return get(internalArtifactCatalogRevision$);

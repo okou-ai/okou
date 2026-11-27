@@ -125,6 +125,7 @@ function ArtifactViewerActions({
         <ArtifactPageDeleteButton
           artifactId={`${reference.hash}${reference.extension}`}
           sourceKind="reference"
+          favoriteUrl={artifact.preview.url}
         />
       )}
       {artifactSupportsFullscreen(artifact.preview.kind) && (

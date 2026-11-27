@@ -572,6 +572,21 @@
       "success": "Artifact deleted",
       "title": "Delete {{title}}?"
     },
+    "favorites": {
+      "add": "Add to favorites",
+      "added": "Added to favorites",
+      "collections": "Artifact collections",
+      "continueBrowsing": "Load more to keep browsing your favorites.",
+      "emptyDescription": "Save artifacts from their more menu to find them here.",
+      "emptyTitle": "No favorites yet",
+      "favorited": "Favorited",
+      "remove": "Remove from favorites",
+      "removed": "Removed from favorites",
+      "title": "Favorites",
+      "unavailable": "Unavailable artifact",
+      "view": "View favorites",
+      "yourArtifacts": "Your artifacts"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

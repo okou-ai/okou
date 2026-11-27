@@ -15,6 +15,8 @@ import { artifactCatalogContract as OriginalArtifactCatalogContract } from "../c
 import { artifactCatalogContract } from "./artifact-catalog";
 import { artifactDownloadsContract as OriginalArtifactDownloadsContract } from "../contracts/artifact-downloads";
 import { artifactDownloadsContract } from "./artifact-downloads";
+import { artifactFavoritesContract as OriginalArtifactFavoritesContract } from "../contracts/artifact-favorites";
+import { artifactFavoritesContract } from "./artifact-favorites";
 import { artifactGoogleDriveContract as OriginalArtifactGoogleDriveContract } from "../contracts/artifact-google-drive";
 import { artifactGoogleDriveContract } from "./artifact-google-drive";
 import { artifactOgContract as OriginalArtifactOgContract } from "../contracts/artifact-og";
@@ -816,6 +818,7 @@ export const clientDescriptorContracts: readonly (readonly [
   ],
   [artifactCatalogContract, OriginalArtifactCatalogContract],
   [artifactDownloadsContract, OriginalArtifactDownloadsContract],
+  [artifactFavoritesContract, OriginalArtifactFavoritesContract],
   [artifactGoogleDriveContract, OriginalArtifactGoogleDriveContract],
   [artifactOgContract, OriginalArtifactOgContract],
   [artifactReferencesContract, OriginalArtifactReferencesContract],

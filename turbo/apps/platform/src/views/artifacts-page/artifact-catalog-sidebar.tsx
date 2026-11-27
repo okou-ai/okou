@@ -68,11 +68,13 @@ export function ArtifactCatalogSidebar() {
     <>
       <ArtifactSidebarContent
         artifactId={detail.data.id}
+        viewerOnly={detail.data.isOwner === false}
         artifactRef={{
           url: preview.url,
           filename: preview.filename,
           contentType: preview.contentType,
           kind: preview.kind,
+          shareAvailable: detail.data.isOwner !== false,
           resourceUrl$: artifactCatalogSidebar.preview.resourceUrl$,
           imageUrl$: artifactCatalogSidebar.preview.imageUrl$,
           shareUrl$: artifactCatalogSidebar.preview.shareUrl$,

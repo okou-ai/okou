@@ -23,6 +23,10 @@ export const clientDescriptorManifest = [
     contracts: ["artifactDownloadsContract"],
   },
   {
+    module: "artifact-favorites",
+    contracts: ["artifactFavoritesContract"],
+  },
+  {
     module: "artifact-google-drive",
     contracts: ["artifactGoogleDriveContract"],
   },

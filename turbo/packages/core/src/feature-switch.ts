@@ -227,6 +227,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.Star]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Save your own or shared artifacts to favorites. Requires artifactLibrary.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     description:

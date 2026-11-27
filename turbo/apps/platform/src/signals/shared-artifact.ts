@@ -19,6 +19,7 @@ import {
 import { SharedArtifactPage } from "../views/shared-artifact-page/shared-artifact-page.tsx";
 import { getArtifactShareScope } from "./artifact-sharing.ts";
 import { artifactPreviewDeletionScope } from "./artifact-deletion.ts";
+import { artifactFavoriteScope } from "./artifact-favorites.ts";
 
 const sharedArtifactViewer$ = computed((get) => {
   get(pathParams$);
@@ -127,6 +128,13 @@ export const setupSharedArtifact$ = command(
             artifactId: id,
             sourceKind: "reference",
           }
+        : null,
+      signal,
+    );
+    set(
+      artifactFavoriteScope("page").select$,
+      artifact && !artifact.sharedThreadSnapshot
+        ? { url: referenceUrl.href }
         : null,
       signal,
     );

@@ -113,6 +113,7 @@ type ArtifactSidebarProps = {
 };
 
 type ArtifactSidebarContentProps = {
+  readonly viewerOnly?: boolean;
   actionsPending?: boolean;
   artifactId?: string;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
@@ -234,6 +235,7 @@ function useMarkdownArtifactSelection(
 }
 
 export function ArtifactSidebarContent({
+  viewerOnly = false,
   actionsPending = false,
   artifactId,
   artifactKind,
@@ -310,10 +312,13 @@ export function ArtifactSidebarContent({
     <ArtifactSidebarResolvedContent
       actionsPending={actionsPending}
       zipPreview={artifactRef.zipPreview}
-      artifactId={artifactId ?? syncTarget?.artifactId}
+      artifactId={
+        viewerOnly ? undefined : (artifactId ?? syncTarget?.artifactId)
+      }
       managementAction={
         <ArtifactDeleteButton
           artifactId={artifactId ?? syncTarget?.artifactId}
+          favoriteUrl={artifactRef.url}
           origin={deletionOrigin}
           menu
         />
@@ -752,6 +757,7 @@ function ArtifactSidebarPreviewActions({
         contentType={contentType}
         previewKind={kind}
         filename={filename}
+        showGoogleDriveAction={shareAvailable}
         syncTarget={syncTarget}
         url={url}
       />

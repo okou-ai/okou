@@ -526,6 +526,12 @@ function SharedThreadHeader({
           <ArtifactPageDeleteButton
             artifactId={sharedThreadId}
             sourceKind="shared-thread"
+            favoriteUrl={
+              new URL(
+                `/share/threads/${encodeURIComponent(sharedThreadId)}`,
+                location.origin,
+              ).href
+            }
           />
         )}
         {signInUrl !== null ? (

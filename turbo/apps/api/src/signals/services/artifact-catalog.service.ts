@@ -246,7 +246,7 @@ function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
 }
 
 /** One read-time category projection, also used before Library pagination. */
-function artifactCatalogCategory() {
+export function artifactCatalogCategory() {
   const kind = artifactCatalogEffectiveKind();
   const contentType = sql`lower(trim(split_part(coalesce(${runUploadedFiles.contentType}, ''), ';', 1)))`;
   const filename = sql`lower(coalesce(${runUploadedFiles.filename}, ${runUploadedFiles.externalId}, ''))`;

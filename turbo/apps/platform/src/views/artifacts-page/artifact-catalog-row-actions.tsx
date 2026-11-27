@@ -5,6 +5,7 @@ import { MessagesSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { artifactCatalogRowDeletionScope } from "../../signals/artifacts-page/artifact-catalog-row-actions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { ArtifactFavoriteMenuItem } from "../okou-page/artifact-favorite-menu-item.tsx";
 import {
   ArtifactDeleteDialog,
   ArtifactDeleteMoreMenu,
@@ -13,8 +14,10 @@ import {
 /** More/Delete uses the summary already returned by the owner-scoped catalog. */
 export function ArtifactCatalogRowActions({
   artifact,
+  favoriteOnly = false,
 }: {
-  readonly artifact: ArtifactSummary;
+  readonly artifact: ArtifactSummary & { readonly favorited?: boolean };
+  readonly favoriteOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const scope = artifactCatalogRowDeletionScope;
@@ -23,26 +26,41 @@ export function ArtifactCatalogRowActions({
   const menuOpenChanged = useSet(scope.menuOpenChanged$);
   const requestDeletion = useSet(scope.requestFromMenu$);
   const dismiss = useSet(scope.dismiss$);
-  const source = artifact.sourceChatThread;
+  const source = favoriteOnly ? undefined : artifact.sourceChatThread;
 
   return (
     <ArtifactDeleteMoreMenu
       triggerRef={triggerRef}
-      onOpenChange={(open, details) => {
-        menuOpenChanged(
-          artifact.id,
-          {
-            open,
-            trigger: details.trigger,
-            selectingDelete: details.reason === "item-press",
-          },
-          pageSignal,
-        );
-      }}
-      onDelete={() => {
-        requestDeletion(artifact, pageSignal);
-      }}
+      onOpenChange={
+        favoriteOnly
+          ? undefined
+          : (open, details) => {
+              menuOpenChanged(
+                artifact.id,
+                {
+                  open,
+                  trigger: details.trigger,
+                  selectingDelete: details.reason === "item-press",
+                },
+                pageSignal,
+              );
+            }
+      }
+      onDelete={
+        favoriteOnly
+          ? undefined
+          : () => {
+              requestDeletion(artifact, pageSignal);
+            }
+      }
     >
+      {artifact.favorited !== undefined && (
+        <ArtifactFavoriteMenuItem
+          artifactId={artifact.id}
+          favorited={artifact.favorited}
+          onSelected={favoriteOnly ? undefined : dismiss}
+        />
+      )}
       {source && (
         <DropdownMenuItem
           nativeButton={false}
