@@ -248,7 +248,7 @@ class CanonicalWorkspaceSession(
                     match.seqId,
                     excerpt?.text ?: match.content,
                     excerpt?.ranges ?: ranges,
-                    sourceRange = ranges.minByOrNull { it.first },
+                    sourceRange = excerpt?.sourceRange ?: ranges.minByOrNull { it.first },
                 )
             }
         }

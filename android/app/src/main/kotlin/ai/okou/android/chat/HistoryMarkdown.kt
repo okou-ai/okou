@@ -693,20 +693,37 @@ internal fun workspaceSearchMarkdownExcerpt(
     ranges: List<IntRange>,
 ): SearchMessageExcerpt {
     val document = workspaceSearchMarkdownParser.parse(source)
-    val first = ranges.minByOrNull { it.first }
+    val orderedRanges = ranges.sortedBy { it.last }
+    val first = orderedRanges.firstOrNull()
+    val initial = first?.let { document.searchExcerptAt(source, orderedRanges, it) }
     if (first != null) {
-        val block = document.workspaceSearchReadingBlock(first)?.second
-        if (block != null) {
-            val escapes = block.tablePipeEscapes(source)
-            val part = block.markdownImages().containingMatch(first, escapes)?.value ?: block
-            val excerpt = part.searchExcerpt(source, ranges, escapes)
-            if (excerpt.text.isNotBlank()) return excerpt
+        if (initial?.sourceRange == first) return initial
+        val readable = document.firstReadableSearchRange(source, orderedRanges)
+        if (readable != null) {
+            val excerpt = document.searchExcerptAt(source, orderedRanges, readable)
+            if (excerpt?.sourceRange == readable) return excerpt
         }
     }
-    return document
-        .children()
-        .map { it.searchExcerpt(source, emptyList()) }
-        .firstOrNull { it.text.isNotBlank() } ?: SearchMessageExcerpt("", emptyList())
+    val context =
+        initial?.text
+            ?: document
+                .children()
+                .firstNotNullOfOrNull {
+                    it.searchExcerpt(source, emptyList()).text.takeIf(String::isNotBlank)
+                }
+                .orEmpty()
+    return SearchMessageExcerpt(context, emptyList(), first)
+}
+
+private fun Node.searchExcerptAt(
+    source: String,
+    ranges: List<IntRange>,
+    anchor: IntRange,
+): SearchMessageExcerpt? {
+    val (_, block) = workspaceSearchReadingBlock(anchor) ?: return null
+    val escapes = block.tablePipeEscapes(source)
+    val part = block.markdownImages().containingMatch(anchor, escapes)?.value ?: block
+    return part.searchExcerpt(source, ranges, escapes).takeIf { it.text.isNotBlank() }
 }
 
 internal fun HistoryMessage.workspaceSearchTarget(

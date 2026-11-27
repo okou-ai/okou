@@ -14,16 +14,23 @@ import org.commonmark.node.SoftLineBreak
 import org.commonmark.node.SourceSpan
 import org.commonmark.node.Text
 
-internal data class SearchMessageExcerpt(val text: String, val ranges: List<IntRange>)
+internal data class SearchMessageExcerpt(
+    val text: String,
+    val ranges: List<IntRange>,
+    val sourceRange: IntRange?,
+)
 
 internal fun Node.searchExcerpt(
     source: String,
     ranges: List<IntRange>,
     escapes: List<Int> = emptyList(),
 ): SearchMessageExcerpt =
-    MarkdownExcerpt(source, ranges.sortedBy { it.last }, escapes)
-        .apply { append(this@searchExcerpt) }
-        .build()
+    MarkdownExcerpt(source, ranges).apply { append(this@searchExcerpt, escapes) }.build()
+
+internal fun Node.firstReadableSearchRange(source: String, ranges: List<IntRange>): IntRange? =
+    MarkdownExcerpt(source, ranges, firstMatchOnly = true)
+        .apply { append(this@firstReadableSearchRange) }
+        .sourceRange
 
 // GFM consumes a backslash before an escaped pipe before parsing the cell's inlines.
 internal fun Node.tablePipeEscapes(source: String): List<Int> {
@@ -48,35 +55,44 @@ internal fun List<Int>.originalMarkdownIndex(inlineIndex: Int): Int {
 private class MarkdownExcerpt(
     private val source: String,
     private val ranges: List<IntRange>,
-    private val escapes: List<Int>,
+    private val firstMatchOnly: Boolean = false,
 ) {
     private val text = StringBuilder()
     private val matches = mutableListOf<IntRange>()
+    var sourceRange: IntRange? = null
+        private set
 
-    fun build() = SearchMessageExcerpt(text.toString().trimEnd(), matches)
+    fun build() = SearchMessageExcerpt(text.toString().trimEnd(), matches, sourceRange)
 
-    fun append(node: Node) {
+    fun append(node: Node, escapes: List<Int> = emptyList()) {
         when (node) {
-            is Text -> appendLiteral(node.literal, node.sourceSpans)
-            is Code -> appendLiteral(node.literal, node.sourceSpans)
-            is FencedCodeBlock -> appendLiteral(node.literal, node.sourceSpans.drop(1))
-            is IndentedCodeBlock -> appendLiteral(node.literal, node.sourceSpans)
-            is HtmlInline -> appendLiteral(node.literal, node.sourceSpans)
-            is HtmlBlock -> appendLiteral(node.literal, node.sourceSpans)
+            is Text -> appendLiteral(node.literal, node.sourceSpans, escapes)
+            is Code -> appendLiteral(node.literal, node.sourceSpans, escapes)
+            is FencedCodeBlock -> appendLiteral(node.literal, node.sourceSpans.drop(1), escapes)
+            is IndentedCodeBlock -> appendLiteral(node.literal, node.sourceSpans, escapes)
+            is HtmlInline -> appendLiteral(node.literal, node.sourceSpans, escapes)
+            is HtmlBlock -> appendLiteral(node.literal, node.sourceSpans, escapes)
             is SoftLineBreak,
-            is HardLineBreak -> text.append(' ')
+            is HardLineBreak -> if (!firstMatchOnly) text.append(' ')
             else -> {
                 val start = text.length
-                for (child in generateSequence(node.firstChild) { it.next }) append(child)
+                val childEscapes =
+                    if (node is TableCell && escapes.isEmpty() && ranges.isNotEmpty())
+                        node.tablePipeEscapes(source)
+                    else escapes
+                for (child in generateSequence(node.firstChild) { it.next }) {
+                    append(child, childEscapes)
+                    if (firstMatchOnly && sourceRange != null) return
+                }
                 if (text.length > start && (node is Block || node is TableCell || node is Image))
                     text.append(' ')
             }
         }
     }
 
-    private fun appendLiteral(literal: String, spans: List<SourceSpan>) {
+    private fun appendLiteral(literal: String, spans: List<SourceSpan>, escapes: List<Int>) {
         val offset = text.length
-        text.append(literal)
+        if (!firstMatchOnly) text.append(literal)
         val sourceStart =
             spans.firstOrNull()?.let { escapes.originalMarkdownIndex(it.inputIndex) } ?: return
         val last = spans.last()
@@ -116,7 +132,11 @@ private class MarkdownExcerpt(
                 }
             val from = maxOf(0, visibleStart)
             val to = minOf(literal.length, visibleStart + end - start)
-            if (from < to) matches += (offset + from) until (offset + to)
+            if (from < to) {
+                if (sourceRange == null) sourceRange = range
+                if (firstMatchOnly) return
+                matches += (offset + from) until (offset + to)
+            }
         }
     }
 }

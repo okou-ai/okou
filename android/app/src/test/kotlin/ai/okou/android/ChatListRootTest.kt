@@ -2050,8 +2050,10 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun workspaceMessageSearchRestoresItsTypeAndOpensTheExactEvent() {
         val app = compose.activity.application as ChatListApplication
-        val body = "**Native history** reply"
-        val start = body.indexOf("history")
+        val body =
+            "See the [documentation](https://example.org/history).\n\n**Native history** reply"
+        val linkMatch = body.indexOf("history")
+        val replyMatch = body.lastIndexOf("history")
         app.fixture.historyReply = body
         app.fixture.searchMessages = { request ->
             assertEquals("history", request.requestUrl?.queryParameter("keyword"))
@@ -2061,7 +2063,9 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
                 {"results":[{"chatThreadId":"$CHAT_PERSONAL","agentName":"Okou",
                   "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
                     "content":${JsonPrimitive(body)},"createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
-                  "matchedRanges":[{"start":$start,"end":${start + "history".length}}]}]}
+                  "matchedRanges":[
+                    {"start":$linkMatch,"end":${linkMatch + "history".length}},
+                    {"start":$replyMatch,"end":${replyMatch + "history".length}}]}]}
                 """,
             )
         }
@@ -2078,7 +2082,10 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         compose.waitUntilExactlyOneExists(hasTestTag("message_output"), 5_000)
         compose.onNodeWithTag("message_output").assertIsDisplayed()
         compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 5_000)
-        compose.onNodeWithTag("conversation_find_hit").assertIsFocused()
+        compose
+            .onNodeWithTag("conversation_find_hit")
+            .assertIsFocused()
+            .assertTextEquals("Native history reply")
         compose.onNodeWithContentDescription("Chat actions").performClick()
         compose.onNodeWithText("Find messages").performClick()
         compose.onNodeWithTag("conversation_find").assertIsDisplayed()

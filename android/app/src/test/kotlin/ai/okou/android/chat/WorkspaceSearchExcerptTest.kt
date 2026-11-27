@@ -44,9 +44,11 @@ class WorkspaceSearchExcerptTest {
     fun linkDestinationMatchKeepsReadableContextWithoutFalseEmphasis() {
         val source = "Inspect the [schedule](https://release.example) before release."
         val start = source.indexOf("release")
-        val excerpt = workspaceSearchMarkdownExcerpt(source, listOf(start until start + 7))
+        val range = start until start + 7
+        val excerpt = workspaceSearchMarkdownExcerpt(source, listOf(range))
         assertEquals("Inspect the schedule before release.", excerpt.text)
         assertEquals(emptyList<IntRange>(), excerpt.ranges)
+        assertEquals(range, excerpt.sourceRange)
     }
 
     @Test

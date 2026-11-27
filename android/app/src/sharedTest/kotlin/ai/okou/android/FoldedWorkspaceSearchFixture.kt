@@ -17,7 +17,8 @@ internal class FoldedWorkspaceSearchFixture(chats: ChatListApiFixture) {
         val otherHitSequence = 23L
         val otherRun = "a9999999-9999-4999-8999-999999999999"
         val lastEvent = "a8888888-8888-4888-8888-888888888888"
-        val indexedBody = "$leadingParagraph\n\n${hit.replace(keyword, "**$keyword**")}"
+        val linkedLead = leadingParagraph.replace("发布清单", "[发布清单](https://example.org/$keyword)")
+        val indexedBody = "$linkedLead\n\n${hit.replace(keyword, "**$keyword**")}"
         chats.setHistoryEvents(
             CHAT_PERSONAL,
             listOf(
@@ -52,12 +53,15 @@ internal class FoldedWorkspaceSearchFixture(chats: ChatListApiFixture) {
     }
 
     private fun searchResult(text: String, sequence: Long): String {
-        val start = text.indexOf(keyword)
+        val ranges =
+            Regex.fromLiteral(keyword).findAll(text).joinToString(",") {
+                """{"start":${it.range.first},"end":${it.range.last + 1}}"""
+            }
         return """
             {"chatThreadId":"$CHAT_PERSONAL",
               "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
                 "content":${JsonPrimitive(text)},"createdAt":"$CHAT_DATE","seqId":$sequence,"runId":"$HISTORY_RUN"},
-              "matchedRanges":[{"start":$start,"end":${start + keyword.length}}]}
+              "matchedRanges":[$ranges]}
             """
             .trimIndent()
     }

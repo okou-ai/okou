@@ -62,17 +62,18 @@ class HistoryMarkdownLayoutTest {
     @Test
     fun workspaceSearchOpensAnImageAfterEscapedPipesInTheSameCell() {
         val source =
-            "| Phase | Schedule |\n| --- | --- |\n" +
+            "Read the [plan](https://example.org/Release).\n\n" +
+                "| Phase | Schedule |\n| --- | --- |\n" +
                 "| Review | ${"\\| ".repeat(24)}![Release chart](/artifacts/launch) |"
-        val start = source.indexOf("Release")
-        val range = start until start + "Release".length
-        val excerpt = workspaceSearchMarkdownExcerpt(source, listOf(range))
+        val ranges = Regex("Release").findAll(source).map { it.range }.toList()
+        val excerpt = workspaceSearchMarkdownExcerpt(source, ranges)
         assertEquals("Release chart", excerpt.text)
         assertEquals(listOf(0..6), excerpt.ranges)
+        assertEquals(ranges.last(), excerpt.sourceRange)
 
-        val target = reply(source).workspaceSearchTarget(range, inlineImages = true)
-        assertEquals("0/1/1", target.markdownBlockPath)
-        assertEquals("0/1/1/0", target.markdownImage)
+        val target = reply(source).workspaceSearchTarget(excerpt.sourceRange, inlineImages = true)
+        assertEquals("1/1/1", target.markdownBlockPath)
+        assertEquals("1/1/1/0", target.markdownImage)
     }
 
     @Test
