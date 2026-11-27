@@ -7,7 +7,7 @@ import {
   type DeferredPromise,
 } from "../../utils.ts";
 import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
-import { addBreadcrumb } from "@sentry/browser";
+import { addBreadcrumb } from "@sentry/react";
 import { CdpFault, isRecord, type CdpConnectionObservation } from "./errors.ts";
 import { maximumCdpMessageLength } from "../display/limits.ts";
 import { monotonicNow } from "../../../lib/time.ts";

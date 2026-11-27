@@ -26,10 +26,6 @@ export default defineConfig({
         __dirname,
         "./src/test/mocks/clerk-resource.ts",
       ),
-      "@sentry/browser": path.resolve(
-        __dirname,
-        "./src/test/mocks/sentry-browser.ts",
-      ),
       "@sentry/react": path.resolve(
         __dirname,
         "./src/test/mocks/sentry-react.ts",

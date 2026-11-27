@@ -10,10 +10,14 @@ import type {
   InitClientArgs,
   InitClientReturn,
 } from "@okouai/api-contracts/client/types";
-import type { AuthTokenProvider } from "../lib/auth-token-provider.ts";
-import { appVersion$ } from "./app-version.ts";
-import { createAuthedContractClient } from "./api-client-base.ts";
-import { apiClientRuntime$ } from "./api-client-runtime.ts";
+import { getCapturedPreviewBypassForTarget } from "../lib/preview-bypass-cookie.ts";
+import { resolveApiBaseForTarget, resolveOAuthApiBase } from "./api-base.ts";
+import {
+  createAuthedContractClient,
+  type AuthTokenProvider,
+} from "./api-client-base.ts";
+import { clerk$ } from "./auth.ts";
+import { readClerkToken } from "./clerk-token.ts";
 
 /**
  * Type alias for the factory function returned by `get(apiClient$)`.
@@ -55,6 +59,16 @@ function rebaseApiPath(
   return `${base}${url.pathname}${url.search}${url.hash}`;
 }
 
+function createClerkTokenProvider(
+  clerk: Promise<Parameters<typeof readClerkToken>[0]>,
+): AuthTokenProvider {
+  return async (requestSignal) => {
+    const resolvedClerk = await clerk;
+    requestSignal?.throwIfAborted();
+    return await readClerkToken(resolvedClerk, requestSignal);
+  };
+}
+
 /**
  * Factory signal for creating typed tRPC-backed clients.
  *
@@ -73,32 +87,23 @@ function rebaseApiPath(
  * ```
  */
 export const apiClient$ = computed((get) => {
-  const runtime = get(apiClientRuntime$);
-  const clientVersion = get(appVersion$);
-  const tokenOptions = {
-    getToken: runtime.getToken,
-  };
+  const apiBaseUrl = resolveApiBaseForTarget("api");
+  const oauthApiBaseUrl = resolveOAuthApiBase();
+  const getToken = createClerkTokenProvider(get(clerk$));
   return <T extends ClientRouter>(contract: T, options?: ApiClientOptions) => {
     return createAuthedContractClient(contract, {
-      getToken: options?.getToken ?? tokenOptions.getToken,
+      getToken: options?.getToken ?? getToken,
       getTokenGuard: options?.getTokenGuard,
-      baseUrl: runtime.apiBaseUrl,
-      clientVersion,
+      baseUrl: apiBaseUrl,
+      clientVersion: __OKOU_APP_VERSION__,
       resolvePath: (path) => {
-        if (options?.apiBase === "api") {
-          return rebaseApiPath(path, runtime.apiBaseUrl, runtime.apiBaseUrl);
-        }
         if (options?.apiBase === OAUTH_API_BASE) {
-          return rebaseApiPath(
-            path,
-            runtime.oauthApiBaseUrl,
-            runtime.apiBaseUrl,
-          );
+          return rebaseApiPath(path, oauthApiBaseUrl, apiBaseUrl);
         }
-        return rebaseApiPath(path, runtime.apiBaseUrl, runtime.apiBaseUrl);
+        return rebaseApiPath(path, apiBaseUrl, apiBaseUrl);
       },
       getVercelProtectionBypass: () => {
-        return runtime.vercelProtectionBypass;
+        return getCapturedPreviewBypassForTarget(apiBaseUrl) ?? undefined;
       },
     });
   };

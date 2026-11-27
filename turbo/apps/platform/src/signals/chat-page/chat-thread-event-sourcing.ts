@@ -26,10 +26,7 @@ import {
   withCleanup,
 } from "../utils.ts";
 import { i18n } from "../../i18n/index.ts";
-import type {
-  ChatThreadEventDataKey,
-  ChatThreadEventQueryResult,
-} from "../chat-database/types.ts";
+import type { ChatThreadEventQueryResult } from "../chat-database/types.ts";
 import type {
   ChatThreadEventView,
   OptimisticChatThreadEvent,
@@ -250,10 +247,6 @@ function threadFieldKind(event: OptimisticChatThreadEvent): string | null {
   }
 }
 
-const chatThreadEventDataKey$ = computed((): ChatThreadEventDataKey => {
-  return { kind: "chat-thread-event" };
-});
-
 const applyPersistedChatThreadEventResult$ = command(
   ({ set }, result: ChatThreadEventQueryResult, signal: AbortSignal): void => {
     const lastEvent = result.events.at(-1);
@@ -281,11 +274,14 @@ const applyPersistedChatThreadEventResult$ = command(
 
 const hydrateChatThreadEventCache$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const dataKey = await get(chatThreadEventDataKey$);
     signal.throwIfAborted();
     const cached = await set(
       queryChatThreadEventDatabase$,
-      { dataKey, afterSeqId: null, consistency: "cache-only" },
+      {
+        dataKey: { kind: "chat-thread-event" },
+        afterSeqId: null,
+        consistency: "cache-only",
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -302,13 +298,12 @@ const hydrateChatThreadEventCache$ = command(
 // stale answer. Failure remains a rejection, never authoritative not-found.
 export const catchUpChatThreadEventSource$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const dataKey = await get(chatThreadEventDataKey$);
     signal.throwIfAborted();
     const currentSeqId = get(chatThreadEventState$).latestSeqId;
     const result = await set(
       queryChatThreadEventDatabase$,
       {
-        dataKey,
+        dataKey: { kind: "chat-thread-event" },
         afterSeqId: currentSeqId,
         consistency: "catch-up",
       },

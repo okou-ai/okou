@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { setAuthenticatedIdentity$ } from "./auth-context.ts";
 import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
 import { setupChatDatabaseRealtime$ } from "./chat-database/realtime.ts";
 import { chatDatabaseReady$ } from "./chat-database/signals.ts";
@@ -54,14 +53,6 @@ const initializeAuthenticatedRealtime$ = command(
     if (!user || !clerk.organization) {
       return false;
     }
-    set(
-      setAuthenticatedIdentity$,
-      Promise.resolve({
-        userId: user.id,
-        orgId: clerk.organization.id,
-        email: user.primaryEmailAddress?.emailAddress,
-      }),
-    );
 
     await get(chatDatabaseReady$);
     signal.throwIfAborted();

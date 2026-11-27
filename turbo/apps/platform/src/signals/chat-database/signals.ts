@@ -20,16 +20,12 @@ import type {
   ChatDatabaseQueryResult,
   ChatEventDataKey,
   ChatThreadEventDataKey,
-  ChatThreadEventQueryResult,
   ProjectEventDataKey,
 } from "./types.ts";
 
 const chatDatabaseRuntimeState$ = state<ChatDatabaseRuntime | null>(null);
 const internalChatDatabaseReady$ = state<Promise<void>>(NEVER_RESOLVED_PROMISE);
 const projectRealtimeReadyState$ = state<Promise<void> | null>(null);
-const cachedChatThreadEventsForTest$ = state<ChatThreadEventQueryResult | null>(
-  null,
-);
 const internalReloadIndexedDbDiagnostics$ = state(0);
 const resetChatDatabaseOwner$ = resetSignal();
 
@@ -48,12 +44,6 @@ const installedChatDatabaseRuntime$ = computed((get): ChatDatabaseRuntime => {
 export const setProjectRealtimeReady$ = command(
   ({ set }, ready: Promise<void>): void => {
     set(projectRealtimeReadyState$, ready);
-  },
-);
-
-export const setCachedChatThreadEventsForTest$ = command(
-  ({ set }, cached: ChatThreadEventQueryResult | null): void => {
-    set(cachedChatThreadEventsForTest$, cached);
   },
 );
 
@@ -193,15 +183,6 @@ const queryChatDatabaseCommand$ = command(
         template: `${query.dataKey.kind}.${query.consistency}`,
       },
       async () => {
-        if (
-          query.dataKey.kind === "chat-thread-event" &&
-          query.consistency === "cache-only"
-        ) {
-          const cachedOverride = get(cachedChatThreadEventsForTest$);
-          if (cachedOverride) {
-            return structuredClone(cachedOverride);
-          }
-        }
         if (
           query.dataKey.kind === "project-event" &&
           query.consistency === "catch-up"

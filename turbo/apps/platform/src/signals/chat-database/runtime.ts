@@ -4,7 +4,6 @@ import {
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
-import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import type {
   ClientRouter,
   InitClientArgs,
@@ -13,10 +12,7 @@ import type {
 import type { IDBPDatabase } from "idb";
 
 import { fetchResource } from "../../lib/resource-fetch.ts";
-import {
-  captureSentryLogError,
-  sentryLogContext,
-} from "../../lib/sentry-config.ts";
+import { captureSentryLogError, sentryLogContext } from "../../lib/sentry.ts";
 import { now } from "../../lib/time.ts";
 import type { ApiClientFactory } from "../api-client.ts";
 import { createChatIdbOpener } from "../external/chat-idb-opener.ts";
@@ -42,15 +38,12 @@ import {
   type MetadataEventSource,
   type MetadataEventRemoteState,
 } from "./metadata-event-source.ts";
-import {
-  scopeChatDatabaseDataKey,
-  type ChatDatabaseDataKey,
-  type ChatDatabaseIdentity,
-  type ChatDatabaseQuery,
-  type ChatDatabaseQueryResult,
-  type ChatEventDataKey,
-  type ScopedChatDatabaseDataKey,
-  type ScopedChatEventDataKey,
+import type {
+  ChatDatabaseDataKey,
+  ChatDatabaseIdentity,
+  ChatDatabaseQuery,
+  ChatDatabaseQueryResult,
+  ChatEventDataKey,
 } from "./types.ts";
 
 type ChatDatabaseContractClient<TContract extends ClientRouter> =
@@ -87,7 +80,7 @@ interface ChatEventRemoteState {
 
 interface ChatEventRemoteContext {
   readonly client: ChatEventContractClient;
-  readonly dataKey: ScopedChatEventDataKey;
+  readonly dataKey: ChatEventDataKey;
 }
 
 interface ChatDatabaseEntry {
@@ -97,7 +90,7 @@ interface ChatDatabaseEntry {
 }
 
 interface ChatEventBatchWrite {
-  readonly dataKey: ScopedChatEventDataKey;
+  readonly dataKey: ChatEventDataKey;
   readonly rows: readonly ChatEventRow[];
   readonly cursor: ChatEventCursor;
 }
@@ -115,15 +108,18 @@ class ChatThreadNotFoundError extends Error {
   }
 }
 
-function dataKeyDiagnosticDetails(dataKey: ScopedChatDatabaseDataKey): {
-  readonly dataset: ScopedChatDatabaseDataKey["kind"];
+function dataKeyDiagnosticDetails(
+  dataKey: ChatDatabaseDataKey,
+  identity: ChatDatabaseIdentity,
+): {
+  readonly dataset: ChatDatabaseDataKey["kind"];
   readonly orgId: string;
   readonly userId: string;
 } {
   return {
     dataset: dataKey.kind,
-    orgId: dataKey.orgId,
-    userId: dataKey.userId,
+    orgId: identity.orgId,
+    userId: identity.userId,
   };
 }
 
@@ -144,26 +140,28 @@ function isIndexedDbUnavailable(error: unknown): boolean {
 }
 
 function logDataKeyError(
-  dataKey: ScopedChatDatabaseDataKey,
+  dataKey: ChatDatabaseDataKey,
+  identity: ChatDatabaseIdentity,
   operation: string,
   error: unknown,
 ): void {
-  L.debug(operation, { ...dataKeyDiagnosticDetails(dataKey), error });
+  L.debug(operation, { ...dataKeyDiagnosticDetails(dataKey, identity), error });
 }
 
 function reportDataKeyError(
-  dataKey: ScopedChatDatabaseDataKey,
+  dataKey: ChatDatabaseDataKey,
+  identity: ChatDatabaseIdentity,
   operation: string,
   error: unknown,
 ): void {
-  logDataKeyError(dataKey, operation, error);
+  logDataKeyError(dataKey, identity, operation, error);
   if (isAbortError(error)) {
     return;
   }
-  const details = dataKeyDiagnosticDetails(dataKey);
+  const details = dataKeyDiagnosticDetails(dataKey, identity);
   const context = sentryLogContext({
     contexts: {
-      chat_database: { org_id: dataKey.orgId },
+      chat_database: { org_id: identity.orgId },
       ...(error instanceof ChatDatabaseHttpError
         ? { response: { status_code: error.status } }
         : {}),
@@ -172,7 +170,7 @@ function reportDataKeyError(
       "chat_database.dataset": dataKey.kind,
       "chat_database.operation": operation,
     },
-    user: { id: dataKey.userId },
+    user: { id: identity.userId },
   });
   captureSentryLogError("ChatDatabase", [operation, error, details, context]);
 }
@@ -239,19 +237,19 @@ export class ChatDatabaseRuntime {
   ): Promise<ChatDatabaseQueryResult<TKey>> {
     const effectiveSignal = AbortSignal.any([this.rootSignal, signal]);
     effectiveSignal.throwIfAborted();
-    const dataKey = scopeChatDatabaseDataKey(query.dataKey, this.identity);
+    const { dataKey } = query;
     const startedAt = now();
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const result = await settle(
-      this.queryData(query, dataKey, effectiveSignal),
+      this.queryData(query, effectiveSignal),
       effectiveSignal,
     );
     if (!result.ok) {
-      reportDataKeyError(dataKey, "query.error", result.error);
+      reportDataKeyError(dataKey, this.identity, "query.error", result.error);
       throw result.error;
     }
     L.debug("query.finish", {
-      ...dataKeyDiagnosticDetails(dataKey),
+      ...dataKeyDiagnosticDetails(dataKey, this.identity),
       durationMs: now() - startedAt,
     });
     return result.value;
@@ -296,16 +294,14 @@ export class ChatDatabaseRuntime {
     if (threadIds.length === 0) {
       return [];
     }
-    const dataKeys = threadIds.map((threadId) => {
-      return scopeChatDatabaseDataKey(
-        { kind: "chat-event", threadId },
-        this.identity,
-      );
-    });
-    const diagnosticDataKey = dataKeys[0];
-    if (!diagnosticDataKey) {
+    const firstThreadId = threadIds[0];
+    if (!firstThreadId) {
       throw new Error("ChatEvent catch-up requires a diagnostic data key");
     }
+    const diagnosticDataKey: ChatEventDataKey = {
+      kind: "chat-event",
+      threadId: firstThreadId,
+    };
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const cachedCursorsResult = await settle(
       this.runIndexedDbOperation(
@@ -320,6 +316,7 @@ export class ChatDatabaseRuntime {
     if (!cachedCursorsResult.ok) {
       logDataKeyError(
         diagnosticDataKey,
+        this.identity,
         "indexeddb.chat-event-cursors.read.error",
         cachedCursorsResult.error,
       );
@@ -345,12 +342,6 @@ export class ChatDatabaseRuntime {
       fetchOptions: { signal: effectiveSignal },
     });
     effectiveSignal.throwIfAborted();
-    if (
-      response.status === 401 ||
-      response.status === CLIENT_FORCE_UPGRADE_STATUS
-    ) {
-      throw new ChatDatabaseHttpError(response.status);
-    }
     if (response.status !== 200) {
       throw new ChatDatabaseHttpError(response.status);
     }
@@ -369,10 +360,7 @@ export class ChatDatabaseRuntime {
         ? []
         : [
             {
-              dataKey: scopeChatDatabaseDataKey(
-                { kind: "chat-event", threadId },
-                this.identity,
-              ),
+              dataKey: { kind: "chat-event", threadId },
               rows,
               cursor: { lastEventId: last.id, lastSeqId: last.seqId },
             },
@@ -384,10 +372,7 @@ export class ChatDatabaseRuntime {
     );
     const rebuiltThreadIds = await Promise.all(
       response.body.notFoundThreads.map(async (threadId) => {
-        const dataKey = scopeChatDatabaseDataKey(
-          { kind: "chat-event", threadId },
-          this.identity,
-        );
+        const dataKey: ChatEventDataKey = { kind: "chat-event", threadId };
         const rebuilt = await this.replaceChatEventsFromSnapshot(
           client,
           dataKey,
@@ -477,6 +462,7 @@ export class ChatDatabaseRuntime {
       }
       logDataKeyError(
         firstWrite.dataKey,
+        this.identity,
         "indexeddb.chat-event-batch.write.error",
         written.error,
       );
@@ -487,7 +473,7 @@ export class ChatDatabaseRuntime {
 
   private async replaceChatEventsFromSnapshot(
     client: ChatEventContractClient,
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     signal: AbortSignal,
   ): Promise<boolean> {
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
@@ -529,7 +515,7 @@ export class ChatDatabaseRuntime {
   }
 
   private async clearChatEventCache(
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     signal: AbortSignal,
   ): Promise<boolean> {
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
@@ -546,6 +532,7 @@ export class ChatDatabaseRuntime {
     if (!cleared.ok) {
       logDataKeyError(
         dataKey,
+        this.identity,
         "indexeddb.chat-event.clear.error",
         cleared.error,
       );
@@ -556,10 +543,10 @@ export class ChatDatabaseRuntime {
 
   private async queryData<TKey extends ChatDatabaseDataKey>(
     query: ChatDatabaseQuery<TKey>,
-    dataKey: ScopedChatDatabaseDataKey,
     signal: AbortSignal,
   ): Promise<ChatDatabaseQueryResult<TKey>> {
-    if (query.dataKey.kind === "chat-event" && dataKey.kind === "chat-event") {
+    const { dataKey } = query;
+    if (dataKey.kind === "chat-event") {
       const result = await this.queryChatEvents(
         dataKey,
         query.afterSeqId,
@@ -576,9 +563,6 @@ export class ChatDatabaseRuntime {
         signal,
       )) as ChatDatabaseQueryResult<TKey>;
     }
-    if (dataKey.kind !== "chat-thread-event") {
-      throw new Error("Chat database query data key is invalid");
-    }
     const result = await this.queryMetadataEvents(
       dataKey,
       query.consistency,
@@ -589,7 +573,7 @@ export class ChatDatabaseRuntime {
   }
 
   private async queryChatEvents(
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     afterSeqId: number | null,
     consistency: ChatDatabaseQuery<ChatEventDataKey>["consistency"],
     signal: AbortSignal,
@@ -607,7 +591,7 @@ export class ChatDatabaseRuntime {
   }
 
   private async syncChatEvents(
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     signal: AbortSignal,
   ): Promise<readonly ChatEventRow[]> {
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
@@ -627,6 +611,7 @@ export class ChatDatabaseRuntime {
     if (!cachedCursorResult.ok) {
       logDataKeyError(
         dataKey,
+        this.identity,
         "indexeddb.chat-event-cursor.read.error",
         cachedCursorResult.error,
       );
@@ -665,7 +650,7 @@ export class ChatDatabaseRuntime {
   }
 
   private async persistChatEventRows(
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     state: ChatEventRemoteState,
     signal: AbortSignal,
   ): Promise<boolean> {
@@ -698,6 +683,7 @@ export class ChatDatabaseRuntime {
     if (!written.ok) {
       logDataKeyError(
         dataKey,
+        this.identity,
         "indexeddb.chat-event.write.error",
         written.error,
       );
@@ -726,9 +712,6 @@ export class ChatDatabaseRuntime {
         fetchOptions: { signal },
       });
       signal.throwIfAborted();
-      if (page.status === 401 || page.status === CLIENT_FORCE_UPGRADE_STATUS) {
-        throw new ChatDatabaseHttpError(page.status);
-      }
       if (page.status === 410) {
         if (cursorFromServer) {
           throw new Error(
@@ -770,7 +753,7 @@ export class ChatDatabaseRuntime {
 
   private async fetchChatEventSnapshot(
     client: ChatEventContractClient,
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     signal: AbortSignal,
   ): Promise<{
     readonly rows: readonly ChatEventRow[];
@@ -781,12 +764,6 @@ export class ChatDatabaseRuntime {
       fetchOptions: { signal },
     });
     signal.throwIfAborted();
-    if (
-      snapshot.status === 401 ||
-      snapshot.status === CLIENT_FORCE_UPGRADE_STATUS
-    ) {
-      throw new ChatDatabaseHttpError(snapshot.status);
-    }
     if (snapshot.status === 404) {
       if (snapshot.body.error.code !== "CHAT_EVENT_SNAPSHOT_NOT_FOUND") {
         throw new ChatThreadNotFoundError();
@@ -834,7 +811,7 @@ export class ChatDatabaseRuntime {
     TSnapshot extends MetadataSnapshot,
     TEvent extends MetadataEvent,
   >(
-    dataKey: ScopedChatDatabaseDataKey,
+    dataKey: ChatDatabaseDataKey,
     consistency: "cache-only" | "catch-up",
     source: MetadataEventSource<TSnapshot, TEvent>,
     signal: AbortSignal,
@@ -898,6 +875,7 @@ export class ChatDatabaseRuntime {
       }
       logDataKeyError(
         dataKey,
+        this.identity,
         "indexeddb.metadata-event.write.error",
         written.error,
       );
@@ -913,7 +891,7 @@ export class ChatDatabaseRuntime {
     TSnapshot extends MetadataSnapshot,
     TEvent extends MetadataEvent,
   >(
-    dataKey: ScopedChatDatabaseDataKey,
+    dataKey: ChatDatabaseDataKey,
     source: MetadataEventSource<TSnapshot, TEvent>,
     state: MetadataEventRemoteState<TSnapshot, TEvent>,
     signal: AbortSignal,
@@ -933,7 +911,7 @@ export class ChatDatabaseRuntime {
         throw error;
       }
       // Compaction is optional: the synchronized tail is still authoritative.
-      logDataKeyError(dataKey, "snapshot-rebase.skip", error);
+      logDataKeyError(dataKey, this.identity, "snapshot-rebase.skip", error);
       return state;
     }
     return await loadMetadataEventTail(
@@ -949,7 +927,7 @@ export class ChatDatabaseRuntime {
   }
 
   private async readChatEventCache(
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     afterSeqId: number | null,
     signal: AbortSignal,
   ): Promise<ChatEventRow[]> {
@@ -969,7 +947,12 @@ export class ChatDatabaseRuntime {
       signal,
     );
     if (!result.ok) {
-      logDataKeyError(dataKey, "indexeddb.chat-event.read.error", result.error);
+      logDataKeyError(
+        dataKey,
+        this.identity,
+        "indexeddb.chat-event.read.error",
+        result.error,
+      );
       return [];
     }
     return result.value;
@@ -979,7 +962,7 @@ export class ChatDatabaseRuntime {
     TSnapshot extends MetadataSnapshot,
     TEvent extends MetadataEvent,
   >(
-    dataKey: ScopedChatDatabaseDataKey,
+    dataKey: ChatDatabaseDataKey,
     source: MetadataEventSource<TSnapshot, TEvent>,
     signal: AbortSignal,
   ): Promise<{
@@ -1005,6 +988,7 @@ export class ChatDatabaseRuntime {
       }
       logDataKeyError(
         dataKey,
+        this.identity,
         "indexeddb.metadata-event.read.error",
         result.error,
       );

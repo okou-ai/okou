@@ -25,17 +25,7 @@ export interface ProjectEventDataKey {
 }
 
 export type ChatDatabaseDataKey =
-  | ChatEventDataKey
-  | ChatThreadEventDataKey
-  | ProjectEventDataKey;
-
-export type ScopedChatEventDataKey = ChatEventDataKey & ChatDatabaseIdentity;
-export type ScopedChatThreadEventDataKey = ChatThreadEventDataKey &
-  ChatDatabaseIdentity;
-export type ScopedChatDatabaseDataKey =
-  | ScopedChatEventDataKey
-  | ScopedChatThreadEventDataKey
-  | (ProjectEventDataKey & ChatDatabaseIdentity);
+  ChatEventDataKey | ChatThreadEventDataKey | ProjectEventDataKey;
 
 export type ChatDatabaseConsistency = "cache-only" | "catch-up";
 
@@ -79,22 +69,3 @@ interface ChatDatabaseDatasetMap {
 
 export type ChatDatabaseQueryResult<TKey extends ChatDatabaseDataKey> =
   ChatDatabaseDatasetMap[TKey["kind"]]["result"];
-
-export function scopeChatDatabaseDataKey(
-  dataKey: ChatEventDataKey,
-  identity: ChatDatabaseIdentity,
-): ScopedChatEventDataKey;
-export function scopeChatDatabaseDataKey(
-  dataKey: ChatThreadEventDataKey,
-  identity: ChatDatabaseIdentity,
-): ScopedChatThreadEventDataKey;
-export function scopeChatDatabaseDataKey(
-  dataKey: ChatDatabaseDataKey,
-  identity: ChatDatabaseIdentity,
-): ScopedChatDatabaseDataKey;
-export function scopeChatDatabaseDataKey(
-  dataKey: ChatDatabaseDataKey,
-  identity: ChatDatabaseIdentity,
-): ScopedChatDatabaseDataKey {
-  return { ...dataKey, userId: identity.userId, orgId: identity.orgId };
-}

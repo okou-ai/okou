@@ -780,9 +780,6 @@ importers:
       '@ricky0123/vad-web':
         specifier: 0.0.31
         version: 0.0.31
-      '@sentry/browser':
-        specifier: ^10.73.0
-        version: 10.73.0
       '@sentry/react':
         specifier: ^10.73.0
         version: 10.73.0(react@19.2.6)

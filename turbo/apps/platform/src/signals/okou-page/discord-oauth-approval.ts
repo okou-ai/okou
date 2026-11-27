@@ -5,7 +5,7 @@ import { discordOauthApprovalBodySchema } from "@okouai/api-contracts/validators
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
 import { onDomEventFn, setLoop, settle } from "../utils.ts";
 import { refreshDiscordOrg$ } from "./discord.ts";
@@ -184,7 +184,7 @@ export const ownDiscordApprovalRoute$ = command(
 
 const verifyDiscordAuthorization$ = command(
   async ({ get, set }, proof: DiscordApprovalProof, signal: AbortSignal) => {
-    await get(runtimeAuthenticatedIdentity$);
+    await get(authenticatedIdentity$);
     signal.throwIfAborted();
     if (get(approvalProof$) !== proof) {
       return;

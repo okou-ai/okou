@@ -1,3 +1,4 @@
+import { openDB } from "idb";
 import { fireEvent, isInaccessible, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -29,8 +30,14 @@ import { authContract } from "@okouai/api-contracts/contracts/auth";
 import { setMockFeatureSwitches } from "../mocks/handlers/api-feature-switches.helpers";
 import { setDebugLoggerLocalStorage$ } from "../signals/bootstrap/loggers";
 import { createDeferredPromise, detach, Reason } from "../signals/utils";
-import { setCachedChatThreadEventsForTest$ } from "../signals/chat-database/signals.ts";
 import type { ChatThreadEventQueryResult } from "../signals/chat-database/types.ts";
+import {
+  CHAT_IDB_VERSION,
+  CHAT_THREAD_EVENTS_STORE,
+  CHAT_THREAD_SNAPSHOT_ID,
+  CHAT_THREAD_SNAPSHOT_STORE,
+  upgradeChatIdb,
+} from "../signals/external/chat-idb-schema.ts";
 import { resolvePlatformRuntimeConfig } from "../lib/platform-host.ts";
 import {
   DEFAULT_LOCALE,
@@ -41,8 +48,6 @@ import {
   initializeI18nWithResources,
   loadInitialLocaleResources,
 } from "../i18n/index.ts";
-
-const TEST_APP_VERSION = "0.540.0";
 
 function ensureTestLocalStorage(): void {
   const currentLocalStorage = globalThis.localStorage;
@@ -90,7 +95,6 @@ export type SetupPageAuth = null | {
 };
 
 interface SetupPageOptions {
-  readonly appVersion?: string;
   readonly context: TestContext;
   readonly path: string;
   readonly host?: string;
@@ -100,10 +104,44 @@ interface SetupPageOptions {
   readonly env?: PageEnvironment;
   readonly featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>;
   /**
-   * Supplies the cache-only chat-thread projection to a page-level story
-   * without coupling its UI assertion to IndexedDB startup.
+   * Seeds the per-workspace chat IndexedDB cache before startup so page-level
+   * stories observe an existing local projection during hydration.
    */
   readonly cachedChatThreadEvents?: ChatThreadEventQueryResult;
+}
+
+async function seedCachedChatThreadEvents(
+  userId: string,
+  orgId: string,
+  cached: ChatThreadEventQueryResult,
+): Promise<void> {
+  if (cached.snapshot === null && cached.events.length === 0) {
+    return;
+  }
+  const db = await openDB(`vm0-chat-${userId}-${orgId}`, CHAT_IDB_VERSION, {
+    upgrade(database, oldVersion) {
+      upgradeChatIdb(database, oldVersion);
+    },
+  });
+  try {
+    const tx = db.transaction(
+      [CHAT_THREAD_SNAPSHOT_STORE, CHAT_THREAD_EVENTS_STORE],
+      "readwrite",
+    );
+    if (cached.snapshot !== null) {
+      await tx.objectStore(CHAT_THREAD_SNAPSHOT_STORE).put({
+        ...cached.snapshot,
+        id: CHAT_THREAD_SNAPSHOT_ID,
+      });
+    }
+    const eventsStore = tx.objectStore(CHAT_THREAD_EVENTS_STORE);
+    for (const event of cached.events) {
+      await eventsStore.put(event);
+    }
+    await tx.done;
+  } finally {
+    db.close();
+  }
 }
 
 type EnvironmentValue = string | undefined;
@@ -280,14 +318,16 @@ async function setupPageAsync(
       });
     });
   }
-  store.set(
-    setCachedChatThreadEventsForTest$,
-    options.cachedChatThreadEvents ?? null,
-  );
+  if (user && activeOrgId && options.cachedChatThreadEvents) {
+    await seedCachedChatThreadEvents(
+      user.id,
+      activeOrgId,
+      options.cachedChatThreadEvents,
+    );
+  }
   signal.throwIfAborted();
   const ready = store.set(
     bootstrap$,
-    options.appVersion ?? TEST_APP_VERSION,
     (view) => {
       setupRouter(store, view, (element) => {
         const container = createBootstrapRoot();

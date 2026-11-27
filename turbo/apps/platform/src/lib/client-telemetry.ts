@@ -86,10 +86,6 @@ export type ClientTelemetryOperation =
   | HttpRequestTelemetry
   | MarketingEventSendTelemetry;
 
-function runtimeName(): "window" {
-  return "window";
-}
-
 function scopeName(operation: ClientTelemetryOperation): string {
   if (operation.event_name === "marketing.event.send") {
     return "okou-app/marketing";
@@ -268,7 +264,7 @@ export function recordClientTelemetry(
       _time: measurement.startedAt,
       "attributes.custom": {
         "okou.client.outcome": outcome,
-        "okou.client.runtime": runtimeName(),
+        "okou.client.runtime": "window",
         ...operationAttributes(operation),
       },
       duration,

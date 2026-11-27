@@ -998,10 +998,6 @@ const edgePreviewBaseline = await responseSnapshot(
   edgePreviewEnvironment,
 );
 assert.doesNotMatch(edgePreviewBaseline.body, /okou-clerk-edge-session/u);
-assert.doesNotMatch(
-  edgePreviewBaseline.body,
-  /__okouSharedDatabaseWorkerBootstrap/u,
-);
 assertNoClerkSecrets(edgePreviewBaseline);
 assert.equal(failingClerkClientFactoryCalls, 1);
 
@@ -1213,7 +1209,6 @@ assert.deepEqual(Object.keys(clerkEdgeSessionJson(authenticated.body)).sort(), [
   "sessionId",
   "userId",
 ]);
-assert.doesNotMatch(authenticated.body, /__okouSharedDatabaseWorkerBootstrap/u);
 assertNoClerkSecrets(authenticated);
 
 const productionOrigin = "https://app.okou.ai";
@@ -1320,10 +1315,6 @@ assert.deepEqual(clerkEdgeSessionJson(authenticatedWithoutOrganization.body), {
   sessionId: "sess_without_organization",
 });
 assert.equal(apiFetchCallsWithoutOrganization, 0);
-assert.doesNotMatch(
-  authenticatedWithoutOrganization.body,
-  /__okouSharedDatabaseWorkerBootstrap/u,
-);
 assertNoClerkSecrets(authenticatedWithoutOrganization);
 
 const prefetchPagePath =
@@ -1423,7 +1414,6 @@ const prefixHtml =
 assert.match(prefixHtml, /id="root"/u);
 assert.match(prefixHtml, /id="app-bootstrap-skeleton"/u);
 assert.doesNotMatch(prefixHtml, /data-okou-api-bootstrap/u);
-assert.doesNotMatch(prefixHtml, /__okouSharedDatabaseWorkerBootstrap/u);
 assert.doesNotMatch(prefixHtml, /<\/body>/u);
 
 const prefetchedOrg = { orgId: "org_prefetch" };

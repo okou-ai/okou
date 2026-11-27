@@ -1,5 +1,4 @@
 import "@testing-library/jest-dom/vitest";
-import "../lib/accept-browser.ts";
 import {
   IDBCursor,
   IDBCursorWithValue,

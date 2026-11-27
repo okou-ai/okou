@@ -175,35 +175,29 @@ function createChatDatabaseEventSignals({
     [PersistedChatEvent[], AbortSignal]
   >;
 }) {
-  const dataKey$ = computed((): ChatEventDataKey => {
-    return { kind: "chat-event", threadId };
+  const dataKey: ChatEventDataKey = { kind: "chat-event", threadId };
+  const load$ = command(async ({ set }, signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted();
+    const rows = await set(
+      queryChatEventDatabase$,
+      { dataKey, afterSeqId: null, consistency: "cache-only" },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (rows.length === 0) {
+      return;
+    }
+    const events = rows.map((row) => {
+      return storedChatEvent(row);
+    });
+    set(persistentChatEvents$, (previous) => {
+      return mergePersistentEvents([previous, events]);
+    });
+    set(reconcileOptimisticChatEvents$, { threadId, events });
+    await set(notifyChatEventsChanged$, chatEvents$, signal);
   });
-  const load$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const dataKey = await get(dataKey$);
-      signal.throwIfAborted();
-      const rows = await set(
-        queryChatEventDatabase$,
-        { dataKey, afterSeqId: null, consistency: "cache-only" },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (rows.length === 0) {
-        return;
-      }
-      const events = rows.map((row) => {
-        return storedChatEvent(row);
-      });
-      set(persistentChatEvents$, (previous) => {
-        return mergePersistentEvents([previous, events]);
-      });
-      set(reconcileOptimisticChatEvents$, { threadId, events });
-      await set(notifyChatEventsChanged$, chatEvents$, signal);
-    },
-  );
   const sync$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const dataKey = await get(dataKey$);
       signal.throwIfAborted();
       const afterSeqId = get(persistentChatEvents$).at(-1)?.seqId ?? null;
       // An earlier refresh can populate the local cache before this page

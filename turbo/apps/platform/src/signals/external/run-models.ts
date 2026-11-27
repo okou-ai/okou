@@ -4,14 +4,14 @@ import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { command, computed, state } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
 import { settle } from "../utils.ts";
 
 const internalReloadAvailableRunModels$ = state(0);
 
 /** Retain the last successful projection only within its authenticated identity. */
 const runModelResource$ = computed(async (get) => {
-  const { userId, orgId } = await get(runtimeAuthenticatedIdentity$);
+  const { userId, orgId } = await get(authenticatedIdentity$);
   return {
     identity: { userId, orgId },
     generation: 0,

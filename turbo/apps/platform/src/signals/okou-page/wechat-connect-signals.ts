@@ -3,8 +3,7 @@ import { integrationsWechatContract } from "@okouai/api-contracts/client/integra
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
-import { currentOrgInfo$ } from "../auth.ts";
+import { authenticatedIdentity$, currentOrgInfo$ } from "../auth.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
 import { refreshWechat$, wechatStatus$ } from "./wechat.ts";
@@ -14,7 +13,7 @@ export const wechatConnectPageStatus$ = computed(async (get) => {
   if (!(await get(featureSwitches$))[FeatureSwitchKey.WechatIntegration]) {
     return { kind: "disabled" } as const;
   }
-  const identity = await get(runtimeAuthenticatedIdentity$);
+  const identity = await get(authenticatedIdentity$);
   if (token !== null) {
     if (!token || token.length > 1024) {
       return { kind: "invalid" } as const;

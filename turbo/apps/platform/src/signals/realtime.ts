@@ -12,7 +12,7 @@ import type {
 } from "ably";
 import { createAblyRealtime, type AblyRealtime } from "../lib/ably-realtime.ts";
 import { apiClient$ } from "./api-client.ts";
-import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
+import { authenticatedIdentity$ } from "./auth.ts";
 import { createAblyAuthCallback } from "../lib/ably-auth.ts";
 import {
   createDeferredPromise,
@@ -784,7 +784,7 @@ interface ConnectedRealtimeClient {
 
 const connectRealtimeClient$ = command(
   async ({ get }, signal: AbortSignal): Promise<ConnectedRealtimeClient> => {
-    const identity = await get(runtimeAuthenticatedIdentity$);
+    const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
     const createClient = get(apiClient$);
     const ably = createAblyRealtime({
@@ -936,7 +936,7 @@ export const setForegroundPresence$ = command(
     }
     const session = await initialization;
     signal.throwIfAborted();
-    const identity = await get(runtimeAuthenticatedIdentity$);
+    const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
     const channel = session.ably.channels.get(
       foregroundChannelName(identity.userId, identity.orgId),

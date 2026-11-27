@@ -7,20 +7,15 @@ import { activeRoute$ } from "./active-route.ts";
 import { resetProjectUi$ } from "./projects/project-ui.ts";
 import { command, type Command } from "ccstate";
 import { createElement } from "react";
-import { clerk$, setupClerkUser$, watchOrgSwitch$ } from "./auth.ts";
+import { setupClerkUser$, watchOrgSwitch$ } from "./auth.ts";
 import {
   setupAuthenticatedRealtime$,
   setupAuthenticatedBootstrapData$,
 } from "./authenticated-daemons.ts";
 import { initTheme$, syncThemePreferences$ } from "./theme.ts";
-import { initializeAppVersion$ } from "./app-version.ts";
 import { initLocale$, syncLocalePreference$ } from "./locale.ts";
 import { setRootSignal$ } from "./root-signal.ts";
-import { setApiClientRuntime$ } from "./api-client-runtime.ts";
-import { readClerkToken } from "./clerk-token.ts";
 import { setupChatDatabase$ } from "./chat-database/signals.ts";
-import { resolveApiBaseForTarget, resolveOAuthApiBase } from "./api-base.ts";
-import { getCapturedPreviewBypassForTarget } from "../lib/preview-bypass-cookie.ts";
 import {
   initRoutes$,
   detachedNavigateTo$,
@@ -700,8 +695,7 @@ const resetViewportSettleSignal$ = resetSignal();
 
 export const bootstrap$ = command(
   async (
-    { get, set },
-    appVersion: string,
+    { set },
     render: (view: BootstrapView) => void,
     signal: AbortSignal,
   ): Promise<void> => {
@@ -716,7 +710,6 @@ export const bootstrap$ = command(
       },
     );
     set(captureDiscordApprovalFragment$, signal);
-    set(initializeAppVersion$, appVersion);
     set(initBootstrapPhaseTiming$);
     set(captureInvitationRedirect$);
     set(markBootstrapLocaleInitStarted$);
@@ -724,20 +717,6 @@ export const bootstrap$ = command(
     // Claims `clerkUser$` in this synchronous pass. The daemons and route
     // setups below read it, and without an owner it never settles.
     const clerkIdentitySetup = set(setupClerkUser$, signal);
-    const apiBaseUrl = resolveApiBaseForTarget("api");
-    const vercelProtectionBypass =
-      getCapturedPreviewBypassForTarget(apiBaseUrl);
-    const clerk = get(clerk$);
-    set(setApiClientRuntime$, {
-      getToken: async (requestSignal) => {
-        const resolvedClerk = await clerk;
-        requestSignal?.throwIfAborted();
-        return await readClerkToken(resolvedClerk, requestSignal);
-      },
-      apiBaseUrl,
-      oauthApiBaseUrl: resolveOAuthApiBase(),
-      ...(vercelProtectionBypass ? { vercelProtectionBypass } : {}),
-    });
     set(setupLoggers$);
 
     await set(captureFriendReferral$, signal);

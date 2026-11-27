@@ -872,7 +872,6 @@ function assertBuiltPageDiscovery(
   htmlSource: string,
   outputs: readonly { fileName: string }[],
 ) {
-  assert.doesNotMatch(htmlSource, /okou-shared-database-worker/u);
   const uiAsset = outputs.find((item) => {
     return /^assets\/clerk-ui-[^/]+\.js$/u.test(item.fileName);
   });
