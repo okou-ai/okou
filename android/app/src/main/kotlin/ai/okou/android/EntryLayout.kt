@@ -75,7 +75,7 @@ internal fun EntryBrand(
 ) {
     val mark: @Composable () -> Unit = {
         Image(
-            painterResource(R.drawable.okou_mark),
+            painterResource(R.drawable.okou_entry_mark),
             contentDescription = null,
             modifier = Modifier.size(if (compact) compactBrandMark else regularBrandMark),
         )
