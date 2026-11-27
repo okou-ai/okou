@@ -50,30 +50,6 @@ pub mod data_router {
 
 /// Model-provider environment contract constants shared by TypeScript and Rust.
 pub mod model_provider_env {
-    /// Synthetic values emitted by pre-cutover API writers.
-    pub mod legacy_placeholders {
-        /// Fake marker bytes for the `CHATGPT_ACCESS_TOKEN` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CHATGPT_ACCESS_TOKEN: &str =
-            "chatgpt-token-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocal";
-
-        /// Fake marker bytes for the `CHATGPT_ACCOUNT_ID` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CHATGPT_ACCOUNT_ID: &str = "ws_VM0_PLACEHOLDER_DO_NOT_TRUST";
-
-        /// Fake marker bytes for the `CHATGPT_REFRESH_TOKEN` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CHATGPT_REFRESH_TOKEN: &str = "rt_VM0_PLACEHOLDER_DO_NOT_TRUST";
-
-        /// Fake marker bytes for the `CLAUDE_CODE_OAUTH_TOKEN` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CLAUDE_CODE_OAUTH_TOKEN: &str = "sk-ant-oat01-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCofAA";
-
-        /// Fake marker bytes for the `OPENAI_API_KEY` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const OPENAI_API_KEY: &str = "sk-proj-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocaT3BlbkFJCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLoca";
-    }
-
     /// Fake model-provider environment placeholder marker values.
     /// These values are not secrets and are not usable credentials.
     pub mod placeholders {
