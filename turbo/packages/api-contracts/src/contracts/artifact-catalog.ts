@@ -324,7 +324,7 @@ const artifactLibrarySummarySchema = artifactSummaryBaseSchema.extend({
   sourceChatThread: object({ id: uuid(), title: string() }).optional(),
 });
 
-const artifactSummarySchema = discriminatedUnion("kind", [
+export const artifactSummarySchema = discriminatedUnion("kind", [
   artifactLibrarySummarySchema.extend({
     kind: literal("shared-thread"),
     sharedThreadId: uuid(),
@@ -387,7 +387,7 @@ const artifactDetailBaseSchema = artifactSummaryBaseSchema.extend({
   googleDriveSync: chatThreadArtifactGoogleDriveSyncSchema.optional(),
 });
 
-const artifactDetailSchema = discriminatedUnion("kind", [
+export const artifactDetailSchema = discriminatedUnion("kind", [
   artifactDetailBaseSchema.extend({
     kind: literal("file"),
     file: artifactFileSchema,

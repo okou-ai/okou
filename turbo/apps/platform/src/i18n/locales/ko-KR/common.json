@@ -571,6 +571,21 @@
       "success": "작업물이 삭제되었습니다",
       "title": "{{title}}을(를) 삭제할까요?"
     },
+    "favorites": {
+      "add": "즐겨찾기에 추가",
+      "added": "즐겨찾기에 추가되었습니다",
+      "collections": "아티팩트 컬렉션",
+      "continueBrowsing": "즐겨찾기를 계속 둘러보려면 더 불러오세요.",
+      "emptyDescription": "각 아티팩트의 추가 작업 메뉴에서 즐겨찾기에 추가하면 여기에 표시됩니다.",
+      "emptyTitle": "아직 즐겨찾기가 없습니다",
+      "favorited": "즐겨찾기에 추가됨",
+      "remove": "즐겨찾기에서 제거",
+      "removed": "즐겨찾기에서 제거되었습니다",
+      "title": "즐겨찾기",
+      "unavailable": "사용할 수 없는 아티팩트",
+      "view": "즐겨찾기 보기",
+      "yourArtifacts": "내 아티팩트"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

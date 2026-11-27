@@ -571,6 +571,21 @@
       "success": "Artefak dihapus",
       "title": "Hapus {{title}}?"
     },
+    "favorites": {
+      "add": "Tambahkan ke favorit",
+      "added": "Ditambahkan ke favorit",
+      "collections": "Koleksi artefak",
+      "continueBrowsing": "Muat lebih banyak untuk terus menelusuri favorit Anda.",
+      "emptyDescription": "Simpan artefak ke favorit melalui menu opsi lainnya untuk menemukannya di sini.",
+      "emptyTitle": "Belum ada favorit",
+      "favorited": "Ditandai sebagai favorit",
+      "remove": "Hapus dari favorit",
+      "removed": "Dihapus dari favorit",
+      "title": "Favorit",
+      "unavailable": "Artefak tidak tersedia",
+      "view": "Lihat favorit",
+      "yourArtifacts": "Artefak Anda"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

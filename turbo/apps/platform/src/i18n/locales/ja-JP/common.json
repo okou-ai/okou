@@ -571,6 +571,21 @@
       "success": "作品を削除しました",
       "title": "{{title}}を削除しますか？"
     },
+    "favorites": {
+      "add": "お気に入りに追加",
+      "added": "お気に入りに追加しました",
+      "collections": "アーティファクトのコレクション",
+      "continueBrowsing": "お気に入りを引き続き閲覧するには、さらに読み込んでください。",
+      "emptyDescription": "アーティファクトのその他の操作メニューからお気に入りに追加すると、ここに表示されます。",
+      "emptyTitle": "お気に入りはまだありません",
+      "favorited": "お気に入りに追加済み",
+      "remove": "お気に入りから削除",
+      "removed": "お気に入りから削除しました",
+      "title": "お気に入り",
+      "unavailable": "利用できないアーティファクト",
+      "view": "お気に入りを表示",
+      "yourArtifacts": "あなたのアーティファクト"
+    },
     "fileBadges": {
       "artwork": "アート",
       "audio": "オーストラリアドル",

@@ -59,15 +59,14 @@ export function artifactDeliveryRecord(
   });
 }
 
-/** Resolve a registry alias with the requesting command's cancellation. */
+/** File aliases share a namespace; HTML aliases always require a layout. */
 export const readArtifactDeliveryRecord$ = command(
   async (
     { set },
-    args: {
-      readonly layout: LinkLayout;
-      readonly kind: "file" | "html";
-      readonly alias: string;
-    },
+    args: { readonly alias: string } & (
+      | { readonly kind: "file"; readonly layout?: LinkLayout }
+      | { readonly kind: "html"; readonly layout: LinkLayout }
+    ),
     signal: AbortSignal,
   ) => {
     const bucket = env("R2_HOSTED_SITES_BUCKET_NAME");
@@ -80,7 +79,7 @@ export const readArtifactDeliveryRecord$ = command(
         {
           bucket,
           key: artifactDeliveryKey(
-            linkLayoutSegment(args.layout),
+            args.layout ? linkLayoutSegment(args.layout) : null,
             args.kind,
             args.alias,
           ),
@@ -98,7 +97,10 @@ export const readArtifactDeliveryRecord$ = command(
     const record = artifactDeliveryRecordSchema.parse(
       JSON.parse(result.value.buffer.toString("utf8")),
     );
-    if (record.publicBrand !== linkLayoutSegment(args.layout)) {
+    if (
+      args.layout !== undefined &&
+      record.publicBrand !== linkLayoutSegment(args.layout)
+    ) {
       throw new Error("Artifact delivery alias has an inconsistent layout");
     }
     return record;

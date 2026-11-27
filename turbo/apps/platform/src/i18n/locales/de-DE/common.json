@@ -572,6 +572,21 @@
       "success": "Artefakt gelöscht",
       "title": "{{title}} löschen?"
     },
+    "favorites": {
+      "add": "Zu den Favoriten hinzufügen",
+      "added": "Zu den Favoriten hinzugefügt",
+      "collections": "Artefaktsammlungen",
+      "continueBrowsing": "Lade weitere Einträge, um deine Favoriten weiter zu durchsuchen.",
+      "emptyDescription": "Füge Artefakte über das Menü für weitere Aktionen zu den Favoriten hinzu, um sie hier wiederzufinden.",
+      "emptyTitle": "Noch keine Favoriten",
+      "favorited": "Als Favorit gespeichert",
+      "remove": "Aus den Favoriten entfernen",
+      "removed": "Aus den Favoriten entfernt",
+      "title": "Favoriten",
+      "unavailable": "Nicht verfügbares Artefakt",
+      "view": "Favoriten anzeigen",
+      "yourArtifacts": "Deine Artefakte"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

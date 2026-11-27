@@ -6,6 +6,7 @@ import { ArtifactCatalogPage } from "../../views/artifacts-page/artifact-catalog
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
+import { artifactFavoritesEnabled$ } from "../artifact-favorites.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { artifactChangedTopic } from "@okouai/api-contracts/validators/realtime";
 import { closeLightboxImmediately$ } from "../okou-page/attachment-chips.ts";
@@ -45,6 +46,8 @@ export const setupArtifactsPage$ = command(
     );
     const libraryEnabled = await get(artifactLibraryEnabled$);
     signal.throwIfAborted();
+    const favoritesEnabled = await get(artifactFavoritesEnabled$);
+    signal.throwIfAborted();
     const routeSearchParams = new URLSearchParams(get(searchParams$));
     const artifactId = artifactIdFromCatalogSearchParams(routeSearchParams);
     // Each visit installs its route-owned query and starts fresh paging.
@@ -52,6 +55,7 @@ export const setupArtifactsPage$ = command(
       initializeArtifactCatalogQueryFromRoute$,
       routeSearchParams,
       libraryEnabled,
+      favoritesEnabled,
       signal,
     );
     // A synced artifact shows its Google Drive state on its catalog row.

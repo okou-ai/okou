@@ -123,7 +123,7 @@ export function messageArtifactAddress(value: string) {
       urls.add(url.origin + "/");
     }
   }
-  return { url, reference, fileId, urls: [...urls], siteSlug };
+  return { url, local, reference, fileId, urls: [...urls], siteSlug };
 }
 
 function fileBy(db: ReadonlyDb, owner: Owner, predicate: SQL, ...other: SQL[]) {

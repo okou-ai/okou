@@ -6,6 +6,7 @@ import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
+import { artifactFavoritesContract } from "@okouai/api-contracts/contracts/artifact-favorites";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
@@ -21,6 +22,7 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactSharingRoutes } from "../artifact-sharing";
+import { artifactFavoritesRoutes } from "../artifact-favorites";
 import { artifactShareRoutes } from "../artifact-shares";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactOgRoutes } from "../artifact-og";
@@ -32,6 +34,7 @@ import { slackInteractiveRoutes } from "../slack-interactive";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createHostBddApi } from "./helpers/api-bdd-host";
+import { launchCatalogPublisher } from "./helpers/catalog-publisher";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
@@ -52,6 +55,7 @@ function app(user: ApiTestUser) {
     context,
     routes: [
       ...artifactSharingRoutes,
+      ...artifactFavoritesRoutes,
       ...artifactShareRoutes,
       ...artifactReferenceRoutes,
       ...artifactOgRoutes,
@@ -118,6 +122,7 @@ async function fixture(
     readonly kind?: "file" | "site";
     readonly siteReference?: boolean;
     readonly image?: boolean;
+    readonly catalog?: boolean;
   } = {},
 ) {
   integrations.configureSlackAppMocks();
@@ -180,7 +185,11 @@ async function fixture(
     readonly url: string;
   };
   if (options.kind === "site") {
-    const prepared = await host.prepareHostedSite(owner, {
+    let publisher: ApiTestUser | { readonly bearerToken: string } = owner;
+    if (options.catalog) {
+      publisher = await launchCatalogPublisher(context, owner);
+    }
+    const prepared = await host.prepareHostedSite(publisher, {
       site: `channel-${randomUUID().slice(0, 8)}`,
       title: "Channel artifact",
       artifactKind: "hosted-site",
@@ -194,7 +203,7 @@ async function fixture(
       ],
     });
     const completed = await host.completeHostedSite(
-      owner,
+      publisher,
       prepared.deploymentId,
     );
     resource = {
@@ -471,6 +480,89 @@ test.each(["file", "site"] as const)(
     await postLink(f);
     expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
     expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledTimes(1);
+  },
+);
+
+test.each(["file", "site"] as const)(
+  "favorites use the live %s grant produced by a signed channel sharing action",
+  async (kind) => {
+    const f = await fixture({ kind, catalog: kind === "site" });
+    const viewer = await connectedMember(f);
+    if (!viewer.user.orgId) {
+      throw new Error("Expected viewer workspace");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...viewer.user, orgId: viewer.user.orgId },
+      {
+        [FeatureSwitchKey.ArtifactLibrary]: true,
+        [FeatureSwitchKey.Star]: true,
+      },
+    );
+    await accept(
+      app(viewer.user)(artifactFavoritesContract).resolve({
+        headers,
+        query: { url: f.resource.url },
+      }),
+      [404],
+    );
+    await postLink(f);
+    await click(f);
+    const created = await accept(
+      app(viewer.user)(artifactFavoritesContract).create({
+        headers,
+        body: { url: f.resource.url },
+      }),
+      [200],
+    );
+    expect(
+      (
+        await accept(
+          app(viewer.user)(artifactFavoritesContract).get({
+            headers,
+            params: { artifactId: created.body.artifactId },
+          }),
+          [200],
+        )
+      ).body,
+    ).toMatchObject({ isOwner: false });
+    const grant = (await shares(f)).find((share) => {
+      return share.email === viewer.user.email;
+    });
+    if (!grant) {
+      throw new Error("Expected channel recipient grant");
+    }
+    await accept(
+      app(f.owner)(artifactSharingContract).remove({
+        headers,
+        params: { kind, id: f.resource.id, shareId: grant.id },
+      }),
+      [200],
+    );
+    expect(
+      (
+        await accept(
+          app(viewer.user)(artifactFavoritesContract).list({
+            headers,
+            query: {},
+          }),
+          [200],
+        )
+      ).body.favorites,
+    ).toStrictEqual([
+      {
+        artifactId: created.body.artifactId,
+        createdAt: expect.any(String),
+        artifact: null,
+      },
+    ]);
+    await accept(
+      app(viewer.user)(artifactFavoritesContract).remove({
+        headers,
+        params: { artifactId: created.body.artifactId },
+      }),
+      [200],
+    );
   },
 );
 

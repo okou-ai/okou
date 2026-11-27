@@ -39,6 +39,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "artifact-favorites",
+    contracts: ["artifactFavoritesContract"],
+    bindings: [],
+  },
+  {
     module: "artifact-google-drive",
     contracts: ["artifactGoogleDriveContract"],
     bindings: [],

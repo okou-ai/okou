@@ -10,6 +10,11 @@ import {
 } from "../../lib/api/domains/artifact-shares";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { createDownloadFileCommand } from "../web/download-file";
+import {
+  createArtifactFavoriteCommand,
+  createArtifactFavoritesCommand,
+  createArtifactUnfavoriteCommand,
+} from "./favorites";
 
 const audiences = {
   "only-me": "private",
@@ -52,7 +57,7 @@ function printStatus(status: ArtifactShareStatus, json: boolean | undefined) {
 }
 
 export const artifactCommand = new Command("artifact")
-  .description("Read or set an owned artifact's visibility and return its URL")
+  .description("Manage artifact visibility, downloads, and personal favorites")
   .argument("<artifact>", "Owned /artifacts/<reference> path or artifact URL")
   .addOption(
     new Option(
@@ -68,11 +73,17 @@ export const artifactCommand = new Command("artifact")
   )
   .option("--json", "Output visibility, URL, and artifact identity as JSON")
   .addCommand(createDownloadFileCommand("download", "okou artifact download"))
+  .addCommand(createArtifactFavoriteCommand())
+  .addCommand(createArtifactUnfavoriteCommand())
+  .addCommand(createArtifactFavoritesCommand())
   .addHelpText(
     "after",
     `
 Examples:
   Read visibility:    okou artifact /artifacts/abc123def4.pdf --json
+  Favorite:           okou artifact favorite /artifacts/abc123def4.pdf
+  List favorites:     okou artifact favorites --json
+  Remove favorite:    okou artifact unfavorite <catalog-artifact-id>
   Only me:            okou artifact /artifacts/abc123def4.pdf --visibility only-me
   Organization:       okou artifact /artifacts/abc123def4.pdf --visibility org
   Public:             okou artifact /artifacts/abc123def4.html --visibility public

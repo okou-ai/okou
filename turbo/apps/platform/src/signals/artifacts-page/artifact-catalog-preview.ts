@@ -41,12 +41,22 @@ export function createCatalogPreviewSessionsRefresh$(
       return;
     }
     const url = artifactDetailPreview(detail).url;
+    const page = await get(catalog.catalog$);
+    signal.throwIfAborted();
+    const card = page.artifacts.find((artifact) => {
+      return artifact.id === detail.id;
+    });
     set(
       selectArtifactPreviewSessions$,
       "sidebar",
       {
         url,
         deletionIdentity: { artifactId: detail.id },
+        managementAvailable: !("isOwner" in detail) || detail.isOwner !== false,
+        favoriteTarget:
+          card?.favorited === undefined
+            ? undefined
+            : { artifactId: detail.id, favorited: card.favorited },
         fileId: "file" in detail ? detail.file.id : undefined,
       },
       ownerSignal,

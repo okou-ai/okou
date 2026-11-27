@@ -2,6 +2,7 @@ import {
   useGet,
   useLastLoadable,
   useLastResolved,
+  useLoadable,
   useSet,
 } from "ccstate-react";
 import type { ComponentProps, ReactNode, Ref } from "react";
@@ -26,6 +27,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   artifactPreviewDeletionScope,
+  emptyArtifactDeletionDetail$,
   type ArtifactDeletionSession,
   type ArtifactDeletionSourceKind,
 } from "../../signals/artifact-deletion.ts";
@@ -39,6 +41,12 @@ import {
 } from "../../signals/artifact-deletion-origin.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArtifactActionTooltip } from "./artifact-actions.tsx";
+import {
+  artifactFavoriteScope,
+  artifactFavoritesEnabled$,
+  emptyArtifactFavoriteTarget$,
+} from "../../signals/artifact-favorites.ts";
+import { ArtifactPreviewFavoriteMenuItem } from "./artifact-favorite-menu-item.tsx";
 
 export function ArtifactDeleteMoreMenu({
   triggerRef,
@@ -48,7 +56,7 @@ export function ArtifactDeleteMoreMenu({
   children,
 }: {
   readonly triggerRef?: Ref<HTMLButtonElement>;
-  readonly onDelete: () => void;
+  readonly onDelete?: () => void;
   readonly onOpenChange?: ComponentProps<typeof DropdownMenu>["onOpenChange"];
   readonly iconSize?: number;
   readonly children?: ReactNode;
@@ -77,142 +85,138 @@ export function ArtifactDeleteMoreMenu({
       </ArtifactActionTooltip>
       <DropdownMenuContent align="end" sideOffset={6}>
         {children}
-        <DropdownMenuItem className="text-destructive" onClick={onDelete}>
-          <Trash2 size={14} />
-          {t(($) => {
-            return $.artifacts.deletion.delete;
-          })}
-        </DropdownMenuItem>
+        {onDelete && (
+          <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+            <Trash2 size={14} />
+            {t(($) => {
+              return $.artifacts.deletion.delete;
+            })}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function PreviewArtifactDeleteMoreMenu({
-  origin,
-  iconSize,
-}: {
-  readonly origin: ArtifactDeletionOrigin;
-  readonly iconSize: number;
-}) {
-  const pageSignal = useGet(pageSignal$);
-  const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
-  const triggerRef = useSet(scope.menuTriggerRef$);
-  const requestDeletion = useSet(scope.requestFromMenu$);
-  return (
-    <ArtifactDeleteMoreMenu
-      triggerRef={triggerRef}
-      iconSize={iconSize}
-      onDelete={() => {
-        detach(
-          requestDeletion(pageSignal),
-          Reason.DomCallback,
-          "confirm artifact deletion",
-        );
-      }}
-    />
   );
 }
 
 export function ArtifactPageDeleteButton({
   artifactId,
   sourceKind,
+  favoriteUrl,
 }: {
   readonly artifactId: string;
   readonly sourceKind: ArtifactDeletionSourceKind;
+  readonly favoriteUrl?: string;
 }) {
   return (
     <ArtifactDeleteButton
       artifactId={artifactId}
       sourceKind={sourceKind}
+      favoriteUrl={favoriteUrl}
       origin={{ kind: "artifact-page" }}
       iconSize={18}
     />
   );
 }
 
-/** Owner-only action shared by catalog, chat, and standalone previews. */
+function usePreviewFavorite(
+  surface: "dialog" | "sidebar" | "page",
+  artifactId: string | undefined,
+  favoriteUrl: string | undefined,
+) {
+  const candidate = useGet(artifactFavoriteScope(surface).session$);
+  const matchesFavorite =
+    candidate &&
+    ("artifactId" in candidate.source
+      ? candidate.source.artifactId === artifactId
+      : candidate.source.url === favoriteUrl);
+  const favoritesEnabled = useLoadable(artifactFavoritesEnabled$);
+  const favorite =
+    favoritesEnabled.state === "hasData" &&
+    favoritesEnabled.data &&
+    matchesFavorite
+      ? candidate
+      : null;
+  const target = useLoadable(favorite?.target$ ?? emptyArtifactFavoriteTarget$);
+  return favorite && target.state === "hasData" && target.data
+    ? favorite
+    : null;
+}
+
+/** Favorites share the existing more menu; deletion stays owner-authorized. */
 export function ArtifactDeleteButton({
   artifactId,
   sourceKind,
+  favoriteUrl,
   origin,
   iconSize = 16,
   menu = false,
 }: {
   readonly artifactId?: string;
   readonly sourceKind?: ArtifactDeletionSourceKind;
+  readonly favoriteUrl?: string;
   /** The surface deleting the artifact; it decides what follows. */
   readonly origin: ArtifactDeletionOrigin;
   readonly iconSize?: number;
   readonly menu?: boolean;
 }) {
-  const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
+  const { t } = useTranslation();
+  const surface = artifactDeletionSurface(origin);
+  const scope = artifactPreviewDeletionScope(surface);
   const session = useGet(scope.session$);
   const identity = useLastResolved(scope.identity$);
-  if (!artifactId) {
+  const selected =
+    session &&
+    artifactId &&
+    identity?.artifactId === artifactId &&
+    identity.sourceKind === sourceKind
+      ? session
+      : null;
+  const detail = useLastLoadable(
+    selected?.detail$ ?? emptyArtifactDeletionDetail$,
+  );
+  const favorite = usePreviewFavorite(surface, artifactId, favoriteUrl);
+  const canDelete = selected && detail.state === "hasData" && detail.data;
+  const pageSignal = useGet(pageSignal$);
+  const triggerRef = useSet(scope.menuTriggerRef$);
+  const requestFromMenu = useSet(scope.requestFromMenu$);
+  const requestDeletion = () => {
+    detach(
+      requestFromMenu(pageSignal),
+      Reason.DomCallback,
+      "confirm artifact deletion",
+    );
+  };
+  if (!canDelete && !favorite) {
     return null;
   }
   return (
     <span className="inline-flex">
-      {session &&
-        identity?.artifactId === artifactId &&
-        identity.sourceKind === sourceKind && (
-          <PreviewArtifactDeleteButton
-            key={artifactId}
-            session={session}
-            origin={origin}
-            iconSize={iconSize}
-            menu={menu}
-          />
-        )}
+      {menu || favorite ? (
+        <ArtifactDeleteMoreMenu
+          triggerRef={triggerRef}
+          iconSize={iconSize}
+          onDelete={canDelete ? requestDeletion : undefined}
+        >
+          {favorite && <ArtifactPreviewFavoriteMenuItem session={favorite} />}
+        </ArtifactDeleteMoreMenu>
+      ) : (
+        <Button
+          ref={triggerRef}
+          showTooltip
+          type="button"
+          variant="quiet"
+          size="icon-sm"
+          className="shrink-0 text-muted-foreground hover:text-destructive"
+          aria-label={t(($) => {
+            return $.artifacts.deletion.delete;
+          })}
+          onClick={requestDeletion}
+        >
+          <Trash2 size={iconSize} />
+        </Button>
+      )}
+      {selected && <ArtifactDeleteDialog session={selected} origin={origin} />}
     </span>
-  );
-}
-
-function PreviewArtifactDeleteButton({
-  session,
-  origin,
-  iconSize,
-  menu,
-}: {
-  readonly session: ArtifactDeletionSession;
-  readonly origin: ArtifactDeletionOrigin;
-  readonly iconSize: number;
-  readonly menu: boolean;
-}) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const detail = useLastLoadable(session.detail$);
-  const requestDeletion = useSet(session.request$);
-  return (
-    <>
-      {detail.state === "hasData" &&
-        detail.data &&
-        (menu ? (
-          <PreviewArtifactDeleteMoreMenu origin={origin} iconSize={iconSize} />
-        ) : (
-          <Button
-            showTooltip
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            className="shrink-0 text-muted-foreground hover:text-destructive"
-            aria-label={t(($) => {
-              return $.artifacts.deletion.delete;
-            })}
-            onClick={(event) => {
-              detach(
-                requestDeletion(event.currentTarget, pageSignal),
-                Reason.DomCallback,
-                "confirm artifact deletion",
-              );
-            }}
-          >
-            <Trash2 size={iconSize} />
-          </Button>
-        ))}
-      <ArtifactDeleteDialog session={session} origin={origin} />
-    </>
   );
 }
 

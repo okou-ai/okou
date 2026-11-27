@@ -571,6 +571,21 @@
       "success": "作品已刪除",
       "title": "刪除{{title}}？"
     },
+    "favorites": {
+      "add": "收藏",
+      "added": "已收藏",
+      "collections": "成果集合",
+      "continueBrowsing": "載入更多，繼續瀏覽收藏。",
+      "emptyDescription": "在成果的「⋯」選單中收藏，即可在這裡找到。",
+      "emptyTitle": "暫無收藏",
+      "favorited": "已收藏",
+      "remove": "取消收藏",
+      "removed": "已取消收藏",
+      "title": "已收藏",
+      "unavailable": "已失效",
+      "view": "查看收藏",
+      "yourArtifacts": "我的成果"
+    },
     "fileBadges": {
       "artwork": "美術",
       "audio": "音訊",

@@ -24,6 +24,7 @@ import {
 import { createPublicArtifactPreviewSignals } from "../public-artifact-preview.ts";
 import { classifyChatAttachment } from "../chat-page/parse-body-blocks.ts";
 import { artifactPreviewDeletionScope } from "../artifact-deletion.ts";
+import { artifactFavoriteScope } from "../artifact-favorites.ts";
 
 const sharedThreadResponse$ = state<SharedThreadResponse | null>(null);
 const sharedThread$ = computed((get) => {
@@ -98,6 +99,18 @@ export const setupSharedThreadPage$ = command(
         ? {
             artifactId: id,
             sourceKind: "shared-thread",
+          }
+        : null,
+      signal,
+    );
+    set(
+      artifactFavoriteScope("page").select$,
+      sharedThread
+        ? {
+            url: new URL(
+              `/share/threads/${encodeURIComponent(id)}`,
+              location.origin,
+            ).href,
           }
         : null,
       signal,
