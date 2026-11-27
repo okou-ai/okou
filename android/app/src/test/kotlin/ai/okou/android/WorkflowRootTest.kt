@@ -219,6 +219,41 @@ internal abstract class WorkflowRootTestFixture {
 )
 internal class WorkflowRootTest : WorkflowRootTestFixture() {
     @Test
+    fun blankWorkflowNameUsesTheCommandWithoutRenamingOnPurposeSave() {
+        val blankTitle = "   "
+        val command = "release-review"
+        app.fixture.releaseTitle = blankTitle
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        val row = "workflow_row_$WORKFLOW_RELEASE"
+        waitForTag(row)
+        compose.onNodeWithTag("workflow_query").performTextInput("/$command")
+        compose.onNodeWithText(command).assertIsDisplayed().performClick()
+        waitForTag("workflow_detail_title")
+        compose.onNodeWithTag("workflow_detail_title").assertTextContains(command)
+        compose.onNodeWithTag("workflow_use").assertIsEnabled()
+
+        compose.onNodeWithText("Edit instructions").performClick()
+        compose.onNodeWithContentDescription("Display name").assertTextContains(command)
+        val updatedPurpose = "Review the final launch assets."
+        compose.onNodeWithContentDescription("Purpose").performTextReplacement(updatedPurpose)
+        compose.onNodeWithTag("workflow_save").assertIsEnabled().performClick()
+
+        waitForTag("workflow_detail_title")
+        waitFor(updatedPurpose)
+        compose.onNodeWithTag("workflow_detail_title").assertTextContains(command)
+        compose.onNodeWithText(updatedPurpose).assertIsDisplayed()
+        val patch =
+            app.fixture.requests.single {
+                it.method == "PATCH" &&
+                    it.requestUrl?.encodedPath == "/api/workflows/$WORKFLOW_RELEASE"
+            }
+        val fields = Json.parseToJsonElement(patch.body.clone().readUtf8()).jsonObject
+        assertEquals(setOf("description"), fields.keys)
+        assertEquals(blankTitle, app.fixture.releaseTitle)
+    }
+
+    @Test
     fun compactWorkflowBackRestoresTheActivatedDirectoryRow() = withHardwareKeyboard {
         app.gate.countDown()
         compose.onNodeWithContentDescription("Workflows").performClick()
