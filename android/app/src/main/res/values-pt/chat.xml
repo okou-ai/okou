@@ -8,9 +8,7 @@
     <string name="chat_undo_marked_read">Conversa marcada como lida</string>
     <string name="chat_undo">Desfazer</string>
     <string name="chat_action_connection_failed">Não foi possível conectar. Verifique sua conexão e tente novamente.</string>
-    <string name="chat_undo_checking">Verificando se a alteração foi desfeita…</string>
     <string name="chat_undo_failed">Não foi possível desfazer a alteração.</string>
-    <string name="chat_undo_unconfirmed">Não foi possível confirmar se a alteração foi desfeita.</string>
     <string name="chat_feedback_dismiss">Fechar</string>
     <string name="chat_list_first_load_failed">Temporariamente indisponível para carregar</string>
     <string name="chat_list_title">Conversas</string>
@@ -21,15 +19,8 @@
     <string name="chat_metadata_unavailable">As informações do projeto estão temporariamente indisponíveis.</string>
     <string name="chat_inbox">Caixa de entrada</string>
     <string name="chat_mark_all_read">Marcar tudo como lido</string>
-    <string name="chat_mark_all_read_unconfirmed">Algumas conversas ainda podem estar por ler.</string>
     <string name="chat_mark_all_read_failed">Não foi possível marcar as conversas como lidas.</string>
     <string name="chat_mark_all_read_partial_failed">Marcadas como lidas: %1$d. Falhas: %2$d.</string>
-    <string name="chat_mark_all_read_mixed">Marcadas como lidas: %1$d. Falhas: %2$d. Não confirmadas: %3$d.</string>
-    <plurals name="chat_mark_all_read_partial">
-        <item quantity="one">%1$d de %2$d conversas foi marcada como lida.</item>
-        <item quantity="many">%1$d de %2$d conversas foram marcadas como lidas.</item>
-        <item quantity="other">%1$d de %2$d conversas foram marcadas como lidas.</item>
-    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d conversa marcada como lida.</item>
         <item quantity="many">%1$d conversas marcadas como lidas.</item>

@@ -56,6 +56,8 @@ internal data class ChatRowEdit(
             when (action) {
                 ChatRowAction.Archive -> row.archived
                 ChatRowAction.Unarchive -> !row.archived
+                ChatRowAction.Mute -> row.muted == true
+                ChatRowAction.Unmute -> row.muted != true
                 ChatRowAction.Pin -> row.pinnedAt != null
                 ChatRowAction.Unpin -> row.pinnedAt == null
                 ChatRowAction.MovePinUp,

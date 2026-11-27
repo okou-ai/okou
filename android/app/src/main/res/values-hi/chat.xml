@@ -8,9 +8,7 @@
     <string name="chat_undo_marked_read">चैट पढ़ी हुई चिह्नित की गई</string>
     <string name="chat_undo">पूर्ववत करें</string>
     <string name="chat_action_connection_failed">कनेक्ट नहीं हो सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
-    <string name="chat_undo_checking">पूर्ववत करने का नतीजा जाँचा जा रहा है…</string>
     <string name="chat_undo_failed">बदलाव पूर्ववत नहीं किया जा सका।</string>
-    <string name="chat_undo_unconfirmed">पुष्टि नहीं हो सकी कि बदलाव पूर्ववत हुआ।</string>
     <string name="chat_feedback_dismiss">बंद करें</string>
     <string name="chat_list_first_load_failed">फ़िलहाल लोड नहीं हो सका</string>
     <string name="chat_list_title">चैट</string>
@@ -21,14 +19,8 @@
     <string name="chat_metadata_unavailable">प्रोजेक्ट की जानकारी फ़िलहाल उपलब्ध नहीं है।</string>
     <string name="chat_inbox">इनबॉक्स</string>
     <string name="chat_mark_all_read">सभी को पढ़ा हुआ चिह्नित करें</string>
-    <string name="chat_mark_all_read_unconfirmed">कुछ चैट अब भी अपठित हो सकती हैं।</string>
     <string name="chat_mark_all_read_failed">चैट को पढ़ा हुआ चिह्नित नहीं किया जा सका।</string>
     <string name="chat_mark_all_read_partial_failed">पढ़ा हुआ चिह्नित: %1$d। विफल: %2$d।</string>
-    <string name="chat_mark_all_read_mixed">पढ़ी गईं: %1$d। विफल: %2$d। पुष्टि बाकी: %3$d।</string>
-    <plurals name="chat_mark_all_read_partial">
-        <item quantity="one">%2$d में से %1$d चैट को पढ़ा गया चिह्नित किया गया।</item>
-        <item quantity="other">%2$d में से %1$d चैट को पढ़ा गया चिह्नित किया गया।</item>
-    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d चैट को पढ़ा हुआ चिह्नित किया गया।</item>
         <item quantity="other">%1$d चैट को पढ़ा हुआ चिह्नित किया गया।</item>
