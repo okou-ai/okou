@@ -3745,7 +3745,39 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun acknowledgedDeletionIsPendingWhileBothAuthoritativeReadsAreUnavailable() = runTest {
+    fun failedProjectDeletionKeepsFeedbackOnTheSameListAfterBackgrounding() = runTest {
+        val source = ProjectOrganizationService()
+        val response = CompletableDeferred<Unit>()
+        source.deleteResponse = {
+            response.await()
+            throw ApiFailure.Http(503, null, null, null)
+        }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            model.deleteProject(CHAT_PROJECT)
+            runCurrent()
+            assertEquals(CHAT_PROJECT, model.uiState.value.projectList.deletingId)
+
+            model.activityForegroundChanged(false)
+            response.complete(Unit)
+            runCurrent()
+            assertNull(model.uiState.value.projectList.deletingId)
+
+            model.activityForegroundChanged(true)
+            runCurrent()
+            val state = model.uiState.value
+            assertEquals(
+                ProjectDeleteStatus.Rejected,
+                state.projectDeleteFeedback.singleOrNull()?.status,
+            )
+            assertEquals(CHAT_PROJECT, state.projects.single().id)
+            assertTrue(state.canDeleteProject)
+        }
+    }
+
+    @Test
+    fun acknowledgedDeletionRecoversThroughNormalSynchronization() = runTest {
         val source = ProjectOrganizationService()
         source.deleteResponse = source::publishDeletion
         withCatchUpModel(source) { model ->
@@ -3770,7 +3802,6 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
 
             source.projectReadUnavailable = false
             source.chatReadUnavailable = false
-            model.refresh()
             advanceTimeBy(3_000)
             runCurrent()
             val synced = model.uiState.value
