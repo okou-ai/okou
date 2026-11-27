@@ -82,6 +82,9 @@ jobs:
           sudo chown "$(id -u):$(id -g)" /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
       - name: Execute selected feature recipe
+        env:
+          GRADLE_OPTS: >-
+            -Dorg.gradle.jvmargs='-Xmx4g -Dfile.encoding=UTF-8'
         run: python3 android/scripts/screenshots.py run --commit "$TARGET_SHA" --driver "$DRIVER_SHA" --script "$SCREENSHOT_SCRIPT"
       - name: Retain screenshots and diagnostics
         id: artifact
