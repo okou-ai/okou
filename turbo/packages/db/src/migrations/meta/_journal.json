@@ -4012,6 +4012,20 @@
       "when": 1795748958015,
       "tag": "1651_drop_user_artifact_favorites",
       "breakpoints": true
+    },
+    {
+      "idx": 1652,
+      "version": "7",
+      "when": 1795755804830,
+      "tag": "1652_expand_files_and_artifact_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 1653,
+      "version": "7",
+      "when": 1795755836531,
+      "tag": "1653_backfill_files_and_artifact_access",
+      "breakpoints": true
     }
   ]
 }
