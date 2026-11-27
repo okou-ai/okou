@@ -12,7 +12,7 @@ export const setupMailDraftPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const signals = get(mailDraftPageSignals$);
     if (signals) {
-      set(signals.subscribeConnectorChanges$, signal);
+      set(signals.subscribeChanges$, signal);
     }
     set(
       updatePage$,

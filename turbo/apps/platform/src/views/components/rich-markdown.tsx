@@ -36,6 +36,7 @@ import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { openThreadMailDraft$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import type {
   ArtifactDescriptor,
@@ -247,6 +248,9 @@ function MediaImage({
         openImageLightbox(
           {
             threadId,
+            groupId: event.currentTarget.closest<HTMLElement>(
+              "[data-chat-group-id]",
+            )?.dataset.chatGroupId,
             url,
             filename,
             preview: resolvedPreview,
@@ -339,14 +343,20 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
           openMailDraft(card.signals);
         } else if (card?.kind === "artifact") {
           event.preventDefault();
-          openArtifact(card, pageSignal);
+          detach(openArtifact(card, pageSignal), Reason.DomCallback);
         } else if (href && isSafeMediaUrl(href) && isImageUrl(href)) {
           event.preventDefault();
           const threadId = event.currentTarget.closest<HTMLElement>(
             "[data-chat-thread-container-id]",
           )?.dataset.chatThreadContainerId;
           openImageLightbox(
-            threadId ? { threadId, url: href } : href,
+            {
+              threadId,
+              url: href,
+              groupId: event.currentTarget.closest<HTMLElement>(
+                "[data-chat-group-id]",
+              )?.dataset.chatGroupId,
+            },
             pageSignal,
           );
         }

@@ -73,6 +73,7 @@ import { orgContract } from "../contracts/org-routes";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
 import { platformRealtimeTokenContract } from "../contracts/realtime";
 import { projectsContract } from "../contracts/projects";
+import { remoteDevicesContract } from "../contracts/remote-devices";
 import { remotesContract } from "../contracts/remotes";
 import { runModelsMainContract } from "../contracts/run-models";
 import { runConnectorAccountsContract } from "../contracts/run-connector-accounts";
@@ -125,6 +126,10 @@ export const iosClientContracts: readonly {
   {
     id: "ios.artifactCatalogContract.list",
     route: artifactCatalogContract.list,
+  },
+  {
+    id: "ios.artifactReferencesContract.byUrl",
+    route: artifactReferencesContract.byUrl,
   },
   {
     id: "ios.artifactReferencesContract.resolve",
@@ -514,6 +519,23 @@ export const iosClientContracts: readonly {
   { id: "ios.projectsContract.update", route: projectsContract.update },
   { id: "ios.projectsContract.delete", route: projectsContract.delete },
   { id: "ios.projectsContract.membership", route: projectsContract.membership },
+  { id: "ios.remoteDevicesContract.list", route: remoteDevicesContract.list },
+  {
+    id: "ios.remoteDevicesContract.create",
+    route: remoteDevicesContract.create,
+  },
+  {
+    id: "ios.remoteDevicesContract.moveChannel",
+    route: remoteDevicesContract.moveChannel,
+  },
+  {
+    id: "ios.remoteDevicesContract.setAccess",
+    route: remoteDevicesContract.setAccess,
+  },
+  {
+    id: "ios.remoteDevicesContract.approve",
+    route: remoteDevicesContract.approve,
+  },
   { id: "ios.remotesContract.overview", route: remotesContract.overview },
   { id: "ios.runModelsMainContract.list", route: runModelsMainContract.list },
   {

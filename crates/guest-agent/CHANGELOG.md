@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.113.10](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.9...guest-agent-v0.113.10) (2026-11-26)
+
+
+### Bug Fixes
+
+* **guest-agent:** handle terminal antigravity step states and log unfinished step details ([#51244](https://github.com/okou-ai/okou/issues/51244)) ([823b7fd](https://github.com/okou-ai/okou/commit/823b7fd27d9f807b800b5792fafab1436016568f))
+
+## [0.113.9](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.8...guest-agent-v0.113.9) (2026-11-26)
+
+## [0.113.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.7...guest-agent-v0.113.8) (2026-11-26)
+
 ## [0.113.7](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.6...guest-agent-v0.113.7) (2026-11-26)
 
 ## [0.113.6](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.5...guest-agent-v0.113.6) (2026-11-26)

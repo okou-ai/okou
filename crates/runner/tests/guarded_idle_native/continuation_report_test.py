@@ -17,7 +17,7 @@ import report_test
 
 class ContinuationReportTests(unittest.TestCase):
     def setUp(self):
-        report_test.NativeReportTests.setUp(self, cases=continuation.CASES)
+        report_test.prepare_native_report_fixture(self, cases=continuation.CASES)
         gib = 1024**3
         policy = report_test.pressure_policy_fixture()
         raw = json.dumps(policy)

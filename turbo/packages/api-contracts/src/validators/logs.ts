@@ -19,6 +19,7 @@ export const triggerSourceSchema = zEnum([
   "test",
   "agent",
   "webhook",
+  "proactive",
   "automation-schedule",
   "automation-event",
 ]);

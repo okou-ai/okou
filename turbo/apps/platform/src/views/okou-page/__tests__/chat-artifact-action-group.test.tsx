@@ -4,7 +4,6 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   setupPage,
@@ -28,6 +27,7 @@ import {
   mockAttachmentChat,
   mockSplitAttachmentChats,
   findNamedMenuItem,
+  mockMessageArtifactDetails,
 } from "./chat-attachment-test-helpers.ts";
 import {
   artifactSummary,
@@ -147,11 +147,9 @@ async function page(
     artifacts: [r.metadata],
   });
   if (options.meta) {
-    context.mocks.api(chatThreadArtifactsContract.list, async ({ respond }) => {
+    mockMessageArtifactDetails(context, async () => {
       await options.meta;
-      return respond(200, {
-        runs: [{ runId: crypto.randomUUID(), files: [r.metadata] }],
-      });
+      return [r.metadata];
     });
   }
   const ownerUrl = rights(r, options);
@@ -202,23 +200,12 @@ test("chat-artifact-action-group-001 a second thread cannot inherit the first pr
       artifacts: [next.metadata],
     },
   );
-  context.mocks.api(
-    chatThreadArtifactsContract.list,
-    async ({ params, respond }) => {
-      const right = params.threadId === SECOND_ATTACHMENT_THREAD_ID;
-      if (right) {
-        await hold.promise;
-      }
-      return respond(200, {
-        runs: [
-          {
-            runId: params.threadId,
-            files: [right ? next.metadata : earlier.metadata],
-          },
-        ],
-      });
-    },
-  );
+  mockMessageArtifactDetails(context, async (url) => {
+    if (url === next.metadata.url) {
+      await hold.promise;
+    }
+    return [earlier.metadata, next.metadata];
+  });
   rights(next);
   await route(true);
   click(await findAction("link", earlier.item.title));

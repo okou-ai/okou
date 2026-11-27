@@ -1,3 +1,7 @@
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactReferenceRoutes } from "../artifact-references";
+import { artifactReferencePath } from "@okouai/api-contracts/validators/artifact-references";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { randomUUID } from "node:crypto";
 import {
   CompleteMultipartUploadCommand,
@@ -14,6 +18,12 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
+import {
+  workflowAutomationsContract,
+  workflowsCollectionContract,
+} from "@okouai/api-contracts/contracts/workflows";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
@@ -22,12 +32,17 @@ import { uploadsMultipartRoutes } from "../uploads-multipart";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { sharedThreadRoutes } from "../shared-threads";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
+import { workflowsRoutes } from "../workflows";
 import {
   createBddApi,
   expectApiError,
@@ -44,6 +59,7 @@ import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -416,6 +432,113 @@ async function publishHostedSite(args: {
   };
 }
 
+describe("GET /api/artifacts/by-url", () => {
+  it("reads one owned file from its message links and keeps its metadata private", async () => {
+    const owner = await catalogActor("File details owner");
+    const uploaded = await uploadFile({
+      owner,
+      prompt: "Publish the notes",
+      filename: "notes.md",
+      contentType: "text/markdown",
+    });
+    const client = setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    );
+    const headers = authenticateSharedThread(owner.actor);
+    for (const url of [
+      uploaded.url,
+      "/api/web/file-url?file_id=" + uploaded.fileId,
+      "http://localhost:3000/api/web/file-url?file_id=" + uploaded.fileId,
+    ]) {
+      const result = await accept(
+        client.byUrl({ headers, query: { url } }),
+        [200],
+      );
+      expect(result.body).toMatchObject({
+        filename: "notes.md",
+        size: 1024,
+        preview: { kind: "markdown" },
+        owner: { artifactId: expect.any(String) },
+      });
+    }
+    const other = await catalogActor("Unrelated file reader");
+    await accept(
+      client.byUrl({
+        headers: authenticateSharedThread(other.actor),
+        query: { url: uploaded.url },
+      }),
+      [404],
+    );
+  });
+
+  it("describes an exact public template without granting the reader owner controls", async () => {
+    const owner = await catalogActor("Template reader");
+    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+    const client = setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    );
+    const headers = authenticateSharedThread(owner.actor);
+    const detail = await accept(
+      client.byUrl({ headers, query: { url: template.embedUrl } }),
+      [200],
+    );
+    expect(detail.body.preview).toStrictEqual({
+      kind: "presentation-html",
+      pageUrl: template.embedUrl,
+      coverUrl: template.previewImage,
+    });
+    expect(detail.body.owner).toBeUndefined();
+    await accept(
+      client.byUrl({
+        headers,
+        query: { url: template.embedUrl + ".unlisted" },
+      }),
+      [404],
+    );
+  });
+
+  it("resolves each immutable site publication and the current alias independently", async () => {
+    const owner = await catalogActor("Publication details owner");
+    const site = "artifact-detail-" + randomUUID().slice(0, 8);
+    const first = await publishHostedSite({
+      owner,
+      site,
+      artifactKind: "presentation-html",
+    });
+    const second = await publishHostedSite({
+      owner,
+      site,
+      artifactKind: "presentation-html",
+    });
+    const headers = authenticateSharedThread(owner.actor);
+    const client = setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    );
+    const firstFiles = await chat.listThreadArtifacts(
+      owner.actor,
+      first.threadId,
+    );
+    const old = firstFiles.runs[0]!.files[0]!;
+    const latest = (
+      await chat.listThreadArtifacts(owner.actor, second.threadId)
+    ).runs[0]!.files[0]!;
+    for (const [url, version] of [
+      [old.url, old],
+      [latest.url, latest],
+      [latest.aliasUrl!, latest],
+    ] as const) {
+      const result = await accept(
+        client.byUrl({ headers, query: { url } }),
+        [200],
+      );
+      expect(result.body).toMatchObject({
+        preview: { kind: "presentation-html", pageUrl: version.url },
+        owner: { artifactId: version.artifactId, fileId: version.id },
+      });
+    }
+  });
+});
+
 describe("GET /api/artifacts/catalog", () => {
   it("publishes a readable private video catalog and preserves its original chat on reuse", async () => {
     const owner = await catalogActor("Private video catalog owner");
@@ -487,9 +610,95 @@ describe("GET /api/artifacts/catalog", () => {
     // The publish-time API response already supplies the original identity.
     const originalCatalog = publications[0]!.catalog;
     const artifactId = originalCatalog.artifacts[0]!.id;
+    const reference = artifactReferencePath(
+      prepared.body.id,
+      "private-video.mp4",
+    );
+    const references = setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    );
+    const headers = authenticateSharedThread(owner.actor);
+    for (const url of [
+      reference,
+      "http://localhost:3002" + reference + "#t=3",
+    ]) {
+      const response = await accept(
+        references.byUrl({ headers, query: { url } }),
+        [200],
+      );
+      expect(response.body).toMatchObject({
+        filename: "private-video.mp4",
+        preview: { kind: "video" },
+        owner: { artifactId },
+      });
+      const publicationId = response.body.owner!.publicationId;
+      const status = await accept(
+        references.driveStatus({
+          headers,
+          params: { publicationId },
+          query: { chatThreadId: first.threadId },
+        }),
+        [200],
+      );
+      expect(status.body.googleDriveSync.status).toBe("disconnected");
+    }
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, artifactId),
     ).resolves.toMatchObject({ sourceChatThreadId: first.threadId });
+    await chat.renameThread(
+      owner.actor,
+      first.threadId,
+      "Original video source",
+    );
+    await enableArtifactLibrary(owner.actor);
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { direction: "asc" }),
+    ).resolves.toMatchObject({
+      artifacts: [
+        {
+          id: artifactId,
+          category: "video",
+          sourceChatThread: {
+            id: first.threadId,
+            title: "Original video source",
+          },
+        },
+      ],
+    });
+    await expect(
+      chat.listArtifactCatalog(owner.actor, {
+        direction: "asc",
+        keyword: "Original video source",
+      }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    await chat.renameThread(
+      owner.actor,
+      first.threadId,
+      "Current source label",
+    );
+    await chat.requestSetThreadArchived(
+      owner.actor,
+      first.threadId,
+      true,
+      [204],
+    );
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { direction: "asc" }),
+    ).resolves.toMatchObject({
+      artifacts: [
+        {
+          sourceChatThread: {
+            id: first.threadId,
+            title: "Current source label",
+          },
+        },
+      ],
+    });
+    const peer = bdd.user({ orgId: owner.actor.orgId! });
+    await enableArtifactLibrary(peer);
+    await expect(
+      chat.listArtifactCatalog(peer, { direction: "asc" }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
     await completeChatRunOk(first.runId, execution.sandboxHeaders);
     const second = await sendChatRun(owner.actor, {
       prompt: "Reuse the private video",
@@ -524,7 +733,163 @@ describe("GET /api/artifacts/catalog", () => {
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, artifactId),
     ).resolves.not.toHaveProperty("sourceChatThreadId");
+    const withoutSource = await chat.listArtifactCatalog(owner.actor, {
+      direction: "asc",
+      category: "video",
+    });
+    expect(withoutSource.artifacts).toStrictEqual([
+      expect.objectContaining({ id: artifactId, category: "video" }),
+    ]);
+    expect(withoutSource.artifacts[0]).not.toHaveProperty("sourceChatThread");
     await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
+  });
+
+  it("keeps artifacts from a hidden Official conversation without disclosing its source", async () => {
+    // The production schedule trigger scans all owners, so this case owns its DB.
+    const client = await setupApp({
+      context,
+      isolatePg: true,
+      routes: [
+        ...morningBriefPreferenceRoutes,
+        ...workflowsRoutes,
+        ...workflowAutomationsRoutes,
+        ...cronExecuteWorkflowAutomationsRoutes,
+      ],
+    });
+    const owner = await catalogActor("Hidden source owner");
+    await bdd.updateUserTimezone(owner.actor, "UTC");
+    // Official schedules serve owners who have recently started a manual Run.
+    const manual = await sendChatRun(owner.actor, {
+      prompt: "Start my workday",
+    });
+    const manualExecution = await runExecution(owner.runnerGroup, manual.runId);
+    await completeChatRunOk(manual.runId, manualExecution.sandboxHeaders);
+    installWorkflowVolumeS3Fixture(context, undefined, { bundlesOnly: true });
+    const headers = authenticateSharedThread(owner.actor);
+    await accept(
+      client(morningBriefPreferenceContract).update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const workflows = await accept(
+      client(workflowsCollectionContract).list({ headers, query: {} }),
+      [200],
+    );
+    const workflow = workflows.body.find((item) => {
+      return item.official?.definitionName === "morning-brief";
+    });
+    if (!workflow) {
+      throw new Error("Expected the installed Morning Brief workflow");
+    }
+    const schedules = await accept(
+      client(workflowAutomationsContract).list({
+        headers,
+        params: { workflowId: workflow.id },
+      }),
+      [200],
+    );
+    const schedule = schedules.body[0];
+    if (!schedule?.nextRunAt) {
+      throw new Error("Expected the Morning Brief schedule");
+    }
+    mockEnv("CRON_SECRET", "artifact-library-cron-secret");
+    mockNow(new Date(schedule.nextRunAt));
+    // Keep the dispatchable Runner's heartbeat fresh at the scheduled time.
+    await api.registerDirectRunner(owner.runnerGroup);
+    await accept(
+      client(cronExecuteWorkflowAutomationsContract).execute({
+        headers: { authorization: "Bearer artifact-library-cron-secret" },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const fired = await accept(
+      client(workflowAutomationsContract).get({
+        headers,
+        params: { id: schedule.id },
+      }),
+      [200],
+    );
+    const threadId = fired.body.chatThreadId;
+    if (!threadId) {
+      throw new Error("Expected the scheduled Official conversation");
+    }
+    const events = await chat.listThreadEventRows(owner.actor, threadId);
+    const runId = events.find((event) => {
+      return event.eventType === "input.prompt" && event.runId !== undefined;
+    })?.runId;
+    if (!runId) {
+      throw new Error("Expected the Official automation to launch a Run");
+    }
+    await expect(
+      chat.readThreadMetadata(owner.actor, threadId),
+    ).resolves.toMatchObject({
+      hidden: true,
+    });
+    const { execution, sandboxHeaders } = await runExecution(
+      owner.runnerGroup,
+      runId,
+    );
+    const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
+    const content = "Official morning brief";
+    installHostedUploadTransport(context, owner.storage);
+    const prepared = await accept(
+      setupApp({ context, routes: uploadsPrepareRoutes })(
+        uploadsContract,
+      ).prepare({
+        headers: { authorization: bearer },
+        body: {
+          filename: "official-brief.txt",
+          contentType: "text/plain",
+          size: Buffer.byteLength(content),
+          purpose: "artifact",
+        },
+      }),
+      [200],
+    );
+    if (!("uploadUrl" in prepared.body)) {
+      throw new Error("Expected a single-part Official artifact upload");
+    }
+    const uploaded = await fetch(prepared.body.uploadUrl, {
+      method: "PUT",
+      headers: prepared.body.uploadHeaders,
+      body: content,
+    });
+    expect(uploaded.status).toBe(200);
+    await chat.completeUploadWithBearer(
+      bearer,
+      { id: prepared.body.id },
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      { runId, exitCode: 1, error: "Catalog source visibility inspected" },
+      sandboxHeaders,
+      [200],
+    );
+    await enableArtifactLibrary(owner.actor);
+    const catalog = await chat.listArtifactCatalog(owner.actor, {
+      direction: "asc",
+      category: "document",
+    });
+    expect(catalog.artifacts).toStrictEqual([
+      expect.objectContaining({
+        title: "official-brief.txt",
+        category: "document",
+      }),
+    ]);
+    expect(catalog.artifacts[0]).not.toHaveProperty("sourceChatThread");
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, catalog.artifacts[0]!.id),
+    ).resolves.not.toHaveProperty("sourceChatThreadId");
+    await accept(
+      client(morningBriefPreferenceContract).update({
+        headers: authenticateSharedThread(owner.actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
   });
 
   it("withdraws the owned object for a historical public file", async () => {
@@ -695,7 +1060,11 @@ describe("GET /api/artifacts/catalog", () => {
       direction: "asc",
     });
     expect(filenameMatch.artifacts).toStrictEqual([
-      expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
+      expect.objectContaining({
+        id: entry!.id,
+        title: "季度销售报告",
+        category: "website",
+      }),
     ]);
     const redeployed = await publishHostedSite({
       owner,
@@ -1621,7 +1990,7 @@ describe("GET /api/artifacts/catalog", () => {
   it("catalogues a published deck as a presentation", async () => {
     const owner = await catalogActor("Artifact catalog deck owner");
     const site = `catalog-deck-${randomUUID().slice(0, 8)}`;
-    await publishHostedSite({
+    const published = await publishHostedSite({
       owner,
       site,
       artifactKind: "presentation-html",
@@ -1636,6 +2005,29 @@ describe("GET /api/artifacts/catalog", () => {
       kind: "presentation",
       title: site,
     });
+    await chat.renameThread(owner.actor, published.threadId, "Deck source");
+    await enableArtifactLibrary(owner.actor);
+    await expect(
+      chat.listArtifactCatalog(owner.actor, {
+        direction: "asc",
+        category: "presentation",
+      }),
+    ).resolves.toMatchObject({
+      artifacts: [
+        {
+          id: catalog.artifacts[0]!.id,
+          kind: "presentation",
+          category: "presentation",
+          sourceChatThread: { id: published.threadId, title: "Deck source" },
+        },
+      ],
+    });
+    await expect(
+      chat.listArtifactCatalog(owner.actor, {
+        direction: "asc",
+        category: "website",
+      }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
   }, 180_000);
 
   it("moves a catalog entry to presentation when a deck redeploys the site", async () => {

@@ -55,6 +55,7 @@ import {
   ChatThreadStateIndicator,
   ChatThreadStateText,
   useChatThreadsTitleLabels,
+  useChatListFilterOptions,
 } from "./sidebar-shared.tsx";
 import {
   Tooltip,
@@ -109,13 +110,12 @@ import {
   currentChatThreadId$,
   hasCurrentChatThread$,
 } from "../../signals/chat-thread-list.ts";
-import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
-import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
-import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
 import {
-  selectChatThreadFilter$,
+  activeChatThreadFilter$,
+  chatThreadFilter$,
   type ChatThreadFilter,
-} from "../../signals/okou-page/chat-thread-filter-selection.ts";
+} from "../../signals/okou-page/chat-thread-filter.ts";
+import { selectChatThreadFilter$ } from "../../signals/okou-page/chat-thread-filter-selection.ts";
 import { workspaceHasUnreadChats$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import { markWorkspaceThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
@@ -1051,16 +1051,10 @@ function ChatThreadFilterAction({
 }
 
 function ShowAllChatsRow() {
-  const { t } = useTranslation();
-
+  const { showAll } = useChatListFilterOptions();
   return (
     <div data-testid="sidebar-chat-show-all-row">
-      <ChatThreadFilterAction
-        filter="all"
-        label={t(($) => {
-          return $.chat.sidebar.showAllChats;
-        })}
-      />
+      <ChatThreadFilterAction {...showAll} />
     </div>
   );
 }
@@ -1089,21 +1083,15 @@ function InboxEmptyState({
   listSignals: SidebarChatThreadListSignals;
 }) {
   const { t } = useTranslation();
+  const { emptyUnarchivedLabel, showWithArchived } = useChatListFilterOptions();
   const hasHiddenArchivedThreads =
     useLastResolved(listSignals.hasHiddenArchivedThreads$) ?? false;
 
   if (hasHiddenArchivedThreads) {
     return (
       <ChatThreadListEmptyState
-        message={t(($) => {
-          return $.chat.sidebar.inboxEmpty;
-        })}
-        action={{
-          filter: "archived",
-          label: t(($) => {
-            return $.chat.sidebar.showArchivedChats;
-          }),
-        }}
+        message={emptyUnarchivedLabel}
+        action={showWithArchived}
       />
     );
   }
@@ -1146,37 +1134,31 @@ function ChatThreads({
   listSignals: SidebarChatThreadListSignals;
 }) {
   const { t } = useTranslation();
-  const archivedOnly = useGet(chatThreadOnlyArchived$);
-  const mutedOnly = useGet(chatThreadOnlyMuted$);
+  const filter = useResolved(activeChatThreadFilter$);
+  const { showAll } = useChatListFilterOptions();
   const rowCount = useLastResolved(listSignals.count$);
   if (rowCount === undefined) {
     return null;
   }
 
   if (rowCount === 0) {
-    const showAllChats = {
-      filter: "all",
-      label: t(($) => {
-        return $.chat.sidebar.showAllChats;
-      }),
-    } as const;
-    if (mutedOnly) {
+    if (filter === "muted") {
       return (
         <ChatThreadListEmptyState
           message={t(($) => {
             return $.chat.sidebar.noMuted;
           })}
-          action={showAllChats}
+          action={showAll}
         />
       );
     }
-    if (archivedOnly) {
+    if (filter === "archived") {
       return (
         <ChatThreadListEmptyState
           message={t(($) => {
             return $.chat.sidebar.noArchived;
           })}
-          action={showAllChats}
+          action={showAll}
         />
       );
     }
@@ -1261,25 +1243,22 @@ function MarkAllReadMenuItem({
 
 function ChatThreadFilterMenuItems() {
   const { t } = useTranslation();
-  const unreadOnly = useGet(chatThreadOnlyUnread$);
-  const archivedOnly = useGet(chatThreadOnlyArchived$);
-  const mutedOnly = useGet(chatThreadOnlyMuted$);
+  const filter = useGet(chatThreadFilter$);
+  const { unarchivedLabel, withArchivedLabel } = useChatListFilterOptions();
   const selectFilter = useSelectChatThreadFilter();
 
   return (
     <>
       <DropdownMenuItem
         onClick={() => {
-          selectFilter("all");
+          selectFilter("unarchived");
         }}
       >
         <Check
           size={16}
-          className={`mr-2 ${unreadOnly || archivedOnly || mutedOnly ? "invisible" : ""}`}
+          className={`mr-2 ${filter === "unarchived" ? "" : "invisible"}`}
         />
-        {t(($) => {
-          return $.chat.sidebar.inbox;
-        })}
+        {unarchivedLabel}
       </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
@@ -1289,7 +1268,10 @@ function ChatThreadFilterMenuItems() {
           GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.ariaKeyShortcuts
         }
       >
-        <Check size={16} className={`mr-2 ${unreadOnly ? "" : "invisible"}`} />
+        <Check
+          size={16}
+          className={`mr-2 ${filter === "unread" ? "" : "invisible"}`}
+        />
         {t(($) => {
           return $.chat.sidebar.unreadOnly;
         })}
@@ -1299,23 +1281,24 @@ function ChatThreadFilterMenuItems() {
       </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
-          selectFilter("archived");
+          selectFilter("withArchived");
         }}
       >
         <Check
           size={16}
-          className={`mr-2 ${archivedOnly ? "" : "invisible"}`}
+          className={`mr-2 ${filter === "withArchived" ? "" : "invisible"}`}
         />
-        {t(($) => {
-          return $.chat.sidebar.archived;
-        })}
+        {withArchivedLabel}
       </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
           selectFilter("muted");
         }}
       >
-        <Check size={16} className={`mr-2 ${mutedOnly ? "" : "invisible"}`} />
+        <Check
+          size={16}
+          className={`mr-2 ${filter === "muted" ? "" : "invisible"}`}
+        />
         {t(($) => {
           return $.chat.sidebar.muted;
         })}
@@ -1369,29 +1352,31 @@ export function ChatThreadsListMenu({
   );
 }
 
-/** The active unread, archived or muted filter's name; null for the inbox. */
+/** Only non-default filters add a label to the chat list title. */
 export function useChatThreadsFilterLabel(): string | null {
   const { t } = useTranslation();
-  const unreadOnly = useGet(chatThreadOnlyUnread$);
-  const archivedOnly = useGet(chatThreadOnlyArchived$);
-  const mutedOnly = useGet(chatThreadOnlyMuted$);
-  return unreadOnly
-    ? t(($) => {
+  const { withArchivedLabel } = useChatListFilterOptions();
+  const filter = useGet(chatThreadFilter$);
+  switch (filter) {
+    case "unread": {
+      return t(($) => {
         return $.chat.sidebar.unreadOnly;
-      })
-    : archivedOnly
-      ? t(($) => {
-          return $.chat.sidebar.archived;
-        })
-      : mutedOnly
-        ? t(($) => {
-            return $.chat.sidebar.muted;
-          })
-        : null;
+      });
+    }
+    case "withArchived": {
+      return withArchivedLabel;
+    }
+    case "muted": {
+      return t(($) => {
+        return $.chat.sidebar.muted;
+      });
+    }
+    case "unarchived": {
+      return null;
+    }
+  }
 }
 
-// A non-default filter names itself in the title so the list
-// never looks like the inbox while it shows archived, unread, or muted chats.
 function useChatThreadsFilteredTitleLabel() {
   const { t } = useTranslation();
   const { titleLabel } = useChatThreadsTitleLabels();
@@ -1528,6 +1513,7 @@ function UnreadChatThreadsContent({
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const { t } = useTranslation();
+  const { showAll } = useChatListFilterOptions();
   const rows = useLastLoadable(unreadSidebarChatThreadRows$);
   const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
   const searchOpen = useGet(threeColumnSearchOpen$);
@@ -1548,12 +1534,7 @@ function UnreadChatThreadsContent({
         message={t(($) => {
           return $.chat.sidebar.noUnread;
         })}
-        action={{
-          filter: "all",
-          label: t(($) => {
-            return $.chat.sidebar.showAllChats;
-          }),
-        }}
+        action={showAll}
       />
     );
   }
@@ -1720,7 +1701,7 @@ function ExpandedChatThreadsContent({
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
 }) {
-  const unreadOnly = useGet(chatThreadOnlyUnread$);
+  const unreadOnly = useGet(chatThreadFilter$) === "unread";
 
   return (
     <ChatThreadsViewport

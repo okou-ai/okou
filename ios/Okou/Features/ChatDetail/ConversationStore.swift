@@ -65,7 +65,7 @@ final class ConversationStore {
   lazy var attachmentViewer = MessageAttachmentStore(
     commands: commands, graph: graph, didFail: didFail)
   lazy var artifacts = MessageArtifactStore(
-    service: commands.artifacts, threadID: thread.id, webURL: webURL, markdown: messageMarkdown,
+    service: commands.artifacts, webURL: webURL, markdown: messageMarkdown,
     graph: graph, didFail: didFail)
   // Confirmed input for delivery, Stop, read watermarks and the native render window.
   // Independent resource phases remain in their original Tasks, not in this snapshot.
@@ -168,7 +168,8 @@ final class ConversationStore {
   }
 
   lazy var approvals = ApprovalCardRegistry(
-    thread: thread, commands: commands, sync: sync, graph: graph, didFail: didFail,
+    thread: thread, commands: commands, sync: sync, graph: graph,
+    remoteDevices: modelSelection?.connectors.remoteDevices, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()
@@ -271,7 +272,7 @@ final class ConversationStore {
     (!composer.hasContent || composer.isDurable) && composer.voice?.isWorking != true
       && pending.isEmpty
       && modelSelection?.isBusy != true
-      && !isLoading && !isSending && !isStopping && !isLoadingEarlier
+      && !isLoading && !isSending && stopTask == nil && !isLoadingEarlier
       && !isRecoveringFailure && !permissionActions.isBusy
       && history?.executionState.isActive != true
   }
@@ -418,20 +419,23 @@ final class ConversationStore {
   }
 
   func stop() async {
-    guard stopTask == nil, !closed, !needsUpgrade, !Task.isCancelled else { return }
-    updateDelivery {
-      $0.isStopping = true
-      $0.stopIssue = nil
-    }
+    guard stopTask == nil, !closed, !needsUpgrade, !Task.isCancelled,
+      let runIDs = projection.currentValue.history?.activeRunIDs, !runIDs.isEmpty
+    else { return }
+    updateDelivery { $0.stopIssue = nil }
+    let events = Dictionary(
+      uniqueKeysWithValues: runIDs.map { ($0, UUID().uuidString.lowercased()) })
+    projection.interruptRuns(events)
+    reconcileActivitySummary()
+    reconcileProjection()
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
-        updateDelivery { $0.isStopping = false }
         stopTask = nil
         didSettle()
       }
       do {
-        try await commands.stop(thread: thread)
+        try await commands.interrupt(threadID: thread.id, events: events)
         try Task.checkCancellation()
         guard !closed else { return }
         await refresh()
@@ -495,8 +499,8 @@ final class ConversationStore {
     reading.cancelRefresh()
   }
 
-  func artifactImageSources(for messageID: String) -> [String] {
-    return reading.artifactImageSources(for: messageID)
+  func artifactGroup(for messageID: String) -> MessageArtifactGroup? {
+    return reading.artifactGroup(for: messageID)
   }
 
   func rememberReadingPosition(_ position: ConversationReadingPosition?) {
@@ -566,11 +570,10 @@ final class ConversationStore {
 }
 
 extension ConversationStore {
-  /// Delivery state that views read: a send or Stop in flight, a Stop that was not
+  /// Delivery state that views read: a send in flight, a Stop that was not
   /// confirmed, the last failure, an upgrade requirement, and each pending message's failure.
   struct Delivery: Equatable {
     var isSending = false
-    var isStopping = false
     var stopIssue: String?
     var error: String?
     var needsUpgrade = false
@@ -583,14 +586,12 @@ extension ConversationStore {
     }
   }
   var isSending: Bool { currentDelivery.isSending }
-  var isStopping: Bool { currentDelivery.isStopping }
   var stopIssue: String? { currentDelivery.stopIssue }
   var error: String? { currentDelivery.error }
   var needsUpgrade: Bool { currentDelivery.needsUpgrade }
   var deliveryFailures: [String: DeliveryFailure] { currentDelivery.failures }
 
-  /// Replaces the delivery state. Stop changes the activity label's demand, so a change of
-  /// `isStopping` reconciles it, as the former property observer did.
+  /// Replaces the delivery state.
   fileprivate func updateDelivery(_ mutation: (inout Delivery) -> Void) {
     let previous = currentDelivery
     var next = previous
@@ -599,7 +600,6 @@ extension ConversationStore {
     do { try graph.set(deliveryState, next) } catch {
       preconditionFailure("Cannot update the conversation delivery graph: \(error)")
     }
-    if next.isStopping != previous.isStopping { reconcileActivitySummary() }
   }
 }
 

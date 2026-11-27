@@ -7,10 +7,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { settleIncludingAbort } from "../../../utils";
-import type {
-  ExecutionContext,
-  StorageMountEntry,
-} from "@okouai/api-contracts/contracts/runners";
+import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { x } from "tar";
 
 /** A real CLI/RPC child, with only its external model provider replaced. */
@@ -23,7 +20,7 @@ export async function readPiExecutionMemory(
     | "piLaunchConfig"
     | "appendSystemPrompt"
   >,
-  mount: StorageMountEntry,
+  mount: NonNullable<ExecutionContext["startupInputs"]["memory"]>,
   signal: AbortSignal,
   afterStartup?: () => Promise<void>,
 ) {

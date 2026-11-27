@@ -40,7 +40,7 @@ final class ConnectorAuthorizationFlow: Identifiable {
     status.builtin?.authMethods.filter { $0.grantKind != "managed" } ?? []
   }
   var supportsProviderApplication: Bool {
-    ["strava", "tiktok", "dropbox", "spotify"].contains(status.target.connectorSlug ?? "")
+    ["strava", "tiktok", "dropbox"].contains(status.target.connectorSlug ?? "")
       && method?.id == "oauth"
       && method?.grantKind == "auth-code"
   }
@@ -290,14 +290,6 @@ final class ConnectorActionStore {
             flow.usesProviderApplication = true
             flow.browserURL = nil
           case .unavailable: flow.browserURL = webURL
-          case .code(let code):
-            guard let slug = current.target.connectorSlug,
-              let state = URLComponents(url: webURL, resolvingAgainstBaseURL: false)?.queryItems?
-                .first(where: { $0.name == "state" })?.value
-            else { throw APIClientError.invalidResponse }
-            try await service.completeProviderAuthorization(
-              slug: slug, parameters: ["state": state, "code": code])
-            try check(flow)
           }
         } catch {
           // A provider callback can take over before the OS launch completes.
@@ -462,7 +454,6 @@ final class ConnectorActionStore {
 
   func receiveProviderReturn(_ url: URL) {
     guard !closed, let flow = active else { return }
-    if providerApplication.receive(url) { return }
     if let receipt = flow.session,
       ConnectorProviderAuthorization.isDropboxCancellation(url, receipt: receipt)
     {

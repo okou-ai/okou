@@ -881,6 +881,8 @@ async fn decode_high_entropy_zrle(width: usize, height: usize, memory_limit: usi
     let (result, sent) = bounded(async { tokio::join!(caller, server) }).await;
     let client = result.unwrap();
     sent.unwrap();
+    let compressed_len = compressed.len();
+    drop(compressed);
     let output = client.pixels().unwrap();
     assert_eq!(output.len(), width * height * 4);
     // Compare every independent RGBA value with one reusable expected row.
@@ -902,7 +904,7 @@ async fn decode_high_entropy_zrle(width: usize, height: usize, memory_limit: usi
     assert!(peak <= memory_limit);
     eprintln!(
         "high-entropy {width}x{height} ZRLE: compressed={}, retained={current}, peak={peak}",
-        compressed.len()
+        compressed_len
     );
     drop(client);
     disconnected(&mut peer).await;

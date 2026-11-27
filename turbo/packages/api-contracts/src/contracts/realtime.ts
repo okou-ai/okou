@@ -22,6 +22,7 @@ export {
   type UserPreferenceKind,
   userPreferenceKinds,
   foregroundChannelName,
+  mailDraftChangedEvent,
 } from "../validators/realtime";
 
 const c = initContract();

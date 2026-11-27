@@ -20,8 +20,7 @@ import { isStaffOrg } from "./staff-org";
 
 export interface FeatureSwitch {
   readonly maintainer: string;
-  readonly description?: string;
-  readonly displayName?: string;
+  readonly description: string;
   readonly enabled: boolean;
   readonly enabledUserHashes?: readonly string[];
   readonly enabledEmailHashes?: readonly string[];
@@ -34,8 +33,7 @@ export interface FeatureSwitch {
 
 export interface FeatureSwitchMetadata {
   readonly maintainer: string;
-  readonly description?: string;
-  readonly displayName?: string;
+  readonly description: string;
   readonly rolloutStage: FeatureSwitchRolloutStage;
 }
 
@@ -55,21 +53,18 @@ export interface FeatureSwitchContext {
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ForYouSimplifiedDeck]: {
     maintainer: "ming@okou.ai",
-    displayName: "Simplified For you deck",
     description:
-      "Browse For you without arrow buttons, show a display-only progress bar, lower the card stack, and size cards from the deck width.",
+      "Browse For you without arrow buttons, show a display-only progress bar, lower the card stack, size cards from the deck width, use tighter card and option corners, label what each option does, and let option text be selected.",
     enabled: false,
   },
   [FeatureSwitchKey.WorkflowListRedesign]: {
     maintainer: "ming@okou.ai",
-    displayName: "Workflow list redesign",
     description:
       "Browse workflows with search, separate visibility and automation filters, and a flat list sorted by creation date.",
     enabled: false,
   },
   [FeatureSwitchKey.IosConnectorAppAuthorization]: {
     maintainer: "yuma@okou.ai",
-    displayName: "iOS connector app authorization",
     description:
       "Authorize TikTok, Dropbox and Spotify through their iOS apps with browser recovery.",
     enabled: false,
@@ -77,7 +72,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ComposerVoiceMessages]: {
     maintainer: "ethan@okou.ai",
-    displayName: "Voice recordings in the composer",
     description:
       "Use recordings as chat attachments instead of dictation for everyone in this workspace.",
     enabled: false,
@@ -85,7 +79,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",
-    displayName: "Refined message sharing",
     description:
       "Share messages from a card in the composer's place: Select all, one selection count, unselected messages faded back, and a Copy link action once the link exists.",
     enabled: false,
@@ -109,7 +102,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.CustomConnectorCloudflareAccess]: {
     maintainer: "liangyou@okou.ai",
-    displayName: "Custom connector Cloudflare Access",
     description:
       "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
     enabled: false,
@@ -117,20 +109,17 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.RemoteDevices]: {
     maintainer: "liangyou@okou.ai",
-    displayName: "Remote devices",
     description: "Manage remote channels and access at the device level.",
     enabled: false,
   },
   [FeatureSwitchKey.MemberConnectorAccountAccess]: {
     maintainer: "liangyou@okou.ai",
-    displayName: "Member-wide connector account access",
     description: "Apply connector account eligibility across a member's chats.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.EmailIntegration]: {
     maintainer: "yuma@okou.ai",
-    displayName: "Email integration",
     description:
       "Email Okou and continue each email conversation in its own chat.",
     enabled: false,
@@ -142,7 +131,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.PresentationOutputFormat]: {
     maintainer: "bingjie@okou.ai",
-    displayName: "Presentation output format",
     description:
       "Choose HTML or PPTX for presentations and remember your default in this workspace.",
     enabled: false,
@@ -152,14 +140,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.MarkdownFirstOutput]: {
     maintainer: "bingjie@okou.ai",
-    displayName: "Markdown-first document output",
     description:
       "Use Markdown for text-focused documents and HTML for visual or interactive deliverables, with structured Markdown previews and DOCX and PDF exports.",
     enabled: true,
   },
   [FeatureSwitchKey.MarkdownArtifactQuote]: {
     maintainer: "bingjie@okou.ai",
-    displayName: "Markdown artifact quotes",
     description:
       "Copy or quote selected Markdown passages into the owning chat in desktop split view.",
     enabled: false,
@@ -167,7 +153,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ChatThreadFork]: {
     maintainer: "ethan@okou.ai",
-    displayName: "Fork a chat",
     description:
       "Start a new chat with a reference to a conversation from its menu.",
     enabled: false,
@@ -176,28 +161,32 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.HideEmptyForYou]: {
     maintainer: "ethan@okou.ai",
-    displayName: "Hide empty For you",
     description: "Show For you in the chat list only when the feed has cards.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatListAllFilter]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Show unarchived chats by default and include archived Projects and chats in All.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.ProjectArchive]: {
     maintainer: "ethan@okou.ai",
-    displayName: "Project archiving",
     description: "Archive and restore Projects from their row menu.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ProjectTitleReveal]: {
     maintainer: "ming@okou.ai",
-    displayName: "Project title reveal",
     description:
       "Show more of Project names with fading overflow and reveal them on hover or keyboard focus.",
     enabled: true,
   },
   [FeatureSwitchKey.OkouAnimatedAvatar]: {
     maintainer: "tongx@okou.ai",
-    displayName: "Animated Okou avatar",
     description:
       "Draw Okou's avatar with the animated design-system avatar everywhere the default artwork appears.",
     enabled: false,
@@ -205,7 +194,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.TikTokOAuthConnector]: {
     maintainer: "yuma@okou.ai",
-    displayName: "TikTok OAuth connector",
     description:
       "Connect a TikTok account with automatically refreshed read-only access.",
     enabled: false,
@@ -214,7 +202,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ComputerUseAppStateDirectTransfer]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Computer Use app state direct transfer",
     description:
       "Deliver the current Mac window state and PNG directly to the Run through its Runner.",
     enabled: false,
@@ -222,7 +209,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
-    displayName: "Desktop Shell",
     description:
       "Use interactive shells on an authorized computer with local opt-in.",
     enabled: false,
@@ -230,14 +216,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ZipArtifactPreview]: {
     maintainer: "liangyou@okou.ai",
-    displayName: "ZIP artifact preview",
     description: "Browse and preview files inside ZIP artifacts up to 5 MiB.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ArtifactLibrary]: {
     maintainer: "bingjie@okou.ai",
-    displayName: "Artifact library list",
     description:
       "Browse artifacts in a searchable list with type filters, creation-time sorting, and the existing sidebar previews.",
     enabled: false,
@@ -245,14 +229,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
-    displayName: "Slash actions",
     description:
       "Lead the composer's slash menu with chat actions, and open Workflows and action settings as second-level lists.",
     enabled: false,
   },
   [FeatureSwitchKey.FollowupPlaceholder]: {
     maintainer: "ethan@okou.ai",
-    displayName: "Follow-up placeholder",
     description:
       "Show the first follow-up in the empty composer and press Tab to accept it.",
     enabled: false,
@@ -260,7 +242,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ChatLatestTurnScrollRoom]: {
     maintainer: "ethan@okou.ai",
-    displayName: "Start the latest chat turn at the top",
     description:
       "Leave room below a short reply so the latest question can scroll to the top of the conversation.",
     enabled: false,
@@ -268,42 +249,36 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",
-    displayName: "Agent name on replies",
     description:
       "Open each chat reply with the agent's avatar and name inside the reading column, and pick messages to share from a checkbox column beside them.",
     enabled: false,
   },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
-    displayName: "Cloud browser panel",
     description:
       "Show who is in control with Take over and Hand back, use a floating loading status instead of the permanent footer, and refine the start button.",
     enabled: false,
   },
   [FeatureSwitchKey.ShareAudienceDescriptions]: {
     maintainer: "ming@okou.ai",
-    displayName: "Share audience descriptions",
     description:
       "Describe each Who can access option in the share menu with one line, and anchor Copy link as a full-width footer under a divider.",
     enabled: true,
   },
   [FeatureSwitchKey.WorksChannelCards]: {
     maintainer: "ming@okou.ai",
-    displayName: "Works channel cards",
     description:
       "Show Works channels in a compact grid with usage examples and icon actions for connecting and managing accounts.",
     enabled: false,
   },
   [FeatureSwitchKey.HostedSiteShareRows]: {
     maintainer: "ming@okou.ai",
-    displayName: "Website share rows",
     description:
       "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
     enabled: true,
   },
   [FeatureSwitchKey.HostedSiteEmailSharing]: {
     maintainer: "yuma@okou.ai",
-    displayName: "Artifact email sharing",
     description:
       "Share websites and files with existing accounts or invite verified email recipients.",
     enabled: false,
@@ -311,7 +286,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.HostedSiteCustomDomains]: {
     maintainer: "yuma@okou.ai",
-    displayName: "Custom domains",
     description:
       "Connect verified custom domains from Customize URL with a subscription.",
     enabled: false,
@@ -319,7 +293,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.FreePlanArtifactPaywall]: {
     maintainer: "ming@okou.ai",
-    displayName: "Free plan artifact paywall",
     description:
       "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
     enabled: true,
@@ -354,7 +327,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.AppStoreConnect]: {
     maintainer: "lancy@okou.ai",
-    displayName: "App Store Connect",
     description:
       "Manage Apple app listings, TestFlight builds, reviews and releases.",
     enabled: false,
@@ -641,9 +613,6 @@ export function getFeatureSwitchMetadata(): Record<
     result[key] = {
       maintainer: featureSwitch.maintainer,
       description: featureSwitch.description,
-      ...(featureSwitch.displayName === undefined
-        ? {}
-        : { displayName: featureSwitch.displayName }),
       rolloutStage: getFeatureSwitchRolloutStage(key, featureSwitch),
     };
   }

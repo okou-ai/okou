@@ -16,6 +16,7 @@ internal class DefaultModelApiFixture(
     @Volatile var gptSortOrder = 1
     @Volatile var gptFastAvailable = true
     @Volatile var planRestricted = false
+    @Volatile var onlyAuto = false
     @Volatile var beforeCatalogReturn: (() -> Unit)? = null
     @Volatile
     var preference =
@@ -94,6 +95,7 @@ internal class DefaultModelApiFixture(
 
     private val models
         get(): String {
+            if (onlyAuto) return """{"models":[]}"""
             val availability = if (planRestricted) "plan_restricted" else "available"
             val gptServiceTier = if (gptFastAvailable) "\"priority\"" else "null"
             return """{"models":[{"model":"gpt-test","modelLabel":"GPT 5.6 Sol","modelProviderId":null,"subscriptionOptions":{"efforts":$gptEfforts,"serviceTier":$gptServiceTier},"memberEffective":{"providerType":"codex-oauth-token","runtimeProviderType":"codex-oauth-token","credentialScope":"member","availability":"$availability","accountSelection":"capture_required"}},{"model":"claude-test","modelLabel":"Claude Sonnet 5","modelProviderId":null,"subscriptionOptions":{"efforts":["medium","high"],"serviceTier":null},"memberEffective":{"providerType":"claude-code-oauth-token","runtimeProviderType":"claude-code-oauth-token","credentialScope":"member","availability":"$availability","accountSelection":"capture_required"}}]}"""

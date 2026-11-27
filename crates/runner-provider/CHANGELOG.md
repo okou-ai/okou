@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.21.24](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.23...runner-provider-v0.21.24) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** retire legacy startup dispatch fields ([#51189](https://github.com/okou-ai/okou/issues/51189)) ([ae83fa7](https://github.com/okou-ai/okou/commit/ae83fa732618ccd8d0fa0d1bd3172c7c4c7ecd41))
+
+## [0.21.23](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.22...runner-provider-v0.21.23) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** generate startup storage destinations ([#51106](https://github.com/okou-ai/okou/issues/51106)) ([88e458e](https://github.com/okou-ai/okou/commit/88e458e669546d4c263cdb2d6016355806bba59c))
+
 ## [0.21.22](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.21...runner-provider-v0.21.22) (2026-11-26)
 
 

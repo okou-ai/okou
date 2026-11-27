@@ -80,7 +80,7 @@ private struct ArtifactMetadataPreview: View {
   let viewer: MessageArtifactStore
   let preview: MessageArtifactPreviewRead
   let markdown: MessageMarkdownCache
-  @LoadableValue private var catalog: Loadable<[ChatArtifact]>
+  @LoadableValue private var detail: Loadable<ChatArtifact>
 
   init(
     viewer: MessageArtifactStore, preview: MessageArtifactPreviewRead,
@@ -89,11 +89,11 @@ private struct ArtifactMetadataPreview: View {
     self.viewer = viewer
     self.preview = preview
     self.markdown = markdown
-    _catalog = LoadableValue(task: preview.reads.catalog, keepLast: true)
+    _detail = LoadableValue(task: preview.reads.detail(preview.artifact).value, keepLast: true)
   }
 
   var body: some View {
-    ArtifactPreviewContent(viewer: viewer, preview: preview, markdown: markdown, catalog: catalog)
+    ArtifactPreviewContent(viewer: viewer, preview: preview, markdown: markdown, detail: detail)
   }
 }
 
@@ -101,7 +101,7 @@ private struct ArtifactPreviewContent: View {
   let viewer: MessageArtifactStore
   let preview: MessageArtifactPreviewRead
   let markdown: MessageMarkdownCache
-  let catalog: Loadable<[ChatArtifact]>?
+  let detail: Loadable<ChatArtifact>?
   @LoadableValue private var value: Loadable<MessageArtifactPreviewRead.Content>
   @LoadableValue private var download: Loadable<ChatAttachmentFile?>
   @State private var webError: String?
@@ -113,12 +113,12 @@ private struct ArtifactPreviewContent: View {
   init(
     viewer: MessageArtifactStore, preview: MessageArtifactPreviewRead,
     markdown: MessageMarkdownCache,
-    catalog: Loadable<[ChatArtifact]>? = nil
+    detail: Loadable<ChatArtifact>? = nil
   ) {
     self.viewer = viewer
     self.preview = preview
     self.markdown = markdown
-    self.catalog = catalog
+    self.detail = detail
     _value = LoadableValue(task: preview.value)
     _download = LoadableValue(task: preview.download)
   }
@@ -128,15 +128,17 @@ private struct ArtifactPreviewContent: View {
   }
 
   var body: some View {
-    MessagePreviewSheet(title: artifact.filename, dismiss: viewer.dismiss) {
+    MessagePreviewSheet(
+      title: artifact.filename, dismiss: viewer.dismiss, isImage: artifact.kind == .image
+    ) {
       VStack(spacing: 0) {
         content.frame(maxWidth: .infinity, maxHeight: .infinity)
         if let error = download.error {
           Text(MessageArtifactStore.message(for: error))
             .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(OkouSpace.md)
         }
-        if let catalog {
-          ArtifactCatalogWarning(catalog: catalog, retry: viewer.refreshDetails)
+        if let detail {
+          ArtifactDetailWarning(detail: detail, retry: viewer.refreshDetails)
         }
       }
       .task(id: value.data?.artifact.id) { await prepareImageCovers() }
@@ -305,12 +307,12 @@ private struct ArtifactPreviewContent: View {
 
 }
 
-private struct ArtifactCatalogWarning: View {
-  let catalog: Loadable<[ChatArtifact]>
+private struct ArtifactDetailWarning: View {
+  let detail: Loadable<ChatArtifact>
   let retry: @MainActor () -> Void
 
   var body: some View {
-    if let error = catalog.error,
+    if let error = detail.error,
       (error as? APIClientError)?.statusCode != 401,
       (error as? APIClientError)?.statusCode != 426
     {

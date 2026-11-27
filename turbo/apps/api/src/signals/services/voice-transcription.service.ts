@@ -19,14 +19,13 @@ import { waitUntil } from "../context/wait-until";
 import { VoiceProviderUnavailableError } from "../external/voice-provider-request";
 import type { VoiceContentPart } from "../external/voice-completion-types";
 import { writeDb$ } from "../external/db";
-import { downloadS3BufferWithMaxBytes$ } from "../external/s3";
 import {
   generateVertexVoice,
   VERTEX_VOICE_MAX_OUTPUT_TOKENS,
 } from "../external/vertex-voice";
 import { gcpLlmConfiguration } from "../external/gcp-llm-auth";
 import { voiceTranscriptionUsage } from "./voice-transcription-usage";
-import { resolveVoiceClips$ } from "./voice-clips.service";
+import { loadVoiceClipAudio$, resolveVoiceClips$ } from "./voice-clips.service";
 import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { processUsageEventKeys$ } from "./credit-usage.service";
@@ -257,21 +256,10 @@ export const transcribeClips$ = command(
       return notConfigured("Voice transcription pricing is incomplete");
     }
 
-    const content = [];
-    for (const clip of resolved.clips) {
-      const bytes = await set(
-        downloadS3BufferWithMaxBytes$,
-        { ...clip, maxBytes: clip.size },
-        signal,
-      );
-      if (bytes.length !== clip.size) {
-        throw new Error("Private audio size changed");
-      }
-      content.push({
-        type: "audio" as const,
-        audio: { data: bytes.toString("base64"), mimeType: clip.mimeType },
-      });
-    }
+    const audio = await set(loadVoiceClipAudio$, resolved.clips, signal);
+    const content = audio.map((clip): VoiceContentPart => {
+      return { type: "audio", audio: clip };
+    });
     signal.throwIfAborted();
     // The claim owns the paid request and its checkpoint across client disconnects.
     const completion = set(

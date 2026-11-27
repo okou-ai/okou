@@ -194,7 +194,8 @@ final class GeneratedResultTests: XCTestCase {
     viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
     let content = try await artifactPreviewTask(viewer).value
     let file = try XCTUnwrap(content.file)
-    let failedCatalog = await (try viewer.reads.store.get(viewer.reads.catalog)).result
+    let failedCatalog = await
+      (try viewer.reads.store.get(viewer.reads.detail(content.artifact).value)).result
     XCTAssertThrowsError(try failedCatalog.get()) { error in
       XCTAssertEqual((error as? APIClientError)?.statusCode, 503)
     }
@@ -202,8 +203,10 @@ final class GeneratedResultTests: XCTestCase {
     let resolutions = fixture.state.resolutions.withLock { $0 }
     fixture.state.catalogUnavailable.withLock { $0 = false }
     viewer.refreshDetails()
-    let recoveredCatalog = try await viewer.reads.store.get(viewer.reads.catalog).value
-    XCTAssertFalse(recoveredCatalog.isEmpty)
+    let recoveredCatalog = try await viewer.reads.store.get(
+      viewer.reads.detail(content.artifact).value
+    ).value
+    XCTAssertEqual(recoveredCatalog.id, content.artifact.id)
     let retained = try await artifactPreviewTask(viewer).value
     XCTAssertEqual(retained.file?.url, file.url)
     XCTAssertEqual(viewer.reads.metadata(retained.artifact).filename, "Notes.txt")
@@ -245,8 +248,8 @@ final class GeneratedResultTests: XCTestCase {
     addTeardownBlock { await server.stop() }
     let origin = try await server.start()
     let fixture = ChatHTTPFixture { request in
-      if request.url?.path.hasSuffix("/artifacts") == true {
-        return ChatHTTPResponse(body: "{\"runs\":[]}")
+      if request.url?.path == "/api/artifacts/by-url" {
+        return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"No detail\"}}")
       }
       let waits = first.withLock { value in
         let result = value
@@ -265,7 +268,7 @@ final class GeneratedResultTests: XCTestCase {
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     let markdown = MessageMarkdownCache(baseURL: fixture.baseURL)
     let viewer = MessageArtifactStore(
-      service: commands.artifacts, threadID: "thread", webURL: fixture.baseURL,
+      service: commands.artifacts, webURL: fixture.baseURL,
       markdown: markdown, graph: makeTestWorkspaceGraph(),
       didFail: { _ in XCTFail("Cancellation must not expire the account") })
     defer { viewer.close() }
@@ -445,22 +448,6 @@ private final class GeneratedResultFixture: Sendable {
     }
     owner.addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    let catalog = try JSONSerialization.string(withJSONObject: [
-      "runs": [
-        [
-          "runId": "run",
-          "files": files.map { file -> [String: Any] in
-            var object: [String: Any] = [
-              "id": file.reference, "url": "/artifacts/" + file.reference,
-              "filename": file.filename, "contentType": file.type, "size": file.bytes.count,
-              "createdAt": "2026-10-21T00:00:00Z"
-            ]
-            if let kind = file.artifactKind { object["artifactKind"] = kind }
-            return object
-          }
-        ]
-      ]
-    ])
     let message = """
       ## Your results
 
@@ -481,11 +468,28 @@ private final class GeneratedResultFixture: Sendable {
     let history = ConversationHistoryFixture(
       rows: [row],
       artifactResources: { request in
-        if request.url?.path.hasSuffix("/artifacts") == true {
+        if request.url?.path == "/api/artifacts/by-url" {
           if state.catalogUnavailable.withLock({ $0 }) {
             return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Unavailable\"}}")
           }
-          return ChatHTTPResponse(body: catalog)
+          guard
+            let link = request.url.flatMap({
+              URLComponents(url: $0, resolvingAgainstBaseURL: false)
+            })?.queryItems?.first(where: { $0.name == "url" })?.value,
+            let file = files.first(where: { link == "/artifacts/" + $0.reference })
+          else { throw URLError(.unsupportedURL) }
+          let kind =
+            file.artifactKind
+            ?? ChatArtifact(
+              source: .reference(file.reference, fragment: ""), filename: file.filename,
+              contentType: file.type
+            ).kind.rawValue
+          return ChatHTTPResponse(
+            body: try JSONSerialization.string(withJSONObject: [
+              "url": link, "filename": file.filename, "contentType": file.type,
+              "size": file.bytes.count,
+              "preview": ["kind": kind]
+            ]))
         }
         let resolution = state.resolutions.withLock {
           $0 += 1

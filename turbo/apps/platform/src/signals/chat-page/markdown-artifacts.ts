@@ -45,6 +45,7 @@ export const embedMarkdownArtifacts$ = command(
     tree: Root,
     registry: ArtifactCardSignalsRegistry,
     threadId: string,
+    eventId: string,
   ) => {
     visit(tree, "element", (node) => {
       if (node.data?.card) {
@@ -67,6 +68,7 @@ export const embedMarkdownArtifacts$ = command(
             kind: "artifact",
             signals: set(registry.register$, descriptor),
             threadId,
+            eventId,
           },
         };
       }

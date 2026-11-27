@@ -2,7 +2,6 @@
 """Synthetic original-file and CLI checks; these do not execute native Guests."""
 
 import copy
-import hashlib
 import json
 import pathlib
 import subprocess
@@ -13,88 +12,12 @@ import uuid
 import native_unpark_report as native
 import report
 import report_test
-import speculative_fault_report_test as callback
-from progress_report_fixture import foreground_heartbeat, joined_observer
+import held_status_report_fixture as fixture
 
 
 class NativeUnparkReportTests(unittest.TestCase):
     def setUp(self):
-        callback.SpeculativeFaultReportTests.setUp(self)
-        self.collector["metadata"]["native_unpark_policy_json"] = self.collector["metadata"].pop("native_speculative_fault_policy_json")
-        original, template, sample = copy.deepcopy(self.events[:6]), copy.deepcopy(self.witnesses[:10]), self.samples[0]
-        old_base = template[0]["monotonic_ns"]-3_000_000
-        old, backing = original[1]["sandbox_id"], original[1]["backing_generation"]
-        old_history = template[1]["evidence"]["history_run_id"]
-        old_runner = template[5]["evidence"]["heartbeat"]["receipt"]["state"]["runnerId"]
-        self.events, self.samples, self.witnesses = [], [], []
-        for index, case in enumerate(sorted(native.CASES)):
-            at = lambda offset: 10_000_000_000*(index+1)+offset*1_000_000
-            owner, generation, history, operation, runner = [str(uuid.uuid4()) for _ in range(5)]
-            tokens = {old:owner,backing:generation,old_history:history,old_runner:runner,template[0]["case"]:case}
-            def remap(value):
-                if isinstance(value, dict): return {key:remap(item) for key,item in value.items()}
-                if isinstance(value, list): return [remap(item) for item in value]
-                if isinstance(value, str):
-                    for before,after in tokens.items(): value = value.replace(before,after)
-                    return value
-                if type(value) is int and old_base <= value < old_base+1_000_000_000:
-                    return at(0)+value-old_base
-                return value
-            terminal = remap(copy.deepcopy(original))
-            for event, offset in zip(terminal,(0,1,40,41,70,100)):
-                event.update(case=case,sandbox_id=owner,backing_generation=generation,
-                             monotonic_ns=at(offset),unix_ns=at(offset)+1000)
-                self.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
-            self.events.extend(terminal)
-            initial = remap(copy.deepcopy(template[0]["evidence"]))
-            initial["status_path"] = str(self.root/f"case-{index}"/"status.json")
-            raw = 'PATCH /vm HTTP/1.1\r\nContent-Length: 19\r\n\r\n{"state":"Resumed"}'
-            response = "HTTP/1.1 204 No Content\r\n\r\n"
-            request_sha, response_sha = [hashlib.sha256(value.encode()).hexdigest() for value in (raw,response)]
-            mode = case.rsplit("-",1)[0]
-            values = (
-                initial,
-                {"mode":mode,"history_run_id":history,"operation_run_id":operation,
-                 "reuse_key":"thread:native-guarded-"+history,"prepare_started_ns":at(5),
-                 "capture_observed_ns":at(7),"request_raw":raw,"request_sha256":request_sha,
-                 "backend_socket":"/run/vm0/sock/"+owner+"/api.sock",
-                 "front_socket":"/run/vm0/sock/"+owner+"/unpark-proof.sock",
-                 "backend_dispatched":False,"restore_callback_reached":False,
-                 "original_full_lease_active":True,"allocated":[2,4096,1]},
-                {"backend_response_observed_ns":at(10),"backend_status":204,"response_raw":response,
-                 "response_sha256":response_sha,"public_unpark_polled_pending":True,
-                 "response_delivery_withheld":True,"restore_callback_reached":False,
-                 "internal_vmm_inflight_claimed":False,"original_full_lease_active":True,
-                 "original_exit_polled_pending":True,"allocated":[2,4096,1]},
-                {"cancel_requested_ns":at(14),"observation_dropped_ns":at(16),
-                 "observer_unwound":mode=="UnparkObserverUnwind","state":"Uncertain",
-                 "commit_refused":True,"repark_refused":True,"incoming_refused":True,
-                 "original_metadata_preserved":True,"original_full_lease_active":True,
-                 "original_exit_polled_pending":True,"pool_empty":True,"allocated":[2,4096,1]},
-                {"pool_held_ns":at(23),"heartbeat_pending_ns":at(24),"pool_released_ns":at(27),
-                 "observer":joined_observer(at(25), at(26)),
-                 "heartbeat":foreground_heartbeat(runner, 1, at(28), at(29), (2, 4096)),
-                 "terminal_unpark_polled_pending":True,"response_delivery_withheld":True,
-                 "additional_full_profile_refused":True,"original_full_lease_active":True,"allocated":[2,4096,1]},
-                {"response_released_ns":at(36),"producer_joined_ns":at(38),"producer_joined":True,
-                 "producer_unwound":mode=="UnparkProducerUnwind","backend_status":204,
-                 "joined_request_sha256":None if mode=="UnparkProducerUnwind" else request_sha,
-                 "accepted_response_before_cancellation":True,"internal_vmm_inflight_claimed":False},
-            )
-            for phase,value,offset in zip(native.PHASES,values,(3,8,12,20,35,39)):
-                self.witnesses.append(report_test.witness_receipt(
-                    case, phase,
-                    monotonic_ns=at(offset),
-                    unix_ns=at(offset)+1000,
-                    sandbox_id=owner,
-                    backing_generation=generation,
-                    evidence=value,
-                ))
-            saved = remap(copy.deepcopy(template[3:]))
-            for event in saved:
-                heartbeat = event["evidence"].get("heartbeat")
-                if heartbeat: heartbeat["receipt"]["state"]["snapshotSequence"] += 1
-            self.witnesses.extend(saved)
+        fixture.prepare_native_unpark(self)
 
     def event(self, phase):
         return report_test.witness_for_phase(self.witnesses, phase)
@@ -105,10 +28,7 @@ class NativeUnparkReportTests(unittest.TestCase):
         return native.validate(self.root)
 
     def refused(self, changes):
-        original = copy.deepcopy(self.witnesses)
-        report_test.assert_indexed_witness_refusals(self, original, changes)
-        self.witnesses = original
-        self.validate()
+        fixture.assert_unpark_witness_refusals(self, changes)
 
     def test_complete_api_wait_proof_keeps_stronger_boundaries_unclaimed(self):
         result = self.validate()

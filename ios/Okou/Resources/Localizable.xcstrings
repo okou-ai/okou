@@ -487,13 +487,6 @@
         }
       }
     },
-    "Handled just now": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "刚刚处理的" }
-        }
-      }
-    },
     "Back to chats": {
       "localizations": {
         "zh-Hans": {
@@ -533,34 +526,6 @@
       "localizations": {
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "%@ 暂停" }
-        }
-      }
-    },
-    "Sent · %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已发送 · %@" }
-        }
-      }
-    },
-    "Draft ready · %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "草稿已备好 · %@" }
-        }
-      }
-    },
-    "Enabled": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已启用" }
-        }
-      }
-    },
-    "Dismissed": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已忽略" }
         }
       }
     },
@@ -606,41 +571,6 @@
         }
       }
     },
-    "Noted — this is already done": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已记下，这件事已经处理了" }
-        }
-      }
-    },
-    "Noted — this is not planned": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已记下，这件事暂无计划" }
-        }
-      }
-    },
-    "Noted — please don’t nudge me about this again": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已记录，请不要再催这件事" }
-        }
-      }
-    },
-    "You’ll see fewer suggestions like this.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "会少推荐类似的建议" }
-        }
-      }
-    },
-    "Sent to the chat": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已发送到该聊天" }
-        }
-      }
-    },
     "All caught up": {
       "localizations": {
         "zh-Hans": {
@@ -662,13 +592,6 @@
         }
       }
     },
-    "Show suggestion %lld of %lld": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "查看第 %1$lld 条建议（共 %2$lld 条）" }
-        }
-      }
-    },
     "For you": {
       "localizations": {
         "zh-Hans": {
@@ -676,31 +599,114 @@
         }
       }
     },
-    "Already done": {
+    "Won't do": {
       "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Mache ich nicht" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "No lo haré" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Je ne le ferai pas" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "नहीं करना है" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tidak akan saya lakukan" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Non lo farò" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "やらない" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "하지 않을래요" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Não vou fazer" }
+        },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已经处理了" }
+          "stringUnit": { "state": "translated", "value": "不做了" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "不做了" }
         }
       }
     },
-    "Not planned": {
+    "Later": {
       "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Später" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Más tarde" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Plus tard" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "बाद में" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Nanti" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Più tardi" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "あとで" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "나중에" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Mais tarde" }
+        },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "暂无计划" }
-        }
-      }
-    },
-    "Don’t nudge me": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "别催了" }
+          "stringUnit": { "state": "translated", "value": "晚点再看" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "晚點再看" }
         }
       }
     },
     "Less like this": {
       "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Weniger davon" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Menos como esta" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Moins de ce type" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "ऐसे सुझाव कम दिखाएँ" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Kurangi saran seperti ini" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Meno suggerimenti simili" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "このような提案を減らす" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "비슷한 제안 줄이기" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Menos sugestões assim" }
+        },
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "少推荐这类内容" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "少推薦這類內容" }
         }
       }
     },
@@ -708,34 +714,6 @@
       "localizations": {
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "反馈" }
-        }
-      }
-    },
-    "Suggestion dismissed": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已忽略推荐" }
-        }
-      }
-    },
-    "Sent to a new chat": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已发送到新聊天" }
-        }
-      }
-    },
-    "This suggestion was already handled.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "这条推荐已处理。" }
-        }
-      }
-    },
-    "This suggestion is no longer available.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "这条推荐已无法恢复。" }
         }
       }
     },
@@ -771,13 +749,6 @@
       "localizations": {
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "已启用自动化" }
-        }
-      }
-    },
-    "Event dismissed": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已忽略事件" }
         }
       }
     },
@@ -20008,117 +19979,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "要傳送這封郵件嗎？" }
-        }
-      }
-    },
-    "Draft in %@": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Entwurf in %@" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Borrador en %@" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Brouillon dans %@" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "%@ में ड्राफ़्ट" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Draf di %@" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Bozza in %@" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "%@ で下書き" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "%@에서 초안 작성" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Rascunho em %@" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "在 %@ 中起草" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "在 %@ 中起草" }
-        }
-      }
-    },
-    "Draft in the existing chat": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Entwurf im bestehenden Chat" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Borrador en el chat existente" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Brouillon dans le chat existant" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "मौजूदा चैट में ड्राफ़्ट" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Draf di obrolan yang ada" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Bozza nella chat esistente" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "既存のチャットで下書き" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "기존 채팅에서 초안 작성" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Rascunho no chat existente" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "在现有对话中起草" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "在現有對話中起草" }
-        }
-      }
-    },
-    "Opening draft…": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Entwurf wird geöffnet…" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Abriendo borrador…" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Ouverture du brouillon…" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "ड्राफ़्ट खुल रहा है…" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Membuka draf…" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Apertura bozza…" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "下書きを開いています…" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "초안 여는 중…" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Abrindo rascunho…" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "正在打开草稿…" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "正在打開草稿…" }
         }
       }
     },

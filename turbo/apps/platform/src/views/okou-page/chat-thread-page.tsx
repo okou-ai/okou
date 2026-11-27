@@ -18,6 +18,7 @@ import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/share
 import type { SharedThreadVisibilitySignals } from "../../signals/shared-thread-visibility.ts";
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
+import { RemoteDeviceApprovalLinkDialog } from "./remote-device-approval-card.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
@@ -2787,6 +2788,7 @@ export function ChatThreadPage() {
     <>
       <ChatThreadArea leftPane={leftPane} rightPane={rightPane} />
       <ChatConnectorActionConnectModal />
+      <RemoteDeviceApprovalLinkDialog />
     </>
   );
 }
@@ -6220,6 +6222,7 @@ function shareGroupClassName({
     role === "user" && "[&_[data-chat-user-message-actions]]:hidden",
     // Keep the warm surface tint when adding hover feedback to a selection.
     "data-selected:bg-secondary-hover",
+    phase === "selecting" && "cursor-default",
     phase === "selecting" &&
       (hasSelection
         ? "data-selected:hover:bg-state-hover-overlay"
@@ -6553,7 +6556,11 @@ function PagedUserGroup({
             ? rendersUserBubble(previousEvent)
             : stackFirstOnPrevious);
         return (
-          <div key={chatEventRenderKey(event)} className="contents">
+          <div
+            key={chatEventRenderKey(event)}
+            className="contents"
+            data-chat-group-id={group.beginEventId}
+          >
             {dateDivider ? (
               <ChatThreadDateDivider divider={dateDivider} />
             ) : null}
@@ -7811,6 +7818,7 @@ function PagedUserMessage({
     openImageLightbox(
       {
         threadId: thread.threadId,
+        sourceEventId: event.id,
         url: attachment.url,
         filename: attachment.filename,
         contentType: attachment.signals.contentType,
@@ -8210,6 +8218,7 @@ function PagedAssistantGroup({
   return (
     <div
       id={groupElementId}
+      data-chat-group-id={group.beginEventId}
       ref={turnOnRef}
       data-role="assistant"
       data-chat-run-id={runId}
@@ -8505,7 +8514,7 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       )}
       data-chat-run-related-artifact-url={card.signals.url}
       onClick={() => {
-        openArtifact(card, pageSignal);
+        detach(openArtifact(card, pageSignal), Reason.DomCallback);
       }}
     >
       <RelatedArtifactIcon kind={card.signals.kind} />

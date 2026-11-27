@@ -1634,6 +1634,7 @@ function queuedPromptRejectionChannel(
   };
   const contextType = input.queuedMessage.contextType;
   switch (contextType) {
+    case "proactive":
     case "web":
     case "agent_run": {
       return undefined;
@@ -1882,6 +1883,7 @@ export interface QueuedPromptLaunchContext {
   readonly orgId: string;
   readonly threadId: string;
   readonly prompt: string;
+  readonly voiceClipFileIds?: readonly string[];
   readonly triggerSource: QueuedUserMessageTriggerSource;
   readonly discordDelivery?: DiscordDeliveryTarget;
   readonly wechatDelivery?: WechatDeliveryTarget;
@@ -1908,6 +1910,7 @@ export const recordQueuedPromptRunLaunch$ = command(
           userId,
           orgId: args.orgId,
           prompt: args.prompt,
+          voiceClipFileIds: args.voiceClipFileIds,
           integrationContext: args.integrationContext,
           includePriorRounds: true,
           titled: args.titled,

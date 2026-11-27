@@ -349,6 +349,34 @@ result through Observation and is not allowed:
 A confirmed value that actions need synchronously is graph `State`, written
 where the read publishes it, and views resolve it like any other signal.
 
+### Observation and Graph Ownership
+
+Observation keeps native interaction state: focus, a presented form's fields
+and its own submission phase, an input menu's query and highlighted row,
+gesture and scroll state. Business state that outlives a form, or that several
+views and actions read, is graph `State`: confirmed values, an owner's write
+phases and failures, the notices it reports, pending choices, and the pages it
+presents. Expose it as a `Computed` that views resolve, plus synchronous
+accessors for actions and tests. An owner that keeps business state in the
+graph is not `@Observable`. `okou_observable_graph` rejects graph signals and
+Stores stored in an Observation owner. A computed property may still return an
+existing signal for views to resolve.
+
+- A view updates only when its `body` reads the resolved value. When a
+  synchronous helper decides what a view shows, the view passes it the value it
+  resolved. Do not resolve a value only to trigger a render.
+- UIKit-backed representables receive resolved values as inputs, so a change
+  runs `updateUIView` and rebuilds a native menu. Resolve in the SwiftUI view
+  that creates the representable.
+- Keep observation close to its reader. Derive a narrow `Computed` for views
+  that need part of a larger State. Read a whole State in a small modifier
+  rather than around a page. A gate that shows parent-built content stores that
+  content instead of rebuilding it.
+- A view whose owner is optional resolves a static fallback signal, so the
+  wrapper keeps one signal type.
+- A multi-field change publishes in one write, so a view never renders half of
+  it.
+
 Review the complete path: trigger, graph/Store identity, dependency Task,
 publication, invalidation, and teardown. Confirm which state is a resource
 phase, confirmed business value, domain phase, or native interaction. Keep

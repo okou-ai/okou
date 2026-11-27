@@ -112,6 +112,8 @@ struct ChatSettingsView: View {
         }
         SettingsConnectorsSection(open: openConnectors)
         StoreProvider(store.settingsResources.store) {
+          SettingsRemoteDevicesSection(
+            resources: store.settingsResources.remoteDevices, webURL: store.webURL)
           SettingsModelsSection(models: store.modelStore)
         }
         Section {
@@ -211,8 +213,11 @@ struct ChatSettingsView: View {
     }
     .background {
       if let connectors {
-        // Keep authorization mounted while connector and account pages are pushed.
-        Color.clear.connectorAuthorizationPresentation(store: connectors)
+        // Keep authorization mounted while connector and account pages are pushed. Its web
+        // page is read from the connectors' Store.
+        StoreProvider(connectors.graph) {
+          Color.clear.connectorAuthorizationPresentation(store: connectors)
+        }
       }
     }
     .onDisappear {

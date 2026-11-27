@@ -6,21 +6,20 @@ import {
   currentChatThreadId$,
   currentChatThreadListIds$,
 } from "../chat-thread-list.ts";
-import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
+import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
 import { currentRightThread$ } from "../chat-page/chat-thread-pane-state.ts";
 import { loadLeftThread$ } from "../chat-page/chat-thread-pane-navigation.ts";
 import { resetSignal } from "../utils.ts";
 import {
-  setChatThreadArchivedFilter$,
-  setChatThreadMutedFilter$,
-  setChatThreadUnreadFilter$,
+  activeChatThreadFilter$,
+  chatThreadFilter$,
+  setChatThreadFilter$,
+  type ChatThreadFilter,
 } from "./chat-thread-filter.ts";
 import { shouldHandleShortcutPress } from "./nav.ts";
 import { agentChatPageActive$ } from "../active-route.ts";
 import { pwaChatListVisible$ } from "./pwa-navigation.ts";
 import { cancelProjectFoldAnimations$ } from "../projects/project-fold.ts";
-
-export type ChatThreadFilter = "all" | "unread" | "archived" | "muted";
 
 const resetChatThreadFilterSelection$ = resetSignal();
 
@@ -31,24 +30,30 @@ export const selectChatThreadFilter$ = command(
   async ({ get, set }, filter: ChatThreadFilter, parentSignal: AbortSignal) => {
     const signal = set(resetChatThreadFilterSelection$, parentSignal);
     set(cancelProjectFoldAnimations$);
-    if (filter === "archived") {
-      set(setChatThreadArchivedFilter$);
-    } else if (filter === "muted") {
-      set(setChatThreadMutedFilter$);
-    } else {
-      set(setChatThreadUnreadFilter$, filter === "unread");
-    }
+    set(setChatThreadFilter$, filter);
 
     if (get(pwaChatListVisible$) && (await get(agentChatPageActive$))) {
       return;
     }
 
-    const threadIds = await get(currentChatThreadListIds$);
+    const [threadIds, activeFilter] = await Promise.all([
+      get(currentChatThreadListIds$),
+      get(activeChatThreadFilter$),
+    ]);
     signal.throwIfAborted();
 
     const currentThreadId = get(currentChatThreadId$);
-    if (currentThreadId && threadIds.includes(currentThreadId)) {
-      return;
+    if (currentThreadId) {
+      // All also contains Project chats, including children of folded Projects.
+      const listed =
+        activeFilter === "all"
+          ? get(eventDrivenChatThreads$).some((thread) => {
+              return thread.id === currentThreadId;
+            })
+          : threadIds.includes(currentThreadId);
+      if (listed) {
+        return;
+      }
     }
 
     const rightThreadId = get(currentRightThread$)?.threadId;
@@ -67,7 +72,7 @@ export const selectChatThreadFilter$ = command(
 export const showChatThreadInbox$ = command(({ set }) => {
   set(cancelProjectFoldAnimations$);
   set(resetChatThreadFilterSelection$);
-  set(setChatThreadUnreadFilter$, false);
+  set(setChatThreadFilter$, "unarchived");
 });
 
 function shouldHandleUnreadOnlyShortcut(event: KeyboardEvent): boolean {
@@ -89,7 +94,7 @@ export const setupChatThreadFilterShortcut$ = command(
           run: async () => {
             await set(
               selectChatThreadFilter$,
-              get(chatThreadOnlyUnread$) ? "all" : "unread",
+              get(chatThreadFilter$) === "unread" ? "unarchived" : "unread",
               signal,
             );
           },

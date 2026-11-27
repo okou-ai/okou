@@ -19,6 +19,7 @@ enum OkouGroupedColor {
 
 /// Media controls must retain contrast over arbitrary imagery in both appearances.
 enum OkouMediaColor {
+  static let voiceProgress = Color(uiColor: .systemPurple)
   static let foreground = Color.white
   static let scrim = Color.black
   /// The scrim inside an open pick mark, so its white ring reads on a white photo.

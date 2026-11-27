@@ -30,7 +30,7 @@ describe("Published member instructions in direct Runs", () => {
         "\uFEFF  B after Run creation\r\n中文\n[AGENT_PROFILE]\n  ";
       await bdd.updatePersonalInstructions(owned.actor, current);
       const { execution } = await owned.runExecution(queued.runId);
-      const selected = execution.contentBundles.instructions!;
+      const selected = execution.startupInputs.contentBundles.instructions!;
       expect(
         readExecutionContentBundle(s3.objects, selected)
           .get("instructions.md")
@@ -50,7 +50,8 @@ describe("Published member instructions in direct Runs", () => {
         model: "auto",
       });
       const subsequent = await owned.runExecution(next.runId);
-      const later = subsequent.execution.contentBundles.instructions!;
+      const later =
+        subsequent.execution.startupInputs.contentBundles.instructions!;
       expect(later.sha256).not.toBe(selected.sha256);
       expect(
         readExecutionContentBundle(s3.objects, later)
@@ -77,7 +78,7 @@ describe("Published member instructions in direct Runs", () => {
       const { execution } = await owned.runExecution(queued.runId);
       const files = readExecutionContentBundle(
         s3.objects,
-        execution.contentBundles.instructions!,
+        execution.startupInputs.contentBundles.instructions!,
       );
       expect([...files.keys()]).toStrictEqual(["instructions.md"]);
       expect(files.get("instructions.md")?.length).toBe(0);
@@ -144,7 +145,7 @@ describe("Published member instructions in direct Runs", () => {
       expect(
         readExecutionContentBundle(
           s3.objects,
-          execution.contentBundles.instructions!,
+          execution.startupInputs.contentBundles.instructions!,
         )
           .get("instructions.md")
           ?.toString(),

@@ -12,10 +12,10 @@ struct OkouApp: App {
   private let configuration = Result { try AppConfiguration() }
 
   private static var isDesignPreview: Bool {
-    if isSSHAuthorizationPreview { return true }
+    if isSSHAuthorizationPreview || isForYouDeck { return true }
     #if DEBUG
       return ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
-        || isChatSyncStatus || isComputerAuthorizationPreview || isForYouDeck
+        || isChatSyncStatus || isComputerAuthorizationPreview
     #else
       return false
     #endif
@@ -48,7 +48,7 @@ struct OkouApp: App {
 
   /// The For you deck against a local fixture (`ForYouDeckGallery`), without signing in.
   private static var isForYouDeck: Bool {
-    #if DEBUG
+    #if DEBUG || STAGING
       ProcessInfo.processInfo.arguments.contains("--for-you-deck")
     #else
       false
@@ -93,12 +93,12 @@ struct OkouApp: App {
         #if DEBUG || STAGING
           if Self.isSSHAuthorizationPreview {
             NavigationStack { SSHAuthorizationGallery() }
+          } else if Self.isForYouDeck {
+            ForYouDeckGallery()
           } else {
             #if DEBUG
               if Self.isComputerAuthorizationPreview {
                 NavigationStack { ComputerAuthorizationGallery() }
-              } else if Self.isForYouDeck {
-                ForYouDeckGallery()
               } else if Self.isChatSyncStatus {
                 NavigationStack { ChatSyncStatusGallery() }
               } else if Self.isResultStyles {
@@ -238,30 +238,10 @@ private struct WorkspaceRootView: View {
   }
 
   private var workspace: some View {
-    WorkspaceNavigation(sidebar: sidebar, forYouBusy: store.forYou.busy) {
-      // Mount the sidebar after identity and its complete local baseline are restored.
-      RestoredSidebarGate(store: store) {
-        if authentication.presentation?.userID == userID,
-          authentication.presentation?.preparedWorkspaceID == workspaceID
-        {
-          ChatSidebarView(
-            store: store, authentication: authentication, workspaceID: workspaceID,
-            notifications: notifications,
-            headerHeight: headerHeight,
-            accountError: $accountError,
-            close: closeSidebar,
-            newChat: startNewChat
-          )
-          .id(ObjectIdentifier(store))
-          .chatFeedbackOverlay(store: store, isPresented: sidebar.isOpen)
-        }
-      }
-    } forYou: {
-      ForYouView(workspace: store, showChat: closeSidebar, goBack: sidebar.goBack)
-    } chat: {
-      chatPage
+    // The page is held while a For you action runs, which the session graph records.
+    ForYouBusyReader(forYou: store.forYou) { forYouBusy in
+      workspaceNavigation(forYouBusy: forYouBusy)
     }
-    .ignoresSafeArea()
     .sensoryFeedback(.selection, trigger: sidebar.isOpen)
     .task(id: sidebar.path.contains(.forYou)) {
       if sidebar.path.contains(.forYou) { await store.forYou.beginVisit() }
@@ -302,6 +282,33 @@ private struct WorkspaceRootView: View {
     }
     .modifier(ChatListActionAlert(list: store.list))
     .modifier(RequiredUpdateCover(store: store))
+  }
+
+  private func workspaceNavigation(forYouBusy: Bool) -> some View {
+    WorkspaceNavigation(sidebar: sidebar, forYouBusy: forYouBusy) {
+      // Mount the sidebar after identity and its complete local baseline are restored.
+      RestoredSidebarGate(store: store) {
+        if authentication.presentation?.userID == userID,
+          authentication.presentation?.preparedWorkspaceID == workspaceID
+        {
+          ChatSidebarView(
+            store: store, authentication: authentication, workspaceID: workspaceID,
+            notifications: notifications,
+            headerHeight: headerHeight,
+            accountError: $accountError,
+            close: closeSidebar,
+            newChat: startNewChat
+          )
+          .id(ObjectIdentifier(store))
+          .chatFeedbackOverlay(store: store, isPresented: sidebar.isOpen)
+        }
+      }
+    } forYou: {
+      ForYouView(workspace: store, showChat: closeSidebar, goBack: sidebar.goBack)
+    } chat: {
+      chatPage
+    }
+    .ignoresSafeArea()
   }
 
   private var chatPage: some View {
@@ -398,6 +405,23 @@ private struct WorkspaceRootView: View {
   private func startNewChat() {
     NewChatRequests.shared.request()
   }
+}
+
+/// Resolves whether a For you action is running from the workspace session's graph, for the
+/// navigation that holds the page while one runs. It applies under the workspace's Store
+/// provider.
+private struct ForYouBusyReader<Content: View>: View {
+  let forYou: ForYouStore
+  let content: (Bool) -> Content
+  @ResolvedValue private var busy: Bool?
+
+  init(forYou: ForYouStore, @ViewBuilder content: @escaping (Bool) -> Content) {
+    self.forYou = forYou
+    self.content = content
+    _busy = ResolvedValue(forYou.busyValue)
+  }
+
+  var body: some View { content(busy ?? forYou.busy) }
 }
 
 /// Shows its content once the workspace has restored the sidebar's cached chats, Projects and

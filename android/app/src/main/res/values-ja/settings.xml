@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">モデルアカウントを切り替えられませんでした。</string>
     <string name="settings_quota">使用枠</string>
     <string name="settings_hour_quota">%1$d時間の使用枠</string>
+    <string name="settings_minute_quota">%1$d分間の使用枠</string>
     <string name="settings_day_quota">%1$d日間の使用枠</string>
     <string name="settings_weekly_quota">週間使用枠</string>
     <string name="settings_quota_unavailable">現在、使用枠を取得できません</string>
@@ -110,4 +111,5 @@
     <string name="settings_suggestions_save_failed">提案の設定を保存できませんでした。以前の設定に戻しました。</string>
     <string name="settings_timezone_save_rejected">タイムゾーンを保存できませんでした。以前のタイムゾーンに戻しました。</string>
     <string name="settings_timezone_schedule_update_failed">タイムゾーンを保存しました。朝のブリーフィングの配信時刻は更新できませんでした。</string>
+    <string name="settings_model_catalog_refresh_failed">利用可能なモデルを更新できませんでした。前回読み込んだ一覧を表示しています。</string>
 </resources>

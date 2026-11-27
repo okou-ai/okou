@@ -8,13 +8,13 @@ import android.content.ClipData
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -49,7 +49,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -58,6 +57,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutBoundsHolder
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -104,6 +104,7 @@ internal fun ConversationMessageRow(
     artifactActions: ChatArtifactActions? = null,
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
+    animateAvatarIn: LayoutBoundsHolder? = null,
     beforeEarlierRepliesResize: () -> Unit = {},
     failureContent: @Composable (HistoryMessage) -> Unit = {
         AssistantFailureText(it.failureReason)
@@ -159,7 +160,7 @@ internal fun ConversationMessageRow(
             }
         message.isReply() ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
-                ConversationReplyHeader(message, artifactActions)
+                ConversationReplyHeader(message, artifactActions, animateAvatarIn)
                 if (entry.summary != null) {
                     var expanded by rememberEarlierRepliesExpanded()
                     if (findHighlight?.reveal != null) {
@@ -261,8 +262,8 @@ private fun EarlierReplyArtifacts(
 internal fun ConversationReplyHeader(
     message: HistoryMessage? = null,
     artifacts: ChatArtifactActions? = null,
+    animateAvatarIn: LayoutBoundsHolder? = null,
 ) {
-    val colors = MaterialTheme.colorScheme
     var menuMessage by remember { mutableStateOf<HistoryMessage?>(null) }
     val focus = remember { FocusRequester() }
     var keyboardFocused by remember { mutableStateOf(false) }
@@ -273,7 +274,7 @@ internal fun ConversationReplyHeader(
     val label = stringResource(R.string.conversation_reply_actions)
     val imageLabel = stringResource(R.string.artifact_image)
     val copyableReply = message?.takeIf {
-        it.blocks.any { block -> block.kind == HistoryBlockKind.Text }
+        it.blocks.any { block -> block.kind == HistoryBlockKind.Text && block.text.isNotBlank() }
     }
     val openMenu by rememberUpdatedState {
         restoreFocus = keyboardFocused
@@ -283,6 +284,7 @@ internal fun ConversationReplyHeader(
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = 48.dp)
+                .testTag("conversation_reply_header")
                 .then(
                     if (copyableReply == null) Modifier
                     else
@@ -293,32 +295,27 @@ internal fun ConversationReplyHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(
-                painterResource(R.drawable.okou_conversation_avatar),
-                null,
-                Modifier.size(24.dp).clip(RoundedCornerShape(8.dp)),
-            )
+            ConversationReplyAvatar(animateAvatarIn.takeIf { copyableReply != null })
             Text(
                 stringResource(R.string.app_name),
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            if (copyableReply != null) {
+            // Keep an opened menu anchored while the next reply's first chunks arrive.
+            if (copyableReply != null || menuMessage != null) {
                 Box {
                     IconButton(
                         onClick = openMenu,
-                        shape = RoundedCornerShape(12.dp),
                         modifier =
-                            Modifier.size(48.dp).focusRequester(focus).onFocusChanged {
+                            Modifier.focusRequester(focus).onFocusChanged {
                                 keyboardFocused = it.isFocused
                             },
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_more_vert),
                             label,
-                            Modifier.size(20.dp),
-                            tint = colors.onSurfaceVariant,
+                            Modifier.size(24.dp),
                         )
                     }
                     menuMessage?.let { selected ->
@@ -355,7 +352,7 @@ internal fun ConversationReplyHeader(
     LaunchedEffect(menuMessage) {
         if (menuMessage == null && restoreFocus) {
             restoreFocus = false
-            focus.requestFocus()
+            if (copyableReply != null) focus.requestFocus()
         }
     }
 }
@@ -430,7 +427,7 @@ internal fun ConversationActivity(
                     )
                 },
             ) {
-                if (stopPlacement.inline) ConversationStopButton(controls, stopPlacement, true)
+                ConversationStopButton(controls, stopPlacement, inline = true)
             }
         } else {
             Spacer(Modifier.width(ConversationStopTouchSize))
@@ -566,7 +563,10 @@ internal data class ConversationFindHighlight(
 )
 
 @Composable
-internal fun Modifier.conversationFindHighlight(highlight: ConversationFindHighlight?): Modifier {
+internal fun Modifier.conversationFindHighlight(
+    highlight: ConversationFindHighlight?,
+    contentPadding: PaddingValues? = null,
+): Modifier {
     if (highlight == null) return this
     val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
@@ -586,10 +586,18 @@ internal fun Modifier.conversationFindHighlight(highlight: ConversationFindHighl
     return drawBehind {
             if (highlight.target.highlighted) {
                 val edge = 2.dp.toPx()
+                val left = contentPadding?.calculateLeftPadding(layoutDirection)?.roundToPx() ?: 0
+                val right = contentPadding?.calculateRightPadding(layoutDirection)?.roundToPx() ?: 0
+                val top = contentPadding?.calculateTopPadding()?.roundToPx() ?: 0
+                val bottom = contentPadding?.calculateBottomPadding()?.roundToPx() ?: 0
                 drawRoundRect(
                     colors.secondaryContainer,
-                    topLeft = Offset(-edge, -edge),
-                    size = Size(size.width + 2 * edge, size.height + 2 * edge),
+                    topLeft = Offset(left - edge, top - edge),
+                    size =
+                        Size(
+                            size.width - left - right + 2 * edge,
+                            size.height - top - bottom + 2 * edge,
+                        ),
                     cornerRadius = CornerRadius(4.dp.toPx() + edge),
                 )
             }

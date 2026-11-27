@@ -2,12 +2,10 @@ import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import type { StorageManifest } from "@okouai/api-contracts/contracts/runners";
-import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
+import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { Header } from "tar";
 
 import type { TestContext } from "../../../../__tests__/test-context";
-import { expectCanonicalStorageManifest } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 
 interface MemoryFile {
@@ -21,7 +19,7 @@ export async function commitMemoryVersion(
   run: {
     readonly runId: string;
     readonly sandboxHeaders: { readonly authorization: string };
-    readonly storageManifest: StorageManifest | null | undefined;
+    readonly memory: ExecutionContext["startupInputs"]["memory"];
   },
   files: readonly MemoryFile[],
   expectedStatus: 200 | 409 | readonly (200 | 409)[] = 200,
@@ -30,11 +28,7 @@ export async function commitMemoryVersion(
   readonly versionId: string;
   readonly status: 200 | 409;
 }> {
-  const memory = expectCanonicalStorageManifest(
-    run.storageManifest,
-  )?.storageMounts.find((mount) => {
-    return mount.name === MEMORY_ARTIFACT_NAME && mount.writeback;
-  });
+  const { memory } = run;
   if (!memory) {
     throw new Error("Expected the execution's writable memory mount");
   }

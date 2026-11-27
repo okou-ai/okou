@@ -1,11 +1,12 @@
-#if DEBUG
+#if DEBUG || STAGING
+  import CCStateSwiftUI
   import ChatData
   import Foundation
   import SwiftUI
   import Synchronization
 
   /// On-demand native acceptance of the For you deck: the production page against an isolated
-  /// HTTP fixture, so swiping, the dock and the caught-up recap can be checked without signing
+  /// HTTP fixture, so the deck, the dock and the caught-up panel can be checked without signing
   /// in or sending read receipts to a real account. The input's model list answers as Auto, so
   /// it opens as it does for a member; a choice that sends never reaches a chat here.
   /// `--for-you-deck-slow` holds the first load and every choice for a few seconds, for the
@@ -17,9 +18,12 @@
     var body: some View {
       switch preview {
       case .success(let preview):
-        ForYouView(workspace: preview.workspace, showChat: {}, goBack: {})
-          .task { await preview.workspace.forYou.beginVisit() }
-          .onDisappear { preview.close() }
+        // Production provides the session Store at the workspace root.
+        StoreProvider(preview.workspace.graph) {
+          ForYouView(workspace: preview.workspace, showChat: {}, goBack: {})
+        }
+        .task { await preview.workspace.forYou.beginVisit() }
+        .onDisappear { preview.close() }
       case .failure(let error):
         Text(verbatim: error.localizedDescription)
       }
@@ -104,18 +108,10 @@
       case ("GET", _) where isSwitches:
         body = "{\"effectiveSwitches\":{}}"
       case ("POST", _) where path.hasSuffix("/suggestion/feedback"):
-        let undoing = Self.isUndo(request)
         if segments.count > 3 {
-          let id = segments[3]
-          Self.settled.withLock { state in
-            if undoing {
-              state[host, default: []].remove(id)
-            } else {
-              state[host, default: []].insert(id)
-            }
-          }
+          Self.settled.withLock { _ = $0[host, default: []].insert(segments[3]) }
         }
-        body = "{\"restored\":\(undoing)}"
+        body = "{\"restored\":false}"
       case ("POST", _) where path.hasSuffix("/dismiss") || path.hasSuffix("/consume"):
         if segments.count > 3 {
           Self.settled.withLock { _ = $0[host, default: []].insert(segments[3]) }
@@ -159,24 +155,6 @@
       {"systemDefaultModel":"okou-1.0","models":[{"model":"okou-1.0","displayName":"Auto",\
       "sortOrder":0,"replacedBy":null,"resolvedModel":"okou-1.0"}],"routes":[]}
       """
-
-    private static func isUndo(_ request: URLRequest) -> Bool {
-      var data = request.httpBody
-      if data == nil, let stream = request.httpBodyStream {
-        stream.open()
-        defer { stream.close() }
-        var buffer = Data()
-        var chunk = [UInt8](repeating: 0, count: 4096)
-        while stream.hasBytesAvailable {
-          let count = stream.read(&chunk, maxLength: chunk.count)
-          if count <= 0 { break }
-          buffer.append(chunk, count: count)
-        }
-        data = buffer
-      }
-      guard let data, let text = String(data: data, encoding: .utf8) else { return false }
-      return text.contains("\"kind\":\"undo\"")
-    }
 
     private struct Card {
       let id: String

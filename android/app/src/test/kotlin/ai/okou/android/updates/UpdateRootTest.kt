@@ -29,6 +29,7 @@ import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
@@ -586,12 +587,14 @@ class UpdateRootTest {
         app.fixture.heldRecovery = verification
         try {
             val install = compose.onNodeWithText("Continue installation")
+            val actionBounds = install.getUnclippedBoundsInRoot()
             install.performClick()
-            val preparing = compose.onNodeWithText("Preparing…")
-            preparing.assertIsDisplayed().assertHasNoClickAction()
+            val waiting = compose.onNodeWithText("Waiting to install")
+            waiting.assertIsDisplayed().assertIsNotEnabled().assertHasNoClickAction()
+            assertEquals(actionBounds, waiting.getUnclippedBoundsInRoot())
             assertNoPlatformLaunch()
             compose.activityRule.scenario.recreate()
-            preparing.assertIsDisplayed().assertHasNoClickAction()
+            waiting.assertIsDisplayed().assertIsNotEnabled()
             assertNoPlatformLaunch()
 
             compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
@@ -605,6 +608,52 @@ class UpdateRootTest {
             assertNoPlatformLaunch()
         } finally {
             verification.complete(Unit)
+        }
+    }
+
+    @Test
+    fun anObsoleteVerificationDoesNotDelayInstallingACompatibleReplacement() {
+        allowInstallAndDiscoverUpdate()
+        val first = updateRelease("99.0.0")
+        val replacement = updateRelease("99.1.0")
+        val obsolete = CompletableDeferred<Unit>()
+        try {
+            compose.runOnIdle {
+                app.fixture.heldRecovery = obsolete
+                app.updates.requireUpdate(RequiredUpdate(first.version))
+            }
+            val download = compose.onNodeWithText("Download update")
+            download.assertIsDisplayed().performClick()
+            finishDownload()
+            compose.waitUntil(10_000) {
+                compose.runOnIdle { first in app.fixture.recoveredReleases }
+            }
+            compose.onNodeWithText("Waiting to install").assertIsNotEnabled()
+            assertNoPlatformLaunch()
+
+            compose.runOnIdle {
+                app.fixture.heldRecovery = null
+                app.fixture.transfer = CompletableDeferred()
+                app.fixture.response = AndroidUpdates(replacement.version, replacement)
+                app.updates.requireUpdate(RequiredUpdate(replacement.version))
+            }
+            compose.waitUntil(10_000) {
+                app.updates.state.value.let { it.candidate == replacement && it.canDownload }
+            }
+            download.assertIsEnabled().performClick()
+            finishDownload("replacement.apk")
+            val installer = nextLaunch()
+            assertEquals(Intent.ACTION_VIEW, installer.intent.action)
+            assertEquals("replacement.apk", installer.intent.data?.lastPathSegment)
+            assertFalse(obsolete.isCompleted)
+
+            obsolete.complete(Unit)
+            compose.onNodeWithText("Installing…").assertIsDisplayed()
+            returnFrom(installer.requestCode)
+            compose.onNodeWithText("Continue installation").assertIsDisplayed().assertIsEnabled()
+            assertNoPlatformLaunch()
+        } finally {
+            obsolete.complete(Unit)
         }
     }
 
@@ -625,6 +674,46 @@ class UpdateRootTest {
         install.assertIsDisplayed().assertIsEnabled()
         assertEquals(1, app.fixture.downloadedReleases.size)
         assertNoPlatformLaunch()
+    }
+
+    @Test
+    fun installFocusFollowsItsSlotUntilTheUserMovesToClose() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            allowInstallAndDiscoverUpdate()
+            openUpdateSettings()
+            updateSettingsRow().performScrollTo().performClick()
+
+            val download = updateDetailText("Download update")
+            download.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            download.performKeyInput { pressKey(Key.Enter) }
+            finishDownload()
+            val first = nextLaunch()
+            returnFrom(first.requestCode)
+            val install = updateDetailText("Continue installation")
+            install.assertIsFocused()
+
+            val verification = CompletableDeferred<Unit>()
+            try {
+                compose.runOnIdle { app.fixture.heldRecovery = verification }
+                install.performKeyInput { pressKey(Key.Enter) }
+                val waiting = updateDetailText("Waiting to install")
+                waiting.assertIsFocused().performKeyInput { pressKey(Key.DirectionLeft) }
+                val close = updateDetailText("Close")
+                close.assertIsFocused()
+                verification.complete(Unit)
+                val second = nextLaunch()
+                returnFrom(second.requestCode)
+                install.assertIsEnabled()
+                close.assertIsFocused()
+            } finally {
+                verification.complete(Unit)
+            }
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
     }
 
     @Test
@@ -682,7 +771,7 @@ class UpdateRootTest {
         compose.waitUntil(10_000) { app.updates.state.value.canDownload }
     }
 
-    private fun finishDownload() {
+    private fun finishDownload(name: String = "install.apk") {
         // The sandbox uses a new private files directory for each test in the same classloader.
         val provider =
             checkNotNull(
@@ -692,7 +781,7 @@ class UpdateRootTest {
                 ),
             )
         FileProvider().attachInfo(app, provider)
-        val file = File(app.filesDir, "updates/install.apk")
+        val file = File(app.filesDir, "updates/$name")
         file.parentFile!!.mkdirs()
         file.writeText("verified external-service fixture")
         app.fixture.transfer.complete(file)

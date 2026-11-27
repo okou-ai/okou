@@ -642,20 +642,35 @@
       "video": "ビデオ"
     },
     "library": {
-      "allArtifacts": "すべてのアーティファクト",
-      "allTypes": "すべての種類",
+      "categories": {
+        "all": "すべて",
+        "audio": "音声",
+        "document": "ドキュメント・PDF",
+        "image": "画像",
+        "other": "その他",
+        "presentation": "プレゼンテーション",
+        "spreadsheet": "スプレッドシート",
+        "video": "動画",
+        "website": "ウェブサイト"
+      },
       "clearFilters": "フィルターをクリア",
       "clearSearch": "検索をクリア",
       "created": "作成日",
       "emptyDescription": "別の名前や種類で検索してください。",
       "emptyTitle": "アーティファクトは見つかりませんでした",
+      "gridView": "グリッド表示",
+      "listView": "リスト表示",
       "loadMore": "さらに読み込む",
       "name": "名前",
+      "openSourceChat": "元のチャットを開く：{{title}}",
       "retry": "再試行",
       "search": "アーティファクトを検索",
       "sortAscending": "昇順で並べ替え",
       "sortDescending": "降順で並べ替え",
-      "type": "種類"
+      "today": "今日",
+      "type": "種類",
+      "view": "表示",
+      "yesterday": "昨日"
     },
     "metadata": {
       "generated": "{{date}} が生成されました",
@@ -1571,16 +1586,16 @@
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
-      "alreadyDone": "Already done",
       "closeFeedback": "Close feedback",
       "customDirection": "こんなことがしたい…",
       "customDirectionDescription": "質問や、やりたいことを入力できます。",
       "customPlaceholder": "どんなことを考えていますか？",
       "dismiss": "非表示にする",
       "dismissRecorded": "Suggestion dismissed",
-      "doneRecorded": "Noted — this is already done",
-      "dontNudge": "急かさないで",
-      "dontNudgeRecorded": "この件を急かさないように記録しました",
+      "done": "完了",
+      "doneRecorded": "すでに完了したと記録しました",
+      "draftIn": "「{{title}}」で下書き",
+      "draftInChat": "既存のチャットで下書き",
       "editDraft": "既存のチャットに下書きを作成",
       "editReason": "Edit reason",
       "feedbackPrompt": "この提案はいかがですか？",
@@ -1615,11 +1630,11 @@
         "show": "提案 {{index}}/{{total}} を表示"
       },
       "label": "提案",
-      "lessLikeThis": "Less like this",
-      "lessRecorded": "You’ll see fewer suggestions like this.",
+      "later": "あとで",
+      "laterRecorded": "あとで見直すと記録しました",
+      "lessLikeThis": "このような提案を減らす",
+      "lessRecorded": "このような提案を減らします。",
       "messageSent": "メッセージを送信しました",
-      "notPlanned": "Not planned",
-      "notPlannedRecorded": "Noted — this is not planned",
       "openChat": "チャットを開く",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
@@ -1629,7 +1644,9 @@
       "sentToChat": "チャットに送信しました",
       "unavailable": "この提案は利用できなくなりました。提案を更新しました。",
       "undoFeedback": "Undo",
-      "viewSource": "参照元を見る"
+      "viewSource": "参照元を見る",
+      "wontDo": "やらない",
+      "wontDoRecorded": "この件はやらないと記録しました"
     },
     "attachments": {
       "attach": "添付する",
@@ -2581,6 +2598,7 @@
       "number": "番号"
     },
     "sidebar": {
+      "all": "すべて",
       "archive": "アーカイブ",
       "archived": "アーカイブ済み",
       "chatsWith": "{{assistantName}} とのチャット",
@@ -2600,6 +2618,7 @@
       "newChatWith": "{{assistantName}} との新しいチャット",
       "noArchived": "アーカイブ済みのチャットはありません",
       "noMuted": "ミュート中のチャットはありません",
+      "noUnarchived": "未アーカイブのチャットはありません",
       "noUnread": "未読のチャットはありません",
       "openChatMenu": "チャットメニューを開く",
       "openListMenu": "チャットリストメニューを開く",
@@ -2611,6 +2630,7 @@
       "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
       "unarchive": "アーカイブを解除",
+      "unarchived": "未アーカイブ",
       "unmute": "ミュートを解除",
       "unpin": "ピン留めを解除",
       "unread": "未読",
@@ -2873,6 +2893,7 @@
     "toasts": {
       "archived": "チャットをアーカイブしました。",
       "archivedMuted": "チャットをアーカイブしました。ミュート中のため、新しい返信があっても戻りません。",
+      "chatUnarchived": "チャットのアーカイブを解除しました",
       "copied": "コピーされました",
       "deleted": "チャットが削除されました",
       "muted": "チャットをミュートしました。新しい返信があっても未読にならず、プッシュ通知も届きません。",
@@ -5506,6 +5527,38 @@
     "usedBy": "この認証情報を使用している接続",
     "username": "ユーザー名："
   },
+  "remoteDevices": {
+    "add": "デバイスを追加",
+    "addChannel": "チャネルを追加",
+    "addChannelTo": "{{device}} にチャネルを追加",
+    "addDescription": "個人用のデバイスを作成します。チャネルは後から追加できます。",
+    "allowOneHour": "1 時間許可",
+    "approval": "リモートデバイスへのアクセス",
+    "approvalTitle": "{{device}} へのアクセスを許可しますか？",
+    "approved": "デバイスへのアクセスを許可しました",
+    "cancel": "キャンセル",
+    "channels": "チャネル",
+    "continuationFailed": "デバイスへのアクセスは許可されました。タスクを続行できませんでした。",
+    "continueTask": "タスクを続行",
+    "create": "デバイスを作成",
+    "createEmpty": "空のデバイスを作成",
+    "empty": "リモートデバイスはまだありません。",
+    "grantScope": "この許可は、すべてのチャットでこのデバイスの全チャネルに適用されます。",
+    "ios": "iOS",
+    "lastSeen": "最終オンライン {{time}}",
+    "loadFailed": "リモートデバイスを読み込めませんでした。",
+    "manage": "デバイスを管理",
+    "move": "移動",
+    "moveChannel": "{{channel}} を別のデバイスに移動",
+    "name": "デバイス名",
+    "noChannels": "チャネルなし",
+    "off": "オフ",
+    "policy": "{{device}} へのアクセス、{{status}}",
+    "retry": "再試行",
+    "saveFailed": "デバイスの変更を保存できませんでした。",
+    "title": "リモートデバイス",
+    "unavailable": "このデバイスは利用できません。"
+  },
   "remoteNetworkGuide": {
     "action": "Action",
     "authKeys": "Keys → Auth keys",
@@ -5797,7 +5850,6 @@
         "internal": "内部",
         "released": "リリース済み"
       },
-      "maintainer": "メンテナ: {{maintainer}}",
       "title": "研究室"
     },
     "models": {
@@ -6059,32 +6111,6 @@
           "stores": "オブジェクトストア",
           "title": "IndexedDB ストレージ",
           "unavailable": "IndexedDB ストレージを利用できません。"
-        },
-        "learning": {
-          "description": "最近の活動を確認し、個人メモリを一度更新します。夜間の実行スケジュールは変わりません。",
-          "notInstalled": "先に環境設定で学習を有効にしてください。",
-          "openChat": "会話を開く",
-          "queued": "学習をキューに追加しました。",
-          "requestFailed": "リクエストの結果を確認できませんでした。",
-          "run": "学習を実行",
-          "starting": "開始中…",
-          "title": "学習",
-          "unavailable": "現在、学習を利用できません。"
-        },
-        "morningBrief": {
-          "description": "アカウントで有効なワークフローを使って一度実行します。提案の更新や実際のメール送信が行われる場合があります。毎日のスケジュールは変わりません。",
-          "openChat": "会話を開く",
-          "requestFailed": "リクエストの結果を確認できませんでした。",
-          "run": "ブリーフを実行",
-          "runAgain": "もう一度実行",
-          "starting": "開始中…",
-          "status": {
-            "completed": "完了しました。",
-            "failed": "実行に失敗しました。会話で詳細を確認してください。",
-            "queued": "キューに追加しました。会話で進捗を確認できます。",
-            "running": "実行中です。"
-          },
-          "title": "モーニングブリーフ"
         },
         "openrouterPreset": {
           "description": "組織全体の新しい Auto および組み込み Okou 1.0 の実行に適用されます。既存の実行は変更されません。",
@@ -7420,6 +7446,7 @@
       "createdBy": "作成者",
       "createInChat": "チャットで作成",
       "description": "タスク用の再利用可能なSOP。ゼロから作成するか、日常業務から抽出して実行、編集、自動化します。",
+      "directoryDescription": "実行・編集・自動化できる再利用可能なSOP。他の製品ではスキルとも呼ばれます。",
       "empty": {
         "all": "チャットからワークフローを作成するか、有用な実行からワークフローを保存します。",
         "automated": "ワークフローにオートメーションを追加すると、ここに表示されます。",

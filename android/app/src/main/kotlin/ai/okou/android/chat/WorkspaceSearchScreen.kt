@@ -10,7 +10,7 @@ import ai.okou.android.WorkspaceSearchGroupHeading
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.artifacts.label
-import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.observeReturnFocus
 import ai.okou.android.rememberReadFailureFeedback
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
@@ -64,6 +64,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -81,6 +82,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 private data class SearchSources(
     val chats: ChatListUiState,
@@ -149,7 +151,10 @@ internal fun WorkspaceSearchScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().imePadding().testTag("chat_search"),
+        Modifier.fillMaxSize()
+            .imePadding()
+            .observeReturnFocus(search.returnFocus, active = restoreResultFocus)
+            .testTag("chat_search"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         WorkspaceSearchToolbar(
@@ -248,11 +253,17 @@ private fun searchResultType(key: String): WorkspaceSearchType =
         else -> WorkspaceSearchType.Chats
     }
 
-private val SearchRead<*>?.isPending: Boolean
+private val SearchRead<*>?.isReading: Boolean
     get() =
         this == SearchRead.Loading ||
             this == SearchRead.Retrying ||
-            this is SearchRead.Ready && refreshing
+            this is SearchRead.Ready && refresh == SearchRefresh.Reading
+
+private val SearchRead<*>?.isPending: Boolean
+    get() =
+        isReading ||
+            this == SearchRead.Scheduled ||
+            this is SearchRead.Ready && refresh == SearchRefresh.Scheduled
 
 private sealed interface SearchItem {
     val key: String
@@ -366,7 +377,7 @@ private fun SearchResults(
         when {
             keyword.isEmpty() || !type.includes(WorkspaceSearchType.Messages) -> null
             currentRemote != null -> currentRemote.messages
-            remoteActive -> SearchRead.Loading
+            remoteActive -> SearchRead.Scheduled
             else -> workspacePreparation
         }
     val workflowRead =
@@ -374,7 +385,7 @@ private fun SearchResults(
             keyword.isNotEmpty() && type.includes(WorkspaceSearchType.Workflows)
         }
     val artifactResults =
-        (currentRemote?.artifacts ?: SearchRead.Loading).takeIf {
+        (currentRemote?.artifacts ?: SearchRead.Scheduled).takeIf {
             remoteActive && onOpenArtifact != null
         }
     val artifactRead =
@@ -413,21 +424,19 @@ private fun SearchResults(
     val artifacts = artifactPage?.rows.orEmpty()
     val artifactCursor = artifactPage?.nextCursor
     val artifactPaging = currentRemote?.artifactPaging
-    val moreArtifactsFailed =
-        type.includes(WorkspaceSearchType.Artifacts) &&
-            artifactPaging == ArtifactSearchPaging.Failed
+    val artifactPageFailed =
+        type == WorkspaceSearchType.Artifacts && artifactPaging?.hasFailure == true
+    val showArtifactPageFailure = artifactPageFailed && artifacts.isNotEmpty()
     val nextArtifactPage =
         artifactPage
             ?.takeIf {
                 type == WorkspaceSearchType.Artifacts &&
-                    !moreArtifactsFailed &&
-                    !it.refreshing &&
-                    !it.refreshFailed
+                    artifactPaging != ArtifactSearchPaging.Failed &&
+                    it.refresh == SearchRefresh.Idle
             }
             ?.nextCursor
     val waitingForArtifactPage =
-        nextArtifactPage != null &&
-            (artifactPaging == ArtifactSearchPaging.Loading || artifacts.isEmpty())
+        nextArtifactPage != null && (artifactPaging?.isLoading == true || artifacts.isEmpty())
     val items =
         remember(
             grouped,
@@ -491,6 +500,7 @@ private fun SearchResults(
     val remotePending =
         reads.any { it.isPending } || waitingForMessageMetadata || waitingForArtifactPage
     val pending = waitingForList || remotePending
+    val reading = waitingForList || waitingForArtifactPage || reads.any { it.isReading }
     fun waitingForResult(key: String): Boolean =
         when (searchResultType(key)) {
             WorkspaceSearchType.Chats -> showChats && waitingForList
@@ -513,7 +523,7 @@ private fun SearchResults(
     val readFailed =
         chatRefreshFailed ||
             messageChatsUnavailable ||
-            moreArtifactsFailed ||
+            artifactPageFailed && artifacts.isEmpty() ||
             sourceUnavailable ||
             reads.any { it.hasFailure }
     val showEmpty =
@@ -521,17 +531,24 @@ private fun SearchResults(
             (!needsChatList || confirmedChats) &&
             !needsMessageChats &&
             !waitingForArtifactPage &&
-            !moreArtifactsFailed &&
+            !artifactPageFailed &&
             !sourceUnavailable &&
             reads.all { it == null || it is SearchRead.Ready }
-    val showPending =
-        key(keyword, type) {
-            rememberContentReadFeedbackAfter(ContentReadFeedbackDelayMillis.takeIf { pending })
+    val showDelayedFeedback =
+        key(keyword, type, pending) {
+            var shown by remember { mutableStateOf(false) }
+            if (reading && !shown) {
+                LaunchedEffect(Unit) {
+                    delay(ContentReadFeedbackDelayMillis)
+                    shown = true
+                }
+            }
+            shown
         }
-    val showSkeleton = showPending && items.isEmpty() && !showEmpty
+    val showSkeleton = showDelayedFeedback && items.isEmpty() && !showEmpty
     val showProgress =
         (items.isNotEmpty() || showEmpty) &&
-            (showPending || needsChatList && list.listRetryProgressVisible)
+            (showDelayedFeedback || needsChatList && list.listRetryProgressVisible)
     val showFailure = readFailed && !pending && items.isEmpty() && !showEmpty
     val failureLabel =
         if (chatRefreshFailed && showChats && !grouped) R.string.chat_search_chats_failed
@@ -562,7 +579,9 @@ private fun SearchResults(
         )
     val resultFocus = remember { FocusRequester() }
     val anchor = search.pendingAnchor
-    val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
+    val inputMode = LocalInputModeManager.current
+    val request = search.returnFocus.pending.takeIf { restoreResultFocus }
+    val pendingFocus = request?.rowKey
     val position = search.position
     val (wasAtTop, previousPosition, firstResult) =
         Snapshot.withoutReadObservation {
@@ -609,14 +628,15 @@ private fun SearchResults(
         }
     }
     val waitingForFocus = pendingFocus?.let(::waitingForResult) == true
-    LaunchedEffect(pendingFocus, anchor, items, waitingForFocus) {
-        if (pendingFocus == null) return@LaunchedEffect
-        val index = items.indexOfFirst { it.key == pendingFocus }
+    LaunchedEffect(request, anchor, items, waitingForFocus) {
+        if (request == null || !search.returnFocus.isCurrent(request, inputMode.inputMode)) {
+            return@LaunchedEffect
+        }
+        val index = items.indexOfFirst { it.key == request.rowKey }
         if (index < 0 && !waitingForFocus) {
-            resultFocus.requestFocus()
-            search.restoreFocus()
+            if (resultFocus.requestFocus()) search.returnFocus.finish(request)
         } else if (index >= 0 && anchor == null) {
-            if (search.position.layoutInfo.visibleItemsInfo.none { it.key == pendingFocus }) {
+            if (search.position.layoutInfo.visibleItemsInfo.none { it.key == request.rowKey }) {
                 search.position.scrollToItem(index)
             }
         }
@@ -651,7 +671,7 @@ private fun SearchResults(
                             highlightedSearchTitle(chat.searchTitle(untitled), keyword),
                             metadata = metadata,
                         ) {
-                            search.returnToResult(row.key)
+                            search.returnToResult(row.key, inputMode.inputMode)
                             onOpen(chat)
                         }
                     }
@@ -673,7 +693,7 @@ private fun SearchResults(
                             snippet = messageSnippet(hit),
                             metadata = metadata,
                         ) {
-                            search.returnToResult(row.key)
+                            search.returnToResult(row.key, inputMode.inputMode)
                             onOpenMessage(hit)
                         }
                     }
@@ -689,7 +709,7 @@ private fun SearchResults(
                                     ?.takeIf { it.isNotBlank() }
                                     ?.let { highlightedSearchTitle(it, keyword) },
                         ) {
-                            search.returnToResult(row.key)
+                            search.returnToResult(row.key, inputMode.inputMode)
                             onOpenWorkflow?.invoke(hit)
                         }
                     }
@@ -702,16 +722,24 @@ private fun SearchResults(
                             highlightedSearchTitle(hit.title, keyword),
                             metadata = stringResource(hit.kind.label()),
                         ) {
-                            search.returnToResult(row.key)
+                            search.returnToResult(row.key, inputMode.inputMode)
                             onOpenArtifact?.invoke(hit)
                         }
                     }
                 }
             }
-            if (nextArtifactPage != null) {
+            if (nextArtifactPage != null || showArtifactPageFailure) {
                 item(key = "search_more_artifacts") {
-                    LaunchedEffect(keyword, nextArtifactPage) {
-                        onMoreArtifacts(keyword, nextArtifactPage)
+                    if (nextArtifactPage != null) {
+                        LaunchedEffect(keyword, nextArtifactPage) {
+                            onMoreArtifacts(keyword, nextArtifactPage)
+                        }
+                    }
+                    if (showArtifactPageFailure) {
+                        ContentReadFeedback(
+                            R.string.artifact_catalog_page_failed,
+                            Modifier.padding(start = 12.dp, top = 12.dp, end = 12.dp),
+                        )
                     }
                 }
             }
@@ -781,20 +809,20 @@ private fun SearchGroup(group: SearchItem.Group, onMore: () -> Unit) {
     ) {
         WorkspaceSearchGroupHeading(label, Modifier.weight(1f))
         if (group.more) {
-            Box(
-                Modifier.widthIn(min = 48.dp)
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
-                    .clickable(role = Role.Button, onClick = onMore)
-                    .semantics { contentDescription = moreLabel }
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center,
+            val shape = RoundedCornerShape(12.dp)
+            TextButton(
+                onClick = onMore,
+                modifier =
+                    Modifier.widthIn(min = 48.dp)
+                        .heightIn(min = 48.dp)
+                        .workspaceSearchFocusOutline(shape)
+                        .semantics { contentDescription = moreLabel },
+                shape = shape,
+                contentPadding = PaddingValues(horizontal = 8.dp),
             ) {
                 Text(
                     stringResource(R.string.chat_search_view_all),
                     style = workspaceSearchSecondaryStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -812,11 +840,18 @@ private fun SearchResult(
     onOpen: () -> Unit,
 ) {
     val rowFocus = remember { FocusRequester() }
-    val restoreFocus =
-        restoreResultFocus && search.pendingFocus == key && search.pendingAnchor == null
-    LaunchedEffect(restoreFocus) {
-        if (restoreFocus && rowFocus.requestFocus(FocusDirection.Enter)) {
-            search.restoreFocus()
+    val inputMode = LocalInputModeManager.current
+    val request =
+        search.returnFocus.pending?.takeIf {
+            restoreResultFocus && it.rowKey == key && search.pendingAnchor == null
+        }
+    LaunchedEffect(request) {
+        if (
+            request != null &&
+                search.returnFocus.isCurrent(request, inputMode.inputMode) &&
+                rowFocus.requestFocus(FocusDirection.Enter)
+        ) {
+            search.returnFocus.finish(request)
         }
     }
     Column(
@@ -921,7 +956,7 @@ private fun highlightedSearchTitle(text: String, keyword: String): AnnotatedStri
 
 private fun messageSnippet(hit: SearchMessageHit): AnnotatedString {
     val text = hit.content
-    val first = hit.ranges.minByOrNull { it.first }
+    val first = hit.firstRange
     var from = ((first?.first ?: 0) - 20).coerceAtLeast(0)
     var to = ((first?.last?.plus(1) ?: from) + 54).coerceAtMost(text.length)
     if (from > 0 && text[from].isLowSurrogate()) from--
@@ -929,7 +964,11 @@ private fun messageSnippet(hit: SearchMessageHit): AnnotatedString {
     return buildAnnotatedString {
         if (from > 0) append('…')
         val leading = length
-        append(text, from, to)
+        // Keep the two-line preview flowing without shifting its match offsets.
+        for (index in from until to) {
+            val character = text[index]
+            append(if (character.isWhitespace()) ' ' else character)
+        }
         for (range in hit.ranges) {
             val start = maxOf(range.first, from)
             val end = minOf(range.last + 1, to)

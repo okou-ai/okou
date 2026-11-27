@@ -135,6 +135,7 @@ internal data class DefaultModelState(
     val save: DefaultModelSave? = null,
     val options: DefaultModelOptions? = null,
     val catalogUnavailable: Boolean = false,
+    val settingsCatalogRefreshFailure: SettingsRefreshFailure? = null,
 ) {
     val pending: UpdateDefaultModelPreference?
         get() = save?.request
@@ -228,7 +229,11 @@ internal class DefaultModelSettings(
         val value = mutable.value
         val options = value.options ?: return
         val choice = options.choices.firstOrNull { it.id == id }
-        if (value.selected?.id == id || id != null && choice?.canSelect != true) return
+        if (id == null) {
+            if (isAutoDefaultModel(value.selectedModel)) return
+        } else if (value.selected?.id == id || choice?.canSelect != true) {
+            return
+        }
         submit(id, fast = false, choice = choice)
     }
 
@@ -296,12 +301,20 @@ internal class DefaultModelSettings(
                 (composerOptionsVisible ||
                     destination == SettingsDestination.Overview ||
                     destination == SettingsDestination.Instructions)
+        if (!catalogVisible || destination != SettingsDestination.Overview)
+            clearSettingsCatalogRefreshFailure()
         if (!catalogVisible) {
             catalogRead?.cancel()
             catalogRead = null
         } else if (catalogRead == null) {
             catalogRead = scope.launch { refreshCatalog() }
         }
+    }
+
+    private fun clearSettingsCatalogRefreshFailure() {
+        val current = mutable.value
+        if (current.settingsCatalogRefreshFailure != null)
+            mutable.value = current.copy(settingsCatalogRefreshFailure = null)
     }
 
     private suspend fun refreshPreferences() {
@@ -362,7 +375,12 @@ internal class DefaultModelSettings(
                 val options = loadOptions()
                 currentCoroutineContext().ensureActive()
                 if (!authorized()) return
-                mutable.value = mutable.value.copy(options = options, catalogUnavailable = false)
+                mutable.value =
+                    mutable.value.copy(
+                        options = options,
+                        catalogUnavailable = false,
+                        settingsCatalogRefreshFailure = null,
+                    )
                 mutable.value.record?.let { publishConfirmed(it) }
                 return
             } catch (cancelled: CancellationException) {
@@ -374,7 +392,18 @@ internal class DefaultModelSettings(
                 val wait =
                     if (error.retryable()) finiteReadRetryDelays.getOrNull(failures++) else null
                 if (wait == null) {
-                    mutable.value = mutable.value.copy(catalogUnavailable = true)
+                    val latest = mutable.value
+                    mutable.value =
+                        latest.copy(
+                            catalogUnavailable = true,
+                            settingsCatalogRefreshFailure =
+                                if (
+                                    destination == SettingsDestination.Overview &&
+                                        latest.options != null
+                                )
+                                    SettingsRefreshFailure()
+                                else null,
+                        )
                     return
                 }
                 delay(wait)
@@ -556,13 +585,13 @@ internal class DefaultModelSettings(
         val state = mutable.value
         val selectedModel = record.confirmed.selectedModel
         val label =
-            if (state.options != null) {
-                val model = state.options.resolve(selectedModel)
-                state.options.choices.firstOrNull { it.id == model }?.label
-            } else
-                state.record?.confirmedLabel?.takeIf {
-                    state.record.confirmed.selectedModel == selectedModel
-                }
+            state.options?.let { options ->
+                val model = options.resolve(selectedModel)
+                options.choices.firstOrNull { it.id == model }?.label
+            }
+                ?: state.record
+                    ?.takeIf { it.confirmed.selectedModel == selectedModel }
+                    ?.confirmedLabel
         val updated = record.copy(confirmedLabel = label)
         mutable.value = state.copy(record = updated, save = save)
         if (updated != state.record) store.save(identity, updated)

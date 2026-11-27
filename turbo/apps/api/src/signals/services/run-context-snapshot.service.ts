@@ -128,7 +128,7 @@ export type RunContextAxiomSnapshot = Omit<
     readonly featureFlagEntries: readonly RunContextFeatureFlagEntry[];
   };
 
-/** Record resolved execution input when its process ownership is published. */
+/** Record resolved execution input with its original owner-assignment time. */
 export function recordRunContextSnapshot(args: {
   readonly runId: string;
   readonly userId: string;

@@ -1,3 +1,4 @@
+import { proactiveInstructions } from "../proactive-run-context.service";
 import {
   mergeRunPrompt,
   renderRunPrompts,
@@ -8,6 +9,7 @@ import { createPhoneUsePrompt } from "./phone-use";
 import { createEmailThreadPrompt } from "./email";
 import { createSuggestionsPrompt } from "./suggestions";
 import { createWechatThreadPrompt } from "./wechat";
+import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
@@ -33,6 +35,7 @@ export interface PreparedRunPrompt {
   readonly appendedSystemPrompt: string;
   readonly userPrompt: string;
   readonly userTimezone: string | undefined;
+  readonly selectedImageModel: ImageModel | null;
 }
 
 export class RunPromptError extends Error {
@@ -75,6 +78,28 @@ function createIntegrationPrompts(
     threadContext.projectContext$,
   );
   return {
+    proactive: computed(async (get) => {
+      const source = await get(threadContext.proactiveInput$);
+      if (!source) {
+        return null;
+      }
+      const permission =
+        source.task === "morning-brief" && !source.suggestionsEnabled
+          ? "\nSuggestions are disabled for this Morning Brief. Skip all Suggestions maintenance."
+          : "";
+      return {
+        userPromptVariables: {
+          message: [
+            proactiveInstructions[source.task],
+            `Scheduled occurrence (UTC): ${source.scheduledAt.toISOString()}`,
+            permission,
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+        },
+        systemPromptVariables: {},
+      };
+    }),
     web: webPrompt$,
     agent_run: webPrompt$,
     slack: createSlackThreadPrompt(
@@ -156,7 +181,8 @@ function createSharedPromptSources(
   });
   const connectors$ = createConnectorsContext(authorizedConnectors$);
   const templates$ = computed(async (get) => {
-    if ((await get(contextType$)) === "automation") {
+    const type = await get(contextType$);
+    if (type === "automation" || type === "proactive") {
       return null;
     }
     const templates = await get(threadContext.templates$);
@@ -202,9 +228,6 @@ export function createPromptAndSkillVolumesSignals(
   const memberMetadata$ = computed((get) => {
     return get(bootstrap.memberMetadata$);
   });
-  const selectedImageModel$ = computed((get) => {
-    return get(bootstrap.selectedImageModel$);
-  });
   const shared = createSharedPromptSources(
     bootstrap,
     pickedEvent$,
@@ -241,7 +264,7 @@ export function createPromptAndSkillVolumesSignals(
   const { computerUsePrompt$, phoneUsePrompt$ } = deviceUsePrompts;
   const rotatedPrompt$ = createRotatedPrompt(threadContext.incompleteContext$);
   const runtimePrompt$ = createRuntimePrompt(
-    selectedImageModel$,
+    memberMetadata$,
     disabledPaidTools$,
   );
   const prompt$ = computed(async (get): Promise<PreparedRunPrompt> => {
@@ -259,7 +282,9 @@ export function createPromptAndSkillVolumesSignals(
       suggestions,
     ] = await Promise.all([
       get(integrationPrompts[contextType]),
-      contextType === "automation" ? null : get(rotatedPrompt$),
+      contextType === "automation" || contextType === "proactive"
+        ? null
+        : get(rotatedPrompt$),
       get(templates$),
       get(agentPrompt$),
       get(userPrompt$),
@@ -281,7 +306,7 @@ export function createPromptAndSkillVolumesSignals(
       computerUse,
       phoneUse,
       connectors,
-      runtime,
+      runtime.prompt,
       suggestions,
     ]);
     const prompts = renderRunPrompts(combined);
@@ -292,6 +317,7 @@ export function createPromptAndSkillVolumesSignals(
       // createUserPrompt already consumed this memoized member observation.
       userTimezone:
         (await get(memberMetadata$)).preferences?.timezone ?? undefined,
+      selectedImageModel: runtime.selectedImageModel,
     };
   });
   return { prompt$, skillVolumes$: shared.skillVolumes$, suggestionsPrompt$ };

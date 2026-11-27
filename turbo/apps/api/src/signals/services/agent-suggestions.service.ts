@@ -1,5 +1,7 @@
+import { proactiveRunReceipt$ } from "./proactive-run-context.service";
 import {
   suggestionStatus,
+  cardState,
   suggestionFeedbackEvents,
   liveSuggestion,
   retainedSuggestion,
@@ -62,6 +64,7 @@ import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contra
 import { readFeedSources$ } from "./feed-sources.service";
 
 interface Owner {
+  readonly proactiveCardDelivery?: boolean;
   readonly userId: string;
   readonly orgId: string;
 }
@@ -129,6 +132,19 @@ export const suggestionAccess$ = command(
           "Suggestions are available only to a running Okou session.",
         );
       }
+      if (run.triggerSource === "proactive") {
+        const receipt = await set(proactiveRunReceipt$, auth, signal);
+        if (!receipt?.suggestionsEnabled || receipt.task === "learning") {
+          return resourceUnavailable(
+            "This proactive Run cannot maintain Suggestions.",
+          );
+        }
+        return {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          proactiveCardDelivery: receipt.cardDeliveryEnabled === true,
+        };
+      }
       if (
         run.provenance?.definitions.some((definition) => {
           return definition.name === PROACTIVE_LEARNING_DEFINITION_NAME;
@@ -195,7 +211,7 @@ export const createSuggestion$ = command(
   ) => {
     const sources = await get(readFeedSources$);
     signal.throwIfAborted();
-    if (!sources.suggestions) {
+    if (!(owner.proactiveCardDelivery ?? sources.suggestions)) {
       return resourceUnavailable(
         "New suggestion cards are turned off. Existing cards remain available.",
       );
@@ -523,7 +539,10 @@ export const consumeSuggestion$ = command(
       );
     }
     return item
-      ? { status: 200 as const, body: item }
+      ? {
+          status: 200 as const,
+          body: { ...item, state: cardState(item.state) },
+        }
       : conflict("Suggestion or selected option is no longer available.");
   },
 );

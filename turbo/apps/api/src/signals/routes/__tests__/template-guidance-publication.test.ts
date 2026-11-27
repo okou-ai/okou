@@ -176,8 +176,8 @@ function executionFiles(
   kind: OwnerKind,
   id: string,
 ) {
-  expect(execution.contentBundles.templates).toHaveLength(1);
-  const bundle = execution.contentBundles.templates?.[0];
+  expect(execution.startupInputs.contentBundles.templates).toHaveLength(1);
+  const bundle = execution.startupInputs.contentBundles.templates?.[0];
   if (!bundle) {
     throw new Error("Expected captured template guidance");
   }
@@ -549,12 +549,25 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
   });
 
   it.each([
-    { framework: "claude-code", model: "claude-fable-5-1" },
-    { framework: "codex", model: "gpt-6-luna" },
-    { framework: "pi", model: "gpt-6-luna" },
+    {
+      framework: "claude-code",
+      model: "claude-fable-5-1",
+      memoryMountPath:
+        "/home/user/.claude/projects/-home-user-workspace/memory",
+    },
+    {
+      framework: "codex",
+      model: "gpt-6-luna",
+      memoryMountPath: "/home/user/.codex/memories",
+    },
+    {
+      framework: "pi",
+      model: "gpt-6-luna",
+      memoryMountPath: "/home/user/.pi/agent/memory",
+    },
   ] as const)(
     "captures $framework guidance at dispatch and rejects later selection of a deleted template",
-    async ({ framework, model }) => {
+    async ({ framework, model, memoryMountPath }) => {
       const owner = await publicChatActor(context);
       owner.ownsFeatureSwitches();
       await owner.run(async () => {
@@ -620,17 +633,12 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
       const first = await owner.runExecution(firstRun.runId);
       const next = await owner.runExecution(nextRun.runId);
       expect(first.execution.cliAgentType).toBe(framework);
-      const memory = first.execution.storageManifest?.storageMounts.find(
-        (mount) => {
-          return mount.name === "memory";
-        },
-      );
-      if (!memory) {
-        throw new Error("Expected the run's Memory mount");
-      }
+      const memory = first.execution.startupInputs.memory;
+      expect(memory).not.toBeNull();
       expect(
-        first.execution.contentBundles.templates?.[0]?.beforeMountPaths,
-      ).toStrictEqual([memory.mountPath]);
+        first.execution.startupInputs.contentBundles.templates?.[0]
+          ?.beforeMountPaths,
+      ).toStrictEqual([memoryMountPath]);
       await owner.run(() => {
         return remove(kind, id);
       });
@@ -823,16 +831,18 @@ test("delivers a Skill and template with the same immutable bundle at their own 
     },
   });
   const { execution } = await owner.runExecution(run.runId);
-  const template = execution.contentBundles.templates?.[0];
+  const template = execution.startupInputs.contentBundles.templates?.[0];
   expect(template).toMatchObject({
     ownerKind: "user-template",
     templateId: published.body.id,
   });
-  expect(execution.contentBundles.skills).toContainEqual({
-    sha256: template?.sha256,
-    archiveBytes: template?.archiveBytes,
-    downloadUrl: template?.downloadUrl,
-    mountPath: expect.stringMatching(/\/skills\/custom-bundle-reuse-/u),
+  expect(execution.startupInputs.contentBundles.skills).toContainEqual({
+    name: expect.stringMatching(/^custom-bundle-reuse-/u),
+    bundle: {
+      sha256: template?.sha256,
+      archiveBytes: template?.archiveBytes,
+      downloadUrl: template?.downloadUrl,
+    },
   });
 });
 
@@ -940,9 +950,11 @@ test("mounts every user-template kind and presentation guidance once in selectio
     },
   });
   const { execution } = await owner.runExecution(run.runId);
-  expect(execution.contentBundles.templates).toHaveLength(expected.length);
+  expect(execution.startupInputs.contentBundles.templates).toHaveLength(
+    expected.length,
+  );
   expect(
-    execution.contentBundles.templates
+    execution.startupInputs.contentBundles.templates
       ?.filter((bundle) => {
         return bundle.ownerKind === "user-template";
       })
@@ -959,12 +971,14 @@ test("mounts every user-template kind and presentation guidance once in selectio
       }),
   );
   for (const item of expected) {
-    const bundle = execution.contentBundles.templates?.find((candidate) => {
-      return (
-        candidate.ownerKind === item.ownerKind &&
-        candidate.templateId === item.templateId
-      );
-    });
+    const bundle = execution.startupInputs.contentBundles.templates?.find(
+      (candidate) => {
+        return (
+          candidate.ownerKind === item.ownerKind &&
+          candidate.templateId === item.templateId
+        );
+      },
+    );
     if (!bundle) {
       throw new Error("Expected each selected template in execution input");
     }
@@ -1187,7 +1201,8 @@ test("delivers a valid template archive larger than the Skill bundle ceiling", a
     template: selection("user-template", published.body.id),
   });
   const execution = await owner.runExecution(run.runId);
-  const bundle = execution.execution.contentBundles.templates?.[0];
+  const bundle =
+    execution.execution.startupInputs.contentBundles.templates?.[0];
   if (!bundle) {
     throw new Error("Expected large template guidance");
   }

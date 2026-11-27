@@ -1,5 +1,6 @@
 package ai.okou.android.state
 
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.ReadFailureAnnouncement
 import ai.okou.android.artifacts.ArtifactFilter
 import ai.okou.android.artifacts.ExternalImagePreviewPrefix
@@ -7,6 +8,7 @@ import ai.okou.android.chat.ConversationAnchor
 import ai.okou.android.chat.ConversationFindTarget
 import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
+import ai.okou.android.chat.SearchMessageAnchor
 import ai.okou.android.chat.WorkspaceSearchType
 import ai.okou.android.hasPendingSearchText
 import androidx.compose.foundation.lazy.LazyListState
@@ -15,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +29,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 
@@ -93,6 +98,10 @@ internal fun rememberWorkspacePresentationState(): SaveableStateHolder =
 internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable {
     mutableStateOf(false)
 }
+
+@Composable
+internal fun rememberConversationQueueFlag(threadId: String?): MutableState<Boolean> =
+    key(threadId) { rememberSaveable { mutableStateOf(false) } }
 
 internal data class AttachmentPickerSelection(
     val draftKey: String,
@@ -306,7 +315,6 @@ internal class ChatSearchState(
     query: TextFieldValue = TextFieldValue(),
     anchor: SearchResultAnchor? = null,
     type: WorkspaceSearchType = WorkspaceSearchType.All,
-    focusedResult: String? = null,
 ) {
     private var committed = query
     var query by mutableStateOf(query)
@@ -325,8 +333,7 @@ internal class ChatSearchState(
     var pendingAnchor by mutableStateOf(anchor)
         private set
 
-    var pendingFocus by mutableStateOf(focusedResult)
-        private set
+    val returnFocus = DirectoryReturnFocus()
 
     val readFailureAnnouncement = ReadFailureAnnouncement()
 
@@ -348,14 +355,10 @@ internal class ChatSearchState(
 
     fun clearQuery() = edit(TextFieldValue())
 
-    fun returnToResult(key: String) {
+    fun returnToResult(key: String, inputMode: InputMode) {
         query = committed
         pendingAnchor = savedAnchor()
-        pendingFocus = key
-    }
-
-    fun restoreFocus() {
-        pendingFocus = null
+        returnFocus.returningFrom(key, inputMode, keyboardOnly = false)
     }
 
     fun savedQuery(): TextFieldValue = committed
@@ -369,7 +372,7 @@ internal class ChatSearchState(
 
     private fun resetPosition() {
         pendingAnchor = null
-        pendingFocus = null
+        returnFocus.cancel()
         position.requestScrollToItem(0)
     }
 
@@ -398,14 +401,16 @@ internal class ChatSearchState(
 }
 
 @Composable
-internal fun rememberChatSearchState(): ChatSearchState =
-    rememberSaveable(
+internal fun rememberChatSearchState(): ChatSearchState {
+    val inputMode = LocalInputModeManager.current
+    return rememberSaveable(
         saver =
             listSaver<ChatSearchState, Any>(
                 save = {
                     val query = it.savedQuery()
                     if (query.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS) {
                         val anchor = it.savedAnchor()
+                        val request = it.returnFocus.pending
                         listOf(
                             query.text,
                             query.selection.start,
@@ -413,33 +418,45 @@ internal fun rememberChatSearchState(): ChatSearchState =
                             anchor?.key.orEmpty(),
                             anchor?.offset ?: 0,
                             it.type.name,
-                            it.pendingFocus.orEmpty(),
+                            request?.rowKey.orEmpty(),
                             anchor?.index ?: 0,
+                            request?.inputMode == InputMode.Keyboard,
                         )
                     } else emptyList()
                 },
                 restore = { fields ->
                     val (text, start, end, key, offset) = fields
                     ChatSearchState(
-                        TextFieldValue(text as String, TextRange(start as Int, end as Int)),
-                        (key as String)
-                            .takeIf { it.isNotEmpty() }
-                            ?.let {
-                                SearchResultAnchor(
-                                    it,
-                                    offset as Int,
-                                    fields.getOrNull(7) as? Int ?: 0,
-                                )
-                            },
-                        WorkspaceSearchType.entries.firstOrNull { it.name == fields.getOrNull(5) }
-                            ?: WorkspaceSearchType.All,
-                        (fields.getOrNull(6) as? String)?.ifEmpty { null },
-                    )
+                            TextFieldValue(text as String, TextRange(start as Int, end as Int)),
+                            (key as String)
+                                .takeIf { it.isNotEmpty() }
+                                ?.let {
+                                    SearchResultAnchor(
+                                        it,
+                                        offset as Int,
+                                        fields.getOrNull(7) as? Int ?: 0,
+                                    )
+                                },
+                            WorkspaceSearchType.entries.firstOrNull {
+                                it.name == fields.getOrNull(5)
+                            } ?: WorkspaceSearchType.All,
+                        )
+                        .also { search ->
+                            val mode =
+                                when (fields.getOrNull(8) as? Boolean) {
+                                    true -> InputMode.Keyboard
+                                    false -> InputMode.Touch
+                                    null -> inputMode.inputMode
+                                }
+                            val target = (fields.getOrNull(6) as? String)?.ifEmpty { null }
+                            search.returnFocus.returningFrom(target, mode, keyboardOnly = false)
+                        }
                 },
             ),
     ) {
         ChatSearchState()
     }
+}
 
 internal data class WorkspaceNavigation(
     val target: WorkspaceTarget = WorkspaceTarget.List,
@@ -449,7 +466,7 @@ internal data class WorkspaceNavigation(
     val chatResourcesId: String? = null,
     val chatArtifactLink: String? = null,
     val chatArtifactFocusKey: String? = null,
-    val messageSequence: Long? = null,
+    val searchMessageAnchor: SearchMessageAnchor? = null,
 )
 
 internal const val RetainedExternalImagePreview = "external-image"
@@ -498,8 +515,10 @@ private fun WorkspaceNavigation.savedFields(): List<Any> {
         chatResourcesId.orEmpty(),
         chatArtifactLink?.restorableArtifactLink().orEmpty(),
         chatArtifactFocusKey.orEmpty(),
-        messageSequence ?: 0L,
+        searchMessageAnchor?.sequence ?: 0L,
         artifacts?.searchResultId.orEmpty(),
+        searchMessageAnchor?.range?.first ?: -1,
+        searchMessageAnchor?.range?.last ?: -1,
     )
 }
 
@@ -523,6 +542,14 @@ private fun restoreWorkspaceNavigation(fields: List<Any?>): WorkspaceNavigation 
                 searchResultId = (fields.getOrNull(10) as? String)?.ifEmpty { null },
             )
         } else null
+    val searchMessageAnchor =
+        (fields.getOrNull(9) as? Long)
+            ?.takeIf { it > 0 }
+            ?.let { sequence ->
+                val start = fields.getOrNull(11) as? Int ?: -1
+                val end = fields.getOrNull(12) as? Int ?: -1
+                SearchMessageAnchor(sequence, if (start >= 0 && end >= start) start..end else null)
+            }
     return WorkspaceNavigation(
         target,
         destination,
@@ -531,7 +558,7 @@ private fun restoreWorkspaceNavigation(fields: List<Any?>): WorkspaceNavigation 
         (fields.getOrNull(6) as? String)?.ifEmpty { null },
         (fields.getOrNull(7) as? String)?.ifEmpty { null }?.restorableArtifactLink(),
         (fields.getOrNull(8) as? String)?.ifEmpty { null },
-        (fields.getOrNull(9) as? Long)?.takeIf { it > 0 },
+        searchMessageAnchor,
     )
 }
 
@@ -603,13 +630,11 @@ internal fun rememberConversationLinkPosition(): MutableState<ConversationLinkPo
 internal class ArtifactPageState(
     filter: ArtifactFilter = ArtifactFilter.All,
     selectedId: String? = null,
-    restoreRow: String? = null,
     restoreSource: Boolean = false,
     pickerArtifactId: String? = null,
 ) {
     var filter by mutableStateOf(filter)
     var selectedId by mutableStateOf(selectedId)
-    var restoreRow by mutableStateOf(restoreRow)
     var restoreSource by mutableStateOf(restoreSource)
     var pickerArtifactId by mutableStateOf(pickerArtifactId)
 }
@@ -623,17 +648,17 @@ internal fun rememberArtifactPageState(): ArtifactPageState =
                     listOf(
                         it.filter.name,
                         it.selectedId.orEmpty(),
-                        it.restoreRow.orEmpty(),
+                        "", // Former pending row slot. Keep the following fields at their saved
+                        // indices.
                         it.restoreSource,
                         it.pickerArtifactId.orEmpty(),
                     )
                 },
-                restore = { (filter, selectedId, restoreRow, restoreSource, pickerArtifactId) ->
+                restore = { (filter, selectedId, _, restoreSource, pickerArtifactId) ->
                     ArtifactPageState(
                         ArtifactFilter.entries.firstOrNull { it.name == filter }
                             ?: ArtifactFilter.All,
                         (selectedId as String).ifEmpty { null },
-                        (restoreRow as String).ifEmpty { null },
                         restoreSource as Boolean,
                         (pickerArtifactId as String).ifEmpty { null },
                     )

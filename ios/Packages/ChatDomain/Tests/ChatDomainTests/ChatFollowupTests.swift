@@ -157,7 +157,7 @@ final class ChatFollowupTests: XCTestCase {
     ]
     let rows = completed + newer + [event(8, .runFailed), event(9, .usageRecorded, run: "next")]
     let history = try project(rows)
-    XCTAssertEqual(history.completion?.eventID, "7")
+    XCTAssertEqual(history.completion?.phraseSeed, "7".utf16.last)
     XCTAssertEqual(history.completion?.createdAt, Date(timeIntervalSince1970: 7))
     XCTAssertNil(history.completion?.recommendedFollowups)
     XCTAssertNil(history.withCancellationRecoveryPending(true).completion)

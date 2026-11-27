@@ -4,15 +4,26 @@ use super::super::session_output::{AssistantTextStream, SessionOutputSender};
 use crate::masker::SecretMasker;
 use guest_contracts::diagnostics::FailureReason;
 use guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
+use guest_telemetry::log_warn;
 use serde_json::{Value, json};
 use sha2::Digest;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::io;
 
+const LOG_TAG: &str = "sandbox:guest-agent";
+
 struct TextStep<'a> {
     text: String,
     preview: Option<AssistantTextStream<'a>>,
+    updates: u32,
+    last_other_state: Option<String>,
+}
+
+struct ToolStep {
+    name: String,
+    updates: u32,
+    last_other_state: Option<String>,
 }
 
 pub(in crate::cli) struct Projection<'a> {
@@ -22,7 +33,7 @@ pub(in crate::cli) struct Projection<'a> {
     masker: &'a SecretMasker,
     text: HashMap<u64, TextStep<'a>>,
     buffered: usize,
-    tools: HashSet<u64>,
+    tools: HashMap<u64, ToolStep>,
     completed: HashSet<u64>,
     last_text_digest: Option<[u8; 32]>,
     terminal: bool,
@@ -48,7 +59,7 @@ impl<'a> Projection<'a> {
             masker,
             text: HashMap::new(),
             buffered: 0,
-            tools: HashSet::new(),
+            tools: HashMap::new(),
             completed: HashSet::new(),
             last_text_digest: None,
             terminal: false,
@@ -122,11 +133,6 @@ impl<'a> Projection<'a> {
             .get("step_index")
             .and_then(Value::as_u64)
             .ok_or_else(|| invalid("Invalid Antigravity step index"))?;
-        let done = match step.get("state").and_then(Value::as_str) {
-            Some("DONE") => true,
-            Some("ACTIVE") => false,
-            _ => return Ok(None),
-        };
         if self.completed.contains(&index) {
             return Ok(None);
         }
@@ -134,6 +140,35 @@ impl<'a> Projection<'a> {
         if self.completed.len() + self.text.len() + self.tools.len() >= 65_536 {
             return Err(invalid("Antigravity step count exceeded the guest limit"));
         }
+        let state = step.get("state").and_then(Value::as_str);
+        let done = match state {
+            Some("DONE") => true,
+            Some("ACTIVE") => false,
+            Some(terminal_state @ ("ERROR" | "FAILED" | "CANCELLED" | "CANCELED" | "ABORTED")) => {
+                return self.handle_terminal_non_done_step(index, kind, terminal_state, step);
+            }
+            other => {
+                let state_label = other.unwrap_or("<missing>");
+                if let Some(text_step) = self.text.get_mut(&index) {
+                    text_step.last_other_state = Some(state_label.to_owned());
+                    log_warn!(
+                        LOG_TAG,
+                        "[debug-agy-unfinished-steps] active text step received non-ACTIVE/DONE state: step_index={index} state={state_label} text_bytes={} updates={}",
+                        text_step.text.len(),
+                        text_step.updates,
+                    );
+                } else if let Some(tool_step) = self.tools.get_mut(&index) {
+                    tool_step.last_other_state = Some(state_label.to_owned());
+                    log_warn!(
+                        LOG_TAG,
+                        "[debug-agy-unfinished-steps] active tool step received non-ACTIVE/DONE state: step_index={index} tool={} state={state_label} updates={}",
+                        tool_step.name,
+                        tool_step.updates,
+                    );
+                }
+                return Ok(None);
+            }
+        };
         if done {
             self.completed.insert(index);
         }
@@ -144,6 +179,69 @@ impl<'a> Projection<'a> {
                 done,
             ),
             _ => self.tool_step(index, step, done),
+        }
+    }
+
+    fn handle_terminal_non_done_step(
+        &mut self,
+        index: u64,
+        kind: Option<&str>,
+        state: &str,
+        step: &Value,
+    ) -> io::Result<Option<Value>> {
+        self.completed.insert(index);
+        match kind {
+            Some("agent_response") => {
+                if let Some(text_step) = self.text.remove(&index) {
+                    self.buffered -= text_step.text.len();
+                    log_warn!(
+                        LOG_TAG,
+                        "[debug-agy-unfinished-steps] closing active text step on terminal state: step_index={index} state={state} text_bytes={} updates={}",
+                        text_step.text.len(),
+                        text_step.updates,
+                    );
+                } else {
+                    log_warn!(
+                        LOG_TAG,
+                        "[debug-agy-unfinished-steps] ignoring inactive text step on terminal state: step_index={index} state={state}"
+                    );
+                }
+                Ok(None)
+            }
+            _ => {
+                if let Some(tool_step) = self.tools.remove(&index) {
+                    log_warn!(
+                        LOG_TAG,
+                        "[debug-agy-unfinished-steps] closing active tool step on terminal state: step_index={index} tool={} state={state} updates={}",
+                        tool_step.name,
+                        tool_step.updates,
+                    );
+                    let fallback = format!("Tool step ended with state {state}");
+                    let content = step
+                        .get("tool_info")
+                        .and_then(|info| info.pointer("/error/message"))
+                        .and_then(Value::as_str)
+                        .unwrap_or(&fallback);
+                    let id = format!(
+                        "agy-{}-tool-{index}",
+                        self.session.as_deref().unwrap_or_default()
+                    );
+                    let response = json!({"type":"user","message":{"role":"user","content":[
+                        {"type":"tool_result","tool_use_id":id,"content":content,"is_error":true}]}});
+                    Ok(Some(response))
+                } else {
+                    let tool_name = step
+                        .pointer("/tool_info/name")
+                        .and_then(Value::as_str)
+                        .or_else(|| step.get("tool_name").and_then(Value::as_str))
+                        .unwrap_or("<unknown>");
+                    log_warn!(
+                        LOG_TAG,
+                        "[debug-agy-unfinished-steps] ignoring inactive tool step on terminal state: step_index={index} tool={tool_name} state={state}"
+                    );
+                    Ok(None)
+                }
+            }
         }
     }
 
@@ -160,7 +258,10 @@ impl<'a> Projection<'a> {
                 .output
                 .clone()
                 .map(|s| AssistantTextStream::new(s, self.masker)),
+            updates: 0,
+            last_other_state: None,
         });
+        step.updates = step.updates.saturating_add(1);
         step.text.push_str(delta);
         if let Some(preview) = &mut step.preview {
             preview.push(0, delta);
@@ -208,7 +309,10 @@ impl<'a> Projection<'a> {
             "agy-{}-tool-{index}",
             self.session.as_deref().unwrap_or_default()
         );
-        let call = if self.tools.insert(index) {
+        let call = if let Some(tracked) = self.tools.get_mut(&index) {
+            tracked.updates = tracked.updates.saturating_add(1);
+            None
+        } else {
             let name = name
                 .ok_or_else(|| invalid("Missing Antigravity tool name"))?
                 .to_owned();
@@ -216,12 +320,18 @@ impl<'a> Projection<'a> {
                 .as_object_mut()
                 .and_then(|fields| fields.remove("parameters"))
                 .unwrap_or_else(|| json!({}));
+            self.tools.insert(
+                index,
+                ToolStep {
+                    name: name.clone(),
+                    updates: 1,
+                    last_other_state: None,
+                },
+            );
             Some(self.assistant(
                 index,
                 json!({"type":"tool_use","id":id,"name":name,"input":input}),
             ))
-        } else {
-            None
         };
         if !done {
             return Ok(call);
@@ -270,7 +380,15 @@ impl<'a> Projection<'a> {
             self.check_session(result)?;
         }
         if !failed && (!self.text.is_empty() || !self.tools.is_empty()) {
-            return Err(invalid("Antigravity completed with unfinished steps"));
+            let details = self.unfinished_steps_summary();
+            log_warn!(
+                LOG_TAG,
+                "[debug-agy-unfinished-steps] Antigravity completed with unfinished steps: {details}"
+            );
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Antigravity completed with unfinished steps ({details})"),
+            ));
         }
         self.terminal = true;
         let error = result.get("error").and_then(Value::as_str).unwrap_or("");
@@ -340,5 +458,45 @@ impl<'a> Projection<'a> {
             return Ok(self.assistant("final", json!({"type":"text","text":response})));
         }
         Ok(event)
+    }
+
+    fn unfinished_steps_summary(&self) -> String {
+        let mut text_entries: Vec<_> = self.text.iter().collect();
+        text_entries.sort_by_key(|(index, _)| **index);
+        let text_summary: Vec<String> = text_entries
+            .into_iter()
+            .map(|(index, step)| match &step.last_other_state {
+                Some(state) => format!(
+                    "{index}(bytes={},updates={},last_other_state={state})",
+                    step.text.len(),
+                    step.updates
+                ),
+                None => format!(
+                    "{index}(bytes={},updates={})",
+                    step.text.len(),
+                    step.updates
+                ),
+            })
+            .collect();
+
+        let mut tool_entries: Vec<_> = self.tools.iter().collect();
+        tool_entries.sort_by_key(|(index, _)| **index);
+        let tool_summary: Vec<String> = tool_entries
+            .into_iter()
+            .map(|(index, step)| match &step.last_other_state {
+                Some(state) => format!(
+                    "{index}(name={},updates={},last_other_state={state})",
+                    step.name, step.updates
+                ),
+                None => format!("{index}(name={},updates={})", step.name, step.updates),
+            })
+            .collect();
+
+        format!(
+            "text=[{}], tools=[{}], completed={}",
+            text_summary.join(", "),
+            tool_summary.join(", "),
+            self.completed.len()
+        )
     }
 }

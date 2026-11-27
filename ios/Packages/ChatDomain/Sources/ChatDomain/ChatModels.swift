@@ -79,17 +79,19 @@ public struct ChatMessageAttachment: Equatable, Identifiable, Sendable {
   public let contentType: String
   public let size: Int?
   public let renderedFileID: String?
+  public let isVoiceRecording: Bool
   public var downloadID: String { renderedFileID ?? id }
 
   public init(
     id: String, filename: String, contentType: String, size: Int? = nil,
-    renderedFileID: String? = nil
+    renderedFileID: String? = nil, isVoiceRecording: Bool = false
   ) {
     self.id = id
     self.filename = filename
     self.contentType = contentType
     self.size = size
     self.renderedFileID = renderedFileID
+    self.isVoiceRecording = isVoiceRecording
   }
 }
 
@@ -166,7 +168,7 @@ public struct ChatHistory: Equatable, Sendable {
   public let messages: [ChatMessage]
   public let workSections: [ChatWorkSection]
   public private(set) var executionState: ChatExecutionState
-  public let activeRunIDs: [String]
+  public private(set) var activeRunIDs: [String]
   public let latestRunID: String?
   public private(set) var activityRunID: String?
   public let queuedEventIDs: [String]
@@ -208,6 +210,19 @@ public struct ChatHistory: Equatable, Sendable {
     self.latestRunID = latestRunID
     self.queuedEventIDs = queuedEventIDs
     self.persistedEventIDs = persistedEventIDs
+  }
+
+  public func interrupting(_ runIDs: Set<String>) -> ChatHistory {
+    guard activeRunIDs.contains(where: runIDs.contains) else { return self }
+    var result = self
+    result.activeRunIDs.removeAll(where: runIDs.contains)
+    if result.activeRunIDs.isEmpty {
+      result.executionState = queuedEventIDs.isEmpty ? .idle : .queued
+      result.activityRunID = nil
+    } else if let activityRunID, runIDs.contains(activityRunID) {
+      result.activityRunID = nil
+    }
+    return result
   }
 
   public func withCancellationRecoveryPending(_ pending: Bool) -> ChatHistory {

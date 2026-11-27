@@ -1,5 +1,6 @@
 package ai.okou.android.artifacts
 
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.committedSearchText
@@ -26,6 +27,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
@@ -34,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -42,6 +45,7 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -49,7 +53,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun ArtifactsRoute(
@@ -67,6 +74,7 @@ internal fun ArtifactsRoute(
     val keyboard = LocalSoftwareKeyboardController.current
     val input = rememberTextFieldState()
     val page = rememberArtifactPageState()
+    val returnFocus = remember(model, searchArtifactId) { DirectoryReturnFocus() }
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val selectedId = searchArtifactId ?: page.selectedId
 
@@ -96,7 +104,7 @@ internal fun ArtifactsRoute(
             .collect { keyword ->
                 val query = ArtifactQuery(page.filter, keyword)
                 if (query != model.state.value.query) {
-                    page.restoreRow = null
+                    returnFocus.cancel()
                     position.requestScrollToItem(0)
                     model.query(
                         query,
@@ -113,7 +121,7 @@ internal fun ArtifactsRoute(
         if (current == null || searchArtifactId != null) {
             onClose()
         } else {
-            page.restoreRow = current
+            returnFocus.returningFrom(current, inputMode.inputMode)
             page.selectedId = null
             model.select(null)
         }
@@ -132,7 +140,7 @@ internal fun ArtifactsRoute(
                 onFilter = { next ->
                     if (page.filter != next) {
                         page.filter = next
-                        page.restoreRow = null
+                        returnFocus.cancel()
                         position.requestScrollToItem(0)
                         model.query(
                             catalogQuery(next, model.state.value.query.keyword),
@@ -142,9 +150,9 @@ internal fun ArtifactsRoute(
                 },
                 position = position,
                 selectedId = selectedId,
-                restoreRow = page.restoreRow,
-                onFocusRestored = { page.restoreRow = null },
+                returnFocus = returnFocus,
                 onSelect = { item ->
+                    returnFocus.cancel()
                     if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     page.selectedId = item.id
@@ -247,20 +255,63 @@ internal fun ArtifactSelectionPreview(
     key(selectedId) {
         val id = selectedId
         val preview = state.preview?.takeIf { it.id == id }
+        val context = LocalContext.current
+        val resources = LocalResources.current
+        val shareScope = rememberCoroutineScope()
+        val shareSnackbar = remember { SnackbarHostState() }
+        var sharing by remember { mutableStateOf(false) }
+        val original = preview?.access?.save
+        val generated =
+            showArtifactImageViewer &&
+                !id.startsWith(ExternalImagePreviewPrefix) &&
+                chatAttachment(id) == null
         val source =
             preview?.info?.sourceChatId?.let { sourceId ->
                 threads.firstOrNull { it.id == sourceId && it.hidden != true }
             }
-        val saveEnabled = !state.saving && page.pickerArtifactId == null
+        val saveEnabled = !state.saving && page.pickerArtifactId == null && !sharing
+        val onShare: (() -> Unit)? =
+            original
+                ?.takeIf { generated }
+                ?.let { file ->
+                    {
+                        if (
+                            !sharing && page.pickerArtifactId == null && !model.state.value.saving
+                        ) {
+                            sharing = true
+                            shareScope.launch {
+                                val result =
+                                    try {
+                                        shareArtifactOriginal(context, model, id, file)
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (_: Exception) {
+                                        ArtifactSaveResult.Failed
+                                    } finally {
+                                        sharing = false
+                                    }
+                                val message =
+                                    when (result) {
+                                        ArtifactSaveResult.Denied -> R.string.artifact_share_denied
+                                        ArtifactSaveResult.Failed -> R.string.artifact_share_failed
+                                        else -> null
+                                    }
+                                if (message != null)
+                                    shareSnackbar.showSnackbar(resources.getString(message))
+                            }
+                        }
+                    }
+                }
         val saveResult =
             if (pickerFailed) ArtifactSaveResult.Failed
             else state.saveResult?.takeIf { it.first == id }?.second
         val openSource: (ConfirmedChat) -> Unit = {
+            shareScope.coroutineContext.cancelChildren()
             page.restoreSource = true
             onSource(it)
         }
         val saveArtifact: (ArtifactSave) -> Unit = { file ->
-            if (page.pickerArtifactId == null && !model.state.value.saving) {
+            if (page.pickerArtifactId == null && !model.state.value.saving && !sharing) {
                 page.pickerArtifactId = id
                 pickerFailed = false
                 try {
@@ -279,40 +330,50 @@ internal fun ArtifactSelectionPreview(
                 }
             }
         }
-        if (
-            showArtifactImageViewer &&
-                preview?.isImage == true &&
-                !id.startsWith(ExternalImagePreviewPrefix) &&
-                chatAttachment(id) == null
-        ) {
-            val save = preview.access?.save
-            ArtifactImageViewer(
-                preview = preview,
-                model = model,
-                wide = wide,
-                backLabel = backLabel,
-                onBack = onBack,
-                saveEnabled = saveEnabled,
-                onSave = save?.let { { saveArtifact(it) } },
-                saveResult = saveResult,
-                onSource = source?.let { { openSource(it) } },
-                restoreSourceFocus = page.restoreSource,
-                onSourceFocusRestored = { page.restoreSource = false },
-            )
-        } else {
-            toolbar()
-            ArtifactPreview(
-                preview,
-                rememberScrollState(),
-                wide,
-                source,
-                restoreSourceFocus = page.restoreSource,
-                onSourceFocusRestored = { page.restoreSource = false },
-                onSource = openSource,
-                saveEnabled = saveEnabled,
-                onSave = saveArtifact,
-                saveResult = saveResult,
-            )
+        ArtifactLinkControls(
+            preview?.linkSource,
+            preview?.item?.title.orEmpty(),
+            model,
+            shareSnackbar,
+        ) { links ->
+            if (generated && preview?.isImage == true) {
+                val save = preview.access?.save
+                ArtifactImageViewer(
+                    preview = preview,
+                    model = model,
+                    wide = wide,
+                    backLabel = backLabel,
+                    onBack = onBack,
+                    saveEnabled = saveEnabled,
+                    onSave = save?.let { { saveArtifact(it) } },
+                    saveResult = saveResult,
+                    onShare = onShare,
+                    sharing = sharing,
+                    shareSnackbar = shareSnackbar,
+                    links = links,
+                    onSource = source?.let { { openSource(it) } },
+                    restoreSourceFocus = page.restoreSource,
+                    onSourceFocusRestored = { page.restoreSource = false },
+                )
+            } else {
+                toolbar()
+                ArtifactPreview(
+                    preview,
+                    rememberScrollState(),
+                    wide,
+                    source,
+                    restoreSourceFocus = page.restoreSource,
+                    onSourceFocusRestored = { page.restoreSource = false },
+                    onSource = openSource,
+                    saveEnabled = saveEnabled,
+                    onSave = saveArtifact,
+                    saveResult = saveResult,
+                    onShare = onShare,
+                    sharing = sharing,
+                    shareSnackbar = shareSnackbar,
+                    links = links,
+                )
+            }
         }
     }
 }

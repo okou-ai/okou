@@ -89,20 +89,19 @@ struct ConversationRowProjection {
       }
     }
     // Text still streaming from the running run, until its durable event takes the same id.
+    var previousItem = items.last
     for output in transcript.streamed {
-      var continues = false
-      if case .message(let previous, _, _, _, _, _, _) = result.last {
-        continues = previous.role != .user
-      } else if case .work = result.last {
-        continues = true
-      }
+      let message = ChatMessage(
+        id: output.eventID, role: .assistant, text: output.text, createdAt: output.createdAt,
+        runID: output.runID, isQueued: false, isError: false)
+      let item = ConversationItem.message(message)
+      let continuesGroup = previousItem.map { continues(item, after: $0) } == true
       result.append(
         .message(
-          ChatMessage(
-            id: output.eventID, role: .assistant, text: output.text, createdAt: output.createdAt,
-            runID: output.runID, isQueued: false, isError: false),
-          showsAvatar: !continues, topSpacing: continues ? 8 : 24, pendingRetry: nil,
+          message, showsAvatar: !continuesGroup, topSpacing: continuesGroup ? 8 : 24,
+          pendingRetry: nil,
           isSending: false))
+      previousItem = item
     }
     let lastRunMessage = items.last { item in
       guard let message = item.message, !message.isQueued else { return false }
@@ -119,9 +118,8 @@ struct ConversationRowProjection {
             completion, followups: source, finishedAt: history.latestRunFinishAt),
           followups: source, showsAvatar: statusNeedsAvatar))
     }
-    result.append(
-      .footer(
-        history.executionState, showsAvatar: history.executionState.isActive && statusNeedsAvatar))
+    let showsActivity = history.executionState == .queued || history.executionState == .running
+    result.append(.footer(history.executionState, showsAvatar: showsActivity && statusNeedsAvatar))
     return result
   }
 
@@ -131,10 +129,17 @@ struct ConversationRowProjection {
       item.message?.userMessage?.annotation?.type != "automation",
       previous.message?.userMessage?.annotation?.type != "automation"
     else { return false }
-    guard item.role == .user, let date = item.message?.createdAt,
-      let previousDate = previous.message?.createdAt
-    else { return true }
-    return timeline.calendar.isDate(date, inSameDayAs: previousDate)
+    guard let message = item.message else { return true }
+    switch previous {
+    case .message(let before, _) where message.role == .user:
+      return timeline.calendar.isDate(message.createdAt, inSameDayAs: before.createdAt)
+    case .message(let before, _):
+      return before.runID == message.runID || before.runID == nil || message.runID == nil
+    case .usage(let runID):
+      return runID == message.runID || message.runID == nil
+    case .work:
+      return true
+    }
   }
 
   /// The last assistant answer of a turn gets the copy / share / open actions.

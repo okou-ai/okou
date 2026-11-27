@@ -85,12 +85,11 @@ struct ForYouSuggestionView: View {
       .fixedSize(horizontal: false, vertical: true)
   }
 
-  /// A direction says what choosing it does before it is chosen, in a short line above its label:
-  /// one that sends says so in amber, one that only prepares a draft names the chat it drafts in.
-  /// There is no mark beside the text, so the label and description keep the button's whole
-  /// width. Each is a white button on the card's grey ground, as the web draws its options, and
-  /// the one being chosen shows its progress in that line and along its foot until the choice
-  /// settles.
+  /// A direction is its label and description, as the web draws its options, with no line saying
+  /// whether it sends now or drafts in a chat: the card is about what to do, not where it lands.
+  /// There is no mark beside the text, so both keep the button's whole width. The one being chosen
+  /// shows its progress along its foot until the choice settles; VoiceOver hears where it goes as
+  /// the button's hint.
   private func optionButton(_ option: ForYouOption) -> some View {
     let sends = option.threadId == nil
     let isPending = pendingOptionID == option.id
@@ -98,8 +97,6 @@ struct ForYouSuggestionView: View {
       choose(option)
     } label: {
       VStack(alignment: .leading, spacing: OkouSpace.six) {
-        ForYouOptionAction(
-          sends: sends, chat: option.threadId.flatMap(threadTitle), isPending: isPending)
         Text(option.label).font(Self.labelFont)
         // A long description keeps its first lines so a dense card leaves its heading room;
         // VoiceOver reads all of it.
@@ -244,6 +241,13 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
   @State private var actionsHeight: CGFloat = 0
   @State private var hasMoreBelow = false
   @State private var hasMoreAbove = false
+  /// Whether the actions sat at the foot while they last showed.
+  @State private var lastPinned = true
+  /// Where the actions go when they come back after a direction is put away: where they were
+  /// before it opened, until the card has grown back enough to agree. The card grows back as the
+  /// keyboard goes down, so a placement judged on its first, short height would set the actions
+  /// under the heading for a moment before they drop to the foot, and both would flash.
+  @State private var returningPinned: Bool?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// The height over which the text fades out at an edge more lies beyond.
   private var fade: CGFloat { OkouSpace.xxxl }
@@ -263,7 +267,8 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
 
   var body: some View {
     if let height {
-      let pinsActions = showsActions && height - actionsHeight - spacing >= height * headingShare
+      let fits = height - actionsHeight - spacing >= height * headingShare
+      let pinsActions = showsActions && (returningPinned ?? fits)
       VStack(alignment: .leading, spacing: spacing) {
         scrolling(
           below: pinsActions
@@ -281,6 +286,14 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
       // source leaving as a direction opens), so the card eases to it rather than cutting the
       // text still on its way up.
       .animation(reduceMotion ? nil : OkouMotion.transition, value: headingHeight)
+      .onChange(of: fits, initial: true) { _, fits in
+        if returningPinned == fits { returningPinned = nil }
+        if showsActions && returningPinned == nil { lastPinned = fits }
+      }
+      .onChange(of: showsActions) { _, shows in
+        // Set as the actions leave, so it already holds on the frame they come back.
+        returningPinned = shows ? (returningPinned == fits ? nil : returningPinned) : lastPinned
+      }
     } else {
       VStack(alignment: .leading, spacing: spacing) {
         measuredHeading
@@ -304,7 +317,7 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     }
     .contentMargins(.top, above, for: .scrollIndicators)
     .contentMargins(.bottom, below, for: .scrollIndicators)
-    // The page keeps its card at the bottom; the card's own text opens at its title and stays
+    // The page hangs its card from the top; the card's own text opens at its title and stays
     // put as a reason opens.
     .defaultScrollAnchor(.top, for: .initialOffset)
     .defaultScrollAnchor(.top, for: .alignment)
@@ -370,55 +383,6 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
   }
 }
 
-/// What choosing a direction does, as a short line above its label: an amber dot and "Send to
-/// a new chat" for one that sends now, a quiet dot and the chat's name for one that drafts, and
-/// progress with "Sending…" while the choice is under way. VoiceOver hears it as the button's
-/// hint instead.
-private struct ForYouOptionAction: View {
-  let sends: Bool
-  /// The chat a draft opens in, when its title is known.
-  let chat: String?
-  let isPending: Bool
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  private static let dot: CGFloat = 6
-
-  /// Amber that reads as text: a deep stop on white, a light one at night.
-  static let sendInk = Color(
-    uiColor: UIColor { traits in
-      UIColor(traits.userInterfaceStyle == .dark ? OkouColor.primary200 : OkouColor.primary700)
-        .resolvedColor(with: traits)
-    })
-
-  private var text: LocalizedStringKey {
-    if isPending { return sends ? "Sending…" : "Opening draft…" }
-    if sends { return "Send to a new chat" }
-    if let chat { return "Draft in \(chat)" }
-    return "Draft in the existing chat"
-  }
-
-  var body: some View {
-    HStack(spacing: OkouSpace.six) {
-      ZStack {
-        if isPending {
-          ProgressView().controlSize(.mini).scaleEffect(0.7).transition(.opacity)
-        } else {
-          Circle().frame(width: Self.dot, height: Self.dot).transition(.opacity)
-        }
-      }
-      .frame(width: OkouSpace.ten, height: OkouSpace.ten)
-      .animation(reduceMotion ? nil : OkouMotion.press, value: isPending)
-      // The words switch at once; fading one phrase into the other overlaps them.
-      Text(text).lineLimit(1)
-    }
-    .font(.okou(.caption).weight(.semibold))
-    .textCase(.uppercase)
-    .tracking(0.5)
-    .foregroundStyle(sends ? Self.sendInk : OkouColor.mutedForeground)
-    .tint(sends ? Self.sendInk : OkouColor.mutedForeground)
-    .accessibilityHidden(true)
-  }
-}
-
 /// A thin line that runs along a chosen direction's foot while its choice is under way: amber
 /// for one that sends, grey for one that drafts. Under Reduce Motion it holds still.
 private struct ForYouOptionProgress: View {
@@ -463,7 +427,7 @@ private struct ForYouOptionButtonStyle: ButtonStyle {
     // corner covers the border instead of letting it run through.
     configuration.label
       .background {
-        shape.fill(OkouColor.card)
+        shape.fill(ForYouView.directionFill)
           .overlay { shape.fill(pressed ? OkouColor.statePressed : .clear) }
           .overlay {
             shape.strokeBorder(
@@ -497,9 +461,9 @@ private struct ForYouChipButtonStyle: ButtonStyle {
 extension ForYouFeedback {
   var title: String {
     switch self {
-    case .alreadyDone: String(localized: "Already done")
-    case .notPlanned: String(localized: "Not planned")
-    case .dontNudge: String(localized: "Don’t nudge me")
+    case .alreadyDone: String(localized: "Done")
+    case .notPlanned: String(localized: "Won't do")
+    case .later: String(localized: "Later")
     case .lessLikeThis: String(localized: "Less like this")
     }
   }
@@ -508,17 +472,8 @@ extension ForYouFeedback {
     switch self {
     case .alreadyDone: "circle-check"
     case .notPlanned: "circle-minus"
-    case .dontNudge: "bell-off"
+    case .later: "clock"
     case .lessLikeThis: "eye-off"
-    }
-  }
-
-  var confirmation: String {
-    switch self {
-    case .alreadyDone: String(localized: "Noted — this is already done")
-    case .notPlanned: String(localized: "Noted — this is not planned")
-    case .dontNudge: String(localized: "Noted — please don’t nudge me about this again")
-    case .lessLikeThis: String(localized: "You’ll see fewer suggestions like this.")
     }
   }
 }

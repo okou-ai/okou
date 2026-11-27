@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">Impossible de changer de compte de modèle.</string>
     <string name="settings_quota">Quota</string>
     <string name="settings_hour_quota">Quota de %1$d h</string>
+    <string name="settings_minute_quota">Quota de %1$d min</string>
     <string name="settings_day_quota">Quota de %1$d jours</string>
     <string name="settings_weekly_quota">Quota hebdomadaire</string>
     <string name="settings_quota_unavailable">Quota temporairement indisponible</string>
@@ -110,4 +111,5 @@
     <string name="settings_suggestions_save_failed">Impossible d’enregistrer les suggestions. Le paramètre précédent a été rétabli.</string>
     <string name="settings_timezone_save_rejected">Impossible d’enregistrer le fuseau horaire. Le fuseau précédent a été rétabli.</string>
     <string name="settings_timezone_schedule_update_failed">Le fuseau horaire a été enregistré. Impossible de mettre à jour l’horaire du résumé matinal.</string>
+    <string name="settings_model_catalog_refresh_failed">Impossible d’actualiser les modèles disponibles. La dernière liste chargée est affichée.</string>
 </resources>

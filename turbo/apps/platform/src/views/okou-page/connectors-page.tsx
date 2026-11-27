@@ -1,4 +1,9 @@
 import {
+  remoteDeviceDirectory$,
+  remoteDevicesEnabled$,
+  selectedRemoteDeviceId$,
+} from "../../signals/remote-devices.ts";
+import {
   BuiltinConnectorAccountDialogs,
   useBuiltinConnectorConnectHandlers,
 } from "./builtin-connector-account-dialogs.tsx";
@@ -117,6 +122,7 @@ import {
   PrivateNetworkPanel,
   RemoteControlPanel,
 } from "./connectors-remote-panels.tsx";
+import { AddRemoteDeviceButton } from "./remote-device-directory.tsx";
 import { WorkspaceCanvasBackdrop } from "./workspace-inset.tsx";
 
 function ConnectorFilterSectionLabel({
@@ -190,6 +196,20 @@ function CustomScopeCount() {
 }
 
 function RemoteControlScopeCount() {
+  const enabled = useLastResolved(remoteDevicesEnabled$);
+  return enabled ? (
+    <RemoteDeviceScopeCount />
+  ) : (
+    <LegacyRemoteControlScopeCount />
+  );
+}
+
+function RemoteDeviceScopeCount() {
+  const devices = useLastResolved(remoteDeviceDirectory$);
+  return <ConnectorsScopeCount value={devices?.length ?? 0} />;
+}
+
+function LegacyRemoteControlScopeCount() {
   const ssh = useLastLoadable(sshSummary$);
   const vnc = useLastLoadable(vncSummary$);
   return (
@@ -261,6 +281,12 @@ function ConnectorsScopeSegment() {
         })}
         <ConnectedScopeCount />
       </SegmentControlItem>
+      <SegmentControlItem value="custom" data-testid="connectors-scope-custom">
+        {t(($) => {
+          return $.connectors.catalog.scope.custom;
+        })}
+        <CustomScopeCount />
+      </SegmentControlItem>
       <SegmentControlItem
         value="remote-control"
         data-testid="connectors-scope-remote-control"
@@ -279,12 +305,6 @@ function ConnectorsScopeSegment() {
         })}
         <PrivateNetworkScopeCount />
       </SegmentControlItem>
-      <SegmentControlItem value="custom" data-testid="connectors-scope-custom">
-        {t(($) => {
-          return $.connectors.catalog.scope.custom;
-        })}
-        <CustomScopeCount />
-      </SegmentControlItem>
     </SegmentControl>
   );
 }
@@ -295,6 +315,7 @@ function ConnectorsScopeSegment() {
  * built.
  */
 function ConnectorsDirectoryToolbar() {
+  const scope = useGet(connectorsScope$);
   return (
     // The controls outlive the header: the title scrolls away and the scope and
     // the search stay reachable. The negative margins hand back the page's own
@@ -315,8 +336,11 @@ function ConnectorsDirectoryToolbar() {
     <div className="sticky top-0 z-30 -mb-6 -mt-6">
       <div className="relative isolate flex flex-col gap-3 pt-6">
         <WorkspaceCanvasBackdrop />
-        <div className="flex items-center overflow-x-auto">
-          <ConnectorsScopeSegment />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 overflow-x-auto">
+            <ConnectorsScopeSegment />
+          </div>
+          {scope === "remote-control" && <RemoteDeviceDirectoryAction />}
         </div>
         <DirectoryControlsPresence />
       </div>
@@ -325,6 +349,13 @@ function ConnectorsDirectoryToolbar() {
       </div>
     </div>
   );
+}
+
+function RemoteDeviceDirectoryAction() {
+  const enabled = useLastResolved(remoteDevicesEnabled$);
+  const setup = useGet(remoteSetup$);
+  const selected = useGet(selectedRemoteDeviceId$);
+  return enabled && !setup && !selected ? <AddRemoteDeviceButton /> : null;
 }
 
 function DirectoryControlsPresence() {

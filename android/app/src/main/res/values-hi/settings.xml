@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">मॉडल खाता बदला नहीं जा सका।</string>
     <string name="settings_quota">कोटा</string>
     <string name="settings_hour_quota">%1$d घंटे का कोटा</string>
+    <string name="settings_minute_quota">%1$d मिनट का कोटा</string>
     <string name="settings_day_quota">%1$d दिन का कोटा</string>
     <string name="settings_weekly_quota">साप्ताहिक कोटा</string>
     <string name="settings_quota_unavailable">कोटा अभी उपलब्ध नहीं है</string>
@@ -110,4 +111,5 @@
     <string name="settings_suggestions_save_failed">सुझाव की सेटिंग सेव नहीं हुई। पिछली सेटिंग बहाल कर दी गई है।</string>
     <string name="settings_timezone_save_rejected">समय क्षेत्र सेव नहीं हो सका। पिछला समय क्षेत्र बहाल कर दिया गया है।</string>
     <string name="settings_timezone_schedule_update_failed">समय क्षेत्र सेव हो गया। सुबह के सारांश का समय अपडेट नहीं हो सका।</string>
+    <string name="settings_model_catalog_refresh_failed">उपलब्ध मॉडल रीफ़्रेश नहीं हो सके। पिछली लोड की गई सूची दिखाई जा रही है।</string>
 </resources>

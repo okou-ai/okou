@@ -1,5 +1,6 @@
 package ai.okou.android.settings
 
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.SettingsChoiceSheet
@@ -10,11 +11,13 @@ import ai.okou.android.SettingsSection
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.api.generated.imageToolOptions
 import ai.okou.android.api.generated.publicImageToolOptions
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,12 +34,21 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
-internal fun BuiltInToolsPage(workspace: String, model: BuiltInToolsSettings) {
+internal fun BuiltInToolsPage(
+    workspace: String,
+    model: BuiltInToolsSettings,
+    snackbar: SnackbarHostState,
+) {
     val state by model.state.collectAsStateWithLifecycle()
     LifecycleResumeEffect(model) {
         model.show()
         onPauseOrDispose { model.hidePage() }
     }
+    SettingsRefreshFeedback(
+        snackbar,
+        state.catalog.refreshFailure,
+        R.string.settings_tools_unavailable,
+    )
     Text(
         stringResource(R.string.settings_tool_scope, workspace),
         style = MaterialTheme.typography.bodyMedium,
@@ -57,26 +69,27 @@ internal fun BuiltInToolsPage(workspace: String, model: BuiltInToolsSettings) {
         val families = state.catalog.value
         val locale = LocalConfiguration.current.locales[0].toLanguageTag()
         if (families == null) {
-            if (state.catalog.initialFailure)
-                ToolStatus(stringResource(R.string.settings_tools_unavailable))
+            if (state.catalog.initialFailure) SettingsReadError()
             else SettingsPlaceholder(stringResource(R.string.settings_data_tools))
         } else {
-            if (state.catalog.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
-            if (families.isNotEmpty())
-                SettingsGroup {
-                    families.forEachIndexed { index, family ->
-                        key(family.id) {
-                            if (index > 0) HorizontalDivider()
-                            ToolSwitch(
-                                family.id,
-                                family.title[locale] ?: family.title["en-US"] ?: family.id,
-                                familyIcon(family.id),
-                                state,
-                                model,
-                            )
+            Box {
+                if (families.isNotEmpty())
+                    SettingsGroup {
+                        families.forEachIndexed { index, family ->
+                            key(family.id) {
+                                if (index > 0) HorizontalDivider()
+                                ToolSwitch(
+                                    family.id,
+                                    family.title[locale] ?: family.title["en-US"] ?: family.id,
+                                    familyIcon(family.id),
+                                    state,
+                                    model,
+                                )
+                            }
                         }
                     }
-                }
+                if (state.catalog.refreshing) ContentReadProgress(R.string.settings_data_tools)
+            }
         }
     }
     SettingsSection(stringResource(R.string.settings_tool_image_generation)) {

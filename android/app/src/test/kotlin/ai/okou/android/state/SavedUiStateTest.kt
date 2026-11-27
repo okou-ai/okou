@@ -11,8 +11,10 @@ import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.SearchArtifactHit
+import ai.okou.android.chat.SearchMessageAnchor
 import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.SearchRead
+import ai.okou.android.chat.SearchRefresh
 import ai.okou.android.chat.SearchWorkflowHit
 import ai.okou.android.chat.WorkspaceSearchResults
 import ai.okou.android.chat.WorkspaceSearchScreen
@@ -261,7 +263,10 @@ class SavedUiStateTest {
         compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
 
         compose.runOnIdle {
-            remote = remote.copy(messages = SearchRead.Ready(emptyList(), refreshing = true))
+            remote =
+                remote.copy(
+                    messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Reading),
+                )
         }
         compose.waitForIdle()
         compose.mainClock.advanceTimeBy(280)
@@ -326,7 +331,10 @@ class SavedUiStateTest {
                     true,
                 )
             }
-        var remote by mutableStateOf(WorkspaceSearchResults(keyword = "Release"))
+        var remote by
+            mutableStateOf(
+                WorkspaceSearchResults(keyword = "Release", messages = SearchRead.Loading),
+            )
         compose.setContent {
             OkouTheme(false) {
                 WorkspaceSearchScreen(
@@ -483,11 +491,14 @@ class SavedUiStateTest {
         compose.runOnIdle { remote = remote.copy(artifactPaging = ArtifactSearchPaging.Failed) }
         progress.assertDoesNotExist()
         row.assertIsDisplayed()
-        compose
-            .onNodeWithText("Some search results are temporarily unavailable")
-            .assertIsDisplayed()
+        val failure = compose.onNodeWithText("Temporarily unable to load more")
+        failure.assertIsDisplayed()
+        compose.runOnIdle { search.selectType(WorkspaceSearchType.All) }
+        row.assertIsDisplayed()
+        failure.assertDoesNotExist()
 
         compose.runOnIdle {
+            search.selectType(WorkspaceSearchType.Artifacts)
             remote =
                 remote.copy(
                     artifacts = SearchRead.Ready(emptyList(), "next"),
@@ -859,6 +870,27 @@ class SavedUiStateTest {
             TextRange(7),
             field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
+    }
+
+    @Test
+    fun workspaceNavigationRestoresThePendingMessageMatch() {
+        val restoration = StateRestorationTester(compose)
+        val expected =
+            WorkspaceNavigation(
+                target = WorkspaceTarget.Chat("chat"),
+                search = SearchRoute.ReturnOnBack,
+                searchMessageAnchor = SearchMessageAnchor(22, 0..3),
+            )
+        var observed = WorkspaceNavigation()
+        restoration.setContent {
+            var navigation by rememberWorkspaceNavigation()
+            SideEffect { observed = navigation }
+            Button(onClick = { navigation = expected }) { Text("Open matching message") }
+        }
+
+        compose.onNodeWithText("Open matching message").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.runOnIdle { assertEquals(expected, observed) }
     }
 
     @Test

@@ -231,6 +231,38 @@ internal interface CanonicalApi {
         @Query("hostname") `queryHostname`: String,
     ): Response<ArtifactSitePreview>
 
+    @POST("/api/artifact-shares/status")
+    suspend fun `artifactShareStatus`(
+        @Header("Authorization") token: String,
+        @Body body: ArtifactShareTarget,
+    ): Response<ArtifactShareStatus>
+
+    @PUT("/api/artifact-shares")
+    suspend fun `updateArtifactShare`(
+        @Header("Authorization") token: String,
+        @Body body: ArtifactShareUpdate,
+    ): Response<ArtifactShareStatus>
+
+    @GET("/api/host/sites/{publicSlug}/url")
+    suspend fun `artifactSiteUrl`(
+        @Header("Authorization") token: String,
+        @Path("publicSlug") `pathPublicSlug`: String,
+        @Query("hostname") `queryHostname`: String,
+    ): Response<ArtifactSiteUrl>
+
+    @GET("/api/host/sites/{siteId}/visibility")
+    suspend fun `artifactSiteVisibility`(
+        @Header("Authorization") token: String,
+        @Path("siteId") `pathSiteId`: String,
+    ): Response<ArtifactSiteVisibility>
+
+    @PATCH("/api/host/sites/{siteId}/visibility")
+    suspend fun `updateArtifactSiteVisibility`(
+        @Header("Authorization") token: String,
+        @Path("siteId") `pathSiteId`: String,
+        @Body body: ArtifactSiteVisibilityUpdate,
+    ): Response<ArtifactSiteVisibility>
+
     @GET("/api/connectors/connected")
     suspend fun `connectedConnectors`(
         @Header("Authorization") token: String,
@@ -1059,7 +1091,16 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
     require(
         listOf(
                 (value.keys.all {
-                    it in setOf("limit", "cursor", "kind", "chatThreadId", "keyword", "direction")
+                    it in
+                        setOf(
+                            "limit",
+                            "cursor",
+                            "kind",
+                            "category",
+                            "chatThreadId",
+                            "keyword",
+                            "direction",
+                        )
                 } &&
                     (!value.containsKey("limit") ||
                         value["limit"].let { field ->
@@ -1086,6 +1127,22 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                                         "avatar",
                                         "presentation",
                                         "shared-thread",
+                                    ))
+                        }) &&
+                    (!value.containsKey("category") ||
+                        value["category"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                field.content in
+                                    setOf(
+                                        "document",
+                                        "presentation",
+                                        "website",
+                                        "spreadsheet",
+                                        "image",
+                                        "video",
+                                        "audio",
+                                        "other",
                                     ))
                         }) &&
                     (!value.containsKey("chatThreadId") ||

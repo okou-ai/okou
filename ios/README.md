@@ -354,7 +354,6 @@ Strava retains its existing mobile authorization independently of this switch.
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | TikTok Login Kit | Enable the iOS platform for `ai.okou.ios` on the API's existing client key. Register the environment's `https://<ConnectorCallbackHost>/connectors/tiktok/callback` Universal Link. Deploy the App worker's association file before native acceptance. TikTok Ads is a different integration.    |
 | Dropbox          | Set the public `OKOU_DROPBOX_APP_KEY` build setting to the API environment's Dropbox OAuth client ID; the build registers `db-<key>`. Register `db-<key>://2/token` with Dropbox. An absent or mismatched build key keeps the normal HTTPS browser flow. Never embed the client secret.          |
-| Spotify          | Register the `ai.okou.ios` bundle and `ai.okou.ios://connector-provider/spotify` redirect on the API's existing Spotify client. The pinned official SDK selects the installed app or system browser. Its code delegate uses the API exchange; the app does not request tokens or start playback. |
 
 These changes need a new iOS build as well as the API and App worker deployment.
 An OS launch failure for TikTok/Dropbox/Strava uses the same attempt in the default

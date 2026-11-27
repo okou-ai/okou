@@ -14,65 +14,28 @@ final class MessageArtifactResources {
   /// The workspace session's Store, which keeps this visit's artifact reads.
   let store: CCState.Store
   fileprivate let lifetime = CCState.State(true)
-  private let revision = CCState.State(0)
-  private let reload: Command<Void, Void>
   private let service: ChatArtifacts
-  private let threadID: String?
   private let webURL: URL
   private let didFail: @MainActor (Error) -> Void
-  private var request: (id: UUID, task: Task<[ChatArtifact], Error>)?
   private var cards: [Key: MessageArtifactCardRead] = [:]
-  // Preview opening/navigation use confirmed type information to choose their read contract.
-  // Loading and failure remain exclusively in the catalog Task.
-  private var confirmedMetadata: [ChatArtifact] = []
+  private var details: [ChatArtifact.Source: MessageArtifactDetailRead] = [:]
   private var closed = false
 
   init(
-    service: ChatArtifacts, threadID: String?, webURL: URL, graph: CCState.Store,
+    service: ChatArtifacts, webURL: URL, graph: CCState.Store,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     store = graph
     self.service = service
-    self.threadID = threadID
     self.webURL = webURL
     self.didFail = didFail
-    let revision = revision
-    reload = Command { context in try context.set(revision, update: { $0 + 1 }) }
   }
 
-  lazy var catalog = makeCatalog()
-
-  private func makeCatalog() -> Computed<Task<[ChatArtifact], Error>> {
-    Computed { [weak self] get, options in
-      guard let self, !closed, try get(lifetime) else { throw CancellationError() }
-      _ = try get(revision)
-      let signal = options.signal
-      let id = UUID()
-      let task = Task<[ChatArtifact], Error> { @MainActor [weak self, service, threadID, webURL] in
-        do {
-          try Task.checkCancellation()
-          let values: [ChatArtifact]
-          if let threadID {
-            values = try await service.list(threadID: threadID, webURL: webURL)
-          } else {
-            values = []
-          }
-          try Task.checkCancellation()
-          try signal.checkCancellation()
-          guard let self, !closed, request?.id == id else { throw CancellationError() }
-          confirmedMetadata = values
-          return values
-        } catch {
-          if let self, !closed, request?.id == id, !Task.isCancelled, !signal.isCancelled {
-            reportAccessFailure(error)
-          }
-          throw error
-        }
-      }
-      request = (id, task)
-      signal.onCancel { task.cancel() }
-      return task
-    }
+  func detail(_ artifact: ChatArtifact) -> MessageArtifactDetailRead {
+    if let read = details[artifact.id] { return read }
+    let read = MessageArtifactDetailRead(artifact: artifact, service: service, owner: self)
+    details[artifact.id] = read
+    return read
   }
 
   /// Definitions and results live for this visit, not for each mounted transcript row.
@@ -89,50 +52,30 @@ final class MessageArtifactResources {
     do { try read.retry(in: store) } catch { didFail(error) }
   }
 
-  func refreshCatalog() throws {
+  func refreshDetail(_ artifact: ChatArtifact) throws {
     guard !closed else { throw CancellationError() }
-    request?.task.cancel()
-    request = nil
-    confirmedMetadata = []
-    try store.set(reload)
+    try detail(artifact).refresh(in: store)
   }
 
-  /// Supplementary labels may fail; the resource authority must still authorize the content.
-  /// A waiter follows a superseding metadata read without cancelling another consumer.
-  func prepareMetadata() async throws {
-    while !closed {
-      try Task.checkCancellation()
-      let task = try store.get(catalog)
-      let id = request?.id
-      let result = await task.result
-      try Task.checkCancellation()
-      guard !closed else { throw CancellationError() }
-      if request?.id != id { continue }
-      switch result {
-      case .success: return
-      case .failure(let error):
-        if Self.blocksAccess(error) { throw error }
-        return
-      }
-    }
-    throw CancellationError()
+  func prepareMetadata(_ artifact: ChatArtifact) async throws {
+    guard !closed else { throw CancellationError() }
+    try await detail(artifact).prepare(in: store)
   }
 
   func metadata(_ artifact: ChatArtifact) -> ChatArtifact {
-    guard let value = confirmedMetadata.first(where: { $0.id == artifact.id }) else {
-      return artifact
-    }
+    guard let value = details[artifact.id]?.confirmed else { return artifact }
     return ChatArtifact(
       source: artifact.source, filename: value.filename, contentType: value.contentType,
-      size: value.size, artifactKind: value.artifactKind)
+      size: value.size, artifactKind: value.artifactKind, previewKind: value.previewKind,
+      previewImageURL: value.previewImageURL)
   }
 
   fileprivate func loadCard(_ resource: ChatArtifact, thumbnail: Bool) async throws
     -> MessageArtifactStore.Card
   {
-    // Do not depend on the catalog revision: refreshing file details must not download
+    // Refreshing file details must not download
     // every already displayed cover again. Each card has its own explicit retry.
-    try await prepareMetadata()
+    try await prepareMetadata(resource)
     try Task.checkCancellation()
     guard !closed else { throw CancellationError() }
     let artifact = metadata(resource)
@@ -175,24 +118,106 @@ final class MessageArtifactResources {
     }
   }
 
-  private static func blocksAccess(_ error: Error) -> Bool {
+  fileprivate static func blocksAccess(_ error: Error) -> Bool {
     guard let status = (error as? APIClientError)?.statusCode else { return false }
     return status == 401 || status == 426
   }
 
-  private func reportAccessFailure(_ error: Error) {
+  fileprivate func reportAccessFailure(_ error: Error) {
     if Self.blocksAccess(error) { didFail(error) }
   }
 
   func close() {
     guard !closed else { return }
     closed = true
-    request?.task.cancel()
-    request = nil
+    for read in details.values { read.cancel() }
+    details = [:]
     for read in cards.values { read.cancel() }
     cards = [:]
-    confirmedMetadata = []
     do { try store.set(lifetime, false) } catch { didFail(error) }
+  }
+
+}
+
+/// One stable artifact identity shares a metadata request between its header, cover and sheet.
+@MainActor
+final class MessageArtifactDetailRead {
+  private let artifact: ChatArtifact
+  private let service: ChatArtifacts
+  private weak var owner: MessageArtifactResources?
+  private let revision = CCState.State(0)
+  private var request: (id: UUID, task: Task<ChatArtifact, Error>)?
+  private(set) var confirmed: ChatArtifact?
+
+  fileprivate init(
+    artifact: ChatArtifact, service: ChatArtifacts, owner: MessageArtifactResources
+  ) {
+    self.artifact = artifact
+    self.service = service
+    self.owner = owner
+  }
+
+  lazy var value = makeValue()
+
+  private func makeValue() -> Computed<Task<ChatArtifact, Error>> {
+    Computed { [weak self] get, options in
+      guard let self, let owner, try get(owner.lifetime) else { throw CancellationError() }
+      _ = try get(revision)
+      let signal = options.signal
+      let id = UUID()
+      let task = Task { @MainActor [weak self, artifact, service] in
+        do {
+          try Task.checkCancellation()
+          let result = try await service.detail(artifact)
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          guard let self, request?.id == id else { throw CancellationError() }
+          confirmed = result
+          return result
+        } catch {
+          if self?.request?.id == id, !Task.isCancelled, !signal.isCancelled {
+            self?.owner?.reportAccessFailure(error)
+          }
+          throw error
+        }
+      }
+      request = (id, task)
+      signal.onCancel { task.cancel() }
+      return task
+    }
+  }
+
+  fileprivate func prepare(in store: CCState.Store) async throws {
+    while let owner, try store.get(owner.lifetime) {
+      try Task.checkCancellation()
+      let task = try store.get(value)
+      let id = request?.id
+      let result = await task.result
+      try Task.checkCancellation()
+      guard try store.get(owner.lifetime) else { throw CancellationError() }
+      if request?.id != id { continue }
+      if case .failure(let error) = result, MessageArtifactResources.blocksAccess(error) {
+        throw error
+      }
+      return
+    }
+    throw CancellationError()
+  }
+
+  fileprivate func refresh(in store: CCState.Store) throws {
+    cancel()
+    try store.set(reload)
+  }
+
+  private lazy var reload: Command<Void, Void> = {
+    let revision = revision
+    return Command { context in try context.set(revision, update: { $0 + 1 }) }
+  }()
+
+  fileprivate func cancel() {
+    request?.task.cancel()
+    request = nil
+    confirmed = nil
   }
 
   isolated deinit { request?.task.cancel() }

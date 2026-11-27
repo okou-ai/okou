@@ -1,5 +1,77 @@
 # Changelog
 
+## [8.887.1](https://github.com/okou-ai/okou/compare/core-v8.887.0...core-v8.887.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **lab:** show feature switch slugs and descriptions ([#51264](https://github.com/okou-ai/okou/issues/51264)) ([bdb24a5](https://github.com/okou-ai/okou/commit/bdb24a5be24c0a172d11b195a824cc6af0e637c5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.137.0
+
+## [8.887.0](https://github.com/okou-ai/okou/compare/core-v8.886.1...core-v8.887.0) (2026-11-26)
+
+
+### Features
+
+* **app:** add unarchived and all chat filters for staff ([#51226](https://github.com/okou-ai/okou/issues/51226)) ([52a6fe8](https://github.com/okou-ai/okou/commit/52a6fe80fe66dbbef978f19e3a5e96fbbdb6b2f0))
+
+
+### Refactoring
+
+* resolve message artifacts by url and navigate within their chat group ([#51081](https://github.com/okou-ai/okou/issues/51081)) ([fe23396](https://github.com/okou-ai/okou/commit/fe233968313c8ef91e51bd11ea6d75a4551ddf83))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.136.0
+
+## [8.886.1](https://github.com/okou-ai/okou/compare/core-v8.886.0...core-v8.886.1) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** retire legacy startup dispatch fields ([#51189](https://github.com/okou-ai/okou/issues/51189)) ([ae83fa7](https://github.com/okou-ai/okou/commit/ae83fa732618ccd8d0fa0d1bd3172c7c4c7ecd41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.135.0
+
+## [8.886.0](https://github.com/okou-ai/okou/compare/core-v8.885.4...core-v8.886.0) (2026-11-26)
+
+
+### Features
+
+* **app:** for you corner radii, selectable option text and action labels ([#51148](https://github.com/okou-ai/okou/issues/51148)) ([d3a229a](https://github.com/okou-ai/okou/commit/d3a229a493ba204b298d182eeeaf60c735241d02))
+
+## [8.885.4](https://github.com/okou-ai/okou/compare/core-v8.885.3...core-v8.885.4) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.134.0
+
+## [8.885.3](https://github.com/okou-ai/okou/compare/core-v8.885.2...core-v8.885.3) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.1
+
 ## [8.885.2](https://github.com/okou-ai/okou/compare/core-v8.885.1...core-v8.885.2) (2026-11-26)
 
 

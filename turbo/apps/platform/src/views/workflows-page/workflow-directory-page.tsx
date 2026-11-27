@@ -687,25 +687,30 @@ export function WorkflowDirectoryPage() {
       })} | ${brandName}`}</title>
       <main className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-3 [scrollbar-gutter:stable] sm:px-6 md:pt-10">
         <div className="mx-auto flex max-w-[900px] flex-col gap-5">
-          <header className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="hidden min-w-0 md:block">
-                <h1 className="text-lg font-semibold tracking-tight text-foreground">
-                  {t(($) => {
-                    return $.workflows.list.title;
-                  })}
-                </h1>
-              </div>
+          <header className="flex flex-wrap items-start justify-between gap-3">
+            {/* Title and description share a column so the description wraps
+                before it reaches the actions; the column wraps above the
+                actions when there is no room for both. */}
+            <div className="hidden min-w-0 flex-[1_1_16rem] flex-col gap-2 md:flex">
+              <h1 className="text-lg font-semibold tracking-tight text-foreground">
+                {t(($) => {
+                  return $.workflows.list.title;
+                })}
+              </h1>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {t(($) => {
+                  return $.workflows.list.directoryDescription;
+                })}
+              </p>
+            </div>
+            {/* h-9 actions sit 4px above the 28px title line so both share a
+                vertical center. */}
+            <div className="max-w-full md:-mt-1">
               <WorkflowsHeaderActions
                 onImportSkills={importSkills}
                 redesigned
               />
             </div>
-            <p className="hidden text-sm leading-relaxed text-muted-foreground md:block">
-              {t(($) => {
-                return $.workflows.list.description;
-              })}
-            </p>
           </header>
           <WorkflowFilterBar sortMode={sortMode} />
           <WorkflowListPanel

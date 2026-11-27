@@ -22,6 +22,10 @@ use std::time::{Duration, Instant};
 const LOCAL_CONCURRENT: usize = 4;
 const LARGE_LOCAL_ARTIFACT_BYTES: u64 = 256 * 1024;
 #[cfg(target_os = "linux")]
+const MIN_INLINE_ARTIFACT_BATCH_TASKS: usize = 17;
+#[cfg(target_os = "linux")]
+const MAX_INLINE_COMPANION_EXPANDED_BYTES: u32 = 32 * 1024 * 1024;
+#[cfg(target_os = "linux")]
 const WIDE_LOCAL_INFLATE_TASKS: usize = 32;
 const BASE_REMOTE_CONCURRENT: usize = 16;
 const MEDIUM_REMOTE_MAX_CONCURRENT: usize = 20;
@@ -61,13 +65,8 @@ impl<'input> DownloadTask<'input> {
         self.url.strip_prefix("file://")
     }
 
-    pub(crate) fn set_inline_archive(&mut self, archive: &'input [u8]) -> bool {
-        // Writable Artifacts retain the existing file-backed inflate policy.
-        if self.telemetry.is_artifact() {
-            return false;
-        }
+    pub(crate) fn set_inline_archive(&mut self, archive: &'input [u8]) {
         self.inline_archive = Some(archive);
-        true
     }
 
     fn log_progress(&self) -> bool {
@@ -517,6 +516,49 @@ fn download_concurrency(remote_count: usize, task_count: usize) -> usize {
     remote_count.clamp(LOCAL_CONCURRENT, limit).min(task_count)
 }
 
+#[cfg(target_os = "linux")]
+fn single_inline_artifact<'input>(tasks: &[PreparedDownloadTask<'input>]) -> Option<&'input [u8]> {
+    let mut artifact = None;
+    for prepared in tasks {
+        let task = &prepared.task;
+        let archive = task.inline_archive?;
+        if !task.telemetry.is_artifact() {
+            continue;
+        }
+        if artifact.is_some() || task.template_guidance.is_some() {
+            return None;
+        }
+        artifact = Some(archive);
+    }
+    artifact
+}
+
+#[cfg(target_os = "linux")]
+fn inline_companions_fit_budget(tasks: &[PreparedDownloadTask<'_>]) -> bool {
+    // Several individually small archives can still compete for write time.
+    tasks
+        .iter()
+        .map(|prepared| &prepared.task)
+        .filter(|task| !task.telemetry.is_artifact())
+        .try_fold(0, |total, task| {
+            let expanded = archive::inflate::small_companion_expanded_bytes(task.inline_archive?)?;
+            let total = total + expanded;
+            (total <= MAX_INLINE_COMPANION_EXPANDED_BYTES).then_some(total)
+        })
+        .is_some()
+}
+
+#[cfg(target_os = "linux")]
+fn inline_batch_prefers_two_workers(tasks: &[PreparedDownloadTask<'_>]) -> bool {
+    let Some(artifact) = single_inline_artifact(tasks) else {
+        return false;
+    };
+    archive::inflate::inline_artifact_size_is_eligible(artifact)
+        && rustix::thread::sched_getaffinity(None).is_ok_and(|cpus| cpus.count() == 2)
+        && inline_companions_fit_budget(tasks)
+        && archive::inflate::has_small_inline_file_prefix(artifact)
+}
+
 fn download_with_readiness(
     mut tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
@@ -534,11 +576,22 @@ fn download_with_readiness(
         .iter()
         .filter(|task| task.task.telemetry.is_remote())
         .count();
-    let concurrency = download_concurrency(remote_count, tasks.len());
-    // Local archives compete for CPU. Prefer longer ready work without changing
-    // the original pending order used to enforce logical and physical ownership.
     let local_only = remote_count == 0;
     let allow_artifact_priority = local_only && readiness.is_none();
+    let concurrency = download_concurrency(remote_count, tasks.len());
+    // Two ready writers help an isolated dense Artifact on a two-CPU Guest.
+    // Other substantial writes in the batch benefit from the existing budget.
+    #[cfg(target_os = "linux")]
+    let concurrency = if allow_artifact_priority
+        && (MIN_INLINE_ARTIFACT_BATCH_TASKS..WIDE_LOCAL_INFLATE_TASKS).contains(&tasks.len())
+        && inline_batch_prefers_two_workers(&tasks)
+    {
+        2
+    } else {
+        concurrency
+    };
+    // Local archives compete for CPU. Prefer longer ready work without changing
+    // the original pending order used to enforce logical and physical ownership.
     let pending = tasks
         .into_iter()
         .enumerate()
@@ -816,20 +869,35 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         && task.template_guidance.is_none()
         && let Some(path) = task.url.strip_prefix("file://")
     {
-        let archive = source::LocalArchive::open(path)?;
-        download.opened_file_compressed_bytes = archive.compressed_bytes;
-        let extract_start = Instant::now();
-        let result = archive::inflate::extract_staged(
-            archive,
-            target_path,
-            local_attempt_metrics.as_ref(),
-            download.concurrency,
-            load,
-        );
+        let metrics = local_attempt_metrics.as_ref();
+        let (result, extract_wall) = if let Some(bytes) = task.inline_archive {
+            download.opened_file_compressed_bytes = Some(bytes.len() as u64);
+            let extract_start = Instant::now();
+            let result = archive::inflate::extract_inline(
+                bytes,
+                target_path,
+                metrics,
+                download.concurrency,
+                load,
+            );
+            (result, extract_start.elapsed())
+        } else {
+            let archive = source::LocalArchive::open(path)?;
+            download.opened_file_compressed_bytes = archive.compressed_bytes;
+            let extract_start = Instant::now();
+            let result = archive::inflate::extract_staged(
+                archive,
+                target_path,
+                metrics,
+                download.concurrency,
+                load,
+            );
+            (result, extract_start.elapsed())
+        };
         if let (Some(metrics), Some(attempt)) =
             (&mut download.local_metrics, &local_attempt_metrics)
         {
-            metrics.record_extraction(attempt.body_read(), extract_start.elapsed());
+            metrics.record_extraction(attempt.body_read(), extract_wall);
         }
         return result;
     }

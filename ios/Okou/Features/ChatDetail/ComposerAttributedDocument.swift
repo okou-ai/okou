@@ -136,7 +136,7 @@ enum ComposerAttributedDocument {
         .replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")
       switch part["type"]?.string {
       case "chat_thread": return "[\(escaped)](/chats/\(part["threadId"]?.string ?? ""))"
-      case "voice": return String(localized: "Voice message")
+      case "voice": return String(localized: "Voice recording")
       case "text": return part["text"]?.string ?? ""
       default: return name
       }
@@ -170,9 +170,14 @@ enum ComposerAttributedDocument {
 /// TextKit provides atomic selection, deletion and native editing geometry.
 final class ComposerReferenceAttachment: NSTextAttachment {
   let part: MessageJSON
+
+  var voiceFileIDs: [String] {
+    guard part["type"]?.string == "voice", case .array(let clips) = part["clips"] else { return [] }
+    return clips.compactMap { $0["fileId"]?.string }
+  }
   var referenceFont = ComposerAttributedDocument.font
   var title: String {
-    if part["type"]?.string == "voice" { return String(localized: "Voice message") }
+    if part["type"]?.string == "voice" { return String(localized: "Voice recording") }
     return part["nameSnapshot"]?.string ?? part["titleSnapshot"]?.string ?? ""
   }
   var symbol: String {
@@ -187,6 +192,15 @@ final class ComposerReferenceAttachment: NSTextAttachment {
     self.part = part
     referenceFont = font
     super.init(data: nil, ofType: nil)
+  }
+
+  convenience init(clips: [ChatUserMessage.Part.VoiceClip], font: UIFont) {
+    self.init(
+      part: .object([
+        "type": .string("voice"),
+        "clips": .array(clips.map { .object(["fileId": .string($0.fileId)]) })
+      ]), font: font)
+    bounds = voiceBounds(availableWidth: .greatestFiniteMagnitude)
   }
 
   override var accessibilityLabel: String? {
@@ -206,6 +220,14 @@ final class ComposerReferenceAttachment: NSTextAttachment {
     super.init(coder: coder)
   }
 
+  func voiceBounds(availableWidth: CGFloat) -> CGRect {
+    let font = referenceFont
+    let height = max(OkouControl.minimumTarget, ceil(font.lineHeight))
+    let width = min(VoiceClipControl.preferredWidth(font: font), availableWidth)
+    return CGRect(
+      x: 0, y: (font.ascender + font.descender - height) / 2, width: width, height: height)
+  }
+
   override func encode(with coder: NSCoder) {
     super.encode(with: coder)
     if let data = try? JSONEncoder().encode(part) {
@@ -217,6 +239,9 @@ final class ComposerReferenceAttachment: NSTextAttachment {
     for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect,
     glyphPosition position: CGPoint, characterIndex charIndex: Int
   ) -> CGRect {
+    if !voiceFileIDs.isEmpty {
+      return voiceBounds(availableWidth: textContainer?.size.width ?? lineFrag.width)
+    }
     let font = referenceFont
     let height = ceil(font.lineHeight + 4)
     let width = min(
@@ -228,6 +253,10 @@ final class ComposerReferenceAttachment: NSTextAttachment {
   override func image(
     forBounds imageBounds: CGRect, textContainer: NSTextContainer?, characterIndex charIndex: Int
   ) -> UIImage? {
+    if !voiceFileIDs.isEmpty {
+      // The native editor overlays the interactive control on this atomic glyph.
+      return UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
+    }
     let font = referenceFont
     return UIGraphicsImageRenderer(size: imageBounds.size).image { _ in
       UIColor(OkouColor.muted).setFill()

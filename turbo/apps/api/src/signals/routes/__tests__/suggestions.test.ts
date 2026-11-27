@@ -1864,7 +1864,7 @@ describe("Suggestion feedback receipts", () => {
     const id = randomUUID();
     const body = {
       id,
-      kind: "not_planned" as const,
+      kind: "later" as const,
       targetId: null,
       note: "",
       snapshot: created.body,
@@ -1890,7 +1890,8 @@ describe("Suggestion feedback receipts", () => {
     expect(list.body.receipts?.[0]?.state.feedbacks).toStrictEqual([
       expect.objectContaining({
         id,
-        kind: "not_planned",
+        kind: "dismissed",
+        deferred: true,
         learnedAt: null,
         context: expect.objectContaining({
           title: created.body.content.title,
@@ -1898,6 +1899,14 @@ describe("Suggestion feedback receipts", () => {
         }),
       }),
     ]);
+    const management = await accept(
+      client().manage({ headers: fixture.headers, query: {} }),
+      [200],
+    );
+    expect(management.body.receipts[0]?.state.feedbacks[0]).toMatchObject({
+      id,
+      kind: "later",
+    });
     const reasonId = randomUUID();
     await accept(
       client().feedback({
@@ -1956,16 +1965,55 @@ describe("Suggestion feedback receipts", () => {
       [200],
     );
     expect(undone.body.restored).toBeTruthy();
-    expect(
-      (await accept(client().list({ headers: humanHeaders }), [200])).body
-        .items,
-    ).toStrictEqual([
-      expect.objectContaining({
-        id: created.body.id,
-        state: expect.objectContaining({
-          status: "active",
-        }),
+    const summary = await accept(
+      client().summary({ headers: humanHeaders }),
+      [200],
+    );
+    const restored = summary.body.firstItem;
+    if (restored?.type !== "suggestion") {
+      throw new Error("Expected restored suggestion");
+    }
+    expect(restored.state.feedbacks[0]).toMatchObject({
+      id,
+      kind: "dismissed",
+      deferred: true,
+    });
+    const secondId = randomUUID();
+    await accept(
+      client().feedback({
+        headers: humanHeaders,
+        params: { id: restored.id },
+        body: { id: secondId, kind: "already_done", note: "", targetId: null },
       }),
-    ]);
+      [200],
+    );
+    const secondUndo = await accept(
+      client().feedback({
+        headers: humanHeaders,
+        params: { id: restored.id },
+        body: {
+          id: randomUUID(),
+          kind: "undo",
+          targetId: secondId,
+          note: "",
+          snapshot: restored,
+        },
+      }),
+      [200],
+    );
+    expect(secondUndo.body.restored).toBeTruthy();
+    const consumed = await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: restored.id },
+        body: { optionId: "review" },
+      }),
+      [200],
+    );
+    expect(consumed.body.state.feedbacks[0]).toMatchObject({
+      id,
+      kind: "dismissed",
+      deferred: true,
+    });
   });
 });

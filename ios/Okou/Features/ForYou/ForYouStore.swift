@@ -2,29 +2,19 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// The deck keeps its order for one visit. Only the visible card gets a read receipt.
-@MainActor @Observable
+@MainActor
 final class ForYouStore {
-  struct Notice {
+  /// A plain toast for an action whose effect the page does not otherwise show, such as an
+  /// automation enabled. A message sent or a card turned down has none: the card leaving the
+  /// deck is the confirmation.
+  struct Notice: Equatable {
     let text: String
-    var threadID: String?
-    var undo: Undo?
   }
-  struct Undo {
-    let card: ForYouCard
-    let position: Int
-    let feedbackID: String
-    let undoID = UUID().uuidString
-  }
-  /// One card this visit settled, for the recap that closes it.
-  struct Handled: Identifiable {
+  /// One card this visit settled. Only their count is read: a new one plays the success haptic.
+  struct Handled: Identifiable, Equatable {
     let id: String
-    let title: String
-    let detail: String
-    var threadID: String?
-    var undo: Undo?
   }
   private struct Selection {
     let cardID: String
@@ -52,16 +42,14 @@ final class ForYouStore {
     let id = UUID().uuidString
   }
   private var feedbackID: ResponseID?
-  private(set) var cards: [ForYouCard] = []
-  private(set) var position = 0
-  private(set) var loaded = false
-  private(set) var busy = false
-  var error: String?
-  var notice: Notice?
-  private(set) var handled: [Handled] = []
-  private(set) var direction: ForYouDirection?
+  private let deckState = CCState.State(Deck())
+  /// The visit's deck, kept in the workspace session's Store. Views resolve it; `deck` and its
+  /// accessors serve actions and tests.
+  let deckValue: Computed<Deck>
+  /// Whether a deck action is running, for the navigation that holds the page while it does.
+  let busyValue: Computed<Bool>
 
-  var current: ForYouCard? { cards.indices.contains(position) ? cards[position] : nil }
+  var current: ForYouCard? { deck.current }
   var summary: Computed<Task<Bool, Error>> { resources.forYouSummary }
 
   init(
@@ -72,6 +60,9 @@ final class ForYouStore {
     self.resources = resources
     self.feed = feed
     self.commands = commands
+    let deckState = deckState
+    deckValue = Computed { try $0(deckState) }
+    busyValue = Computed { try $0(deckState).busy }
   }
 
   /// A visit starts without the previous one's confirmations.
@@ -88,19 +79,14 @@ final class ForYouStore {
       let result = try await resources.loadForYou()
       try Task.checkCancellation()
       if let direction, !result.contains(where: { $0.id == direction.cardID }) { closeDirection() }
-      cards = result
-      position = previous.flatMap { id in result.firstIndex { $0.id == id } } ?? 0
-      loaded = true
-      error = nil
+      updateDeck {
+        $0.cards = result
+        $0.position = previous.flatMap { id in result.firstIndex { $0.id == id } } ?? 0
+        $0.loaded = true
+        $0.error = nil
+      }
     } catch is CancellationError {
     } catch { self.error = error.localizedDescription }
-  }
-
-  /// The pager came to rest on a card.
-  func show(_ id: String) {
-    guard let index = cards.firstIndex(where: { $0.id == id }), index != position else { return }
-    position = index
-    error = nil
   }
 
   func read(_ id: String) async {
@@ -123,49 +109,23 @@ final class ForYouStore {
       do {
         try await feed.feedback(card, reason: reason, id: id)
       } catch let failure as APIClientError {
+        // Settled on another device: it leaves the deck all the same.
         guard failure.statusCode == 409 else { throw failure }
         remove(card)
-        notice = Notice(text: String(localized: "This suggestion was already handled."))
         return
       }
-      let undo = Undo(card: card, position: position, feedbackID: id)
-      notice = Notice(
-        text: reason?.confirmation ?? String(localized: "Suggestion dismissed"), undo: undo)
-      record(card, detail: reason?.title ?? String(localized: "Dismissed"), undo: undo)
+      record(card)
       remove(card)
       feedbackID = nil
-    }
-  }
-
-  func undo(_ action: Undo) async {
-    await perform {
-      let restored = try await feed.feedback(
-        action.card, reason: nil, id: action.undoID, undoing: action.feedbackID)
-      if let index = handled.firstIndex(where: { $0.id == action.card.id }) {
-        // A card that came back is no longer settled; one that is gone can not be undone again.
-        if restored { handled.remove(at: index) } else { handled[index].undo = nil }
-      }
-      if restored {
-        if let index = cards.firstIndex(where: { $0.id == action.card.id }) {
-          position = index
-        } else {
-          position = min(action.position, cards.count)
-          cards.insert(action.card, at: position)
-        }
-      }
-      notice =
-        restored ? nil : Notice(text: String(localized: "This suggestion is no longer available."))
-      workspace?.requestRefresh(.forYou)
     }
   }
 
   func resolve(_ card: ForYouCard, event: ForYouAutomation, enable: Bool) async {
     await perform {
       try await feed.resolve(event, cardID: card.id, enable: enable)
-      notice = Notice(
-        text: enable
-          ? String(localized: "Automation enabled") : String(localized: "Event dismissed"))
-      record(card, detail: enable ? String(localized: "Enabled") : String(localized: "Dismissed"))
+      // Enabling did something worth a word; dismissing an event, like a card, says nothing.
+      notice = enable ? Notice(text: String(localized: "Automation enabled")) : nil
+      record(card)
       remove(card)
     }
   }
@@ -195,15 +155,7 @@ final class ForYouStore {
         guard failure.statusCode == 409 else { throw failure }
         // The local draft or sent message is already durable even if another device consumed the card.
       }
-      if openChat {
-        record(
-          card, detail: String(localized: "Draft ready · \(option.label)"),
-          threadID: option.threadId)
-      } else {
-        let threadID = selections[card.id]?.threadID
-        notice = Notice(text: String(localized: "Sent to a new chat"), threadID: threadID)
-        record(card, detail: String(localized: "Sent · \(option.label)"), threadID: threadID)
-      }
+      record(card)
       remove(card)
     }
     return openChat && error == nil
@@ -256,13 +208,9 @@ final class ForYouStore {
       try Task.checkCancellation()
       editor.models.isSending = true
       defer { editor.models.isSending = false }
-      let destination = try await send(draft, target: target, attempt: attempt)
+      try await send(draft, target: target, attempt: attempt)
       workspace.composerWorkflows.recordUse(workflows)
-      notice = Notice(
-        text: destination == target
-          ? String(localized: "Sent to the chat") : String(localized: "Sent to a new chat"),
-        threadID: destination)
-      record(card, detail: String(localized: "Sent"), threadID: destination)
+      record(card)
       // Accepting the annotated message consumes the card on the server.
       remove(card)
     }
@@ -315,10 +263,7 @@ final class ForYouStore {
     } catch APIClientError.http(404, _, _, _) { return nil }
   }
 
-  @discardableResult
-  private func send(_ draft: ComposerDraft, target: String?, attempt: Selection) async throws
-    -> String
-  {
+  private func send(_ draft: ComposerDraft, target: String?, attempt: Selection) async throws {
     guard let document = draft.draftUserMessage, document.isSupported, let workspace,
       !workspace.isClosed
     else {
@@ -344,34 +289,102 @@ final class ForYouStore {
       modelSelection: attempt.model, reasoningEffort: attempt.effort,
       computerAccess: attempt.computerAccess)
     workspace.requestRefresh(.threadList)
-    return destination
   }
 
-  private func record(
-    _ card: ForYouCard, detail: String, threadID: String? = nil, undo: Undo? = nil
-  ) {
+  private func record(_ card: ForYouCard) {
     handled.removeAll { $0.id == card.id }
-    handled.append(
-      Handled(id: card.id, title: card.title, detail: detail, threadID: threadID, undo: undo))
+    handled.append(Handled(id: card.id))
   }
 
   private func remove(_ card: ForYouCard) {
     if direction?.cardID == card.id { closeDirection() }
-    cards.removeAll { $0.id == card.id }
-    position = min(position, max(0, cards.count - 1))
+    updateDeck { deck in
+      deck.cards.removeAll { $0.id == card.id }
+      deck.position = min(deck.position, max(0, deck.cards.count - 1))
+    }
     selections[card.id] = nil
     workspace?.requestRefresh(.forYou)
   }
 
   private func perform(_ operation: () async throws -> Void) async {
     guard !busy, workspace?.isClosed == false else { return }
-    busy = true
-    error = nil
+    updateDeck {
+      $0.busy = true
+      $0.error = nil
+    }
     defer { busy = false }
     do {
       try await operation()
     } catch is CancellationError {} catch {
       self.error = error.localizedDescription
+    }
+  }
+}
+
+extension ForYouStore {
+  /// The visit's cards and the one in front, the load and action phases, the last failure and
+  /// notice, the cards it settled, and the open direction composer, which compares by identity.
+  struct Deck: Equatable {
+    var cards: [ForYouCard] = []
+    var position = 0
+    var loaded = false
+    var busy = false
+    var error: String?
+    var notice: Notice?
+    var handled: [Handled] = []
+    var direction: ForYouDirection?
+
+    var current: ForYouCard? { cards.indices.contains(position) ? cards[position] : nil }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.cards == rhs.cards && lhs.position == rhs.position && lhs.loaded == rhs.loaded
+        && lhs.busy == rhs.busy && lhs.error == rhs.error && lhs.notice == rhs.notice
+        && lhs.handled == rhs.handled && lhs.direction === rhs.direction
+    }
+  }
+
+  /// The current value of `deckValue`.
+  var deck: Deck {
+    // A synchronous local business value, not a network or persistence boundary.
+    do { return try resources.store.get(deckValue) } catch {
+      preconditionFailure("Cannot read the For you deck: \(error)")
+    }
+  }
+  private(set) var cards: [ForYouCard] {
+    get { deck.cards }
+    set { updateDeck { $0.cards = newValue } }
+  }
+  private(set) var loaded: Bool {
+    get { deck.loaded }
+    set { updateDeck { $0.loaded = newValue } }
+  }
+  private(set) var busy: Bool {
+    get { deck.busy }
+    set { updateDeck { $0.busy = newValue } }
+  }
+  var error: String? {
+    get { deck.error }
+    set { updateDeck { $0.error = newValue } }
+  }
+  var notice: Notice? {
+    get { deck.notice }
+    set { updateDeck { $0.notice = newValue } }
+  }
+  private(set) var handled: [Handled] {
+    get { deck.handled }
+    set { updateDeck { $0.handled = newValue } }
+  }
+  private(set) var direction: ForYouDirection? {
+    get { deck.direction }
+    set { updateDeck { $0.direction = newValue } }
+  }
+
+  private func updateDeck(_ change: (inout Deck) -> Void) {
+    var next = deck
+    change(&next)
+    guard next != deck else { return }
+    do { try resources.store.set(deckState, next) } catch {
+      preconditionFailure("Cannot publish the For you deck: \(error)")
     }
   }
 }
@@ -382,15 +395,5 @@ final class ForYouStore {
 private struct ForYouUnconfirmedChoice: LocalizedError {
   var errorDescription: String? {
     String(localized: "Retry the previous action to confirm its result.")
-  }
-}
-
-extension ForYouCard {
-  fileprivate var title: String {
-    switch content {
-    case .suggestion(let suggestion): suggestion.title
-    case .automation(let event): event.automationName
-    case .unsupported: ""
-    }
   }
 }

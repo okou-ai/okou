@@ -1,3 +1,4 @@
+import { mockMessageArtifactDetails } from "./chat-attachment-test-helpers.ts";
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
   artifactCatalogContract,
@@ -14,10 +15,7 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
-import {
-  chatThreadArtifactsContract,
-  type ChatThreadArtifactRun,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatThreadArtifactRun } from "@okouai/api-contracts/contracts/chat-threads";
 
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, within } from "@testing-library/react";
@@ -212,9 +210,9 @@ export function mockArtifactConversation(
         : respond(200, detail);
     },
   );
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    return respond(200, {
-      runs: [...(options.artifactRuns?.() ?? [])],
+  mockMessageArtifactDetails(context, () => {
+    return (options.artifactRuns?.() ?? []).flatMap((run) => {
+      return run.files;
     });
   });
   context.mocks.api(browserContract.get, ({ respond }) => {

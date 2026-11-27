@@ -28,6 +28,7 @@ export const suggestionFeedbackSchema = object({
   kind: zEnum([
     "already_done",
     "not_planned",
+    "later",
     "less_like_this",
     "dismissed",
     "option_selected",
@@ -53,6 +54,7 @@ export const suggestionFeedbackRequestSchema = object({
   kind: zEnum([
     "already_done",
     "not_planned",
+    "later",
     "less_like_this",
     "dismissed",
     "undo",
@@ -206,7 +208,36 @@ export const platformEventSchema = feedItemBaseSchema.extend({
   state: object({ status: zEnum(["active", "dismissed"]) }).strict(),
 });
 export type PlatformEvent = zInfer<typeof platformEventSchema>;
-const activeFeedItemSchema = suggestionSchema.or(platformEventSchema);
+// Member cards expose the existing dismissal receipt to installed clients. The
+// optional marker preserves the exact signed history when a card is sent back.
+const cardFeedbackSchema = suggestionFeedbackSchema.extend({
+  kind: suggestionFeedbackSchema.shape.kind.exclude(["later"]),
+  deferred: literal(true).optional(),
+});
+const cardFeedbacks = array(cardFeedbackSchema).max(100);
+const cardSuggestionSchema = suggestionSchema.extend({
+  state: suggestionStateSchema.extend({ feedbacks: cardFeedbacks }),
+});
+export type SuggestionCard = zInfer<typeof cardSuggestionSchema>;
+const cardReceiptSchema = suggestionReceiptSchema.extend({
+  state: suggestionReceiptSchema.shape.state.extend({
+    feedbacks: cardFeedbacks,
+  }),
+});
+const snapshotFeedbackSchema = suggestionFeedbackSchema
+  .extend({ deferred: literal(true).optional() })
+  .overwrite(({ deferred, ...feedback }) => {
+    return {
+      ...feedback,
+      kind: deferred && feedback.kind === "dismissed" ? "later" : feedback.kind,
+    };
+  });
+const suggestionSnapshotSchema = suggestionSchema.extend({
+  state: suggestionStateSchema.extend({
+    feedbacks: array(snapshotFeedbackSchema).max(100),
+  }),
+});
+const activeFeedItemSchema = cardSuggestionSchema.or(platformEventSchema);
 export type ActiveFeedItem = zInfer<typeof activeFeedItemSchema>;
 export type FeedItem = Suggestion | SuggestionReceipt | PlatformEvent;
 export const feedSourcesSchema = object({
@@ -245,7 +276,7 @@ export type SuggestionCreate = zInfer<typeof suggestionCreateSchema>;
 export type SuggestionUpdate = zInfer<typeof suggestionUpdateSchema>;
 const suggestionConsumeSchema = object({
   optionId: suggestionOptionIdSchema.nullable(),
-  snapshot: suggestionSchema.optional(),
+  snapshot: suggestionSnapshotSchema.optional(),
 });
 export type SuggestionConsume = zInfer<typeof suggestionConsumeSchema>;
 
@@ -331,7 +362,7 @@ export const feedContract = c.router({
       200: object({
         items: array(activeFeedItemSchema).max(FEED_PAGE_SIZE),
         nextCursor: string().optional(),
-        receipts: array(suggestionReceiptSchema).optional(),
+        receipts: array(cardReceiptSchema).optional(),
       }),
       ...errors,
     },
@@ -376,7 +407,7 @@ export const feedContract = c.router({
     headers: authHeadersSchema,
     pathParams: params,
     body: suggestionConsumeSchema,
-    responses: { 200: suggestionSchema, ...errors },
+    responses: { 200: cardSuggestionSchema, ...errors },
     summary: "Choose a suggestion option, or dismiss it with a null option ID",
   },
   feedback: {
@@ -385,7 +416,7 @@ export const feedContract = c.router({
     headers: authHeadersSchema,
     pathParams: params,
     body: suggestionFeedbackRequestSchema.extend({
-      snapshot: suggestionSchema.optional(),
+      snapshot: suggestionSnapshotSchema.optional(),
     }),
     responses: {
       200: object({ restored: literal(true).or(literal(false)) }),

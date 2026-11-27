@@ -78,6 +78,15 @@ export const runWebhookContract: ClientDescriptor<
       502: true,
     },
   },
+  gmailDraftUpdated: {
+    method: "POST",
+    path: "/api/webhooks/run/gmail-draft-updated",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+    },
+  },
   usageEvent: {
     method: "POST",
     path: "/api/webhooks/run/usage-event",

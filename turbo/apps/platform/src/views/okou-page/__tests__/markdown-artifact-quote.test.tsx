@@ -507,13 +507,9 @@ test("Disabling Markdown quotes in Lab preserves drafts and keeps actions off du
   click(await screen.findByText("Lab"));
   await screen.findByRole("heading", { name: "Lab" });
   click(await screen.findByText("bingjie"));
-  const row = (await screen.findByText("Markdown artifact quotes")).closest(
-    "li",
-  );
-  if (!row) {
-    throw new Error("Markdown artifact quote switch was not found");
-  }
-  const toggle = within(row).getByRole("switch");
+  const toggle = await screen.findByRole("switch", {
+    name: FeatureSwitchKey.MarkdownArtifactQuote,
+  });
   expect(toggle).toBeChecked();
   click(toggle);
   await refreshStarted.promise;

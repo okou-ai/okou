@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { nowDate } from "../../lib/time";
 import {
   loadAutomationOwnerTimezone$,
@@ -68,13 +67,10 @@ export const runOwnedWorkflowAutomationNow$ = command(
       return { kind: "not-found" };
     }
     if (automation.officialBlueprintKey !== null) {
-      const kind = proactiveWorkflowKind(target.workflowName);
-      if (kind !== "learning") {
-        return {
-          kind: "conflict",
-          message: OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
-        };
-      }
+      return {
+        kind: "conflict",
+        message: OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,
+      };
     }
     const currentTime = nowDate();
     const ownerTimezone = await set(

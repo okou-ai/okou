@@ -2,11 +2,13 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.updates.updateFocusOutline
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -16,11 +18,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -195,6 +199,14 @@ internal fun ConversationStopButton(
         Spacer(Modifier.size(ConversationStopTouchSize))
         return
     }
+    val colors = IconButtonDefaults.iconButtonColors()
+    if (inline && !placement.inline) {
+        // Keep the glyph in the scrolling row while the toolbar owns the usable action.
+        Box(Modifier.size(ConversationStopTouchSize), contentAlignment = Alignment.Center) {
+            StopGlyph(colors.contentColor)
+        }
+        return
+    }
     val focus = remember { FocusRequester() }
     val label = stringResource(R.string.controls_stop)
     val transfer = placement.transferFocusToInline == inline
@@ -206,6 +218,7 @@ internal fun ConversationStopButton(
     }
     IconButton(
         onClick = controls::stop,
+        colors = colors,
         modifier =
             Modifier.size(ConversationStopTouchSize)
                 .focusRequester(focus)
@@ -213,6 +226,11 @@ internal fun ConversationStopButton(
                 .updateFocusOutline(CircleShape, MaterialTheme.colorScheme.onSurface)
                 .semantics { contentDescription = label },
     ) {
-        Icon(painterResource(R.drawable.ic_stop_circle), null, Modifier.size(20.dp))
+        StopGlyph(colors.contentColor)
     }
+}
+
+@Composable
+private fun StopGlyph(tint: Color) {
+    Icon(painterResource(R.drawable.ic_stop_circle), null, Modifier.size(20.dp), tint)
 }

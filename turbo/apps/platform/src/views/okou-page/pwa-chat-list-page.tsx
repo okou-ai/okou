@@ -1,22 +1,26 @@
 import { ProjectCreateButton } from "../projects/project-row.tsx";
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastResolved,
+  useLoadable,
+  useResolved,
+  useSet,
+} from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { MessageSquare, Search, SquarePen } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 
 import { mainStylesheetLoaded$ } from "../../signals/app-skeleton.ts";
-import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
-import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
-import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
+import {
+  activeChatThreadFilter$,
+  type ChatThreadFilter,
+} from "../../signals/okou-page/chat-thread-filter.ts";
 import type {
   SidebarChatThreadListSignals,
   SidebarChatThreadScrollSignals,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
-import {
-  selectChatThreadFilter$,
-  type ChatThreadFilter,
-} from "../../signals/okou-page/chat-thread-filter-selection.ts";
+import { selectChatThreadFilter$ } from "../../signals/okou-page/chat-thread-filter-selection.ts";
 import {
   PWA_CHAT_THREAD_ROW_HEIGHT,
   pwaChatThreadScrollSignals$,
@@ -26,6 +30,7 @@ import { openThreeColumnSearchDialog$ } from "../../signals/okou-page/sidebar-st
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
+import { useChatListFilterOptions } from "./sidebar-shared.tsx";
 import { PwaChatTitle } from "./pwa-chat-title.tsx";
 import { ForYouChatListRow } from "./sidebar-okou-row.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
@@ -93,19 +98,17 @@ function PwaChatListHeader() {
 }
 
 function ShowAllChatsButton() {
-  const { t } = useTranslation();
+  const { showAll } = useChatListFilterOptions();
   const selectFilter = useSelectFilter();
   return (
     <Button
       variant="quiet"
       className="min-h-11"
       onClick={() => {
-        selectFilter("all");
+        selectFilter(showAll.filter);
       }}
     >
-      {t(($) => {
-        return $.chat.sidebar.showAllChats;
-      })}
+      {showAll.label}
     </Button>
   );
 }
@@ -131,49 +134,45 @@ function PwaChatListEmpty({
   hasHiddenArchivedThreads: boolean;
 }) {
   const { t } = useTranslation();
-  const unread = useGet(chatThreadOnlyUnread$);
-  const archived = useGet(chatThreadOnlyArchived$);
-  const muted = useGet(chatThreadOnlyMuted$);
+  const filter = useResolved(activeChatThreadFilter$);
+  const { emptyUnarchivedLabel, showWithArchived } = useChatListFilterOptions();
+  const filtered =
+    filter === "unread" || filter === "archived" || filter === "muted";
   const selectFilter = useSelectFilter();
-  const message = unread
-    ? t(($) => {
-        return $.chat.sidebar.noUnread;
-      })
-    : archived
+  const message =
+    filter === "unread"
       ? t(($) => {
-          return $.chat.sidebar.noArchived;
+          return $.chat.sidebar.noUnread;
         })
-      : muted
+      : filter === "archived"
         ? t(($) => {
-            return $.chat.sidebar.noMuted;
+            return $.chat.sidebar.noArchived;
           })
-        : hasHiddenArchivedThreads
+        : filter === "muted"
           ? t(($) => {
-              return $.chat.sidebar.inboxEmpty;
+              return $.chat.sidebar.noMuted;
             })
-          : t(($) => {
-              return $.chat.sidebar.empty;
-            });
+          : hasHiddenArchivedThreads
+            ? emptyUnarchivedLabel
+            : t(($) => {
+                return $.chat.sidebar.empty;
+              });
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 py-12 text-center text-muted-foreground">
       <MessageSquare size={28} aria-hidden="true" />
       <p className="text-sm">{message}</p>
-      {unread || archived || muted ? <ShowAllChatsButton /> : null}
-      {!unread && !archived && !muted && !hasHiddenArchivedThreads ? (
-        <StartChatButton />
-      ) : null}
+      {filtered ? <ShowAllChatsButton /> : null}
+      {!filtered && !hasHiddenArchivedThreads ? <StartChatButton /> : null}
       {hasHiddenArchivedThreads ? (
         <Button
           variant="quiet"
           className="min-h-11"
           onClick={() => {
-            selectFilter("archived");
+            selectFilter(showWithArchived.filter);
           }}
         >
-          {t(($) => {
-            return $.chat.sidebar.showArchivedChats;
-          })}
+          {showWithArchived.label}
         </Button>
       ) : null}
     </div>

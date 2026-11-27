@@ -8,6 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/voice-clips";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { db$ } from "../external/db";
+import { downloadS3BufferWithMaxBytes$ } from "../external/s3";
 import {
   privateArtifactFromRow,
   readPrivateAttachmentRows,
@@ -32,6 +33,13 @@ type VoiceClipRequest = {
   readonly fileIds: readonly string[];
 };
 
+interface ResolvedVoiceClip {
+  readonly bucket: string;
+  readonly key: string;
+  readonly size: number;
+  readonly mimeType: string;
+}
+
 export function voiceClipRequestError(fileIds: readonly string[]) {
   if (fileIds.length > MAX_VOICE_CLIPS) {
     return badRequestMessage("Too many voice clips");
@@ -43,7 +51,7 @@ export function resolveVoiceClipRecords(
   args: VoiceClipRequest,
   records: ReadonlyMap<string, PrivateAttachmentRow>,
 ) {
-  const clips = [];
+  const clips: ResolvedVoiceClip[] = [];
   let total = 0;
   for (const id of args.fileIds) {
     const row = records.get(id.toLowerCase());
@@ -101,5 +109,24 @@ export const resolveVoiceClips$ = command(
       }),
     );
     return resolveVoiceClipRecords(args, records);
+  },
+);
+
+export const loadVoiceClipAudio$ = command(
+  async ({ set }, clips: readonly ResolvedVoiceClip[], signal: AbortSignal) => {
+    const audio = [];
+    for (const clip of clips) {
+      const bytes = await set(
+        downloadS3BufferWithMaxBytes$,
+        { ...clip, maxBytes: clip.size },
+        signal,
+      );
+      if (bytes.length !== clip.size) {
+        throw new Error("Private audio size changed");
+      }
+      audio.push({ data: bytes.toString("base64"), mimeType: clip.mimeType });
+    }
+    signal.throwIfAborted();
+    return audio;
   },
 );

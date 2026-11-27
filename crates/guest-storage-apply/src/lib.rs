@@ -1,8 +1,8 @@
 //! Apply guest storage/artifact manifests and replace claim-time Agent instructions.
 //!
 //! Features:
-//! - Bounded parallel downloads using std::thread (up to 16 for remote inputs,
-//!   with 4 workers for local-only extraction)
+//! - Bounded parallel downloads using std::thread, with worker budgets selected
+//!   for local extraction and remote response waits
 //! - Streaming extraction; immutable template archives use bounded temporary verification
 //!
 //! ## Manifest application and failure semantics
@@ -398,9 +398,7 @@ fn bind_inline_archives<'input>(
             .local_archive_path()
             .and_then(|path| archives.get_key_value(path))
         {
-            if !task.set_inline_archive(archive) {
-                return false;
-            }
+            task.set_inline_archive(archive);
             used.insert(source);
         }
     }

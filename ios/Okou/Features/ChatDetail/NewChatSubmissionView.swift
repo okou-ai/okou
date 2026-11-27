@@ -67,7 +67,8 @@ struct NewChatSubmissionView: View {
     ScrollView {
       UserMessageView(
         message: submission.message.message, webURL: webURL, viewer: submission.viewer,
-        loadsAttachments: true, sendTransition: submission.transition
+        loadsAttachments: true, voicePlayback: submission.composer.voicePlayback,
+        sendTransition: submission.transition
       ) {
         if submission.isReadyForConversation, let conversation {
           ConversationSendingIndicator(messageID: submission.message.id, conversation: conversation)

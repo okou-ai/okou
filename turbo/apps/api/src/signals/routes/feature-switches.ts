@@ -41,8 +41,6 @@ function featureSwitchResponseBody(params: {
         userId: params.userId,
         overrides: switches,
       }),
-      // App versions before 0.1180.0 have a staff-only bundled default (#41334).
-      agentSuggestion: true,
       // Older iOS builds require this response field to review and apply batches.
       batchConnectorPermissions: true,
     },

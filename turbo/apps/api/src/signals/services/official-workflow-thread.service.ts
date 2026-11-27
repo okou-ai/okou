@@ -51,6 +51,7 @@ const revokeOfficialThreadUserInputs$ = command(
           and(
             eq(chatEvents.chatThreadId, threadId),
             eq(chatEvents.eventType, "input.prompt"),
+            sql`${chatEvents.contextType} IS DISTINCT FROM 'proactive'`,
             isNull(chatEvents.runId),
             notExists(
               new QueryBuilder()

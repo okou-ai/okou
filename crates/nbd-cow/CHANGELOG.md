@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.33](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.32...nbd-cow-v0.5.33) (2026-11-26)
+
+
+### Refactoring
+
+* **nbd-cow:** share fixed-width netlink field reads ([#51162](https://github.com/okou-ai/okou/issues/51162)) ([d9f6384](https://github.com/okou-ai/okou/commit/d9f63840c2d4da67f21fa428594f49d031099fbd))
+
 ## [0.5.32](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.31...nbd-cow-v0.5.32) (2026-11-25)
 
 

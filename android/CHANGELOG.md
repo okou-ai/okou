@@ -1,5 +1,97 @@
 # Changelog
 
+## [0.64.1](https://github.com/okou-ai/okou/compare/android-v0.64.0...android-v0.64.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** align chat list terminal read feedback ([#51272](https://github.com/okou-ai/okou/issues/51272)) ([adace51](https://github.com/okou-ai/okou/commit/adace5196aed90e2d263a0ac14bbc3f5ab8a05f6))
+
+## [0.64.0](https://github.com/okou-ai/okou/compare/android-v0.63.0...android-v0.64.0) (2026-11-27)
+
+
+### Features
+
+* **artifacts:** add visual browsing to library ([#51115](https://github.com/okou-ai/okou/issues/51115)) ([d11e612](https://github.com/okou-ai/okou/commit/d11e6120de54a6d91addd74541361e0497d5ae0a))
+
+## [0.63.0](https://github.com/okou-ai/okou/compare/android-v0.62.1...android-v0.63.0) (2026-11-26)
+
+
+### Features
+
+* **android:** align reply headers and stop controls with design ([#51224](https://github.com/okou-ai/okou/issues/51224)) ([d9de7cf](https://github.com/okou-ai/okou/commit/d9de7cf480729ca06431e688f51680d227714e82))
+* **android:** share artifact links and manage access ([#51204](https://github.com/okou-ai/okou/issues/51204)) ([6724356](https://github.com/okou-ai/okou/commit/6724356a5c14f25068ca31247b344fc3e6a62e4c))
+
+
+### Bug Fixes
+
+* **android:** retain loaded chat images on foreground ([#51196](https://github.com/okou-ai/okou/issues/51196)) ([fb355ee](https://github.com/okou-ai/okou/commit/fb355eefb97764032a5a651a2eff032c42d5afed))
+* **android:** reveal chat swipe labels continuously ([#51215](https://github.com/okou-ai/okou/issues/51215)) ([91dcfc7](https://github.com/okou-ai/okou/commit/91dcfc72b9a6730c7272f2838045db67597b7d09))
+* **android:** reveal the matched block from workspace search ([#51205](https://github.com/okou-ai/okou/issues/51205)) ([6bd96d6](https://github.com/okou-ai/okou/commit/6bd96d6aac095e5b23083656f117465a8a30ba37))
+* **android:** show accurate model account quota windows ([#51213](https://github.com/okou-ai/okou/issues/51213)) ([71c79f2](https://github.com/okou-ai/okou/commit/71c79f261c29dd787f2d14f7e552ab69302bd257))
+
+
+### Refactoring
+
+* **android:** share directory return focus ([#51165](https://github.com/okou-ai/okou/issues/51165)) ([190bc42](https://github.com/okou-ai/okou/commit/190bc42a9f817002dd5a8abfe0342edc1be06df1))
+
+## [0.62.1](https://github.com/okou-ai/okou/compare/android-v0.62.0...android-v0.62.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** align search read feedback and group actions ([#51194](https://github.com/okou-ai/okou/issues/51194)) ([1eb2d12](https://github.com/okou-ai/okou/commit/1eb2d1250f9cd405532be0e17bc821787c9a1d68))
+* **android:** align update installation handoff with design ([#51182](https://github.com/okou-ai/okou/issues/51182)) ([797b075](https://github.com/okou-ai/okou/commit/797b075d9f3fdedea06b701181a7f280ea57a725))
+* **android:** end chat list reads with their foreground scope ([#51175](https://github.com/okou-ai/okou/issues/51175)) ([7729309](https://github.com/okou-ai/okou/commit/7729309653cc736d26fc1765f962b6d4a54362c3))
+* **android:** keep the model picker stable on refresh failure ([#51192](https://github.com/okou-ai/okou/issues/51192)) ([c173f4a](https://github.com/okou-ai/okou/commit/c173f4a26361f15b07666b297eb9463f4810f741))
+* **android:** stabilize workflow loading and pending controls ([#51174](https://github.com/okou-ai/okou/issues/51174)) ([d11e96c](https://github.com/okou-ai/okou/commit/d11e96c084cd6fb13e8ca9cf82f7896c31f37e60))
+
+## [0.62.0](https://github.com/okou-ai/okou/compare/android-v0.61.1...android-v0.62.0) (2026-11-26)
+
+
+### Features
+
+* **android:** share authorized artifact originals ([#51167](https://github.com/okou-ai/okou/issues/51167)) ([e032b8b](https://github.com/okou-ai/okou/commit/e032b8bdc923214ef42c2cf1f15d82248e987656))
+
+
+### Bug Fixes
+
+* **android:** align search focus and retain artifact pages ([#51138](https://github.com/okou-ai/okou/issues/51138)) ([0960de9](https://github.com/okou-ai/okou/commit/0960de99534726404ee8e4d4ff7eb586bf0683c3))
+* **android:** keep connector account refresh feedback in the active surface ([#51161](https://github.com/okou-ai/okou/issues/51161)) ([05cc659](https://github.com/okou-ai/okou/commit/05cc659fad7fa17db7cb4cbb9c78fe9abaae29fb))
+* **android:** let unavailable default models reset to auto ([#51183](https://github.com/okou-ai/okou/issues/51183)) ([3197413](https://github.com/okou-ai/okou/commit/31974138f441e2ba817f4ba7757f684b4bc03d5b))
+* **android:** retain chat queue position across layout changes ([#51155](https://github.com/okou-ai/okou/issues/51155)) ([c7ddc41](https://github.com/okou-ai/okou/commit/c7ddc418167181360f2eb29701c540286db9eb41))
+
+## [0.61.1](https://github.com/okou-ai/okou/compare/android-v0.61.0...android-v0.61.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** keep update failures attached to their package ([#51152](https://github.com/okou-ai/okou/issues/51152)) ([e8382c8](https://github.com/okou-ai/okou/commit/e8382c8a7e30eb653e8c4de47f8d32167e6cd556))
+
+## [0.61.0](https://github.com/okou-ai/okou/compare/android-v0.60.1...android-v0.61.0) (2026-11-26)
+
+
+### Features
+
+* **android:** open image artifacts in the shared viewer ([#51124](https://github.com/okou-ai/okou/issues/51124)) ([2092614](https://github.com/okou-ai/okou/commit/209261422df27b190d0ee4239c119b5508cde42a))
+
+
+### Bug Fixes
+
+* **android:** align artifact pagination feedback with design ([#51096](https://github.com/okou-ai/okou/issues/51096)) ([f15099b](https://github.com/okou-ai/okou/commit/f15099b5aac8a4d2c667f0bf1a6f2c310aa21754))
+* **android:** align workflow actions and menus with material defaults ([#51122](https://github.com/okou-ai/okou/issues/51122)) ([9dc8e99](https://github.com/okou-ai/okou/commit/9dc8e999f49ed57d985b4dffc45d395dbd6ccd6e))
+* **android:** continue chat indicator retries across filters ([#51134](https://github.com/okou-ai/okou/issues/51134)) ([3b5ce58](https://github.com/okou-ai/okou/commit/3b5ce58793e8f34bb22525b79f0a7221448aed97))
+* **android:** include sent attachments in conversation find ([#51130](https://github.com/okou-ai/okou/issues/51130)) ([5575234](https://github.com/okou-ai/okou/commit/5575234b7e58f1368611ca67d9e331736fcc5e82))
+* **android:** restore focus and clarify update toolbar actions ([#51129](https://github.com/okou-ai/okou/issues/51129)) ([1420819](https://github.com/okou-ai/okou/commit/14208194c0d88f162079f0172875183531914334))
+* **android:** scope cached credit balance refresh feedback ([#51120](https://github.com/okou-ai/okou/issues/51120)) ([6bb106f](https://github.com/okou-ai/okou/commit/6bb106f06d39c471697108c99d41d1abc1774dba))
+* **android:** settle search metadata after skipped list snapshots ([#51118](https://github.com/okou-ai/okou/issues/51118)) ([051ac99](https://github.com/okou-ai/okou/commit/051ac9984f4cfbdcf5abceeafd7766abffc2ec4b))
+* **android:** show cold connector account errors in their section ([#51125](https://github.com/okou-ai/okou/issues/51125)) ([dbce6b5](https://github.com/okou-ai/okou/commit/dbce6b53c9ee75a42db26c70212c7dd7948f52c7))
+
+
+### Refactoring
+
+* **android:** share confirmed form adoption rules ([#51119](https://github.com/okou-ai/okou/issues/51119)) ([067eac8](https://github.com/okou-ai/okou/commit/067eac81dc0319d3041cc18cca96735c2eb01b99))
+
 ## [0.60.1](https://github.com/okou-ai/okou/compare/android-v0.60.0...android-v0.60.1) (2026-11-26)
 
 

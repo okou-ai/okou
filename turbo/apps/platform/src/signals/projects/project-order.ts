@@ -1,15 +1,9 @@
 import { command, computed } from "ccstate";
-import { chatThreadOnlyArchived$ } from "../chat-page/chat-thread-only-archived.ts";
-import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
-import { chatThreadOnlyMuted$ } from "../chat-page/chat-thread-only-muted.ts";
+import { chatThreadFilter$ } from "../okou-page/chat-thread-filter.ts";
 import { projects$, reorderProject$ } from "./projects.ts";
 
 export const projectReorderEnabled$ = computed((get) => {
-  return (
-    !get(chatThreadOnlyUnread$) &&
-    !get(chatThreadOnlyArchived$) &&
-    !get(chatThreadOnlyMuted$)
-  );
+  return get(chatThreadFilter$) === "unarchived";
 });
 
 export const stepProject$ = command(

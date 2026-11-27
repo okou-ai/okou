@@ -22,9 +22,7 @@ import {
   sidebarChatThreadItemSignalsRegistry$,
   type SidebarChatThreadItemSignals,
 } from "./sidebar-chat-thread-item.ts";
-import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
-import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
-import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
+import { activeChatThreadFilter$ } from "../okou-page/chat-thread-filter.ts";
 import {
   createProjectFoldMotionSignals,
   type ProjectFoldMotion,
@@ -460,11 +458,11 @@ export function createSidebarChatThreadScrollSignals({
   const foldMotion = createProjectFoldMotionSignals(domSignals, rowHeight);
   // Share the list projection while each viewport owns its scroll and fold state.
   const list$ = computed(async (get): Promise<SidebarChatThreadListSignals> => {
-    const showAllChatsRow =
-      get(chatThreadOnlyUnread$) ||
-      get(chatThreadOnlyArchived$) ||
-      get(chatThreadOnlyMuted$);
-    const list = await get(source$);
+    const [filter, list] = await Promise.all([
+      get(activeChatThreadFilter$),
+      get(source$),
+    ]);
+    const showAllChatsRow = filter !== "all" && filter !== "unarchived";
     return createSidebarChatThreadViewportSignals(
       domSignals,
       list,

@@ -123,11 +123,8 @@ public struct ForYouCard: Decodable, Equatable, Sendable, Identifiable {
 public enum ForYouFeedback: String, CaseIterable, Sendable {
   case alreadyDone = "already_done"
   case notPlanned = "not_planned"
-  case dontNudge = "dont_nudge"
+  case later
   case lessLikeThis = "less_like_this"
-
-  var wireKind: String { self == .dontNudge ? Self.notPlanned.rawValue : rawValue }
-  var note: String { self == .dontNudge ? "Do not nudge me about this again." : "" }
 }
 
 public struct ForYouFeed: Sendable {
@@ -166,8 +163,8 @@ public struct ForYouFeed: Sendable {
   ) async throws -> Bool {
     struct Result: Decodable { let restored: Bool }
     var body: [String: MessageJSON] = [
-      "id": .string(id), "kind": .string(target == nil ? reason?.wireKind ?? "dismissed" : "undo"),
-      "note": .string(reason?.note ?? "")
+      "id": .string(id), "kind": .string(target == nil ? reason?.rawValue ?? "dismissed" : "undo"),
+      "note": .string("")
     ]
     body["targetId"] = target.map(MessageJSON.string)
     body["snapshot"] = card.snapshot

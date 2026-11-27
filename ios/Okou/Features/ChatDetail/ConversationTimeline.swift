@@ -107,8 +107,7 @@ struct ConversationTimeline {
       return String(localized: "Keep going · \(finishedAt.formatted(style))", locale: locale)
     }
     let time = completion.createdAt.formatted(style)
-    // Web selects one of eight localized phrases from the last UTF-16 unit of the event ID.
-    switch (completion.eventID.utf16.last ?? 0) % 8 {
+    switch completion.phraseSeed % 8 {
     case 0: return String(localized: "Wrapped up at \(time)", locale: locale)
     case 1: return String(localized: "All done — \(time)", locale: locale)
     case 2: return String(localized: "Delivered at \(time)", locale: locale)

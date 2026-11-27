@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">Das Modellkonto konnte nicht gewechselt werden.</string>
     <string name="settings_quota">Kontingent</string>
     <string name="settings_hour_quota">%1$d-Stunden-Kontingent</string>
+    <string name="settings_minute_quota">%1$d-Minuten-Kontingent</string>
     <string name="settings_day_quota">%1$d-Tage-Kontingent</string>
     <string name="settings_weekly_quota">Wochenkontingent</string>
     <string name="settings_quota_unavailable">Kontingent vorübergehend nicht verfügbar</string>
@@ -110,4 +111,5 @@
     <string name="settings_suggestions_save_failed">Die Vorschläge konnten nicht gespeichert werden. Die vorherige Einstellung wurde wiederhergestellt.</string>
     <string name="settings_timezone_save_rejected">Die Zeitzone konnte nicht gespeichert werden. Die vorherige Zeitzone wurde wiederhergestellt.</string>
     <string name="settings_timezone_schedule_update_failed">Die Zeitzone wurde gespeichert. Der Zeitplan für das Morgenbriefing konnte nicht aktualisiert werden.</string>
+    <string name="settings_model_catalog_refresh_failed">Verfügbare Modelle konnten nicht aktualisiert werden. Die zuletzt geladene Liste wird angezeigt.</string>
 </resources>

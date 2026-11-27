@@ -14,6 +14,7 @@ from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_sse_usage_helpers import model_sse_parse_warnings
 from tests.model_sse_cooperative_helpers import (
+    build_model_sse_updates,
     encode_model_sse,
     make_model_sse_pipeline_flow,
     model_sse_terminal,
@@ -232,8 +233,8 @@ async def test_abandonment_keeps_only_accepted_prefix_and_reports_incomplete_ins
 async def test_long_lived_stream_has_no_lifetime_event_cap(real_flow, tmp_path):
     flow = make_model_sse_pipeline_flow(real_flow, tmp_path)
     mitm_addon.responseheaders(flow)
-    for index in range(20):
-        body = b"".join(model_sse_update("anthropic", index * 100 + n) for n in range(1, 101))
+    for start in range(1, 2_001, 100):
+        body = build_model_sse_updates("anthropic", range(start, start + 100))
         wire = encode_model_sse(body, "gzip")
         assert response_stream(flow)(wire) == wire
         if response_streaming.has_pending_response_inspection(flow):

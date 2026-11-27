@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +50,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import java.io.File
 
+private const val AttachmentImageAspectRatio = 4f / 3
+
 @Composable
 internal fun ChatMessageAttachments(
     messageId: String,
@@ -72,9 +75,10 @@ internal fun ChatMessageAttachments(
                 actions?.threadId.orEmpty(),
                 localFiles[image.id],
                 Modifier.attachmentAction(messageId, index, image, actions)
+                    .align(Alignment.CenterHorizontally)
+                    .widthIn(max = 180.dp * AttachmentImageAspectRatio)
                     .fillMaxWidth()
-                    .heightIn(max = 180.dp)
-                    .aspectRatio(4f / 3),
+                    .aspectRatio(AttachmentImageAspectRatio),
             )
         } else {
             images.chunked(2).forEach { row ->
@@ -91,7 +95,7 @@ internal fun ChatMessageAttachments(
                             Modifier.attachmentAction(messageId, index, image, actions)
                                 .weight(1f)
                                 .heightIn(max = 160.dp)
-                                .aspectRatio(4f / 3),
+                                .aspectRatio(AttachmentImageAspectRatio),
                         )
                     }
                     if (row.size == 1) Spacer(Modifier.weight(1f))

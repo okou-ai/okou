@@ -1,3 +1,5 @@
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import userEvent from "@testing-library/user-event";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -9,6 +11,7 @@ import {
   findNamedLink,
   getNamedButton,
   mockAttachmentChat,
+  mockMessageArtifactDetails,
   queryNamedButton,
   artifactFile,
   ATTACHMENT_RUN_ID,
@@ -67,6 +70,201 @@ async function openFirstPhoto() {
   click(await findNamedLink("Preview quay.png"));
   return await screen.findByTestId("artifact-sidebar");
 }
+
+test("opens an uploaded photo and switches to its neighbor on browsers without URL.canParse", async () => {
+  class BrowserURL extends URL {}
+  Object.defineProperty(BrowserURL, "canParse", { value: undefined });
+  vi.stubGlobal("URL", BrowserURL);
+  twoImageChat();
+  const sidebar = await openFirstPhoto();
+  click(await findNamedButton("Next image artifact", sidebar));
+  await expect(
+    within(sidebar).findByRole("group", { name: "harbor.png preview" }),
+  ).resolves.toBeVisible();
+});
+
+test("the same photo opens in its clicked message group without reading either thread list", async () => {
+  const parts = (names: string[]) => {
+    return names.map((filename) => {
+      return {
+        type: "file" as const,
+        filenameSnapshot: filename,
+        fileId: filename,
+        contentType: "image/png",
+      };
+    });
+  };
+  mockAttachmentChat(context, {
+    chatEvents: [
+      {
+        role: "user",
+        content: "First pair",
+        runId: ATTACHMENT_RUN_ID,
+        createdAt: "2026-03-10T01:00:00Z",
+        fileParts: parts(["same.png", "first-next.png"]),
+      },
+      {
+        role: "assistant",
+        content: "Read the first pair",
+        runId: ATTACHMENT_RUN_ID,
+        runEventId: "first-pair-response",
+        sequenceNumber: 1,
+        createdAt: "2026-03-10T01:01:00Z",
+      },
+      {
+        role: "user",
+        content: "Second pair",
+        runId: "d0000000-0000-4000-a000-000000000082",
+        createdAt: "2026-03-10T01:02:00Z",
+        fileParts: parts(["same.png", "second-next.png"]),
+      },
+    ],
+  });
+  const listRequests: string[] = [];
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    listRequests.push("run files");
+    return respond(200, { runs: [] });
+  });
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    listRequests.push("catalog");
+    return respond(200, { artifacts: [], nextCursor: null });
+  });
+  await setupPage({ context, path: "/chats/" + ATTACHMENT_THREAD_ID });
+  const secondMessage = (
+    await findNamedLink("Preview second-next.png")
+  ).closest<HTMLElement>('[data-role="user"]')!;
+  click(await findNamedLink("Preview same.png", secondMessage));
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  click(await findNamedButton("Next image artifact", sidebar));
+  await expect(
+    within(sidebar).findByRole("group", {
+      name: "second-next.png preview",
+    }),
+  ).resolves.toBeVisible();
+  click(await findNamedButton("Previous image artifact", sidebar));
+  await expect(
+    within(sidebar).findByRole("group", { name: "same.png preview" }),
+  ).resolves.toBeVisible();
+  expect(listRequests).toStrictEqual([]);
+});
+
+test("an extensionless image uses its single detail for opening and returning from its neighbor", async () => {
+  const id = "a7000000-0000-4000-a000-000000000c61";
+  const first = artifactReferencePath(id);
+  const second = artifactFile("neighbor.png", {
+    url: artifactReferencePath("a7000000-0000-4000-a000-000000000c62"),
+    contentType: "image/png",
+  });
+  mockAttachmentChat(context, {
+    chatEvents: [
+      {
+        role: "assistant",
+        content: `Open the [blueprint](${first}) or ![neighbor](${second.url}).`,
+        runId: ATTACHMENT_RUN_ID,
+        runEventId: "two-blueprints",
+        sequenceNumber: 1,
+        createdAt: "2026-03-10T00:00:01Z",
+      },
+    ],
+  });
+  const queries: string[] = [];
+  mockMessageArtifactDetails(context, (url) => {
+    queries.push(url);
+    return [
+      artifactFile("blueprint.png", { url: first, contentType: "image/png" }),
+      second,
+    ];
+  });
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    const url =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3MoAAAAASUVORK5CYII=";
+    return respond(200, {
+      url,
+      downloadUrl: url,
+      expiresAt: "2099-01-01T00:00:00Z",
+      filename: "blueprint.png",
+      contentType: "image/png",
+      target: { kind: "file", id },
+    });
+  });
+  await setupPage({ context, path: "/chats/" + ATTACHMENT_THREAD_ID });
+  await waitFor(() => {
+    expect(
+      document.querySelector('[data-role="assistant"] img[alt="neighbor.png"]'),
+    ).toBeInTheDocument();
+  });
+  click(await findNamedLink("blueprint"));
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(sidebar).findByRole("group", { name: "blueprint.png preview" }),
+  ).resolves.toBeVisible();
+  click(await findNamedButton("Next image artifact", sidebar));
+  await expect(
+    within(sidebar).findByRole("group", { name: "neighbor.png preview" }),
+  ).resolves.toBeVisible();
+  click(await findNamedButton("Previous image artifact", sidebar));
+  await expect(
+    within(sidebar).findByRole("group", { name: "blueprint.png preview" }),
+  ).resolves.toBeVisible();
+  expect(
+    queries.filter((url) => {
+      return new URL(url, location.origin).pathname === first;
+    }),
+  ).toHaveLength(1);
+  expect(
+    queries.filter((url) => {
+      return new URL(url, location.origin).pathname === second.url;
+    }),
+  ).toHaveLength(1);
+});
+
+test("a relative file link and its API URL share a detail and open the signed original", async () => {
+  const path = "/api/web/file-url?file_id=file-blueprint&filename=Plan.png";
+  const apiLink = "https://api.okou.ai" + path;
+  mockAttachmentChat(context, {
+    chatEvents: [
+      {
+        role: "assistant",
+        content: `Use the [floor plan](${path}) or its [original file](${apiLink}).`,
+        runId: ATTACHMENT_RUN_ID,
+        runEventId: "plan-upload-links",
+        sequenceNumber: 1,
+        createdAt: "2026-03-10T00:00:01Z",
+      },
+    ],
+  });
+  const queries: string[] = [];
+  mockMessageArtifactDetails(context, (url) => {
+    queries.push(url);
+    return [artifactFile("Plan.png", { url, contentType: "image/png" })];
+  });
+  const original = "https://media.example.test/authorized-plan.png";
+  context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
+    expect(query.file_id).toBe("file-blueprint");
+    return respond(200, {
+      url: original,
+      downloadUrl: original,
+      expiresAt: "2099-01-01T00:00:00Z",
+      publicUrl: null,
+    });
+  });
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: "/chats/" + ATTACHMENT_THREAD_ID,
+  });
+  for (const label of ["floor plan", "original file"]) {
+    click(await findNamedLink(label));
+    const viewer = await screen.findByTestId("artifact-sidebar");
+    await waitFor(() => {
+      expect(
+        within(viewer).getByTestId("artifact-sidebar-body-image"),
+      ).toHaveAttribute("src", original);
+    });
+    click(await findNamedButton("Close artifact", viewer));
+  }
+  expect(queries).toHaveLength(1);
+});
 
 test("artifact-image-viewer-001 waits for decoded pixels despite knowing the first photo's size", async () => {
   twoImageChat();

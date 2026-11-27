@@ -30,9 +30,11 @@ struct AssistantFailureState: Equatable {
   var actionTitle: String { recovery.continues ? "Continue" : "Try again" }
 
   /// `models` is the selection's graph value for this render; nil reads its current value.
+  /// Views pass the model selection and connector state they resolved for this render.
   @MainActor static func make(
     failure: ChatFailure, current: Bool, selection: ChatModelSelectionStore?,
-    models: ChatModelSelectionStore.Presentation? = nil, subscriptionsBusy: Bool? = nil,
+    models: ChatModelSelectionStore.Presentation? = nil,
+    connectors: ComposerConnectorStore.Status? = nil, subscriptionsBusy: Bool? = nil,
     accounts: [PersonalSubscription]?, busy: Bool, accountsError: String? = nil
   ) -> Self {
     let models = models ?? selection?.presentation
@@ -80,7 +82,9 @@ struct AssistantFailureState: Equatable {
       isBusy: busy || models?.isMutating == true
         || (subscriptionsBusy ?? (subscriptions?.isMutating == true))
         || (readsAccount && accounts == nil && accountsError == nil),
-      canSend: selection.map { $0.connectors.canSend && models?.allowsSending == true } ?? true,
+      canSend: selection.map {
+        (connectors ?? $0.connectors.status).canSend && models?.allowsSending == true
+      } ?? true,
       accountLabel: account?.accountEmail ?? account?.workspaceName,
       disconnected: readsAccount && accounts != nil && account == nil,
       resetDetails: details.isEmpty ? recovery.resetLabel.map { ["Resets \($0)"] } ?? [] : details,

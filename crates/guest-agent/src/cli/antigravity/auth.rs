@@ -9,8 +9,10 @@
 //! subscription runs therefore place one real, short-lived native credential
 //! inside the member's own `agy` environment. The API service owns the OAuth
 //! lifecycle (connect, refresh, disconnect) and passes exactly one run-scoped
-//! credential per launch; project commands still run in the separate task
-//! sandbox, not in this credential's environment.
+//! credential per launch. Like Claude Code, agy runs its commands directly in
+//! the Okou sandbox without its own terminal sandbox, so those commands can
+//! read this credential; the staff pilot accepts that until firewall-side
+//! replacement keeps the real credential out of the sandbox.
 //!
 //! Scope: internal staff opt-in behind the `_geminiAntigravity` switch. This
 //! path intentionally relies on the official Antigravity OAuth client identity

@@ -1,5 +1,93 @@
 # Changelog
 
+## [0.70.2](https://github.com/okou-ai/okou/compare/ios-v0.70.1...ios-v0.70.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **ios:** restore the for you card when the keyboard closes ([#51262](https://github.com/okou-ai/okou/issues/51262)) ([a8675a3](https://github.com/okou-ai/okou/commit/a8675a39689a07ef203ab1e2b8527062648aeb3f))
+
+## [0.70.1](https://github.com/okou-ai/okou/compare/ios-v0.70.0...ios-v0.70.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** dismiss image previews with a vertical swipe ([#51247](https://github.com/okou-ai/okou/issues/51247)) ([236705f](https://github.com/okou-ai/okou/commit/236705fb0a1e82efd56c0dd239178c92f3ebd32b))
+* **ios:** scope chat archive undo to the originating view ([#51253](https://github.com/okou-ai/okou/issues/51253)) ([391e1f9](https://github.com/okou-ai/okou/commit/391e1f9114e3e9309972a716e52489541366d87a))
+
+## [0.70.0](https://github.com/okou-ai/okou/compare/ios-v0.69.3...ios-v0.70.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** focus for you on one larger card at a time ([#51218](https://github.com/okou-ai/okou/issues/51218)) ([632780d](https://github.com/okou-ai/okou/commit/632780d28fe673558abb8f5e22bdaaab4da2d086))
+
+
+### Bug Fixes
+
+* **ios:** preserve inline voice recordings in sent messages ([#51251](https://github.com/okou-ai/okou/issues/51251)) ([4881092](https://github.com/okou-ai/okou/commit/4881092121fbe885d59bf634dbbdc123d7e5b584))
+
+## [0.69.3](https://github.com/okou-ai/okou/compare/ios-v0.69.2...ios-v0.69.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** keep single recording sends compact ([#51248](https://github.com/okou-ai/okou/issues/51248)) ([b6e7974](https://github.com/okou-ai/okou/commit/b6e7974d6b9966f048fc82702ce32614cb73375d))
+
+## [0.69.2](https://github.com/okou-ai/okou/compare/ios-v0.69.1...ios-v0.69.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** play voice clips inline in the chat composer ([#51227](https://github.com/okou-ai/okou/issues/51227)) ([6e628b5](https://github.com/okou-ai/okou/commit/6e628b513de31b758330caf30e856f9133c04200))
+
+## [0.69.1](https://github.com/okou-ai/okou/compare/ios-v0.69.0...ios-v0.69.1) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** remove spotify app authorization sdk ([#51237](https://github.com/okou-ai/okou/issues/51237)) ([45ada95](https://github.com/okou-ai/okou/commit/45ada953eccf4f768fe2e931063aca34e601019b))
+* resolve message artifacts by url and navigate within their chat group ([#51081](https://github.com/okou-ai/okou/issues/51081)) ([fe23396](https://github.com/okou-ai/okou/commit/fe233968313c8ef91e51bd11ea6d75a4551ddf83))
+
+## [0.69.0](https://github.com/okou-ai/okou/compare/ios-v0.68.0...ios-v0.69.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** reject graph state in observable owners ([#51160](https://github.com/okou-ai/okou/issues/51160)) ([efff3c2](https://github.com/okou-ai/okou/commit/efff3c205360bd4ed8334b5e6e4ecd0204110c83))
+
+## [0.68.0](https://github.com/okou-ai/okou/compare/ios-v0.67.4...ios-v0.68.0) (2026-11-26)
+
+
+### Features
+
+* offer four feedback choices on suggestion cards ([#51173](https://github.com/okou-ai/okou/issues/51173)) ([4f89ea3](https://github.com/okou-ai/okou/commit/4f89ea375bdad29e8180bf76011733206f402fcf))
+
+
+### Bug Fixes
+
+* **ios:** match the web chat thinking animation ([#51168](https://github.com/okou-ai/okou/issues/51168)) ([a82432a](https://github.com/okou-ai/okou/commit/a82432a4cd630f2ab87180431cd4627ad89d619f))
+
+
+### Refactoring
+
+* **ios:** keep the connector choices' status in the session graph ([#51146](https://github.com/okou-ai/okou/issues/51146)) ([f655b57](https://github.com/okou-ai/okou/commit/f655b576c8a8e843d398d459c47d0fbfea243132))
+* **ios:** keep the for you deck in the session graph ([#51153](https://github.com/okou-ai/okou/issues/51153)) ([5202a6d](https://github.com/okou-ai/okou/commit/5202a6d7103599bcaa8e3ae4fa03fd37b1779423))
+
+## [0.67.4](https://github.com/okou-ai/okou/compare/ios-v0.67.3...ios-v0.67.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ci:** allow compatible ios test products across runner image revisions ([#51147](https://github.com/okou-ai/okou/issues/51147)) ([7495108](https://github.com/okou-ai/okou/commit/74951083c486ca09acf7b775d65232202e0d12a6))
+
+## [0.67.3](https://github.com/okou-ai/okou/compare/ios-v0.67.2...ios-v0.67.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** use skeletons while connector lists load ([#51076](https://github.com/okou-ai/okou/issues/51076)) ([d060f19](https://github.com/okou-ai/okou/commit/d060f19e17e0e66d65a6445dd28f53280ce93475))
+
 ## [0.67.2](https://github.com/okou-ai/okou/compare/ios-v0.67.1...ios-v0.67.2) (2026-11-26)
 
 

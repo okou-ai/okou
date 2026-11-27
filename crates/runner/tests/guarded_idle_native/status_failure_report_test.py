@@ -2,7 +2,6 @@
 """Synthetic real-file/CLI consumer regressions, not native execution evidence."""
 
 import copy
-import hashlib
 import json
 import pathlib
 import subprocess
@@ -10,79 +9,15 @@ import sys
 import unittest
 import uuid
 
-import cleanup_report as cleanup
+import held_status_report_fixture as fixture
 import report
 import report_test
 import status_failure_report as failure
-from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class StatusFailureReportTests(unittest.TestCase):
     def setUp(self):
-        report_test.NativeReportTests.setUp(self)
-        self.policy = report_test.pressure_policy_fixture()
-        raw = json.dumps(self.policy)
-        self.artifacts["policy_sha256"] = hashlib.sha256(raw.encode()).hexdigest()
-        self.collector["metadata"]["native_status_failure_policy_json"] = raw
-        originals, sample = self.events, self.samples[0]
-        self.events, self.samples, self.witnesses = [], [], []
-        for index, case in enumerate(sorted(failure.CASES)):
-            base = 10_000_000_000 * (index + 1)
-            at = lambda offset: base + offset*1_000_000
-            terminal = copy.deepcopy(originals[index*6:index*6+6])
-            for event, clock in zip(terminal, (0, 1, 2, 3, 20, 50)):
-                event.update(case=case, monotonic_ns=at(clock), unix_ns=at(clock)+1000)
-                self.samples.append(report_test.residency_sample_at(sample, at(clock) + 1))
-            self.events.extend(terminal)
-            accounts = {k: 0 for k in cleanup.COUNTS} | {"closed": True}
-            active = accounts | {"registered_operations": 1, "started": 1,
-                                 "cleanup_growth_bytes": self.policy["tail_growth_bytes"], "tracked_tasks": 1}
-            covered = {"allocated": [2,4096,1], "accounting": active,
-                       "original_lease_active": True, "io_release_withheld": True}
-            first = copy.deepcopy(covered)
-            first["accounting"]["closed"] = False
-            runner = str(uuid.uuid4())
-            baseline = {"mode": "starting", "max_concurrent": 1, "active_runs": [],
-                "started_at": "2026-10-18T16:00:00Z", "updated_at": "2026-10-18T16:00:10Z",
-                "idle_sandboxes": [{"reuse_key": "thread:native-guarded-"+str(uuid.uuid4()),
-                                    "sandbox_id": terminal[1]["sandbox_id"]}]}
-            retried = {k:v for k,v in baseline.items() if k != "idle_sandboxes"}
-            retried["updated_at"] = "2026-10-18T16:00:20Z"
-            status_path = str(self.root/f"case-{index}"/"status.json")
-            values = (
-                {"policy": self.policy, "published_status": baseline, "status_path": status_path,
-                    "receiver_polled_pending": True, "coverage": first},
-                {"pool_held_ns": at(6), "status_held_ns": at(7), "heartbeat_pending_ns": at(8),
-                    "heartbeat_polled_pending": True, "observer": joined_observer(at(9), at(10)), "tracker_shutdown_pending": True,
-                    "accounting_shutdown_pending": True, "coverage": covered},
-                {"pool_released_ns": at(13), "status_held_ns": at(7),
-                    "heartbeat": foreground_heartbeat(runner, 1, at(14), at(15), (2, 4096)),
-                    "receiver_polled_pending": True,
-                    "tracker_shutdown_pending": True, "accounting_shutdown_pending": True, "coverage": covered},
-                {"io_released_ns": at(17), "status_held_ns": at(7), "status_wait_polled_ns": at(21),
-                    "status_waits_before": 0, "status_waits_after": 1, "receiver_polled_pending": True,
-                    "tracker_shutdown_pending": True, "accounting_joined": True, "accounting": accounts,
-                    "allocated": [0,0,0], "heartbeat": foreground_heartbeat(runner, 2, at(22), at(23), (0, 0)),
-                    "fault_injected_ns": at(24), "status_destination_directory": True},
-                {"status_released_ns": at(26), "batch_joined_ns": at(27), "selected": 1, "completed": 1,
-                    "uncertain": 0, "not_started": 0, "is_complete": False, "status_error_kind": "write",
-                    "status_error_path": status_path, "status_destination_directory": True},
-                {"retry_started_ns": at(32), "retry_completed_ns": at(33), "published_status": retried,
-                    "regular_file": True, "original_batch_complete": False},
-                {"batch_joined": True, "tracker_joined": True, "accounting_joined": True,
-                    "heartbeat_joined": True, "provider_joined": True, "peer_joined": True,
-                    "remaining_activation_owners": 0, "remaining_finalizing_owners": 0,
-                    "allocated": [0,0,0], "accounting": accounts},
-            )
-            for phase, value, clock in zip(failure.PHASES, values, (4,12,16,25,30,40,45)):
-                self.witnesses.append(report_test.witness_receipt(
-                    case, phase,
-                    monotonic_ns=at(clock),
-                    unix_ns=at(clock)+1000,
-                    sandbox_id=terminal[1]["sandbox_id"],
-                    backing_generation=terminal[1]["backing_generation"],
-                    evidence=copy.deepcopy(value),
-                ))
+        fixture.prepare_status_failure(self)
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,

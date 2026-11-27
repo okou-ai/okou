@@ -31,7 +31,6 @@ final class ConversationPresentation {
   private let report: @MainActor (Error) -> Void
   private var closed: Bool { isClosed() }
   private var needsUpgrade: Bool { conversation?.needsUpgrade != false }
-  private var isStopping: Bool { conversation?.isStopping == true }
   private var items: [ConversationItem] { projection.items }
   private var messages: [ChatMessage] { projection.messages }
   private var history: ChatHistory? {
@@ -339,9 +338,9 @@ final class ConversationPresentation {
   }
 
   func reconcileActivitySummary() {
+    let history = projection.currentValue.history
     activitySummary.demand(
       !closed && !needsUpgrade && detailOwner != nil && isVisible()
-        && !isStopping
         && history?.executionState == .running ? history?.activityRunID : nil)
     reconcileStreaming()
   }
@@ -349,6 +348,7 @@ final class ConversationPresentation {
   /// Follows the visible chat's running run; like the web, a chunk 0 starts a message,
   /// later chunks append, and the persisted event with the same id always wins.
   private func reconcileStreaming() {
+    let history = projection.currentValue.history
     let runID =
       !closed && !needsUpgrade && detailOwner != nil && isVisible()
         && history?.executionState == .running ? history?.activityRunID?.lowercased() : nil
@@ -443,8 +443,8 @@ final class ConversationPresentation {
         } : [], events: history?.usageEventIDs ?? [:])
   }
 
-  func artifactImageSources(for messageID: String) -> [String] {
-    guard let index = items.firstIndex(where: { $0.id == messageID }) else { return [] }
+  func artifactGroup(for messageID: String) -> MessageArtifactGroup? {
+    guard let index = items.firstIndex(where: { $0.id == messageID }) else { return nil }
     var start = index
     while start > 0, !items[start].beginsWorkSection, items[start - 1].role == items[index].role {
       start -= 1
@@ -453,7 +453,8 @@ final class ConversationPresentation {
     while end < items.count, !items[end].beginsWorkSection, items[end].role == items[index].role {
       end += 1
     }
-    return items[start..<end].compactMap(\.message).map(\.text)
+    return MessageArtifactGroup(
+      id: items[start].id, sources: items[start..<end].compactMap(\.message).map(\.text))
   }
 
   func cancelRefresh() {

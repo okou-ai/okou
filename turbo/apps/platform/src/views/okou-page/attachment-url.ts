@@ -1,3 +1,5 @@
+import { authenticatedWebFile, tryParseUrl } from "../../lib/message-url.ts";
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { fetchResource } from "../../lib/resource-fetch.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { rewritePlatformHostname } from "@okouai/core/platform-service-origin";
@@ -42,21 +44,20 @@ function browserOrigin(): string | null {
 }
 
 function addOrigin(origins: Set<string>, baseUrl: string | null) {
-  if (!baseUrl || !URL.canParse(baseUrl)) {
-    return;
+  const parsed = baseUrl ? tryParseUrl(baseUrl) : null;
+  if (parsed) {
+    origins.add(parsed.origin);
   }
-  origins.add(new URL(baseUrl).origin);
 }
 
 function addPlatformOriginVariants(
   origins: Set<string>,
   baseUrl: string | null,
 ) {
-  if (!baseUrl || !URL.canParse(baseUrl)) {
+  const parsed = baseUrl ? tryParseUrl(baseUrl) : null;
+  if (!parsed) {
     return;
   }
-
-  const parsed = new URL(baseUrl);
   origins.add(parsed.origin);
 
   for (const target of ["api", "www"] as const) {
@@ -107,11 +108,7 @@ function artifactCdnUrl(args: {
 }
 
 function parseFileUrl(url: string): URL | null {
-  const baseUrl = browserOrigin() ?? undefined;
-  if (!URL.canParse(url, baseUrl)) {
-    return null;
-  }
-  return new URL(url, baseUrl);
+  return tryParseUrl(url, browserOrigin() ?? undefined);
 }
 
 function normalizedLegacyFileUrl(url: string): string | null {
@@ -160,28 +157,24 @@ export function publicAttachmentUrl(url: string): string {
   return normalizedLegacyFileUrl(url) ?? normalizedArtifactFileUrl(url) ?? url;
 }
 
-function comparableArtifactPreviewUrl(value: string): string | null {
-  if (!URL.canParse(value)) {
-    return null;
+/** The group contains stable artifact identities, independent of presentation fragments. */
+export function messageArtifactKey(value: string): string {
+  const origin = browserOrigin() ?? undefined;
+  const ref = parseArtifactReference(value, origin);
+  if (ref) {
+    return "/artifacts/" + ref.hash;
   }
-  const url = new URL(value);
-  const pathname = url.pathname === "/" ? "" : url.pathname;
-  return `${url.protocol}//${url.host}${pathname}${url.search}${url.hash}`;
-}
-
-export function artifactPreviewUrlsMatch(
-  artifactUrl: string,
-  previewUrl: string,
-): boolean {
-  if (artifactUrl === previewUrl) {
-    return true;
+  const canonical = publicAttachmentUrl(value);
+  const url = tryParseUrl(canonical, origin);
+  if (!url) {
+    return canonical;
   }
-  const comparableArtifactUrl = comparableArtifactPreviewUrl(artifactUrl);
-  const comparablePreviewUrl = comparableArtifactPreviewUrl(previewUrl);
-  return (
-    comparableArtifactUrl !== null &&
-    comparableArtifactUrl === comparablePreviewUrl
-  );
+  url.hash = "";
+  const file = authenticatedWebFile(value);
+  if (file) {
+    return "/api/web/file-url?file_id=" + encodeURIComponent(file.id);
+  }
+  return url.href;
 }
 
 function canUseDevArtifactFetchProxy(): boolean {
@@ -194,11 +187,8 @@ function canUseDevArtifactFetchProxy(): boolean {
 }
 
 export function readableAttachmentResourceUrl(url: string): string {
-  if (!canUseDevArtifactFetchProxy() || !URL.canParse(url)) {
-    return url;
-  }
-  const parsed = new URL(url);
-  if (!isAllowedDevArtifactFetchUrl(parsed)) {
+  const parsed = canUseDevArtifactFetchProxy() ? tryParseUrl(url) : null;
+  if (!parsed || !isAllowedDevArtifactFetchUrl(parsed)) {
     return url;
   }
   return `${DEV_ARTIFACT_FETCH_PROXY_PATH}?url=${encodeURIComponent(url)}`;

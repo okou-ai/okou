@@ -1080,6 +1080,29 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    fun touchBackFromAnArtifactKeepsTheDirectorySearchUnfocused() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(true)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.summary.title)
+            compose.onNodeWithText(fixture.summary.title).performClick()
+            awaitText("Preview only", partial = true)
+
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+
+            compose.onNodeWithTag("artifact_query").assertIsNotFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
     fun openingTheSourceConversationLeavesFindAndBackRestoresThePreview() {
         val fixture = ArtifactApiFixture(app.fixture)
@@ -1627,7 +1650,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithText(fixture.image.title).performClick()
         awaitText("Temporarily unable to load image")
         compose.onNodeWithContentDescription("Image actions").performClick()
-        compose.onNodeWithText("Save file").assertIsEnabled()
+        compose.onNodeWithText("Save image").assertIsEnabled()
         val frame = compose.onNodeWithTag("artifact_preview_surface").getUnclippedBoundsInRoot()
         val status =
             compose.onNodeWithText("Temporarily unable to load image").getUnclippedBoundsInRoot()
@@ -1671,7 +1694,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
                 compose.mainClock.autoAdvance = true
                 compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
                 compose.onNodeWithContentDescription("Image actions").performClick()
-                compose.onNodeWithText("Save file").assertIsEnabled()
+                compose.onNodeWithText("Save image").assertIsEnabled()
                 pending
             } finally {
                 releaseImage.countDown()
@@ -1680,7 +1703,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         awaitText("Image unavailable")
         assertEquals(pendingFrame, surface.getUnclippedBoundsInRoot())
         loading.assertDoesNotExist()
-        compose.onNodeWithText("Save file").assertDoesNotExist()
+        compose.onNodeWithText("Save image").assertDoesNotExist()
         compose.onNodeWithContentDescription("Image actions").assertDoesNotExist()
     }
 

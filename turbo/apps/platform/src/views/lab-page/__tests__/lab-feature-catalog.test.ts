@@ -63,7 +63,13 @@ test("lab-page-001 Lab still lists enabled Banking in Alpha when the member need
   await visitLab(true);
   expect(screen.getByRole("heading", { name: "Lab" })).toBeVisible();
   expect(stageOf(FeatureSwitchKey.Banking)).toBe("Alpha");
-  expect(screen.getByRole("switch", { name: /^banking\b/i })).toBeChecked();
+  const banking = screen.getByRole("switch", {
+    name: FeatureSwitchKey.Banking,
+  });
+  expect(banking).toBeChecked();
+  expect(banking).toHaveAccessibleDescription(
+    getFeatureSwitchMetadata()[FeatureSwitchKey.Banking].description,
+  );
 });
 
 test("lab-page-002 Each staff-visible feature has exactly one switch under its rollout heading", async () => {
@@ -78,9 +84,8 @@ test("lab-page-002 Each staff-visible feature has exactly one switch under its r
       });
     })
     .map((key) => {
-      const { rolloutStage, displayName } = catalog[key];
-      const label = displayName ?? key;
-      return [rolloutStage, label].join("/");
+      const { rolloutStage } = catalog[key];
+      return [rolloutStage, key].join("/");
     })
     .sort();
   const actual = screen
@@ -112,8 +117,7 @@ test.each([
     });
   });
   await visitLab(false, true);
-  const name = getFeatureSwitchMetadata()[key].displayName ?? key;
-  const row = screen.getByText(name, { exact: true }).closest("li")!;
+  const row = screen.getByText(key, { exact: true }).closest("li")!;
   expect(row.closest("section")?.querySelector("h2")).toHaveTextContent(stage);
   expect(within(row).getByRole("switch")).toBeChecked();
 });
@@ -158,8 +162,7 @@ test.each([
     return respond(200, { deleted: true });
   });
   await setupPage({ context, path: "/_/lab" });
-  const name = getFeatureSwitchMetadata()[featureKey].displayName ?? featureKey;
-  const label = (await screen.findByText(name, { exact: true })).closest(
+  const label = (await screen.findByText(featureKey, { exact: true })).closest(
     "label",
   )!;
   const toggle = within(label).getByRole("switch");
@@ -212,8 +215,7 @@ test("Any Lab tester can find presentation format in Beta, opt in, and reset it"
 
   await screen.findByRole("heading", { name: "Lab" });
   click(getButtonByName("bingjie"));
-  const name = getFeatureSwitchMetadata()[featureKey].displayName ?? featureKey;
-  const row = screen.getByText(name, { exact: true }).closest("li")!;
+  const row = screen.getByText(featureKey, { exact: true }).closest("li")!;
   expect(row.closest("section")?.querySelector("h2")).toHaveTextContent("Beta");
   const control = within(row).getByRole("switch");
   expect(control).toHaveAttribute("aria-checked", "false");
@@ -270,7 +272,7 @@ test("Lab reads the embedded Banking preference before showing the service's lat
   try {
     await visitLab(false, true);
     const toggle = () => {
-      return screen.getByRole("switch", { name: /^banking\b/i });
+      return screen.getByRole("switch", { name: FeatureSwitchKey.Banking });
     };
     expect(toggle()).toBeChecked();
     mockedClerk.sessionGetToken.mockResolvedValue("lab-editor");

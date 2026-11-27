@@ -47,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -58,8 +59,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.layout.LayoutBoundsHolder
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layoutBounds
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -78,10 +81,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal val ConversationContentMaxWidth = 768.dp
 
@@ -119,6 +124,7 @@ internal fun ConversationRoute(
     stopPlacement: ConversationStopPlacement? = null,
     paneFeedbackVisible: Boolean = false,
     queueOpen: Boolean = false,
+    queuePosition: LazyListState? = null,
     dismissQueue: () -> Unit = {},
     artifactActions: ChatArtifactActions? = null,
     findTarget: ConversationFindTarget? = null,
@@ -127,8 +133,8 @@ internal fun ConversationRoute(
     onLinkFocusRestored: () -> Unit = {},
     linkFocusKey: String? = null,
     onLinkUnavailable: (() -> Unit)? = null,
-    messageSequence: Long? = null,
-    onSearchMessageResolved: (Long, Boolean) -> Unit = { _, _ -> },
+    searchMessageAnchor: SearchMessageAnchor? = null,
+    onSearchMessageResolved: (SearchMessageAnchor, Boolean) -> Unit = { _, _ -> },
     onFollowup: ((String) -> Unit)? = null,
     recovery: @Composable (HistoryMessage) -> Unit = { AssistantFailureText(it.failureReason) },
 ) {
@@ -172,6 +178,17 @@ internal fun ConversationRoute(
             }
         }
     val replying = activeMessage?.message?.isOutputReply() == true
+    val animatedReplyId =
+        activeMessage
+            ?.takeIf {
+                visible &&
+                    execution == HistoryExecution.Running &&
+                    it.summary?.phase == ReplyPhase.Replying &&
+                    output.phase != RunOutputPhase.CatchingUp &&
+                    controls?.canStop != false
+            }
+            ?.message
+            ?.id
     val activity =
         when (execution) {
             HistoryExecution.Running ->
@@ -225,36 +242,50 @@ internal fun ConversationRoute(
     val window = currentWindowSizeDp()
     val messageInset = if (window.width >= 600) 32.dp else 24.dp
     val linkTarget = linkPosition?.destination
-    val searchEventId =
-        remember(transcript, messageSequence) {
-            messageSequence?.let { transcript?.searchMessage(it)?.id }
+    val searchMessage =
+        remember(transcript, searchMessageAnchor) {
+            searchMessageAnchor?.let { transcript?.searchMessage(it.sequence) }
         }
+    val inlineImages = artifactActions?.images != null
     val requestedSearchTarget =
-        remember(messageSequence, searchEventId) {
-            searchEventId?.let { ConversationFindTarget(it, null) }
-        }
+        if (searchMessage != null && searchMessageAnchor != null) {
+            key(searchMessageAnchor, searchMessage, inlineImages) {
+                val target by
+                    produceState<ConversationFindTarget?>(null) {
+                        value =
+                            withContext(Dispatchers.Default) {
+                                searchMessage.workspaceSearchTarget(
+                                    searchMessageAnchor.range,
+                                    inlineImages,
+                                )
+                            }
+                    }
+                target
+            }
+        } else null
     var revealedSearchTarget by
         remember(model, threadId) { mutableStateOf<ConversationFindTarget?>(null) }
-    val searchTarget = if (messageSequence == null) revealedSearchTarget else requestedSearchTarget
+    val searchTarget =
+        if (searchMessageAnchor == null) revealedSearchTarget else requestedSearchTarget
     val readingTarget = findTarget ?: linkTarget ?: searchTarget
     // Keep cached history usable while a failed lookup awaits a retry.
     val waitingForSearch =
-        messageSequence != null &&
+        searchMessageAnchor != null &&
             searchTarget == null &&
             !missing &&
             state.phase != HistoryPhase.Failed
-    LaunchedEffect(model, thread?.id, messageSequence) {
-        val sequence = messageSequence ?: return@LaunchedEffect
-        if (thread != null && model.searchMessageIsMissing(threadId, sequence)) {
+    LaunchedEffect(model, thread?.id, searchMessageAnchor) {
+        val anchor = searchMessageAnchor ?: return@LaunchedEffect
+        if (thread != null && model.searchMessageIsMissing(threadId, anchor.sequence)) {
             revealedSearchTarget = null
-            onSearchMessageResolved(sequence, false)
+            onSearchMessageResolved(anchor, false)
         }
     }
     val searchPositioned = requestedSearchTarget?.positioned == true
-    LaunchedEffect(messageSequence, requestedSearchTarget, searchPositioned) {
-        if (messageSequence != null && requestedSearchTarget != null && searchPositioned) {
+    LaunchedEffect(searchMessageAnchor, requestedSearchTarget, searchPositioned) {
+        if (searchMessageAnchor != null && requestedSearchTarget != null && searchPositioned) {
             revealedSearchTarget = requestedSearchTarget
-            onSearchMessageResolved(messageSequence, true)
+            onSearchMessageResolved(searchMessageAnchor, true)
         }
     }
     val targetMessageId =
@@ -630,6 +661,7 @@ internal fun ConversationRoute(
             if (imageReply != null && !readingReady) artifactActions?.copy(restoreKey = null)
             else artifactActions
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
+        val avatarViewport = remember { LayoutBoundsHolder() }
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(
@@ -638,6 +670,10 @@ internal fun ConversationRoute(
                         .testTag("conversation")
                         .focusRequester(timelineFocus)
                         .focusable()
+                        .then(
+                            if (animatedReplyId == null) Modifier
+                            else Modifier.layoutBounds(avatarViewport),
+                        )
                         .then(
                             if (awaitingFindPosition)
                                 Modifier.onGloballyPositioned { findViewport = it }
@@ -726,6 +762,10 @@ internal fun ConversationRoute(
                                         artifactActions = visibleArtifacts,
                                         findHighlight = highlight,
                                         links = links,
+                                        animateAvatarIn =
+                                            avatarViewport.takeIf {
+                                                entry.message.id == animatedReplyId
+                                            },
                                         beforeEarlierRepliesResize = {
                                             if (
                                                 !awaitingFindPosition &&
@@ -851,6 +891,7 @@ internal fun ConversationRoute(
                 queue,
                 controls,
                 controlSnackbar.takeIf { showQueueFeedback },
+                queuePosition ?: rememberLazyListState(),
                 dismissQueue,
             )
     }

@@ -1,104 +1,80 @@
 import SwiftUI
-import UIKit
 
-/// The page's scenery: the cover picture at one fixed scale across the top, continued below by
-/// the colour of its own sea, so the cards and the dock stand on the same scene as the header.
-/// A taller card only covers more of it; the picture never resizes, so it keeps one size and
-/// one sharpness while the cards change. At night the whole scene dims, and while a direction is
-/// written it recedes under the page's ground.
+/// The page's ground: the grouped ground the white cards stand on, as a sheet's rows do, warmed
+/// at the top by a wash of the brand's subtle amber that fades out down the page, with the
+/// brand's line texture (the thinking mark's brush) drawn round its four corners and fading out
+/// towards the middle, where the card is. The texture is the brush itself, unrepeated, so its
+/// lines frame the header, the dock and the card's sides without a seam. While a direction is
+/// written the ground recedes under the page's canvas.
 struct ForYouCover: View {
-  /// How far the scene has drifted sideways behind the cards, in points.
-  let drift: CGFloat
-  /// Recedes under the page's ground, so the card and the input stand alone and the glass and
-  /// keyboard over it read plain instead of taking the sea's colour.
+  /// Recedes under the page's canvas, so the card and the input stand alone and the glass and
+  /// keyboard over it read plain.
   var veiled = false
-  /// Hears where the train's lower edge is on screen, so the cards can stay below it.
-  var onHorizon: (CGFloat) -> Void = { _ in }
   @Environment(\.colorScheme) private var colorScheme
 
-  private static let aspect: CGFloat = 1024 / 410
-  /// The picture takes this share of the page's height (never less than the screen's width),
-  /// which sets the train just under the header.
-  private static let share: CGFloat = 0.4
-  /// The train's lower edge, as a share of the picture's height.
-  private static let trainEdgeShare: CGFloat = 0.7
-
-  private static func pictureHeight(_ size: CGSize) -> CGFloat {
-    max(size.width / aspect, size.height * share)
-  }
-  /// The cover dims at night so the page's light header and status bar read on it.
-  private static let nightDim: Double = 0.4
-  /// How much of the page's ground lies over the scene while it is veiled: enough to quiet the
-  /// sea, little enough that the scene still shows where the page is.
+  static let ground = OkouGroupedColor.background
+  /// The warm wash at the top: the brand's subtle amber over the grouped ground, strongest under
+  /// the status bar, a trace by the card's middle and gone at the foot.
+  private static let warmth = LinearGradient(
+    stops: [
+      .init(color: OkouColor.brandSubtle.opacity(0.55), location: 0),
+      .init(color: OkouColor.brandSubtle.opacity(0.25), location: 0.42),
+      .init(color: OkouColor.brandSubtle.opacity(0), location: 1)
+    ], startPoint: .top, endPoint: .bottom)
+  /// The brush's ink: the brand amber, faint, so it reads as texture rather than drawing.
+  private static let dayInk: Double = 0.12
+  private static let nightInk: Double = 0.08
+  /// Each corner's brush is this share of the page's width: small enough that its marks read as
+  /// lines rather than paint.
+  private static let brushShare: CGFloat = 0.55
+  /// How much of the page's canvas lies over the ground while it is veiled.
   private static let veil: Double = 0.8
 
   var body: some View {
     GeometryReader { geometry in
-      let height = Self.pictureHeight(geometry.size)
-      let width = height * Self.aspect
-      let travel = max(0, width - geometry.size.width)
-      VStack(spacing: 0) {
-        Image("ForYouCover").resizable().scaledToFill()
-          .frame(width: width, height: height)
-          .onGeometryChange(for: CGFloat.self) { proxy in
-            let frame = proxy.frame(in: .global)
-            return frame.minY + frame.height * Self.trainEdgeShare
-          } action: { line in
-            onHorizon(line)
-          }
-          .offset(x: -min(travel, drift))
-          .frame(width: geometry.size.width, height: height, alignment: .leading)
-          .clipped()
-          // The picture's textured lower edge melts into the plain sea below it.
-          .overlay(alignment: .bottom) {
-            LinearGradient(
-              colors: [Self.sea.opacity(0), Self.sea], startPoint: .top, endPoint: .bottom
-            )
-            .frame(height: OkouSpace.xxxl)
-          }
-        Self.sea
+      let size = geometry.size
+      let side = size.width * Self.brushShare
+      // One brush per corner, each turned a quarter from the last so the lines run round the
+      // page, and set half off its edges.
+      ZStack {
+        brush(side).rotationEffect(.degrees(0))
+          .position(x: side * 0.3, y: side * 0.35)
+        brush(side).rotationEffect(.degrees(90))
+          .position(x: size.width - side * 0.3, y: side * 0.35)
+        brush(side).rotationEffect(.degrees(270))
+          .position(x: side * 0.3, y: size.height - side * 0.35)
+        brush(side).rotationEffect(.degrees(180))
+          .position(x: size.width - side * 0.3, y: size.height - side * 0.35)
       }
-    }
-    .overlay {
-      if colorScheme == .dark {
-        OkouMediaColor.scrim.opacity(Self.nightDim)
+      .frame(width: size.width, height: size.height)
+      // Strongest at the page's edges, gone well before the middle.
+      .mask {
+        EllipticalGradient(
+          stops: [
+            .init(color: .clear, location: 0), .init(color: .clear, location: 0.42),
+            .init(color: .black.opacity(0.6), location: 0.62), .init(color: .black, location: 0.8)
+          ], center: .center, startRadiusFraction: 0, endRadiusFraction: 0.75)
       }
+      .opacity(colorScheme == .dark ? Self.nightInk : Self.dayInk)
     }
+    .background(Self.warmth)
+    .background(Self.ground)
     .overlay { OkouColor.background.opacity(veiled ? Self.veil : 0) }
     .ignoresSafeArea()
     .accessibilityHidden(true)
   }
 
-  /// The average colour of the picture's lowest band, its sea, read once from the asset itself,
-  /// so the scene continues without a seam and without a colour of its own. Without the picture
-  /// the page keeps its ground.
-  private static let sea: Color = {
-    guard let image = UIImage(named: "ForYouCover")?.cgImage,
-      let space = CGColorSpace(name: CGColorSpace.sRGB)
-    else { return OkouColor.background }
-    let band = max(1, image.height / 12)
-    let width = 32
-    let height = 4
-    var pixels = [UInt8](repeating: 0, count: width * height * 4)
-    let drawn: Bool = pixels.withUnsafeMutableBytes { buffer in
-      guard
-        let cropped = image.cropping(
-          to: CGRect(x: 0, y: image.height - band, width: image.width, height: band)),
-        let context = CGContext(
-          data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
-          bytesPerRow: width * 4, space: space,
-          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-      else { return false }
-      context.interpolationQuality = .high
-      context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
-      return true
-    }
-    guard drawn else { return OkouColor.background }
-    let count = Double(width * height)
-    func channel(_ offset: Int) -> Double {
-      stride(from: offset, to: pixels.count, by: 4).reduce(0) { $0 + Double(pixels[$1]) }
-        / count / 255
-    }
-    return Color(.sRGB, red: channel(0), green: channel(1), blue: channel(2))
-  }()
+  /// One brush, faded out towards its own edges so the square it is cut from never shows.
+  private func brush(_ side: CGFloat) -> some View {
+    Image("OkouThinkingTexture").resizable()
+      .foregroundStyle(OkouColor.primary)
+      .frame(width: side, height: side * 803 / 800)
+      .mask {
+        RadialGradient(
+          stops: [
+            .init(color: .black, location: 0), .init(color: .black.opacity(0.7), location: 0.55),
+            .init(color: .clear, location: 1)
+          ], center: .center, startRadius: 0, endRadius: side / 2)
+      }
+  }
 }

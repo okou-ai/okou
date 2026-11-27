@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">未能切換模型帳號</string>
     <string name="settings_quota">配額</string>
     <string name="settings_hour_quota">%1$d 小時額度</string>
+    <string name="settings_minute_quota">%1$d 分鐘額度</string>
     <string name="settings_day_quota">%1$d 天額度</string>
     <string name="settings_weekly_quota">周額度</string>
     <string name="settings_quota_unavailable">配額暫不可用</string>
@@ -110,4 +111,5 @@
     <string name="settings_suggestions_save_failed">無法儲存建議設定，已還原原值。</string>
     <string name="settings_timezone_save_rejected">無法儲存時區，已還原原值。</string>
     <string name="settings_timezone_schedule_update_failed">時區已儲存，無法更新晨報時間。</string>
+    <string name="settings_model_catalog_refresh_failed">暫時無法重新整理可用模型，已保留上次載入的清單。</string>
 </resources>

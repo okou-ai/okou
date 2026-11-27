@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">No se pudo cambiar de cuenta de modelo.</string>
     <string name="settings_quota">Cuota</string>
     <string name="settings_hour_quota">Cuota de %1$d h</string>
+    <string name="settings_minute_quota">Cuota de %1$d min</string>
     <string name="settings_day_quota">Cuota de %1$d días</string>
     <string name="settings_weekly_quota">Cuota semanal</string>
     <string name="settings_quota_unavailable">Cuota temporalmente no disponible</string>
@@ -110,4 +111,5 @@
     <string name="settings_suggestions_save_failed">No se pudieron guardar las sugerencias. Se restauró el ajuste anterior.</string>
     <string name="settings_timezone_save_rejected">No se pudo guardar la zona horaria. Se restauró la zona anterior.</string>
     <string name="settings_timezone_schedule_update_failed">Se guardó la zona horaria, pero no se pudo actualizar el horario del resumen matutino.</string>
+    <string name="settings_model_catalog_refresh_failed">No se pudieron actualizar los modelos disponibles. Se muestra la última lista cargada.</string>
 </resources>

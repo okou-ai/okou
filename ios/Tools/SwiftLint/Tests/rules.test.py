@@ -17,6 +17,7 @@ from global_state_cases import GLOBAL_STATE_CASES
 from graph_factory_cases import GRAPH_FACTORY_CASES
 from import_cases import IMPORT_CASES
 from logging_cases import LOGGING_CASES
+from observable_graph_cases import OBSERVABLE_GRAPH_CASES
 from resource_cancellation_binding_cases import RESOURCE_CANCELLATION_BINDING_CASES
 from resource_failure_cases import RESOURCE_FAILURE_CASES
 from resource_failure_path_cases import RESOURCE_FAILURE_PATH_CASES
@@ -39,6 +40,7 @@ BINARY = (
 
 CASES = [
     *DUPLICATE_CONDITION_CASES,
+    *OBSERVABLE_GRAPH_CASES,
     *COLLECTION_PUBLICATION_CASES,
     *THROWING_TASK_CASES,
     *USELESS_CATCH_CASES,

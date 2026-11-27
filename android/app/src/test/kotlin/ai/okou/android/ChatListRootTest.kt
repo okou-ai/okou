@@ -31,6 +31,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
@@ -85,6 +86,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
@@ -1311,13 +1313,16 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun aFailedRefreshKeepsAnEmptyFilterVisible() {
+    fun aTerminalRefreshNotifiesOnceAndKeepsAnEmptyFilterVisible() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
         awaitListAndNames()
         compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithText("No archived chats").assertExists()
+        val empty = compose.onNodeWithText("No archived chats")
+        val emptyBounds = empty.getUnclippedBoundsInRoot()
+        val notice = compose.activity.getString(R.string.chat_list_sync_failed)
+        val normalEvents = app.fixture.events
 
         app.fixture.events = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
         refreshWorkspaceChats()
@@ -1326,8 +1331,31 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Failed
         }
         compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
-        compose.onNodeWithText("No archived chats").assertExists()
+        empty.assertExists()
+        compose.onNodeWithText(notice).assertDoesNotExist()
         compose.onNodeWithContentDescription("Syncing chats…").assertDoesNotExist()
+
+        app.fixture.events = { MockResponse().setResponseCode(400) }
+        shadowOf(Looper.getMainLooper()).idleFor(3, TimeUnit.SECONDS)
+        compose.waitUntilExactlyOneExists(hasText(notice), 10_000)
+        assertEquals(emptyBounds, empty.getUnclippedBoundsInRoot())
+        compose.onNodeWithTag("chat_list_first_read_status").assertDoesNotExist()
+
+        app.fixture.events = normalEvents
+        refreshWorkspaceChats()
+        compose.waitUntilDoesNotExist(hasText(notice), 10_000)
+        assertEquals(emptyBounds, empty.getUnclippedBoundsInRoot())
+
+        app.fixture.events = { MockResponse().setResponseCode(400) }
+        refreshWorkspaceChats()
+        compose.waitUntilExactlyOneExists(hasText(notice), 10_000)
+        compose.onNodeWithText("Back to Inbox").performClick()
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+        compose.onNodeWithText(notice).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Archived").performClick()
+        empty.assertIsDisplayed()
+        compose.onNodeWithText(notice).assertDoesNotExist()
     }
 
     @Test
@@ -1465,14 +1493,21 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
             firstRead.countDown()
             awaitListAndNames()
-            val status = compose.onNodeWithTag("chat_list_first_read_status")
+            val status = compose.onNodeWithText(loadFailure)
+            val illustration = compose.onNodeWithTag("content-read-failure-illustration")
             status.assertIsDisplayed()
+            illustration.assertIsDisplayed().assertWidthIsEqualTo(160.dp)
             compose.onNodeWithContentDescription(loading).assertDoesNotExist()
             compose.onNodeWithText("No unread chats").assertDoesNotExist()
             compose.onNodeWithText("Try again").assertDoesNotExist()
             val statusBounds = status.getUnclippedBoundsInRoot()
-            assertEquals(heading.left, statusBounds.left)
-            assertEquals(28.dp, statusBounds.top - heading.bottom)
+            val illustrationBounds = illustration.getUnclippedBoundsInRoot()
+            assertTrue(illustrationBounds.top > heading.bottom)
+            assertEquals(16.dp, statusBounds.top - illustrationBounds.bottom)
+            val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
+            val listCenter = (listBounds.left + listBounds.right) / 2
+            val statusCenter = (statusBounds.left + statusBounds.right) / 2
+            assertTrue(kotlin.math.abs((listCenter - statusCenter).value) <= 1f)
             assertEquals(
                 LiveRegionMode.Polite,
                 status.fetchSemanticsNode().config[SemanticsProperties.LiveRegion],
@@ -1481,8 +1516,10 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             status.performSemanticsAction(SemanticsActions.GetTextLayoutResult) {
                 it(statusLayouts)
             }
-            assertEquals(14.sp, statusLayouts.single().layoutInput.style.fontSize)
-            assertEquals(20.sp, statusLayouts.single().layoutInput.style.lineHeight)
+            val style = statusLayouts.single().layoutInput.style
+            assertEquals(16.sp, style.fontSize)
+            assertEquals(24.sp, style.lineHeight)
+            assertEquals(FontWeight.Medium, style.fontWeight)
             assertEquals(toolbarBounds, filter.getUnclippedBoundsInRoot())
         } finally {
             firstRead.countDown()
@@ -2121,14 +2158,18 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         compose.onNodeWithTag("search_type_Messages").performClick()
         compose.onNodeWithTag("chat_search_query").performTextInput(fixture.keyword)
         val results = hasAnyAncestor(hasTestTag("chat_search_results"))
-        val result = hasText(fixture.hit) and results
+        val result = hasText(fixture.hit, substring = true) and results
         compose.waitUntilExactlyOneExists(result, 5_000)
         compose.onNode(hasText(fixture.otherHit) and results).assertIsDisplayed()
-        compose.onNode(result).performClick()
+        val row = compose.onNode(result)
+        val preview = row.fetchSemanticsNode().config[SemanticsProperties.Text]
+        assertTrue(preview.any { fixture.hit in it.text && '\n' !in it.text })
+        row.performClick()
 
         val focused = hasTestTag("conversation_find_hit") and isFocused()
         compose.waitUntilExactlyOneExists(focused, 5_000)
-        compose.onNode(focused).assertIsDisplayed().assertTextContains(fixture.hit)
+        compose.onNode(focused).assertIsDisplayed().assertTextEquals(fixture.hit)
+        compose.onNodeWithText(fixture.leadingParagraph).assertIsDisplayed()
         compose.onNode(matchedSummary, useUnmergedTree = true).assert(expanded)
         compose.onNode(otherSummary, useUnmergedTree = true).assert(collapsed)
         compose.onNodeWithText(fixture.otherEarlierReply).assertDoesNotExist()
@@ -2136,6 +2177,48 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         val list = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
         assertTrue(compose.onNode(focused).getUnclippedBoundsInRoot().left > list.right)
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun workspaceMessageSearchRevealsTheMatchedCellOutsideTheHorizontalViewport() {
+        val app = compose.activity.application as ChatListApplication
+        val query = "approval"
+        val text = "Launch approval"
+        val body =
+            "| Phase | Build | Tests | Assets | Owner |\n" +
+                "| --- | --- | --- | --- | --- |\n" +
+                "| Release | Ready | Passed | Ready | $text |"
+        val start = body.indexOf(query)
+        app.fixture.historyReply = body
+        app.fixture.searchMessages = { request ->
+            assertEquals(query, request.requestUrl?.queryParameter("keyword"))
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_PERSONAL",
+                  "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
+                    "content":${JsonPrimitive(body)},"createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":$start,"end":${start + query.length}}]}]}
+                """,
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput(query)
+        val result =
+            hasText(text, substring = true) and hasAnyAncestor(hasTestTag("chat_search_results"))
+        compose.waitUntilExactlyOneExists(result, 5_000)
+        compose.onNode(result).performClick()
+
+        val focused = hasTestTag("conversation_find_hit") and isFocused() and hasText(text)
+        compose.waitUntilExactlyOneExists(focused, 5_000)
+        val cell = compose.onNode(focused).assertIsDisplayed().assertTextEquals(text)
+        val bounds = cell.getUnclippedBoundsInRoot()
+        val conversation = compose.onNodeWithTag("conversation").getUnclippedBoundsInRoot()
+        assertEquals(112.dp, bounds.right - bounds.left)
+        assertTrue(bounds.right <= conversation.right - 24.dp)
     }
 
     @Test

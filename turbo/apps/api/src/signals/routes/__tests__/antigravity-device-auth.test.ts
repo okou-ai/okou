@@ -22,6 +22,9 @@ const clerk = createRouteMocks(context).clerk;
 const REDIRECT_URI = "http://localhost:51121/oauth-callback";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const USERINFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo";
+// MSW reads ":name" in a path string as a parameter; match by expression.
+const CLOUD_CODE_METHOD =
+  /^https:\/\/daily-cloudcode-pa\.googleapis\.com\/v1internal:(loadCodeAssist|fetchAvailableModels)$/;
 
 function app() {
   return setupApp({
@@ -67,6 +70,10 @@ function mockGoogle(
     http.get(USERINFO_URL, ({ request }) => {
       lookups.push(request.headers.get("authorization"));
       return HttpResponse.json({ id: "1234567890", email: "Member@Gmail.com" });
+    }),
+    // Listing a connected account reads its live plan and quota.
+    http.post(CLOUD_CODE_METHOD, () => {
+      return HttpResponse.json({});
     }),
   );
   return { exchanges, lookups };
@@ -200,7 +207,13 @@ describe("Antigravity Google sign-in", () => {
       [400],
     );
     expect(replay.body.error.message).toBe("Sign-in is not pending");
-    expect(google.exchanges).toHaveLength(1);
+    // Listing refreshes the grant for live usage; the replay must not
+    // exchange the authorization code again.
+    expect(
+      google.exchanges.filter((exchange) => {
+        return exchange.get("grant_type") === "authorization_code";
+      }),
+    ).toHaveLength(1);
   });
 
   it("keeps the sign-in pending when an address from another sign-in is pasted", async () => {

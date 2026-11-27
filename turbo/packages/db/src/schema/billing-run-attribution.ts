@@ -30,7 +30,7 @@ export const billingRunAttribution = pgTable(
     source: text("source").notNull(),
     // Captured at admission, independent of mutable Workflow and content rows.
     creditChargePolicy: text("credit_charge_policy")
-      .$type<"standard" | "official_workflow_free">()
+      .$type<"standard" | "official_workflow_free" | "platform_proactive">()
       .notNull()
       .default("standard"),
     // Grouping identity only. Deliberately not an FK and never a title, prompt
@@ -64,11 +64,11 @@ export const billingRunAttribution = pgTable(
       ),
       check(
         "billing_run_attribution_credit_policy_check",
-        sql`${table.creditChargePolicy} IN ('standard', 'official_workflow_free')`,
+        sql`${table.creditChargePolicy} IN ('standard', 'official_workflow_free', 'platform_proactive')`,
       ),
       check(
         "billing_run_attribution_source_check",
-        sql`${table.source} IN ('chat', 'automation', 'slack', 'discord', 'wechat', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')`,
+        sql`${table.source} IN ('chat', 'automation', 'proactive', 'slack', 'discord', 'wechat', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')`,
       ),
       check(
         "billing_run_attribution_thread_context_check",

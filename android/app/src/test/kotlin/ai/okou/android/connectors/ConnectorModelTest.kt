@@ -203,6 +203,7 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
             model.await { it.connected.data?.get(CONNECTOR_CALENDAR)?.accounts?.size == 1 }
 
             fixture.failAccountReads = true
+            fixture.accountRetryAfterSeconds = 0
             model.select(CONNECTOR_CALENDAR)
             val revisited = model.uiState.value
             assertEquals(first.detail.data, revisited.detail.data)
@@ -215,10 +216,20 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
             )
             assertEquals(1, revisited.accountsFor(CONNECTOR_CALENDAR).size)
 
-            val refreshing = model.await { it.accounts.failure != null }
+            val refreshing = model.await { it.accounts.failureRound != null }
             assertEquals(first.permissions.data, refreshing.permissions.data)
             model.startAuthorization(null, "oauth", emptyMap())
             assertNull(model.uiState.value.action)
+
+            fixture.failAccountReads = false
+            model.resume()
+            val retrying = model.uiState.value
+            assertEquals(refreshing.accounts.failureRound, retrying.accounts.failureRound)
+            assertEquals(refreshing.selectedAccountContent, retrying.selectedAccountContent)
+            assertFalse(retrying.canChangeAccounts)
+            val confirmed = model.await { it.canChangeAccounts }
+            assertNull(confirmed.accounts.failureRound)
+            assertEquals(1, confirmed.selectedAccountContent?.size)
         }
     }
 

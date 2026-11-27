@@ -66,6 +66,7 @@ export interface AgentToolsPromptInputs {
   readonly presentationOutputFormatEnabled: boolean;
   readonly markdownFirstOutputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
+  readonly remoteDevicesEnabled: boolean;
   readonly artifactThreePointTimingEnabled: boolean;
   readonly hostedSiteCustomDomainsEnabled: boolean;
 }
@@ -111,6 +112,10 @@ export function buildAgentToolsPromptInputs(args: {
       context,
     ),
     cloudBrowserEnabled: args.cloudBrowserEnabled,
+    remoteDevicesEnabled: isFeatureEnabled(
+      FeatureSwitchKey.RemoteDevices,
+      context,
+    ),
   };
 }
 
@@ -168,8 +173,14 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
     "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
     "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
-    "- SSH chat access: in Web Chat, for a configured host missing from authorized inventory, use `okou ssh request-access <connection-id> --reason <purpose>` and share its exact review URL, then end the Run. The user approves in a message card and the next round continues automatically; do not direct them to find a Remote control switch. If connector permissions also need approval, use `--require-permission <connector/permission>` for every diagnosed permission, share the existing permission/batch link alongside the SSH request, and attach continuation only to the SSH request.",
-    "- VNC chat access: in Web Chat, use `okou vnc request-access <connection-id> --reason <purpose>` for a configured VNC host missing from authorized inventory. This covers every saved VNC security profile and Direct, SSH, Cloudflare Access, and Tailscale routes. First inspect the configured VNC transport and any SSH-backed KDC: if a required SSH host is not authorized, request its access with `okou ssh request-access` and end the Run; after approval, recheck all dependencies before requesting VNC access. Never grant SSH implicitly or treat its approval as VNC access. Share the exact VNC review URL and end the Run; owner approval continues automatically. Use `--require-permission` for accompanying diagnosed connector approvals, with continuation only on the host request.",
+    ...(args.remoteDevicesEnabled
+      ? [
+          "- Remote Device access: use `okou remote list --json` to discover configured Desktop, iOS, SSH, and VNC channels. Use the exact channel ID with its protocol command. If the requested channel's device needs approval, use `okou remote request-access <device-id> --reason <purpose>` and share its exact URL in the current Chat. Approval applies to all channels of that device for one hour. For a VNC route or Kerberos KDC using SSH on another device, check and request that device separately. Use `--callback-prompt` only when device approval is the only action needed and the task must continue in the next round. The current Run can use an approved device on its next operation.",
+        ]
+      : [
+          "- SSH chat access: in Web Chat, for a configured host missing from authorized inventory, use `okou ssh request-access <connection-id> --reason <purpose>` and share its exact review URL, then end the Run. The user approves in a message card and the next round continues automatically; do not direct them to find a Remote control switch. If connector permissions also need approval, use `--require-permission <connector/permission>` for every diagnosed permission, share the existing permission/batch link alongside the SSH request, and attach continuation only to the SSH request.",
+          "- VNC chat access: in Web Chat, use `okou vnc request-access <connection-id> --reason <purpose>` for a configured VNC host missing from authorized inventory. This covers every saved VNC security profile and Direct, SSH, Cloudflare Access, and Tailscale routes. First inspect the configured VNC transport and any SSH-backed KDC: if a required SSH host is not authorized, request its access with `okou ssh request-access` and end the Run; after approval, recheck all dependencies before requesting VNC access. Never grant SSH implicitly or treat its approval as VNC access. Share the exact VNC review URL and end the Run; owner approval continues automatically. Use `--require-permission` for accompanying diagnosed connector approvals, with continuation only on the host request.",
+        ]),
     "- Remote SSH failures: after a connection failure or unexpected disconnect, prefer the actual failed operation's Attempt ID: `okou ssh diagnose <connection-id> --attempt-id <attempt-id> --json`, adding `--session-id <id>` when known. Use IDs from that failed operation. Without an Attempt ID, a connection/session-only query returns the latest matching retained failure; verify its operation, connection, session, and time before attributing it. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure. This is passive history within this Run, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay an uncertain command or check.",
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
     ...(args.artifactThreePointTimingEnabled

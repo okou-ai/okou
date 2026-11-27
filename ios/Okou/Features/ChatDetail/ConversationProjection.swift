@@ -11,6 +11,9 @@ import Foundation
 final class ConversationProjection {
   private struct Input {
     var history: ChatHistory?
+    var interruptEvents: [String: String] = [:]
+
+    var presentedHistory: ChatHistory? { history?.interrupting(Set(interruptEvents.keys)) }
     var pending: [ConversationStore.PendingMessage] = []
     var expanded: Set<String> = []
     var closed = false
@@ -56,7 +59,7 @@ final class ConversationProjection {
     let items = Computed<[ConversationItem]> { get in
       let value = try get(input)
       return Self.items(
-        messages: try get(messages), history: value.history, expanded: value.expanded)
+        messages: try get(messages), history: value.presentedHistory, expanded: value.expanded)
     }
     itemsValue = items
     let streamed = Computed<[ConversationStore.StreamedOutput]> { get in
@@ -72,7 +75,7 @@ final class ConversationProjection {
     value = Computed { get in
       let current = try get(input)
       return Value(
-        history: current.history, pending: current.pending, items: try get(items),
+        history: current.presentedHistory, pending: current.pending, items: try get(items),
         streamed: try get(streamed))
     }
     replaceStream = Command { context, value in try context.set(streamedInput, value) }
@@ -101,8 +104,14 @@ final class ConversationProjection {
     guard history != snapshot.history else { return }
     update {
       $0.history = history
+      let persisted = Set((history?.persistedEventIDs ?? []).map { $0.lowercased() })
+      $0.interruptEvents = $0.interruptEvents.filter { !persisted.contains($0.value) }
       $0.expanded.formIntersection((history?.workSections ?? []).map(\.id))
     }
+  }
+
+  func interruptRuns(_ events: [String: String]) {
+    update { $0.interruptEvents.merge(events) { _, newest in newest } }
   }
 
   func replacePending(_ pending: [ConversationStore.PendingMessage]) {

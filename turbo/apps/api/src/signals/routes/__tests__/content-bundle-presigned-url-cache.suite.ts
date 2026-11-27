@@ -93,7 +93,7 @@ describe("content bundle presigned URL cache", () => {
       });
       const { execution, sandboxHeaders } = await chats.runExecution(run.runId);
       await chats.cancelChatRun(actor, run.runId, sandboxHeaders);
-      return execution.contentBundles;
+      return execution.startupInputs.contentBundles;
     };
     return {
       actor,
@@ -137,7 +137,7 @@ describe("content bundle presigned URL cache", () => {
       custom.id,
       [{ key: "secret", kind: "secret", value: "readonly-cache-test-token" }],
     );
-    const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(custom.slug, custom.id)}`;
+    const skillName = getCustomConnectorSkillName(custom.slug, custom.id);
     mockUniquePresignedUrls();
     const createExecution = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
@@ -145,14 +145,16 @@ describe("content bundle presigned URL cache", () => {
       });
       await api.heartbeatRunner(runnerGroup);
       const execution = await api.executionInput(run.runId);
-      const mount = execution.contentBundles.skills.find((entry) => {
-        return entry.mountPath === mountPath;
-      });
-      if (!mount?.downloadUrl) {
+      const mount = execution.startupInputs.contentBundles.skills.find(
+        (entry) => {
+          return entry.name === skillName;
+        },
+      );
+      if (!mount?.bundle.downloadUrl) {
         throw new Error("Missing Connector Skill bundle download URL");
       }
-      expect(mount.mountPath).toBe(
-        `/home/user/.claude/skills/custom-${custom.slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
+      expect(mount.name).toBe(
+        `custom-${custom.slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
       );
       expect(execution.connectorRuntimeTargets).toContainEqual(
         expect.objectContaining({
@@ -161,7 +163,7 @@ describe("content bundle presigned URL cache", () => {
           sourceId: account.connectionId,
         }),
       );
-      return { runId: run.runId, archiveUrl: mount.downloadUrl };
+      return { runId: run.runId, archiveUrl: mount.bundle.downloadUrl };
     };
 
     const first = await createExecution("request the readonly skill archive");
@@ -183,7 +185,9 @@ describe("content bundle presigned URL cache", () => {
     expect(first.skills).toHaveLength(4);
     expect(first.instructions).toBeDefined();
     for (const bundle of [
-      ...first.skills,
+      ...first.skills.map(({ bundle }) => {
+        return bundle;
+      }),
       ...(first.instructions ? [first.instructions] : []),
     ]) {
       expect(
@@ -205,15 +209,15 @@ describe("content bundle presigned URL cache", () => {
       const fresh = await readWorkflowExecution();
       expect(
         fresh.skills.map((bundle) => {
-          return bundle.sha256;
+          return bundle.bundle.sha256;
         }),
       ).toStrictEqual(
         first.skills.map((bundle) => {
-          return bundle.sha256;
+          return bundle.bundle.sha256;
         }),
       );
-      expect(fresh.skills[0]?.downloadUrl).not.toBe(
-        first.skills[0]?.downloadUrl,
+      expect(fresh.skills[0]?.bundle.downloadUrl).not.toBe(
+        first.skills[0]?.bundle.downloadUrl,
       );
       expect(fresh.instructions?.downloadUrl).not.toBe(
         first.instructions?.downloadUrl,
@@ -228,16 +232,20 @@ describe("content bundle presigned URL cache", () => {
     closeS3Clients();
     mockEnv("R2_SECRET_ACCESS_KEY", "rotated-content-bundle-secret");
     const rotatedCredentials = await readWorkflowExecution();
-    expect(rotatedCredentials.skills[0]?.sha256).toBe(first.skills[0]?.sha256);
-    expect(rotatedCredentials.skills[0]?.downloadUrl).not.toBe(
-      first.skills[0]?.downloadUrl,
+    expect(rotatedCredentials.skills[0]?.bundle.sha256).toBe(
+      first.skills[0]?.bundle.sha256,
+    );
+    expect(rotatedCredentials.skills[0]?.bundle.downloadUrl).not.toBe(
+      first.skills[0]?.bundle.downloadUrl,
     );
     closeS3Clients();
     mockEnv("S3_ENDPOINT", "https://replacement-r2.example.com");
     const rotatedEndpoint = await readWorkflowExecution();
-    expect(rotatedEndpoint.skills[0]?.sha256).toBe(first.skills[0]?.sha256);
-    expect(rotatedEndpoint.skills[0]?.downloadUrl).not.toBe(
-      rotatedCredentials.skills[0]?.downloadUrl,
+    expect(rotatedEndpoint.skills[0]?.bundle.sha256).toBe(
+      first.skills[0]?.bundle.sha256,
+    );
+    expect(rotatedEndpoint.skills[0]?.bundle.downloadUrl).not.toBe(
+      rotatedCredentials.skills[0]?.bundle.downloadUrl,
     );
     await expect(readWorkflowExecution()).resolves.toStrictEqual(
       rotatedEndpoint,
@@ -260,20 +268,22 @@ describe("content bundle presigned URL cache", () => {
     const { execution, sandboxHeaders } = await chats.runExecution(
       queued.runId,
     );
-    expect(execution.contentBundles.skills[0]?.mountPath).toBe(
-      cached.skills[0]?.mountPath,
+    expect(execution.startupInputs.contentBundles.skills[0]?.name).toBe(
+      cached.skills[0]?.name,
     );
-    expect(execution.contentBundles.skills[0]?.sha256).toBe(
-      cached.skills[0]?.sha256,
-    );
-    expect(execution.contentBundles.skills[0]?.downloadUrl).toBe(
-      cached.skills[0]?.downloadUrl,
-    );
+    expect(
+      execution.startupInputs.contentBundles.skills[0]?.bundle.sha256,
+    ).toBe(cached.skills[0]?.bundle.sha256);
+    expect(
+      execution.startupInputs.contentBundles.skills[0]?.bundle.downloadUrl,
+    ).toBe(cached.skills[0]?.bundle.downloadUrl);
     await chats.cancelChatRun(actor, queued.runId, sandboxHeaders);
     const updated = await readWorkflowExecution();
-    expect(updated.skills[0]?.sha256).not.toBe(cached.skills[0]?.sha256);
-    expect(updated.skills[0]?.downloadUrl).not.toBe(
-      cached.skills[0]?.downloadUrl,
+    expect(updated.skills[0]?.bundle.sha256).not.toBe(
+      cached.skills[0]?.bundle.sha256,
+    );
+    expect(updated.skills[0]?.bundle.downloadUrl).not.toBe(
+      cached.skills[0]?.bundle.downloadUrl,
     );
     await expect(readWorkflowExecution()).resolves.toStrictEqual(updated);
   });
@@ -373,9 +383,9 @@ describe("content bundle presigned URL cache", () => {
     await chats.cancelChatRun(actor, older.runId, {
       authorization: `Bearer ${older.sandboxToken}`,
     });
-    expect(older.contentBundles.instructions?.downloadUrl).not.toBe(
-      newer.instructions?.downloadUrl,
-    );
+    expect(
+      older.startupInputs.contentBundles.instructions?.downloadUrl,
+    ).not.toBe(newer.instructions?.downloadUrl);
     const reused = await withMockNowForTest(
       startedAt + 2000,
       readWorkflowExecution,

@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">Gagal mengganti akun model.</string>
     <string name="settings_quota">Kuota</string>
     <string name="settings_hour_quota">Kuota %1$d jam</string>
+    <string name="settings_minute_quota">Kuota %1$d menit</string>
     <string name="settings_day_quota">Kuota %1$d hari</string>
     <string name="settings_weekly_quota">Kuota mingguan</string>
     <string name="settings_quota_unavailable">Kuota untuk sementara tidak tersedia</string>
@@ -110,4 +111,5 @@
     <string name="settings_suggestions_save_failed">Saran tidak dapat disimpan. Setelan sebelumnya dipulihkan.</string>
     <string name="settings_timezone_save_rejected">Zona waktu tidak dapat disimpan. Zona waktu sebelumnya dipulihkan.</string>
     <string name="settings_timezone_schedule_update_failed">Zona waktu disimpan. Jadwal ringkasan pagi tidak dapat diperbarui.</string>
+    <string name="settings_model_catalog_refresh_failed">Model yang tersedia tidak dapat diperbarui. Daftar terakhir yang dimuat tetap ditampilkan.</string>
 </resources>

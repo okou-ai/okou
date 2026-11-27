@@ -642,20 +642,35 @@
       "video": "影片"
     },
     "library": {
-      "allArtifacts": "全部成果",
-      "allTypes": "全部類型",
+      "categories": {
+        "all": "全部",
+        "audio": "音訊",
+        "document": "文件與 PDF",
+        "image": "圖片",
+        "other": "其他",
+        "presentation": "簡報",
+        "spreadsheet": "試算表",
+        "video": "影片",
+        "website": "網站"
+      },
       "clearFilters": "清除篩選",
       "clearSearch": "清除搜尋",
       "created": "建立時間",
       "emptyDescription": "請嘗試其他名稱或類型。",
       "emptyTitle": "沒有找到成果",
+      "gridView": "網格檢視",
+      "listView": "清單檢視",
       "loadMore": "載入更多",
       "name": "名稱",
+      "openSourceChat": "開啟來源對話：{{title}}",
       "retry": "重試",
       "search": "搜尋成果",
       "sortAscending": "升冪排序",
       "sortDescending": "降冪排序",
-      "type": "類型"
+      "today": "今天",
+      "type": "類型",
+      "view": "檢視方式",
+      "yesterday": "昨天"
     },
     "metadata": {
       "generated": "生成於 {{date}}",
@@ -1571,16 +1586,16 @@
     },
     "agentSuggestions": {
       "addReason": "補充原因",
-      "alreadyDone": "已經處理了",
       "closeFeedback": "關閉回饋",
       "customDirection": "我想……",
       "customDirectionDescription": "提出問題，或說說你想做什麼。",
       "customPlaceholder": "你有什麼想法？",
       "dismiss": "忽略",
       "dismissRecorded": "已收起這則建議",
+      "done": "完成",
       "doneRecorded": "已記下，這件事已經處理了",
-      "dontNudge": "別催了",
-      "dontNudgeRecorded": "已記錄，請不要再催這件事",
+      "draftIn": "在「{{title}}」中起草",
+      "draftInChat": "在原對話中起草",
       "editDraft": "在原對話中準備草稿",
       "editReason": "修改原因",
       "feedbackPrompt": "這則建議怎麼樣？",
@@ -1615,11 +1630,11 @@
         "show": "查看第 {{index}} 則建議（共 {{total}} 則）"
       },
       "label": "建議",
+      "later": "晚點再看",
+      "laterRecorded": "已記下，晚點再看",
       "lessLikeThis": "少推薦這類內容",
       "lessRecorded": "會少推薦類似的建議",
       "messageSent": "訊息已傳送",
-      "notPlanned": "暫無計劃",
-      "notPlannedRecorded": "已記下，這件事暫無計劃",
       "openChat": "開啟聊天",
       "reasonLabel": "補充原因（選填）",
       "saveReason": "儲存",
@@ -1629,7 +1644,9 @@
       "sentToChat": "已傳送到該聊天",
       "unavailable": "這則建議已無法使用，建議清單已重新整理。",
       "undoFeedback": "復原",
-      "viewSource": "查看來源"
+      "viewSource": "查看來源",
+      "wontDo": "不做了",
+      "wontDoRecorded": "已記下，這件事不做了"
     },
     "attachments": {
       "attach": "新增附件",
@@ -2581,6 +2598,7 @@
       "number": "數字"
     },
     "sidebar": {
+      "all": "全部",
       "archive": "歸檔",
       "archived": "已歸檔",
       "chatsWith": "與{{assistantName}}的聊天",
@@ -2600,6 +2618,7 @@
       "newChatWith": "與{{assistantName}}新建聊天",
       "noArchived": "沒有已歸檔的聊天",
       "noMuted": "沒有已靜音的聊天",
+      "noUnarchived": "沒有未歸檔的聊天",
       "noUnread": "沒有未讀聊天",
       "openChatMenu": "開啟聊天選單",
       "openListMenu": "開啟聊天列表選單",
@@ -2611,6 +2630,7 @@
       "showArchivedChats": "顯示已歸檔的聊天",
       "titlePlaceholder": "聊天標題",
       "unarchive": "取消歸檔",
+      "unarchived": "未歸檔",
       "unmute": "取消靜音",
       "unpin": "取消置頂",
       "unread": "未讀",
@@ -2873,6 +2893,7 @@
     "toasts": {
       "archived": "聊天已歸檔",
       "archivedMuted": "聊天已歸檔，已靜音的聊天有新回覆也不會回來",
+      "chatUnarchived": "已取消聊天歸檔",
       "copied": "已複製",
       "deleted": "聊天已刪除",
       "muted": "聊天已靜音，有新回覆也不會顯示未讀或傳送推播通知",
@@ -5506,6 +5527,38 @@
     "usedBy": "使用此憑證的連線",
     "username": "使用者名稱："
   },
+  "remoteDevices": {
+    "add": "新增裝置",
+    "addChannel": "新增通道",
+    "addChannelTo": "為 {{device}} 新增通道",
+    "addDescription": "建立個人裝置。之後可以新增通道。",
+    "allowOneHour": "允許 1 小時",
+    "approval": "遠端裝置存取",
+    "approvalTitle": "允許存取 {{device}} 嗎？",
+    "approved": "已授權存取裝置",
+    "cancel": "取消",
+    "channels": "通道",
+    "continuationFailed": "已授權存取裝置。任務未能繼續。",
+    "continueTask": "繼續任務",
+    "create": "建立裝置",
+    "createEmpty": "建立空白裝置",
+    "empty": "目前沒有遠端裝置。",
+    "grantScope": "此權限適用於你的所有對話，涵蓋此裝置的所有通道。",
+    "ios": "iOS",
+    "lastSeen": "上次上線 {{time}}",
+    "loadFailed": "無法載入遠端裝置。",
+    "manage": "管理裝置",
+    "move": "移動",
+    "moveChannel": "將 {{channel}} 移至另一部裝置",
+    "name": "裝置名稱",
+    "noChannels": "沒有通道",
+    "off": "關閉",
+    "policy": "{{device}} 的存取權限，{{status}}",
+    "retry": "重試",
+    "saveFailed": "無法儲存裝置變更。",
+    "title": "遠端裝置",
+    "unavailable": "此裝置無法使用。"
+  },
   "remoteNetworkGuide": {
     "action": "Action",
     "authKeys": "Keys → Auth keys",
@@ -5797,7 +5850,6 @@
         "internal": "內部",
         "released": "已發布"
       },
-      "maintainer": "維護者：{{maintainer}}",
       "title": "實驗室"
     },
     "models": {
@@ -6059,32 +6111,6 @@
           "stores": "個物件儲存",
           "title": "IndexedDB 儲存",
           "unavailable": "IndexedDB 儲存不可用。"
-        },
-        "learning": {
-          "description": "立即回顧近期活動並更新個人記憶，不變更夜間執行排程。",
-          "notInstalled": "請先在偏好設定中開啟學習，再於此執行。",
-          "openChat": "開啟對話",
-          "queued": "學習已加入佇列。",
-          "requestFailed": "無法確認請求結果。",
-          "run": "執行學習",
-          "starting": "正在啟動…",
-          "title": "學習",
-          "unavailable": "學習暫時無法使用。"
-        },
-        "morningBrief": {
-          "description": "立即執行一次帳號已開啟的晨間簡報。它可能更新建議並寄送實際郵件，每日執行時間保持不變。",
-          "openChat": "開啟對話",
-          "requestFailed": "請求未完成。",
-          "run": "執行晨間簡報",
-          "runAgain": "再次執行晨間簡報",
-          "starting": "正在啟動…",
-          "status": {
-            "completed": "晨間簡報已完成。",
-            "failed": "晨間簡報執行失敗，請開啟對話查看詳情。",
-            "queued": "已加入佇列，可開啟對話查看進度。",
-            "running": "晨間簡報正在執行。"
-          },
-          "title": "晨間簡報"
         },
         "openrouterPreset": {
           "description": "對整個組織後續新建的 Auto 和 Okou 1.0 內建模型執行生效，不影響既有執行。",
@@ -7420,6 +7446,7 @@
       "createdBy": "建立者",
       "createInChat": "在對話中建立",
       "description": "把一項任務沉澱成可複用的標準流程。可以從零編寫，也可以從日常工作中提煉，然後隨時執行、編輯或自動化。",
+      "directoryDescription": "可複用的標準流程（SOP），可隨時執行、編輯或自動化。其他產品中也叫技能（Skills）。",
       "empty": {
         "all": "在對話中建立工作流，或把一次好用的執行儲存下來。",
         "automated": "給工作流新增自動化後，它就會出現在這裡。",

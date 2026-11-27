@@ -24,6 +24,10 @@ export function foregroundChannelName(userId: string, orgId: string): string {
   return `user-org-foreground:${userId}:${orgId}`;
 }
 
+export function mailDraftChangedEvent(mailDraftId: string): string {
+  return `mailDraftChanged:${mailDraftId}`;
+}
+
 export const connectorChangedPayloadSchema = object({
   connectorSlug: connectorSlugSchema,
 });

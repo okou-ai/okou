@@ -54,13 +54,9 @@ impl Launch {
             "--disable-slash-commands".into(),
             "--mode".into(),
             "accept-edits".into(),
+            "--dangerously-skip-permissions".into(),
             "--settings".into(),
-            json!({
-                "modelProvider": "", "useG1Credits": false,
-                "enableTerminalSandbox": true, "toolPermission": "proceed-in-sandbox",
-                "allowNonWorkspaceAccess": false
-            })
-            .to_string(),
+            settings().to_string(),
             "--model".into(),
             model.clone(),
         ];
@@ -111,6 +107,19 @@ impl Launch {
             _rules: rules,
         })
     }
+}
+
+/// Run like Claude Code (`--dangerously-skip-permissions`) inside the Okou
+/// sandbox, which is the isolation boundary. agy's terminal sandbox cuts off
+/// networking on Linux, and its requests to run outside it wait for an
+/// approval that a headless Run cannot give. Tool-policy deny rules still
+/// apply.
+fn settings() -> serde_json::Value {
+    json!({
+        "modelProvider": "", "useG1Credits": false,
+        "enableTerminalSandbox": false, "toolPermission": "always-proceed",
+        "allowNonWorkspaceAccess": true, "artifactReviewPolicy": "always-proceed"
+    })
 }
 
 fn model_slug(model: Option<&str>, effort: Option<&str>) -> Result<String, AgentError> {

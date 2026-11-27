@@ -8,6 +8,7 @@ struct UserMessageView<SendingIndicator: View>: View {
   let webURL: URL
   let viewer: MessageAttachmentStore
   let loadsAttachments: Bool
+  let voicePlayback: VoiceClipPlayback
   var sendTransition: ConversationSendTransition?
   @ViewBuilder let sendingIndicator: () -> SendingIndicator
 
@@ -16,18 +17,29 @@ struct UserMessageView<SendingIndicator: View>: View {
   }
 
   var body: some View {
-    let hasBody = !document.bodyParts.isEmpty || message.inputError != nil
+    let files = message.attachments.filter { !$0.isVoiceRecording }
+    let parts = document.transcriptBodyParts
+    let voiceIDs =
+      parts.contains { $0.type == "voice" }
+      ? [] : message.attachments.filter(\.isVoiceRecording).map(\.id)
+    let hasBody = !parts.isEmpty || message.inputError != nil
+    let playback = loadsAttachments ? voicePlayback : nil
     let bubbleInset: CGFloat = 14
     VStack(alignment: .trailing, spacing: OkouSpace.sm) {
       if let annotation = document.annotation {
         UserMessageAnnotation(part: annotation, webURL: webURL)
       }
-      if !message.attachments.isEmpty {
+      if !files.isEmpty || !voiceIDs.isEmpty {
         UserMessageBubbleLayout {
           VStack(alignment: .trailing, spacing: OkouSpace.sm) {
-            ForEach(message.attachments) { attachment in
+            ForEach(files) { attachment in
               MessageAttachmentView(
                 attachment: attachment, viewer: viewer, loadsThumbnail: loadsAttachments)
+            }
+            if !voiceIDs.isEmpty {
+              let style: VoiceClipControl.Style = files.isEmpty && !hasBody ? .full : .compact
+              MessageVoicePlayer(fileIDs: voiceIDs, style: style, playback: playback)
+                .id(voiceIDs).id(style)
             }
           }
           if !hasBody { sendingIndicator() }
@@ -37,7 +49,7 @@ struct UserMessageView<SendingIndicator: View>: View {
         UserMessageBubbleLayout {
           VStack(alignment: .leading, spacing: OkouSpace.ten) {
             UserMessageBody(
-              parts: document.bodyParts, webURL: webURL,
+              parts: parts, webURL: webURL, playback: playback,
               sourceTitle: document.annotation?.isForwardedChat == true
                 ? document.annotation?.titleSnapshot : nil)
             if let error = message.inputError {
@@ -110,6 +122,7 @@ struct ConversationSendingIndicator: View {
 private struct UserMessageBody: View {
   let parts: [ChatUserMessage.Part]
   let webURL: URL
+  let playback: VoiceClipPlayback?
   let sourceTitle: String?
 
   private struct Group: Identifiable {
@@ -151,6 +164,8 @@ private struct UserMessageBody: View {
               UserMessageInlineText(parts: part.note ?? [], webURL: webURL)
             }
           }
+        } else if group.parts.contains(where: { $0.type == "voice" }) {
+          UserMessageVoiceText(parts: group.parts, webURL: webURL, playback: playback)
         } else {
           UserMessageInlineText(parts: group.parts, webURL: webURL)
         }
@@ -180,46 +195,56 @@ struct UserMessageInlineText: View {
 
   var content: AttributedString {
     parts.reduce(into: AttributedString()) { result, part in
-      var text = AttributedString(part.displayText)
-      switch part.type {
-      case "text":
-        for match in Self.links?.matches(
-          in: part.displayText, range: NSRange(part.displayText.startIndex..., in: part.displayText)
-        ) ?? [] {
-          if let url = match.url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-            let range = Range(match.range, in: part.displayText),
-            let start = AttributedString.Index(range.lowerBound, within: text),
-            let end = AttributedString.Index(range.upperBound, within: text)
-          {
-            let literal = part.displayText[range].lowercased()
-            guard literal.hasPrefix("https://") || literal.hasPrefix("http://") else { continue }
-            if let previous = part.displayText[..<range.lowerBound].unicodeScalars.last,
-              previous.isASCII && CharacterSet.alphanumerics.contains(previous)
-            {
-              continue
-            }
-            text[start..<end].link = url
-          }
-        }
-      case "chat_thread", "project", "template":
-        // The muted chip marks a mention; its text stays ink.
+      var text = Self.linkedText(for: part, webURL: webURL)
+      if part.isInlineReference {
         text.foregroundColor = OkouColor.foreground
         text.font = .okou(.body).weight(.medium)
         text.backgroundColor = OkouColor.muted
-        let path: String?
-        if part.type == "chat_thread", let id = part.threadId, UUID(uuidString: id) != nil {
-          path = "chats/\(id)"
-        } else if part.type == "project", let id = part.projectId, UUID(uuidString: id) != nil {
-          path = "projects/\(id)"
-        } else {
-          path = nil
-        }
-        if let path { text.link = webURL.appending(path: path) }
-      default: break
       }
       result.append(text)
     }
   }
+
+  static func linkedText(for part: ChatUserMessage.Part, webURL: URL) -> AttributedString {
+    var text = AttributedString(part.displayText)
+    switch part.type {
+    case "text":
+      for match in Self.links?.matches(
+        in: part.displayText, range: NSRange(part.displayText.startIndex..., in: part.displayText)
+      ) ?? [] {
+        if let url = match.url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+          let range = Range(match.range, in: part.displayText),
+          let start = AttributedString.Index(range.lowerBound, within: text),
+          let end = AttributedString.Index(range.upperBound, within: text)
+        {
+          let literal = part.displayText[range].lowercased()
+          guard literal.hasPrefix("https://") || literal.hasPrefix("http://") else { continue }
+          if let previous = part.displayText[..<range.lowerBound].unicodeScalars.last,
+            previous.isASCII && CharacterSet.alphanumerics.contains(previous)
+          {
+            continue
+          }
+          text[start..<end].link = url
+        }
+      }
+    case "chat_thread", "project", "template":
+      let path: String?
+      if part.type == "chat_thread", let id = part.threadId, UUID(uuidString: id) != nil {
+        path = "chats/\(id)"
+      } else if part.type == "project", let id = part.projectId, UUID(uuidString: id) != nil {
+        path = "projects/\(id)"
+      } else {
+        path = nil
+      }
+      if let path { text.link = webURL.appending(path: path) }
+    default: break
+    }
+    return text
+  }
+}
+
+extension ChatUserMessage.Part {
+  var isInlineReference: Bool { ["chat_thread", "project", "template"].contains(type) }
 }
 
 private struct UserMessageAnnotation: View {

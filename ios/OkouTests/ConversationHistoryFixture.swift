@@ -54,7 +54,7 @@ final class ConversationHistoryFixture: Sendable {
         throw URLError(.unsupportedURL)
       }
       let artifactPath =
-        requestPath.hasPrefix("/api/artifact-references/") || requestPath == path + "/artifacts"
+        requestPath.hasPrefix("/api/artifact-references/") || requestPath == "/api/artifacts/by-url"
       let artifactRequest = artifactResources != nil && artifactPath
       if artifactRequest, request.httpMethod != "GET" { throw URLError(.unsupportedURL) }
       try beforeRequest?()

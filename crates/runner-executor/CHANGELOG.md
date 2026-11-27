@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.24.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.13...runner-executor-v0.24.14) (2026-11-27)
+
+## [0.24.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.12...runner-executor-v0.24.13) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** retire legacy startup dispatch fields ([#51189](https://github.com/okou-ai/okou/issues/51189)) ([ae83fa7](https://github.com/okou-ai/okou/commit/ae83fa732618ccd8d0fa0d1bd3172c7c4c7ecd41))
+
+
+### Performance Improvements
+
+* **runner:** inline warm artifact archives on blank startup ([#51172](https://github.com/okou-ai/okou/issues/51172)) ([65d01d2](https://github.com/okou-ai/okou/commit/65d01d216eeba83e5ea7687eb60c9ec5681f8ef5))
+
+## [0.24.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.11...runner-executor-v0.24.12) (2026-11-26)
+
 ## [0.24.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.10...runner-executor-v0.24.11) (2026-11-26)
 
 ## [0.24.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.9...runner-executor-v0.24.10) (2026-11-26)

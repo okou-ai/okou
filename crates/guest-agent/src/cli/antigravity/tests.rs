@@ -102,3 +102,137 @@ fn bad_model_session_and_result_order_cannot_claim_success() {
     assert_eq!(terminal["type"], "result");
     assert!(projection.project_line(&result.to_string()).is_err());
 }
+
+#[test]
+fn runs_commands_without_the_terminal_sandbox_or_permission_prompts() {
+    let settings = super::settings();
+    assert_eq!(settings["enableTerminalSandbox"], false);
+    assert_eq!(settings["toolPermission"], "always-proceed");
+    assert_eq!(settings["allowNonWorkspaceAccess"], true);
+    assert_eq!(settings["artifactReviewPolicy"], "always-proceed");
+}
+
+fn tool_step(index: u64, state: &str, name: &str, extra: serde_json::Value) -> String {
+    let mut tool_info = json!({"name": name, "parameters": {"path": "/tmp/a"}});
+    if let (Some(dst), Some(src)) = (tool_info.as_object_mut(), extra.as_object()) {
+        for (k, v) in src {
+            dst.insert(k.clone(), v.clone());
+        }
+    }
+    json!({
+        "event": "step_update",
+        "step_update": {
+            "conversation_id": ID,
+            "step_index": index,
+            "step_type": "tool",
+            "state": state,
+            "tool_info": tool_info,
+        }
+    })
+    .to_string()
+}
+
+#[test]
+fn unfinished_steps_error_reports_diagnostic_details() {
+    let masker = crate::masker::SecretMasker::from_raw("");
+    let mut projection = Projection::new(MODEL, None, &masker);
+    projection.project_line(&init()).unwrap();
+
+    assert_eq!(
+        projection
+            .project_line(&text_step("ACTIVE", "hello"))
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        projection.project_line(&text_step("WAITING", "")).unwrap(),
+        None
+    );
+    let call = projection
+        .project_line(&tool_step(5, "ACTIVE", "run_command", json!({})))
+        .unwrap()
+        .expect("active tool emits tool_use");
+    assert_eq!(call["message"]["content"][0]["type"], "tool_use");
+
+    let result = json!({"event":"result","result":{"conversation_id":ID,"status":"SUCCESS","response":"done"}});
+    let err = projection.project_line(&result.to_string()).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Antigravity completed with unfinished steps"),
+        "{msg}"
+    );
+    assert!(
+        msg.contains("3(bytes=5,updates=1,last_other_state=WAITING)"),
+        "{msg}"
+    );
+    assert!(msg.contains("5(name=run_command,updates=1)"), "{msg}");
+    assert!(msg.contains("completed=0"), "{msg}");
+}
+
+#[test]
+fn terminal_non_done_states_close_active_steps_and_allow_completion() {
+    let masker = crate::masker::SecretMasker::from_raw("");
+    let mut projection = Projection::new(MODEL, None, &masker);
+    projection.project_line(&init()).unwrap();
+
+    // Active text step cancelled before completion
+    assert_eq!(
+        projection
+            .project_line(&text_step("ACTIVE", "partial"))
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        projection
+            .project_line(&text_step("CANCELLED", ""))
+            .unwrap(),
+        None
+    );
+
+    // Active tool step ends in ERROR -> emits error tool_result
+    let call = projection
+        .project_line(&tool_step(5, "ACTIVE", "run_command", json!({})))
+        .unwrap()
+        .expect("active tool emits tool_use");
+    let tool_use_id = call["message"]["content"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let tool_res = projection
+        .project_line(&tool_step(
+            5,
+            "ERROR",
+            "run_command",
+            json!({"error": {"message": "command aborted"}}),
+        ))
+        .unwrap()
+        .expect("errored active tool emits error tool_result");
+    assert_eq!(tool_res["message"]["content"][0]["type"], "tool_result");
+    assert_eq!(
+        tool_res["message"]["content"][0]["tool_use_id"],
+        tool_use_id
+    );
+    assert_eq!(tool_res["message"]["content"][0]["is_error"], true);
+    assert_eq!(
+        tool_res["message"]["content"][0]["content"],
+        "command aborted"
+    );
+
+    // Inactive tool step cancelled -> ignored without emitting events
+    assert_eq!(
+        projection
+            .project_line(&tool_step(6, "CANCELLED", "read_file", json!({})))
+            .unwrap(),
+        None
+    );
+
+    let result = json!({"event":"result","result":{"conversation_id":ID,"status":"SUCCESS","response":"final answer"}});
+    let fallback = projection
+        .project_line(&result.to_string())
+        .unwrap()
+        .expect("fallback assistant message");
+    assert_eq!(fallback["message"]["content"][0]["text"], "final answer");
+    let terminal = projection.take_pending().expect("terminal result event");
+    assert_eq!(terminal["type"], "result");
+    assert_eq!(terminal["subtype"], "success");
+}

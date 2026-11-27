@@ -69,6 +69,8 @@ async function readPickedInputRun(
 describe("CHAT-02: shared user message queue", () => {
   it("dispatches idle-thread sends by appending a run-associated replacement", async () => {
     const { actor } = await entitledChatActor();
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
 
     const messageId = randomUUID();
     const referencedThreadId = randomUUID();
@@ -102,6 +104,16 @@ describe("CHAT-02: shared user message queue", () => {
       );
     }
     await flushWaitUntilForTest();
+    const messageTopic = `chatThreadMessageCreated:${sent.body.threadId}`;
+    const refreshTopics = context.mocks.ably.publish.mock.calls
+      .map(([topic]) => {
+        return topic;
+      })
+      .filter((topic) => {
+        return topic === messageTopic || topic === "threadListChanged";
+      });
+    expect(refreshTopics).toStrictEqual([messageTopic, "threadListChanged"]);
+
     const runId = await readPickedInputRun(
       actor,
       sent.body.threadId,
@@ -184,12 +196,6 @@ describe("CHAT-02: shared user message queue", () => {
     );
     const afterReplay = await chat.listThreadEvents(actor, sent.body.threadId);
     expect(userMessages(afterReplay.events)).toHaveLength(rows.length);
-    await flushWaitUntilForTest();
-    expect(
-      context.mocks.ably.publish.mock.calls.some((call) => {
-        return call[0] === `chatThreadMessageCreated:${sent.body.threadId}`;
-      }),
-    ).toBeTruthy();
 
     const receivedExecution = await runExecution(runId);
     expect(receivedExecution.execution.apiStartTime).toBe(apiStartedAt);
@@ -676,8 +682,15 @@ describe("CHAT-02: shared user message queue", () => {
 
     // Freeing a slot picks the oldest queued thread first; the launched run
     // keeps the delegated autonomy budget carried by the queued input.
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
     await cancelAndCompleteChatRun(actor, firstTargetRunId);
     await flushWaitUntilForTest();
+    expect(
+      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+        return topic === `chatThreadMessageCreated:${secondTargetThread.id}`;
+      }),
+    ).toHaveLength(1);
     const secondTargetRunId = await readPickedInputRun(
       actor,
       secondTargetThread.id,
@@ -876,6 +889,7 @@ describe("CHAT-02: shared user message queue", () => {
     await flushWaitUntilForTest();
     const delegatedExecution = await runExecution(delegatedRunId);
 
+    context.mocks.ably.publish.mockClear();
     const blockedEventId = randomUUID();
     const blocked = await requestSendEventWithBearer(
       okouTokenFromExecution(delegatedExecution.execution),
@@ -892,6 +906,12 @@ describe("CHAT-02: shared user message queue", () => {
     });
     // The pick rejects the exhausted budget in the thread instead of the send.
     await flushWaitUntilForTest();
+    const rejectionTopic = `chatThreadMessageCreated:${blockedTarget.id}`;
+    expect(
+      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+        return topic === rejectionTopic;
+      }),
+    ).toHaveLength(2);
     const targetMessages = await waitForThreadMessages(
       actor,
       blockedTarget.id,
@@ -1281,12 +1301,16 @@ describe("CHAT-02: shared user message queue", () => {
       threadId: anchor.threadId,
     });
     await flushWaitUntilForTest();
-    const threadListPublishes = context.mocks.ably.publish.mock.calls
+    const messageTopic = `chatThreadMessageCreated:${anchor.threadId}`;
+    const refreshTopics = context.mocks.ably.publish.mock.calls
       .slice(beforeQueuedSend)
-      .filter(([topic]) => {
-        return topic === "threadListChanged";
+      .map(([topic]) => {
+        return topic;
+      })
+      .filter((topic) => {
+        return topic === messageTopic || topic === "threadListChanged";
       });
-    expect(threadListPublishes).toHaveLength(1);
+    expect(refreshTopics).toStrictEqual([messageTopic, "threadListChanged"]);
 
     await cancelAndCompleteChatRun(actor, anchor.runId);
     await flushWaitUntilForTest();

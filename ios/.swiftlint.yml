@@ -13,6 +13,7 @@ opt_in_rules:
   - okou_import_boundaries
   - okou_logging_boundaries
   - okou_native_requests
+  - okou_observable_graph
   - okou_private_atoms
   - okou_render_effects
   - okou_resource_cancellation

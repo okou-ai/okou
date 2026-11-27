@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">Impossibile cambiare account del modello.</string>
     <string name="settings_quota">Quota</string>
     <string name="settings_hour_quota">Quota di %1$d ore</string>
+    <string name="settings_minute_quota">Quota di %1$d min</string>
     <string name="settings_day_quota">Quota di %1$d giorni</string>
     <string name="settings_weekly_quota">Quota settimanale</string>
     <string name="settings_quota_unavailable">Quota temporaneamente non disponibile</string>
@@ -110,4 +111,5 @@
     <string name="settings_suggestions_save_failed">Impossibile salvare i suggerimenti. È stata ripristinata l’impostazione precedente.</string>
     <string name="settings_timezone_save_rejected">Impossibile salvare il fuso orario. È stato ripristinato quello precedente.</string>
     <string name="settings_timezone_schedule_update_failed">Fuso orario salvato. Impossibile aggiornare l’orario del riepilogo del mattino.</string>
+    <string name="settings_model_catalog_refresh_failed">Impossibile aggiornare i modelli disponibili. Viene mostrato l’ultimo elenco caricato.</string>
 </resources>

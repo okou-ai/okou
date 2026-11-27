@@ -87,21 +87,11 @@ final class ComposerDraftStore {
   let attachments: AttachmentDraftStore
   let editor: ComposerEditor
   let voice: ComposerVoiceInputStore?
+  let voicePlayback: VoiceClipPlayback
   private var consumedVoiceID: UUID?
   var canEditVoice: Bool { canEditDocument }
   private var canEditDocument: Bool {
     ComposerDraftRules.canEditDocument(signals.snapshot, signals.statusSnapshot)
-  }
-
-  func appendVoiceClip(_ fileID: String, recordingID: UUID) {
-    guard consumedVoiceID != recordingID else { return }
-    consumedVoiceID = recordingID
-    document.parts.append(
-      .object([
-        "type": .string("voice"), "clips": .array([.object(["fileId": .string(fileID)])])
-      ]))
-    resetEditors()
-    changed()
   }
 
   func insertVoiceText(_ text: String, id: UUID, at target: ComposerEditor.VoiceInsertion) -> Bool {
@@ -161,6 +151,7 @@ final class ComposerDraftStore {
     guard !closed else { return }
     let active = phase == .active
     if !active {
+      voicePlayback.stop()
       let pendingStart = voice?.isWaitingToStartCapture == true
       if pendingStart ? phase == .background : isForeground { voice?.suspend() }
     }
@@ -222,6 +213,7 @@ final class ComposerDraftStore {
     let store = graph
     self.store = store
     editor = ComposerEditor(graph: store)
+    voicePlayback = VoiceClipPlayback(artifacts: commands.artifacts)
     let voice =
       target == .unassigned
       ? nil
@@ -518,6 +510,7 @@ final class ComposerDraftStore {
   func close(discardingDraft: Bool = false) {
     guard !closed else { return }
     voice?.suspend()
+    voicePlayback.stop()
     if !discardingDraft { persist() }
     editor.dismissKeyboard()
     if discardingDraft {
@@ -546,6 +539,21 @@ final class ComposerDraftStore {
 }
 
 extension ComposerDraftStore {
+  func insertVoiceClip(
+    _ fileID: String, recordingID: UUID, at target: ComposerEditor.VoiceInsertion?
+  ) {
+    guard consumedVoiceID != recordingID else { return }
+    consumedVoiceID = recordingID
+    let clip = MessageJSON.object([
+      "type": .string("voice"), "clips": .array([.object(["fileId": .string(fileID)])])
+    ])
+    if let target, editor.insertVoiceClip(clip, at: target) { return }
+    // A restored recording or a replaced editor has no live selection to insert into.
+    document.parts.append(clip)
+    resetEditors()
+    changed()
+  }
+
   static func removeStoredDraft(_ id: String, from storage: ChatDraftStorage) throws {
     // A released conversation can still own imported files outside its serialized draft.
     let key = ChatDraftTarget.thread(id).key

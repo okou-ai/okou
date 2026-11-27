@@ -1,5 +1,70 @@
 # Changelog
 
+## [10.44.22](https://github.com/okou-ai/okou/compare/cli-v10.44.21...cli-v10.44.22) (2026-11-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.137.0
+    * @okouai/core bumped to 8.887.1
+    * @okouai/pi-agent-runtime bumped to 1.52.96
+
+## [10.44.21](https://github.com/okou-ai/okou/compare/cli-v10.44.20...cli-v10.44.21) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.136.0
+    * @okouai/core bumped to 8.887.0
+    * @okouai/pi-agent-runtime bumped to 1.52.95
+
+## [10.44.20](https://github.com/okou-ai/okou/compare/cli-v10.44.19...cli-v10.44.20) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.135.0
+    * @okouai/core bumped to 8.886.1
+    * @okouai/pi-agent-runtime bumped to 1.52.94
+
+## [10.44.19](https://github.com/okou-ai/okou/compare/cli-v10.44.18...cli-v10.44.19) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.886.0
+    * @okouai/pi-agent-runtime bumped to 1.52.93
+
+## [10.44.18](https://github.com/okou-ai/okou/compare/cli-v10.44.17...cli-v10.44.18) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.134.0
+    * @okouai/core bumped to 8.885.4
+    * @okouai/pi-agent-runtime bumped to 1.52.92
+
+## [10.44.17](https://github.com/okou-ai/okou/compare/cli-v10.44.16...cli-v10.44.17) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.133.1
+    * @okouai/core bumped to 8.885.3
+    * @okouai/pi-agent-runtime bumped to 1.52.91
+
 ## [10.44.16](https://github.com/okou-ai/okou/compare/cli-v10.44.15...cli-v10.44.16) (2026-11-26)
 
 

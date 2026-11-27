@@ -5,6 +5,7 @@ import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner
 import type { RunnerVncInvalidate } from "@okouai/api-contracts/contracts/runner-vnc";
 import {
   foregroundChannelName,
+  mailDraftChangedEvent,
   sessionOutputChannelName,
   computerUseHostChannelScope,
   computerUseHostChannelName,
@@ -444,11 +445,25 @@ function publishChatDatabaseSignal(
   return Promise.resolve();
 }
 
+export function publishMailDraftChangedSafely(
+  target: { readonly userId: string; readonly orgId: string },
+  mailDraftId: string,
+): Promise<void> {
+  return publishChatDatabaseSignal(target, mailDraftChangedEvent(mailDraftId));
+}
+
 export function publishAgentSuggestionsChangedSafely(target: {
   readonly userId: string;
   readonly orgId: string;
 }): Promise<void> {
   return publishChatDatabaseSignal(target, "agentSuggestionsChanged");
+}
+
+export function publishRemoteDevicesChangedSafely(target: {
+  readonly userId: string;
+  readonly orgId: string;
+}): Promise<void> {
+  return publishChatDatabaseSignal(target, "remoteDevicesChanged");
 }
 
 /**

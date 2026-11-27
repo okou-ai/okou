@@ -643,20 +643,35 @@
       "video": "Video"
     },
     "library": {
-      "allArtifacts": "Alle Artefakte",
-      "allTypes": "Alle Typen",
+      "categories": {
+        "all": "Alle",
+        "audio": "Audio",
+        "document": "Dokumente und PDF",
+        "image": "Bilder",
+        "other": "Sonstige",
+        "presentation": "Präsentationen",
+        "spreadsheet": "Tabellen",
+        "video": "Videos",
+        "website": "Websites"
+      },
       "clearFilters": "Filter zurücksetzen",
       "clearSearch": "Suche löschen",
       "created": "Erstellt",
       "emptyDescription": "Versuche es mit einem anderen Namen oder Typ.",
       "emptyTitle": "Keine Artefakte gefunden",
+      "gridView": "Rasteransicht",
+      "listView": "Listenansicht",
       "loadMore": "Mehr laden",
       "name": "Name",
+      "openSourceChat": "Quellchat öffnen: {{title}}",
       "retry": "Erneut versuchen",
       "search": "Artefakte suchen",
       "sortAscending": "Aufsteigend sortieren",
       "sortDescending": "Absteigend sortieren",
-      "type": "Typ"
+      "today": "Heute",
+      "type": "Typ",
+      "view": "Ansicht",
+      "yesterday": "Gestern"
     },
     "metadata": {
       "generated": "Generiert {{date}}",
@@ -1575,16 +1590,16 @@
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
-      "alreadyDone": "Already done",
       "closeFeedback": "Close feedback",
       "customDirection": "Ich möchte…",
       "customDirectionDescription": "Stelle eine Frage oder beschreibe, was du tun möchtest.",
       "customPlaceholder": "Was hast du im Sinn?",
       "dismiss": "Verwerfen",
       "dismissRecorded": "Suggestion dismissed",
-      "doneRecorded": "Noted — this is already done",
-      "dontNudge": "Nicht mehr erinnern",
-      "dontNudgeRecorded": "Notiert — bitte nicht mehr daran erinnern",
+      "done": "Fertig",
+      "doneRecorded": "Notiert – das ist schon erledigt",
+      "draftIn": "Entwurf in {{title}}",
+      "draftInChat": "Entwurf im bestehenden Chat",
       "editDraft": "Entwurf im bestehenden Chat vorbereiten",
       "editReason": "Edit reason",
       "feedbackPrompt": "Wie findest du diesen Vorschlag?",
@@ -1619,11 +1634,11 @@
         "show": "Vorschlag {{index}} von {{total}} anzeigen"
       },
       "label": "Vorschläge",
-      "lessLikeThis": "Less like this",
-      "lessRecorded": "You’ll see fewer suggestions like this.",
+      "later": "Später",
+      "laterRecorded": "Für später vorgemerkt",
+      "lessLikeThis": "Weniger davon",
+      "lessRecorded": "Du wirst weniger solcher Vorschläge sehen.",
       "messageSent": "Nachricht gesendet",
-      "notPlanned": "Not planned",
-      "notPlannedRecorded": "Noted — this is not planned",
       "openChat": "Chat öffnen",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
@@ -1633,7 +1648,9 @@
       "sentToChat": "An den Chat gesendet",
       "unavailable": "Dieser Vorschlag ist nicht mehr verfügbar. Die Vorschläge wurden aktualisiert.",
       "undoFeedback": "Undo",
-      "viewSource": "Quelle ansehen"
+      "viewSource": "Quelle ansehen",
+      "wontDo": "Mache ich nicht",
+      "wontDoRecorded": "Notiert – das machst du nicht"
     },
     "attachments": {
       "attach": "Anhängen",
@@ -2594,6 +2611,7 @@
       "number": "Nummer"
     },
     "sidebar": {
+      "all": "Alle",
       "archive": "Archivieren",
       "archived": "Archiviert",
       "chatsWith": "Chats mit {{assistantName}}",
@@ -2613,6 +2631,7 @@
       "newChatWith": "Neuer Chat mit {{assistantName}}",
       "noArchived": "Keine archivierten Chats",
       "noMuted": "Keine stummgeschalteten Chats",
+      "noUnarchived": "Keine nicht archivierten Chats",
       "noUnread": "Keine ungelesenen Chats",
       "openChatMenu": "Chat-Menü öffnen",
       "openListMenu": "Chatlisten-Menü öffnen",
@@ -2624,6 +2643,7 @@
       "showArchivedChats": "Archivierte Chats anzeigen",
       "titlePlaceholder": "Chattitel",
       "unarchive": "Archivierung aufheben",
+      "unarchived": "Nicht archiviert",
       "unmute": "Stummschaltung aufheben",
       "unpin": "Nicht mehr anheften",
       "unread": "Ungelesen",
@@ -2888,6 +2908,7 @@
     "toasts": {
       "archived": "Chat archiviert.",
       "archivedMuted": "Chat archiviert. Er ist stummgeschaltet, neue Antworten holen ihn nicht zurück.",
+      "chatUnarchived": "Chat aus dem Archiv geholt",
       "copied": "Kopiert",
       "deleted": "Chat gelöscht",
       "muted": "Chat stummgeschaltet. Neue Antworten erscheinen nicht als ungelesen und senden keine Push-Benachrichtigungen.",
@@ -5529,6 +5550,38 @@
     "usedBy": "Verbindungen mit diesen Zugangsdaten",
     "username": "Benutzername:"
   },
+  "remoteDevices": {
+    "add": "Gerät hinzufügen",
+    "addChannel": "Kanal hinzufügen",
+    "addChannelTo": "Kanal zu {{device}} hinzufügen",
+    "addDescription": "Erstelle ein persönliches Gerät. Du kannst später Kanäle hinzufügen.",
+    "allowOneHour": "Für 1 Stunde erlauben",
+    "approval": "Zugriff auf ein Remote-Gerät",
+    "approvalTitle": "Zugriff auf {{device}} erlauben?",
+    "approved": "Gerätezugriff gewährt",
+    "cancel": "Abbrechen",
+    "channels": "Kanäle",
+    "continuationFailed": "Der Gerätezugriff wurde gewährt. Die Aufgabe konnte nicht fortgesetzt werden.",
+    "continueTask": "Aufgabe fortsetzen",
+    "create": "Gerät erstellen",
+    "createEmpty": "Leeres Gerät erstellen",
+    "empty": "Noch keine Remote-Geräte.",
+    "grantScope": "Der Zugriff gilt in allen deinen Chats für sämtliche Kanäle dieses Geräts.",
+    "ios": "iOS",
+    "lastSeen": "Zuletzt gesehen {{time}}",
+    "loadFailed": "Remote-Geräte konnten nicht geladen werden.",
+    "manage": "Geräte verwalten",
+    "move": "Verschieben",
+    "moveChannel": "{{channel}} auf ein anderes Gerät verschieben",
+    "name": "Gerätename",
+    "noChannels": "Keine Kanäle",
+    "off": "Aus",
+    "policy": "Zugriff für {{device}}, {{status}}",
+    "retry": "Erneut versuchen",
+    "saveFailed": "Die Änderung am Gerät konnte nicht gespeichert werden.",
+    "title": "Remote-Geräte",
+    "unavailable": "Dieses Gerät ist nicht verfügbar."
+  },
   "remoteNetworkGuide": {
     "action": "Action",
     "authKeys": "Keys → Auth keys",
@@ -5820,7 +5873,6 @@
         "internal": "Intern",
         "released": "Veröffentlicht"
       },
-      "maintainer": "Betreuer: {{maintainer}}",
       "title": "Labor"
     },
     "models": {
@@ -6083,32 +6135,6 @@
           "stores": "Objektspeicher",
           "title": "IndexedDB-Speicher",
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
-        },
-        "learning": {
-          "description": "Prüfe die letzten Aktivitäten und aktualisiere deinen persönlichen Speicher einmalig. Dein nächtlicher Zeitplan bleibt unverändert.",
-          "notInstalled": "Aktiviere Lernen zuerst in den Einstellungen.",
-          "openChat": "Gespräch öffnen",
-          "queued": "Lernen wurde eingereiht.",
-          "requestFailed": "Die Anfrage konnte nicht bestätigt werden.",
-          "run": "Lernen starten",
-          "starting": "Wird gestartet…",
-          "title": "Lernen",
-          "unavailable": "Lernen ist derzeit nicht verfügbar."
-        },
-        "morningBrief": {
-          "description": "Führe das aktivierte Morgenbriefing deines Kontos einmal aus. Dabei können Vorschläge aktualisiert und echte E-Mails versendet werden. Dein täglicher Zeitplan bleibt unverändert.",
-          "openChat": "Gespräch öffnen",
-          "requestFailed": "Die Anfrage konnte nicht bestätigt werden.",
-          "run": "Morgenbriefing starten",
-          "runAgain": "Erneut starten",
-          "starting": "Wird gestartet…",
-          "status": {
-            "completed": "Das Morgenbriefing ist abgeschlossen.",
-            "failed": "Das Morgenbriefing ist fehlgeschlagen. Details findest du im Gespräch.",
-            "queued": "In der Warteschlange. Verfolge das Briefing im Gespräch.",
-            "running": "Das Morgenbriefing läuft."
-          },
-          "title": "Morgenbriefing"
         },
         "openrouterPreset": {
           "description": "Gilt für neue Auto- und integrierte Okou 1.0-Ausführungen in der gesamten Organisation. Bestehende Ausführungen bleiben unverändert.",
@@ -7449,6 +7475,7 @@
       "createdBy": "Erstellt von",
       "createInChat": "Im Chat erstellen",
       "description": "Eine wiederverwendbare SOP für eine Aufgabe. Schreiben Sie eines von Grund auf oder destillieren Sie es aus Ihrer täglichen Arbeit und führen Sie es dann aus, bearbeiten oder automatisieren Sie es.",
+      "directoryDescription": "Wiederverwendbare SOPs zum Ausführen und Automatisieren. Anderswo heißen sie Skills.",
       "empty": {
         "all": "Erstellen Sie einen Workflow aus dem Chat oder speichern Sie einen aus einer nützlichen Ausführung.",
         "automated": "Wenn Sie einem Workflow eine Automatisierung hinzufügen, wird sie hier angezeigt.",

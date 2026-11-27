@@ -1,10 +1,12 @@
 package ai.okou.android.chat
 
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.R
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.committedSearchText
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.searchClearAction
 import ai.okou.android.workspaceSearchControlHeight
 import ai.okou.android.workspaceSearchFocusOutline
@@ -109,11 +111,12 @@ internal class ConversationFindVisit(
     var focusedResult by mutableStateOf<String?>(null)
         private set
 
-    var focusPending = true
+    val returnFocus = DirectoryReturnFocus()
+    var focusOnEntry = true
         private set
 
-    fun focusRestored() {
-        focusPending = false
+    fun entryFocused() {
+        focusOnEntry = false
     }
 
     fun onInputFocusChanged(focused: Boolean) {
@@ -147,30 +150,32 @@ internal class ConversationFindVisit(
         if (normalized == keyword) return
         keyword = normalized
         focusedResult = null
+        returnFocus.cancel()
         position.requestScrollToItem(0)
     }
 
     fun open(result: FindResult) {
+        returnFocus.cancel()
         val message = result.message
         focusedResult = message.id
         target =
             ConversationFindTarget(
                 message.id,
-                result.passage?.index.takeIf { message.role == HistoryRole.Assistant },
+                result.passage?.index?.toString().takeIf { message.role == HistoryRole.Assistant },
                 bodyIndex = result.passage?.bodyIndex,
                 markdownImage = result.passage?.imagePath,
             )
     }
 
-    fun returnToResults() {
-        focusPending = true
+    fun returnToResults(inputMode: InputMode) {
+        returnFocus.returningFrom(focusedResult, inputMode, keyboardOnly = false)
         target = null
     }
 }
 
 internal class ConversationFindTarget(
     val id: String,
-    val markdownBlock: Int?,
+    val markdownBlockPath: String?,
     val isRun: Boolean = false,
     val bodyIndex: Int? = null,
     val markdownImage: String? = null,
@@ -341,14 +346,25 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
             }
         }
     val results = filtered?.takeIf { it.first === index && it.second == keyword }?.third
+    val returnRow = visit.returnFocus.pending?.rowKey
     LaunchedEffect(visit) {
-        if (visit.focusPending && visit.focusedResult == null && inputFocus.requestFocus()) {
-            visit.focusRestored()
+        if (visit.focusOnEntry && inputFocus.requestFocus()) {
+            visit.entryFocused()
             keyboard?.show()
         }
     }
     Column(
-        Modifier.fillMaxSize().testTag("conversation_find"),
+        Modifier.fillMaxSize()
+            .restoreDirectoryFocus(
+                visit.returnFocus,
+                ready = results != null,
+                position = visit.position,
+                row = resultFocus,
+                fallback = inputFocus,
+                rowEnabled =
+                    returnRow != null && results?.any { it.message.id == returnRow } == true,
+            )
+            .testTag("conversation_find"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.widthIn(max = 720.dp)) {
@@ -420,7 +436,6 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                 }
                 items(results, key = { it.message.id }) { result ->
                     val message = result.message
-                    val restoreFocus = visit.focusedResult == message.id
                     var rowFocused by remember { mutableStateOf(false) }
                     Column(
                         Modifier.fillMaxWidth()
@@ -433,9 +448,12 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                             )
                             .onFocusChanged { rowFocused = it.isFocused }
                             .then(
-                                if (restoreFocus)
+                                if (visit.focusedResult == message.id)
                                     Modifier.focusProperties { canFocus = true }
-                                        .focusRequester(resultFocus)
+                                else Modifier,
+                            )
+                            .then(
+                                if (returnRow == message.id) Modifier.focusRequester(resultFocus)
                                 else Modifier,
                             )
                             .clickable(role = Role.Button) {
@@ -469,12 +487,6 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                                 style = titleStyle,
                             )
                             FindExcerpt(result, keyword.length, summaryStyle)
-                        }
-                    }
-                    if (restoreFocus) {
-                        LaunchedEffect(message.id) {
-                            if (visit.focusPending && resultFocus.requestFocus())
-                                visit.focusRestored()
                         }
                     }
                 }

@@ -32,7 +32,7 @@ async function openNotice(
 }
 
 const verify = "Verify access to this website";
-function authorizationTarget(card: ReturnType<typeof within>, action: string) {
+function linkTarget(card: ReturnType<typeof within>, action: string) {
   const link = card.getByText(action, {
     selector: "a[href]",
   }) as HTMLAnchorElement;
@@ -49,7 +49,7 @@ test("hosted-site-access-001 offers a signed-out reader the original journal or 
   expect(
     card.getByText("Sign in with an account that can access this website."),
   ).toBeInTheDocument();
-  expect(authorizationTarget(card, "Sign in")).toBe(
+  expect(linkTarget(card, "Sign in")).toBe(
     site + "/.okou/auth/start?returnTo=%2Fjournals%2Ffield%3Fentry%3D23",
   );
   expect(screen.getByText("Back to Okou", { selector: "a" })).toHaveAttribute(
@@ -68,7 +68,7 @@ test("hosted-site-access-002 resumes the draft verification with the current acc
   expect(
     card.getByText("Continue to verify access with your current account."),
   ).toBeInTheDocument();
-  expect(authorizationTarget(card, "Continue")).toBe(
+  expect(linkTarget(card, "Continue")).toBe(
     site + "/.okou/auth/start?returnTo=%2Fjournals%2Fdraft%3Fchapter%3D4",
   );
   expect(
@@ -80,7 +80,7 @@ test("hosted-site-access-002 resumes the draft verification with the current acc
 test("hosted-site-access-003 restarts an expired report session with its summary view", async () => {
   const title = "Verify your access again";
   const card = await openNotice("expired", title, "/report?view=summary");
-  expect(authorizationTarget(card, "Continue")).toBe(
+  expect(linkTarget(card, "Continue")).toBe(
     site + "/.okou/auth/start?returnTo=%2Freport%3Fview%3Dsummary",
   );
   expect(
@@ -89,7 +89,7 @@ test("hosted-site-access-003 restarts an expired report session with its summary
   expect(document.title).toBe(title + " | Okou");
 });
 
-test("hosted-site-access-004 gives a denied reader the sharer's guidance and an account choice", async () => {
+test("hosted-site-access-004 lets a denied reader retry the website or switch accounts", async () => {
   const title = "You can’t view this website";
   const card = await openNotice("denied", title, "/journals");
   expect(
@@ -100,12 +100,15 @@ test("hosted-site-access-004 gives a denied reader the sharer's guidance and an 
   expect(
     card.getByText("Switch account", { selector: "button" }),
   ).toBeEnabled();
+  expect(linkTarget(card, "Try again")).toBe(site + "/journals");
   expect(document.title).toBe(title + " | Okou");
 });
 
-test("hosted-site-access-005 describes temporary unavailability in both the notice and browser title", async () => {
+test("hosted-site-access-005 lets a reader retry the original temporarily unavailable page", async () => {
   const title = "This website is temporarily unavailable";
-  await openNotice("unavailable", title, "/journals");
+  const path = "/journals/field?entry=23";
+  const card = await openNotice("unavailable", title, path);
+  expect(linkTarget(card, "Try again")).toBe(site + path);
   expect(document.title).toBe(title + " | Okou");
 });
 

@@ -311,13 +311,16 @@ class ProductTests(unittest.TestCase):
         self.toolchain.write_text('{"xcode":"the same"}')
         # The CI host uses sw_vers; provide a deterministic host identity on Linux.
         version = self.base / "sw_vers"
-        version.write_text("#!/bin/sh\necho 24D39\n")
+        version.write_text('#!/bin/sh\necho "$TEST_MACOS_BUILD"\n')
         version.chmod(0o755)
         self.env = os.environ | {
             "PATH": f"{self.base}:{os.environ['PATH']}",
             "GITHUB_RUN_ID": "12",
             "GITHUB_RUN_ATTEMPT": "1",
             "GITHUB_SHA": "merge-sha",
+            "ImageOS": "macos27",
+            "ImageVersion": "20261104.0337.1",
+            "TEST_MACOS_BUILD": "26A434",
             "IOS_PRODUCT_TOOLCHAIN": str(self.toolchain),
         }
         self.command("pack", self.src, check=True)
@@ -334,8 +337,8 @@ class ProductTests(unittest.TestCase):
             check=check,
         )
 
-    def test_preserves_specification_permissions_and_links(self):
-        self.command("unpack", self.dst, check=True)
+    def test_transfers_executable_products_across_runner_image_versions(self):
+        self.command("unpack", self.dst, check=True, ImageVersion="20261123.0387.2")
         products = self.dst / "okou-ios-ci/DerivedData/Build/Products"
         self.assertEqual(
             (products / "Okou.xctestrun").read_text(), "test specification"
@@ -349,7 +352,8 @@ class ProductTests(unittest.TestCase):
             {"GITHUB_RUN_ID": "13"},
             {"GITHUB_RUN_ATTEMPT": "2"},
             {"GITHUB_SHA": "other"},
-            {"ImageVersion": "other"},
+            {"ImageOS": "other"},
+            {"TEST_MACOS_BUILD": "other"},
         ]:
             with self.subTest(env=env):
                 self.assertNotEqual(

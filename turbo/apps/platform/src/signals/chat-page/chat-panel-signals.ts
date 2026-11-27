@@ -6,7 +6,6 @@ import type { Root } from "hast";
 import type { Command, Computed } from "ccstate";
 import type {
   GenerationTemplateRequest,
-  ChatThreadArtifactRun,
   ChatThreadDraft,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
@@ -50,8 +49,10 @@ export type ThinkingIndicators =
     };
 
 export interface EventImageGroupProjection {
+  readonly id: string;
   readonly role: ChatEventGroup["role"];
   readonly events: readonly {
+    readonly id: string;
     readonly userMessage?: UserMessageDocument;
     readonly userMessageRenderDocument?: UserMessageRenderDocument;
     readonly tree?: Root;
@@ -100,7 +101,6 @@ export interface MessageListSignals {
     Promise<boolean>,
     [AbortSignal]
   >;
-  readonly artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>;
 }
 
 export interface SendMessageOptions {
@@ -221,5 +221,4 @@ export interface ChatPanelSignals {
   readonly thinkingPhrase$: Computed<string>;
   readonly donePhrase$: Computed<Promise<string>>;
   // -- Artifacts ------------------------------------------------------------
-  readonly artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>;
 }

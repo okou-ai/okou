@@ -1,3 +1,8 @@
+import { proactiveDispatchPhase$ } from "../services/proactive-dispatch-ownership.service";
+import {
+  standalonePreference$,
+  saveStandaloneSuggestions$,
+} from "../services/proactive-dispatch-state.service";
 import { command } from "ccstate";
 import { and, eq, or } from "drizzle-orm";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
@@ -28,6 +33,9 @@ const readProactivePreference$ = command(
     owner: ProactiveWorkflowOwner,
     signal: AbortSignal,
   ): Promise<ProactivePreference> => {
+    if ((await set(proactiveDispatchPhase$, signal)) !== "automation") {
+      return await set(standalonePreference$, owner, "suggestions", signal);
+    }
     const eligibility = await set(loadProactivePreferences$, owner, signal);
     signal.throwIfAborted();
     const definitions = Object.values(PROACTIVE_WORKFLOW_DEFINITIONS);
@@ -95,6 +103,13 @@ const savePreference$ = command(
     },
     signal: AbortSignal,
   ) => {
+    if ((await set(proactiveDispatchPhase$, signal)) !== "automation") {
+      await set(saveStandaloneSuggestions$, owner, enabled, withFeed, signal);
+      if (withFeed) {
+        await publishAgentSuggestionsChangedSafely(owner);
+      }
+      return;
+    }
     const db = set(writeDb$);
     const choice = {
       proactiveSuggestionsEnabled: enabled,

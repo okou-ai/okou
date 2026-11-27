@@ -2,8 +2,6 @@
 """Synthetic original-file/CLI regressions, never a substitute for native proof."""
 
 import copy
-import hashlib
-import json
 import pathlib
 import subprocess
 import sys
@@ -11,99 +9,19 @@ import unittest
 import uuid
 
 import batch_replacement_report as replacement
-import cleanup_report as cleanup
-import report
 import report_test
-import status_failure_report_test as failure_test
-from progress_report_fixture import foreground_heartbeat, joined_observer, memory_read_receipt
+import held_status_report_fixture as fixture
 
 
 class ReplacementReportTests(unittest.TestCase):
     def setUp(self):
-        failure_test.StatusFailureReportTests.setUp(self)
-        raw = json.dumps(self.policy)
-        self.collector["metadata"].pop("native_status_failure_policy_json")
-        self.collector["metadata"]["native_batch_replacement_policy_json"] = raw
-        self.artifacts["policy_sha256"] = hashlib.sha256(raw.encode()).hexdigest()
-        original, sample = self.events[:6], self.samples[0]
-        self.events, self.samples, self.witnesses = [], [], []
-        for index, case in enumerate(sorted(replacement.CASES)):
-            at = lambda offset: 10_000_000_000*(index+1) + offset*1_000_000
-            old, backing, new, new_backing, operation, runner = [str(uuid.uuid4()) for _ in range(6)]
-            terminal = copy.deepcopy(original)
-            for event, offset in zip(terminal,(0,1,9,10,26,65)):
-                event.update(case=case,sandbox_id=old,backing_generation=backing,
-                             monotonic_ns=at(offset),unix_ns=at(offset)+1000)
-                self.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
-            self.events.extend(terminal)
-            zero = dict.fromkeys(cleanup.COUNTS,0) | {"closed":False}
-            active = zero | {"registered_operations":3,"queued":2,"started":1,"tracked_tasks":1,
-                             "cleanup_growth_bytes":self.policy["tail_growth_bytes"]}
-            coverage = {"allocated":[4,8192,2],"accounting":active,
-                        "original_lease_active":True,"io_release_withheld":True}
-            reuse = "thread:native-guarded-"+str(uuid.uuid4())
-            initial = {"mode":"starting","max_concurrent":1,"active_runs":[],
-                "started_at":"2026-10-19T01:00:00Z","updated_at":"2026-10-19T01:00:01Z",
-                "idle_sandboxes":[{"reuse_key":reuse,"sandbox_id":old}]}
-            current = copy.deepcopy(initial)
-            current.update(updated_at="2026-10-19T01:00:02Z",
-                           idle_sandboxes=[{"reuse_key":reuse,"sandbox_id":new}])
-            empty = {k:v for k,v in current.items() if k != "idle_sandboxes"}
-            empty["updated_at"] = "2026-10-19T01:00:03Z"
-            reads = [
-                memory_read_receipt(at(offset), at(offset) + 1000, offset * 1_000_000)
-                for offset in (7, 8, 33)
-            ]
-            values = (
-                {"policy":self.policy,"status_path":str(self.root/f"case-{index}"/"status.json"),
-                 "published_status":initial,"selected_revision":1,
-                 "preparation":{"sandbox_id":new,"backing_generation":new_backing,"operation_id":operation,
-                    "grant_started_ns":at(2),"grant_finished_ns":at(3),"prepared_ns":at(4),
-                    "guest_rpc_completed":True,"phase_settled":True,"separate_incoming_lease":True},
-                 "same_reuse_key":reuse,"source_read_blocked":True,"receiver_polled_pending":True,
-                 "accounting":zero|{"registered_operations":2,"queued":2},"allocated":[4,8192,2],
-                 "original_full_lease_active":True,"original_exit_polled_pending":True,"incoming_exit_polled_pending":True},
-                {"insertion_started_ns":at(6),"revision":2,"original_exit_confirmed":True,
-                 "receiver_polled_pending":True,"coverage":coverage},
-                {"pool_held_ns":at(13),"heartbeat_pending_ns":at(14),"heartbeat_polled_pending":True,
-                 "observer":joined_observer(at(15), at(16)),"coverage":coverage},
-                {"pool_released_ns":at(19),"heartbeat":foreground_heartbeat(runner, 1, at(20), at(21), (4, 8192)),
-                 "receiver_polled_pending":True,"coverage":coverage},
-                {"io_released_ns":at(24),"retirement_joined_ns":at(27),"home_cache_promoted":True,
-                 "original_exit_confirmed":True,"original_lease_released":True,"incoming_exit_polled_pending":True,
-                 "receiver_polled_pending":True,"allocated":[2,4096,1]},
-                {"status_held_ns":at(31),"source_resumed_ns":at(32),"status_wait_polled_ns":at(34),
-                 "status_waits_before":0,"status_waits_after":1,
-                 "heartbeat":foreground_heartbeat(runner, 2, at(35), at(36), (2, 4096)),
-                 "accounting":zero,"samples":reads,"receiver_polled_pending":True,"allocated":[2,4096,1]},
-                {"status_released_ns":at(39),"batch_joined_ns":at(40),"selected":1,"completed":0,"uncertain":0,
-                 "not_started":1,"status_error":False,"is_complete":False,"refused_sandbox_id":old,
-                 "refused_reuse_key":reuse,"error":"AccountingChanged","revision":2,"published_status":current,
-                 "regular_file":True,"incoming_exit_polled_pending":True,"allocated":[2,4096,1]},
-                {"started_ns":at(43),"joined_ns":at(44),"selected":1,"completed":1,"uncertain":0,
-                 "not_started":0,"status_error":False,"is_complete":True,"incoming_exit_confirmed":True,
-                 "published_status":empty,"allocated":[0,0,0]},
-                {"old_batch_joined":True,"replacement_joined":True,"incoming_batch_joined":True,
-                 "tracker_joined":True,"accounting_joined":True,"heartbeat_joined":True,"provider_joined":True,"peer_joined":True,
-                 "remaining_activation_owners":0,"remaining_finalizing_owners":0,
-                 "allocated":[0,0,0],"accounting":zero|{"closed":True}},
-            )
-            for phase,value,offset in zip(replacement.PHASES,values,(5,12,18,23,29,38,42,46,50)):
-                self.witnesses.append(report_test.witness_receipt(
-                    case, phase,
-                    monotonic_ns=at(offset),
-                    unix_ns=at(offset)+1000,
-                    sandbox_id=old,
-                    backing_generation=backing,
-                    evidence=copy.deepcopy(value),
-                ))
+        fixture.prepare_batch_replacement(self, replacement.CASES)
 
     def event(self,phase):
         return report_test.witness_for_phase(self.witnesses, phase)
 
     def write(self):
-        report_test.write_report_fixture(self.root, self.collector, self.samples,
-            [(report.PREFIX, self.events), (replacement.PREFIX, self.witnesses)])
+        fixture.write_batch_replacement(self)
 
     def validate(self):
         self.write()

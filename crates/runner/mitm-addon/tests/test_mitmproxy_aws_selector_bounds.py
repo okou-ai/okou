@@ -19,6 +19,7 @@ from tests.aws_sigv4_helpers import aws_sigv4_authorization, aws_sigv4_header_au
 from tests.firewall_aws_sigv4_helpers import aws_api_entry
 from tests.firewall_helpers import firewall_permission
 from tests.mitmproxy_http_framing_helpers import start_http_layer
+from tests.repeated_bytes_helpers import join_repeated_bytes
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 
 _HOST = "s3.example.com"
@@ -54,7 +55,7 @@ async def test_mixed_aws_rules_respect_raw_inspection_bounds(tmp_path: Path, cas
         target += b"x" * (size - len(target))
         assert len(target) == size
     elif case == "dense-query":
-        target = b"/files/a?" + b"&".join([b"x=1"] * 262_144)
+        target = join_repeated_bytes(b"&", b"x=1", 262_144, prefix=b"/files/a?")
 
     fields = [
         (name.encode(), value.encode())

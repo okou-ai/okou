@@ -1490,6 +1490,11 @@ export const clientContractImportManifest = [
         imported: "foregroundChannelName",
       },
       {
+        name: "mailDraftChangedEvent",
+        source: "validators/realtime",
+        imported: "mailDraftChangedEvent",
+      },
+      {
         name: "sessionOutputChannelName",
         source: "validators/realtime",
         imported: "sessionOutputChannelName",

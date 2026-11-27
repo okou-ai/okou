@@ -43,12 +43,15 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.LocalRippleThemeConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.RippleThemeConfiguration
 import androidx.compose.material3.SheetValue
@@ -81,6 +84,7 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -98,10 +102,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 
 @Composable
 internal fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
@@ -336,6 +346,7 @@ internal fun SettingsTrigger(
     enabled: Boolean = true,
     visible: Boolean = true,
     fallbackFocus: FocusRequester? = null,
+    keepOpenWhenHidden: Boolean = false,
     content: @Composable (dismiss: () -> Unit) -> Unit,
     trigger: @Composable (Modifier, open: () -> Unit) -> Unit,
 ) {
@@ -343,6 +354,7 @@ internal fun SettingsTrigger(
     var focused by remember { mutableStateOf(false) }
     var restoreFocus by rememberSettingsFlag()
     val focus = remember { FocusRequester() }
+    val showContent = open && enabled && (visible || keepOpenWhenHidden)
     // Resolve return focus before Compose detaches the hidden trigger.
     val restoreRelatedFocus = !visible && (focused || restoreFocus)
     if (visible) {
@@ -352,10 +364,10 @@ internal fun SettingsTrigger(
                 open = true
             }
         }
-        if (open && enabled) content { open = false }
     }
-    LaunchedEffect(open, enabled, visible) {
-        if (!visible) {
+    if (showContent) content { open = false }
+    LaunchedEffect(open, enabled, visible, showContent) {
+        if (!visible && !showContent) {
             open = false
             restoreFocus = false
             if (restoreRelatedFocus) fallbackFocus?.requestFocus()
@@ -376,6 +388,7 @@ internal fun SettingsModal(
     fitContentInsets: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
     reserveTopInset: Boolean = false,
+    snackbar: SnackbarHostState? = null,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -396,9 +409,19 @@ internal fun SettingsModal(
                 shape = if (fullScreen) RectangleShape else MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface,
             ) {
-                if (fitContentInsets) {
-                    Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) { content(true) }
-                } else content(true)
+                val body: @Composable () -> Unit = {
+                    if (fitContentInsets) {
+                        Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
+                            content(true)
+                        }
+                    } else content(true)
+                }
+                if (snackbar == null) body()
+                else
+                    BoxWithConstraints(propagateMinConstraints = true) {
+                        body()
+                        SettingsModalSnackbar(snackbar, maxWidth, above = false)
+                    }
             }
         }
     } else {
@@ -421,7 +444,17 @@ internal fun SettingsModal(
                     },
                 ),
             sheetGesturesEnabled = dismissible,
-            dragHandle = if (showDragHandle) ({ BottomSheetDefaults.DragHandle() }) else null,
+            dragHandle =
+                if (showDragHandle) {
+                    {
+                        if (snackbar == null) BottomSheetDefaults.DragHandle()
+                        else
+                            BoxWithConstraints {
+                                BottomSheetDefaults.DragHandle()
+                                SettingsModalSnackbar(snackbar, maxWidth, above = true)
+                            }
+                    }
+                } else null,
             properties =
                 ModalBottomSheetProperties(
                     shouldDismissOnBackPress = dismissible && confirmDismiss == null,
@@ -437,6 +470,36 @@ internal fun SettingsModal(
             }
             content(false)
         }
+    }
+}
+
+@Composable
+private fun SettingsModalSnackbar(state: SnackbarHostState, width: Dp, above: Boolean) {
+    var hasContent by remember(state) { mutableStateOf(false) }
+    if (state.currentSnackbarData == null && !hasContent) return
+
+    // The host can finish its exit animation while the popup remains measured.
+    Popup(popupPositionProvider = remember(above) { SettingsModalSnackbarPosition(above) }) {
+        Box(Modifier.onSizeChanged { hasContent = it.height > 0 }) {
+            WorkspaceFeedbackHost(state, Modifier.widthIn(max = width).padding(vertical = 8.dp))
+        }
+    }
+}
+
+private class SettingsModalSnackbarPosition(private val above: Boolean) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+        val maxY = (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+        val x = (anchorBounds.left + anchorBounds.right - popupContentSize.width) / 2
+        val y =
+            if (above || anchorBounds.bottom > maxY) anchorBounds.top - popupContentSize.height
+            else anchorBounds.bottom
+        return IntOffset(x.coerceIn(0, maxX), y.coerceIn(0, maxY))
     }
 }
 
@@ -463,6 +526,7 @@ internal fun SettingsSheet(
     scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
     dismissible: Boolean = true,
     fullScreenInShortWindow: Boolean = false,
+    showBack: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
     snackbar: SnackbarHostState? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -487,22 +551,40 @@ internal fun SettingsSheet(
                 modifier
                     .fillMaxWidth()
                     .padding(settingsPanelContentPadding(compactHeight))
-                    .padding(top = if (centered) 16.dp else 0.dp)
+                    .padding(
+                        top = if (centered && !(compactHeight && showBack)) 16.dp else 0.dp,
+                    )
                     .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
             ) {
                 Box(Modifier.fillMaxWidth()) {
                     val compactTitle = compactHeight && fullScreenInShortWindow
-                    Text(
-                        title,
-                        Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
-                            .semantics { heading() },
-                        style =
-                            MaterialTheme.typography.titleLarge.copy(
-                                fontSize = if (compactTitle) 16.sp else 22.sp,
-                                lineHeight = if (compactTitle) 24.sp else 28.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            ),
-                    )
+                    val titleStyle =
+                        MaterialTheme.typography.titleLarge.copy(
+                            fontSize = if (compactTitle) 16.sp else 22.sp,
+                            lineHeight = if (compactTitle) 24.sp else 28.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    if (showBack) {
+                        Row(
+                            Modifier.heightIn(min = 64.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(onDismiss, Modifier.size(48.dp), enabled = dismissible) {
+                                Icon(
+                                    painterResource(R.drawable.ic_arrow_back),
+                                    stringResource(R.string.back),
+                                )
+                            }
+                            Text(title, Modifier.semantics { heading() }, style = titleStyle)
+                        }
+                    } else {
+                        Text(
+                            title,
+                            Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
+                                .semantics { heading() },
+                            style = titleStyle,
+                        )
+                    }
                     if (progress != null) Box(Modifier.align(Alignment.BottomCenter)) { progress() }
                 }
                 val body = Modifier.fillMaxWidth()
@@ -826,6 +908,62 @@ internal fun SettingsChoicePanel(
                 if (it.isFocused) focusedKey = key
             }
         }
+    }
+}
+
+@Composable
+internal fun SettingsRadioRow(
+    title: String,
+    selected: Boolean,
+    enabled: Boolean,
+    supportingText: String?,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    val radioColor = MaterialTheme.colorScheme.primary
+    val disabledColor = colors.onSurface.copy(alpha = 0.38f)
+    val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
+            .clip(shape)
+            .updateFocusOutline(shape, foreground)
+            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
+            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                color = if (enabled) foreground else foreground.copy(alpha = 0.38f),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            supportingText?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant,
+                )
+            }
+        }
+        RadioButton(
+            selected,
+            onClick = null,
+            enabled = enabled,
+            colors =
+                RadioButtonDefaults.colors(
+                    selectedColor = radioColor,
+                    unselectedColor = colors.onSurfaceVariant,
+                    disabledSelectedColor = disabledColor,
+                    disabledUnselectedColor = disabledColor,
+                ),
+        )
     }
 }
 

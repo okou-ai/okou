@@ -130,7 +130,9 @@ class WorkspaceSettingsModelTest {
                                 usage.copy(fiveHour = shortWindow.copy(resetAt = "unavailable")),
                         )
                         .quotas()
-                assertEquals(invalidShortReset[1].resetAt, invalidShortReset[0].resetAt)
+                assertNull(invalidShortReset[0].resetAt)
+                assertEquals(claude.quotas()[1].resetAt, invalidShortReset[1].resetAt)
+                assertEquals(0.0, invalidShortReset[0].remaining)
                 val resetOnly =
                     claude
                         .copy(

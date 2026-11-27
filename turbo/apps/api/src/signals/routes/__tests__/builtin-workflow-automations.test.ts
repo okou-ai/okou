@@ -19,12 +19,7 @@ import {
   type WorkflowAutomationSummary,
   type WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import {
-  CANONICAL_CLAUDE_CONFIG_DIR,
-  CANONICAL_CODEX_HOME_DIR,
-  PI_SKILLS_ROOT,
-  type ExecutionContext,
-} from "@okouai/api-contracts/contracts/runners";
+import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
@@ -188,7 +183,12 @@ async function saveFeedback(
   agentToken: string,
   title: string,
   reason: string,
-  kind: "less_like_this" | "option_selected" | "dismissed" = "less_like_this",
+  kind:
+    | "less_like_this"
+    | "option_selected"
+    | "dismissed"
+    | "not_planned"
+    | "later" = "less_like_this",
   completedActionTitles: readonly string[] = [],
 ) {
   const api = setupApp({ context, routes: feedRoutes })(feedContract);
@@ -253,12 +253,17 @@ async function saveFeedback(
           id: feedbackId,
           kind,
           targetId: null,
-          note: "Initial preference",
+          note: {
+            less_like_this: "Initial preference",
+            not_planned: "Do not nudge me about this again.",
+            later: "",
+            dismissed: "",
+          }[kind],
         },
       }),
       [200],
     );
-    if (kind === "less_like_this") {
+    if (kind === "less_like_this" || kind === "not_planned") {
       await accept(
         api.feedback({
           headers,
@@ -281,11 +286,15 @@ async function saveFeedback(
   );
   return {
     expected: {
-      kind,
       title,
       rationale,
-      ...(kind === "less_like_this" ? { reason } : {}),
-      ...(kind === "option_selected" ? { choice: "Review" } : {}),
+      message: {
+        less_like_this: `Show me fewer suggestions like this. My reason: ${reason}`,
+        option_selected: "I chose this direction: Review",
+        later: "I want to look at this later. Remind me after a while.",
+        not_planned: `Do not nudge me about this again. My reason: ${reason}`,
+        dismissed: "",
+      }[kind],
     },
     undo: async () => {
       await accept(
@@ -361,7 +370,15 @@ async function prepareWorkflowFeedback(
     );
   });
   if (learning) {
-    return { initial: [existing] };
+    const legacy = await withFeedbackRun(owned, (token) => {
+      return saveFeedback(
+        token,
+        "A suggestion dismissed by an older client",
+        "I already have a reminder",
+        "not_planned",
+      );
+    });
+    return { initial: [existing, legacy.expected] };
   }
   const startedAt = now();
   return withMockNowForTest(startedAt, () => {
@@ -369,7 +386,8 @@ async function prepareWorkflowFeedback(
       const undone = await saveFeedback(
         token,
         "Undo this preference",
-        "Temporary preference",
+        "",
+        "later",
       );
       const selected = await saveFeedback(
         token,
@@ -395,11 +413,9 @@ const feedbackSchema = object({
   complete: boolean(),
   feedback: array(
     object({
-      kind: string(),
+      message: string(),
       title: string(),
       rationale: string(),
-      reason: string().optional(),
-      choice: string().optional(),
     }),
   ),
 });
@@ -556,7 +572,7 @@ async function expectSuggestionFeedbackLifecycle(
       // instructions skip maintenance instead of repeating completed work.
       const bounded = await readFeedback(now(), false);
       const completed = bounded.filter((feedback) => {
-        return feedback.kind === "already_done";
+        return completedTitles.includes(feedback.title);
       });
       expect(completed.length).toBeGreaterThan(0);
       expect(completed.length).toBeLessThan(completedTitles.length);
@@ -564,7 +580,8 @@ async function expectSuggestionFeedbackLifecycle(
         expect(completedTitles).toContain(feedback.title);
         expect(feedback).toMatchObject({
           rationale: "Review the owner's pending decision",
-          reason: "Completed through another channel",
+          message:
+            "I have already done this. My reason: Completed through another channel",
         });
       }
     });
@@ -831,15 +848,11 @@ function officialWorkflowBundle(
   execution: ExecutionContext,
   definitionName: string,
 ) {
-  const skillRoot =
-    execution.cliAgentType === "pi"
-      ? PI_SKILLS_ROOT
-      : execution.cliAgentType === "codex"
-        ? `${CANONICAL_CODEX_HOME_DIR}/skills`
-        : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
-  const bundles = execution.contentBundles.skills.filter((bundle) => {
-    return bundle.mountPath === `${skillRoot}/${definitionName}`;
-  });
+  const bundles = execution.startupInputs.contentBundles.skills.filter(
+    (bundle) => {
+      return bundle.name === definitionName;
+    },
+  );
   expect(bundles).toHaveLength(1);
   const [bundle] = bundles;
   if (!bundle) {
@@ -1042,8 +1055,8 @@ test.each(scenarios)(
       });
     }
     const bundle = officialWorkflowBundle(execution, definitionName);
-    expect(bundle.downloadUrl).toBe(
-      `https://static.vm0.io/workflows/builtin-skills/${bundle.sha256}.tar.gz`,
+    expect(bundle.bundle.downloadUrl).toBe(
+      `https://static.vm0.io/workflows/builtin-skills/${bundle.bundle.sha256}.tar.gz`,
     );
     expect(execution.prompt).toContain(heading);
     expectWorkflowInstructions(execution.prompt, definitionName, learning);

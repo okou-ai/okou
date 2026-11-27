@@ -7,6 +7,7 @@ import {
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
 import type {
+  ArtifactCatalogCategory,
   ArtifactCatalogDirection,
   ArtifactCatalogKind,
   ArtifactCatalogListClientQuery,
@@ -51,6 +52,7 @@ export interface ArtifactCatalogPage {
 }
 
 export interface ArtifactCatalogQuery {
+  readonly category: ArtifactCatalogCategory | null;
   readonly kind: ArtifactCatalogKind | null;
   readonly search: string;
   readonly direction: ArtifactCatalogDirection;
@@ -140,6 +142,8 @@ export interface ArtifactCatalogViewSignals extends ArtifactCatalogSelection {
 }
 
 export interface ArtifactCatalogSignals extends ArtifactCatalogViewSignals {
+  readonly selectedCategory$: Computed<ArtifactCatalogCategory | null>;
+  readonly setCategory$: Command<void, [ArtifactCatalogCategory | null]>;
   readonly selectedKind$: Computed<ArtifactCatalogKind | null>;
   readonly setKind$: Command<void, [ArtifactCatalogKind | null]>;
   readonly search$: Computed<string>;
@@ -265,9 +269,11 @@ function createCatalogSource(
   library?: ReturnType<typeof createArtifactLibraryQuerySignals>,
 ) {
   const kind$ = state<ArtifactCatalogKind | null>(null);
+  const category$ = state<ArtifactCatalogCategory | null>(null);
   const reloadVersion$ = state(0);
   const query$ = computed(async (get): Promise<CatalogQuerySnapshot> => {
     const kind = get(kind$);
+    const category = get(category$);
     const enabled = library ? get(library.enabled$) : false;
     const keyword = library ? get(library.keyword$) : "";
     const direction = library ? get(library.direction$) : null;
@@ -278,6 +284,7 @@ function createCatalogSource(
       query: {
         limit: ARTIFACT_CATALOG_PAGE_SIZE,
         ...(kind ? { kind } : {}),
+        ...(libraryEnabled && category ? { category } : {}),
         ...(chatThreadId ? { chatThreadId } : {}),
         ...(libraryEnabled && direction ? { direction } : {}),
         ...(trimmedKeyword ? { keyword: trimmedKeyword } : {}),
@@ -315,6 +322,7 @@ function createCatalogSource(
     chatThreadId,
     driveAccountRevision$,
     kind$,
+    category$,
     reloadVersion$,
     identity$,
     firstPage$,
@@ -626,13 +634,25 @@ export function createArtifactCatalogSignals(
     view.refreshArtifactPreviews$,
   );
   const setKind$ = command(({ get, set }, kind: ArtifactCatalogKind | null) => {
-    if (get(source.kind$) === kind) {
+    if (get(source.kind$) === kind && get(source.category$) === null) {
       return;
     }
     set(source.kind$, kind);
+    set(source.category$, null);
     set(library.restartRequests$, get(pageSignal$));
     set(resetPages$);
   });
+  const setCategory$ = command(
+    ({ get, set }, category: ArtifactCatalogCategory | null) => {
+      if (get(source.category$) === category && get(source.kind$) === null) {
+        return;
+      }
+      set(source.category$, category);
+      set(source.kind$, null);
+      set(library.restartRequests$, get(pageSignal$));
+      set(resetPages$);
+    },
+  );
   const setSearch$ = command(
     async (
       { get, set },
@@ -659,6 +679,10 @@ export function createArtifactCatalogSignals(
   );
   return {
     ...view,
+    selectedCategory$: computed((get) => {
+      return get(source.category$);
+    }),
+    setCategory$,
     selectedKind$: computed((get) => {
       return get(source.kind$);
     }),
@@ -670,6 +694,7 @@ export function createArtifactCatalogSignals(
     initializeQuery$: command(
       ({ set }, query: ArtifactCatalogQuery, signal: AbortSignal) => {
         set(source.kind$, query.kind);
+        set(source.category$, query.category);
         set(library.initialize$, query, signal);
         set(reloadCatalog$);
       },

@@ -1,7 +1,7 @@
 import { useGet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import { resolvedAppLocale } from "../../i18n/format.ts";
 import type { createPlatformEventEntry } from "../../signals/okou-page/platform-feed-events.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -10,6 +10,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { userPreferences$ } from "../../signals/okou-page/settings/user-preferences.ts";
 import { ForYouCardHeading } from "./for-you-card-heading.tsx";
+import { useForYouSimplifiedDeck } from "./for-you-deck-switch.ts";
 
 function formatPauseTime(disabledAt: string, timeZone: string | undefined) {
   return new Date(disabledAt).toLocaleString(resolvedAppLocale(), {
@@ -37,6 +38,7 @@ export function PlatformFeedEvent({
   const preferences = useLastResolved(userPreferences$);
   const { content } = entry.item;
   const busy = activation.state === "loading" || dismissal.state === "loading";
+  const simplified = useForYouSimplifiedDeck();
   return (
     <article
       aria-labelledby={`suggestion-title-${entry.item.id}`}
@@ -70,7 +72,12 @@ export function PlatformFeedEvent({
           </Link>
         }
       />
-      <div className="-mx-4 mt-5 mb-6 space-y-3 rounded-3xl bg-muted p-4">
+      <div
+        className={cn(
+          "-mx-4 mt-5 mb-6 space-y-3 bg-muted p-4",
+          simplified ? "rounded-xl" : "rounded-3xl",
+        )}
+      >
         <p className="text-sm text-muted-foreground">
           {t(($) => {
             return $.feedEvents.automationDisabled.systemSource;

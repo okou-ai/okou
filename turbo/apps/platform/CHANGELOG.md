@@ -13,6 +13,127 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1193.1](https://github.com/okou-ai/okou/compare/app-v0.1193.0...app-v0.1193.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **app:** use arrow cursor for share selection rows ([#51275](https://github.com/okou-ai/okou/issues/51275)) ([c7bc7e4](https://github.com/okou-ai/okou/commit/c7bc7e49d62a11fb7f97f311467b709b45d3d129))
+
+## [0.1193.0](https://github.com/okou-ai/okou/compare/app-v0.1192.0...app-v0.1193.0) (2026-11-27)
+
+
+### Features
+
+* **artifacts:** add visual browsing to library ([#51115](https://github.com/okou-ai/okou/issues/51115)) ([d11e612](https://github.com/okou-ai/okou/commit/d11e6120de54a6d91addd74541361e0497d5ae0a))
+
+
+### Bug Fixes
+
+* **lab:** show feature switch slugs and descriptions ([#51264](https://github.com/okou-ai/okou/issues/51264)) ([bdb24a5](https://github.com/okou-ai/okou/commit/bdb24a5be24c0a172d11b195a824cc6af0e637c5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.137.0
+    * @okouai/core bumped to 8.887.1
+    * @okouai/ui bumped to 1.22.40
+
+## [0.1192.0](https://github.com/okou-ai/okou/compare/app-v0.1191.1...app-v0.1192.0) (2026-11-26)
+
+
+### Features
+
+* **app:** add unarchived and all chat filters for staff ([#51226](https://github.com/okou-ai/okou/issues/51226)) ([52a6fe8](https://github.com/okou-ai/okou/commit/52a6fe80fe66dbbef978f19e3a5e96fbbdb6b2f0))
+
+
+### Bug Fixes
+
+* **app:** center display formulas in pdf exports ([#51142](https://github.com/okou-ai/okou/issues/51142)) ([091e76c](https://github.com/okou-ai/okou/commit/091e76cb191e2eaa1114fde437a5cfcad7860129))
+* **app:** hold finished chat avatars upright ([#51110](https://github.com/okou-ai/okou/issues/51110)) ([5d695fd](https://github.com/okou-ai/okou/commit/5d695fdd14cc7f34efeb6f541d271b3d2aff4c48))
+* **app:** let readers retry hosted site access ([#51232](https://github.com/okou-ai/okou/issues/51232)) ([a113ae0](https://github.com/okou-ai/okou/commit/a113ae031b7e1e407f41321c5c1eac828f9f6701))
+
+
+### Refactoring
+
+* resolve message artifacts by url and navigate within their chat group ([#51081](https://github.com/okou-ai/okou/issues/51081)) ([fe23396](https://github.com/okou-ai/okou/commit/fe233968313c8ef91e51bd11ea6d75a4551ddf83))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.136.0
+    * @okouai/core bumped to 8.887.0
+    * @okouai/ui bumped to 1.22.39
+
+## [0.1191.1](https://github.com/okou-ai/okou/compare/app-v0.1191.0...app-v0.1191.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **platform:** wrap workflows description beside header actions ([#51178](https://github.com/okou-ai/okou/issues/51178)) ([ed04cbc](https://github.com/okou-ai/okou/commit/ed04cbc473d1bef46379abb361ed3e9f53808949))
+* refresh linked gmail drafts during active runs ([#51188](https://github.com/okou-ai/okou/issues/51188)) ([75d38ca](https://github.com/okou-ai/okou/commit/75d38ca957eed0354634ddd0f96797fb58d8dc14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.135.0
+    * @okouai/core bumped to 8.886.1
+    * @okouai/ui bumped to 1.22.38
+
+## [0.1191.0](https://github.com/okou-ai/okou/compare/app-v0.1190.0...app-v0.1191.0) (2026-11-26)
+
+
+### Features
+
+* **app:** for you corner radii, selectable option text and action labels ([#51148](https://github.com/okou-ai/okou/issues/51148)) ([d3a229a](https://github.com/okou-ai/okou/commit/d3a229a493ba204b298d182eeeaf60c735241d02))
+* offer four feedback choices on suggestion cards ([#51173](https://github.com/okou-ai/okou/issues/51173)) ([4f89ea3](https://github.com/okou-ai/okou/commit/4f89ea375bdad29e8180bf76011733206f402fcf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.886.0
+    * @okouai/ui bumped to 1.22.37
+
+## [0.1190.0](https://github.com/okou-ai/okou/compare/app-v0.1189.4...app-v0.1190.0) (2026-11-26)
+
+
+### Features
+
+* prepare later feedback for suggestions ([#51159](https://github.com/okou-ai/okou/issues/51159)) ([938f9b2](https://github.com/okou-ai/okou/commit/938f9b2cc1c2c188316ed17f72ce06ec4edb42b8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.134.0
+    * @okouai/core bumped to 8.885.4
+    * @okouai/ui bumped to 1.22.36
+
+## [0.1189.4](https://github.com/okou-ai/okou/compare/app-v0.1189.3...app-v0.1189.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* copy canonical artifact links from chat resources ([#51107](https://github.com/okou-ai/okou/issues/51107)) ([efdb0d7](https://github.com/okou-ai/okou/commit/efdb0d71bc53873fad7531040fe3ebc5126c21b8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.1
+    * @okouai/core bumped to 8.885.3
+    * @okouai/ui bumped to 1.22.35
+
 ## [0.1189.3](https://github.com/okou-ai/okou/compare/app-v0.1189.2...app-v0.1189.3) (2026-11-26)
 
 

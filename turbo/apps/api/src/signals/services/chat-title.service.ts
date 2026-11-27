@@ -22,6 +22,7 @@ import {
 import {
   VERTEX_AUXILIARY_MAX_TOKENS,
   generateVertexTextWithUsage,
+  type VertexTextMessage,
 } from "../external/vertex-text";
 import { publishThreadListChanged } from "../external/realtime";
 import { db$, writeDb$ } from "../external/db";
@@ -31,6 +32,7 @@ import {
   generateAuxiliary,
   type RecordAuxiliaryGenerationDetail,
 } from "./auxiliary-generation.service";
+import { loadVoiceClipAudio$, resolveVoiceClips$ } from "./voice-clips.service";
 import { chatEventTextCondition } from "./chat-event-type.service";
 import { visibleChatEventPredicate } from "./chat-event-visibility.service";
 import {
@@ -151,11 +153,7 @@ interface ChatTitleInput {
   readonly currentUserMessage: string;
   readonly integrationContext?: string;
   readonly priorRounds?: readonly ChatCompletionContextMessage[];
-}
-
-interface ChatMessageForGeneration {
-  readonly role: "system" | "user" | "assistant";
-  readonly content: string;
+  readonly audio?: Extract<VertexTextMessage, { role: "user" }>["audio"];
 }
 
 interface ChatCompletionContextRow {
@@ -192,7 +190,7 @@ function chatCompletionContextMessage(
 
 async function generateFastPathText(
   model: VertexModel,
-  messages: readonly ChatMessageForGeneration[],
+  messages: readonly VertexTextMessage[],
   maxTokens = VERTEX_AUXILIARY_MAX_TOKENS,
   options?: {
     readonly stripMarkdown?: boolean;
@@ -251,7 +249,9 @@ function generateChatTitle(
   }
 
   sections.push(
-    `Most recent user message:\n${input.currentUserMessage.slice(0, TITLE_CONTEXT_CHAR_CAP)}`,
+    input.audio
+      ? "Most recent user message: Listen to the attached voice clips in order. Title the conversation based on what the user says in the recordings."
+      : `Most recent user message:\n${input.currentUserMessage.slice(0, TITLE_CONTEXT_CHAR_CAP)}`,
   );
 
   // A title is persisted immutably onto the thread, so a mid-word fragment is
@@ -267,6 +267,7 @@ function generateChatTitle(
       {
         role: "user",
         content: sections.join("\n\n"),
+        audio: input.audio,
       },
     ],
     VERTEX_AUXILIARY_MAX_TOKENS,
@@ -410,6 +411,7 @@ export const generateAndPersistChatThreadTitle$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly prompt: string;
+      readonly voiceClipFileIds?: readonly string[];
       readonly integrationContext?: string;
       readonly includePriorRounds: boolean;
       /** The claimed thread snapshot already had a title or rename. */
@@ -420,7 +422,7 @@ export const generateAndPersistChatThreadTitle$ = command(
     if (
       args.titled ||
       !gcpLlmConfiguration() ||
-      args.prompt.trim().length === 0
+      (!args.voiceClipFileIds && args.prompt.trim().length === 0)
     ) {
       return;
     }
@@ -434,10 +436,28 @@ export const generateAndPersistChatThreadTitle$ = command(
         const title = await generateAuxiliary(
           {
             feature: "chat_title",
-            generate: (record) => {
+            generate: async (record) => {
+              let audio: ChatTitleInput["audio"];
+              if (args.voiceClipFileIds) {
+                const resolved = await set(
+                  resolveVoiceClips$,
+                  {
+                    orgId: args.orgId,
+                    userId: args.userId,
+                    fileIds: args.voiceClipFileIds,
+                  },
+                  signal,
+                );
+                if ("status" in resolved) {
+                  return null;
+                }
+                audio = await set(loadVoiceClipAudio$, resolved.clips, signal);
+                signal.throwIfAborted();
+              }
               return generateChatTitle(
                 {
                   currentUserMessage: args.prompt,
+                  audio,
                   integrationContext: args.integrationContext,
                   priorRounds: priorRounds.length > 0 ? priorRounds : undefined,
                 },

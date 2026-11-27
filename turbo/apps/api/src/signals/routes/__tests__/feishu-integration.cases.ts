@@ -5591,14 +5591,15 @@ export function registerFeishuIntegrationTests(
             unknownPolicy: "deny",
           },
         );
-        const managedSkillMount = receivedExecution.contentBundles.skills.find(
-          (bundle) => {
-            return bundle.mountPath.endsWith(
-              `-${managedConnector.id.replaceAll("-", "").slice(0, 8)}`,
-            );
-          },
-        );
-        expect(managedSkillMount?.sha256).toBe(managedSkillDigest);
+        const managedSkillMount =
+          receivedExecution.startupInputs.contentBundles.skills.find(
+            (bundle) => {
+              return bundle.name.endsWith(
+                `-${managedConnector.id.replaceAll("-", "").slice(0, 8)}`,
+              );
+            },
+          );
+        expect(managedSkillMount?.bundle.sha256).toBe(managedSkillDigest);
         expect(receivedExecution.prompt).toContain(feishuFilePrompt);
         expect(receivedExecution.prompt).toContain(
           "   [MESSAGE_ID] om_file_message",

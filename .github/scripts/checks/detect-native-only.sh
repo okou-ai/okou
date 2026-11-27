@@ -14,7 +14,7 @@ case "${EVENT_NAME:?EVENT_NAME is required}" in
     ;;
   push)
     # Main builds produce commit-addressed artifacts for release promotion.
-    printf 'ios-only=false\nturbo-ts-checks-needed=true\n'
+    printf 'ios-only=false\nturbo-ts-checks-needed=true\ncodeql-needed=true\n'
     exit 0
     ;;
   *)
@@ -36,6 +36,7 @@ git diff --no-renames --name-only -z "$base" HEAD > "$changed_files"
 has_changes=false
 ios_only=true
 crates_only=true
+codeql_needed=false
 while IFS= read -r -d '' path; do
   has_changes=true
   case "$path" in
@@ -43,14 +44,29 @@ while IFS= read -r -d '' path; do
     crates/*) ios_only=false ;;
     *) ios_only=false; crates_only=false ;;
   esac
+  # The JS extractor also reads templates, config and extensionless files.
+  # Exempt only known non-inputs so new or unfamiliar formats receive a scan.
+  case "$path" in
+    */.eslintrc* | .eslintrc*) codeql_needed=true ;;
+    *.[mM][dD]) ;;
+    ios/* | android/* | crates/* | desktop/* | docs/*)
+      case "${path##*.}" in
+        swift | kt | kts | rs | py | c | h | sh | toml | lock | png | jpg | webp | ttf) ;;
+        *) codeql_needed=true ;;
+      esac
+      ;;
+    *) codeql_needed=true ;;
+  esac
 done < "$changed_files"
 
 if [ "$has_changes" = false ]; then
   ios_only=false
   crates_only=false
+  codeql_needed=true
 fi
 ts_checks_needed=true
 if [ "$ios_only" = true ] || [ "$crates_only" = true ]; then
   ts_checks_needed=false
 fi
-printf 'ios-only=%s\nturbo-ts-checks-needed=%s\n' "$ios_only" "$ts_checks_needed"
+printf 'ios-only=%s\nturbo-ts-checks-needed=%s\ncodeql-needed=%s\n' \
+  "$ios_only" "$ts_checks_needed" "$codeql_needed"

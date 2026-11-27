@@ -55,10 +55,7 @@ import {
 import { createGithubBddApi, newGithubUserId } from "./helpers/api-bdd-github";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
@@ -205,11 +202,7 @@ async function sandboxStorageWriteFixture(label: string) {
       ...(await owned.runExecution(sent.runId)),
     };
   });
-  const mount = expectCanonicalStorageManifest(
-    execution.execution.storageManifest,
-  )?.storageMounts.find((candidate) => {
-    return candidate.writeback;
-  });
+  const mount = execution.execution.startupInputs.memory;
   if (!mount) {
     throw new Error("Expected a canonical writeback mount");
   }
@@ -267,13 +260,9 @@ async function sandboxStorageWriteFixture(label: string) {
           prompt: "Read the current storage mount",
         });
         const nextExecution = await owned.runExecution(next.runId);
-        const current = expectCanonicalStorageManifest(
-          nextExecution.execution.storageManifest,
-        )?.storageMounts.find((candidate) => {
-          return candidate.storageId === mount.storageId;
-        });
-        if (!current) {
-          throw new Error("Expected the successor's same storage mount");
+        const current = nextExecution.execution.startupInputs.memory;
+        if (!current || current.storageId !== mount.storageId) {
+          throw new Error("Expected the successor's same Memory storage ID");
         }
         return current;
       });
@@ -2086,12 +2075,7 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
         prompt: "write artifacts from the sandbox",
       });
       const { execution } = await fixture.runExecution(run.runId);
-      const manifest = expectCanonicalStorageManifest(
-        execution.storageManifest,
-      );
-      const writebackMount = manifest?.storageMounts.find((mount) => {
-        return mount.writeback === true;
-      });
+      const writebackMount = execution.startupInputs.memory;
       if (!writebackMount) {
         throw new Error("Expected a canonical writeback mount");
       }
@@ -2114,7 +2098,7 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
       );
 
       // Canonical writes land under the run organization's Storage prefix.
-      const storageName = writebackMount.name;
+      const storageName = "memory";
       const files = [storageFile("index.html", 2048)];
       const storageClient = setupApp({
         context,
@@ -2232,14 +2216,8 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
         prompt: "Read the committed Memory",
       });
       const nextExecution = await fixture.runExecution(next.runId);
-      expect(
-        expectCanonicalStorageManifest(
-          nextExecution.execution.storageManifest,
-        )?.storageMounts.find((mount) => {
-          return mount.storageId === writebackMount.storageId;
-        }),
-      ).toMatchObject({
-        name: storageName,
+      expect(nextExecution.execution.startupInputs.memory).toMatchObject({
+        storageId: writebackMount.storageId,
         versionId: prepared.body.versionId,
         archiveUrl: expect.any(String),
       });

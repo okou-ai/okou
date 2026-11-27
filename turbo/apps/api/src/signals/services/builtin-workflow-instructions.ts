@@ -28,9 +28,9 @@ You own the email decision. Send only when the verified briefing contains useful
 
 Use only \`okou notify mail --kind morning-brief\` to send to the user's account email. The platform does not send a second completion email for this revision. Do not create Gmail or Outlook drafts, send through a connector, send chat messages, or make other provider-side updates. If the notification command or capability is unavailable, keep the briefing in the Chat and report that email was unavailable; do not substitute another delivery channel or notification kind.
 
-## Send once per automation event
+## Send once per occurrence
 
-Okou sends at most one Morning Brief email per automation event and derives its idempotency key from this run's event. Do not pass \`--idempotency-key\`, and do not construct a key from the prompt, the clock, a date, or a Run ID.
+Okou sends at most one Morning Brief email per scheduled occurrence and derives its idempotency key from this run's event. Do not pass \`--idempotency-key\`, and do not construct a key from the prompt, the clock, a date, or a Run ID.
 
 Save the final briefing to a UTF-8 Markdown file, within the CLI's 8000-character body limit. Choose a concise subject within its 180-character limit, then call:
 
@@ -99,7 +99,7 @@ Do not republish a previously offered action whose underlying state has not mate
 
 Before mutations, re-read the pool and recent receipts so concurrent user choices or withdrawals win. Recheck affected sources when newer progress makes an earlier read stale. Follow the reference for stable identities and publication; never evade a terminal receipt by changing the key. Keep title, rationale, options and neutral background consistent with the latest verified state. Write concise cards in the user's language; keep evidence and technical details in self-contained drafts. Do not overwrite the live composer or execute proposed work.
 
-Leave a concise diagnostic account in this workflow's Chat: each old card's disposition and reason, any new action and why it merits attention, and coverage gaps or unfinished checks. If curation is unavailable, report it without another publication channel.
+Leave a concise diagnostic account in this task's Chat: each old card's disposition and reason, any new action and why it merits attention, and coverage gaps or unfinished checks. If curation is unavailable, report it without another publication channel.
 
 ### Decision examples
 
@@ -108,8 +108,9 @@ Leave a concise diagnostic account in this workflow's Chat: each old card's disp
 - Learning says the user works on integrations, but a connector fix is assigned to a teammate and progressing normally: do not recommend that the user take it over. If the teammate is waiting for this user's final review, suggest that review only after verifying the current request.
 - A review was completed in an already-read Chat while its issue stayed open: remove the review card; do not invent a documentation follow-up.
 - The user said "proceed" and the Agent is fixing an execution error: remove "approve/start this"; do not call the work finished or ask the user to repeat authorization.
-- The user marked an action Already done: treat it as handled even if an old checklist remains unchecked. Rewording it is not a new action.
-- The user chose Not planned: do not return the same proposal with a new title or identity; a genuinely new event still needs independent assessment.
+- The user marked an action Done: treat it as handled even if an old checklist remains unchecked. Rewording it is not a new action.
+- The user chose Won't do: do not return the same proposal with a new title or identity; a genuinely new event still needs independent assessment.
+- The user chose Later: consider their request in a subsequent check when revisiting it would be useful. Keep the same identity for the same action and respect terminal receipts.
 - A referenced Chat is unreadable: check other relevant current sources; if the action still cannot be verified, remove the old card as unverified.
 - That Chat becomes readable again: re-evaluate the action and feedback; if the same action is unchanged, do not republish it.
 - A pending action was previously offered and has no new deadline, risk or request: do not publish it again under a new title or identity.
