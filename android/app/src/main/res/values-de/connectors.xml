@@ -121,7 +121,7 @@
     <string name="connector_device_denied">Der Anbieter hat die Autorisierung abgelehnt.</string>
     <string name="connector_device_expired">Der Gerätecode ist abgelaufen. Starte die Autorisierung erneut.</string>
     <string name="connector_device_failed">Die Geräteautorisierung konnte nicht abgeschlossen werden.</string>
-    <string name="connector_access_scope">Gilt für alle deine Chats.</string>
+    <string name="connector_access_scope">Zugriffsrichtlinien gelten für alle deine Chats in diesem Arbeitsbereich.</string>
     <string name="connector_access_label">Zugriff für %1$s, %2$s</string>
     <string name="connector_access_allow">Zulassen</string>
     <string name="connector_access_deny">Ablehnen</string>

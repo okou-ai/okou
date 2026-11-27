@@ -117,7 +117,7 @@
     <string name="connector_device_denied">服务方已拒绝授权。</string>
     <string name="connector_device_expired">设备码已过期，请重新发起授权。</string>
     <string name="connector_device_failed">暂时无法完成设备授权。</string>
-    <string name="connector_access_scope">适用于你的所有聊天。</string>
+    <string name="connector_access_scope">访问策略适用于你在此工作区的所有对话。</string>
     <string name="connector_access_label">%1$s 的访问权限, %2$s</string>
     <string name="connector_access_allow">允许</string>
     <string name="connector_access_deny">拒绝</string>

@@ -183,6 +183,7 @@ internal fun ChatConnectorOptionsButton(
         options?.state?.collectAsStateWithLifecycle()?.value?.takeIf { it.target == target.key }
     val overview = state?.overview
     val overviewData = overview?.data
+    val overviewConfirmed = overview?.expiresAt != null
     val slug = presentation.connectorSlug
     val summary = overviewData?.find { it.entry.slug == slug }
     val detail = state?.details?.get(slug)
@@ -197,8 +198,16 @@ internal fun ChatConnectorOptionsButton(
                 options.showOverview(target)
             }
     }
-    LaunchedEffect(options, target, showingAccounts, summary, state?.revision, lifecycle) {
-        if (showingAccounts && options != null && summary != null)
+    LaunchedEffect(
+        options,
+        target,
+        showingAccounts,
+        summary,
+        overviewConfirmed,
+        state?.revision,
+        lifecycle,
+    ) {
+        if (showingAccounts && options != null && summary != null && overviewConfirmed)
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 options.showAccounts(target, summary.entry.slug)
             }
@@ -491,7 +500,7 @@ internal fun ChatConnectorOptionsButton(
                 if (overviewData != null && overview.failure != null)
                     ConnectorOptionFeedback(R.string.connector_refresh_failed)
             } else if (rows == null || summary == null) {
-                if (reading?.failure != null || (overviewData == null && overview?.failure != null))
+                if (reading?.failure != null || (!overviewConfirmed && overview?.failure != null))
                     ConnectorReadError(R.string.connector_accounts_failed)
                 else
                     ConnectorSkeleton(stringResource(R.string.connector_loading_accounts), rows = 2)
@@ -510,7 +519,7 @@ internal fun ChatConnectorOptionsButton(
                     else R.string.chat_connector_scope,
                     Modifier.padding(horizontal = 8.dp),
                 )
-                if (rows.isEmpty()) ConnectorOptionFeedback(R.string.chat_connector_empty)
+                if (rows.isEmpty()) ConnectorOptionFeedback(R.string.connector_empty_connected)
                 val policies = detail.policies
                 Column {
                     for (row in rows) {
@@ -651,8 +660,7 @@ private fun ChatConnectorRow(
                     role = Role.Checkbox,
                     onValueChange = { onToggle() },
                 )
-        else if (memberAccess && !needsRepair && account.policy == null && modifier != Modifier)
-            modifier.focusable()
+        else if (memberAccess && !needsRepair && modifier != Modifier) modifier.focusable()
         else Modifier
     val label = account.label()
     val identity = account.identity?.takeIf { it != label }
@@ -696,7 +704,6 @@ private fun ChatConnectorRow(
                         canEdit,
                         onPolicy,
                         outlined = true,
-                        modifier = modifier,
                     )
                 }
             showCheckbox -> Checkbox(checked = enabled, onCheckedChange = null, enabled = canEdit)

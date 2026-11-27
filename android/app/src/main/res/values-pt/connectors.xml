@@ -125,7 +125,7 @@
     <string name="connector_device_denied">O provedor negou a autorização.</string>
     <string name="connector_device_expired">O código do dispositivo expirou. Inicie a autorização novamente.</string>
     <string name="connector_device_failed">Não foi possível concluir a autorização do dispositivo.</string>
-    <string name="connector_access_scope">Aplica-se a todos os seus chats.</string>
+    <string name="connector_access_scope">As políticas de acesso se aplicam a todos os seus chats neste espaço de trabalho.</string>
     <string name="connector_access_label">Acesso para %1$s, %2$s</string>
     <string name="connector_access_allow">Permitir</string>
     <string name="connector_access_deny">Negar</string>

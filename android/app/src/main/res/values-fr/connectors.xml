@@ -125,7 +125,7 @@
     <string name="connector_device_denied">Le fournisseur a refusé l’autorisation.</string>
     <string name="connector_device_expired">Le code de l’appareil a expiré. Relancez l’autorisation.</string>
     <string name="connector_device_failed">Impossible de terminer l’autorisation de l’appareil.</string>
-    <string name="connector_access_scope">S’applique à toutes vos discussions.</string>
+    <string name="connector_access_scope">Les règles d’accès s’appliquent à toutes vos discussions dans cet espace de travail.</string>
     <string name="connector_access_label">Accès pour %1$s, %2$s</string>
     <string name="connector_access_allow">Autoriser</string>
     <string name="connector_access_deny">Refuser</string>

@@ -121,7 +121,7 @@
     <string name="connector_device_denied">सेवा प्रदाता ने अनुमति देने से मना कर दिया।</string>
     <string name="connector_device_expired">डिवाइस कोड की समय-सीमा समाप्त हो गई। अनुमति की प्रक्रिया फिर शुरू करें।</string>
     <string name="connector_device_failed">डिवाइस को अनुमति देने की प्रक्रिया पूरी नहीं हो सकी।</string>
-    <string name="connector_access_scope">आपकी सभी चैट पर लागू होता है।</string>
+    <string name="connector_access_scope">पहुँच नीतियाँ इस वर्कस्पेस में आपकी सभी चैट पर लागू होती हैं।</string>
     <string name="connector_access_label">%1$s के लिए ऐक्सेस, %2$s</string>
     <string name="connector_access_allow">अनुमति दें</string>
     <string name="connector_access_deny">अस्वीकार करें</string>

@@ -9,9 +9,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -47,7 +48,6 @@ internal fun ConnectorAccountPolicyMenu(
     enabled: Boolean,
     update: (ConnectorAccountPolicyRequestPolicy) -> Unit,
     outlined: Boolean = false,
-    modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val expiration = policy.expiresAt
@@ -101,10 +101,10 @@ internal fun ConnectorAccountPolicyMenu(
         }
     val label = if (duration == null) status else "$status $duration"
     val description = stringResource(R.string.connector_access_label, account.label(), label)
-    val semantics = modifier.semantics { contentDescription = description }
+    val semantics = Modifier.semantics { contentDescription = description }
     Box {
         if (outlined) {
-            Column(Modifier.widthIn(max = 164.dp)) {
+            Column(Modifier.width(144.dp)) {
                 if (expiration != null && duration != null)
                     Text(
                         if (allowed)
@@ -116,7 +116,7 @@ internal fun ConnectorAccountPolicyMenu(
                 OutlinedButton(
                     onClick = { expanded = true },
                     enabled = enabled,
-                    modifier = semantics.heightIn(min = 56.dp),
+                    modifier = semantics.fillMaxWidth().heightIn(min = 56.dp),
                     shape = MaterialTheme.shapes.extraSmall,
                     contentPadding = PaddingValues(horizontal = 12.dp),
                 ) {

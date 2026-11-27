@@ -117,7 +117,7 @@
     <string name="connector_device_denied">サービス提供元が認証を拒否しました。</string>
     <string name="connector_device_expired">デバイスコードの有効期限が切れました。認証をやり直してください。</string>
     <string name="connector_device_failed">デバイス認証を完了できませんでした。</string>
-    <string name="connector_access_scope">すべてのチャットに適用されます。</string>
+    <string name="connector_access_scope">アクセス ポリシーは、このワークスペース内のすべてのチャットに適用されます。</string>
     <string name="connector_access_label">%1$s のアクセス, %2$s</string>
     <string name="connector_access_allow">許可</string>
     <string name="connector_access_deny">拒否</string>

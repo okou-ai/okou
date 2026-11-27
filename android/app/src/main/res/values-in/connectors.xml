@@ -117,7 +117,7 @@
     <string name="connector_device_denied">Penyedia menolak otorisasi.</string>
     <string name="connector_device_expired">Kode perangkat telah kedaluwarsa. Mulai otorisasi lagi.</string>
     <string name="connector_device_failed">Otorisasi perangkat tidak dapat diselesaikan.</string>
-    <string name="connector_access_scope">Berlaku di semua chat Anda.</string>
+    <string name="connector_access_scope">Kebijakan akses berlaku untuk semua chat Anda di ruang kerja ini.</string>
     <string name="connector_access_label">Akses untuk %1$s, %2$s</string>
     <string name="connector_access_allow">Izinkan</string>
     <string name="connector_access_deny">Tolak</string>

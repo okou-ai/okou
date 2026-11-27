@@ -117,7 +117,7 @@
     <string name="connector_device_denied">서비스 제공업체가 인증을 거부했습니다.</string>
     <string name="connector_device_expired">기기 코드가 만료되었습니다. 인증을 다시 시작하세요.</string>
     <string name="connector_device_failed">기기 인증을 완료하지 못했습니다.</string>
-    <string name="connector_access_scope">모든 채팅에 적용됩니다.</string>
+    <string name="connector_access_scope">액세스 정책은 이 워크스페이스의 모든 채팅에 적용됩니다.</string>
     <string name="connector_access_label">%1$s 접근 권한, %2$s</string>
     <string name="connector_access_allow">허용</string>
     <string name="connector_access_deny">거부</string>

@@ -110,7 +110,7 @@
     <string name="chat_options_settings">Conversation settings</string>
     <string name="chat_options_model">Model</string>
     <string name="chat_connector_scope">Applies to this chat. Accounts initially follow the workspace defaults.</string>
-    <string name="connector_access_scope">Applies across your chats.</string>
+    <string name="connector_access_scope">Access policies apply to all your chats in this workspace.</string>
     <string name="connector_access_label">Access for %1$s, %2$s</string>
     <string name="connector_access_allow">Allow</string>
     <string name="connector_access_deny">Deny</string>
