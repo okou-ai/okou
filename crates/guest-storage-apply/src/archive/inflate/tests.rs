@@ -29,22 +29,53 @@ fn extract(dir: &TempDir, bytes: &[u8], inline: bool) -> Result<(), DownloadErro
 }
 
 #[test]
+fn inline_worker_size_hint_stays_within_the_measured_bands() {
+    const MIB: usize = 1024 * 1024;
+    let mut input = vec![0; 4 * MIB];
+    for (compressed, expanded, eligible) in [
+        (MIB - 1, 12 * MIB, false),
+        (MIB, 8 * MIB, true),
+        (4 * MIB - 1, 16 * MIB - 1, true),
+        (4 * MIB, 12 * MIB, false),
+        (2 * MIB, 8 * MIB - 1, false),
+        (2 * MIB, 16 * MIB, false),
+    ] {
+        let archive = input.get_mut(..compressed).unwrap();
+        *archive.last_chunk_mut::<4>().unwrap() = (expanded as u32).to_le_bytes();
+        assert_eq!(inline_artifact_size_is_eligible(archive), eligible);
+    }
+}
+
+#[test]
+fn inline_companion_size_hint_must_be_below_the_artifact_range() {
+    let limit = 8 * 1024 * 1024u32;
+    assert_eq!(
+        small_companion_expanded_bytes(&(limit - 1).to_le_bytes()),
+        Some(limit - 1)
+    );
+    assert_eq!(small_companion_expanded_bytes(&limit.to_le_bytes()), None);
+    assert_eq!(small_companion_expanded_bytes(&[0; 3]), None);
+}
+
+#[test]
 fn wide_read_ahead_samples_a_prefix_of_small_regular_files() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("archive.tar.gz");
-    let content = [b'a'; 16 * 1024];
+    let content = vec![b'a'; TAR_PREFIX_BYTES as usize + 1];
 
-    for (file_count, large_file, expected) in
-        [(16, None, true), (15, None, false), (16, Some(4), false)]
-    {
+    for (file_count, large_file, wide, inline) in [
+        (16, None, true, true),
+        (15, None, false, true),
+        (16, Some((4, 32 * 1024)), false, false),
+        (16, Some((10, 32 * 1024)), false, true),
+        (16, Some((10, content.len())), false, false),
+    ] {
         let encoder = GzEncoder::new(fs::File::create(&source).unwrap(), Compression::none());
         let mut archive = tar::Builder::new(encoder);
         for index in 0..file_count {
-            let size = if large_file == Some(index) {
-                content.len()
-            } else {
-                128
-            };
+            let size = large_file
+                .filter(|(position, _)| *position == index)
+                .map_or(128, |(_, size)| size);
             let mut header = tar::Header::new_gnu();
             header.set_entry_type(tar::EntryType::Regular);
             header.set_size(size as u64);
@@ -57,14 +88,16 @@ fn wide_read_ahead_samples_a_prefix_of_small_regular_files() {
         let mut staged = File::open(&source).unwrap();
         let bytes = fs::read(&source).unwrap();
         assert_eq!(
-            has_small_file_prefix(|output, offset| staged.read_exact_at(output, offset)),
-            expected
+            has_small_file_prefix(
+                |output, offset| staged.read_exact_at(output, offset),
+                16,
+                8 * 1024,
+                None,
+            ),
+            wide
         );
         assert_eq!(staged.stream_position().unwrap(), 0);
-        assert_eq!(
-            has_small_file_prefix(|output, offset| read_inline_at(&bytes, output, offset)),
-            expected
-        );
+        assert_eq!(has_small_inline_file_prefix(&bytes), inline);
     }
 }
 

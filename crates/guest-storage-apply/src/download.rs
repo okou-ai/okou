@@ -22,6 +22,10 @@ use std::time::{Duration, Instant};
 const LOCAL_CONCURRENT: usize = 4;
 const LARGE_LOCAL_ARTIFACT_BYTES: u64 = 256 * 1024;
 #[cfg(target_os = "linux")]
+const MIN_INLINE_ARTIFACT_BATCH_TASKS: usize = 17;
+#[cfg(target_os = "linux")]
+const MAX_INLINE_COMPANION_EXPANDED_BYTES: u32 = 32 * 1024 * 1024;
+#[cfg(target_os = "linux")]
 const WIDE_LOCAL_INFLATE_TASKS: usize = 32;
 const BASE_REMOTE_CONCURRENT: usize = 16;
 const MEDIUM_REMOTE_MAX_CONCURRENT: usize = 20;
@@ -512,6 +516,49 @@ fn download_concurrency(remote_count: usize, task_count: usize) -> usize {
     remote_count.clamp(LOCAL_CONCURRENT, limit).min(task_count)
 }
 
+#[cfg(target_os = "linux")]
+fn single_inline_artifact<'input>(tasks: &[PreparedDownloadTask<'input>]) -> Option<&'input [u8]> {
+    let mut artifact = None;
+    for prepared in tasks {
+        let task = &prepared.task;
+        let archive = task.inline_archive?;
+        if !task.telemetry.is_artifact() {
+            continue;
+        }
+        if artifact.is_some() || task.template_guidance.is_some() {
+            return None;
+        }
+        artifact = Some(archive);
+    }
+    artifact
+}
+
+#[cfg(target_os = "linux")]
+fn inline_companions_fit_budget(tasks: &[PreparedDownloadTask<'_>]) -> bool {
+    // Several individually small archives can still compete for write time.
+    tasks
+        .iter()
+        .map(|prepared| &prepared.task)
+        .filter(|task| !task.telemetry.is_artifact())
+        .try_fold(0, |total, task| {
+            let expanded = archive::inflate::small_companion_expanded_bytes(task.inline_archive?)?;
+            let total = total + expanded;
+            (total <= MAX_INLINE_COMPANION_EXPANDED_BYTES).then_some(total)
+        })
+        .is_some()
+}
+
+#[cfg(target_os = "linux")]
+fn inline_batch_prefers_two_workers(tasks: &[PreparedDownloadTask<'_>]) -> bool {
+    let Some(artifact) = single_inline_artifact(tasks) else {
+        return false;
+    };
+    archive::inflate::inline_artifact_size_is_eligible(artifact)
+        && rustix::thread::sched_getaffinity(None).is_ok_and(|cpus| cpus.count() == 2)
+        && inline_companions_fit_budget(tasks)
+        && archive::inflate::has_small_inline_file_prefix(artifact)
+}
+
 fn download_with_readiness(
     mut tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
@@ -529,11 +576,22 @@ fn download_with_readiness(
         .iter()
         .filter(|task| task.task.telemetry.is_remote())
         .count();
-    let concurrency = download_concurrency(remote_count, tasks.len());
-    // Local archives compete for CPU. Prefer longer ready work without changing
-    // the original pending order used to enforce logical and physical ownership.
     let local_only = remote_count == 0;
     let allow_artifact_priority = local_only && readiness.is_none();
+    let concurrency = download_concurrency(remote_count, tasks.len());
+    // Two ready writers help an isolated dense Artifact on a two-CPU Guest.
+    // Other substantial writes in the batch benefit from the existing budget.
+    #[cfg(target_os = "linux")]
+    let concurrency = if allow_artifact_priority
+        && (MIN_INLINE_ARTIFACT_BATCH_TASKS..WIDE_LOCAL_INFLATE_TASKS).contains(&tasks.len())
+        && inline_batch_prefers_two_workers(&tasks)
+    {
+        2
+    } else {
+        concurrency
+    };
+    // Local archives compete for CPU. Prefer longer ready work without changing
+    // the original pending order used to enforce logical and physical ownership.
     let pending = tasks
         .into_iter()
         .enumerate()
