@@ -691,7 +691,7 @@ private fun SearchResults(
                             row.key,
                             restoreResultFocus,
                             highlightedSearchText(chat.searchTitle(untitled), keyword),
-                            snippet = { MessageSearchExcerpt(hit) },
+                            snippet = { SearchResultExcerpt(hit.content, hit.ranges) },
                             metadata = metadata,
                         ) {
                             search.returnToResult(row.key, inputMode.inputMode)
@@ -706,9 +706,11 @@ private fun SearchResults(
                             restoreResultFocus,
                             highlightedSearchText(hit.title, keyword),
                             snippet = {
-                                hit.description
-                                    ?.takeIf { it.isNotBlank() }
-                                    ?.let { SearchExcerptText(highlightedSearchText(it, keyword)) }
+                                hit.description?.takeIf(String::isNotBlank)?.let { purpose ->
+                                    val match = purpose.searchMatch(keyword)
+                                    if (match == null) SearchExcerptText(AnnotatedString(purpose))
+                                    else SearchResultExcerpt(purpose, listOf(match))
+                                }
                             },
                         ) {
                             search.returnToResult(row.key, inputMode.inputMode)
@@ -940,13 +942,18 @@ private val WorkspaceSearchType.emptyLabel: Int
 
 @Composable
 private fun highlightedSearchText(text: String, keyword: String): AnnotatedString {
-    val start =
-        keyword.takeIf(String::isNotEmpty)?.let { text.indexOf(it, ignoreCase = true) } ?: -1
+    val match = text.searchMatch(keyword)
     val matchStyle = searchMatchStyle()
     return buildAnnotatedString {
         append(text)
-        if (start >= 0) addStyle(matchStyle, start, start + keyword.length)
+        if (match != null) addStyle(matchStyle, match.first, match.last + 1)
     }
+}
+
+private fun String.searchMatch(keyword: String): IntRange? {
+    if (keyword.isEmpty()) return null
+    val start = indexOf(keyword, ignoreCase = true)
+    return if (start >= 0) start until start + keyword.length else null
 }
 
 @Composable
@@ -969,14 +976,13 @@ private fun SearchExcerptText(
 }
 
 @Composable
-private fun MessageSearchExcerpt(hit: SearchMessageHit) {
-    val text = hit.content
+private fun SearchResultExcerpt(text: String, matches: List<IntRange>) {
     if (text.isBlank()) return
-    val first = hit.ranges.minByOrNull { it.first }
+    val first = matches.minByOrNull { it.first }
     val matchStyle = searchMatchStyle()
     val density = LocalDensity.current
     val window = LocalWindowInfo.current.containerSize
-    var startAtMatch by remember(hit, density, window) { mutableStateOf(false) }
+    var startAtMatch by remember(text, matches, density, window) { mutableStateOf(false) }
     val leadingContext = if (startAtMatch) 0 else 20
     var from = ((first?.first ?: 0) - leadingContext).coerceIn(0, text.lastIndex)
     var to = ((first?.last?.plus(1) ?: from) + 54).coerceAtMost(text.length)
@@ -990,7 +996,7 @@ private fun MessageSearchExcerpt(hit: SearchMessageHit) {
             val character = text[index]
             append(if (character.isWhitespace()) ' ' else character)
         }
-        for (range in hit.ranges) {
+        for (range in matches) {
             val start = maxOf(range.first, from)
             val end = minOf(range.last + 1, to)
             if (start < end) {
