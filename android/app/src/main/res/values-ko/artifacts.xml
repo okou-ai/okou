@@ -103,4 +103,7 @@
     <string name="artifact_link_who_can_view">볼 수 있는 사용자</string>
     <string name="artifact_workspace_link_hint">%1$s 구성원은 이 링크를 열 수 있습니다.</string>
     <string name="artifact_public_link_hint">링크가 있는 모든 사용자가 열 수 있습니다.</string>
+    <string name="artifact_image_page_description">총 %2$d장 중 %1$d번째 이미지</string>
+    <string name="artifact_image_previous_page">이전 이미지</string>
+    <string name="artifact_image_next_page">다음 이미지</string>
 </resources>

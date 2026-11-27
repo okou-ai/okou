@@ -123,6 +123,12 @@ internal fun ConversationMessageRow(
                 Box(modifier = Modifier.fillMaxWidth(.85f).wrapContentWidth(Alignment.End)) {
                     val delivery = entry.preview?.pendingDelivery
                     val status = delivery?.let { stringResource(it.label()) }
+                    val returnKey = artifactActions?.restoreKey
+                    val missingAttachment =
+                        attachmentFocusMessage(returnKey) == message.id &&
+                            (returnKey?.substringAfterLast('/')?.toIntOrNull() ?: -1) !in
+                                attachments.indices
+                    val messageFocus = remember { FocusRequester() }
                     Surface(
                         modifier =
                             (if (attachments.isEmpty()) Modifier
@@ -130,6 +136,16 @@ internal fun ConversationMessageRow(
                                 .then(
                                     if (status == null) Modifier
                                     else Modifier.semantics { stateDescription = status },
+                                )
+                                .then(
+                                    if (missingAttachment)
+                                        Modifier.focusRequester(messageFocus)
+                                            .focusable()
+                                            .onGloballyPositioned {
+                                                if (messageFocus.requestFocus())
+                                                    artifactActions?.restored?.invoke()
+                                            }
+                                    else Modifier,
                                 ),
                         shape = RoundedCornerShape(16.dp),
                         color = colors.surfaceVariant,

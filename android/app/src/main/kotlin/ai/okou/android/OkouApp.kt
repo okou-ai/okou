@@ -22,6 +22,8 @@ import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ChatRowAction
+import ai.okou.android.chat.ChatSentImageViewer
+import ai.okou.android.chat.ChatSentImageVisit
 import ai.okou.android.chat.ComposerPrefillResult
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
@@ -59,6 +61,7 @@ import ai.okou.android.chat.WorkspaceNamePresentation
 import ai.okou.android.chat.WorkspaceRenameTarget
 import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.chat.WorkspaceSearchScreen
+import ai.okou.android.chat.attachmentFocusMessage
 import ai.okou.android.chat.conversationRunControls
 import ai.okou.android.chat.imageFocusReply
 import ai.okou.android.chat.openConversationWebLink
@@ -471,18 +474,32 @@ internal fun OkouApp(
     val missingMessage = stringResource(R.string.chat_search_message_unavailable)
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    fun openChatArtifact(link: String, focusKey: String?, visit: ChatSentImageVisit? = null) {
+        focus.clearFocus()
+        keyboard?.hide()
+        chatArtifacts?.showSentImages(visit)
+        navigation = navigation.copy(chatArtifactLink = link, chatArtifactFocusKey = focusKey)
+    }
+    fun conversationArtifactActions(threadId: String): ChatArtifactActions? =
+        chatArtifacts?.let { model ->
+            ChatArtifactActions(
+                open = { link, key -> openChatArtifact(link, key) },
+                restoreKey = navigation.chatArtifactFocusKey,
+                restored = {
+                    navigation =
+                        navigation.copy(
+                            chatArtifactLink = null,
+                            chatArtifactFocusKey = null,
+                        )
+                },
+                images = model.inlineImages,
+                threadId = threadId,
+                openImages = { visit, key -> openChatArtifact(visit.initialLink, key, visit) },
+            )
+        }
     val openComposerAttachment: ((ChatAttachmentReference) -> Unit)? =
         if (chatArtifacts == null) null
-        else
-            { attachment ->
-                focus.clearFocus()
-                keyboard?.hide()
-                navigation =
-                    navigation.copy(
-                        chatArtifactLink = attachment.attachmentPreviewId(),
-                        chatArtifactFocusKey = null,
-                    )
-            }
+        else { attachment -> openChatArtifact(attachment.attachmentPreviewId(), null) }
 
     fun closeFind(returnToActions: Boolean = false) {
         val find = findVisit ?: return
@@ -546,6 +563,7 @@ internal fun OkouApp(
         returnToCard: Boolean = false,
         preservePage: Boolean = false,
     ) {
+        composer?.showDraftImages(null)
         if (navigation.chatArtifactLink != null) {
             navigation =
                 navigation.copy(
@@ -553,6 +571,7 @@ internal fun OkouApp(
                     chatArtifactFocusKey = navigation.chatArtifactFocusKey.takeIf { returnToCard },
                 )
             chatArtifacts?.select(null)
+            chatArtifacts?.showSentImages(null)
             inlineArtifactPageState.removeState("chat-artifact-link")
         }
         if (!returnToCard && navigation.chatArtifactFocusKey != null) {
@@ -707,9 +726,10 @@ internal fun OkouApp(
         fromSearch: Boolean,
         fromLink: Boolean = false,
         searchMessageAnchor: SearchMessageAnchor? = null,
+        keepAttachmentVisit: Boolean = false,
     ) {
         if (!fromLink) clearConversationLinks()
-        closeResources(preservePage = fromLink)
+        if (!keepAttachmentVisit) closeResources(preservePage = fromLink)
         if (artifactSource != null && !fromLink) closeArtifacts(restoreFocus = false)
         val search =
             when {
@@ -734,13 +754,24 @@ internal fun OkouApp(
             )
     }
 
-    fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false, fromLink: Boolean = false) {
+    fun openChat(
+        chat: ConfirmedChat,
+        fromSearch: Boolean = false,
+        fromLink: Boolean = false,
+        keepAttachmentVisit: Boolean = false,
+    ) {
         val activeChats = chats ?: return
         val pending = composer?.uiState?.value?.pendingNewChat(chat.id)
         val destination =
             if (pending == null) WorkspaceTarget.Chat(chat.id)
             else WorkspaceTarget.NewChat(pending.projectId)
-        openConversation(chat.id, destination, fromSearch, fromLink)
+        openConversation(
+            chat.id,
+            destination,
+            fromSearch,
+            fromLink,
+            keepAttachmentVisit = keepAttachmentVisit,
+        )
         if (pending == null) composer?.acknowledge(chat.id)
         activeChats.history.open(chat)
     }
@@ -1073,7 +1104,15 @@ internal fun OkouApp(
         if (newChat != null && navigation.target == newChat && provisionalId != null) {
             conversations.open(provisionalId)
             if (provisionalChat != null) {
-                if (createdId != null) openChat(provisionalChat)
+                if (createdId != null)
+                    openChat(
+                        provisionalChat,
+                        keepAttachmentVisit =
+                            chatArtifacts?.sentImageVisit?.threadId == provisionalId ||
+                                (navigation.chatArtifactLink == null &&
+                                    attachmentFocusMessage(navigation.chatArtifactFocusKey) !=
+                                        null),
+                    )
                 else chats?.history?.open(provisionalChat)
             }
         }
@@ -1154,6 +1193,9 @@ internal fun OkouApp(
             )
         else null
     val conversationMissing = runActions?.confirmed?.phase == HistoryPhase.Missing
+    LaunchedEffect(inlineArtifactLink, conversationMissing) {
+        if (inlineArtifactLink != null && conversationMissing) closeResources()
+    }
     val actionableThread = thread.takeUnless { conversationMissing }
     val visibleConversationId =
         actionableThread?.id?.takeIf {
@@ -2002,19 +2044,37 @@ internal fun OkouApp(
                                 }
                                 return@detailPane
                             }
-                            if (inlineArtifactLink != null && chatArtifacts != null) {
+                            if (
+                                inlineArtifactLink != null &&
+                                    chatArtifacts != null &&
+                                    !conversationMissing
+                            ) {
                                 inlineArtifactPageState.SaveableStateProvider(
                                     "chat-artifact-link",
                                 ) {
-                                    ChatArtifactLinkPreview(
-                                        chatArtifacts,
-                                        inlineArtifactLink,
-                                        listWidth != null,
-                                        inlineImage =
-                                            imageFocusReply(navigation.chatArtifactFocusKey) !=
-                                                null,
-                                    ) {
-                                        closeResources(returnToCard = true)
+                                    val visit =
+                                        chatArtifacts.sentImageVisit?.takeIf {
+                                            it.initialLink == inlineArtifactLink &&
+                                                it.threadId == (thread?.id ?: provisionalId)
+                                        }
+                                    val close = { closeResources(returnToCard = true) }
+                                    if (visit != null) {
+                                        ChatSentImageViewer(
+                                            chatArtifacts,
+                                            visit,
+                                            listWidth != null,
+                                            close,
+                                        )
+                                    } else {
+                                        ChatArtifactLinkPreview(
+                                            chatArtifacts,
+                                            inlineArtifactLink,
+                                            listWidth != null,
+                                            inlineImage =
+                                                imageFocusReply(navigation.chatArtifactFocusKey) !=
+                                                    null,
+                                            onClose = close,
+                                        )
                                     }
                                 }
                                 return@detailPane
@@ -2122,31 +2182,9 @@ internal fun OkouApp(
                                                     if (canEdit) { prompt -> followup = prompt }
                                                     else null,
                                                 artifactActions =
-                                                    if (chatArtifacts == null || thread == null)
-                                                        null
-                                                    else
-                                                        ChatArtifactActions(
-                                                            open = { link, key ->
-                                                                focus.clearFocus()
-                                                                keyboard?.hide()
-                                                                navigation =
-                                                                    navigation.copy(
-                                                                        chatArtifactLink = link,
-                                                                        chatArtifactFocusKey = key,
-                                                                    )
-                                                            },
-                                                            restoreKey =
-                                                                navigation.chatArtifactFocusKey,
-                                                            restored = {
-                                                                navigation =
-                                                                    navigation.copy(
-                                                                        chatArtifactLink = null,
-                                                                        chatArtifactFocusKey = null,
-                                                                    )
-                                                            },
-                                                            images = chatArtifacts.inlineImages,
-                                                            threadId = target.id,
-                                                        ),
+                                                    thread?.let {
+                                                        conversationArtifactActions(it.id)
+                                                    },
                                                 findTarget = find?.target,
                                                 linkPosition = linkPosition,
                                                 onLink = ::openMessageLink,
@@ -2267,6 +2305,8 @@ internal fun OkouApp(
                                                     historyAvailable = provisionalChat != null,
                                                     controls = runActions,
                                                     stopPlacement = stopPlacement,
+                                                    artifactActions =
+                                                        conversationArtifactActions(provisionalId),
                                                     queueOpen = queueOpen,
                                                     queuePosition = queuePosition,
                                                     dismissQueue = {

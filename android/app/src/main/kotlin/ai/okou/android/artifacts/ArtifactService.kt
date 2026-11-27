@@ -545,6 +545,9 @@ private const val ChatAttachmentPreviewPrefix = "chat-attachment:"
 internal fun isGeneratedArtifactPreview(id: String): Boolean =
     !id.startsWith(ExternalImagePreviewPrefix) && chatAttachment(id) == null
 
+internal fun isChatAttachmentImage(id: String): Boolean =
+    chatAttachment(id)?.contentType?.isAttachmentImage == true
+
 internal fun ChatAttachmentReference.attachmentPreviewId(): String =
     ChatAttachmentPreviewPrefix +
         listOf(id, filename, contentType).joinToString("/") { Uri.encode(it) }
