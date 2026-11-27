@@ -1,4 +1,3 @@
-import { iosAntigravitySubscriptionTransforms } from "./antigravity-subscription";
 import { iosVoiceDraftTransforms } from "./voice-draft";
 import { iosChatUltrafastTransforms } from "./chat-ultrafast";
 import type { ClientResponseTransform } from "./types";
@@ -10,5 +9,4 @@ export const iosResponseTransforms: readonly ClientResponseTransform[] = [
   ...Object.values(iosVoiceDraftTransforms),
   ...Object.values(iosChatUltrafastTransforms),
   ...Object.values(iosChatContextTransforms),
-  ...Object.values(iosAntigravitySubscriptionTransforms),
 ];

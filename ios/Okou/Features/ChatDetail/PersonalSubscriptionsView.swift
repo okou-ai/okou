@@ -56,7 +56,7 @@ private struct PersonalSubscriptionsContent: View {
         }
       }
       Section {
-        ForEach(PersonalSubscriptionType.allCases) { type in
+        ForEach(PersonalSubscriptionType.deviceAuthCases) { type in
           Button {
             store.start(type: type)
             showsAuth = true
@@ -130,14 +130,16 @@ private struct PersonalSubscriptionsContent: View {
         // Without a valid sign-in there is no usage to show; one row says what to do.
         HStack(spacing: OkouSpace.md) {
           Text("Sign-in expired").foregroundStyle(OkouColor.destructive)
-          Spacer(minLength: OkouSpace.sm)
-          Button("Reconnect") {
-            store.start(type: type, accountID: account.id)
-            showsAuth = true
+          if type.supportsDeviceAuth {
+            Spacer(minLength: OkouSpace.sm)
+            Button("Reconnect") {
+              store.start(type: type, accountID: account.id)
+              showsAuth = true
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(OkouColor.foreground)
+            .font(.okou(.body).weight(.medium))
           }
-          .buttonStyle(.borderless)
-          .foregroundStyle(OkouColor.foreground)
-          .font(.okou(.body).weight(.medium))
         }
       } else if account.usageWindows.isEmpty {
         VStack(alignment: .leading, spacing: OkouSpace.two) {
@@ -227,9 +229,11 @@ private struct PersonalSubscriptionsContent: View {
         if account.isActive == false {
           Button("Use account", okouSymbol: "check") { Task { await store.activate(account) } }
         }
-        Button("Reconnect", okouSymbol: "refresh-cw") {
-          store.start(type: type, accountID: account.id)
-          showsAuth = true
+        if type.supportsDeviceAuth {
+          Button("Reconnect", okouSymbol: "refresh-cw") {
+            store.start(type: type, accountID: account.id)
+            showsAuth = true
+          }
         }
         Button("Disconnect", okouSymbol: "log-out", role: .destructive) { disconnecting = account }
       } label: {
