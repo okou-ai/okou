@@ -102,6 +102,7 @@ internal fun ArtifactImageViewer(
         preview.problem == ArtifactProblem.Denied ||
             preview.problem == ArtifactProblem.Missing ||
             preview.problem == ArtifactProblem.Unavailable
+    val originalUnavailable = preview.problem == ArtifactProblem.OriginalUnavailable
     val source = (preview.content as? ArtifactContent.EncodedImage).takeUnless { unavailable }
     val bitmap = (preview.content as? ArtifactContent.Image)?.bitmap ?: source?.fallback
     val decoded = source?.let { rememberDecodedArtifactImage(it.bytes, imageSize) }
@@ -109,9 +110,9 @@ internal fun ArtifactImageViewer(
     val independentThumbnail =
         preview.info?.independentThumbnailUrl(preview.access?.url?.toString())
     val thumbnailUrl =
-        (independentThumbnail ?: preview.info?.thumbnailUrl ?: preview.item?.thumbnail).takeIf {
-            bitmap == null && original == null && preview.access != null && !unavailable
-        }
+        if (bitmap == null && original == null && !unavailable && !originalUnavailable) {
+            independentThumbnail ?: preview.info?.thumbnailUrl?.takeIf { preview.access != null }
+        } else null
     val thumbnail = thumbnailUrl?.let { url ->
         key(model, url) {
             val cacheOnly = independentThumbnail == null
@@ -136,8 +137,8 @@ internal fun ArtifactImageViewer(
     val problem =
         when {
             unavailable -> R.string.artifact_image_unavailable
-            preview.problem == ArtifactProblem.OriginalUnavailable ->
-                R.string.artifact_image_original_unavailable
+            originalUnavailable ->
+                R.string.artifact_image_original_unavailable.takeIf { image != null }
             preview.problem != null ||
                 preview.content == ArtifactContent.Unsupported ||
                 decoded is AsyncImagePainter.State.Error -> R.string.artifact_image_load_failed

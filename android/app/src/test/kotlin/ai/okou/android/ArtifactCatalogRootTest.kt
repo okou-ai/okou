@@ -1838,6 +1838,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
 
             releaseOriginal.countDown()
             compose.waitUntilDoesNotExist(hasContentDescription("Image actions"), 10_000)
+            compose.waitUntilDoesNotExist(hasContentDescription(fixture.image.title), 10_000)
             releaseAuthority.countDown()
             awaitText("Original image unavailable")
             assertEquals(0L, authorityRead.count)
@@ -1852,22 +1853,35 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
-    fun missingOriginalGrantStillShowsAnIndependentlyAuthorizedThumbnail() {
+    fun showsIndependentThumbnailBeforeOriginalGrantAndAfterReauthorization() {
         val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = true)
         fixture.install()
+        val requestedGrant = CountDownLatch(1)
+        val releaseGrant = CountDownLatch(1)
         val respond = app.fixture.commandResponse
         app.fixture.commandResponse = { request ->
             if (request.requestUrl?.encodedPath == "/api/artifact-references/thumbnail1.png") {
+                requestedGrant.countDown()
+                check(releaseGrant.await(10, TimeUnit.SECONDS))
                 jsonResponse("""{"error":{"code":"NOT_FOUND","message":"Artifact unavailable"}}""")
                     .setResponseCode(404)
             } else respond(request)
         }
 
-        app.responseGate.countDown()
-        awaitText(fixture.sourceTitle)
-        compose.onNodeWithContentDescription("Artifacts").performClick()
-        awaitText(fixture.image.title)
-        compose.onNodeWithText(fixture.image.title).performClick()
+        try {
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.image.title)
+            compose.onNodeWithText(fixture.image.title).performClick()
+            compose.onNodeWithTag("artifact_image_toolbar").assertIsDisplayed()
+            compose.waitUntil(5_000) { compose.runOnIdle { requestedGrant.count == 0L } }
+            compose.waitUntilExactlyOneExists(hasContentDescription(fixture.image.title), 5_000)
+            compose.onNodeWithText("Loading image…").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Image actions").assertDoesNotExist()
+        } finally {
+            releaseGrant.countDown()
+        }
         awaitText("Original image unavailable")
         compose.onNodeWithContentDescription(fixture.image.title).assertIsDisplayed()
         compose.onNodeWithContentDescription("Image actions").assertDoesNotExist()
