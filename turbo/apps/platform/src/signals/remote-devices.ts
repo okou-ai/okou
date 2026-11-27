@@ -219,11 +219,12 @@ export const renameRemoteDevice$ = command(
       signal,
       { showErrorToast: false },
     );
-    set(renameDraft$, { ...draft, request });
+    const submittedDraft = { ...draft, request };
+    set(renameDraft$, submittedDraft);
     await request;
     signal.throwIfAborted();
     set(invalidateRemoteDeviceDirectory$);
-    if (get(renameDraft$)?.request === request) {
+    if (get(renameDraft$) === submittedDraft) {
       set(closeRemoteDeviceRename$);
     }
   },
