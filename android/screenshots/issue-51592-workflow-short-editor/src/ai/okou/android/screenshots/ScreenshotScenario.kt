@@ -44,13 +44,17 @@ class ScreenshotScenario {
         val initialSize = displayOverride("size", "\\d+x\\d+")
         val initialDensity = displayOverride("density", "\\d+")
         val initialScale = device.executeShellCommand("settings get system font_scale").trim()
+        val initialIme = device.executeShellCommand("settings get secure show_ime_with_hard_keyboard").trim()
         val failures = mutableListOf<Throwable>()
         try {
             device.executeShellCommand("wm density 160")
+            device.executeShellCommand("settings put secure show_ime_with_hard_keyboard 0")
             captureWindow(412, 892, 1f, UserPreferencesTheme.LIGHT) { scenario, fixture ->
+                closeIme(scenario)
                 device.executeShellCommand("wm size 360x280")
                 device.executeShellCommand("settings put system font_scale 2.0")
                 assertWindow(scenario, 360, 280, 2f)
+                closeIme(scenario)
                 reveal(scenario, subject, minimumHeight = 70)
                 assertEquals(draft, node(subject).text)
                 ScreenshotCapture.capture("short-editor-fields.png")
@@ -84,6 +88,8 @@ class ScreenshotScenario {
                 "wm density ${initialDensity ?: "reset"}",
                 if (initialScale.toFloatOrNull() == null) "settings delete system font_scale"
                 else "settings put system font_scale $initialScale",
+                if (initialIme.toIntOrNull() == null) "settings delete secure show_ime_with_hard_keyboard"
+                else "settings put secure show_ime_with_hard_keyboard $initialIme",
             ).forEach { command ->
                 try {
                     device.executeShellCommand(command)
@@ -198,6 +204,22 @@ class ScreenshotScenario {
         return bottom
     }
 
+    private fun closeIme(scenario: ActivityScenario<MainActivity>) {
+        fun imeVisible(): Boolean {
+            var visible = false
+            scenario.onActivity {
+                visible = it.window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
+            }
+            return visible
+        }
+        if (!imeVisible()) return
+        assertTrue(device.pressBack())
+        val hidden = object : Condition<UiDevice, Boolean> {
+            override fun apply(device: UiDevice): Boolean = !imeVisible()
+        }
+        assertTrue("The keyboard closes before capturing the resized form", device.wait(hidden, 10_000))
+    }
+
     private fun reveal(
         scenario: ActivityScenario<MainActivity>,
         selector: BySelector,
@@ -206,6 +228,7 @@ class ScreenshotScenario {
         val scoped = By.copy(selector).pkg(app.packageName)
         var largestVisibleHeight = 0
         repeat(28) {
+            closeIme(scenario)
             val node = device.findObject(scoped)
             val target = if (selector === save) node?.let(::saveControl) else node
             val bottom = safeBottom(scenario)
@@ -219,7 +242,7 @@ class ScreenshotScenario {
                     .filter { it.height() >= 48 }
                     .minByOrNull { it.height() }
                     ?: error("No scrollable editor viewport for $selector")
-            val x = scrollBounds.centerX()
+            val x = scrollBounds.left + 14
             val start = minOf(bottom, scrollBounds.bottom) - 12
             val drag = if (selector === save) 68 else if (target == null) 46 else 24
             val end = maxOf(scrollBounds.top + 12, start - drag)
