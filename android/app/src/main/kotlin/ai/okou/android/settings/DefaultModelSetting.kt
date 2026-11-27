@@ -45,6 +45,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -56,6 +57,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.testTag
@@ -203,10 +206,13 @@ internal fun ModelPickerSheet(
     dismiss: () -> Unit,
     catalogUnavailable: Boolean = false,
     snackbar: SnackbarHostState? = null,
+    footerHasAction: Boolean = false,
     footer: @Composable () -> Unit = {},
 ) {
     val fullScreen = isShortSettingsPanelWindow()
     val scroll = rememberScrollState()
+    val contentPadding = settingsPanelContentPadding(compactHeight = fullScreen)
+    var footerHeight by remember { mutableIntStateOf(0) }
     val selected = choices?.firstOrNull { it.id == selectedId }
     val advancedModel = selected?.takeIf { it.canSelect }
     val showEffort = advancedModel != null && advancedModel.efforts.isNotEmpty()
@@ -236,7 +242,7 @@ internal fun ModelPickerSheet(
         Column(
             Modifier.fillMaxWidth()
                 .then(size)
-                .padding(settingsPanelContentPadding(compactHeight = fullScreen))
+                .padding(contentPadding)
                 .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
             val back: @Composable () -> Unit = {
@@ -367,17 +373,24 @@ internal fun ModelPickerSheet(
                     }
                 }
             }
-            footer()
+            if (footerHasAction) {
+                Column(Modifier.onSizeChanged { footerHeight = it.height }) { footer() }
+            } else footer()
         }
     }
     SettingsModal(dismiss, fullScreen = fullScreen, fitContentInsets = fullScreen) { centered ->
         Box(Modifier.testTag("model-picker"), propagateMinConstraints = true) {
             panel(centered)
             if (snackbar != null) {
+                val footerInset =
+                    if (footerHasAction) {
+                        with(LocalDensity.current) { footerHeight.toDp() } +
+                            contentPadding.calculateBottomPadding()
+                    } else 0.dp
                 Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomCenter) {
                     WorkspaceFeedbackHost(
                         snackbar,
-                        Modifier.padding(bottom = 8.dp),
+                        Modifier.padding(bottom = 8.dp + footerInset),
                         manageTimeout = false,
                     )
                 }

@@ -353,6 +353,7 @@ internal fun ChatConnectorOptionsButton(
             },
             dismiss = ::back,
             snackbar = conversationSnackbar,
+            footerHasAction = edits?.phase == ConversationModelSave.NeedsCheck,
             footer = {
                 edits?.phase?.message?.let { message ->
                     ConnectorOptionFeedback(message, Modifier.padding(top = 8.dp))

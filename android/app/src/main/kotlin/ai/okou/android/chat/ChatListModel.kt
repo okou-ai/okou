@@ -1727,7 +1727,10 @@ class ChatListModel(
                 serviceTierEventId = UUID.randomUUID().toString(),
             )
         val edit = ConversationModelEdit(request, expected)
-        publishModelEdits(threadId, edits.copy(pending = edits.pending + edit))
+        publishModelEdits(
+            threadId,
+            edits.copy(pending = edits.pending + edit, failures = emptyList()),
+        )
         if (edits.pending.isEmpty()) writeConversationModel(threadId)
     }
 

@@ -168,7 +168,7 @@ class ChatComposerRootTest {
                 val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                 requests += body
                 val attempt = requests.size
-                if (attempt == 2) {
+                if (attempt == 2 || attempt == 6) {
                     jsonResponse("""{"code":"BAD_REQUEST","message":"Unavailable"}""")
                         .setResponseCode(400)
                 } else {
@@ -281,28 +281,6 @@ class ChatComposerRootTest {
                 8_000,
             )
             compose.onAllNodes(saveFailure).assertCountEquals(1)
-            // Drive each transition without consuming the notice's accessible timeout.
-            compose.mainClock.autoAdvance = false
-            try {
-                compose
-                    .onNode(
-                        hasContentDescription("Back") and
-                            hasAnyAncestor(hasTestTag("model-picker")),
-                    )
-                    .performClick()
-                compose.mainClock.advanceTimeBy(500)
-                compose
-                    .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
-                    .performSemanticsAction(SemanticsActions.Dismiss)
-                compose.mainClock.advanceTimeBy(500)
-                compose
-                    .onNode(saveFailure and hasAnyAncestor(conversationFeedback))
-                    .assertIsDisplayed()
-                compose.onAllNodes(saveFailure).assertCountEquals(1)
-            } finally {
-                compose.mainClock.autoAdvance = true
-            }
-            openModel()
             compose.waitUntilExactlyOneExists(hasText("Fast mode") and isOff(), 8_000)
             gpt.assertIsSelected()
             compose.onNodeWithText("High").assertExists()
@@ -355,6 +333,39 @@ class ChatComposerRootTest {
             assertEquals(JsonNull, unsupportedTierWrite.getValue("codexServiceTier"))
             assertTrue(app.fixture.created.isEmpty())
             assertTrue(app.modelFixture.writes.isEmpty())
+
+            compose.waitUntilDoesNotExist(saveFailure, 8_000)
+            compose.onNodeWithText("Medium").performClick()
+            compose.onNodeWithText("High").performClick()
+            compose.waitUntilExactlyOneExists(
+                saveFailure and hasAnyAncestor(hasTestTag("model-picker")),
+                8_000,
+            )
+            compose.onNodeWithText("Medium").assertIsDisplayed()
+            // Drive each transition without consuming the notice's accessible timeout.
+            compose.mainClock.autoAdvance = false
+            try {
+                compose
+                    .onNode(
+                        hasContentDescription("Back") and
+                            hasAnyAncestor(hasTestTag("model-picker")),
+                    )
+                    .performClick()
+                compose.mainClock.advanceTimeBy(500)
+                compose
+                    .onNode(
+                        hasContentDescription("Drag handle") and
+                            SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss),
+                    )
+                    .performSemanticsAction(SemanticsActions.Dismiss)
+                compose.mainClock.advanceTimeBy(500)
+                compose
+                    .onNode(saveFailure and hasAnyAncestor(conversationFeedback))
+                    .assertIsDisplayed()
+                compose.onAllNodes(saveFailure).assertCountEquals(1)
+            } finally {
+                compose.mainClock.autoAdvance = true
+            }
         } finally {
             release.countDown()
             instrumentation.resetInTouchMode()
