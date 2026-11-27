@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS } from "../model-provider-firewalls";
 import {
   getModelProviderEnvBindings,
   getFrameworkForType,
@@ -40,6 +41,29 @@ describe("model-first canonical catalog", () => {
     expect(
       MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_ACCESS_TOKEN.split("."),
     ).toHaveLength(1);
+  });
+
+  it("reserves unique namespaced placeholders with CLI-compatible shapes", () => {
+    const values = MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS;
+    const allValues = [
+      ...Object.values(MODEL_PROVIDER_ENV_PLACEHOLDERS),
+      ...Object.values(values),
+    ];
+    expect(new Set(allValues).size).toBe(allValues.length);
+    for (const value of Object.values(values)) {
+      expect(value).toContain("OkouModelProvider");
+    }
+    expect(values.CLAUDE_CODE_OAUTH_TOKEN).toMatch(
+      /^sk-ant-oat01-[\w-]{93}AA$/u,
+    );
+    expect(values.OPENAI_API_KEY).toMatch(
+      /^OkouModelProviderOpenRouter[A-Za-z0-9]+$/u,
+    );
+    expect(values.CHATGPT_ACCESS_TOKEN).toMatch(
+      /^chatgpt-token-[A-Za-z0-9]+$/u,
+    );
+    expect(values.CHATGPT_ACCOUNT_ID).toMatch(/^ws_[A-Za-z0-9]+$/u);
+    expect(values.CHATGPT_REFRESH_TOKEN).toMatch(/^rt_[A-Za-z0-9]+$/u);
   });
 
   it("validates credential scopes", () => {
