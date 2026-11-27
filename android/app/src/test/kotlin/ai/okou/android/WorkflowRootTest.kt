@@ -2064,12 +2064,13 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
             assertEquals(rowTop, row.getUnclippedBoundsInRoot().top)
 
             query.performTextReplacement("unmatched query")
-            val empty = compose.onNodeWithText("No matching workflows").assertIsDisplayed()
+            val empty = compose.onNodeWithText("No matching workflows")
+            empty.assertDoesNotExist()
             compose.waitForIdle()
             compose.mainClock.advanceTimeBy(280)
-            compose.onNode(loading and !progressSemantics).assertDoesNotExist()
-            progress.assertIsDisplayed()
-            empty.assertIsDisplayed()
+            compose.onNode(loading and !progressSemantics).assertIsDisplayed()
+            progress.assertDoesNotExist()
+            empty.assertDoesNotExist()
 
             val updatedTitle = "Launch planning"
             app.fixture.releaseTitle = updatedTitle
@@ -2128,8 +2129,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
 
             query.assertTextContains(keyword)
             scope.assertIsSelected()
-            compose.onNodeWithText("No matching workflows").assertIsDisplayed()
-            // The cached empty result can appear while the catalog refresh is still running.
+            waitFor("No matching workflows")
             val focusedResults = hasTestTag("chat_search_results") and isFocused()
             compose.waitUntil(5_000) {
                 compose.onAllNodes(focusedResults).fetchSemanticsNodes().isNotEmpty()
