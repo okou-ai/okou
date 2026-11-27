@@ -205,9 +205,9 @@ function createThreadModelContext(
         }
       : event.modelSelection;
   });
-  const creditsWaived$ = computed(async (get) =>
-    Boolean(await get(proactiveInput$)),
-  );
+  const creditsWaived$ = computed(async (get) => {
+    return Boolean(await get(proactiveInput$));
+  });
   const model = createThreadModelSignals(
     bootstrap,
     chatThreadId,

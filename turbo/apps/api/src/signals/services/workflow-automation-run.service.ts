@@ -4,8 +4,6 @@ import {
   projectCommittedChatThreadSearch$,
 } from "./chat-event-publication.service";
 import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery.service";
-import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
-import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 import {
   threadModelReplacementWritePlan,
   resolveEnqueuedChatInputModel$,
@@ -161,46 +159,6 @@ function pendingTickReplacement(args: RunWorkflowAutomationNowArgs) {
     ? { chatThreadId, automationId: automation.id }
     : undefined;
 }
-
-const workflowAutomationInputModel$ = command(
-  async (
-    { set },
-    {
-      automation,
-      chatThreadId,
-    }: Pick<RunWorkflowAutomationNowArgs, "automation" | "chatThreadId">,
-    signal: AbortSignal,
-  ) => {
-    const official = await set(
-      synchronizeOfficialWorkflowThread$,
-      {
-        workflowId: automation.workflowId,
-        orgId: automation.orgId,
-        userId: automation.ownerUserId,
-      },
-      signal,
-    );
-    if (official) {
-      return {
-        modelSelection: {
-          selectedModel: AUTO_SELECTED_MODEL,
-          codexServiceTier: null,
-          reasoningEffort: null,
-        },
-        threadModelReplacement: null,
-      };
-    }
-    return await set(
-      resolveEnqueuedChatInputModel$,
-      {
-        threadId: chatThreadId,
-        orgId: automation.orgId,
-        userId: automation.ownerUserId,
-      },
-      signal,
-    );
-  },
-);
 
 const prepareNotionQueueSource$ = command(
   async (
@@ -598,8 +556,12 @@ const prepareWorkflowAdmission$ = command(
   ) => {
     const { automation, chatThreadId } = args;
     const model = await set(
-      workflowAutomationInputModel$,
-      { automation, chatThreadId },
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: chatThreadId,
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
+      },
       signal,
     );
     const displayName = await set(

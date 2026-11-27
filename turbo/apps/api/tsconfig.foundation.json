@@ -260,7 +260,6 @@
     "src/signals/services/proactive-task-instructions.ts",
     "src/signals/services/proactive-nightly-instructions.ts",
     "src/signals/services/suggestion-curation-reference.ts",
-    "src/signals/services/official-workflow-run.service.ts",
     "src/signals/services/run-admission.service.ts",
     "src/signals/services/system-storage-presigned-url-cache.service.ts",
     "src/signals/services/time-automation.ts",

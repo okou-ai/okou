@@ -19,11 +19,15 @@ export function selectExecutionContentBundles(
   packages: CapturedExecutionPackages,
   context: ExecutionPackageMounts,
 ) {
-  const workflowNames = new Set(packages.workflows.map(({ name }) => name));
-  const instructions = packages.instructionsBundle;
-  const preparedSkills = context.seedSkillBundles.filter(
-    ({ name }) => !workflowNames.has(name),
+  const workflowNames = new Set(
+    packages.workflows.map(({ name }) => {
+      return name;
+    }),
   );
+  const instructions = packages.instructionsBundle;
+  const preparedSkills = context.seedSkillBundles.filter(({ name }) => {
+    return !workflowNames.has(name);
+  });
   const skills = [
     ...packages.workflows,
     ...preparedSkills.map(({ name, mount: { sha256, archiveBytes } }) => {
