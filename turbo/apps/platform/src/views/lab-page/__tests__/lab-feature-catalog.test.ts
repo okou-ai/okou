@@ -187,54 +187,6 @@ test.each([
   });
 });
 
-test("Any Lab tester can find presentation format in Beta, opt in, and reset it", async () => {
-  const featureKey = FeatureSwitchKey.PresentationOutputFormat;
-  let switches: Record<string, boolean> = { [FeatureSwitchKey.Lab]: true };
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, { switches, effectiveSwitches: switches });
-  });
-  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
-    switches = { ...switches, ...body.switches };
-    return respond(200, { switches, effectiveSwitches: switches });
-  });
-  context.mocks.api(featureSwitchesContract.delete, ({ respond }) => {
-    switches = { [FeatureSwitchKey.Lab]: true };
-    return respond(200, { deleted: true });
-  });
-  await setupPage({
-    context,
-    path: "/_/lab",
-    auth: {
-      user: {
-        id: "presentation-format-tester",
-        fullName: "bingjie",
-        email: "bingjie-tester@example.test",
-      },
-    },
-  });
-
-  await screen.findByRole("heading", { name: "Lab" });
-  click(getButtonByName("bingjie"));
-  const row = screen.getByText(featureKey, { exact: true }).closest("li")!;
-  expect(row.closest("section")?.querySelector("h2")).toHaveTextContent("Beta");
-  const control = within(row).getByRole("switch");
-  expect(control).toHaveAttribute("aria-checked", "false");
-
-  click(control);
-  await waitFor(() => {
-    expect(control).toHaveAttribute("aria-checked", "true");
-  });
-
-  const reset = getButtonByName("Reset all");
-  await waitFor(() => {
-    return expect(reset).toBeEnabled();
-  });
-  click(reset);
-  await waitFor(() => {
-    expect(control).toHaveAttribute("aria-checked", "false");
-  });
-});
-
 test("Lab reads the embedded Banking preference before showing the service's later updates", async () => {
   const banking = FeatureSwitchKey.Banking;
   const bootstrap = document.createElement("script");

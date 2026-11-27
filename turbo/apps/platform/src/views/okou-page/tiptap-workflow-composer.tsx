@@ -61,7 +61,6 @@ import {
 } from "./composer-actions.ts";
 
 import { composerCreatePlaceholder } from "../../signals/okou-page/composer-create.ts";
-import { presentationOutputFormat$ } from "../../signals/okou-page/presentation-output-format.ts";
 import { CREATE_WORKFLOW_WITH_CHAT_PROMPT } from "../../signals/chat-page/workflow-prompt-action.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
@@ -154,11 +153,6 @@ function WorkflowComposerPlaceholder({
 }) {
   const sending = useLastResolved(composer.submission.sending$);
   const createMode = useGet(composer.create.mode$);
-  const presentationFormatLoadable = useLastLoadable(presentationOutputFormat$);
-  const presentationFormat =
-    presentationFormatLoadable.state === "hasData"
-      ? presentationFormatLoadable.data
-      : undefined;
   const hasInput = useGet(composer.editor.hasInput$);
   const hasEditorContent = useEditorState({
     editor: composer.editor.editor,
@@ -186,7 +180,7 @@ function WorkflowComposerPlaceholder({
       >
         {followup ??
           (createMode
-            ? composerCreatePlaceholder(createMode, presentationFormat)
+            ? composerCreatePlaceholder(createMode)
             : workflowComposerPlaceholder(sending))}
       </span>
       {followup && <FollowupAcceptButton onAccept={acceptFollowup} />}

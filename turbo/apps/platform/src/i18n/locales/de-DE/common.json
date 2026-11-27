@@ -1962,7 +1962,6 @@
         "documentPlaceholder": "Was möchtest du in deinem Dokument festhalten?",
         "imagePlaceholder": "Beschreibe das gewünschte Bild…",
         "presentationPlaceholder": "Worum geht es in deiner Präsentation?",
-        "presentationPlaceholderWithDefault": "Worum geht es in deiner Präsentation? (Standard: {{format}})",
         "slideCount": "Folienanzahl",
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
@@ -1974,16 +1973,6 @@
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
-      "presentationFormatSetup": {
-        "htmlDescription": "Ein Link, der in jedem Browser öffnet",
-        "htmlLabel": "Web-Folien",
-        "openSettings": "Einstellungen öffnen",
-        "pptxDescription": "Eine bearbeitbare .pptx-Datei",
-        "pptxLabel": "PowerPoint",
-        "savedDefault": "{{format}} ist jetzt dein Standard für Präsentationen",
-        "settingsHint": "Gilt für jede neue Präsentation. Du kannst es in den Einstellungen ändern.",
-        "title": "Wähle ein Standardformat, um zu starten"
-      },
       "selectedModelUnavailable": "Das ausgewählte Modell ist nicht verfügbar. Konfigurieren Sie es vor dem Senden.",
       "selectedModelUnavailableToast": "Das ausgewählte Modell ist nicht verfügbar",
       "selectModel": "Modell auswählen",
@@ -2663,6 +2652,11 @@
       "unsupported": "Manuelles Zurücksetzen wird nicht unterstützt; die Nutzung erholt sich automatisch."
     },
     "taskChips": {
+      "presentationFormat": "Präsentationsformat",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
       "shelf": {
@@ -6104,14 +6098,6 @@
           "title": "Standardmodell"
         },
         "description": "Lege Standardeinstellungen für neue Chats und die Art des Nachrichtenversands fest.",
-        "presentationFormat": {
-          "htmlDescription": "Neue Präsentationen öffnen als Link im Browser",
-          "pptxDescription": "Neue Präsentationen kommen als bearbeitbare .pptx-Datei",
-          "saveFailed": "Das Standardformat konnte nicht gespeichert werden. Versuche es erneut.",
-          "title": "Standardformat für Präsentationen",
-          "unavailable": "Dein Standardformat konnte nicht geladen werden",
-          "unsetDescription": "Wir fragen bei deiner ersten Präsentation"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

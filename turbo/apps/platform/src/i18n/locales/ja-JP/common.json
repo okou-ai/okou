@@ -1956,7 +1956,6 @@
         "documentPlaceholder": "ドキュメントにどのような内容を含めますか？",
         "imagePlaceholder": "作成したい画像を説明してください…",
         "presentationPlaceholder": "プレゼンテーションのテーマは何ですか？",
-        "presentationPlaceholderWithDefault": "どんなプレゼンテーションですか？（既定: {{format}}）",
         "slideCount": "スライド数",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
@@ -1968,16 +1967,6 @@
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",
-      "presentationFormatSetup": {
-        "htmlDescription": "どのブラウザでも開けるリンク",
-        "htmlLabel": "Web スライド",
-        "openSettings": "設定を開く",
-        "pptxDescription": "編集できる .pptx ファイル",
-        "pptxLabel": "PowerPoint",
-        "savedDefault": "{{format}} をプレゼンテーションの既定に設定しました",
-        "settingsHint": "今後の新しい資料すべてに使われます。設定で変更できます。",
-        "title": "既定の形式を選んで開始"
-      },
       "selectedModelUnavailable": "選択されたモデルは使用できません。送信する前に設定してください。",
       "selectedModelUnavailableToast": "選択したモデルは利用できません",
       "selectModel": "モデルを選択してください",
@@ -2648,6 +2637,11 @@
       "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
     "taskChips": {
+      "presentationFormat": "プレゼンテーション形式",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",
       "shelf": {
@@ -6080,14 +6074,6 @@
           "title": "デフォルトモデル"
         },
         "description": "新しいチャットの初期設定とメッセージの送信方法を選択します。",
-        "presentationFormat": {
-          "htmlDescription": "新しい資料はブラウザで開けるリンクになります",
-          "pptxDescription": "新しい資料は編集できる .pptx ファイルで届きます",
-          "saveFailed": "既定の形式を保存できませんでした。もう一度お試しください。",
-          "title": "プレゼンテーションの既定の形式",
-          "unavailable": "既定の形式を読み込めませんでした",
-          "unsetDescription": "初めて資料を作るときに確認します"
-        },
         "sectionTitle": "チャット"
       },
       "debug": {

@@ -4,11 +4,6 @@ import {
   type TemplateGuidanceBundle,
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { USER_TEMPLATE_KINDS } from "@okouai/api-contracts/contracts/user-templates";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computed, type Computed } from "ccstate";
 import { enum as zEnum } from "zod";
 import {
@@ -61,14 +56,12 @@ export function createRunTemplates(
   event$: Parameters<typeof createRunTemplateGuidance>[0],
   orgId$: Parameters<typeof createRunTemplateGuidance>[1],
   disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
-  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
   prefetched?: PrefetchedTemplates,
 ) {
   const guidance = createRunTemplateGuidance(
     event$,
     orgId$,
     disabledPaidTools$,
-    featureSwitches$,
     prefetched,
   );
   const templates$ = computed(async (get): Promise<RunTemplatesResult> => {
@@ -99,7 +92,6 @@ function createRunTemplateGuidance(
   >,
   orgId$: Computed<Promise<string>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
-  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
   prefetched?: PrefetchedTemplates,
 ) {
   const selection$ = computed(async (get) => {
@@ -193,23 +185,18 @@ function createRunTemplateGuidance(
   });
   const guidance$ = computed(
     async (get): Promise<RunTemplateGuidanceResult> => {
-      const [selection, presentations, mounted, disabledPaidTools, features] =
+      const [selection, presentations, mounted, disabledPaidTools] =
         await Promise.all([
           get(selection$),
           get(presentations$),
           get(mounted$),
           get(disabledPaidTools$),
-          get(featureSwitches$),
         ]);
       return buildRunTemplateGuidance({
         templates: selection?.templates ?? [],
         presentations,
         mounted,
         disabledPaidTools,
-        presentationOutputFormatEnabled: isFeatureEnabled(
-          FeatureSwitchKey.PresentationOutputFormat,
-          features,
-        ),
       });
     },
   );
@@ -226,7 +213,6 @@ function buildRunTemplateGuidance(args: {
     readonly guidanceBundle: TemplateGuidanceBundle;
   })[];
   readonly disabledPaidTools: readonly string[];
-  readonly presentationOutputFormatEnabled: boolean;
 }): RunTemplateGuidanceResult {
   const { templates, presentations, mounted, disabledPaidTools } = args;
   const guidance = resolveGenerationTemplatesGuidance(templates, {
@@ -236,7 +222,6 @@ function buildRunTemplateGuidance(args: {
     mountedUserTemplates: mounted,
     includeManagedImageInstructions:
       !disabledPaidTools.includes("image-generation"),
-    presentationOutputFormatEnabled: args.presentationOutputFormatEnabled,
   });
   if (guidance.status === "invalid") {
     return { error: { code: "BAD_REQUEST", message: guidance.message } };
