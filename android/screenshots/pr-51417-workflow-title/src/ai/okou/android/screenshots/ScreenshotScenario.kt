@@ -12,14 +12,17 @@ import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.os.LocaleList
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.Until
+import androidx.test.uiautomator.UiObject2
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -54,13 +57,36 @@ class ScreenshotScenario {
                 },
             )
         fun label(id: Int) = localized.getString(id)
-        fun get(selector: BySelector) =
-            checkNotNull(device.wait(Until.findObjects(selector), 12_000)) {
-                    "Missing workflow title element $selector"
+        fun <T : Any> observe(selector: BySelector, read: (List<UiObject2>) -> T?): T =
+            checkNotNull(
+                device.wait(
+                    object : Condition<UiDevice, T> {
+                        override fun apply(device: UiDevice): T? =
+                            try {
+                                read(device.findObjects(selector))
+                            } catch (_: StaleObjectException) {
+                                // The loading placeholder can leave the tree between the read and traversal.
+                                null
+                            }
+                    },
+                    12_000,
+                ),
+            ) { "Missing workflow element $selector" }
+
+        fun text(value: String) = By.pkg(app.packageName).text(value)
+        fun bounds(selector: BySelector) =
+            observe(selector) { nodes -> nodes.firstOrNull()?.visibleBounds }
+        fun clickableBounds(selector: BySelector) =
+            observe(selector) { nodes ->
+                nodes.firstNotNullOfOrNull { node ->
+                    generateSequence(node) { it.parent }
+                        .firstOrNull { it.isClickable && it.isEnabled }
+                        ?.visibleBounds
                 }
-                .minBy { it.visibleBounds.left }
-        fun button(id: Int) = get(By.pkg(app.packageName).desc(label(id)))
-        fun text(value: String) = get(By.pkg(app.packageName).text(value))
+            }
+        fun tap(bounds: Rect) {
+            assertTrue(device.click(bounds.centerX(), bounds.centerY()))
+        }
         fun restoreSetting(scope: String, name: String, value: String) {
             if (value.toFloatOrNull() == null)
                 device.executeShellCommand("settings delete $scope $name")
@@ -88,48 +114,44 @@ class ScreenshotScenario {
                     fixture.active.set(wide)
                     val command = "release-review"
                     ActivityScenario.launch(MainActivity::class.java).use {
-                        button(R.string.workspace_workflows).click()
-                        val caption = text(command)
-                        val row = generateSequence(caption) { it.parent }.first { it.isClickable }
-                        assertTrue(row.visibleBounds.height() >= 80)
-                        val search = get(By.pkg(app.packageName).clazz("android.widget.EditText"))
-                        assertEquals(48, search.visibleBounds.height())
+                        tap(clickableBounds(By.pkg(app.packageName).desc(label(R.string.workspace_workflows))))
+                        assertTrue(clickableBounds(text(command)).height() >= 80)
+                        val search = bounds(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                        assertEquals(48, search.height())
                         if (!wide) ScreenshotCapture.capture("workflow-directory-phone.png")
-                        row.click()
+                        tap(clickableBounds(text(command)))
 
-                        val action = text(label(R.string.workflow_use_in_chat))
-                        val footer = generateSequence(action) { it.parent }.first { it.isClickable }
-                        assertTrue(footer.visibleBounds.height() >= 48)
-                        assertEquals(if (wide) 968 else 392, footer.visibleBounds.right)
-                        if (!wide) assertEquals(20, footer.visibleBounds.left)
-                        val title = checkNotNull(
-                            device.wait(Until.findObjects(By.pkg(app.packageName).text(command)), 5_000),
-                        ).maxBy { it.visibleBounds.left }
-                        assertEquals(if (wide) 352 else 20, title.visibleBounds.left)
-                        text("/$command")
-                        val tabs =
-                            listOf(R.string.workflow_instructions, R.string.workflow_automations, R.string.workflow_history)
-                                .map { id ->
-                                    generateSequence(text(label(id))) { it.parent }.first { it.isClickable }
-                                }
-                        val tabWidths = tabs.map { it.visibleBounds.width() }
+                        bounds(text("/$command"))
+                        val edit = text(label(R.string.workflow_edit_instructions))
+                        clickableBounds(edit)
+                        val footer = clickableBounds(text(label(R.string.workflow_use_in_chat)))
+                        assertTrue(footer.height() >= 48)
+                        assertEquals(if (wide) 968 else 392, footer.right)
+                        if (!wide) assertEquals(20, footer.left)
+                        val title = observe(text(command)) { nodes ->
+                            nodes.map { it.visibleBounds }.maxByOrNull { it.left }
+                        }
+                        assertEquals(if (wide) 352 else 20, title.left)
+                        val tabIds = listOf(
+                            R.string.workflow_instructions,
+                            R.string.workflow_automations,
+                            R.string.workflow_history,
+                        )
+                        val tabs = tabIds.map { id -> clickableBounds(text(label(id))) }
+                        val tabWidths = tabs.map { it.width() }
                         assertTrue(tabWidths.max() - tabWidths.min() <= 1)
-                        assertTrue(tabs.all { it.visibleBounds.height() >= 48 })
+                        assertTrue(tabs.all { it.height() >= 48 })
                         ScreenshotCapture.capture("workflow-detail-$layout.png")
                         if (wide) {
-                            tabs[1].click()
-                            text(label(R.string.workflow_trigger_rules))
-                            text(fixture.ruleTitle)
+                            tap(clickableBounds(text(label(R.string.workflow_automations))))
+                            bounds(text(label(R.string.workflow_trigger_rules)))
+                            bounds(text(fixture.ruleTitle))
                             ScreenshotCapture.capture("workflow-automation-wide.png")
-                            text(label(R.string.workflow_instructions)).click()
+                            tap(clickableBounds(text(label(R.string.workflow_instructions))))
                         }
 
-                        text(label(R.string.workflow_edit_instructions)).click()
-                        val field = get(
-                            By.pkg(app.packageName).clazz("android.widget.EditText").text(command),
-                        )
-                        assertEquals(command, field.text)
-                        assertTrue(field.isEnabled)
+                        tap(clickableBounds(edit))
+                        bounds(text(command).clazz("android.widget.EditText").enabled(true))
                         ScreenshotCapture.capture("workflow-editor-$layout.png")
                     }
                 }
