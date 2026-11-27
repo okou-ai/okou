@@ -4065,7 +4065,6 @@
       "recoveryScheduled": "È stato programmato un tentativo di ripristino automatico.",
       "switchFailed": "Impossibile cambiare area di lavoro. Riprova o usa il selettore delle aree di lavoro.",
       "switchWorkspace": "Cambia area di lavoro",
-      "systemManaged": "Questa automazione è gestita dal sistema. Lo stato attuale è mostrato di seguito.",
       "systemSource": "Avviso di sistema",
       "title": "Automazione in pausa",
       "unavailable": "Automazione non trovata o accesso non consentito",

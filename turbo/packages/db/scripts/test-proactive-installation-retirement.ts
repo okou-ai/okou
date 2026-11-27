@@ -154,25 +154,27 @@ export async function validateProactiveInstallationRetirement(
     await assert.rejects(retire, /Historical task thread is not hidden/);
     await db`UPDATE chat_threads SET hidden=true WHERE id=${thread}`;
     const concurrent = postgres(databaseUrl, { max: 1 });
-    const outcomes = await Promise.all([
-      retire(),
-      retireProactiveInstallations(concurrent, second),
-    ]).finally(() => {
-      return concurrent.end();
-    });
-    const completed = outcomes.filter((outcome) => {
-      return outcome.status === "retired";
-    });
-    assert.deepEqual(completed, [
-      {
-        status: "retired",
-        workflows: 3,
-        automations: 1,
-        enrollments: 1,
-        runs: 1,
-        rollbackRelease: first,
-      },
-    ]);
+    try {
+      const outcomes = await Promise.all([
+        retire(),
+        retireProactiveInstallations(concurrent, second),
+      ]);
+      const completed = outcomes.filter((outcome) => {
+        return outcome.status === "retired";
+      });
+      assert.deepEqual(completed, [
+        {
+          status: "retired",
+          workflows: 3,
+          automations: 1,
+          enrollments: 1,
+          runs: 1,
+          rollbackRelease: first,
+        },
+      ]);
+    } finally {
+      await concurrent.end();
+    }
     assert.deepEqual(await retire(), { status: "nothing-to-retire" });
     const [saved] =
       await db`SELECT w.id,w.archived_official_snapshot AS snapshot,t.id AS thread,t.hidden

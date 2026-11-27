@@ -4007,7 +4007,6 @@
       "recoveryScheduled": "Ein automatischer Wiederherstellungsversuch wurde geplant.",
       "switchFailed": "Der Arbeitsbereich konnte nicht gewechselt werden. Versuche es erneut oder nutze die Arbeitsbereichsauswahl.",
       "switchWorkspace": "Arbeitsbereich wechseln",
-      "systemManaged": "Diese Automatisierung wird vom System verwaltet. Ihr aktueller Status wird unten angezeigt.",
       "systemSource": "Systemmeldung",
       "title": "Automatisierung pausiert",
       "unavailable": "Automatisierung nicht gefunden oder kein Zugriff",

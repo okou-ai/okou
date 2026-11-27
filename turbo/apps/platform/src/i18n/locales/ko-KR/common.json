@@ -3989,7 +3989,6 @@
       "recoveryScheduled": "자동 복구 시도가 예약되었어요.",
       "switchFailed": "워크스페이스를 전환할 수 없습니다. 다시 시도하거나 워크스페이스 전환 메뉴를 이용하세요.",
       "switchWorkspace": "워크스페이스 전환",
-      "systemManaged": "시스템에서 관리하는 자동화입니다. 아래에 현재 상태가 표시됩니다.",
       "systemSource": "시스템 알림",
       "title": "자동화가 일시 중지되었어요",
       "unavailable": "자동화를 찾을 수 없거나 접근 권한이 없습니다",

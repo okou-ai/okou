@@ -3989,7 +3989,6 @@
       "recoveryScheduled": "Percobaan pemulihan otomatis telah dijadwalkan.",
       "switchFailed": "Tidak dapat mengganti ruang kerja. Coba lagi atau gunakan pemilih ruang kerja.",
       "switchWorkspace": "Ganti ruang kerja",
-      "systemManaged": "Otomatisasi ini dikelola sistem. Status saat ini ditampilkan di bawah.",
       "systemSource": "Pembaruan sistem",
       "title": "Otomatisasi dijeda",
       "unavailable": "Otomatisasi tidak ditemukan atau Anda tidak memiliki akses",
