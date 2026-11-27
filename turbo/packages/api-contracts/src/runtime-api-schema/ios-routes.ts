@@ -596,6 +596,18 @@ export const iosClientContracts: readonly {
     id: "ios.workflowsCollectionContract.composer",
     route: workflowsCollectionContract.composer,
   },
+  {
+    id: "ios.workflowsCollectionContract.recent",
+    route: workflowsCollectionContract.recent,
+  },
+  {
+    id: "ios.workflowsCollectionContract.recordRecentUse",
+    route: workflowsCollectionContract.recordRecentUse,
+  },
+  {
+    id: "ios.workflowsCollectionContract.importRecent",
+    route: workflowsCollectionContract.importRecent,
+  },
   { id: "ios.workflowsDetailContract.get", route: workflowsDetailContract.get },
   {
     id: "ios.sshAuthorizationContract.get",

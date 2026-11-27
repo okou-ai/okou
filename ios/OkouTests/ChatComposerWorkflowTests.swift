@@ -401,7 +401,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
       source.close()
       gate.open()
     }
-    resources.update(query: "rel", recent: [])
+    resources.update(query: "rel")
     resources.reload(source: source)
     let first = try resources.store.get(resources.matches)
     addTeardownBlock { @MainActor in
@@ -410,7 +410,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
       _ = await first.result
     }
     await fulfillment(of: [started], timeout: 2)
-    resources.update(query: "morning", recent: [])
+    resources.update(query: "morning")
     let latest = try resources.store.get(resources.matches)
     gate.open()
     let matches = try await latest.value
@@ -463,7 +463,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
       oldGate.open()
       dismissedGate.open()
     }
-    resources.update(query: "rel", recent: [])
+    resources.update(query: "rel")
     resources.reload(source: source)
     let old = try resources.store.get(resources.matches)
     addTeardownBlock { @MainActor in
