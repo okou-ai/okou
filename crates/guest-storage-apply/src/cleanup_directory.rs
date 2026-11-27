@@ -58,7 +58,7 @@ impl CleanupDirectory {
             .map(Self)
     }
 
-    fn open_child(&self, name: &OsStr) -> io::Result<Self> {
+    pub(super) fn open_child(&self, name: &OsStr) -> io::Result<Self> {
         let bytes = name.as_bytes();
         if bytes.is_empty() || bytes.contains(&b'/') {
             return Err(io::Error::new(

@@ -176,6 +176,58 @@ fn final_memory_symlink_is_replaced_without_touching_its_referent() {
 }
 
 #[test]
+fn wide_manifest_retains_siblings_and_isolates_the_changed_artifact() {
+    let fixture = fixture().unwrap();
+    let memory = target(&fixture);
+    fs::create_dir_all(&memory).unwrap();
+    fs::write(memory.join("old.md"), b"old memory").unwrap();
+    let original = fs::metadata(&memory).unwrap().ino();
+
+    let skills = fixture.dir.path().join(".codex/skills");
+    let retained = skills.join("retained");
+    fs::create_dir_all(&retained).unwrap();
+    fs::write(retained.join("SKILL.md"), b"retained skill").unwrap();
+    let retained_inode = fs::metadata(&retained).unwrap().ino();
+    let mut input = manifest(&fixture).unwrap();
+    let mounts = input["storageMounts"].as_array_mut().unwrap();
+    mounts.push(json!({ "mountPath": retained, "cached": true }));
+    for index in 0..70 {
+        mounts.push(json!({
+            "mountPath": skills.join(format!("absent-{index}")), "cached": true
+        }));
+    }
+    let absent_parent = fixture.dir.path().join("absent-parent");
+    for name in ["a", "b"] {
+        mounts.push(json!({ "mountPath": absent_parent.join(name), "cached": true }));
+    }
+
+    let output = fixture
+        .run_manifest_stdin(&serde_json::to_vec(&input).unwrap())
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read(retained.join("SKILL.md")).unwrap(),
+        b"retained skill"
+    );
+    assert_eq!(fs::metadata(&retained).unwrap().ino(), retained_inode);
+    assert_eq!(fs::read_dir(&skills).unwrap().count(), 1);
+    assert!(!absent_parent.exists());
+    assert_eq!(fs::read(memory.join("new.md")).unwrap(), b"new memory");
+    assert!(!memory.join("old.md").exists());
+    let quarantined = discarded(&fixture).unwrap();
+    assert_eq!(quarantined.len(), 1);
+    assert_eq!(fs::metadata(&quarantined[0]).unwrap().ino(), original);
+    assert_eq!(
+        fs::read(quarantined[0].join("old.md")).unwrap(),
+        b"old memory"
+    );
+}
+
+#[test]
 fn wide_manifest_with_an_aliased_cached_target_uses_synchronous_cleanup() {
     let fixture = fixture().unwrap();
     let memory = target(&fixture);

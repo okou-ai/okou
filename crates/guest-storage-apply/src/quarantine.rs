@@ -137,12 +137,13 @@ impl Quarantine {
 
 fn check_targets(targets: &[&Path]) -> io::Result<bool> {
     if targets.len() < MIN_PARALLEL_TARGETS {
-        return check_target_slice(targets);
+        return check_target_group(targets, None);
     }
 
     let (sample, targets) = targets.split_at(SAMPLE_TARGETS);
     let started = Instant::now();
-    if !check_target_slice(sample)? {
+    // Keep the existing sample cost for the decision to use parallel readers.
+    if !check_target_group(sample, None)? {
         return Ok(false);
     }
     if started.elapsed() < SLOW_SAMPLE {
@@ -187,14 +188,39 @@ fn check_targets_in_parallel(targets: &[&Path]) -> io::Result<bool> {
 }
 
 fn check_target_slice(targets: &[&Path]) -> io::Result<bool> {
+    for siblings in targets.chunk_by(|left, right| left.parent() == right.parent()) {
+        // A single checked handle suffices for consecutive siblings in this
+        // read-only slice. The individual walk owns errors if the open fails.
+        let parent = match siblings {
+            [first, _, ..] => first
+                .parent()
+                .and_then(|path| CleanupDirectory::open(path).ok()),
+            _ => None,
+        };
+        if !check_target_group(siblings, parent.as_ref())? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn check_target_group(targets: &[&Path], parent: Option<&CleanupDirectory>) -> io::Result<bool> {
     // Inputs must not alias the private cleanup namespace through symlink
     // ancestors. Missing roots are checked through their nearest parent.
     for &target in targets {
+        let anchored = parent.and_then(|parent| target.file_name().map(|name| (parent, name)));
         let mut existing = target;
         loop {
-            match CleanupDirectory::open(existing) {
+            let directory = match anchored {
+                Some((parent, name)) => parent.open_child(name),
+                None => CleanupDirectory::open(existing),
+            };
+            match directory {
                 Ok(_) => break,
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    if anchored.is_some() {
+                        break;
+                    }
                     let Some(ancestor) = existing.parent() else {
                         return Ok(false);
                     };
