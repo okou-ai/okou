@@ -43,7 +43,7 @@ async fn codex_app_server_backend_preserves_completion_when_queued_input_is_reje
         ));
         then.status(200).json_body(json!({ "outcome": "steered" }));
     });
-    let active_input = ActiveInputRuntime::new_enabled(
+    let active_input = ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
         HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)?,

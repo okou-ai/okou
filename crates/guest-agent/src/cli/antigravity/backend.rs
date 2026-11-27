@@ -334,7 +334,7 @@ async fn run_antigravity_acp(
         };
         in_flight_prompts.insert(initial_id);
 
-        let mut active_input_open = active_input.is_enabled();
+        let mut active_input_open = true;
 
         // 3. Event and steer loop.
         loop {

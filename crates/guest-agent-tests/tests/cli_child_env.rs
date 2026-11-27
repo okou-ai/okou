@@ -148,9 +148,10 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
         }
     }
 
-    let active_input = guest_agent::active_input::ActiveInputRuntime::new_disabled(
+    let active_input = guest_agent::active_input::ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
+        runtime.http.clone(),
     );
     let result = cli::execute_cli_with_active_input_for_config(
         &SecretMasker::from_raw(""),
@@ -369,9 +370,10 @@ async fn assert_missing_runtime_defaults_stay_absent(
         }
     }
     let runtime = GuestRuntime::from_process_env()?;
-    let active_input = guest_agent::active_input::ActiveInputRuntime::new_disabled(
+    let active_input = guest_agent::active_input::ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
+        runtime.http.clone(),
     );
     let result = cli::execute_cli_with_active_input_for_config(
         &SecretMasker::from_raw(""),
@@ -446,9 +448,10 @@ async fn assert_user_runtime_env_reaches_claude(
     }
 
     let runtime = GuestRuntime::from_process_env()?;
-    let active_input = guest_agent::active_input::ActiveInputRuntime::new_disabled(
+    let active_input = guest_agent::active_input::ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
+        runtime.http.clone(),
     );
     let result = cli::execute_cli_with_active_input_for_config(
         &SecretMasker::from_raw(""),

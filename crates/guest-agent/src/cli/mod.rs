@@ -1065,8 +1065,7 @@ async fn execute_cli_inner(
             codex_turn_start_gate: _,
     } = controls;
 
-    let replay_user_messages =
-        active_input.is_enabled() && matches!(runtime.framework, env::Framework::ClaudeCode);
+    let replay_user_messages = matches!(runtime.framework, env::Framework::ClaudeCode);
     log_info!(
         LOG_TAG,
         "Starting {} execution...",
@@ -1080,7 +1079,7 @@ async fn execute_cli_inner(
     let cmd = if matches!(runtime.framework, env::Framework::Pi) {
         build_pi_command_for_runtime(runtime)?
     } else {
-        command::build_claude_command_for_runtime(runtime, replay_user_messages)
+        command::build_claude_command_for_runtime(runtime)
     };
     let (bin, args) = cmd
         .split_first()

@@ -247,19 +247,13 @@ impl ActiveInputState {
 
 #[derive(Debug)]
 struct ActiveInputInner {
-    mode: ActiveInputMode,
+    declarations: SteeredInputDeclarations,
     initial_prompt_uuid: String,
     initial_prompt_text: String,
     tx: mpsc::Sender<ActiveInputFrame>,
     close_tx: watch::Sender<bool>,
     sink_in_flight_tx: watch::Sender<bool>,
     state: Mutex<ActiveInputState>,
-}
-
-#[derive(Debug)]
-enum ActiveInputMode {
-    Disabled,
-    Enabled(SteeredInputDeclarations),
 }
 
 /// Cloneable control-plane side of active input for one guest-agent run.
@@ -388,23 +382,14 @@ fn prompt_user_content(event: &Value) -> PromptUserContent {
 }
 
 impl ActiveInputRuntime {
-    /// Creates a runtime whose controller rejects active-input control payloads.
-    ///
-    /// The paired writer still exists so the CLI execution path can use the
-    /// same ownership and shutdown flow as enabled runs, but no follow-up frames
-    /// will be accepted from the process-control side.
-    pub fn new_disabled(run_id: &str, initial_prompt_text: &str) -> Self {
-        Self::new_internal(run_id, initial_prompt_text, ActiveInputMode::Disabled)
-    }
-
     /// Create an active-input runtime that declares accepted inputs steered.
     ///
     /// The declaration worker runs on the current Tokio runtime.
-    pub fn new_enabled(run_id: &str, initial_prompt_text: &str, http: HttpClient) -> Self {
+    pub fn new(run_id: &str, initial_prompt_text: &str, http: HttpClient) -> Self {
         Self::new_internal(
             run_id,
             initial_prompt_text,
-            ActiveInputMode::Enabled(SteeredInputDeclarations::start(run_id, http)),
+            SteeredInputDeclarations::start(run_id, http),
         )
     }
 
@@ -413,17 +398,21 @@ impl ActiveInputRuntime {
         Self::new_internal(
             run_id,
             initial_prompt_text,
-            ActiveInputMode::Enabled(SteeredInputDeclarations::start_for_test()),
+            SteeredInputDeclarations::start_for_test(),
         )
     }
 
-    fn new_internal(run_id: &str, initial_prompt_text: &str, mode: ActiveInputMode) -> Self {
+    fn new_internal(
+        run_id: &str,
+        initial_prompt_text: &str,
+        declarations: SteeredInputDeclarations,
+    ) -> Self {
         let (tx, rx) = mpsc::channel(ACTIVE_INPUT_QUEUE_CAPACITY);
         let (close_tx, close_rx) = watch::channel(false);
         let (sink_in_flight_tx, _) = watch::channel(false);
         let controller = ActiveInputController {
             inner: Arc::new(ActiveInputInner {
-                mode,
+                declarations,
                 initial_prompt_uuid: claude_initial_prompt_uuid(run_id),
                 initial_prompt_text: initial_prompt_text.to_owned(),
                 tx,
@@ -459,16 +448,6 @@ impl ActiveInputRuntime {
 }
 
 impl ActiveInputController {
-    /// Returns whether this run was configured to support active input.
-    ///
-    /// Disabled runs keep the same controller/writer lifecycle shape, but
-    /// [`ActiveInputController::handle_control_payload`] rejects follow-up
-    /// input instead of queueing frames. Enabled runs may still reject payloads
-    /// later if active input has closed or the bounded backlog is full.
-    pub fn is_enabled(&self) -> bool {
-        matches!(self.inner.mode, ActiveInputMode::Enabled(_))
-    }
-
     /// Validates and queues one process-control active-input payload.
     ///
     /// `payload` must be a JSON object with the required string fields `type`,
@@ -481,17 +460,16 @@ impl ActiveInputController {
     /// {"type":"active-input","eventId":"b1e2ad6d-930a-4d51-aa40-7952d54f978b","text":"follow-up prompt"}
     /// ```
     ///
-    /// For an enabled controller, [`ActiveInputControlOutcome::Accepted`] means
-    /// a new follow-up frame was queued for the paired writer, or a retry
-    /// matched the text of a known queued, writing, or backend-accepted delivery.
-    /// Known IDs are checked before lifecycle state, so such retries remain
-    /// accepted after closure without enqueueing another frame. This
-    /// acknowledgement confirms neither backend delivery nor that active input
-    /// is open. Reusing a known ID with different text or retrying a failed
-    /// delivery is rejected.
+    /// [`ActiveInputControlOutcome::Accepted`] means a new follow-up frame was
+    /// queued for the paired writer, or a retry matched the text of a known
+    /// queued, writing, or backend-accepted delivery. Known IDs are checked
+    /// before lifecycle state, so such retries remain accepted after closure
+    /// without enqueueing another frame. This acknowledgement confirms neither
+    /// backend delivery nor that active input is open. Reusing a known ID with
+    /// different text or retrying a failed delivery is rejected.
     ///
-    /// Unsupported, invalid, or disabled payloads are rejected. New valid event
-    /// IDs are rejected as closed when active input is closing or closed.
+    /// Unsupported or invalid payloads are rejected. New valid event IDs are
+    /// rejected as closed when active input is closing or closed.
     /// A bounded backlog returns
     /// [`ActiveInputControlOutcome::QueueFull`] so callers can distinguish
     /// backpressure from validation rejection. Callers should branch on the
@@ -500,11 +478,6 @@ impl ActiveInputController {
     /// [`ACTIVE_INPUT_CLOSED_DIAGNOSTIC`], which Runner uses to classify the
     /// expected closed-lifecycle race for logging.
     pub fn handle_control_payload(&self, payload: &[u8]) -> ActiveInputControlOutcome {
-        let ActiveInputMode::Enabled(_) = &self.inner.mode else {
-            return ActiveInputControlOutcome::Rejected {
-                diagnostic: "active input is not supported for this agent",
-            };
-        };
         let payload = match decode_active_input(payload) {
             Ok(payload) => payload,
             Err(error) => return active_input_decode_rejection(error),
@@ -612,12 +585,6 @@ impl ActiveInputController {
         expects_replay: bool,
     ) -> Result<(), AgentError> {
         let event_id = frame.event_id();
-        let ActiveInputMode::Enabled(declarations) = &self.inner.mode else {
-            self.mark_backend_failed(frame);
-            return Err(AgentError::Execution(
-                "active-input steered declarations are unavailable".to_string(),
-            ));
-        };
 
         let mut state = self
             .inner
@@ -638,7 +605,7 @@ impl ActiveInputController {
         }
         drop(state);
         if newly_accepted {
-            declarations.declare(event_id);
+            self.inner.declarations.declare(event_id);
         }
         self.inner.sink_in_flight_tx.send_replace(false);
         Ok(())
@@ -733,9 +700,7 @@ impl ActiveInputController {
     /// worker available for a later caller to finish waiting.
     pub async fn finalize_steered_declarations(&self) -> Result<(), AgentError> {
         let sink_in_flight = self.sink_in_flight();
-        if let ActiveInputMode::Enabled(declarations) = &self.inner.mode {
-            declarations.finalize().await;
-        }
+        self.inner.declarations.finalize().await;
         if sink_in_flight {
             return Err(AgentError::Execution(
                 "active-input sink did not reach quiescence".to_string(),
@@ -747,19 +712,15 @@ impl ActiveInputController {
     /// Attempts to close active input after a CLI result event.
     ///
     /// A `true` return means the caller can treat active input as idle for this
-    /// result. For enabled runs, this also signals the writer to close when the
-    /// runtime is still open. A `false` return means there is still pending
-    /// input to observe or clear, or the runtime was already closing or closed.
+    /// result and signals the writer to close when the runtime is still open.
+    /// A `false` return means there is still pending input to observe or clear,
+    /// or the runtime was already closing or closed.
     ///
     /// This is a result-time idle check, not an unconditional terminal close.
     /// A successful RPC ACK already observed on stdout resolves that frame for
     /// this check even if the writer has not yet consumed the response. Queued
     /// and unacknowledged frames still prevent closure.
     pub fn close_for_result_if_idle(&self) -> bool {
-        if !self.is_enabled() {
-            return true;
-        }
-
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         let had_observed_result = state.observed_result;
         state.observed_result = true;
@@ -902,11 +863,6 @@ impl ActiveInputWriter {
                 frame = self.rx.recv() => return frame,
             }
         }
-    }
-
-    /// Returns whether the paired controller was configured to support active input.
-    pub fn is_enabled(&self) -> bool {
-        self.controller.is_enabled()
     }
 
     /// Record backend acceptance for a sink whose user frame is replayed.

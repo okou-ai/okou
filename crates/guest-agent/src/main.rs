@@ -283,21 +283,11 @@ async fn run(runtime: GuestRuntime) -> i32 {
     let masker = Arc::new(masker::SecretMasker::from_config(&runtime.config));
     let shutdown = CancellationToken::new();
     let cli_cancellation = CancellationToken::new();
-    let framework_supports_active_input = framework_supports_active_input(runtime.config.framework);
-    let has_process_control_endpoint = runtime.process_control_endpoint.is_some();
-    let active_input_enabled = framework_supports_active_input && has_process_control_endpoint;
-    let active_input = if active_input_enabled {
-        guest_agent::active_input::ActiveInputRuntime::new_enabled(
-            &runtime.config.run_id,
-            &runtime.config.prompt,
-            http.clone(),
-        )
-    } else {
-        guest_agent::active_input::ActiveInputRuntime::new_disabled(
-            &runtime.config.run_id,
-            &runtime.config.prompt,
-        )
-    };
+    let active_input = guest_agent::active_input::ActiveInputRuntime::new(
+        &runtime.config.run_id,
+        &runtime.config.prompt,
+        http.clone(),
+    );
     let control_handle = control::ControlHandle::spawn(
         runtime.process_control_endpoint.as_deref(),
         shutdown.clone(),
@@ -397,16 +387,6 @@ async fn run(runtime: GuestRuntime) -> i32 {
     }
 
     exit_code
-}
-
-fn framework_supports_active_input(framework: env::Framework) -> bool {
-    matches!(
-        framework,
-        env::Framework::ClaudeCode
-            | env::Framework::Codex
-            | env::Framework::Pi
-            | env::Framework::Antigravity
-    )
 }
 
 struct ExecutionControls {

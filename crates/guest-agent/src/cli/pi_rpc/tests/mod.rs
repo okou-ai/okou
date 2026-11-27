@@ -1047,7 +1047,7 @@ async fn writer_requires_startup_boundary_before_prompt() {
             stdin,
             "run",
             "initial prompt",
-            ActiveInputRuntime::new_disabled("run", "initial prompt").into_writer(),
+            ActiveInputRuntime::new_for_test("run", "initial prompt").into_writer(),
             response_rx,
             startup_rx,
             CancellationToken::new(),
@@ -1231,7 +1231,7 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
     let mut stdout = BufReader::new(stdout);
     let http = HttpClient::with_api_config(server.base_url(), "test-token", "run", Duration::ZERO)
         .expect("declaration HTTP client should build");
-    let active_input = ActiveInputRuntime::new_enabled("run", "initial prompt", http);
+    let active_input = ActiveInputRuntime::new("run", "initial prompt", http);
     let controller = active_input.controller();
     let mut projection =
         PiRpcProjection::new("run", "session").with_active_input(controller.clone());

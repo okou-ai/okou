@@ -377,7 +377,7 @@ fn claude_large_prompt_is_not_rejected_by_process_argv_guard() {
     let prompt = "x".repeat(guest_contracts::exec_limits::EXECVE_STRING_MAX_BYTES + 1);
     let runtime = runtime_for_command_test(env::Framework::ClaudeCode, &prompt, "", &user_env);
 
-    let cmd = command::build_claude_command_for_runtime(&runtime, false);
+    let cmd = command::build_claude_command_for_runtime(&runtime);
     let (bin, args) = cmd.split_first().unwrap();
     let env_values = child_env::values_for_runtime(&runtime);
 
@@ -561,7 +561,7 @@ fn cli_exit_summary_preserves_signal_exit_before_mapping() {
 #[cfg(unix)]
 #[tokio::test]
 async fn cli_exit_observation_distinguishes_stdout_drain_from_loop_completion() {
-    let active_input = ActiveInputRuntime::new_disabled("run-exit-observation", "");
+    let active_input = ActiveInputRuntime::new_for_test("run-exit-observation", "");
     let controller = active_input.controller();
     let termination_deadline = tokio::time::sleep(Duration::MAX);
     tokio::pin!(termination_deadline);

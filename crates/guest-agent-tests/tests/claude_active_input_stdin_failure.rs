@@ -69,7 +69,7 @@ exec sleep 60
     });
     let steer_http =
         HttpClient::with_api_config(server.base_url(), "test-token", run_id, Duration::ZERO)?;
-    let active_input = ActiveInputRuntime::new_enabled(run_id, PROMPT, steer_http);
+    let active_input = ActiveInputRuntime::new(run_id, PROMPT, steer_http);
     let controller = active_input.controller();
     let payload = guest_contracts::active_input::encode_active_input(EVENT_ID, "follow-up prompt")?;
     let cancellation = CancellationToken::new();

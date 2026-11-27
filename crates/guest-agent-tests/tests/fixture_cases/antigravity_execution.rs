@@ -222,7 +222,7 @@ async fn antigravity_acp_steers_active_input_into_active_turn()
     let runtime = runtime(root.path(), &server.base_url, "steer")?;
     let dir = root.path().join("steer");
 
-    let active_input = ActiveInputRuntime::new_enabled(
+    let active_input = ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
         runtime.http.clone(),

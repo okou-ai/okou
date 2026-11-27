@@ -53,7 +53,7 @@ async fn cancellation_preserves_a_steer_response_already_in_flight()
             .header("Content-Type", "application/json")
             .json_body(json!({ "outcome": "steered" }));
     });
-    let active_input = ActiveInputRuntime::new_enabled(
+    let active_input = ActiveInputRuntime::new(
         RUN_ID,
         &runtime.config.prompt,
         HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)?,

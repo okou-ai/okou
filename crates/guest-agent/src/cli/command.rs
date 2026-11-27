@@ -10,10 +10,7 @@ use crate::env;
 
 use super::{CliRuntimeConfig, LOG_TAG};
 
-pub(super) fn build_claude_command_for_runtime(
-    runtime: &CliRuntimeConfig<'_>,
-    replay_user_messages: bool,
-) -> Vec<String> {
+pub(super) fn build_claude_command_for_runtime(runtime: &CliRuntimeConfig<'_>) -> Vec<String> {
     build_claude_command_with_config(
         runtime.use_mock_claude,
         runtime.mock_claude_path.as_ref(),
@@ -24,7 +21,6 @@ pub(super) fn build_claude_command_for_runtime(
             append_system_prompt_file: (!runtime.append_system_prompt.is_empty())
                 .then_some(runtime.claude_append_system_prompt_file.as_ref()),
             disallowed_tools: runtime.disallowed_tools.as_ref(),
-            replay_user_messages,
         },
     )
 }
@@ -52,7 +48,6 @@ struct ClaudeArgsConfig<'a> {
     resume_id: &'a str,
     append_system_prompt_file: Option<&'a str>,
     disallowed_tools: &'a str,
-    replay_user_messages: bool,
 }
 
 fn build_claude_args(config: ClaudeArgsConfig<'_>) -> Vec<String> {
@@ -64,10 +59,8 @@ fn build_claude_args(config: ClaudeArgsConfig<'_>) -> Vec<String> {
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--dangerously-skip-permissions".to_string(),
+        "--replay-user-messages".to_string(),
     ];
-    if config.replay_user_messages {
-        args.push("--replay-user-messages".to_string());
-    }
 
     if !config.resume_id.is_empty() {
         log_info!(LOG_TAG, "Resuming session");

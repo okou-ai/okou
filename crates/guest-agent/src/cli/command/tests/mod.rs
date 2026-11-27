@@ -11,15 +11,6 @@ fn build_claude_args_for_test(
     append_system_prompt: &str,
     disallowed_tools: &str,
 ) -> Vec<String> {
-    build_claude_args_for_test_with_replay(resume_id, append_system_prompt, disallowed_tools, true)
-}
-
-fn build_claude_args_for_test_with_replay(
-    resume_id: &str,
-    append_system_prompt: &str,
-    disallowed_tools: &str,
-    replay_user_messages: bool,
-) -> Vec<String> {
     let _system_log_state_guard = crate::lock_system_log_test_state();
     disable_system_log();
     build_claude_args(ClaudeArgsConfig {
@@ -29,7 +20,6 @@ fn build_claude_args_for_test_with_replay(
         append_system_prompt_file: (!append_system_prompt.is_empty())
             .then_some(TEST_APPEND_SYSTEM_PROMPT_FILE),
         disallowed_tools,
-        replay_user_messages,
     })
 }
 
@@ -49,7 +39,6 @@ fn build_claude_command_for_test(use_mock: bool) -> Vec<String> {
             resume_id: "",
             append_system_prompt_file: None,
             disallowed_tools: "",
-            replay_user_messages: true,
         },
     )
 }
@@ -63,7 +52,6 @@ fn build_claude_args_for_model_test(model: &str) -> Vec<String> {
         resume_id: "",
         append_system_prompt_file: None,
         disallowed_tools: "",
-        replay_user_messages: true,
     })
 }
 
@@ -93,12 +81,6 @@ fn build_claude_args_basic() {
 }
 
 #[test]
-fn build_claude_args_omits_replay_user_messages_when_disabled() {
-    let args = build_claude_args_for_test_with_replay("", "", "", false);
-    assert!(!args.contains(&"--replay-user-messages".to_string()));
-}
-
-#[test]
 fn build_claude_args_resume_log_omits_resume_id() {
     let _system_log_state_guard = crate::lock_system_log_test_state();
     let tmp = tempfile::tempdir().unwrap();
@@ -111,7 +93,6 @@ fn build_claude_args_resume_log_omits_resume_id() {
         resume_id: "sess-secret-123",
         append_system_prompt_file: None,
         disallowed_tools: "",
-        replay_user_messages: true,
     });
     guest_telemetry::log::clear_system_log_file();
     let system_log = std::fs::read_to_string(system_log_path).unwrap();
