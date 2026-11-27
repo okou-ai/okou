@@ -62,7 +62,6 @@ export function openWorkspace(
         memberships: [{ id: "org_finance", role: "org:admin" }],
       },
     },
-    sharedWorkerTestTransport: "message-port",
   });
 }
 export function findAction(name: string, scope: ParentNode = document.body) {

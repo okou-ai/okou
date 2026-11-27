@@ -84,7 +84,6 @@ test("message-port-019 Split conversations receive the right rows when the secon
     context,
     ...workspace.pageOptions,
     path: "/chats/" + primary.thread.id + "?sidebar=" + side.thread.id,
-    sharedWorkerTestTransport: "message-port",
   });
   await Promise.all(
     chapters.map((c) => {

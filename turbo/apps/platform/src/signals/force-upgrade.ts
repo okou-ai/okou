@@ -13,16 +13,11 @@ export function reportForceUpgradeRequired(): void {
   }
 }
 
-export function reportForceUpgradeResponse(
-  response: { readonly status: number },
-  onForceUpgrade?: () => void,
-): boolean {
+export function reportForceUpgradeResponse(response: {
+  readonly status: number;
+}): boolean {
   if (response.status === CLIENT_FORCE_UPGRADE_STATUS) {
-    if (onForceUpgrade) {
-      onForceUpgrade();
-    } else {
-      reportForceUpgradeRequired();
-    }
+    reportForceUpgradeRequired();
     return true;
   }
   return false;

@@ -36,7 +36,6 @@ function feeds() {
         context,
         ...pageOptions,
         path: "/",
-        sharedWorkerTestTransport: "message-port",
       });
     },
   };
@@ -205,7 +204,6 @@ test("message-port-033 Unread and read-cursor updates leave the transcript alone
     ...ws.pageOptions,
     context,
     path: "/chats/" + notes.id,
-    sharedWorkerTestTransport: "message-port",
   });
   await screen.findByText("Train arrived");
   const permit = threadLinkByTitle("Permit review");

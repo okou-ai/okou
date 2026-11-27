@@ -9,7 +9,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-// Matches Web's shared-database/event-log-policy.ts, independently of disk capacity.
+// Matches Web's signals/chat-database/event-log-policy.ts, independently of disk capacity.
 private const val CHAT_THREAD_SNAPSHOT_REBASE_THRESHOLD = 100
 
 /** A refresh publishes only a completely checked tail, with Web's forward-progress rules. */

@@ -98,12 +98,9 @@ export function installBrowserRequest(
     return respond(201, { threadId });
   });
   const path = browserInputPath();
-  async function open(
-    sharedWorkerTestTransport: "direct" | "message-port" = "direct",
-  ) {
+  async function open() {
     await setupPage({
       context,
-      sharedWorkerTestTransport,
       host: "app.okou.ai",
       path,
     });

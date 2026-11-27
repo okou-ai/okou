@@ -1,4 +1,3 @@
-import { observeOrganizationNotification } from "./organization-notification-fixture.ts";
 import {
   vncConnectionsContract,
   type VncConnectionResponse,
@@ -334,11 +333,6 @@ test("vnc-settings-020 Saving an unchanged Apple screen-sharing connection keeps
 });
 
 test("vnc-settings-004 A VNC host keeps its timed warning after a foreign update and clears it after its own update", async () => {
-  const foreign = observeOrganizationNotification(
-    context,
-    "vnc:observations-changed",
-    "elsewhere",
-  );
   const desktop = vncHost(44, "Survey console");
   const inventory = mockRemoteInventory(context, { vnc: [desktop] });
   let recovered = false;
@@ -350,7 +344,6 @@ test("vnc-settings-004 A VNC host keeps its timed warning after a foreign update
   await setupPage({
     context,
     path: detail(desktop.id),
-    sharedWorkerTestTransport: "message-port",
   });
   await screen.findByText(warning);
   expect(
@@ -365,7 +358,6 @@ test("vnc-settings-004 A VNC host keeps its timed warning after a foreign update
   context.mocks.ably.trigger("vnc:observations-changed", {
     orgId: "elsewhere",
   });
-  await foreign;
   // Open another section in the active workspace while the foreign event is delivered.
   await identity();
   expect(screen.getByText(warning)).toBeVisible();

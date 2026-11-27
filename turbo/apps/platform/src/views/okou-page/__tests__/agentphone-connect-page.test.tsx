@@ -45,7 +45,6 @@ function open(path: string) {
     path,
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.WhatsappIntegration]: true },
-    sharedWorkerTestTransport: "message-port",
   });
 }
 async function followSettings(label: string) {

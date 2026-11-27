@@ -28,7 +28,6 @@ const context = testContext();
 const workflows = {
   context,
   path: "/workflows",
-  sharedWorkerTestTransport: "message-port",
 } as const;
 test("authentication-startup-011 Workflows reuses the identity load already in progress", async () => {
   const sdk = context.mocks.clerk();
@@ -125,6 +124,24 @@ test("authentication-startup-018 Changing the workspace leaves Workflows for hom
   await waitFor(() => {
     return expect(location.pathname).toBe("/");
   });
+});
+
+test("Changing the signed-in account in the same workspace reloads without changing the route", async () => {
+  const reload = vi.spyOn(window.location, "reload");
+  const sdk = context.mocks.clerk();
+  await setupPage(workflows);
+  await expect(
+    screen.findByRole("heading", { name: "Workflows" }),
+  ).resolves.toBeVisible();
+  sdk.user(
+    { id: "next-member", fullName: "Next member" },
+    { token: "next-session" },
+  );
+  sdk.stateChanged();
+  await waitFor(() => {
+    return expect(reload).toHaveBeenCalledTimes(1);
+  });
+  expect(location.pathname).toBe("/workflows");
 });
 
 test("A repeated signed-in member notification keeps Workflows and its account menu available", async () => {
@@ -318,7 +335,6 @@ test("The workspace starts its member subscription after a delayed identity load
   try {
     const startup = await startPage({
       context,
-      sharedWorkerTestTransport: "message-port",
       path: "/workflows",
       auth: { user: { id: "user-a", fullName: "Basin Member" } },
     });
@@ -390,7 +406,6 @@ test("Only the replacement workspace receives the member profile after the owner
 const workspace = {
   context,
   path: "/workflows",
-  sharedWorkerTestTransport: "message-port",
 } as const;
 
 function startupView() {

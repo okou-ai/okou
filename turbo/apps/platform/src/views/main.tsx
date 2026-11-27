@@ -9,7 +9,6 @@ import { Router } from "./router.tsx";
 import { ClerkOptionsProvider } from "./clerk-options-provider.tsx";
 import { FeatureGuideDialog } from "./components/feature-guide-dialog.tsx";
 import { ForceUpgradeDialog } from "./components/force-upgrade-dialog.tsx";
-import { SharedWorkerFailureDialog } from "./components/shared-worker-failure-dialog.tsx";
 import { InspectLogFileInput } from "./inspect-log-file-input.tsx";
 import type { BootstrapView } from "../signals/bootstrap.ts";
 import { AuthV1LoadError } from "./auth-v1/auth-v1-load-error.tsx";
@@ -138,7 +137,6 @@ export const setupRouter = (
           <BillingFeedbackSurvey />
           <InstatusStatusNotice />
         </ErrorBoundary>
-        <SharedWorkerFailureDialog />
         <AppToaster />
       </StoreProvider>
     </StrictMode>,

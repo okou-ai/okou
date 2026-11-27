@@ -100,7 +100,6 @@ export const apiClient$ = computed((get) => {
       getVercelProtectionBypass: () => {
         return runtime.vercelProtectionBypass;
       },
-      onForceUpgrade: runtime.onForceUpgrade,
     });
   };
 });

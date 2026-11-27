@@ -29,11 +29,8 @@ import { authContract } from "@okouai/api-contracts/contracts/auth";
 import { setMockFeatureSwitches } from "../mocks/handlers/api-feature-switches.helpers";
 import { setDebugLoggerLocalStorage$ } from "../signals/bootstrap/loggers";
 import { createDeferredPromise, detach, Reason } from "../signals/utils";
-import {
-  setupSharedWorkerTestBootstrap$,
-  type SharedWorkerTestTransport,
-} from "../shared-database/test-bridge.ts";
-import type { ChatThreadEventQueryResult } from "../shared-database/data-key.ts";
+import { setCachedChatThreadEventsForTest$ } from "../signals/chat-database/signals.ts";
+import type { ChatThreadEventQueryResult } from "../signals/chat-database/types.ts";
 import { resolvePlatformRuntimeConfig } from "../lib/platform-host.ts";
 import {
   DEFAULT_LOCALE,
@@ -102,13 +99,11 @@ interface SetupPageOptions {
   readonly debugLoggers?: string[];
   readonly env?: PageEnvironment;
   readonly featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>;
-  readonly sharedWorkerAppVersion?: string;
   /**
-   * Supplies the shared worker's cache-only chat-thread projection to a
-   * page-level story without coupling its UI assertion to IndexedDB startup.
+   * Supplies the cache-only chat-thread projection to a page-level story
+   * without coupling its UI assertion to IndexedDB startup.
    */
   readonly cachedChatThreadEvents?: ChatThreadEventQueryResult;
-  readonly sharedWorkerTestTransport?: SharedWorkerTestTransport;
 }
 
 type EnvironmentValue = string | undefined;
@@ -245,7 +240,7 @@ async function setupPageAsync(
   // setupPage exercises the shared MSW fixture data even when a test does not
   // customize a handler. Start the lazy mock lifecycle so abort resets any
   // fixture mutations made by the application during this test.
-  const { mocks, store, workerStore } = options.context;
+  const { mocks, store } = options.context;
   if (options.locale) {
     mocks.data.userPreferences({
       locale: options.locale,
@@ -286,18 +281,8 @@ async function setupPageAsync(
     });
   }
   store.set(
-    setupSharedWorkerTestBootstrap$,
-    {
-      appVersion: options.sharedWorkerAppVersion ?? TEST_APP_VERSION,
-      workerStore,
-      cachedChatThreadEvents: options.cachedChatThreadEvents,
-      identity:
-        auth.user && activeOrgId
-          ? { userId: auth.user.id, orgId: activeOrgId }
-          : null,
-      transport: options.sharedWorkerTestTransport ?? "direct",
-    },
-    signal,
+    setCachedChatThreadEventsForTest$,
+    options.cachedChatThreadEvents ?? null,
   );
   signal.throwIfAborted();
   const ready = store.set(

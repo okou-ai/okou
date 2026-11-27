@@ -340,7 +340,6 @@ test("worker-runtime-007 An expired transcript and thread list recover their fre
     context: createTestRuntime(context),
     auth: ws.pageOptions.auth,
     path: "/chats/" + thread.id,
-    sharedWorkerTestTransport: "message-port",
   });
   await expect(screen.findByText("Initial version")).resolves.toBeVisible();
   const channel =
@@ -379,7 +378,6 @@ test("worker-runtime-007 An expired transcript and thread list recover their fre
     context: createTestRuntime(context),
     auth: ws.pageOptions.auth,
     path: "/chats/" + thread.id,
-    sharedWorkerTestTransport: "message-port",
   });
   await reopened.content;
   await expect(screen.findByText("Minutes approved")).resolves.toBeVisible();
@@ -389,135 +387,131 @@ test("worker-runtime-007 An expired transcript and thread list recover their fre
   await reopened.ready;
 });
 
-test.each(["direct", "message-port"] as const)(
-  "A returning %s reader follows the expense cursors across two deliveries and leaves for a new chat",
-  async (transport) => {
-    const thread = continuityThread(942, 1, "Expenses"),
-      other = continuityThread(942, 2, "Travel review");
-    const stages = [
-      "Approve train ticket",
-      "Book the return seat",
-      "Print the departure pass",
-    ];
-    const rows = mockChatEventRows(
-      normalizeMockChatEvents(
-        stages.map((content, i) => {
-          return {
-            id: crypto.randomUUID(),
-            role: "user",
-            content,
-            runId: crypto.randomUUID(),
-            seqId: i + 1,
-            createdAt: new Date(Date.UTC(2026, 10, 1, 10, 0, i)).toISOString(),
-          };
-        }),
-        thread.id,
-      ),
-    );
-    const ws = installContinuityWorkspace(context, {
-      caseId: 942,
-      threads: [thread, other],
-      chatEventRows: rows.slice(0, 1),
-    });
-    const pageOptions = {
-      ...ws.pageOptions,
-      path: "/chats/" + thread.id,
-      sharedWorkerTestTransport: transport,
-    };
-    const original = createTestRuntime(context);
-    await setupPage({ ...pageOptions, context: original });
-    await screen.findByText(stages[0]!);
-    cleanup();
-    original.dispose();
-    const arrived = context.mocks.deferred<void>(),
-      release = context.mocks.deferred<void>();
-    let length = 2;
-    context.mocks.api(
-      chatThreadEventsContract.rows,
-      async ({ params, query, respond }) => {
-        const matching = params.threadId === thread.id;
-        const cursor = query.sinceSeqId ?? 0;
-        if (matching) {
-          if (!arrived.settled()) {
-            arrived.resolve();
-          }
-          await release.promise;
+test("A returning reader follows the expense cursors across two deliveries and leaves for a new chat", async () => {
+  const thread = continuityThread(942, 1, "Expenses"),
+    other = continuityThread(942, 2, "Travel review");
+  const stages = [
+    "Approve train ticket",
+    "Book the return seat",
+    "Print the departure pass",
+  ];
+  const rows = mockChatEventRows(
+    normalizeMockChatEvents(
+      stages.map((content, i) => {
+        return {
+          id: crypto.randomUUID(),
+          role: "user",
+          content,
+          runId: crypto.randomUUID(),
+          seqId: i + 1,
+          createdAt: new Date(Date.UTC(2026, 10, 1, 10, 0, i)).toISOString(),
+        };
+      }),
+      thread.id,
+    ),
+  );
+  const ws = installContinuityWorkspace(context, {
+    caseId: 942,
+    threads: [thread, other],
+    chatEventRows: rows.slice(0, 1),
+  });
+  const pageOptions = {
+    ...ws.pageOptions,
+    path: "/chats/" + thread.id,
+  };
+  const original = createTestRuntime(context);
+  await setupPage({ ...pageOptions, context: original });
+  await screen.findByText(stages[0]!);
+  cleanup();
+  original.dispose();
+  const arrived = context.mocks.deferred<void>(),
+    release = context.mocks.deferred<void>();
+  let length = 2;
+  context.mocks.api(
+    chatThreadEventsContract.rows,
+    async ({ params, query, respond }) => {
+      const matching = params.threadId === thread.id;
+      const cursor = query.sinceSeqId ?? 0;
+      if (matching) {
+        if (!arrived.settled()) {
+          arrived.resolve();
         }
-        const predecessor = rows[length - 2]!;
-        const accepted =
-          matching &&
-          cursor === predecessor.seqId &&
-          query.sinceEventId === predecessor.id;
-        const body = accepted ? rows.slice(cursor, length) : [];
-        const tail = body.at(-1);
-        const lastEventId = tail?.id ?? query.sinceEventId;
-        return respond(200, {
-          rows: body,
-          hasMore: false,
-          cursor: lastEventId
-            ? { lastSeqId: tail?.seqId ?? cursor, lastEventId }
-            : { lastSeqId: 0, lastEventId: null },
-        });
-      },
-    );
-    const active = createTestRuntime(context);
-    const session = await startPage({ ...pageOptions, context: active });
-    try {
-      await arrived.promise;
-      await expect(screen.findByText(stages[0]!)).resolves.toBeVisible();
-      expect(screen.queryByText(stages[1]!)).toBeNull();
-      release.resolve();
-      await session.ready;
-      await screen.findByText(stages[1]!);
-      const member = ws.pageOptions.auth;
-      const wire =
-        "user-org:" + member.user.id + ":" + member.organization?.activeOrg?.id;
-      const emit = () => {
-        return context.mocks.ably.triggerOnChannel(
-          wire,
-          "chatThreadMessageCreated:" + thread.id,
-          { threadId: thread.id },
-        );
-      };
-      length = 3;
-      emit();
-      await screen.findByText(stages[2]!);
-      const messages = screen.getAllByText(
-        /^(Approve train ticket|Book the return seat|Print the departure pass)$/,
-      );
-      expect(
-        messages.map((message) => {
-          return message.textContent;
-        }),
-      ).toStrictEqual(stages);
-      click(await findFastControl("link", /^New chat/));
-      await waitFor(() => {
-        return expect(location.pathname).toBe("/");
-      });
-      await screen.findByRole("textbox", { name: "Message" });
-      cleanup();
-      active.dispose();
-      await waitFor(() => {
-        return expect(
-          context.mocks.ably.hasChannelSubscriptionOnChannel(wire),
-        ).toBeFalsy();
-      });
-      emit();
-      await setupPage({
-        ...pageOptions,
-        context: createTestRuntime(context),
-        path: "/chats/" + other.id,
-      });
-      await screen.findByText("Travel review", {
-        selector: '[data-testid="chat-thread-header-title"]',
-      });
-    } finally {
-      if (!release.settled()) {
-        release.resolve();
+        await release.promise;
       }
+      const predecessor = rows[length - 2]!;
+      const accepted =
+        matching &&
+        cursor === predecessor.seqId &&
+        query.sinceEventId === predecessor.id;
+      const body = accepted ? rows.slice(cursor, length) : [];
+      const tail = body.at(-1);
+      const lastEventId = tail?.id ?? query.sinceEventId;
+      return respond(200, {
+        rows: body,
+        hasMore: false,
+        cursor: lastEventId
+          ? { lastSeqId: tail?.seqId ?? cursor, lastEventId }
+          : { lastSeqId: 0, lastEventId: null },
+      });
+    },
+  );
+  const active = createTestRuntime(context);
+  const session = await startPage({ ...pageOptions, context: active });
+  try {
+    await arrived.promise;
+    await expect(screen.findByText(stages[0]!)).resolves.toBeVisible();
+    expect(screen.queryByText(stages[1]!)).toBeNull();
+    release.resolve();
+    await session.ready;
+    await screen.findByText(stages[1]!);
+    const member = ws.pageOptions.auth;
+    const wire =
+      "user-org:" + member.user.id + ":" + member.organization?.activeOrg?.id;
+    const emit = () => {
+      return context.mocks.ably.triggerOnChannel(
+        wire,
+        "chatThreadMessageCreated:" + thread.id,
+        { threadId: thread.id },
+      );
+    };
+    length = 3;
+    emit();
+    await screen.findByText(stages[2]!);
+    const messages = screen.getAllByText(
+      /^(Approve train ticket|Book the return seat|Print the departure pass)$/,
+    );
+    expect(
+      messages.map((message) => {
+        return message.textContent;
+      }),
+    ).toStrictEqual(stages);
+    click(await findFastControl("link", /^New chat/));
+    await waitFor(() => {
+      return expect(location.pathname).toBe("/");
+    });
+    await screen.findByRole("textbox", { name: "Message" });
+    cleanup();
+    active.dispose();
+    await waitFor(() => {
+      return expect(
+        context.mocks.ably.hasChannelSubscriptionOnChannel(wire),
+      ).toBeFalsy();
+    });
+    emit();
+    await setupPage({
+      ...pageOptions,
+      context: createTestRuntime(context),
+      path: "/chats/" + other.id,
+    });
+    await screen.findByText("Travel review", {
+      selector: '[data-testid="chat-thread-header-title"]',
+    });
+  } finally {
+    if (!release.settled()) {
+      release.resolve();
     }
-  },
-);
+  }
+});
 
 test("Only the updated conversation gains a message when the worker warms two open threads", async () => {
   const stable = continuityThread(886, 1, "Mooring notes");
@@ -574,7 +568,6 @@ test("Only the updated conversation gains a message when the worker warms two op
   const options = {
     ...ws.pageOptions,
     path: "/chats/" + stable.id + "?sidebar=" + changed.id,
-    sharedWorkerTestTransport: "message-port" as const,
   };
   const original = createTestRuntime(context);
   await setupPage({ ...options, context: original });

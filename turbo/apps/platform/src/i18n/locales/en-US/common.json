@@ -6109,7 +6109,7 @@
         },
         "indexedDb": {
           "countExplanation": "Counts use read-only transactions and do not read record bodies.",
-          "description": "Inspect record counts in the local chat cache owned by the shared worker.",
+          "description": "Inspect record counts in the local IndexedDB chat cache.",
           "loading": "Loading IndexedDB storage...",
           "measurementUnavailable": "Snapshot measurement failed.",
           "measureSnapshot": "Measure snapshot",
@@ -6448,10 +6448,6 @@
       "browse": "Browse workflows",
       "description": "It may have moved, or the link may be old. Everything else is where you left it.",
       "title": "That page isn't here."
-    },
-    "workerFailure": {
-      "description": "The connection to this app was interrupted.",
-      "title": "Connection interrupted"
     }
   },
   "sharedThread": {

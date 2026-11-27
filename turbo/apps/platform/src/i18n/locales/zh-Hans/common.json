@@ -6087,7 +6087,7 @@
         },
         "indexedDb": {
           "countExplanation": "计数使用只读事务，不会读取记录内容。",
-          "description": "查看共享 Worker 持有的本地聊天缓存中的记录数。",
+          "description": "查看本地 IndexedDB 聊天缓存中的记录数量。",
           "loading": "正在加载 IndexedDB 存储…",
           "measurementUnavailable": "快照测量失败。",
           "measureSnapshot": "测量快照",
@@ -6426,10 +6426,6 @@
       "browse": "浏览工作流",
       "description": "它可能已经换了位置，也可能是链接太旧了。其他内容都还在原处。",
       "title": "这个页面不在这里。"
-    },
-    "workerFailure": {
-      "description": "与此应用的连接已中断。",
-      "title": "连接已中断"
     }
   },
   "sharedThread": {

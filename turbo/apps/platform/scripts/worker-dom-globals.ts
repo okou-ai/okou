@@ -1,11 +1,11 @@
 import { parse } from "acorn";
 import type { Plugin } from "vite";
 
-// A SharedWorker script is evaluated in a scope that has no DOM. Referencing a
+// A Web Worker script is evaluated in a scope that has no DOM. Referencing a
 // window-only global there throws ReferenceError while the worker script is
 // still being evaluated, and the page can only observe that as an opaque
 // "worker failed to load" error event. Keep the first-party modules that reach
-// the worker bundle free of these globals so the failure is impossible to
+// a worker bundle free of these globals so the failure is impossible to
 // introduce rather than something we rediscover from production telemetry.
 const FORBIDDEN_WORKER_GLOBALS = [
   "document",
@@ -117,8 +117,8 @@ export function workerDomGlobalsMessage(
     .sort()
     .join(", ");
   return [
-    `${moduleId} reaches the shared database worker bundle but uses window-only globals: ${names}.`,
-    "A SharedWorker has no DOM, so reading one of these throws while the worker script is still evaluating and the page only sees an opaque load failure.",
+    `${moduleId} reaches a Web Worker bundle but uses window-only globals: ${names}.`,
+    "A Web Worker has no DOM, so reading one of these throws while the worker script is still evaluating and the page only sees an opaque load failure.",
     "Read the value through globalThis, move the DOM-dependent code into a module the worker does not import, or rename the local binding that shadows the global.",
   ].join("\n");
 }

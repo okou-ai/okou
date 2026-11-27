@@ -9,8 +9,6 @@ import { SENTRY_APPLICATION_KEY } from "./sentry-application-key.ts";
 import { redactProofUrl } from "./redact-proof-url.ts";
 import { StorageUploadError } from "./storage-upload-error.ts";
 
-type PlatformSentryRuntime = "page" | "shared-worker";
-
 type SentryTags = Parameters<typeof Sentry.setTags>[0];
 
 interface SentryLoggerContext {
@@ -49,9 +47,7 @@ function redactDiagnosticUrls<T>(
   );
 }
 
-export function createPlatformSentryOptions(
-  runtime: PlatformSentryRuntime,
-): BrowserOptions {
+export function createPlatformSentryOptions(): BrowserOptions {
   const runtimeConfig = resolvePlatformRuntimeConfig();
 
   return {
@@ -68,27 +64,17 @@ export function createPlatformSentryOptions(
     release: __OKOU_APP_VERSION__,
 
     // Drop page errors only when every frame comes from third-party code;
-    // errors containing our application frames still report. Only the page
-    // bundle carries the application key: the shared worker is built by a
-    // separate Vite worker pipeline that the Sentry plugin does not process,
-    // so applying this filter there would drop application errors.
-    integrations:
-      runtime === "page"
-        ? [
-            Sentry.thirdPartyErrorFilterIntegration({
-              behaviour:
-                "drop-error-if-exclusively-contains-third-party-frames",
-              filterKeys: [SENTRY_APPLICATION_KEY],
-            }),
-          ]
-        : [],
+    // errors containing our application frames still report.
+    integrations: [
+      Sentry.thirdPartyErrorFilterIntegration({
+        behaviour: "drop-error-if-exclusively-contains-third-party-frames",
+        filterKeys: [SENTRY_APPLICATION_KEY],
+      }),
+    ],
 
     initialScope: {
       tags: {
         app: "platform",
-        ...(runtime === "shared-worker"
-          ? { runtime: "shared-worker", worker: "shared-database" }
-          : {}),
       },
     },
 
@@ -129,9 +115,6 @@ export function createPlatformSentryOptions(
     },
 
     beforeBreadcrumb(breadcrumb) {
-      if (runtime === "shared-worker" && breadcrumb.category === "console") {
-        return null;
-      }
       if (breadcrumb.data) {
         breadcrumb.data = redactDiagnosticUrls(breadcrumb.data);
       }

@@ -72,7 +72,6 @@ function enter(path: string) {
     context,
     host: "app.okou.ai",
     path,
-    sharedWorkerTestTransport: "message-port",
   });
 }
 async function action(name: string) {

@@ -28,7 +28,6 @@ interface AuthedClientOptions {
   readonly getToken: AuthTokenProvider;
   readonly getTokenGuard?: () => () => void;
   readonly getVercelProtectionBypass: () => string | undefined;
-  readonly onForceUpgrade?: () => void;
   readonly validateResponse?: boolean;
   readonly resolvePath?: (
     path: string,
@@ -178,7 +177,7 @@ export function createAuthedContractClient<T extends ClientRouter>(
           return networkResponse;
         })());
 
-      if (reportForceUpgradeResponse(response, options.onForceUpgrade)) {
+      if (reportForceUpgradeResponse(response)) {
         return response;
       }
 

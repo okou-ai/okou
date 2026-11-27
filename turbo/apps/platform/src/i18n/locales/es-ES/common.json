@@ -6182,7 +6182,7 @@
         },
         "indexedDb": {
           "countExplanation": "El recuento usa transacciones de solo lectura y no lee el contenido de los registros.",
-          "description": "Consulta la cantidad de registros de la caché local de chats administrada por el worker compartido.",
+          "description": "Inspecciona el recuento de registros en la caché local de chat de IndexedDB.",
           "loading": "Cargando almacenamiento de IndexedDB...",
           "measurementUnavailable": "No se pudo medir el snapshot.",
           "measureSnapshot": "Medir snapshot",
@@ -6521,10 +6521,6 @@
       "browse": "Explorar flujos de trabajo",
       "description": "Puede que se haya movido o que el enlace sea antiguo. Todo lo demás sigue donde lo dejaste.",
       "title": "Esta página no está aquí."
-    },
-    "workerFailure": {
-      "description": "Se ha interrumpido la conexión con esta aplicación.",
-      "title": "Conexión interrumpida"
     }
   },
   "sharedThread": {

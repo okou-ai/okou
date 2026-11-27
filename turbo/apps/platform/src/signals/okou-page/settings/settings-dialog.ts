@@ -15,7 +15,7 @@ import {
   searchParams$,
   updateSearchParams$,
 } from "../../route.ts";
-import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
+import { reloadIndexedDbDiagnostics$ } from "../../chat-database/signals.ts";
 import { resetSignal } from "../../utils.ts";
 import { usagePackManagementAsync$ } from "../billing.ts";
 import { invalidateEmailSubscription$ } from "./email-subscription.ts";
@@ -151,7 +151,7 @@ export const setSettingsActiveSection$ = command(
   ({ get, set }, section: SettingsSection, signal: AbortSignal) => {
     signal.throwIfAborted();
     if (section === "debug" && get(internalActiveSection$) !== "debug") {
-      set(reloadIndexedDbDiagnosticsFromWorker$);
+      set(reloadIndexedDbDiagnostics$);
       set(reloadConnectorCatalogRelease$);
     }
     const previous = get(internalActiveSection$);
@@ -335,7 +335,7 @@ export const setSettingsDialogOpen$ = command(
     // by an entry point outside Settings, so that flow owns the whole dialog.
     set(setBillingPlansStandalone$, get(billingSubPage$));
     if (get(internalActiveSection$) === "debug") {
-      set(reloadIndexedDbDiagnosticsFromWorker$);
+      set(reloadIndexedDbDiagnostics$);
     }
     set(internalSettingsDialogOpen$, true);
     await set(initProfileName$, modalSignal);

@@ -6087,7 +6087,7 @@
         },
         "indexedDb": {
           "countExplanation": "읽기 전용 트랜잭션으로 개수를 집계하며 레코드 본문은 읽지 않습니다.",
-          "description": "Shared Worker가 관리하는 로컬 채팅 캐시의 레코드 수를 확인합니다.",
+          "description": "로컬 IndexedDB 채팅 캐시의 레코드 수를 확인합니다.",
           "loading": "IndexedDB 저장소를 불러오는 중...",
           "measurementUnavailable": "스냅샷 측정에 실패했습니다.",
           "measureSnapshot": "스냅샷 측정",
@@ -6426,10 +6426,6 @@
       "browse": "워크플로 둘러보기",
       "description": "이동되었거나 링크가 오래된 것일 수 있습니다. 나머지는 모두 그대로 있습니다.",
       "title": "해당 페이지는 여기에 없습니다."
-    },
-    "workerFailure": {
-      "description": "이 앱과의 연결이 중단되었습니다.",
-      "title": "연결 중단"
     }
   },
   "sharedThread": {

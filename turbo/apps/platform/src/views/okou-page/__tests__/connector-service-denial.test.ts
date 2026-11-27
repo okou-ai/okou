@@ -24,7 +24,6 @@ test("fetch-002 An empty connector denial surfaces the thrown HTTP status in the
     context,
     host: "app.okou.ai",
     path: "/settings/slack?w=T9876&u=U3210",
-    sharedWorkerTestTransport: "message-port",
   });
   await asked.promise;
   expect(screen.queryByText("HTTP 403")).toBeNull();

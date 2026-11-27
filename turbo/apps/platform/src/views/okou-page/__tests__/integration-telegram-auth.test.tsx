@@ -239,7 +239,6 @@ test("telegram-connect-routes-003 Sign-in carries the complete signed member des
     auth: null,
     host: "app.okou.ai",
     path: telegramPath + signedQuery,
-    sharedWorkerTestTransport: "message-port",
   });
   await waitFor(() => {
     expect(location.pathname).toBe("/sign-in");

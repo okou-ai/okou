@@ -35,10 +35,6 @@ function chatIdbName(userId: string, orgId: string): string {
 
 /**
  * Open the per-credential chat IndexedDB database.
- *
- * This module is imported by the shared database worker, so it must never
- * reach `document`, `window`, or any other page-only global — directly or
- * through an import.
  */
 export function createChatIdbOpener(
   options: ChatIdbOpenerOptions,

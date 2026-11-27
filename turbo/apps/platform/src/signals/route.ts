@@ -10,7 +10,7 @@ import {
 import { hash, pathname, pushState, replaceState, search } from "./location.ts";
 import { setPageSignal$ } from "./page-signal.ts";
 import { rootSignal$ } from "./root-signal.ts";
-import { bridgeConnected$ } from "./shared-database-bridge-state.ts";
+import { chatDatabaseReady$ } from "./chat-database/signals.ts";
 import { detach, onDomEventFn, Reason, resetSignal } from "./utils.ts";
 import { logger } from "./log.ts";
 import { capturePageView, markBootstrapRouteSetup$ } from "../lib/posthog.ts";
@@ -453,7 +453,7 @@ export const setupPageWrapper = (
 /**
  * Wraps a page setup function with authentication requirement.
  * Opens sign-in dialog if user is not authenticated.
- * Organization pages also require selection and a connected shared database.
+ * Organization pages also require selection and an initialized chat database.
  * Identity-only resource authorization pages do not join or create a workspace.
  */
 export const setupAuthPageWrapper = (
@@ -511,7 +511,7 @@ export const setupAuthPageWrapper = (
       return;
     }
 
-    await get(bridgeConnected$);
+    await get(chatDatabaseReady$);
     signal.throwIfAborted();
     await set(setupPageWrapper(fn), signal);
   });

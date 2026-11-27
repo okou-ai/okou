@@ -10,8 +10,6 @@ import type {
   InboundMessage,
   RealtimeChannel,
 } from "ably";
-import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
-import type { SharedDatabaseRealtimeScope } from "../shared-database/protocol.ts";
 import { createAblyRealtime, type AblyRealtime } from "../lib/ably-realtime.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
@@ -79,7 +77,7 @@ interface RealtimeSession {
   readonly channels: RealtimeSessionChannels;
 }
 
-type RealtimeChannelScope = SharedDatabaseRealtimeScope;
+type RealtimeChannelScope = "run-output" | "credential" | "user" | "org";
 
 interface RealtimeSessionChannels {
   readonly "run-output": RealtimeSubscriptionChannel;
@@ -87,56 +85,6 @@ interface RealtimeSessionChannels {
   readonly user: RealtimeSubscriptionChannel;
   readonly org: RealtimeSubscriptionChannel;
 }
-
-class SharedWorkerRealtimeChannel implements RealtimeSubscriptionChannel {
-  private readonly subscriptions = new Map<ChannelCallback, string>();
-
-  constructor(
-    private readonly bridge: SharedDatabaseBridge,
-    private readonly scope: RealtimeChannelScope,
-  ) {}
-
-  subscribe(
-    topic: string | null,
-    callback: ChannelCallback,
-    onResync: ChannelResyncCallback,
-  ): Promise<unknown> {
-    if (topic === null) {
-      throw new Error("Shared Worker realtime subscriptions require a topic");
-    }
-    if (this.subscriptions.has(callback)) {
-      throw new Error("Shared Worker realtime callback already exists");
-    }
-    const subscriptionId = crypto.randomUUID();
-    this.subscriptions.set(callback, subscriptionId);
-    return this.bridge.subscribeRealtime(
-      subscriptionId,
-      this.scope,
-      topic,
-      callback,
-      onResync,
-    );
-  }
-
-  unsubscribe(_topic: string | null, callback: ChannelCallback): void {
-    const subscriptionId = this.subscriptions.get(callback);
-    if (!subscriptionId) {
-      return;
-    }
-    this.subscriptions.delete(callback);
-    this.bridge.unsubscribeRealtime(subscriptionId);
-  }
-}
-
-const sharedWorkerRealtimeBridgeState$ = state<SharedDatabaseBridge | null>(
-  null,
-);
-
-export const setSharedWorkerRealtimeBridge$ = command(
-  ({ set }, bridge: SharedDatabaseBridge): void => {
-    set(sharedWorkerRealtimeBridgeState$, bridge);
-  },
-);
 
 const realtimeInitialization$ = state<Promise<RealtimeSession> | null>(null);
 interface PendingAblySubscription {
@@ -972,10 +920,7 @@ const initializeRealtime$ = command(
 );
 
 export const setupRealtime$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    if (get(sharedWorkerRealtimeBridgeState$)) {
-      return;
-    }
+  async ({ set }, signal: AbortSignal): Promise<void> => {
     const initialization = set(initializeRealtime$, signal);
     // Preserve the actual outcome for subscribers arriving after startup fails.
     set(realtimeInitialization$, initialization);
@@ -1013,11 +958,6 @@ const realtimeChannel$ = command(
     signal: AbortSignal,
   ): Promise<RealtimeSubscriptionChannel> => {
     signal.throwIfAborted();
-
-    const sharedWorkerBridge = get(sharedWorkerRealtimeBridgeState$);
-    if (sharedWorkerBridge) {
-      return new SharedWorkerRealtimeChannel(sharedWorkerBridge, scope);
-    }
 
     const initialization = get(realtimeInitialization$);
     if (initialization) {

@@ -15,21 +15,21 @@ export function addBreadcrumb(
 }
 
 export function init(options?: BrowserOptions): void {
-  recordSentryInitialization("shared-worker", options);
+  recordSentryInitialization("page", options);
 }
 
 export function captureException(
   error: unknown,
   context?: Parameters<typeof import("@sentry/browser").captureException>[1],
 ): string {
-  return recordSentryException(null, error, context);
+  return recordSentryException("page", error, context);
 }
 
 export function captureMessage(
   message: string,
   context?: Parameters<typeof import("@sentry/browser").captureMessage>[1],
 ): string {
-  return recordSentryMessage(null, message, context);
+  return recordSentryMessage("page", message, context);
 }
 
 export function setUser(

@@ -129,8 +129,8 @@ Initial authentication and organization state belongs in `auth`:
 
 Use `featureSwitches` to configure the mocked authoritative API response.
 Before that response arrives, the App uses repository defaults rather than
-browser-persisted switch state. `debugLoggers` and the documented
-shared-database lifecycle options are also owned by the page's test context.
+browser-persisted switch state. `debugLoggers` and cached chat-thread fixtures
+are also owned by the page's test context.
 
 ## Synchronization and Queries
 
@@ -298,23 +298,20 @@ argument or through a factory such as `createChatComposerHelpers(context)`.
 Retain the context handle, not its current `signal` or stores, at module scope;
 its getters provide the fresh case lifetime.
 
-The context's lazy `store` and `workerStore` are separate ccstate domains. Do not
-merge them or globally deduplicate contexts. For a real app replacement or an
-additional worker domain, use a named `createTestRuntime(context)` child. This
-factory registers no hooks and installs no document lifecycle; its independent
-app/worker stores and cancellation signal belong to the explicit parent case.
-It shares the parent's external mock boundary, not the parent's stores. Its
-`dispose(reason)` cancels that runtime without resetting case mocks or deleting
-the document lifecycle. Parent teardown cancels every child. A disposed child
-does not restart within the same case; create a new child for a replacement.
-A file-scope child handle lazily rotates with its parent's next case.
+The context's lazy `store` owns the ccstate domain for the test case. Do not
+globally deduplicate contexts. For a real app replacement or an additional page
+runtime, use a named `createTestRuntime(context)` child. This factory registers
+no hooks and installs no document lifecycle; its independent store and
+cancellation signal belong to the explicit parent case. It shares the parent's
+external mock boundary, not the parent's store. Its `dispose(reason)` cancels
+that runtime without resetting case mocks or deleting the document lifecycle.
+Parent teardown cancels every child. A disposed child does not restart within
+the same case; create a new child for a replacement. A file-scope child handle
+lazily rotates with its parent's next case.
 
-Use `child.workerStore` for an additional worker rather than repurposing the app
-store. Multiple tab connections may intentionally use the same worker store;
-closing one connection must not stop that worker. Name whether a replacement
-app keeps a shared worker or starts a fresh worker domain. The voice replacement
-fixtures use fresh child app/worker stores, preserving their existing isolation
-contract; these helpers do not model independent browser documents or MSW servers.
+The voice replacement fixtures use fresh child stores, preserving their
+existing isolation contract; these helpers do not model independent browser
+documents or MSW servers.
 
 Bind external resources to the owning `context.signal`. Do not manually clear
 detached work, browser storage, spies, globals, or mocks in file-level cleanup

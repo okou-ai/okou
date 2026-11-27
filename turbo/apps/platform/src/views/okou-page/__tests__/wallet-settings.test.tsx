@@ -184,7 +184,6 @@ test("realtime-011 Link settings refresh on subscription, handle the member even
   await setupPage({
     context,
     path: "/?settings=wallet",
-    sharedWorkerTestTransport: "message-port",
   });
   const region = await screen.findByRole("region", { name: "Link" });
   await findAction("button", "Connect", region);
@@ -197,9 +196,9 @@ test("realtime-011 Link settings refresh on subscription, handle the member even
   source.triggerOnChannel(channel, topic, { orgId: "org_default" });
   await within(region).findByText("Connected");
 
-  source.triggerSharedWorkerConnectionState("suspended");
+  source.triggerConnectionState("suspended");
   status = linkStatus("reconnect-required");
-  source.triggerSharedWorkerConnectionState("connected");
+  source.triggerConnectionState("connected");
   await expect(
     within(region).findByText("Reconnect required"),
   ).resolves.toBeInTheDocument();

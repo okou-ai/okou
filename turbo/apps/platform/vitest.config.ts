@@ -47,10 +47,6 @@ export default defineConfig({
         __dirname,
         "../../packages/mermaid-lite/dist/mermaid.esm.min.mjs",
       ),
-      "virtual:shared-database-worker": `${path.resolve(
-        __dirname,
-        "./src/shared-database-worker.ts",
-      )}?sharedworker&url`,
     },
   },
   define: {

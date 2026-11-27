@@ -48,29 +48,18 @@ interface IndexedDbTransactionTelemetry {
   readonly request_count: number;
 }
 
-interface SharedDatabaseQueryTelemetry {
-  readonly event_name: "shared_database.query";
+interface IndexedDbVersionChangedTelemetry {
+  readonly event_name: "indexeddb.version_changed";
+  readonly database: IndexedDbDatabase;
+}
+
+interface ChatDatabaseQueryTelemetry {
+  readonly event_name: "chat_database.query";
   readonly template: string;
-}
-
-interface SharedDatabaseTokenRequestTelemetry {
-  readonly event_name: "shared_database.token_request";
-  readonly request_id: string;
-}
-
-interface SharedWorkerFailureTelemetry {
-  readonly event_name: "shared_worker.failure";
-  readonly phase: "error-event";
-  readonly script_path: string;
 }
 
 interface BootstrapStylesheetTelemetry {
   readonly event_name: "bootstrap.stylesheet";
-}
-
-interface SharedDatabaseWorkerUnavailableTelemetry {
-  readonly event_name: "shared_database.worker_unavailable";
-  readonly reason: string;
 }
 
 interface HttpRequestTelemetry {
@@ -91,30 +80,19 @@ export type ClientTelemetryOperation =
   | IndexedDbOpenTelemetry
   | IndexedDbTransactionCreateTelemetry
   | IndexedDbTransactionTelemetry
-  | SharedDatabaseQueryTelemetry
-  | SharedDatabaseTokenRequestTelemetry
-  | SharedWorkerFailureTelemetry
+  | IndexedDbVersionChangedTelemetry
+  | ChatDatabaseQueryTelemetry
   | BootstrapStylesheetTelemetry
-  | SharedDatabaseWorkerUnavailableTelemetry
   | HttpRequestTelemetry
   | MarketingEventSendTelemetry;
 
-function runtimeName(): "shared_worker" | "window" {
-  return typeof window === "undefined" ? "shared_worker" : "window";
+function runtimeName(): "window" {
+  return "window";
 }
 
 function scopeName(operation: ClientTelemetryOperation): string {
   if (operation.event_name === "marketing.event.send") {
     return "okou-app/marketing";
-  }
-  if (operation.event_name === "shared_worker.failure") {
-    return "okou-app/shared-worker";
-  }
-  if (
-    operation.event_name === "shared_database.worker_unavailable" ||
-    operation.event_name === "shared_database.token_request"
-  ) {
-    return "okou-app/shared-worker";
   }
   if (operation.event_name === "bootstrap.stylesheet") {
     return "okou-app/bootstrap";
@@ -122,12 +100,13 @@ function scopeName(operation: ClientTelemetryOperation): string {
   if (
     operation.event_name === "indexeddb.open" ||
     operation.event_name === "indexeddb.transaction.create" ||
-    operation.event_name === "indexeddb.transaction"
+    operation.event_name === "indexeddb.transaction" ||
+    operation.event_name === "indexeddb.version_changed"
   ) {
     return "okou-app/indexeddb";
   }
-  return operation.event_name === "shared_database.query"
-    ? "okou-app/shared-worker-query"
+  return operation.event_name === "chat_database.query"
+    ? "okou-app/chat-database"
     : "okou-app/http";
 }
 
@@ -150,11 +129,8 @@ function statusCode(
 
 function operationName(operation: ClientTelemetryOperation): string {
   if (
-    operation.event_name === "shared_worker.failure" ||
     operation.event_name === "marketing.event.send" ||
-    operation.event_name === "bootstrap.stylesheet" ||
-    operation.event_name === "shared_database.worker_unavailable" ||
-    operation.event_name === "shared_database.token_request"
+    operation.event_name === "bootstrap.stylesheet"
   ) {
     return operation.event_name;
   }
@@ -163,6 +139,9 @@ function operationName(operation: ClientTelemetryOperation): string {
   }
   if (operation.event_name === "indexeddb.open") {
     return `${operation.database}.open`;
+  }
+  if (operation.event_name === "indexeddb.version_changed") {
+    return `${operation.database}.version_changed`;
   }
   if (operation.event_name === "indexeddb.transaction.create") {
     return `${operation.template}.transaction.create`;
@@ -180,23 +159,10 @@ function operationAttributes(
       "okou.marketing.event.org_id": operation.org_id,
     };
   }
-  if (operation.event_name === "shared_worker.failure") {
-    return {
-      "okou.shared_worker.failure.phase": operation.phase,
-      "okou.shared_worker.script_path": operation.script_path,
-    };
-  }
-  if (operation.event_name === "shared_database.worker_unavailable") {
-    return {
-      "okou.shared_database.unavailable.reason": operation.reason,
-    };
-  }
-  if (operation.event_name === "shared_database.token_request") {
-    return {
-      "okou.shared_database.token_request.request_id": operation.request_id,
-    };
-  }
-  if (operation.event_name === "indexeddb.open") {
+  if (
+    operation.event_name === "indexeddb.open" ||
+    operation.event_name === "indexeddb.version_changed"
+  ) {
     return {
       "db.namespace": operation.database,
       "db.system": "indexeddb",
@@ -318,13 +284,6 @@ export function recordClientTelemetry(
         : { "status.code": resolvedStatusCode }),
     },
   ]);
-}
-
-export async function flushClientTelemetry(): Promise<void> {
-  const config = resolvePlatformClientTelemetryConfig();
-  if (config.token) {
-    await telemetryClient(config.token).flush();
-  }
 }
 
 export async function observeClientOperation<TResult>(

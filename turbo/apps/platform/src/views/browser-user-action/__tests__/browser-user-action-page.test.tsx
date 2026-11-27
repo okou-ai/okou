@@ -656,7 +656,7 @@ test.each([
       "user:test-user-123",
       "browserUserActionChanged:" + threadId,
     );
-    await request.open("message-port");
+    await request.open();
     await screen.findByText("Checking browser status");
     await subscription.started;
     request.record.state = state;
@@ -672,7 +672,7 @@ test("browser-user-action-page-053 the target thread signals an uncertain outcom
     "user:test-user-123",
     "browserUserActionChanged:" + threadId,
   );
-  await request.open("message-port");
+  await request.open();
   await screen.findByText("Checking browser status");
   await subscription.started;
   const initialCheck = context.mocks.deferred<void>();
@@ -733,7 +733,7 @@ test("A pending standalone field is withdrawn when preflight finds changed field
       });
     },
   );
-  await request.open("message-port");
+  await request.open();
   await waitFor(() => {
     return expect(
       context.mocks.ably.hasSubscriptionOnChannel(

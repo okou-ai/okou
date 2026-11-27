@@ -1,5 +1,3 @@
-import type { BrowserClerk } from "@clerk/shared/types";
-import type { SharedDatabaseIdentity } from "../shared-database/data-key.ts";
 import { createDeferredPromise, waitForToken } from "./utils.ts";
 
 interface ClerkTokenSession {
@@ -77,34 +75,4 @@ export async function readClerkToken(
     session.getToken(options.skipCache ? { skipCache: true } : undefined),
     signal,
   );
-}
-
-export async function readClerkMemberToken(
-  clerk: BrowserClerk,
-  member: SharedDatabaseIdentity,
-  signal: AbortSignal,
-): Promise<string> {
-  const memberSession = async () => {
-    await waitForClerkSession(clerk, signal);
-    signal.throwIfAborted();
-    const { session, user } = clerk;
-    if (session?.user?.id !== member.userId || user?.id !== member.userId) {
-      // A live port must report a provider failure so another tab can answer.
-      throw new Error(
-        "The current Clerk session does not match the shared database member",
-      );
-    }
-    return session;
-  };
-  const session = await memberSession();
-  // Clerk scopes this token explicitly, even while its active organization is changing.
-  const token = await waitForToken(
-    session.getToken({ organizationId: member.orgId }),
-    signal,
-  );
-  await memberSession();
-  if (!token) {
-    throw new Error("Clerk token is unavailable");
-  }
-  return token;
 }

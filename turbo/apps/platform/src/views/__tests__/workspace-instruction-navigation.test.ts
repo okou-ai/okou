@@ -49,7 +49,6 @@ async function start(path = personal) {
   await setupPage({
     context,
     path,
-    sharedWorkerTestTransport: "message-port",
     auth: {
       user: { id: member, fullName: "Taylor Member" },
       organization: { activeOrg: active, memberships },

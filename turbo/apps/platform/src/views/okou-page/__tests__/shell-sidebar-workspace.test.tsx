@@ -43,7 +43,6 @@ async function search() {
   await setupPage({
     context,
     path: "/",
-    sharedWorkerTestTransport: "message-port",
   });
   click(await screen.findByLabelText("Search workspace"));
   return screen.findByRole("dialog");

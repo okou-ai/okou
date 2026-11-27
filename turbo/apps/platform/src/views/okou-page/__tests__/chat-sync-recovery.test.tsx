@@ -52,7 +52,6 @@ async function conversation() {
     context,
     path: "/chats/" + chat.id,
     auth: member,
-    sharedWorkerTestTransport: "message-port",
     cachedChatThreadEvents: cachedChatListEvents(854, [chat]),
   });
   await screen.findByText("Original reply");
@@ -83,7 +82,7 @@ test("chat-sync-recovery-001 a hidden browser tab applies the ordinary title upd
 });
 test("chat-sync-recovery-003 reconnecting after a continuity gap retrieves both the renamed chat and its missed reply", async () => {
   const page = await conversation();
-  context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
+  context.mocks.ably.triggerConnectionState("suspended");
   page.rename();
   page.replies.push({
     role: "assistant",
@@ -94,7 +93,7 @@ test("chat-sync-recovery-003 reconnecting after a continuity gap retrieves both 
     sequenceNumber: 1,
     createdAt: "2026-08-01T09:10:00Z",
   });
-  context.mocks.ably.triggerSharedWorkerConnectionState("connected");
+  context.mocks.ably.triggerConnectionState("connected");
   await renamed();
   await expect(screen.findByText(missed)).resolves.toBeInTheDocument();
 });
@@ -133,14 +132,13 @@ test("chat-sync-recovery-006 a credential gap reconciles renamed, retired and ne
     context,
     path: "/",
     auth: chatListAuth(855),
-    sharedWorkerTestTransport: "message-port",
   });
   const row = (name: string) => {
     return "Show or hide chats in " + name;
   };
   await findFastControl("button", row(first.name));
   await findFastControl("button", row(retired.name));
-  context.mocks.ably.triggerSharedWorkerConnectionState("suspended", {
+  context.mocks.ably.triggerConnectionState("suspended", {
     code: 40_142,
     statusCode: 401,
     message: "Credential expired",
@@ -167,7 +165,7 @@ test("chat-sync-recovery-006 a credential gap reconciles renamed, retired and ne
       createdAt: now,
     };
   }) as ProjectEvent[];
-  context.mocks.ably.triggerSharedWorkerConnectionState("connected");
+  context.mocks.ably.triggerConnectionState("connected");
   await findFastControl("button", row("Renamed Project"));
   await findFastControl("button", row(created.name));
   await waitFor(() => {

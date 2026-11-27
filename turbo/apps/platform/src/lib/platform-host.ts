@@ -7,10 +7,8 @@ interface PlatformServiceStatusConfig {
   readonly pageBaseUrl: string;
 }
 
-// Resolved from `location` and build-time constants alone. The shared database
-// SharedWorker is a second entry point into this bundle and has no DOM, so
-// nothing here may read page state: every value must come from the hostname or
-// from an `import.meta.env` constant that the build inlines.
+// Resolved from `location` and build-time constants alone, so every value comes
+// from the hostname or an `import.meta.env` constant inlined at build time.
 interface PlatformRuntimeConfig {
   readonly environment: PlatformEnvironment;
   readonly clerkPublishableKey: string;

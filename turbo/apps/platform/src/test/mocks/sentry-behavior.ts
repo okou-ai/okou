@@ -12,7 +12,7 @@ type SentryBreadcrumb = Parameters<
   typeof import("@sentry/browser").addBreadcrumb
 >[0];
 
-type SentryRuntime = "page" | "shared-worker";
+type SentryRuntime = "page";
 
 interface SentryInitialization {
   readonly options: BrowserOptions | undefined;
@@ -40,16 +40,11 @@ export interface SentryMock {
   readonly users: SentryUser[];
 }
 
-interface SentryBehavior extends SentryMock {
-  captureRuntime: SentryRuntime;
-}
-
-const activeBehavior$ = state<SentryBehavior | null>(null);
+const activeBehavior$ = state<SentryMock | null>(null);
 const behaviorStore = createStore();
 
 export function mockSentry(signal: AbortSignal): SentryMock {
-  const behavior: SentryBehavior = {
-    captureRuntime: "page",
+  const behavior: SentryMock = {
     breadcrumbs: [],
     initializations: [],
     reports: [],
@@ -86,12 +81,11 @@ export function recordSentryInitialization(
   if (!behavior) {
     return;
   }
-  behavior.captureRuntime = runtime;
   behavior.initializations.push({ options, runtime });
 }
 
 export function recordSentryException(
-  runtime: SentryRuntime | null,
+  runtime: SentryRuntime,
   error: unknown,
   context?: CaptureExceptionContext,
 ): string {
@@ -100,17 +94,15 @@ export function recordSentryException(
     behavior.reports.push({
       context,
       error,
-      runtime: runtime ?? behavior.captureRuntime,
+      runtime,
       type: "exception",
     });
   }
-  return runtime === "shared-worker"
-    ? "test-worker-sentry-event"
-    : "test-page-sentry-event";
+  return "test-page-sentry-event";
 }
 
 export function recordSentryMessage(
-  runtime: SentryRuntime | null,
+  runtime: SentryRuntime,
   message: string,
   context?: CaptureMessageContext,
 ): string {
@@ -119,13 +111,11 @@ export function recordSentryMessage(
     behavior.reports.push({
       context,
       message,
-      runtime: runtime ?? behavior.captureRuntime,
+      runtime,
       type: "message",
     });
   }
-  return runtime === "shared-worker"
-    ? "test-worker-sentry-event"
-    : "test-page-sentry-event";
+  return "test-page-sentry-event";
 }
 
 export function recordSentryUser(user: SentryUser): void {

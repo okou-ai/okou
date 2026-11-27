@@ -103,7 +103,6 @@ test("teams-connect-page-010 installation during subscription attachment reaches
   await startPage({
     context,
     path: settings,
-    sharedWorkerTestTransport: "message-port",
   });
   await subscription.started;
   await screen.findByText("Install in Teams to finish");

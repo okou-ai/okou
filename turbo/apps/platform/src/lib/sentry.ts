@@ -8,7 +8,7 @@ import {
 // handlers are installed before the app bootstraps. Errors during bootstrap
 // (route resolution, signal evaluation) would be missed with deferred init.
 export function initSentry(): void {
-  Sentry.init(createPlatformSentryOptions("page"));
+  Sentry.init(createPlatformSentryOptions());
   setupSentryLogger();
 }
 

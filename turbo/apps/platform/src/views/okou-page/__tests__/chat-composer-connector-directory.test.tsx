@@ -71,7 +71,9 @@ test("chat-composer-connector-overview-008 opening account choices fetches detai
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {
-      requested.resolve(params.connectionId);
+      if (!requested.settled()) {
+        requested.resolve(params.connectionId);
+      }
       return respond(200, {
         ...selected,
         connectionStatus: "reconnect-required",
@@ -221,7 +223,7 @@ test("chat-composer-connector-overview-003 a targeted account update, removal an
     expect(queryFastControl("button", /^Probe 2\b/)).toBeVisible();
   });
   afterGap = true;
-  context.mocks.ably.triggerSharedWorkerChannelGap("user:test-user-123");
+  context.mocks.ably.triggerChannelGap("user:test-user-123");
   await findFastControl("button", "Probe 2 after reconnect");
   expect(queryFastControl("button", /^Probe 1\b/)).toBeNull();
 });

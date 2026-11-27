@@ -3,7 +3,7 @@ import { apiClient$ } from "../api-client.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { pathParams$ } from "../route.ts";
-import { queryChatThreadEventSharedDatabase$ } from "../shared-database.ts";
+import { queryChatThreadEventDatabase$ } from "../chat-database/signals.ts";
 import { command, computed, state, type Command } from "ccstate";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import type {
@@ -29,7 +29,7 @@ import { i18n } from "../../i18n/index.ts";
 import type {
   ChatThreadEventDataKey,
   ChatThreadEventQueryResult,
-} from "../../shared-database/data-key.ts";
+} from "../chat-database/types.ts";
 import type {
   ChatThreadEventView,
   OptimisticChatThreadEvent,
@@ -250,7 +250,7 @@ function threadFieldKind(event: OptimisticChatThreadEvent): string | null {
   }
 }
 
-const sharedChatThreadEventDataKey$ = computed((): ChatThreadEventDataKey => {
+const chatThreadEventDataKey$ = computed((): ChatThreadEventDataKey => {
   return { kind: "chat-thread-event" };
 });
 
@@ -279,12 +279,12 @@ const applyPersistedChatThreadEventResult$ = command(
   },
 );
 
-const hydrateSharedChatThreadEventCache$ = command(
+const hydrateChatThreadEventCache$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const dataKey = await get(sharedChatThreadEventDataKey$);
+    const dataKey = await get(chatThreadEventDataKey$);
     signal.throwIfAborted();
     const cached = await set(
-      queryChatThreadEventSharedDatabase$,
+      queryChatThreadEventDatabase$,
       { dataKey, afterSeqId: null, consistency: "cache-only" },
       signal,
     );
@@ -300,13 +300,13 @@ const hydrateSharedChatThreadEventCache$ = command(
 // Each caller runs its own catch-up: a mutation can commit after an older sync
 // has already read its result, so sharing one in-flight refresh would serve a
 // stale answer. Failure remains a rejection, never authoritative not-found.
-const catchUpSharedChatThreadEventSource$ = command(
+export const catchUpChatThreadEventSource$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const dataKey = await get(sharedChatThreadEventDataKey$);
+    const dataKey = await get(chatThreadEventDataKey$);
     signal.throwIfAborted();
     const currentSeqId = get(chatThreadEventState$).latestSeqId;
     const result = await set(
-      queryChatThreadEventSharedDatabase$,
+      queryChatThreadEventDatabase$,
       {
         dataKey,
         afterSeqId: currentSeqId,
@@ -324,18 +324,12 @@ const catchUpSharedChatThreadEventSource$ = command(
   },
 );
 
-const initializeSharedChatThreadEventSource$ = command(
+export const initializeChatThreadEventSource$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
-    await set(hydrateSharedChatThreadEventCache$, signal);
-    await set(catchUpSharedChatThreadEventSource$, signal);
+    await set(hydrateChatThreadEventCache$, signal);
+    await set(catchUpChatThreadEventSource$, signal);
   },
 );
-
-export const catchUpChatThreadEventSource$ =
-  catchUpSharedChatThreadEventSource$;
-
-export const initializeChatThreadEventSource$ =
-  initializeSharedChatThreadEventSource$;
 
 const chatThreadsSnapshot$ = computed((get) => {
   return get(chatThreadEventState$).snapshot?.chatThreads ?? [];
@@ -616,7 +610,7 @@ export function createThreadMetaLookup(): Command<
       // after initial readiness. This reader owns its own refresh, so another
       // caller's cancellation can never finish it.
       const canonicalEventStreamReady = initialCanonicalReady.settled()
-        ? set(catchUpSharedChatThreadEventSource$, get(rootSignal$))
+        ? set(catchUpChatThreadEventSource$, get(rootSignal$))
         : initialCanonicalReady.promise;
       const syncVersion = get(chatThreadEventSyncVersion$);
       const resolution = await set(

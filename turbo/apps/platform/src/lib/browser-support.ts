@@ -6,11 +6,9 @@ export interface BrowserUpgrade {
   readonly target: BrowserUpgradeTarget;
 }
 
-// Native CSS sign() sets the desktop Chromium floor. Android also needs
-// SharedWorker, which Chromium first enabled there in 148. Tailwind v4 requires
-// Firefox 128, and stable scrollbar gutters require Safari/iOS 18.2.
+// Native CSS sign() sets the Chromium floor. Tailwind v4 requires Firefox 128,
+// and stable scrollbar gutters require Safari/iOS 18.2.
 const MINIMUM_CHROMIUM_VERSION = 138;
-const MINIMUM_ANDROID_CHROMIUM_VERSION = 148;
 const MINIMUM_FIREFOX_VERSION = 128;
 
 function supportsAppleVersion(match: RegExpExecArray): boolean {
@@ -49,10 +47,7 @@ function browserUpgradeForUserAgent(userAgent: string): BrowserUpgrade | null {
   );
   if (chromiumMatch || chromeMatch) {
     const match = chromiumMatch ?? chromeMatch;
-    const minimumVersion = isAndroid
-      ? MINIMUM_ANDROID_CHROMIUM_VERSION
-      : MINIMUM_CHROMIUM_VERSION;
-    if (Number(match?.[1]) >= minimumVersion) {
+    if (Number(match?.[1]) >= MINIMUM_CHROMIUM_VERSION) {
       return null;
     }
 
@@ -102,15 +97,5 @@ function browserUpgradeForUserAgent(userAgent: string): BrowserUpgrade | null {
 }
 
 export function browserUpgradeRequired(): BrowserUpgrade | null {
-  const versionUpgrade = browserUpgradeForUserAgent(navigator.userAgent);
-  if (versionUpgrade) {
-    return versionUpgrade;
-  }
-  if (typeof SharedWorker !== "function") {
-    return {
-      actionUrl: "https://www.google.com/chrome/",
-      target: "browser",
-    };
-  }
-  return null;
+  return browserUpgradeForUserAgent(navigator.userAgent);
 }

@@ -6,7 +6,6 @@ interface ApiClientRuntime {
   readonly getToken: AuthTokenProvider;
   readonly oauthApiBaseUrl: string;
   readonly vercelProtectionBypass?: string;
-  readonly onForceUpgrade?: () => void;
 }
 
 const internalApiClientRuntime$ = state<ApiClientRuntime | undefined>(

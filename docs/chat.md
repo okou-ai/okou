@@ -86,8 +86,8 @@ configured secret-masking policy applies. Assistant text otherwise follows the
 provider output. Pi runtime admission follows the route policy.
 A visible chat panel subscribes while it has a pending or running run; queued
 runs do not subscribe. Run changes and page cancellation reset that subscription.
-The SharedWorker shares the transport across tabs and releases the channel
-attachment when its final subscriber leaves.
+Each tab shares its authenticated Ably connection for session output and
+releases the channel attachment when its final local subscriber leaves.
 
 Streaming and final event insertion derive the same chat event UUID from the
 run ID and the delta's `runEventId`. The independent public event sequence

@@ -1,15 +1,25 @@
 import type { IDBPDatabase } from "idb";
 
-import type {
-  IndexedDbDiagnostics,
-  IndexedDbSnapshotMeasurement,
-} from "../../shared-database/computed-key.ts";
 import {
   CHAT_IDB_STORE_NAMES,
   CHAT_THREAD_SNAPSHOT_ID,
   CHAT_THREAD_SNAPSHOT_STORE,
 } from "./chat-idb-schema.ts";
 import { runIndexedDbTransaction } from "./indexeddb-client.ts";
+
+export interface IndexedDbDiagnostics {
+  readonly version: number;
+  readonly stores: readonly {
+    readonly name: string;
+    readonly recordCount: number;
+  }[];
+}
+
+export interface IndexedDbSnapshotMeasurement {
+  readonly threadCount: number;
+  readonly payloadBytes: number;
+  readonly readDurationMs: number;
+}
 
 type GetDb = () => Promise<IDBPDatabase>;
 

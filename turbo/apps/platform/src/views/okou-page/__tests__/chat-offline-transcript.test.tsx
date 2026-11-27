@@ -87,7 +87,6 @@ test("worker-runtime-002 Reopening a conversation reads only rows belonging to t
       context: open,
       path: RUN_PATH,
       auth: member(entry.org),
-      sharedWorkerTestTransport: "message-port",
     });
     await expect(screen.findByText(entry.text)).resolves.toBeVisible();
     cleanup();
@@ -110,7 +109,6 @@ test("worker-runtime-002 Reopening a conversation reads only rows belonging to t
       context: open,
       path: RUN_PATH,
       auth: member(entry.org),
-      sharedWorkerTestTransport: "message-port",
     });
     await page.content;
     await expect(screen.findByText(entry.text)).resolves.toBeVisible();

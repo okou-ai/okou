@@ -4,7 +4,6 @@ import {
   MESSAGE_PDF_WORKER_FILE_PATTERN,
   MESSAGE_PDF_WORKER_LIMIT_BYTES,
 } from "./message-pdf-worker.ts";
-import { SHARED_DATABASE_WORKER_FILE_PATTERN } from "./shared-database-worker-html.ts";
 
 const VENDOR_FILE_PATTERN = /^assets\/vendor-[^/]+\.js$/u;
 const ROLLDOWN_RUNTIME_FILE_PATTERN = /^assets\/rolldown-runtime-[^/]+\.js$/u;
@@ -322,14 +321,6 @@ function eagerApplicationBundleViolations(
   vendorChunkCount: number,
 ): string[] {
   const applicationChunks = generatedChunks(javaScriptOutputs);
-  const workerAssets = javaScriptOutputs.filter(
-    (output): output is GeneratedAsset => {
-      return (
-        output.type === "asset" &&
-        SHARED_DATABASE_WORKER_FILE_PATTERN.test(output.fileName)
-      );
-    },
-  );
   const vendorChunks = applicationChunks.filter((chunk) => {
     return chunk.isEntry !== true && VENDOR_FILE_PATTERN.test(chunk.fileName);
   });
@@ -347,25 +338,22 @@ function eagerApplicationBundleViolations(
   const vendorChunk = vendorChunks[0];
   const lazyChunk = lazyChunks[0];
   const runtimeChunk = runtimeChunks[0];
-  const workerAsset = workerAssets[0];
   const invalidLayout = [
-    javaScriptOutputs.length !== vendorChunkCount + 4,
+    javaScriptOutputs.length !== vendorChunkCount + 3,
     appChunks.length !== 1,
     vendorChunks.length !== vendorChunkCount,
     lazyChunks.length !== 1,
     runtimeChunks.length !== 1,
-    workerAssets.length !== 1,
   ].some(Boolean);
   if (
     invalidLayout ||
     !appChunk ||
     !vendorChunk ||
     !lazyChunk ||
-    !runtimeChunk ||
-    !workerAsset
+    !runtimeChunk
   ) {
     return [
-      `Expected exactly one app entry, one lazy chunk, ${vendorChunkCount} vendor chunk(s), one Rolldown runtime chunk, and one shared database worker asset, but generated: ${outputDescription(javaScriptOutputs)}`,
+      `Expected exactly one app entry, one lazy chunk, ${vendorChunkCount} vendor chunk(s), and one Rolldown runtime chunk, but generated: ${outputDescription(javaScriptOutputs)}`,
     ];
   }
 
@@ -447,7 +435,7 @@ export function singleWorkerBundleViolations(
         .join(", ")}`,
     ];
   }
-  return chunkViolations(chunk, new Set(), new Set(["@clerk/clerk-js"]));
+  return chunkViolations(chunk, new Set());
 }
 
 export function applicationJavaScriptBundlePlugin(

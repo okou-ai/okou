@@ -18,8 +18,7 @@ import { initLocale$, syncLocalePreference$ } from "./locale.ts";
 import { setRootSignal$ } from "./root-signal.ts";
 import { setApiClientRuntime$ } from "./api-client-runtime.ts";
 import { readClerkToken } from "./clerk-token.ts";
-import { setupSharedDatabaseBridge$ } from "./shared-database-browser.ts";
-import { listenSharedWorkerFailure$ } from "./shared-worker-failure.ts";
+import { setupChatDatabase$ } from "./chat-database/signals.ts";
 import { resolveApiBaseForTarget, resolveOAuthApiBase } from "./api-base.ts";
 import { getCapturedPreviewBypassForTarget } from "../lib/preview-bypass-cookie.ts";
 import {
@@ -744,16 +743,14 @@ export const bootstrap$ = command(
     await set(captureFriendReferral$, signal);
     signal.throwIfAborted();
 
-    // Keep failures that happen before the first React render observable.
-    set(listenSharedWorkerFailure$, signal);
     const workspaceSwitch = set(watchOrgSwitch$, signal);
-    const sharedDatabaseSetup = set(setupSharedDatabaseBridge$, signal);
+    const chatDatabaseSetup = set(setupChatDatabase$, signal);
     const ready = set(completeBootstrap$, render, signal);
 
     await Promise.all([
       clerkIdentitySetup,
       workspaceSwitch,
-      sharedDatabaseSetup,
+      chatDatabaseSetup,
       ready,
     ]);
     signal.throwIfAborted();

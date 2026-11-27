@@ -375,7 +375,7 @@ function assetEnvironment() {
               controller.close();
             },
           }),
-          httpEtag: '"shared-worker-etag"',
+          httpEtag: '"pdf-worker-etag"',
           range,
           size: bodySize,
           writeHttpMetadata(headers) {
@@ -438,19 +438,6 @@ function clerkEdgeSessionJson(html) {
   ];
   assert.equal(matches.length, 1);
   return JSON.parse(matches[0][1]);
-}
-
-const SHARED_DATABASE_WORKER_PRELOAD_PATTERN =
-  /<script>window\.__okouSharedDatabaseWorkerBootstrap\.start\(([\s\S]*?)\);<\/script>/u;
-
-function sharedDatabaseWorkerPreloadArguments(html) {
-  const matches = [
-    ...html.matchAll(
-      new RegExp(SHARED_DATABASE_WORKER_PRELOAD_PATTERN.source, "gu"),
-    ),
-  ];
-  assert.equal(matches.length, 1);
-  return JSON.parse(`[${matches[0][1]}]`);
 }
 
 function prefetchedApiJson(html, path) {
@@ -1013,7 +1000,7 @@ const edgePreviewBaseline = await responseSnapshot(
 assert.doesNotMatch(edgePreviewBaseline.body, /okou-clerk-edge-session/u);
 assert.doesNotMatch(
   edgePreviewBaseline.body,
-  SHARED_DATABASE_WORKER_PRELOAD_PATTERN,
+  /__okouSharedDatabaseWorkerBootstrap/u,
 );
 assertNoClerkSecrets(edgePreviewBaseline);
 assert.equal(failingClerkClientFactoryCalls, 1);
@@ -1226,10 +1213,7 @@ assert.deepEqual(Object.keys(clerkEdgeSessionJson(authenticated.body)).sort(), [
   "sessionId",
   "userId",
 ]);
-assert.deepEqual(sharedDatabaseWorkerPreloadArguments(authenticated.body), [
-  currentUserId,
-  "org_current",
-]);
+assert.doesNotMatch(authenticated.body, /__okouSharedDatabaseWorkerBootstrap/u);
 assertNoClerkSecrets(authenticated);
 
 const productionOrigin = "https://app.okou.ai";
@@ -1338,7 +1322,7 @@ assert.deepEqual(clerkEdgeSessionJson(authenticatedWithoutOrganization.body), {
 assert.equal(apiFetchCallsWithoutOrganization, 0);
 assert.doesNotMatch(
   authenticatedWithoutOrganization.body,
-  SHARED_DATABASE_WORKER_PRELOAD_PATTERN,
+  /__okouSharedDatabaseWorkerBootstrap/u,
 );
 assertNoClerkSecrets(authenticatedWithoutOrganization);
 
@@ -1439,13 +1423,7 @@ const prefixHtml =
 assert.match(prefixHtml, /id="root"/u);
 assert.match(prefixHtml, /id="app-bootstrap-skeleton"/u);
 assert.doesNotMatch(prefixHtml, /data-okou-api-bootstrap/u);
-// The Worker preload must not wait for the API prefetch budget.
-// The page adds its URL bypass to the Worker URL, so the edge forwards it.
-assert.deepEqual(sharedDatabaseWorkerPreloadArguments(prefixHtml), [
-  "user_prefetch",
-  "org_prefetch",
-  "query-secret",
-]);
+assert.doesNotMatch(prefixHtml, /__okouSharedDatabaseWorkerBootstrap/u);
 assert.doesNotMatch(prefixHtml, /<\/body>/u);
 
 const prefetchedOrg = { orgId: "org_prefetch" };
@@ -1622,7 +1600,7 @@ let observedR2Key = null;
 let observedR2Options = null;
 const proxiedAsset = await worker.fetch(
   new Request(
-    "https://app.okou.ai/okou-app/assets/shared-database-worker-AbCd1234.js",
+    "https://app.okou.ai/okou-app/assets/message-pdf-worker-AbCd1234.js",
     {
       headers: {
         Authorization: "Bearer secret",
@@ -1633,10 +1611,7 @@ const proxiedAsset = await worker.fetch(
   ),
   assetEnvironment(),
 );
-assert.equal(
-  observedR2Key,
-  "okou-app/assets/shared-database-worker-AbCd1234.js",
-);
+assert.equal(observedR2Key, "okou-app/assets/message-pdf-worker-AbCd1234.js");
 assert.equal(observedR2Options?.range.get("range"), "bytes=0-1023");
 assert.equal(observedR2Options?.range.get("authorization"), null);
 assert.equal(observedR2Options?.range.get("cookie"), null);
@@ -1661,7 +1636,7 @@ const publicOriginEnvironment = assetEnvironment();
 delete publicOriginEnvironment.STATIC_ASSETS_BUCKET;
 const publicOriginProxiedAsset = await worker.fetch(
   new Request(
-    "https://app.okou.ai/okou-app/assets/shared-database-worker-Legacy123.js",
+    "https://app.okou.ai/okou-app/assets/message-pdf-worker-Legacy123.js",
     {
       headers: {
         Authorization: "Bearer secret",
@@ -1674,7 +1649,7 @@ const publicOriginProxiedAsset = await worker.fetch(
 );
 assert.equal(
   publicAssetRequest?.url,
-  "https://static.okou.io/okou-app/assets/shared-database-worker-Legacy123.js",
+  "https://static.okou.io/okou-app/assets/message-pdf-worker-Legacy123.js",
 );
 assert.equal(publicAssetRequest?.headers.get("authorization"), null);
 assert.equal(publicAssetRequest?.headers.get("cookie"), null);
