@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use api_contracts::generated::constants::model_provider_env::{
-    namespaced_placeholders, placeholders as model_provider_placeholders,
+    legacy_placeholders, placeholders as model_provider_placeholders,
 };
 use api_contracts::generated::constants::runners::{
     PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION, PI_MODEL_CONFIG_CURRENT_GENERATION,
@@ -41,7 +41,7 @@ pub(super) const CLAUDE_MODEL_PROVIDER_PLACEHOLDER_ENV_KEYS: &[ProtectedModelPro
         name: "CLAUDE_CODE_OAUTH_TOKEN",
         placeholders: &[
             model_provider_placeholders::CLAUDE_CODE_OAUTH_TOKEN,
-            namespaced_placeholders::CLAUDE_CODE_OAUTH_TOKEN,
+            legacy_placeholders::CLAUDE_CODE_OAUTH_TOKEN,
         ],
     },
 ];
@@ -51,28 +51,28 @@ pub(super) const CODEX_MODEL_PROVIDER_PLACEHOLDER_ENV_KEYS: &[ProtectedModelProv
         name: "OPENAI_API_KEY",
         placeholders: &[
             model_provider_placeholders::OPENAI_API_KEY,
-            namespaced_placeholders::OPENAI_API_KEY,
+            legacy_placeholders::OPENAI_API_KEY,
         ],
     },
     ProtectedModelProviderEnvKey {
         name: "CHATGPT_ACCESS_TOKEN",
         placeholders: &[
             model_provider_placeholders::CHATGPT_ACCESS_TOKEN,
-            namespaced_placeholders::CHATGPT_ACCESS_TOKEN,
+            legacy_placeholders::CHATGPT_ACCESS_TOKEN,
         ],
     },
     ProtectedModelProviderEnvKey {
         name: "CHATGPT_ACCOUNT_ID",
         placeholders: &[
             model_provider_placeholders::CHATGPT_ACCOUNT_ID,
-            namespaced_placeholders::CHATGPT_ACCOUNT_ID,
+            legacy_placeholders::CHATGPT_ACCOUNT_ID,
         ],
     },
     ProtectedModelProviderEnvKey {
         name: "CHATGPT_REFRESH_TOKEN",
         placeholders: &[
             model_provider_placeholders::CHATGPT_REFRESH_TOKEN,
-            namespaced_placeholders::CHATGPT_REFRESH_TOKEN,
+            legacy_placeholders::CHATGPT_REFRESH_TOKEN,
         ],
     },
     ProtectedModelProviderEnvKey {
