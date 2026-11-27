@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.18...runner-executor-v0.24.19) (2026-11-27)
+
+
+### Performance Improvements
+
+* **runner:** skip duplicate home mount on fresh startup ([#51452](https://github.com/okou-ai/okou/issues/51452)) ([1cb591e](https://github.com/okou-ai/okou/commit/1cb591e43d54c3fe8f1158b8731a170bff79ab51))
+
 ## [0.24.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.17...runner-executor-v0.24.18) (2026-11-27)
 
 

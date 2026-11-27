@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.26](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.25...runner-provider-v0.21.26) (2026-11-27)
+
+
+### Refactoring
+
+* **api:** retire template startup ordering anchors ([#51368](https://github.com/okou-ai/okou/issues/51368)) ([b31aeaa](https://github.com/okou-ai/okou/commit/b31aeaaa18d1d578c8fd506560371d7a46d0debf))
+
 ## [0.21.25](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.24...runner-provider-v0.21.25) (2026-11-27)
 
 
