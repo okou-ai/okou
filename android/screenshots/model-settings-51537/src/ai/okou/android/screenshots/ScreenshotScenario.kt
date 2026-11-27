@@ -34,6 +34,7 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -400,8 +401,13 @@ class ScreenshotScenario {
         waitFor("a ${if (checked) "selected" else "selectable"} option for $label") {
             result =
                 device.findObjects(text(label)).firstNotNullOfOrNull { candidate ->
-                    generateSequence(candidate) { it.parent }.firstOrNull {
-                        it.isCheckable && it.isChecked == checked
+                    try {
+                        generateSequence(candidate) { it.parent }.firstOrNull {
+                            it.isCheckable && it.isChecked == checked
+                        }
+                    } catch (_: StaleObjectException) {
+                        // The option may be replaced while the model list recomposes.
+                        null
                     }
                 }
             result != null
