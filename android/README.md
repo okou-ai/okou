@@ -29,13 +29,13 @@ shows saving, refresh and retry states. Workspace settings offer the eight Web
 palettes and languages in `supportedLocales`, including distinct
 Simplified and Traditional Chinese.
 
-Android reads a private cache of the last confirmed display mode and palette
-while the identified workspace loads. The cache is scoped to the API origin,
-account and workspace and is read off the main thread. With known local
-workspace permissions, Settings can show these values while the app verifies
-workspace access. Preference controls become available after the app loads the
-server preferences, which take precedence and refresh the cache. Remote
-workspace content and operations require verified workspace access.
+Android restores the last applied display mode and palette and the last confirmed
+language, time zone, and Cloud Browser default while the identified workspace loads.
+The cache is scoped to the API origin, account and workspace and is read off the
+main thread. Earlier appearance-only records still restore the display mode and
+palette. Settings shows local values or product defaults until server preferences
+take precedence, enable the controls, and refresh the cache. Remote workspace
+content and operations require verified workspace access.
 Temporary workspace metadata and preference failures after authorization retry
 while the app is in the foreground. Cached chats stay usable, and the workspace
 row in Settings shows preparation and temporary failures in its subtitle.
@@ -503,8 +503,8 @@ selections, failed saves, retry, readback and retired work. PaletteColorsTest re
 mode/palette combinations from the generated Material 3 scheme. LegacyLanguageSettingsTest
 exercises pre-Android13 app-language changes through the real Activity.
 Add modules and shared helpers for actual application boundaries.
-SessionModelTest holds workspace responses to exercise cached appearance,
-confirmation and account and workspace isolation. PendingWorkspaceRootTest
+SessionModelTest holds workspace responses to exercise preference restoration,
+confirmed persistence and account and workspace isolation. PendingWorkspaceRootTest
 holds access, workspace metadata and chat sync to verify the first display with
 and without cached chats, along with late access removal.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during

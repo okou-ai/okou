@@ -13,7 +13,7 @@ import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlOwners
 import ai.okou.android.chat.SearchRecentChatsStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
-import ai.okou.android.preferences.MemberAppearanceCache
+import ai.okou.android.preferences.MemberPreferencesCache
 import ai.okou.android.settings.DefaultModelStore
 import ai.okou.android.settings.WorkspaceSettingsCache
 import ai.okou.android.updates.AndroidUpdateClient
@@ -59,8 +59,8 @@ open class OkouApplication : Application() {
             },
         )
     }
-    val memberAppearanceCache by lazy {
-        MemberAppearanceCache({ noBackupFilesDir.resolve("member-appearance") })
+    val memberPreferencesCache by lazy {
+        MemberPreferencesCache({ noBackupFilesDir.resolve("member-appearance") })
     }
     internal val defaultModelStore by lazy {
         val storageScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
