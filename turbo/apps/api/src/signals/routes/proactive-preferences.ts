@@ -1,149 +1,15 @@
-import { proactiveDispatchPhase$ } from "../services/proactive-dispatch-ownership.service";
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import { command } from "ccstate";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
+import { bodyResultOf } from "../context/request";
+import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
+import type { RouteEntry } from "../route-entry";
 import {
   standalonePreference$,
   saveStandaloneSuggestions$,
 } from "../services/proactive-dispatch-state.service";
-import { command } from "ccstate";
-import { and, eq, or } from "drizzle-orm";
-import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import type { ProactivePreference } from "@okouai/api-contracts/contracts/proactive";
-import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
-import { feedPreferences } from "@okouai/db/schema/feed-preference";
-import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
-import { workflows } from "@okouai/db/schema/workflow";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { nowDate } from "../../lib/time";
-import { organizationAuthContext$ } from "../auth/auth-context";
-import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
-import type { RouteEntry } from "../route-entry";
-import {
-  loadProactivePreferences$,
-  type ProactiveWorkflowOwner,
-} from "../services/proactive-workflows-eligibility.service";
-import { ensureProactiveWorkflows$ } from "../services/proactive-workflows-lifecycle.service";
-import { PROACTIVE_WORKFLOW_DEFINITIONS } from "../services/proactive-workflow-definitions";
-import { settle } from "../utils";
 import { proactivePreferenceAccess$ } from "../services/proactive-preference-access";
-
-const readProactivePreference$ = command(
-  async (
-    { get, set },
-    owner: ProactiveWorkflowOwner,
-    signal: AbortSignal,
-  ): Promise<ProactivePreference> => {
-    if ((await set(proactiveDispatchPhase$, signal)) !== "automation") {
-      return await set(standalonePreference$, owner, "suggestions", signal);
-    }
-    const eligibility = await set(loadProactivePreferences$, owner, signal);
-    signal.throwIfAborted();
-    const definitions = Object.values(PROACTIVE_WORKFLOW_DEFINITIONS);
-    const automations = await get(db$)
-      .select({
-        enabled: workflowAutomations.enabled,
-        failures: workflowAutomations.consecutiveFailures,
-        status: workflowAutomations.officialReconciliationStatus,
-      })
-      .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-      .where(
-        and(
-          eq(workflows.orgId, owner.orgId),
-          eq(workflows.ownerUserId, owner.userId),
-          or(
-            ...definitions.map((definition) => {
-              return and(
-                eq(workflows.officialDefinitionName, definition.name),
-                eq(
-                  workflowAutomations.officialBlueprintKey,
-                  definition.blueprintKey,
-                ),
-              );
-            }),
-          ),
-          eq(workflowAutomations.officialIntendedEnabled, true),
-        ),
-      );
-    signal.throwIfAborted();
-    const unavailableReason =
-      eligibility.suggestions && eligibility.timezone === null
-        ? "missing-timezone"
-        : null;
-    return {
-      enabled: eligibility.suggestions,
-      status: !eligibility.suggestions
-        ? "paused"
-        : automations.some((automation) => {
-              return automation.status === "failed" || automation.failures;
-            })
-          ? "error"
-          : unavailableReason === null &&
-              automations.length === definitions.length &&
-              automations.every((automation) => {
-                return automation.enabled && automation.status === "current";
-              })
-            ? "enabled"
-            : "preparing",
-      unavailableReason,
-    };
-  },
-);
-
-const savePreference$ = command(
-  async (
-    { set },
-    owner: ProactiveWorkflowOwner,
-    {
-      enabled,
-      withFeed,
-    }: {
-      readonly enabled: boolean;
-      readonly withFeed: boolean;
-    },
-    signal: AbortSignal,
-  ) => {
-    if ((await set(proactiveDispatchPhase$, signal)) !== "automation") {
-      await set(saveStandaloneSuggestions$, owner, enabled, withFeed, signal);
-      if (withFeed) {
-        await publishAgentSuggestionsChangedSafely(owner);
-      }
-      return;
-    }
-    const db = set(writeDb$);
-    const choice = {
-      proactiveSuggestionsEnabled: enabled,
-    };
-    const saveWorkflowPreference = db
-      .insert(orgMembersMetadata)
-      .values({ ...owner, ...choice })
-      .onConflictDoUpdate({
-        target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-        set: { ...choice, updatedAt: nowDate() },
-      });
-    if (withFeed) {
-      // Both upserts commit in one statement, including when either row is new.
-      const saved = db.$with("saved_hourly_preference").as(
-        saveWorkflowPreference.returning({
-          userId: orgMembersMetadata.userId,
-        }),
-      );
-      await db
-        .with(saved)
-        .insert(feedPreferences)
-        .values({ ...owner, suggestions: enabled })
-        .onConflictDoUpdate({
-          target: [feedPreferences.orgId, feedPreferences.userId],
-          set: { suggestions: enabled },
-        });
-      signal.throwIfAborted();
-      await publishAgentSuggestionsChangedSafely(owner);
-    } else {
-      await saveWorkflowPreference;
-    }
-    signal.throwIfAborted();
-  },
-);
 
 const preferenceRoute$ = command(
   async (
@@ -171,26 +37,19 @@ const preferenceRoute$ = command(
         return body.response;
       }
       await set(
-        savePreference$,
+        saveStandaloneSuggestions$,
         owner,
-        { enabled: body.data.enabled, withFeed },
+        body.data.enabled,
+        withFeed,
         signal,
       );
-      const setup = await settle(
-        set(ensureProactiveWorkflows$, owner, signal),
-        signal,
-      );
-      const preference = await set(readProactivePreference$, owner, signal);
-      return {
-        status: 200 as const,
-        body: setup.ok
-          ? preference
-          : { ...preference, status: "error" as const },
-      };
+      if (withFeed) {
+        await publishAgentSuggestionsChangedSafely(owner);
+      }
     }
     return {
       status: 200 as const,
-      body: await set(readProactivePreference$, owner, signal),
+      body: await set(standalonePreference$, owner, "suggestions", signal),
     };
   },
 );

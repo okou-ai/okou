@@ -24,7 +24,7 @@ import {
   type ExecutionOrgRows,
 } from "./execution-org-context.service";
 import { memberModelSourcesAggregate } from "./model-source-context.service";
-import { officialWorkflowThreadCondition } from "./official-workflow-policy.service";
+import { platformTaskThreadCondition } from "./platform-task-thread.service";
 
 const rawDecoder = zodDriverValueDecoder(zUnknown());
 const orgRowSchema = object({
@@ -47,7 +47,7 @@ const existingSendThreadColumns = Object.freeze({
 export type ExistingSendThreadRow = Pick<
   typeof chatThreads.$inferSelect,
   keyof typeof existingSendThreadColumns
-> & { readonly isOfficialWorkflowThread: boolean };
+> & { readonly isPlatformTaskThread: boolean };
 
 /**
  * Own one preparation statement for a new organization/member identity. A
@@ -90,7 +90,7 @@ export function createExecutionOrgMemberContext(
             ...selection,
             existingThread: {
               ...existingSendThreadColumns,
-              isOfficialWorkflowThread: officialWorkflowThreadCondition({
+              isPlatformTaskThread: platformTaskThreadCondition({
                 ...owner,
                 threadId: existingThreadId,
               }).mapWith(pgBooleanDecoder),

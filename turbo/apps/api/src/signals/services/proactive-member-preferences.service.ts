@@ -3,13 +3,13 @@ import { and, eq } from "drizzle-orm";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { db$ } from "../external/db";
 
-export interface ProactiveWorkflowOwner {
+export interface ProactiveScheduleOwner {
   readonly orgId: string;
   readonly userId: string;
 }
 
 export const loadProactivePreferences$ = command(
-  async ({ get }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
+  async ({ get }, owner: ProactiveScheduleOwner, signal: AbortSignal) => {
     const [preference] = await get(db$)
       .select({
         suggestionsEnabled: orgMembersMetadata.proactiveSuggestionsEnabled,
@@ -28,7 +28,6 @@ export const loadProactivePreferences$ = command(
     const timezone = preference?.timezone ?? null;
     return {
       suggestions: suggestionsEnabled,
-      learning: suggestionsEnabled && timezone !== null,
       timezone,
     };
   },

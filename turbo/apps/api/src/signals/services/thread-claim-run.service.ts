@@ -9,7 +9,7 @@ import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-qu
 import { writeDb$ } from "../external/db";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { finalizeClaimedRunUserMessage$ } from "./chat-run-event.service";
-import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
+import { morningBriefScheduleClaimBound$ } from "./legacy-morning-brief-settlement.service";
 import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
@@ -245,7 +245,7 @@ import {
 } from "./agent-run-metadata-write.service";
 import type { EnqueuedChatInputFacts } from "./chat-run-preparation-facts";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
-import { OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE } from "./official-workflow-policy.service";
+import { PLATFORM_TASK_THREAD_READ_ONLY_MESSAGE } from "./platform-task-thread.service";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
 import type { ModelFirstPin } from "./model-selection.service";
@@ -501,6 +501,7 @@ type LaunchAutomation = ThreadAutomationTarget["automation"];
 
 function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   readonly workflowName: string | null;
+  readonly officialDefinitionName: string | null;
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
   readonly automation: LaunchAutomation;
@@ -522,7 +523,7 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
     ),
     ...EVENT_POLICY[eventType],
     ...(eventType === "manual" &&
-    proactiveWorkflowKind(args.workflowName) === "learning"
+    proactiveWorkflowKind(args.officialDefinitionName) === "learning"
       ? { recordLastRunId: false, recordLastRunAt: false }
       : {}),
   };
@@ -1030,9 +1031,9 @@ export function createThreadClaimRunObjects(
           "Proactive occurrence is no longer eligible",
         );
       }
-      if (event.preparation.isOfficialWorkflowThread && !proactive) {
+      if (event.preparation.isPlatformTaskThread && !proactive) {
         throw new QueuedPromptLaunchUnavailableError(
-          OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
+          PLATFORM_TASK_THREAD_READ_ONLY_MESSAGE,
         );
       }
       if (event.contextType === "automation") {
@@ -1511,6 +1512,7 @@ export function createThreadClaimRunObjects(
       }
       const material = buildWorkflowAutomationQueuedLaunchMaterial({
         workflowName: event.workflowName,
+        officialDefinitionName: target.workflow.officialDefinitionName,
         eventType: event.eventType,
         eventPayload: await get(threadContext.automationPayload$),
         automation: target.automation,
@@ -3676,6 +3678,7 @@ function threadDispatchInput(args: ThreadRunContext): DirectRunInput {
   return {
     run: {
       id: args.identity.runId,
+      triggerSource: metadata.triggerSource,
       userId: rows.userId,
       orgId: rows.orgId,
       chatThreadId: rows.chatThreadId,

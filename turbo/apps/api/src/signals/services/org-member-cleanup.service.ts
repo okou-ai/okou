@@ -1,4 +1,4 @@
-import { inactiveProactiveAutomationCondition } from "./proactive-workflow-owner";
+import { departedMemberProactiveAutomations } from "./proactive-workflow-owner";
 import { deleteOnboardingDraft$ } from "./onboarding-draft.service";
 import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
@@ -130,7 +130,7 @@ const deleteMemberInitialization$ = command(
         nextRunAt: null,
         updatedAt: nowDate(),
       })
-      .where(inactiveProactiveAutomationCondition(args, []));
+      .where(departedMemberProactiveAutomations(args));
     signal.throwIfAborted();
   },
 );
@@ -170,28 +170,18 @@ export const cleanupOrgMemberResources$ = command(
       signal,
     );
     signal.throwIfAborted();
+    // Preserve the handoff tombstone for a retained enrollment until older releases drain.
     await db
-      .insert(morningBriefEnrollments)
-      .values({
-        orgId: args.orgId,
-        userId: args.userId,
+      .update(morningBriefEnrollments)
+      .set({
         state: "departed",
-        membershipId: args.membershipId,
-        availableAt: currentTime,
-        createdAt: currentTime,
+        membershipId: args.membershipId ?? morningBriefEnrollments.membershipId,
         updatedAt: currentTime,
       })
-      .onConflictDoUpdate({
-        target: [morningBriefEnrollments.orgId, morningBriefEnrollments.userId],
-        set: {
-          state: "departed",
-          // Deletion can arrive before enrollment or after a missing live lookup.
-          // Retain its generation so a late created event cannot revive intent.
-          membershipId:
-            args.membershipId ?? morningBriefEnrollments.membershipId,
-          updatedAt: currentTime,
-        },
-        setWhere: and(
+      .where(
+        and(
+          eq(morningBriefEnrollments.orgId, args.orgId),
+          eq(morningBriefEnrollments.userId, args.userId),
           args.membershipId
             ? or(
                 isNull(morningBriefEnrollments.membershipId),
@@ -205,7 +195,7 @@ export const cleanupOrgMemberResources$ = command(
             "departed",
           ]),
         ),
-      });
+      );
     signal.throwIfAborted();
     const [installation] = await db
       .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })

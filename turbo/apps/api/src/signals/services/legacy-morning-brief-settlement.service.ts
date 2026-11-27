@@ -1,17 +1,12 @@
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
-import {
-  MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
-} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   morningBriefScheduleClaims,
   type MorningBriefScheduleClaimSettlement,
 } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { boolean, literal, object } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -38,76 +33,8 @@ type AutomationRow = typeof workflowAutomations.$inferSelect;
 
 const log = logger("MorningBriefScheduleClaim");
 
-/** Matches the Official poller and callback policy; they share one constant. */
+/** Preserve the failure limit for occurrences admitted by the previous scheduler. */
 const MAX_CONSECUTIVE_FAILURES = 3;
-
-/** Check the Blueprint before looking up the member's Morning Brief for claim journaling. */
-function canJournalMorningBrief(automation: AutomationRow) {
-  return (
-    automation.kind === "schedule" &&
-    automation.scheduleType === "cron" &&
-    automation.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
-  );
-}
-
-export const isCanonicalMorningBriefAutomation$ = command(
-  async (
-    { set },
-    automation: AutomationRow,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    if (!canJournalMorningBrief(automation)) {
-      return false;
-    }
-    const db = set(writeDb$);
-    const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
-    const [selected] = await db
-      .select({ id: workflows.id })
-      .from(workflows)
-      .where(
-        and(
-          eq(workflows.orgId, owner.orgId),
-          eq(workflows.ownerUserId, owner.userId),
-          eq(workflows.visibility, "private"),
-          inArray(workflows.officialDefinitionName, [
-            ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
-          ]),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!selected) {
-      return false;
-    }
-    const rows = await db
-      .select({
-        id: workflowAutomations.id,
-        kind: workflowAutomations.kind,
-        scheduleType: workflowAutomations.scheduleType,
-        blueprintKey: workflowAutomations.officialBlueprintKey,
-        reconciliationStatus: workflowAutomations.officialReconciliationStatus,
-      })
-      .from(workflowAutomations)
-      .where(
-        and(
-          eq(workflowAutomations.orgId, owner.orgId),
-          eq(workflowAutomations.ownerUserId, owner.userId),
-          eq(workflowAutomations.workflowId, selected.id),
-        ),
-      )
-      .limit(2);
-    signal.throwIfAborted();
-    const current = rows[0];
-    return (
-      rows.length === 1 &&
-      current?.id === automation.id &&
-      current.kind === "schedule" &&
-      current.scheduleType === "cron" &&
-      current.blueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY &&
-      current.reconciliationStatus === "current"
-    );
-  },
-);
 
 /** How the caller identifies the occurrence it is settling. */
 type MorningBriefScheduleSettlementSubject =
@@ -172,7 +99,7 @@ const prepareMorningBriefScheduleSettlement$ = command(
   },
 );
 
-function officialMorningBriefSettlementPlan(
+function legacyMorningBriefSettlementPlan(
   automation: AutomationRow,
   args: SettleMorningBriefScheduleArgs,
   settledAt: Date,
@@ -231,7 +158,7 @@ interface PreparedMorningBriefScheduleSettlement {
   readonly automationRevision: string;
   readonly claim: typeof morningBriefScheduleClaims.$inferSelect;
   readonly settledAt: Date;
-  readonly plan: ReturnType<typeof officialMorningBriefSettlementPlan>;
+  readonly plan: ReturnType<typeof legacyMorningBriefSettlementPlan>;
   readonly feedEvent: PreparedAutomationDisabledFeedEvent | null;
 }
 
@@ -291,7 +218,7 @@ const prepareMorningBriefSchedulePublication$ = command(
       return null;
     }
     const settledAt = nowDate();
-    const plan = officialMorningBriefSettlementPlan(
+    const plan = legacyMorningBriefSettlementPlan(
       observed.automation,
       args,
       settledAt,

@@ -33,7 +33,7 @@ import { writeDb$ } from "../external/db";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
-import { officialScheduleOwnerIsActive$ } from "./official-schedule-activity.service";
+import { platformScheduleOwnerIsActive$ } from "./platform-schedule-activity.service";
 import {
   nextProactiveSlot,
   scheduleOwner,
@@ -167,7 +167,7 @@ const dispatchSlot$ = command(
     const next = nextProactiveSlot(row, row.task, row.timezone, at);
     const expired = row.task === "morning-brief" && scheduleExpired(anchor, at);
     const active =
-      !expired && (await set(officialScheduleOwnerIsActive$, row, at, signal));
+      !expired && (await set(platformScheduleOwnerIsActive$, row, at, signal));
     const cursor = {
       nextRunAt: next,
       deferredAnchorAt: null,

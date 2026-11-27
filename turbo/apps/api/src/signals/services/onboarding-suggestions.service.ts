@@ -5,12 +5,12 @@ import { and, eq, isNull } from "drizzle-orm";
 import { clerk$, type ClerkUser } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { db$ } from "../external/db";
-import type { ProactiveWorkflowOwner } from "./proactive-workflows-eligibility.service";
+import type { ProactiveScheduleOwner } from "./proactive-member-preferences.service";
 
 export const shouldEnableOnboardingSuggestions$ = command(
   async (
     { get },
-    owner: ProactiveWorkflowOwner,
+    owner: ProactiveScheduleOwner,
     knownUser: ClerkUser | undefined,
     signal: AbortSignal,
   ) => {
