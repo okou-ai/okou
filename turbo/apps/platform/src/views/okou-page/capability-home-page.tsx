@@ -330,7 +330,6 @@ export function CapabilityHomeContent({
   readonly heading?: ReactNode;
 }) {
   const selected = useGet(signals.taskChips.home.task$);
-  const focusEditor = useSet(signals.editor.focus$);
   const swap = useHomeSwap(signals);
   const closeButton = (
     <CapabilityCloseButton
@@ -383,11 +382,7 @@ export function CapabilityHomeContent({
               <div className={cn(GREETING_ROW, "items-center")}>{heading}</div>
             )}
             <CapabilityCards signals={signals} />
-            <CapabilityHomeCompliance
-              // The block takes its focused hide control with it; the
-              // composer is where the page's focus starts, so it goes there.
-              onHidden={focusEditor}
-            />
+            <CapabilityHomeCompliance />
           </div>
         ) : (
           <>

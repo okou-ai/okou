@@ -574,139 +574,126 @@ describe("RUN-01: agent run authorization and session boundaries", () => {
   );
 });
 
-describe("RUN-01: admission boundaries beyond request validation", () => {
-  it("run-lifecycle-admission.bdd-001 rejects runs for onboarded organizations with suspended entitlements", async () => {
-    const actor = bdd.user();
-    const runs = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const { customerId, subscriptionId } =
-      await runs.grantProEntitlement(actor);
-    await runs.ensurePersonalSubscriptionModel(actor, {
+async function rejectSuspendedEntitlementSend(args: {
+  readonly prompt: string;
+  readonly model?: null;
+}) {
+  const actor = bdd.user();
+  const runs = createRunsApi(context);
+  const webhooks = createWebhookCallbackApi(context);
+  const [{ customerId, subscriptionId }] = await Promise.all([
+    runs.grantProEntitlement(actor),
+    runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
-    });
+    }),
+  ]);
 
-    webhooks.configureStripeBillingEnv();
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: customerId,
-      metadata: { orgId: actor.orgId },
-    });
-    await webhooks.postStripeEvent(
-      {
-        id: `evt_cancel_${randomUUID()}`,
-        type: "customer.subscription.updated",
-        created: Math.floor(now() / 1000),
-        data: {
-          object: {
-            id: subscriptionId,
-            customer: customerId,
-            status: "canceled",
-            metadata: {},
-            cancel_at_period_end: false,
-            cancel_at: null,
-            schedule: null,
-            trial_end: null,
-            items: { data: [{ price: { id: "price_bdd_pro" } }] },
-          },
+  webhooks.configureStripeBillingEnv();
+  context.mocks.stripe.customers.retrieve.mockResolvedValue({
+    id: customerId,
+    metadata: { orgId: actor.orgId },
+  });
+  await webhooks.postStripeEvent(
+    {
+      id: `evt_cancel_${randomUUID()}`,
+      type: "customer.subscription.updated",
+      created: Math.floor(now() / 1000),
+      data: {
+        object: {
+          id: subscriptionId,
+          customer: customerId,
+          status: "canceled",
+          metadata: {},
+          cancel_at_period_end: false,
+          cancel_at: null,
+          schedule: null,
+          trial_end: null,
+          items: { data: [{ price: { id: "price_bdd_pro" } }] },
         },
       },
+    },
+    [200],
+  );
+  await flushWaitUntilForTest();
+
+  const authHeaders = signIn(actor);
+  const clientEventId = randomUUID();
+  const sent = await accept(
+    chatEventsApi.send({
+      headers: authHeaders,
+      body: {
+        prompt: args.prompt,
+        hasTextContent: true,
+        ...(args.model === undefined ? {} : { model: args.model }),
+        clientEventId,
+        userMessage: {
+          version: 1,
+          parts: [{ type: "text", text: args.prompt }],
+        },
+      },
+    }),
+    [201],
+  );
+  await flushWaitUntilForTest();
+
+  const [rows, logs, queue] = await Promise.all([
+    accept(
+      threadEventsApi.rows({
+        headers: authHeaders,
+        params: { threadId: sent.body.threadId },
+        query: { sinceSeqId: 0, limit: 50 },
+      }),
       [200],
+    ),
+    accept(
+      logsListApi.list({ headers: authHeaders, query: { limit: 50 } }),
+      [200],
+    ),
+    accept(runsQueueApi.getQueue({ headers: authHeaders }), [200]),
+  ]);
+
+  const rejected = projectChatEventRows(rows.body.rows).find((event) => {
+    return (
+      event.eventType === "input.rejected" &&
+      event.revokesEventId === clientEventId
     );
-    await flushWaitUntilForTest();
+  });
+  const loggedPrompts = logs.body.data.map((entry) => {
+    return entry.prompt;
+  });
+  return {
+    rejectedEventType: rejected?.eventType,
+    rejectedError: rejected && "error" in rejected ? rejected.error : undefined,
+    promptLogged: loggedPrompts.includes(args.prompt),
+    activeQueue: queue.body.concurrency.active,
+  };
+}
 
-    const authHeaders = signIn(actor);
-    const defaultPrompt = "Suspended default subscription send";
-    const autoPrompt = "Suspended auto model send";
-    const defaultEventId = randomUUID();
-    const autoEventId = randomUUID();
-    const [defaultSend, autoSend] = await Promise.all([
-      accept(
-        chatEventsApi.send({
-          headers: authHeaders,
-          body: {
-            prompt: defaultPrompt,
-            hasTextContent: true,
-            clientEventId: defaultEventId,
-            userMessage: {
-              version: 1,
-              parts: [{ type: "text", text: defaultPrompt }],
-            },
-          },
-        }),
-        [201],
-      ),
-      accept(
-        chatEventsApi.send({
-          headers: authHeaders,
-          body: {
-            prompt: autoPrompt,
-            hasTextContent: true,
-            model: null,
-            clientEventId: autoEventId,
-            userMessage: {
-              version: 1,
-              parts: [{ type: "text", text: autoPrompt }],
-            },
-          },
-        }),
-        [201],
-      ),
-    ]);
-    await flushWaitUntilForTest();
-
-    const [defaultRows, autoRows, logs, queue] = await Promise.all([
-      accept(
-        threadEventsApi.rows({
-          headers: authHeaders,
-          params: { threadId: defaultSend.body.threadId },
-          query: { sinceSeqId: 0, limit: 50 },
-        }),
-        [200],
-      ),
-      accept(
-        threadEventsApi.rows({
-          headers: authHeaders,
-          params: { threadId: autoSend.body.threadId },
-          query: { sinceSeqId: 0, limit: 50 },
-        }),
-        [200],
-      ),
-      accept(
-        logsListApi.list({ headers: authHeaders, query: { limit: 50 } }),
-        [200],
-      ),
-      accept(runsQueueApi.getQueue({ headers: authHeaders }), [200]),
-    ]);
-
-    const defaultRejected = projectChatEventRows(defaultRows.body.rows).find(
-      (event) => {
-        return (
-          event.eventType === "input.rejected" &&
-          event.revokesEventId === defaultEventId
-        );
-      },
-    );
-    const autoRejected = projectChatEventRows(autoRows.body.rows).find(
-      (event) => {
-        return (
-          event.eventType === "input.rejected" &&
-          event.revokesEventId === autoEventId
-        );
-      },
-    );
-    expect(defaultRejected).toMatchObject({
-      eventType: "input.rejected",
-      error: "insufficient_credits",
+describe("RUN-01: admission boundaries beyond request validation", () => {
+  it("run-lifecycle-admission.bdd-001 (1/2) rejects default subscription runs when entitlements are suspended", async () => {
+    await expect(
+      rejectSuspendedEntitlementSend({
+        prompt: "Suspended default subscription send",
+      }),
+    ).resolves.toStrictEqual({
+      rejectedEventType: "input.rejected",
+      rejectedError: "insufficient_credits",
+      promptLogged: false,
+      activeQueue: 0,
     });
-    expect(autoRejected).toMatchObject({
-      eventType: "input.rejected",
-      error: "insufficient_credits",
-    });
+  });
 
-    const loggedPrompts = logs.body.data.map((entry) => {
-      return entry.prompt;
+  it("run-lifecycle-admission.bdd-001 (2/2) rejects Auto model runs when entitlements are suspended", async () => {
+    await expect(
+      rejectSuspendedEntitlementSend({
+        prompt: "Suspended auto model send",
+        model: null,
+      }),
+    ).resolves.toStrictEqual({
+      rejectedEventType: "input.rejected",
+      rejectedError: "insufficient_credits",
+      promptLogged: false,
+      activeQueue: 0,
     });
-    expect(loggedPrompts).not.toContain(defaultPrompt);
-    expect(loggedPrompts).not.toContain(autoPrompt);
-    expect(queue.body.concurrency.active).toBe(0);
   });
 });

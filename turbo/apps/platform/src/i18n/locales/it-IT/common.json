@@ -3099,6 +3099,16 @@
       "loading": "Caricamento account…",
       "loadMore": "Carica altro",
       "managerTitle": "Gestisci gli account di {{connector}}",
+      "namePresetCustom": "Personalizzato",
+      "namePresets": {
+        "company": "Azienda",
+        "customer": "Cliente",
+        "personal": "Personale",
+        "primary": "Principale",
+        "secondary": "Secondario",
+        "work": "Lavoro"
+      },
+      "namePromptCustomHint": "Lascia vuoto per salvare senza nome.",
       "namePromptDescription": "Puoi saltare questo passaggio e assegnare un nome all'account in seguito.",
       "namePromptTitle": "Assegna un nome al tuo account {{connector}}",
       "noAccounts": "Nessun account",
@@ -6492,7 +6502,6 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
-      "hide": "Nascondi conformità",
       "link": "Dettagli sulla sicurezza",
       "status": {
         "aligned": "Allineato",

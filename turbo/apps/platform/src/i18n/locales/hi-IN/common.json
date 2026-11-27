@@ -3046,6 +3046,16 @@
       "loading": "खाते लोड हो रहे हैं…",
       "loadMore": "और लोड करें",
       "managerTitle": "{{connector}} खाते प्रबंधित करें",
+      "namePresetCustom": "कस्टम",
+      "namePresets": {
+        "company": "कंपनी",
+        "customer": "ग्राहक",
+        "personal": "व्यक्तिगत",
+        "primary": "प्राथमिक",
+        "secondary": "द्वितीयक",
+        "work": "कार्य"
+      },
+      "namePromptCustomHint": "बिना नाम के सहेजने के लिए खाली छोड़ें।",
       "namePromptDescription": "आप इसे छोड़ सकते हैं और खाते को बाद में नाम दे सकते हैं।",
       "namePromptTitle": "अपने {{connector}} खाते को नाम दें",
       "noAccounts": "कोई खाता नहीं",
@@ -6421,7 +6431,6 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
-      "hide": "अनुपालन छिपाएँ",
       "link": "सुरक्षा विवरण",
       "status": {
         "aligned": "संरेखित",

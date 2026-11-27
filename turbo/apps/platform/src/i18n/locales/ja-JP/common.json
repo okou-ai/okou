@@ -3028,6 +3028,16 @@
       "loading": "アカウントを読み込み中…",
       "loadMore": "さらに読み込む",
       "managerTitle": "{{connector}} のアカウントを管理",
+      "namePresetCustom": "カスタム",
+      "namePresets": {
+        "company": "会社",
+        "customer": "顧客",
+        "personal": "個人",
+        "primary": "メイン",
+        "secondary": "サブ",
+        "work": "仕事"
+      },
+      "namePromptCustomHint": "空欄のまま保存すると名前なしで保存されます。",
       "namePromptDescription": "この手順をスキップして、後でアカウントに名前を付けることもできます。",
       "namePromptTitle": "{{connector}} アカウントに名前を付ける",
       "noAccounts": "アカウントなし",
@@ -6397,7 +6407,6 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
-      "hide": "コンプライアンスを非表示",
       "link": "セキュリティの詳細",
       "status": {
         "aligned": "整合",

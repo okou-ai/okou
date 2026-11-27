@@ -6,10 +6,12 @@ import { and, eq, gte, sql, type SQL } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { number, object, string, type output } from "zod";
 import { env } from "../../lib/env";
-import { nowDateSql } from "../../lib/time";
+import { singleton } from "../../lib/singleton";
+import { nowDate, nowDateSql } from "../../lib/time";
 import { STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS } from "./system-storage-presigned-url-cache.service";
 
 const CACHE_SCOPE = "content_bundle" as const;
+const RECENT_URL_LIMIT = 2048;
 
 export interface ContentBundleUrlCacheContext {
   readonly bucket: string;
@@ -22,14 +24,64 @@ export const cachedContentBundleUrlSchema = object({
   expiresAtMs: number(),
 });
 
+type CachedContentBundleUrl = output<typeof cachedContentBundleUrlSchema>;
+
 export interface ContentBundleUrlCacheSnapshot {
   readonly context: ContentBundleUrlCacheContext;
-  readonly rows: readonly output<typeof cachedContentBundleUrlSchema>[];
+  readonly rows: readonly CachedContentBundleUrl[];
 }
 
-export interface PrefetchedContentBundleUrls {
-  readonly hashes: readonly string[];
-  readonly rows: ContentBundleUrlCacheSnapshot["rows"];
+// Only completed URLs are shared across requests. Every caller must authorize
+// and select its immutable bundles before consulting this map.
+const recentUrlCache = singleton(() => {
+  return new Map<string, CachedContentBundleUrl>();
+});
+
+export function readRememberedContentBundleUrls(
+  context: ContentBundleUrlCacheContext,
+  hashes: readonly string[],
+) {
+  const recentUrls = recentUrlCache();
+  const rows: CachedContentBundleUrl[] = [];
+  const remaining: string[] = [];
+  const minimumExpiry =
+    nowDate().getTime() + STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS;
+  for (const hash of hashes) {
+    const key = `${context.keyPrefix}:${hash}`;
+    const row = recentUrls.get(key);
+    if (row) {
+      recentUrls.delete(key);
+      if (row.expiresAtMs >= minimumExpiry) {
+        recentUrls.set(key, row);
+        rows.push(row);
+        continue;
+      }
+    }
+    remaining.push(hash);
+  }
+  return { rows, remaining };
+}
+
+export function rememberContentBundleUrls(
+  context: ContentBundleUrlCacheContext,
+  rows: ContentBundleUrlCacheSnapshot["rows"],
+): void {
+  const recentUrls = recentUrlCache();
+  for (const row of rows) {
+    const key = `${context.keyPrefix}:${row.sha256}`;
+    const current = recentUrls.get(key);
+    if (current && current.expiresAtMs >= row.expiresAtMs) {
+      continue;
+    }
+    recentUrls.delete(key);
+    recentUrls.set(key, row);
+    if (recentUrls.size > RECENT_URL_LIMIT) {
+      const oldest = recentUrls.keys().next();
+      if (!oldest.done) {
+        recentUrls.delete(oldest.value);
+      }
+    }
+  }
 }
 
 export const contentBundleUrlCacheContext$ = computed(
@@ -95,30 +147,15 @@ export function contentBundleUrlCacheSnapshotSql(
   const keys = [...new Set(hashes)].map((hash) => {
     return cacheKey(context, hash);
   });
-  return selectCachedBundleUrlsSql(
-    sql`SELECT jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb) AS cache_key`,
-  );
-}
-
-/** Look up immutable hashes selected by the surrounding package statement. */
-export function prefetchedContentBundleUrlsSql(
-  context: ContentBundleUrlCacheContext,
-  hashes: SQL,
-): SQL {
-  return selectCachedBundleUrlsSql(sql`
-    SELECT encode(sha256(convert_to(${context.keyPrefix} || ':' || sha256, 'UTF8')), 'hex') AS cache_key
-    FROM (${hashes}) AS bundle_hashes
-  `);
-}
-
-function selectCachedBundleUrlsSql(keys: SQL): SQL {
   return sql`(
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'sha256', ${systemStoragePresignedUrlCache.storageVersionId},
       'url', ${systemStoragePresignedUrlCache.presignedUrl},
       'expiresAtMs', (EXTRACT(EPOCH FROM ${systemStoragePresignedUrlCache.expiresAt}) * 1000)::double precision
     )), '[]'::jsonb)
-    FROM (${keys}) AS selected_bundles
+    FROM (
+      SELECT jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb) AS cache_key
+    ) AS selected_bundles
     INNER JOIN ${systemStoragePresignedUrlCache}
       ON ${eq(systemStoragePresignedUrlCache.cacheKey, sql`selected_bundles.cache_key`)}
     WHERE ${and(

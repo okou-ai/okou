@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.109](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.108...codex-mock-v0.12.109) (2026-11-27)
+
+
+### Refactoring
+
+* **codex-mock:** share required request id validation ([#51402](https://github.com/okou-ai/okou/issues/51402)) ([4666327](https://github.com/okou-ai/okou/commit/466632735a992f129c7bdbc79ff190be4a864ac1))
+
 ## [0.12.108](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.107...codex-mock-v0.12.108) (2026-11-27)
 
 ## [0.12.107](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.106...codex-mock-v0.12.107) (2026-11-26)

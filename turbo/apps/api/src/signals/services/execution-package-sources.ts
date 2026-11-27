@@ -11,12 +11,6 @@ import { parseRawRows } from "../../lib/db-raw-rows";
 import { now } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
 import { settle } from "../utils";
-import {
-  cachedContentBundleUrlSchema,
-  contentBundleUrlCacheContext$,
-  prefetchedContentBundleUrlsSql,
-  type PrefetchedContentBundleUrls,
-} from "./content-bundle-presigned-url-cache";
 
 export interface ExecutionPackageScope {
   readonly orgId: string;
@@ -44,14 +38,7 @@ export type ExecutionPackageSources = Infer<
 
 const packageSourcesRowSchema = object({
   packages: executionPackageSourcesSchema,
-  bundleHashes: array(string()),
-  cachedBundleUrls: array(cachedContentBundleUrlSchema),
 });
-
-export interface ExecutionPackageObservation {
-  readonly sources: ExecutionPackageSources;
-  readonly prefetchedUrls: PrefetchedContentBundleUrls | null;
-}
 
 /** Prompt and Automation preparation use the same member package projection. */
 export function executionPackageSourcesSql(scope: ExecutionPackageScope) {
@@ -89,29 +76,10 @@ export function executionPackageSourcesSql(scope: ExecutionPackageScope) {
 export function createExecutionPackageSources(scope: ExecutionPackageScope) {
   return computed(async (get) => {
     const db = get(rawSqlReadDb$);
-    const cache = get(contentBundleUrlCacheContext$);
-    const statement = sql`
-      WITH package_sources AS MATERIALIZED (
-        SELECT ${executionPackageSourcesSql(scope)} AS packages
-      ), bundle_hashes AS (
-        SELECT packages->'memberInstructions'->>'sha256' AS sha256
-        FROM package_sources
-        UNION
-        SELECT workflow->'contentBundle'->>'sha256' AS sha256
-        FROM package_sources, jsonb_array_elements(packages->'workflows') AS workflow
-        UNION
-        SELECT skill->'contentBundle'->>'sha256' AS sha256
-        FROM package_sources, jsonb_array_elements(packages->'seedSkills') AS skill
-      ), covered_hashes AS (
-        SELECT sha256 FROM bundle_hashes WHERE sha256 ~ '^[a-f0-9]{64}$'
-      )
-      SELECT packages,
-        ARRAY(SELECT sha256 FROM covered_hashes) AS "bundleHashes",
-        ${prefetchedContentBundleUrlsSql(cache, sql`SELECT sha256 FROM covered_hashes`)} AS "cachedBundleUrls"
-      FROM package_sources`;
+    const statement = sql`SELECT ${executionPackageSourcesSql(scope)} AS packages`;
     const startedAt = performance.now();
     const result = await settle(
-      (async (): Promise<ExecutionPackageObservation> => {
+      (async () => {
         const [row] = parseRawRows(
           packageSourcesRowSchema,
           await db.execute(statement),
@@ -119,13 +87,7 @@ export function createExecutionPackageSources(scope: ExecutionPackageScope) {
         if (!row) {
           throw new Error("Execution package query returned no row");
         }
-        return {
-          sources: row.packages,
-          prefetchedUrls: {
-            hashes: row.bundleHashes,
-            rows: row.cachedBundleUrls,
-          },
-        };
+        return row.packages;
       })(),
     );
     return {

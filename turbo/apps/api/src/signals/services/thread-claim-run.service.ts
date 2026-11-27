@@ -2177,7 +2177,7 @@ export function createThreadClaimRunObjects(
       sources: startupSources,
       officialWorkflow,
     });
-    const selected = selectExecutionPackages(packageSources?.sources ?? null, {
+    const selected = selectExecutionPackages(packageSources, {
       officialWorkflowNames: mounts.officialWorkflowBundles.map(({ name }) => {
         return name;
       }),
@@ -2188,7 +2188,6 @@ export function createThreadClaimRunObjects(
     }
     return {
       memoryMountPath,
-      prefetchedUrls: packageSources?.prefetchedUrls ?? null,
       packages: {
         mounts,
         bundles: selectExecutionContentBundles(selected, mounts),
@@ -2222,12 +2221,7 @@ export function createThreadClaimRunObjects(
       }
     }
     const packagePlan = await get(runnerPackages$);
-    return isRouteError(packagePlan)
-      ? null
-      : {
-          bundles: packagePlan.packages.bundles,
-          prefetchedUrls: packagePlan.prefetchedUrls,
-        };
+    return isRouteError(packagePlan) ? null : packagePlan.packages.bundles;
   });
   const executionBundleCache$ = createExecutionBundleCache(executionBundles$);
   /** The run token makes runner input a command; its result is passed on. */

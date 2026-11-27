@@ -3046,6 +3046,16 @@
       "loading": "Konten werden geladen…",
       "loadMore": "Mehr laden",
       "managerTitle": "{{connector}}-Konten verwalten",
+      "namePresetCustom": "Benutzerdefiniert",
+      "namePresets": {
+        "company": "Unternehmen",
+        "customer": "Kunde",
+        "personal": "Privat",
+        "primary": "Primär",
+        "secondary": "Sekundär",
+        "work": "Arbeit"
+      },
+      "namePromptCustomHint": "Leer lassen, um ohne Namen zu speichern.",
       "namePromptDescription": "Sie können diesen Schritt überspringen und das Konto später benennen.",
       "namePromptTitle": "{{connector}}-Konto benennen",
       "noAccounts": "Keine Konten",
@@ -6421,7 +6431,6 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
-      "hide": "Compliance ausblenden",
       "link": "Sicherheitsdetails",
       "status": {
         "aligned": "Ausgerichtet",

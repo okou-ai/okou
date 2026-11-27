@@ -1440,6 +1440,7 @@ async fn apply_prepared_storage(
     prepared: &mut crate::storage_cache::PreparedStorage,
     telemetry: &mut JobTelemetry,
     cache_started: Instant,
+    startup_path: SandboxStartupPath,
 ) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
     use std::sync::{
         Arc,
@@ -1456,6 +1457,11 @@ async fn apply_prepared_storage(
         super::DEFAULT_EXEC_TIMEOUT,
         Arc::clone(&host_failed),
     )?;
+    let handoff = if startup_path == SandboxStartupPath::Blank {
+        handoff.with_blank_startup()
+    } else {
+        handoff
+    };
     let mut phase_telemetry = telemetry.concurrent_phase();
     let (telemetry, guest_telemetry) = phase_telemetry.collectors();
     {
@@ -1484,6 +1490,7 @@ async fn apply_prepared_storage(
             let Ok(crate::storage_cache::GuestStorageInput {
                 initial,
                 decoded_tail,
+                pending_archives,
             }) = receive.await
             else {
                 return Ok(None);
@@ -1497,6 +1504,7 @@ async fn apply_prepared_storage(
                     &initial.files,
                     guest_telemetry,
                     &cancel,
+                    pending_archives,
                 )
                 .await?;
                 if let Some(tail) = decoded_tail {
@@ -1513,6 +1521,7 @@ async fn apply_prepared_storage(
                         &tail.files,
                         guest_telemetry,
                         &cancel,
+                        PendingGuestArchives::default(),
                     )
                     .await?;
                 }
@@ -1692,6 +1701,7 @@ async fn prepare_guest_storage(
                 if owned_sources? {
                     let deferred = apply_prepared_storage(
                         sandbox, context, config, prepared, telemetry, cache_started,
+                        start.sandbox_startup_path,
                     )
                     .await?;
                     let _ = prepared_storage.take();

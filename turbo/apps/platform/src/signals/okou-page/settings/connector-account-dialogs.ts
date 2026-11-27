@@ -7,6 +7,7 @@ import type {
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 
+import { i18n } from "../../../i18n/index.ts";
 import type {
   PlatformConnectorAccountMutationIntent,
   PlatformConnectorCatalogConnectItem,
@@ -243,6 +244,66 @@ export const closeCustomAccountConnectDialog$ = command(({ set }) => {
   set(internalCustomAccountConnectDialog$, null);
 });
 
+export const CONNECTOR_ACCOUNT_NAME_PRESETS = [
+  "primary",
+  "secondary",
+  "personal",
+  "work",
+  "customer",
+  "company",
+] as const;
+
+export type ConnectorAccountNamePreset =
+  (typeof CONNECTOR_ACCOUNT_NAME_PRESETS)[number];
+
+export type ConnectorAccountNameChoice = ConnectorAccountNamePreset | "custom";
+
+export function isConnectorAccountNameChoice(
+  value: unknown,
+): value is ConnectorAccountNameChoice {
+  return (
+    value === "custom" ||
+    CONNECTOR_ACCOUNT_NAME_PRESETS.some((preset) => {
+      return preset === value;
+    })
+  );
+}
+
+function presetDisplayName(preset: ConnectorAccountNamePreset): string {
+  switch (preset) {
+    case "primary": {
+      return i18n.t(($) => {
+        return $.connectors.accounts.namePresets.primary;
+      });
+    }
+    case "secondary": {
+      return i18n.t(($) => {
+        return $.connectors.accounts.namePresets.secondary;
+      });
+    }
+    case "personal": {
+      return i18n.t(($) => {
+        return $.connectors.accounts.namePresets.personal;
+      });
+    }
+    case "work": {
+      return i18n.t(($) => {
+        return $.connectors.accounts.namePresets.work;
+      });
+    }
+    case "customer": {
+      return i18n.t(($) => {
+        return $.connectors.accounts.namePresets.customer;
+      });
+    }
+    case "company": {
+      return i18n.t(($) => {
+        return $.connectors.accounts.namePresets.company;
+      });
+    }
+  }
+}
+
 interface ConnectorAccountNamePrompt {
   readonly target: ConnectorAccountTarget;
   readonly account: ConnectorAccountConnection;
@@ -251,15 +312,27 @@ interface ConnectorAccountNamePrompt {
 
 const internalConnectorAccountNamePrompt$ =
   state<ConnectorAccountNamePrompt | null>(null);
+const internalConnectorAccountNamePromptChoice$ =
+  state<ConnectorAccountNameChoice>("custom");
 const internalConnectorAccountNamePromptValue$ = state("");
 
 export const connectorAccountNamePrompt$ = computed((get) => {
   return get(internalConnectorAccountNamePrompt$);
 });
 
+export const connectorAccountNamePromptChoice$ = computed((get) => {
+  return get(internalConnectorAccountNamePromptChoice$);
+});
+
 export const connectorAccountNamePromptValue$ = computed((get) => {
   return get(internalConnectorAccountNamePromptValue$);
 });
+
+export const setConnectorAccountNamePromptChoice$ = command(
+  ({ set }, choice: ConnectorAccountNameChoice) => {
+    set(internalConnectorAccountNamePromptChoice$, choice);
+  },
+);
 
 export const setConnectorAccountNamePromptValue$ = command(
   ({ set }, value: string) => {
@@ -269,16 +342,21 @@ export const setConnectorAccountNamePromptValue$ = command(
 
 export const closeConnectorAccountNamePrompt$ = command(({ set }) => {
   set(internalConnectorAccountNamePrompt$, null);
+  set(internalConnectorAccountNamePromptChoice$, "custom");
   set(internalConnectorAccountNamePromptValue$, "");
 });
 
 export const saveConnectorAccountNamePrompt$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const prompt = get(internalConnectorAccountNamePrompt$);
-    const displayName = get(internalConnectorAccountNamePromptValue$).trim();
-    if (!prompt || !displayName) {
+    if (!prompt) {
       return;
     }
+    const choice = get(internalConnectorAccountNamePromptChoice$);
+    const displayName =
+      choice === "custom"
+        ? get(internalConnectorAccountNamePromptValue$).trim() || null
+        : presetDisplayName(choice);
     await set(
       renameConnectorAccount$,
       {
@@ -315,6 +393,7 @@ const finishConnectorAccountConnectionCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
+    set(internalConnectorAccountNamePromptChoice$, "custom");
     set(internalConnectorAccountNamePromptValue$, "");
     set(internalConnectorAccountNamePrompt$, {
       target: args.target,
@@ -569,6 +648,7 @@ export const resetConnectorAccountDialogs$ = command(({ set }) => {
   set(internalCustomAccountManager$, null);
   set(internalCustomAccountConnectDialog$, null);
   set(internalConnectorAccountNamePrompt$, null);
+  set(internalConnectorAccountNamePromptChoice$, "custom");
   set(internalConnectorAccountNamePromptValue$, "");
   set(resetConnectorAccountManagerDrafts$);
   set(settingsConnectorAccounts.clearTarget$);

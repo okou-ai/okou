@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.251.36](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.35...runner-rs-v0.251.36) (2026-11-27)
+
+
+### Refactoring
+
+* **runner:** reuse canonical history payload in fixtures ([#51395](https://github.com/okou-ai/okou/issues/51395)) ([ce5f0d6](https://github.com/okou-ai/okou/commit/ce5f0d6c867a4df6c10d7e92d462fb535b23af6c))
+
 ## [0.251.35](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.34...runner-rs-v0.251.35) (2026-11-27)
 
 ### Release Dependencies
