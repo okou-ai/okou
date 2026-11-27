@@ -59,12 +59,11 @@
     <string name="instructions_title">個人用指示</string>
     <string name="instructions_loading">指示を読み込み中…</string>
     <string name="instructions_refresh_failed">指示を更新できませんでした。前回読み込んだ指示を表示しています。</string>
-    <string name="instructions_uncertain">保存結果を確認できていません。変更内容は保持されています。</string>
     <string name="instructions_load_failed">現在読み込めません</string>
     <string name="instructions_unavailable">現在、個人の指示は利用できません。</string>
     <string name="instructions_unsaved">未保存の変更があります。</string>
     <string name="instructions_local_failed">ローカルの下書きを保存できませんでした。再試行してください。</string>
-    <string name="instructions_save_rejected">保存が拒否されました。変更は保持されています。</string>
+    <string name="instructions_save_rejected">保存できませんでした。変更内容は保持されています。</string>
     <string name="instructions_invalid">テキストに未対応の文字が含まれています。</string>
     <string name="instructions_checking">保存結果を確認しています…</string>
     <string name="instructions_save">保存</string>

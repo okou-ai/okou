@@ -59,12 +59,11 @@
     <string name="instructions_title">व्यक्तिगत निर्देश</string>
     <string name="instructions_loading">निर्देश लोड हो रहे हैं…</string>
     <string name="instructions_refresh_failed">निर्देश रीफ़्रेश नहीं हो सके। पिछली बार लोड किए गए निर्देश दिख रहे हैं।</string>
-    <string name="instructions_uncertain">सेव का नतीजा अभी पक्का नहीं है। आपके बदलाव सुरक्षित हैं।</string>
     <string name="instructions_load_failed">अभी लोड नहीं हो पा रहा है</string>
     <string name="instructions_unavailable">इस संदर्भ में निजी निर्देश उपलब्ध नहीं हैं।</string>
     <string name="instructions_unsaved">आपके बदलाव अभी सहेजे नहीं गए हैं।</string>
     <string name="instructions_local_failed">स्थानीय ड्राफ़्ट सहेजा नहीं जा सका। फिर प्रयास करें।</string>
-    <string name="instructions_save_rejected">सहेजना अस्वीकार हुआ। आपके बदलाव सुरक्षित हैं।</string>
+    <string name="instructions_save_rejected">सहेजा नहीं जा सका। आपके बदलाव सुरक्षित हैं।</string>
     <string name="instructions_invalid">पाठ में असमर्थित वर्ण है।</string>
     <string name="instructions_checking">सेव का नतीजा जाँचा जा रहा है…</string>
     <string name="instructions_save">सेव करें</string>
