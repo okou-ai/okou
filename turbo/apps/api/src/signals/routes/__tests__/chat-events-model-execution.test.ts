@@ -19,6 +19,7 @@ import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runner
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
+  webhookClerkContract,
   webhookCompleteContract,
   webhookEventsContract,
 } from "@okouai/api-contracts/contracts/webhooks";
@@ -38,10 +39,11 @@ import {
   TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
 } from "../../../__tests__/test-timeouts";
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { billingStatusRoutes } from "../billing-status";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
@@ -57,6 +59,7 @@ import { userModelPreferenceRoutes } from "../user-model-preference";
 import { userPreferencesRoutes } from "../user-preferences";
 import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "../webhooks-agent-events";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
@@ -81,6 +84,7 @@ const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
+const chatCallbacks = createChatCallbacksApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const workflows = createWorkflowsBddApi(context);
 const authDevice = createAuthDeviceApiActions(context);
@@ -137,6 +141,10 @@ const webhooksAgentEventsApi = setupApp({
   context,
   routes: webhooksAgentEventsRoutes,
 })(webhookEventsContract);
+const webhooksClerkApi = setupApp({
+  context,
+  routes: webhooksClerkRoutes,
+})(webhookClerkContract);
 const workflowsCollectionApi = setupApp({ context, routes: workflowsRoutes })(
   workflowsCollectionContract,
 );
@@ -155,122 +163,138 @@ const automationWebhookResponseSchema = zObject({
 });
 
 beforeAll(async () => {
+  const previousClerkSecret = optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET");
+  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_warmup");
+  context.mocks.clerk.verifyWebhook.mockRejectedValueOnce(new Error("warmup"));
   context.mocks.clerk.authenticateRequest.mockResolvedValue({
     isAuthenticated: false,
   });
-  await Promise.all([
-    accept(billingStatusApi.get({ headers: {} }), [401]),
-    accept(
-      chatEventsApi.send({
-        headers: {},
-        body: {
-          prompt: "warmup",
-          hasTextContent: true,
-          clientEventId: randomUUID(),
-          userMessage: {
-            version: 1,
-            parts: [{ type: "text", text: "warmup" }],
+  const warmed = await settleIncludingAbort(async () => {
+    await Promise.all([
+      accept(
+        webhooksClerkApi.post({
+          body: "{}",
+          extraHeaders: {},
+        }),
+        [401],
+      ),
+      accept(billingStatusApi.get({ headers: {} }), [401]),
+      accept(
+        chatEventsApi.send({
+          headers: {},
+          body: {
+            prompt: "warmup",
+            hasTextContent: true,
+            clientEventId: randomUUID(),
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "warmup" }],
+            },
           },
-        },
-      }),
-      [401],
-    ),
-    accept(
-      chatThreadEventsApi.rows({
-        headers: {},
-        params: { threadId: randomUUID() },
-        query: { sinceSeqId: 0 },
-      }),
-      [401],
-    ),
-    accept(userModelPreferenceApi.get({ headers: {} }), [401]),
-    accept(userPreferencesApi.get({ headers: {} }), [401]),
-    accept(
-      chatThreadMetadataApi.get({
-        headers: {},
-        params: { id: randomUUID() },
-      }),
-      [401],
-    ),
-    accept(
-      chatThreadModelSelectionApi.update({
-        headers: {},
-        params: { id: randomUUID() },
-        body: { model: null },
-      }),
-      [401],
-    ),
-    accept(
-      codexDeviceAuthApi.start({
-        headers: {},
-        body: { scope: "personal" },
-      }),
-      [401],
-    ),
-    accept(onboardingCompleteApi.complete({ headers: {}, body: {} }), [401]),
-    accept(
-      personalModelProvidersApi.upsert({
-        headers: {},
-        body: { type: "claude-code-oauth-token", secret: "warmup" },
-      }),
-      [401],
-    ),
-    accept(
-      runnersHeartbeatApi.heartbeat({
-        headers: {},
-        body: {
-          runnerId: randomUUID(),
-          group: "vm0/warmup",
-          snapshotGeneration: 1,
-          snapshotSequence: 1,
-          totalVcpu: 8,
-          totalMemoryMb: 16_384,
-          maxConcurrent: 2,
-          allocatedVcpu: 0,
-          allocatedMemoryMb: 0,
-          runningCount: 0,
-          admittableProfiles: ["vm0/default"],
-          heldSandboxStates: [],
-          heldHomeStates: [],
-          activeReuseProducers: [],
-          mode: "running",
-        },
-      }),
-      [401],
-    ),
-    accept(
-      runsByIdApi.getById({ headers: {}, params: { id: randomUUID() } }),
-      [401],
-    ),
-    accept(
-      webhooksAgentCompleteApi.complete({
-        headers: {},
-        body: { runId: randomUUID(), exitCode: 0 },
-      }),
-      [401],
-    ),
-    accept(
-      webhooksAgentEventsApi.send({
-        headers: {},
-        body: {
-          runId: randomUUID(),
-          events: [{ type: "result", sequenceNumber: 1, result: "warmup" }],
-        },
-      }),
-      [401],
-    ),
-    accept(workflowsCollectionApi.list({ headers: {}, query: {} }), [401]),
-    accept(workflowAutomationsApi.listWorkspace({ headers: {} }), [401]),
-    accept(
-      chatThreadUsageApi.read({
-        headers: {},
-        params: { id: randomUUID() },
-        body: { runIds: [randomUUID()] },
-      }),
-      [401],
-    ),
-    accept(featureSwitchesApi.get({ headers: {} }), [401]),
-  ]);
+        }),
+        [401],
+      ),
+      accept(
+        chatThreadEventsApi.rows({
+          headers: {},
+          params: { threadId: randomUUID() },
+          query: { sinceSeqId: 0 },
+        }),
+        [401],
+      ),
+      accept(userModelPreferenceApi.get({ headers: {} }), [401]),
+      accept(userPreferencesApi.get({ headers: {} }), [401]),
+      accept(
+        chatThreadMetadataApi.get({
+          headers: {},
+          params: { id: randomUUID() },
+        }),
+        [401],
+      ),
+      accept(
+        chatThreadModelSelectionApi.update({
+          headers: {},
+          params: { id: randomUUID() },
+          body: { model: null },
+        }),
+        [401],
+      ),
+      accept(
+        codexDeviceAuthApi.start({
+          headers: {},
+          body: { scope: "personal" },
+        }),
+        [401],
+      ),
+      accept(onboardingCompleteApi.complete({ headers: {}, body: {} }), [401]),
+      accept(
+        personalModelProvidersApi.upsert({
+          headers: {},
+          body: { type: "claude-code-oauth-token", secret: "warmup" },
+        }),
+        [401],
+      ),
+      accept(
+        runnersHeartbeatApi.heartbeat({
+          headers: {},
+          body: {
+            runnerId: randomUUID(),
+            group: "vm0/warmup",
+            snapshotGeneration: 1,
+            snapshotSequence: 1,
+            totalVcpu: 8,
+            totalMemoryMb: 16_384,
+            maxConcurrent: 2,
+            allocatedVcpu: 0,
+            allocatedMemoryMb: 0,
+            runningCount: 0,
+            admittableProfiles: ["vm0/default"],
+            heldSandboxStates: [],
+            heldHomeStates: [],
+            activeReuseProducers: [],
+            mode: "running",
+          },
+        }),
+        [401],
+      ),
+      accept(
+        runsByIdApi.getById({ headers: {}, params: { id: randomUUID() } }),
+        [401],
+      ),
+      accept(
+        webhooksAgentCompleteApi.complete({
+          headers: {},
+          body: { runId: randomUUID(), exitCode: 0 },
+        }),
+        [401],
+      ),
+      accept(
+        webhooksAgentEventsApi.send({
+          headers: {},
+          body: {
+            runId: randomUUID(),
+            events: [{ type: "result", sequenceNumber: 1, result: "warmup" }],
+          },
+        }),
+        [401],
+      ),
+      accept(workflowsCollectionApi.list({ headers: {}, query: {} }), [401]),
+      accept(workflowAutomationsApi.listWorkspace({ headers: {} }), [401]),
+      accept(
+        chatThreadUsageApi.read({
+          headers: {},
+          params: { id: randomUUID() },
+          body: { runIds: [randomUUID()] },
+        }),
+        [401],
+      ),
+      accept(featureSwitchesApi.get({ headers: {} }), [401]),
+    ]);
+  });
+  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", previousClerkSecret);
+  if (!warmed.ok) {
+    throw warmed.error;
+  }
 });
 
 function signIn(actor: ApiTestUser): void {
@@ -285,11 +309,11 @@ function requireOrgId(actor: ApiTestUser): string {
 }
 
 function initRuntimeMocks(): void {
-  createChatCallbacksApi(context).acceptChatObjectStorage();
+  chatCallbacks.acceptChatObjectStorage();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-  createChatCallbacksApi(context).disableVapid();
+  chatCallbacks.disableVapid();
 }
 
 async function connectPersonalCodex(
@@ -538,15 +562,14 @@ async function postSignedAutomationWebhook(args: {
 
 describe("Codex execution switch", () => {
   it(
-    "chat-events-codex-execution-007 rotates native sessions and preserves visible context when switching both ways",
+    "chat-events-codex-execution-007 (1/2) rotates native session and preserves visible context when switching from Pi to native Codex",
     { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
       const { actor, runnerGroup } = await setupFreeMemberWithSubscriptions({
-        codex: { accountId: "acct-codex-rotate" },
+        codex: { accountId: "acct-codex-rotate-pi-to-codex" },
       });
       const orgId = requireOrgId(actor);
       const piAnswer = "PI_UNIQUE_ANSWER_ALPHA_719";
-      const codexAnswer = "CODEX_UNIQUE_ANSWER_BETA_823";
 
       const turn1 = await sendPromptAndClaim(actor, runnerGroup, {
         prompt: "Turn one on Pi",
@@ -554,18 +577,20 @@ describe("Codex execution switch", () => {
       });
       expect(turn1.execution.cliAgentType).toBe("pi");
 
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId, orgRole: actor.orgRole },
-        { [FeatureSwitchKey.CodexExecution]: true },
-      );
-      await completeNativeRun({
-        runId: turn1.runId,
-        sandboxToken: turn1.execution.sandboxToken,
-        cliAgentType: "pi",
-        sessionId: turn1.threadId,
-        answer: piAnswer,
-      });
+      await Promise.all([
+        updateFeatureSwitchesForUser(
+          context,
+          { userId: actor.userId, orgId, orgRole: actor.orgRole },
+          { [FeatureSwitchKey.CodexExecution]: true },
+        ),
+        completeNativeRun({
+          runId: turn1.runId,
+          sandboxToken: turn1.execution.sandboxToken,
+          cliAgentType: "pi",
+          sessionId: turn1.threadId,
+          answer: piAnswer,
+        }),
+      ]);
 
       const turn2 = await sendPromptAndClaim(actor, runnerGroup, {
         threadId: turn1.threadId,
@@ -580,38 +605,59 @@ describe("Codex execution switch", () => {
       );
       expect(turn2.execution.prompt).not.toContain(piAnswer);
       expect(turn2.execution.appendSystemPrompt ?? "").not.toContain(piAnswer);
+    },
+  );
 
-      await completeNativeRun({
-        runId: turn2.runId,
-        sandboxToken: turn2.execution.sandboxToken,
-        cliAgentType: "codex",
-        sessionId: randomUUID(),
-        answer: codexAnswer,
+  it(
+    "chat-events-codex-execution-007 (2/2) rotates native session and preserves visible context when switching from native Codex back to Pi",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const { actor, runnerGroup } = await setupFreeMemberWithSubscriptions({
+        codex: { accountId: "acct-codex-rotate-codex-to-pi" },
+        featureSwitches: { [FeatureSwitchKey.CodexExecution]: true },
       });
-      const [run2Readback] = await Promise.all([
-        runs.readRun(actor, turn2.runId),
+      const orgId = requireOrgId(actor);
+      const codexAnswer = "CODEX_UNIQUE_ANSWER_BETA_823";
+
+      const turn1 = await sendPromptAndClaim(actor, runnerGroup, {
+        prompt: "Turn one on native Codex",
+        model: "gpt-6-luna",
+      });
+      expect(turn1.execution.cliAgentType).toBe("codex");
+
+      await Promise.all([
+        completeNativeRun({
+          runId: turn1.runId,
+          sandboxToken: turn1.execution.sandboxToken,
+          cliAgentType: "codex",
+          sessionId: randomUUID(),
+          answer: codexAnswer,
+        }),
         updateFeatureSwitchesForUser(
           context,
           { userId: actor.userId, orgId, orgRole: actor.orgRole },
           { [FeatureSwitchKey.CodexExecution]: false },
         ),
       ]);
-      expect(run2Readback.status).toBe("completed");
 
-      const turn3 = await sendPromptAndClaim(actor, runnerGroup, {
-        threadId: turn1.threadId,
-        prompt: "Turn three back on Pi",
-        model: "gpt-6-luna",
-      });
+      const [run1Readback, turn2] = await Promise.all([
+        runs.readRun(actor, turn1.runId),
+        sendPromptAndClaim(actor, runnerGroup, {
+          threadId: turn1.threadId,
+          prompt: "Turn two back on Pi",
+          model: "gpt-6-luna",
+        }),
+      ]);
+      expect(run1Readback.status).toBe("completed");
 
-      expect(turn3.execution.cliAgentType).toBe("pi");
-      expect(turn3.execution.nativeContinuation.sessionId).toBeNull();
-      expect(turn3.execution.nativeContinuation.generationRunId).toBeNull();
-      expect(turn3.execution.nativeContinuation.recoveryPrompt).toContain(
+      expect(turn2.execution.cliAgentType).toBe("pi");
+      expect(turn2.execution.nativeContinuation.sessionId).toBeNull();
+      expect(turn2.execution.nativeContinuation.generationRunId).toBeNull();
+      expect(turn2.execution.nativeContinuation.recoveryPrompt).toContain(
         "okou chat messages --output-dir /tmp/okou-chat-history",
       );
-      expect(turn3.execution.prompt).not.toContain(codexAnswer);
-      expect(turn3.execution.appendSystemPrompt ?? "").not.toContain(
+      expect(turn2.execution.prompt).not.toContain(codexAnswer);
+      expect(turn2.execution.appendSystemPrompt ?? "").not.toContain(
         codexAnswer,
       );
     },

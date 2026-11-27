@@ -17,12 +17,13 @@ import {
   workflowsCollectionContract,
   type ChatRunFinishedEventConfig,
 } from "@okouai/api-contracts/contracts/workflows";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import {
   TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
   TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
 } from "../../../__tests__/test-timeouts";
 import { now } from "../../../lib/time";
@@ -47,6 +48,10 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
+const runs = createRunsApi(context);
+const chatCallbacks = createChatCallbacksApi(context);
+const webhooks = createWebhookCallbackApi(context);
+const routeMocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 const app = setupApp({
@@ -80,7 +85,7 @@ const webhookEventsApi = runApp(webhookEventsContract);
 const webhookCompleteApi = runApp(webhookCompleteContract);
 
 function signIn(user: ApiTestUser) {
-  createRouteMocks(context).clerk.session(
+  routeMocks.clerk.session(
     user.userId,
     user.orgId,
     user.orgRole ?? "org:admin",
@@ -91,7 +96,6 @@ function signIn(user: ApiTestUser) {
 async function grantProPlan(user: ApiTestUser): Promise<void> {
   const suffix = randomUUID();
   const customerId = `cus_pro_${suffix}`;
-  const webhooks = createWebhookCallbackApi(context);
   webhooks.configureStripeBillingEnv();
   context.mocks.stripe.customers.retrieve.mockResolvedValue({
     id: customerId,
@@ -122,6 +126,278 @@ async function grantProPlan(user: ApiTestUser): Promise<void> {
 }
 
 describe("chat-run-finished workflow automations", () => {
+  beforeAll(async () => {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const warmupId = randomUUID();
+    await Promise.all([
+      accept(
+        threadsApi.create({
+          headers: {},
+          body: { title: "warmup" },
+        }),
+        [401],
+      ),
+      accept(
+        workflowsApi.create({
+          headers: {},
+          body: { name: "warmup-wf", visibility: "private" },
+        }),
+        [401],
+      ),
+      accept(
+        automationsApi.get({
+          headers: {},
+          params: { id: warmupId },
+        }),
+        [401],
+      ),
+      accept(
+        chatEventsApi.send({
+          headers: {},
+          body: {
+            prompt: "warmup",
+            hasTextContent: true,
+            clientEventId: warmupId,
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "warmup" }],
+            },
+          },
+        }),
+        [401],
+      ),
+      accept(
+        threadEventsApi.rows({
+          headers: {},
+          params: { threadId: warmupId },
+          query: { sinceSeqId: 0 },
+        }),
+        [401],
+      ),
+      accept(
+        logsListApi.list({
+          headers: {},
+          query: { status: "running" },
+        }),
+        [401],
+      ),
+      accept(
+        runsCancelApi.cancel({
+          headers: {},
+          params: { id: warmupId },
+        }),
+        [401],
+      ),
+      accept(
+        webhookEventsApi.send({
+          headers: {},
+          body: {
+            runId: warmupId,
+            events: [
+              {
+                type: "assistant",
+                sequenceNumber: 1,
+                message: { content: [{ type: "text", text: "warmup" }] },
+              },
+            ],
+          },
+        }),
+        [401],
+      ),
+      accept(
+        webhookCompleteApi.complete({
+          headers: {},
+          body: { runId: warmupId, exitCode: 0 },
+        }),
+        [401],
+      ),
+    ]);
+  });
+
+  it(
+    "chat-run-finished-automations.bdd-011 reports no failure reason when a cancelled run triggers recovery",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const watchedTitle = "Watched cancelled run";
+      const {
+        actor,
+        owner,
+        watchedThreadId,
+        watchedRunId,
+        sandboxHeaders,
+        automations,
+      } = await setupWatchedRunScenario({
+        watchedTitle,
+        prompt: "Run that gets cancelled",
+        model: null,
+        withClaudeSubscription: false,
+        rememberWatchedToken: false,
+        automations: [
+          { label: "recovery-cancelled", runStatuses: ["cancelled"] },
+        ],
+      });
+      const recovery = automations[0];
+      if (!recovery) {
+        throw new Error("Expected recovery automation");
+      }
+
+      await accept(
+        runsCancelApi.cancel({
+          headers: signIn(actor),
+          params: { id: watchedRunId },
+        }),
+        [200],
+      );
+      await accept(
+        webhookCompleteApi.complete({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            exitCode: 1,
+            error: "Run cancelled",
+          },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const [recoverySummary, recoveryEvents] = await Promise.all([
+        readAutomation(actor, recovery.id),
+        readThreadEvents(actor, recovery.chatThreadId),
+      ]);
+
+      expect(recoverySummary.lastRunAt).toStrictEqual(expect.any(String));
+      const recoveryRunId = expectSingleLaunchedWatchedInput(recoveryEvents, {
+        sourceRunId: watchedRunId,
+        sourceThreadId: watchedThreadId,
+        sourceTitle: watchedTitle,
+      });
+      const recoveryExecution = await owner.executionInput(recoveryRunId);
+      expect(recoveryExecution.prompt).toContain('"runStatus": "cancelled"');
+      expect(recoveryExecution.prompt).toContain('"failureReason": null');
+    },
+  );
+
+  it(
+    "chat-run-finished-automations.bdd-004 fires claimable matching automations when a watched run completes",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const watchedTitle = "Watched chat run";
+      const {
+        actor,
+        owner,
+        watchedThreadId,
+        watchedRunId,
+        sandboxHeaders,
+        automations,
+      } = await setupWatchedRunScenario({
+        watchedTitle,
+        prompt: "Run deployment check",
+        model: "claude-fable-5-1",
+        withClaudeSubscription: true,
+        automations: [
+          { label: "always" },
+          { label: "failed-only", runStatuses: ["failed"] },
+          {
+            label: "pattern-match",
+            runStatuses: ["completed"],
+            outputPattern: "*deploy failed*",
+          },
+          {
+            label: "pattern-miss",
+            outputPattern: "*all systems nominal*",
+          },
+        ],
+      });
+      const [always, failedOnly, patternMatch, patternMiss] = automations;
+      if (!always || !failedOnly || !patternMatch || !patternMiss) {
+        throw new Error("Expected four watched automations");
+      }
+
+      const assistantText = "Alert: Deploy FAILED on prod";
+      await accept(
+        webhookEventsApi.send({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            events: [
+              {
+                type: "system",
+                subtype: "init",
+                session_id: watchedThreadId,
+                sequenceNumber: 0,
+              },
+              {
+                type: "assistant",
+                sequenceNumber: 1,
+                message: { content: [{ type: "text", text: assistantText }] },
+              },
+              { type: "result", sequenceNumber: 2, result: assistantText },
+            ],
+          },
+        }),
+        [200],
+      );
+      await accept(
+        webhookCompleteApi.complete({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            exitCode: 0,
+            lastEventSequence: 2,
+            completion: {
+              cliAgentType: "claude-code",
+              cliAgentSessionId: watchedThreadId,
+              cliAgentSessionHistoryDisposition: "native_only",
+            },
+          },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const [
+        alwaysSummary,
+        failedOnlySummary,
+        patternMatchSummary,
+        patternMissSummary,
+        alwaysEvents,
+        runningLogs,
+      ] = await Promise.all([
+        readAutomation(actor, always.id),
+        readAutomation(actor, failedOnly.id),
+        readAutomation(actor, patternMatch.id),
+        readAutomation(actor, patternMiss.id),
+        readThreadEvents(actor, always.chatThreadId),
+        accept(
+          logsListApi.list({
+            headers: signIn(actor),
+            query: { status: "running" },
+          }),
+          [200],
+        ),
+      ]);
+
+      expect(alwaysSummary.lastRunAt).toStrictEqual(expect.any(String));
+      expect(patternMatchSummary.lastRunAt).toStrictEqual(expect.any(String));
+      expect(failedOnlySummary.lastRunAt).toBeNull();
+      expect(patternMissSummary.lastRunAt).toBeNull();
+
+      const alwaysRunId = expectSingleLaunchedWatchedInput(alwaysEvents, {
+        sourceRunId: watchedRunId,
+        sourceThreadId: watchedThreadId,
+        sourceTitle: watchedTitle,
+        displayText: "A run in the watched chat thread completed.",
+      });
+      expect(runningLogs.body.data).toHaveLength(2);
+
+      const triggeredExecution = await owner.executionInput(alwaysRunId);
+      expect(triggeredExecution.prompt).toContain('"failureReason": null');
+    },
+  );
+
   it("chat-run-finished-automations.bdd-002 requires the watched chat thread to belong to the automation owner", async () => {
     context.mocks.s3.send.mockResolvedValue({
       ContentLength: 256,
@@ -271,28 +547,30 @@ describe("chat-run-finished workflow automations", () => {
     readonly rememberWatchedToken?: boolean;
   }) {
     const actor = bdd.user();
-    const runs = createRunsApi(context);
-    const chatCallbacks = createChatCallbacksApi(context);
     chatCallbacks.acceptChatObjectStorage();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     chatCallbacks.disableVapid();
     const runnerReady = runs.configureRunnerGroup({ maxConcurrent: 4 });
     const owner = publicRunOwner(context, actor);
-    await Promise.all([
+    const authHeaders = signIn(actor);
+    const [, , , watchedThread, ...createdWorkflows] = await Promise.all([
       runnerReady,
       owner.run(() => {
         return runs.grantProEntitlement(actor);
       }),
-    ]);
-
-    const authHeaders = signIn(actor);
-    const [, ...createdWorkflows] = await Promise.all([
       args.withClaudeSubscription
         ? owner.run(() => {
             return runs.ensurePersonalSubscriptionModel(actor);
           })
         : Promise.resolve(),
+      accept(
+        threadsApi.create({
+          headers: authHeaders,
+          body: { title: args.watchedTitle },
+        }),
+        [201],
+      ),
       ...args.automations.map((spec) => {
         return accept(
           workflowsApi.create({
@@ -307,13 +585,6 @@ describe("chat-run-finished workflow automations", () => {
       }),
     ]);
 
-    const watchedThread = await accept(
-      threadsApi.create({
-        headers: signIn(actor),
-        body: { title: args.watchedTitle },
-      }),
-      [201],
-    );
     const watchedThreadId = watchedThread.body.id;
 
     const sendEventId = randomUUID();
@@ -455,71 +726,7 @@ describe("chat-run-finished workflow automations", () => {
   }
 
   it(
-    "chat-run-finished-automations.bdd-011 reports no failure reason when a cancelled run triggers recovery",
-    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const watchedTitle = "Watched cancelled run";
-      const {
-        actor,
-        owner,
-        watchedThreadId,
-        watchedRunId,
-        sandboxHeaders,
-        automations,
-      } = await setupWatchedRunScenario({
-        watchedTitle,
-        prompt: "Run that gets cancelled",
-        model: null,
-        withClaudeSubscription: false,
-        rememberWatchedToken: false,
-        automations: [
-          { label: "recovery-cancelled", runStatuses: ["cancelled"] },
-        ],
-      });
-      const recovery = automations[0];
-      if (!recovery) {
-        throw new Error("Expected recovery automation");
-      }
-
-      await accept(
-        runsCancelApi.cancel({
-          headers: signIn(actor),
-          params: { id: watchedRunId },
-        }),
-        [200],
-      );
-      await accept(
-        webhookCompleteApi.complete({
-          headers: sandboxHeaders,
-          body: {
-            runId: watchedRunId,
-            exitCode: 1,
-            error: "Run cancelled",
-          },
-        }),
-        [200],
-      );
-      await flushWaitUntilForTest();
-
-      const [recoverySummary, recoveryEvents] = await Promise.all([
-        readAutomation(actor, recovery.id),
-        readThreadEvents(actor, recovery.chatThreadId),
-      ]);
-
-      expect(recoverySummary.lastRunAt).toStrictEqual(expect.any(String));
-      const recoveryRunId = expectSingleLaunchedWatchedInput(recoveryEvents, {
-        sourceRunId: watchedRunId,
-        sourceThreadId: watchedThreadId,
-        sourceTitle: watchedTitle,
-      });
-      const recoveryExecution = await owner.executionInput(recoveryRunId);
-      expect(recoveryExecution.prompt).toContain('"runStatus": "cancelled"');
-      expect(recoveryExecution.prompt).toContain('"failureReason": null');
-    },
-  );
-
-  it(
-    "chat-run-finished-automations.bdd-005 fires failed-status automations without matching patterns on errors",
+    "chat-run-finished-automations.bdd-005 (1/2) fires failed-status automations and skips completed-status automations on errors",
     { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
       const watchedTitle = "Watched failed run";
@@ -532,26 +739,16 @@ describe("chat-run-finished workflow automations", () => {
       } = await setupWatchedRunScenario({
         watchedTitle,
         prompt: "Trigger sandbox failure",
+        model: "claude-fable-5-1",
         withClaudeSubscription: true,
         automations: [
           { label: "failed-only", runStatuses: ["failed"] },
           { label: "completed-only", runStatuses: ["completed"] },
-          {
-            label: "failed-boom",
-            runStatuses: ["failed"],
-            outputPattern: "*boom*",
-          },
-          {
-            label: "failed-rate-limited",
-            runStatuses: ["failed"],
-            outputPattern: "*provider_rate_limited*",
-          },
         ],
       });
-      const [failedOnly, completedOnly, failedBoom, failedRateLimited] =
-        automations;
-      if (!failedOnly || !completedOnly || !failedBoom || !failedRateLimited) {
-        throw new Error("Expected four watched automations");
+      const [failedOnly, completedOnly] = automations;
+      if (!failedOnly || !completedOnly) {
+        throw new Error("Expected two watched automations");
       }
 
       await accept(
@@ -568,30 +765,74 @@ describe("chat-run-finished workflow automations", () => {
       );
       await flushWaitUntilForTest();
 
-      const [
-        failedOnlySummary,
-        completedOnlySummary,
-        failedBoomSummary,
-        failedRateLimitedSummary,
-        failedOnlyEvents,
-      ] = await Promise.all([
-        readAutomation(actor, failedOnly.id),
-        readAutomation(actor, completedOnly.id),
-        readAutomation(actor, failedBoom.id),
-        readAutomation(actor, failedRateLimited.id),
-        readThreadEvents(actor, failedOnly.chatThreadId),
-      ]);
+      const [failedOnlySummary, completedOnlySummary, failedOnlyEvents] =
+        await Promise.all([
+          readAutomation(actor, failedOnly.id),
+          readAutomation(actor, completedOnly.id),
+          readThreadEvents(actor, failedOnly.chatThreadId),
+        ]);
 
       expect(failedOnlySummary.lastRunAt).toStrictEqual(expect.any(String));
       expect(completedOnlySummary.lastRunAt).toBeNull();
-      expect(failedBoomSummary.lastRunAt).toBeNull();
-      expect(failedRateLimitedSummary.lastRunAt).toBeNull();
 
       expectSingleLaunchedWatchedInput(failedOnlyEvents, {
         sourceRunId: watchedRunId,
         sourceThreadId: watchedThreadId,
         sourceTitle: watchedTitle,
       });
+    },
+  );
+
+  it(
+    "chat-run-finished-automations.bdd-005 (2/2) skips pattern-filtered failed-status automations when the watched run fails without assistant output",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const watchedTitle = "Watched failed pattern run";
+      const { actor, watchedRunId, sandboxHeaders, automations } =
+        await setupWatchedRunScenario({
+          watchedTitle,
+          prompt: "Trigger sandbox failure without assistant text",
+          model: "claude-fable-5-1",
+          withClaudeSubscription: true,
+          automations: [
+            {
+              label: "failed-boom",
+              runStatuses: ["failed"],
+              outputPattern: "*boom*",
+            },
+            {
+              label: "failed-rate-limited",
+              runStatuses: ["failed"],
+              outputPattern: "*provider_rate_limited*",
+            },
+          ],
+        });
+      const [failedBoom, failedRateLimited] = automations;
+      if (!failedBoom || !failedRateLimited) {
+        throw new Error("Expected two pattern-filtered automations");
+      }
+
+      await accept(
+        webhookCompleteApi.complete({
+          headers: sandboxHeaders,
+          body: {
+            runId: watchedRunId,
+            exitCode: 1,
+            error: "boom: sandbox exploded",
+            failureReason: "provider_rate_limited",
+          },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+
+      const [failedBoomSummary, failedRateLimitedSummary] = await Promise.all([
+        readAutomation(actor, failedBoom.id),
+        readAutomation(actor, failedRateLimited.id),
+      ]);
+
+      expect(failedBoomSummary.lastRunAt).toBeNull();
+      expect(failedRateLimitedSummary.lastRunAt).toBeNull();
     },
   );
 
@@ -674,123 +915,6 @@ describe("chat-run-finished workflow automations", () => {
       expect(recoveryExecution.prompt).toContain(
         '"failureReason": "provider_rate_limited"',
       );
-    },
-  );
-
-  it(
-    "chat-run-finished-automations.bdd-004 fires claimable matching automations when a watched run completes",
-    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const watchedTitle = "Watched chat run";
-      const {
-        actor,
-        owner,
-        watchedThreadId,
-        watchedRunId,
-        sandboxHeaders,
-        automations,
-      } = await setupWatchedRunScenario({
-        watchedTitle,
-        prompt: "Run deployment check",
-        withClaudeSubscription: true,
-        automations: [
-          { label: "always" },
-          { label: "failed-only", runStatuses: ["failed"] },
-          {
-            label: "pattern-match",
-            runStatuses: ["completed"],
-            outputPattern: "*deploy failed*",
-          },
-          {
-            label: "pattern-miss",
-            outputPattern: "*all systems nominal*",
-          },
-        ],
-      });
-      const [always, failedOnly, patternMatch, patternMiss] = automations;
-      if (!always || !failedOnly || !patternMatch || !patternMiss) {
-        throw new Error("Expected four watched automations");
-      }
-
-      const assistantText = "Alert: Deploy FAILED on prod";
-      await accept(
-        webhookEventsApi.send({
-          headers: sandboxHeaders,
-          body: {
-            runId: watchedRunId,
-            events: [
-              {
-                type: "system",
-                subtype: "init",
-                session_id: watchedThreadId,
-                sequenceNumber: 0,
-              },
-              {
-                type: "assistant",
-                sequenceNumber: 1,
-                message: { content: [{ type: "text", text: assistantText }] },
-              },
-              { type: "result", sequenceNumber: 2, result: assistantText },
-            ],
-          },
-        }),
-        [200],
-      );
-      await accept(
-        webhookCompleteApi.complete({
-          headers: sandboxHeaders,
-          body: {
-            runId: watchedRunId,
-            exitCode: 0,
-            lastEventSequence: 2,
-            completion: {
-              cliAgentType: "claude-code",
-              cliAgentSessionId: watchedThreadId,
-              cliAgentSessionHistoryDisposition: "native_only",
-            },
-          },
-        }),
-        [200],
-      );
-      await flushWaitUntilForTest();
-
-      const [
-        alwaysSummary,
-        failedOnlySummary,
-        patternMatchSummary,
-        patternMissSummary,
-        alwaysEvents,
-        runningLogs,
-      ] = await Promise.all([
-        readAutomation(actor, always.id),
-        readAutomation(actor, failedOnly.id),
-        readAutomation(actor, patternMatch.id),
-        readAutomation(actor, patternMiss.id),
-        readThreadEvents(actor, always.chatThreadId),
-        accept(
-          logsListApi.list({
-            headers: signIn(actor),
-            query: { status: "running" },
-          }),
-          [200],
-        ),
-      ]);
-
-      expect(alwaysSummary.lastRunAt).toStrictEqual(expect.any(String));
-      expect(patternMatchSummary.lastRunAt).toStrictEqual(expect.any(String));
-      expect(failedOnlySummary.lastRunAt).toBeNull();
-      expect(patternMissSummary.lastRunAt).toBeNull();
-
-      const alwaysRunId = expectSingleLaunchedWatchedInput(alwaysEvents, {
-        sourceRunId: watchedRunId,
-        sourceThreadId: watchedThreadId,
-        sourceTitle: watchedTitle,
-        displayText: "A run in the watched chat thread completed.",
-      });
-      expect(runningLogs.body.data).toHaveLength(2);
-
-      const triggeredExecution = await owner.executionInput(alwaysRunId);
-      expect(triggeredExecution.prompt).toContain('"failureReason": null');
     },
   );
 });

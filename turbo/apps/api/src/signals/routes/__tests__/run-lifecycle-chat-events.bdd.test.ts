@@ -668,7 +668,7 @@ describe("run-lifecycle-chat-events.bdd", () => {
 
   describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () => {
     it(
-      "run-lifecycle-chat-events.bdd-004 persists assistant events into the linked thread and swallows optional consumer failures",
+      "run-lifecycle-chat-events.bdd-004 (1/2) persists Claude assistant events, swallows optional realtime failures, and ignores sequence duplicates",
       { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
       async () => {
         const actor = bdd.user();
@@ -766,135 +766,6 @@ describe("run-lifecycle-chat-events.bdd", () => {
                     sequenceNumber: 2,
                     message: { content: [{ type: "text", text: secondText }] },
                   },
-                ],
-              },
-            }),
-            [200],
-          );
-          await flushWaitUntilForTest();
-
-          expect(failedFirstPublish).toBeTruthy();
-          expect(publishedTopics).toContain(messageTopic);
-
-          const expectedFirstId = expectedAssistantEventId(
-            launched.runId,
-            "event:1",
-          );
-          const afterFirstTwo = eventBackedContents(
-            await listThreadEvents(actor, launched.threadId),
-            launched.runId,
-          );
-          expect(afterFirstTwo).toHaveLength(2);
-          expect(afterFirstTwo[0]?.id).toBe(expectedFirstId);
-          expect(afterFirstTwo[0]?.content).toBe(firstText);
-          expect(afterFirstTwo[1]?.content).toBe(secondText);
-
-          await accept(
-            webhookEventsClient.send({
-              headers: sandboxHeaders,
-              body: {
-                runId: launched.runId,
-                events: [
-                  {
-                    type: "item.completed",
-                    sequenceNumber: 3,
-                    item: {
-                      id: "item_reasoning_1",
-                      type: "reasoning",
-                      text: "Internal reasoning trace",
-                    },
-                  },
-                  {
-                    type: "item.completed",
-                    sequenceNumber: 4,
-                    item: {
-                      id: "item_codex_note_1",
-                      type: "agent_message",
-                      text: "Codex follow-up note",
-                    },
-                  },
-                  {
-                    type: "item.completed",
-                    sequenceNumber: 5,
-                    item: {
-                      id: "item_command_1",
-                      type: "command_execution",
-                      command: "ls -la",
-                      aggregated_output: "README.md",
-                      exit_code: 0,
-                      status: "completed",
-                    },
-                  },
-                  {
-                    type: "item.completed",
-                    sequenceNumber: 6,
-                    item: {
-                      id: "item_blank_1",
-                      type: "agent_message",
-                      text: "   ",
-                    },
-                  },
-                  {
-                    type: "item.completed",
-                    sequenceNumber: 7,
-                    item: {
-                      id: "item_blank_2",
-                      type: "agent_message",
-                      text: "",
-                    },
-                  },
-                ],
-              },
-            }),
-            [200],
-          );
-          await flushWaitUntilForTest();
-
-          expect(
-            eventBackedContents(
-              await listThreadEvents(actor, launched.threadId),
-              launched.runId,
-            ).map((entry) => {
-              return entry.content;
-            }),
-          ).toStrictEqual([firstText, secondText, "Codex follow-up note"]);
-
-          await accept(
-            webhookEventsClient.send({
-              headers: sandboxHeaders,
-              body: {
-                runId: launched.runId,
-                events: [
-                  {
-                    type: "assistant",
-                    sequenceNumber: 8,
-                    message: {
-                      content: [
-                        {
-                          type: "tool_use",
-                          id: "toolu_1",
-                          name: "Bash",
-                          input: { command: "pwd" },
-                        },
-                      ],
-                    },
-                  },
-                  {
-                    type: "assistant",
-                    sequenceNumber: 9,
-                    message: { content: [{ type: "text", text: "   " }] },
-                  },
-                ],
-              },
-            }),
-            [200],
-          );
-          await accept(
-            webhookEventsClient.send({
-              headers: sandboxHeaders,
-              body: {
-                runId: launched.runId,
-                events: [
                   {
                     type: "assistant",
                     sequenceNumber: 1,
@@ -911,16 +782,130 @@ describe("run-lifecycle-chat-events.bdd", () => {
           );
           await flushWaitUntilForTest();
 
-          const finalOutputs = eventBackedContents(
+          expect(failedFirstPublish).toBeTruthy();
+          expect(publishedTopics).toContain(messageTopic);
+
+          const expectedFirstId = expectedAssistantEventId(
+            launched.runId,
+            "event:1",
+          );
+          const outputs = eventBackedContents(
             await listThreadEvents(actor, launched.threadId),
             launched.runId,
           );
-          expect(finalOutputs).toHaveLength(3);
-          const matchingSeq1 = finalOutputs.filter((entry) => {
-            return entry.id === expectedFirstId;
+          expect(outputs).toHaveLength(2);
+          expect(outputs[0]?.id).toBe(expectedFirstId);
+          expect(outputs[0]?.content).toBe(firstText);
+          expect(outputs[1]?.content).toBe(secondText);
+        });
+      },
+    );
+
+    it(
+      "run-lifecycle-chat-events.bdd-004 (2/2) filters non-output Codex and tool events before cooperative cancellation",
+      { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+      async () => {
+        const actor = await prepareNativeClaudeActor();
+        const owner = publicRunOwner(context, actor);
+
+        await owner.run(async () => {
+          const launched = await sendChatRun(actor, {
+            prompt: "Filter non-output events and cancel cooperatively",
+            model: "claude-fable-5-1",
           });
-          expect(matchingSeq1).toHaveLength(1);
-          expect(matchingSeq1[0]?.content).toBe(firstText);
+          const execution = await owner.executionInput(launched.runId);
+          const sandboxHeaders = {
+            authorization: `Bearer ${execution.sandboxToken}`,
+          };
+
+          await accept(
+            webhookEventsClient.send({
+              headers: sandboxHeaders,
+              body: {
+                runId: launched.runId,
+                events: [
+                  {
+                    type: "item.completed",
+                    sequenceNumber: 1,
+                    item: {
+                      id: "item_reasoning_1",
+                      type: "reasoning",
+                      text: "Internal reasoning trace",
+                    },
+                  },
+                  {
+                    type: "item.completed",
+                    sequenceNumber: 2,
+                    item: {
+                      id: "item_codex_note_1",
+                      type: "agent_message",
+                      text: "Codex follow-up note",
+                    },
+                  },
+                  {
+                    type: "item.completed",
+                    sequenceNumber: 3,
+                    item: {
+                      id: "item_command_1",
+                      type: "command_execution",
+                      command: "ls -la",
+                      aggregated_output: "README.md",
+                      exit_code: 0,
+                      status: "completed",
+                    },
+                  },
+                  {
+                    type: "item.completed",
+                    sequenceNumber: 4,
+                    item: {
+                      id: "item_blank_1",
+                      type: "agent_message",
+                      text: "   ",
+                    },
+                  },
+                  {
+                    type: "item.completed",
+                    sequenceNumber: 5,
+                    item: {
+                      id: "item_blank_2",
+                      type: "agent_message",
+                      text: "",
+                    },
+                  },
+                  {
+                    type: "assistant",
+                    sequenceNumber: 6,
+                    message: {
+                      content: [
+                        {
+                          type: "tool_use",
+                          id: "toolu_1",
+                          name: "Bash",
+                          input: { command: "pwd" },
+                        },
+                      ],
+                    },
+                  },
+                  {
+                    type: "assistant",
+                    sequenceNumber: 7,
+                    message: { content: [{ type: "text", text: "   " }] },
+                  },
+                ],
+              },
+            }),
+            [200],
+          );
+          await flushWaitUntilForTest();
+
+          expect(
+            eventBackedContents(
+              await listThreadEvents(actor, launched.threadId),
+              launched.runId,
+            ).map((entry) => {
+              return entry.content;
+            }),
+          ).toStrictEqual(["Codex follow-up note"]);
 
           await cancelRun(actor, launched.runId);
           await flushWaitUntilForTest();

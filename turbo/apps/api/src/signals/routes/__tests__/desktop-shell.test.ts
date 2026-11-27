@@ -12,13 +12,23 @@ import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-s
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { desktopShellAuthorizationContract } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import type { desktopShellSessionSchema } from "@okouai/api-contracts/contracts/desktop-shell-schemas";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import {
   computerUseCommandResultChangedEvent,
   computerUseCommandResultChannelName,
   computerUseCommandsChangedEvent,
   computerUseHostChannelName,
 } from "@okouai/api-contracts/contracts/realtime";
+import {
+  runsByIdContract,
+  runsCancelContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runners";
 import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import {
+  webhookClerkContract,
+  webhookCompleteContract,
+} from "@okouai/api-contracts/contracts/webhooks";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
@@ -29,10 +39,10 @@ import {
 import { setupApp } from "../../../__tests__/test-helpers";
 import {
   TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
-  TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
   TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
 } from "../../../__tests__/test-timeouts";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import {
   clearMockNow,
   mockNow,
@@ -43,7 +53,13 @@ import { settleIncludingAbort } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { computerUseRoutes } from "../computer-use";
 import { desktopShellAuthorizationRoutes } from "../desktop-shell-authorization";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { remoteDevicesRoutes } from "../remote-devices";
+import { runnersRoutes } from "../runners";
+import { runsRoutes } from "../runs";
+import { runsCancelRoutes } from "../runs-cancel";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -174,13 +190,21 @@ function expectApiError(response: {
   throw new Error("Expected API error body");
 }
 
+interface DesktopShellSuiteApis {
+  readonly bdd: ReturnType<typeof createBddApi>;
+  readonly runs: ReturnType<typeof createRunsApi>;
+  readonly chat: ReturnType<typeof createChatFilesBddApi>;
+  readonly chatFixture: ReturnType<typeof createChatEventsFixture>;
+  readonly webhooks: ReturnType<typeof createWebhookCallbackApi>;
+  readonly authOrg: ReturnType<typeof createAuthOrgBddApi>;
+}
+
 /** Lightweight Desktop Shell scenario using built-in limited-free Runs and one direct runner. */
-function createDesktopShellFixture(context: TestContext) {
-  const bdd = createBddApi(context);
-  const runs = createRunsApi(context);
-  const chat = createChatFilesBddApi(context);
-  const chatFixture = createChatEventsFixture(context);
-  const webhooks = createWebhookCallbackApi(context);
+function createDesktopShellFixture(
+  context: TestContext,
+  apis: DesktopShellSuiteApis,
+) {
+  const { bdd, runs, chat, chatFixture, webhooks, authOrg } = apis;
   const hosts = createPublicComputerUseHosts(context);
   const member = bdd.user();
 
@@ -196,12 +220,18 @@ function createDesktopShellFixture(context: TestContext) {
       return withMockNowForTest(acceptedTime, async () => {
         for (const [runId, sandboxToken] of activeRuns) {
           const cancelled = await settleIncludingAbort(async () => {
-            await runs.requestCancelRun(member, runId, [200]);
-            await webhooks.requestAgentComplete(
-              { runId, exitCode: 1, error: "Run cancelled" },
-              { authorization: `Bearer ${sandboxToken}` },
-              [200],
+            const cancelResponse = await runs.requestCancelRun(
+              member,
+              runId,
+              [200, 400],
             );
+            if (cancelResponse.status === 200) {
+              await webhooks.requestAgentComplete(
+                { runId, exitCode: 1, error: "Run cancelled" },
+                { authorization: `Bearer ${sandboxToken}` },
+                [200],
+              );
+            }
           });
           if (!cancelled.ok) {
             errors.push(cancelled.error);
@@ -321,7 +351,7 @@ function createDesktopShellFixture(context: TestContext) {
     cancelRun,
     createCliToken(actor: ApiTestUser) {
       return run(() => {
-        return createAuthOrgBddApi(context).createCliToken(actor, run);
+        return authOrg.createCliToken(actor, run);
       });
     },
   };
@@ -329,33 +359,134 @@ function createDesktopShellFixture(context: TestContext) {
 
 describe("Desktop Shell command pipeline", () => {
   const context = testContext();
+  const suiteApis: DesktopShellSuiteApis = {
+    bdd: createBddApi(context),
+    runs: createRunsApi(context),
+    chat: createChatFilesBddApi(context),
+    chatFixture: createChatEventsFixture(context),
+    webhooks: createWebhookCallbackApi(context),
+    authOrg: createAuthOrgBddApi(context),
+  };
+  const computerUseClient = setupApp({ context, routes: computerUseRoutes })(
+    computerUseHostsContract,
+  );
+  const shellAuthClient = setupApp({
+    context,
+    routes: desktopShellAuthorizationRoutes,
+  })(desktopShellAuthorizationContract);
+  const remoteDevicesClient = setupApp({
+    context,
+    routes: remoteDevicesRoutes,
+  })(remoteDevicesContract);
+  const chatEventsClient = setupApp({ context, routes: chatEventsRoutes })(
+    chatEventsContract,
+  );
+  const featureSwitchesClient = setupApp({
+    context,
+    routes: featureSwitchesRoutes,
+  })(featureSwitchesContract);
+  const runnersHeartbeatClient = setupApp({ context, routes: runnersRoutes })(
+    runnersHeartbeatContract,
+  );
+  const runsByIdClient = setupApp({ context, routes: runsRoutes })(
+    runsByIdContract,
+  );
+  const runsCancelClient = setupApp({ context, routes: runsCancelRoutes })(
+    runsCancelContract,
+  );
+  const webhookCompleteClient = setupApp({
+    context,
+    routes: webhooksAgentCompleteRoutes,
+  })(webhookCompleteContract);
+  const webhookClerkClient = setupApp({
+    context,
+    routes: webhooksClerkRoutes,
+  })(webhookClerkContract);
 
   beforeAll(async () => {
+    const previousClerkSecret = optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET");
+    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_warmup");
+    context.mocks.clerk.verifyWebhook.mockRejectedValueOnce(
+      new Error("warmup"),
+    );
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,
     });
-    await Promise.all([
-      setupApp({ context, routes: computerUseRoutes })(
-        computerUseHostsContract,
-      ).list({ headers: {} }),
-      setupApp({ context, routes: desktopShellAuthorizationRoutes })(
-        desktopShellAuthorizationContract,
-      ).get({ headers: {}, params: { id: randomUUID() } }),
-      setupApp({ context, routes: remoteDevicesRoutes })(
-        remoteDevicesContract,
-      ).list({ headers: {} }),
-      setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
-        headers: {},
-        body: {
-          prompt: "warmup",
-          hasTextContent: true,
-          userMessage: {
-            version: 1,
-            parts: [{ type: "text", text: "warmup" }],
-          },
-        },
-      }),
-    ]);
+    const warmupId = randomUUID();
+    const warmed = await settleIncludingAbort(async () => {
+      await Promise.all([
+        accept(
+          webhookClerkClient.post({
+            body: "{}",
+            extraHeaders: {},
+          }),
+          [401],
+        ),
+        accept(computerUseClient.list({ headers: {} }), [401]),
+        accept(
+          shellAuthClient.get({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(remoteDevicesClient.list({ headers: {} }), [401]),
+        accept(featureSwitchesClient.get({ headers: {} }), [401]),
+        accept(
+          chatEventsClient.send({
+            headers: {},
+            body: {
+              prompt: "warmup",
+              hasTextContent: true,
+              userMessage: {
+                version: 1,
+                parts: [{ type: "text", text: "warmup" }],
+              },
+            },
+          }),
+          [401],
+        ),
+        accept(
+          runnersHeartbeatClient.heartbeat({
+            headers: {},
+            body: {
+              runnerId: warmupId,
+              group: "vm0/warmup",
+              snapshotGeneration: 1,
+              snapshotSequence: 1,
+              totalVcpu: 8,
+              totalMemoryMb: 16_384,
+              maxConcurrent: 2,
+              allocatedVcpu: 0,
+              allocatedMemoryMb: 0,
+              runningCount: 0,
+              admittableProfiles: ["vm0/default"],
+              heldSandboxStates: [],
+              heldHomeStates: [],
+              activeReuseProducers: [],
+              mode: "running",
+            },
+          }),
+          [401],
+        ),
+        accept(
+          runsByIdClient.getById({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          runsCancelClient.cancel({ headers: {}, params: { id: warmupId } }),
+          [401],
+        ),
+        accept(
+          webhookCompleteClient.complete({
+            headers: {},
+            body: { runId: warmupId, exitCode: 0 },
+          }),
+          [401],
+        ),
+      ]);
+    });
+    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", previousClerkSecret);
+    if (!warmed.ok) {
+      throw warmed.error;
+    }
   });
 
   afterEach(() => {
@@ -363,25 +494,345 @@ describe("Desktop Shell command pipeline", () => {
   });
 
   it(
-    "desktop-shell-007 revokes queued work without cancelling already claimed work or closing terminals",
-    { timeout: TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    "desktop-shell-007 (2/2) renews revoked Shell access with a new ID and routes input to the existing terminal",
+    { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const fixture = createDesktopShellFixture(context);
+      const fixture = createDesktopShellFixture(context, suiteApis);
       const { member, memberIdentity } = fixture;
       const permissionId = randomUUID();
       const capabilities = shellCapabilities(permissionId);
       const sessionId = randomUUID();
+
+      const [, host] = await Promise.all([
+        fixture.run(() => {
+          return updateFeatureSwitchesForUser(context, memberIdentity, {
+            [FeatureSwitchKey.DesktopShell]: true,
+          });
+        }),
+        fixture.computerUse.startComputerUseHost(
+          member,
+          shellHostOptions(permissionId, { hostName: "Renew Test Desktop" }),
+        ),
+      ]);
+      const run1 = await fixture.launchRun(host.hostId);
+      const auth1 = await fixture.computerUse.requestDesktopShellAccess(
+        { bearer: run1.token },
+        "Start interactive command",
+      );
+      await fixture.cancelRun(run1.runId, run1.sandboxToken);
+      await fixture.computerUse.actDesktopShellAccess(
+        member,
+        expectShellAuth(auth1).id,
+        "approve",
+        [200],
+      );
+      await fixture.computerUse.actDesktopShellAccess(
+        member,
+        expectShellAuth(auth1).id,
+        "revoke",
+        [200],
+      );
+
+      const run2 = await fixture.launchRun(host.hostId, run1.threadId);
+      const auth2 = await fixture.computerUse.requestDesktopShellAccess(
+        { bearer: run2.token },
+        "Resume existing terminal",
+      );
+      expect(expectShellAuth(auth2).id).not.toBe(expectShellAuth(auth1).id);
+
+      await fixture.cancelRun(run2.runId, run2.sandboxToken);
+      const renewed = await fixture.computerUse.actDesktopShellAccess(
+        member,
+        expectShellAuth(auth2).id,
+        "approve",
+        [200],
+      );
+      expect(expectShellAuth(renewed).status).toBe("approved");
+
+      const run3 = await fixture.launchRun(host.hostId, run1.threadId);
+      await expect(
+        fixture.computerUse.claimNextComputerUseCommand(
+          host.connection,
+          capabilities,
+        ),
+      ).resolves.toStrictEqual({ status: "idle" });
+
+      const terminalInput =
+        await fixture.computerUse.requestCreateDesktopShellCommand(
+          { bearer: run3.token },
+          { kind: "shell.cmd", sessionId, input: "yes\n", waitMs: 10_000 },
+          [200],
+        );
+      const claimedInput =
+        await fixture.computerUse.claimNextComputerUseCommand(
+          host.connection,
+          capabilities,
+        );
+      expect(claimedInput.status).toBe("command");
+      if (claimedInput.status === "command") {
+        expect(claimedInput.command.id).toBe(
+          expectShellQueued(terminalInput).commandId,
+        );
+        expect(claimedInput.command.payload).toMatchObject({
+          sessionId,
+          input: "yes\n",
+          shellPermissionId: permissionId,
+        });
+      }
+    },
+  );
+
+  it(
+    "pf-077 (2/2) enforces Remote Device revocation on queued and new Shell commands while the chat grant remains approved",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createDesktopShellFixture(context, suiteApis);
+      const { member, memberIdentity } = fixture;
+      const permissionId = randomUUID();
+      const capabilities = shellCapabilities(permissionId);
+
+      const [, host] = await Promise.all([
+        fixture.run(() => {
+          return updateFeatureSwitchesForUser(context, memberIdentity, {
+            [FeatureSwitchKey.DesktopShell]: true,
+            [FeatureSwitchKey.RemoteDevices]: true,
+          });
+        }),
+        fixture.computerUse.startComputerUseHost(
+          member,
+          shellHostOptions(permissionId, {
+            hostName: "Remote Device Revoke Desktop",
+          }),
+        ),
+      ]);
+
+      const directory = await fixture.run(() => {
+        return accept(
+          remoteDevicesClient.list({
+            headers: sessionHeaders(context, member),
+          }),
+          [200],
+        );
+      });
+      const device = directory.body.devices.find((candidate) => {
+        return candidate.channels.some((channel) => {
+          return channel.kind === "desktop" && channel.id === host.hostId;
+        });
+      });
+      if (!device) {
+        throw new Error("Expected the Desktop host's Remote Device entry");
+      }
+
+      const [, run1] = await Promise.all([
+        fixture.run(() => {
+          return accept(
+            remoteDevicesClient.setAccess({
+              headers: sessionHeaders(context, member),
+              params: { deviceId: device.id },
+              body: { mode: "always" },
+            }),
+            [200],
+          );
+        }),
+        fixture.launchRun(),
+      ]);
+
+      const requested = await fixture.run(() => {
+        return accept(
+          shellAuthClient.create({
+            headers: { authorization: `Bearer ${run1.token}` },
+            body: { reason: "Inspect workspace", hostId: host.hostId },
+          }),
+          [200],
+        );
+      });
+      await fixture.cancelRun(run1.runId, run1.sandboxToken);
+      const approved = await fixture.computerUse.actDesktopShellAccess(
+        member,
+        requested.body.id,
+        "approve",
+        [200],
+      );
+      expect(expectShellAuth(approved).status).toBe("approved");
+
+      // With both Remote Device policy and Shell grant active, a follow-up Run
+      // dispatches and the Desktop host claims the Shell command.
+      const run2 = await fixture.launchRun(undefined, run1.threadId);
+      const firstCommand =
+        await fixture.computerUse.requestCreateDesktopShellCommand(
+          { bearer: run2.token },
+          { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
+          [200],
+        );
+      const claimed = await fixture.computerUse.claimNextComputerUseCommand(
+        host.connection,
+        capabilities,
+      );
+      expect(claimed.status).toBe("command");
+      if (claimed.status === "command") {
+        expect(claimed.command.id).toBe(
+          expectShellQueued(firstCommand).commandId,
+        );
+      }
+      await fixture.computerUse.completeComputerUseCommandWith(
+        host.connection,
+        expectShellQueued(firstCommand).commandId,
+        { status: "succeeded", result: { sessions: [] } },
+      );
+
+      // Denying the Remote Device while the Shell grant remains approved blocks
+      // both claiming queued Shell commands and submitting new Shell commands.
+      const queuedBeforeDeny =
+        await fixture.computerUse.requestCreateDesktopShellCommand(
+          { bearer: run2.token },
+          { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
+          [200],
+        );
+      expect(expectShellQueued(queuedBeforeDeny).status).toBe("queued");
+
+      await fixture.run(() => {
+        return accept(
+          remoteDevicesClient.setAccess({
+            headers: sessionHeaders(context, member),
+            params: { deviceId: device.id },
+            body: { mode: "denied" },
+          }),
+          [200],
+        );
+      });
+
+      await expect(
+        fixture.computerUse.claimNextComputerUseCommand(
+          host.connection,
+          capabilities,
+        ),
+      ).resolves.toStrictEqual({ status: "idle" });
+
+      await fixture.computerUse.requestCreateDesktopShellCommand(
+        { bearer: run2.token },
+        { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
+        [404],
+      );
+    },
+  );
+
+  it(
+    "desktop-shell-006 (1/2) scopes approval to the owning member and only accepts human decisions",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createDesktopShellFixture(context, suiteApis);
+      const { member, memberIdentity } = fixture;
+      const otherMember = fixture.bdd.user({ orgId: member.orgId });
+      const permissionId = randomUUID();
 
       await fixture.run(() => {
         return updateFeatureSwitchesForUser(context, memberIdentity, {
           [FeatureSwitchKey.DesktopShell]: true,
         });
       });
+      await fixture.run(() => {
+        return updateFeatureSwitchesForUser(context, orgActor(otherMember), {
+          [FeatureSwitchKey.DesktopShell]: true,
+        });
+      });
 
       const host = await fixture.computerUse.startComputerUseHost(
         member,
-        shellHostOptions(permissionId, { hostName: "Revoke Test Desktop" }),
+        shellHostOptions(permissionId, { hostName: "Scoped Desktop" }),
       );
+      const run1 = await fixture.launchRun(host.hostId);
+
+      const auth1 = await fixture.computerUse.requestDesktopShellAccess(
+        { bearer: run1.token },
+        "Inspect build environment",
+      );
+      expect(auth1.body).toMatchObject({
+        status: "pending",
+        approvalBlockedReason: "run_active",
+      });
+      await fixture.computerUse.actDesktopShellAccess(
+        member,
+        expectShellAuth(auth1).id,
+        "approve",
+        [409],
+      );
+
+      await fixture.cancelRun(run1.runId, run1.sandboxToken);
+      const approved = await fixture.computerUse.actDesktopShellAccess(
+        member,
+        expectShellAuth(auth1).id,
+        "approve",
+        [200],
+      );
+      const approvedAuth = expectShellAuth(approved);
+      expect(approvedAuth.status).toBe("approved");
+      if (!approvedAuth.approvedAt || !approvedAuth.grantExpiresAt) {
+        throw new Error("Expected approval and grant expiry timestamps");
+      }
+      expect(
+        Date.parse(approvedAuth.grantExpiresAt) -
+          Date.parse(approvedAuth.approvedAt),
+      ).toBe(ONE_HOUR_MS);
+
+      const run2 = await fixture.launchRun(host.hostId, run1.threadId);
+      const cliToken = await fixture.createCliToken(member);
+
+      await fixture.computerUse.readDesktopShellAccess(
+        otherMember,
+        expectShellAuth(auth1).id,
+        [404],
+      );
+      await fixture.computerUse.actDesktopShellAccess(
+        otherMember,
+        expectShellAuth(auth1).id,
+        "revoke",
+        [404],
+      );
+      await fixture.computerUse.actDesktopShellAccess(
+        { bearer: run2.token },
+        expectShellAuth(auth1).id,
+        "approve",
+        [403],
+      );
+      await fixture.computerUse.requestDesktopShellAccess(
+        member,
+        "Direct session attempt",
+        [403],
+      );
+      await fixture.computerUse.requestCreateDesktopShellCommand(
+        member,
+        { kind: "shell.list", waitMs: 10_000 },
+        [403],
+      );
+      await fixture.computerUse.requestCreateDesktopShellCommand(
+        { bearer: cliToken.token },
+        { kind: "shell.list", waitMs: 10_000 },
+        [403],
+      );
+    },
+  );
+
+  it(
+    "desktop-shell-007 (1/2) revokes queued work without cancelling already claimed work or closing terminals",
+    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createDesktopShellFixture(context, suiteApis);
+      const { member, memberIdentity } = fixture;
+      const permissionId = randomUUID();
+      const capabilities = shellCapabilities(permissionId);
+      const sessionId = randomUUID();
+
+      const [, host] = await Promise.all([
+        fixture.run(() => {
+          return updateFeatureSwitchesForUser(context, memberIdentity, {
+            [FeatureSwitchKey.DesktopShell]: true,
+          });
+        }),
+        fixture.computerUse.startComputerUseHost(
+          member,
+          shellHostOptions(permissionId, { hostName: "Revoke Test Desktop" }),
+        ),
+      ]);
       const run1 = await fixture.launchRun(host.hostId);
       const auth1 = await fixture.computerUse.requestDesktopShellAccess(
         { bearer: run1.token },
@@ -490,89 +941,35 @@ describe("Desktop Shell command pipeline", () => {
           [403],
         ),
       ]);
-
-      // Renew Shell access and confirm the existing open terminal accepts input.
-      const auth2 = await fixture.computerUse.requestDesktopShellAccess(
-        { bearer: run2.token },
-        "Resume existing terminal",
-      );
-      expect(expectShellAuth(auth2).id).not.toBe(expectShellAuth(auth1).id);
-
-      await fixture.cancelRun(run2.runId, run2.sandboxToken);
-      const renewed = await fixture.computerUse.actDesktopShellAccess(
-        member,
-        expectShellAuth(auth2).id,
-        "approve",
-        [200],
-      );
-      expect(expectShellAuth(renewed).status).toBe("approved");
-
-      const run3 = await fixture.launchRun(host.hostId, run1.threadId);
-      await expect(
-        fixture.computerUse.claimNextComputerUseCommand(
-          host.connection,
-          capabilities,
-        ),
-      ).resolves.toStrictEqual({ status: "idle" });
-
-      const terminalInput =
-        await fixture.computerUse.requestCreateDesktopShellCommand(
-          { bearer: run3.token },
-          { kind: "shell.cmd", sessionId, input: "yes\n", waitMs: 10_000 },
-          [200],
-        );
-      const claimedInput =
-        await fixture.computerUse.claimNextComputerUseCommand(
-          host.connection,
-          capabilities,
-        );
-      expect(claimedInput.status).toBe("command");
-      if (claimedInput.status === "command") {
-        expect(claimedInput.command.id).toBe(
-          expectShellQueued(terminalInput).commandId,
-        );
-        expect(claimedInput.command.payload).toMatchObject({
-          sessionId,
-          input: "yes\n",
-          shellPermissionId: permissionId,
-        });
-      }
     },
   );
 
   it(
-    "pf-077 requires both the Remote Device policy and the chat's Shell grant",
-    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    "pf-077 (1/2) gates Shell requests, commands, and approval on both Remote Device policy and Shell grant",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const fixture = createDesktopShellFixture(context);
+      const fixture = createDesktopShellFixture(context, suiteApis);
       const { member, memberIdentity } = fixture;
       const permissionId = randomUUID();
-      const capabilities = shellCapabilities(permissionId);
 
-      await fixture.run(() => {
-        return updateFeatureSwitchesForUser(context, memberIdentity, {
-          [FeatureSwitchKey.DesktopShell]: true,
-          [FeatureSwitchKey.RemoteDevices]: true,
-        });
-      });
-
-      const host = await fixture.computerUse.startComputerUseHost(
-        member,
-        shellHostOptions(permissionId, { hostName: "Remote Device Desktop" }),
-      );
-
-      const remoteDevices = setupApp({
-        context,
-        routes: remoteDevicesRoutes,
-      })(remoteDevicesContract);
-      const shellAuthClient = setupApp({
-        context,
-        routes: desktopShellAuthorizationRoutes,
-      })(desktopShellAuthorizationContract);
+      const [, host] = await Promise.all([
+        fixture.run(() => {
+          return updateFeatureSwitchesForUser(context, memberIdentity, {
+            [FeatureSwitchKey.DesktopShell]: true,
+            [FeatureSwitchKey.RemoteDevices]: true,
+          });
+        }),
+        fixture.computerUse.startComputerUseHost(
+          member,
+          shellHostOptions(permissionId, { hostName: "Remote Device Desktop" }),
+        ),
+      ]);
 
       const directory = await fixture.run(() => {
         return accept(
-          remoteDevices.list({ headers: sessionHeaders(context, member) }),
+          remoteDevicesClient.list({
+            headers: sessionHeaders(context, member),
+          }),
           [200],
         );
       });
@@ -590,26 +987,28 @@ describe("Desktop Shell command pipeline", () => {
 
       // With Remote Device access denied and no Shell grant, neither requesting
       // Shell access nor dispatching a Shell command can proceed.
-      await fixture.run(() => {
-        return accept(
-          shellAuthClient.create({
-            headers: { authorization: `Bearer ${run1.token}` },
-            body: { reason: "Inspect workspace", hostId: host.hostId },
-          }),
-          [409],
-        );
-      });
-      await fixture.computerUse.requestCreateDesktopShellCommand(
-        { bearer: run1.token },
-        { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
-        [404],
-      );
+      await Promise.all([
+        fixture.run(() => {
+          return accept(
+            shellAuthClient.create({
+              headers: { authorization: `Bearer ${run1.token}` },
+              body: { reason: "Inspect workspace", hostId: host.hostId },
+            }),
+            [409],
+          );
+        }),
+        fixture.computerUse.requestCreateDesktopShellCommand(
+          { bearer: run1.token },
+          { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
+          [404],
+        ),
+      ]);
 
       // Allowing the Remote Device alone is not enough: Shell commands still
       // require the chat's independent one-hour Shell grant.
       const allowedDevice = await fixture.run(() => {
         return accept(
-          remoteDevices.setAccess({
+          remoteDevicesClient.setAccess({
             headers: sessionHeaders(context, member),
             params: { deviceId: device.id },
             body: { mode: "always" },
@@ -619,25 +1018,25 @@ describe("Desktop Shell command pipeline", () => {
       });
       expect(allowedDevice.body.accessAllowed).toBeTruthy();
 
-      const missingGrant =
-        await fixture.computerUse.requestCreateDesktopShellCommand(
+      const [missingGrant, requested] = await Promise.all([
+        fixture.computerUse.requestCreateDesktopShellCommand(
           { bearer: run1.token },
           { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
           [403],
-        );
+        ),
+        fixture.run(() => {
+          return accept(
+            shellAuthClient.create({
+              headers: { authorization: `Bearer ${run1.token}` },
+              body: { reason: "Inspect workspace", hostId: host.hostId },
+            }),
+            [200],
+          );
+        }),
+      ]);
       expect(expectApiError(missingGrant).code).toBe(
         "SHELL_AUTHORIZATION_REQUIRED",
       );
-
-      const requested = await fixture.run(() => {
-        return accept(
-          shellAuthClient.create({
-            headers: { authorization: `Bearer ${run1.token}` },
-            body: { reason: "Inspect workspace", hostId: host.hostId },
-          }),
-          [200],
-        );
-      });
       expect(requested.body).toMatchObject({
         status: "pending",
         computerUseHostId: host.hostId,
@@ -649,7 +1048,7 @@ describe("Desktop Shell command pipeline", () => {
       // Denying the Remote Device blocks approving the pending Shell request.
       await fixture.run(() => {
         return accept(
-          remoteDevices.setAccess({
+          remoteDevicesClient.setAccess({
             headers: sessionHeaders(context, member),
             params: { deviceId: device.id },
             body: { mode: "denied" },
@@ -675,7 +1074,7 @@ describe("Desktop Shell command pipeline", () => {
       // Re-allowing the Remote Device unblocks approval of the chat's Shell grant.
       await fixture.run(() => {
         return accept(
-          remoteDevices.setAccess({
+          remoteDevicesClient.setAccess({
             headers: sessionHeaders(context, member),
             params: { deviceId: device.id },
             body: { mode: "always" },
@@ -690,65 +1089,6 @@ describe("Desktop Shell command pipeline", () => {
         [200],
       );
       expect(expectShellAuth(approved).status).toBe("approved");
-
-      // With both Remote Device policy and Shell grant active, a follow-up Run
-      // dispatches and the Desktop host claims the Shell command.
-      const run2 = await fixture.launchRun(undefined, run1.threadId);
-      const firstCommand =
-        await fixture.computerUse.requestCreateDesktopShellCommand(
-          { bearer: run2.token },
-          { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
-          [200],
-        );
-      const claimed = await fixture.computerUse.claimNextComputerUseCommand(
-        host.connection,
-        capabilities,
-      );
-      expect(claimed.status).toBe("command");
-      if (claimed.status === "command") {
-        expect(claimed.command.id).toBe(
-          expectShellQueued(firstCommand).commandId,
-        );
-      }
-      await fixture.computerUse.completeComputerUseCommandWith(
-        host.connection,
-        expectShellQueued(firstCommand).commandId,
-        { status: "succeeded", result: { sessions: [] } },
-      );
-
-      // Denying the Remote Device while the Shell grant remains approved blocks
-      // both claiming queued Shell commands and submitting new Shell commands.
-      const queuedBeforeDeny =
-        await fixture.computerUse.requestCreateDesktopShellCommand(
-          { bearer: run2.token },
-          { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
-          [200],
-        );
-      expect(expectShellQueued(queuedBeforeDeny).status).toBe("queued");
-
-      await fixture.run(() => {
-        return accept(
-          remoteDevices.setAccess({
-            headers: sessionHeaders(context, member),
-            params: { deviceId: device.id },
-            body: { mode: "denied" },
-          }),
-          [200],
-        );
-      });
-
-      await expect(
-        fixture.computerUse.claimNextComputerUseCommand(
-          host.connection,
-          capabilities,
-        ),
-      ).resolves.toStrictEqual({ status: "idle" });
-
-      await fixture.computerUse.requestCreateDesktopShellCommand(
-        { bearer: run2.token },
-        { hostId: host.hostId, kind: "shell.list", waitMs: 10_000 },
-        [404],
-      );
     },
   );
 
@@ -756,7 +1096,7 @@ describe("Desktop Shell command pipeline", () => {
     "desktop-shell-004 notifies the owner when another computer changes the computer for a pending Shell approval",
     { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const fixture = createDesktopShellFixture(context);
+      const fixture = createDesktopShellFixture(context, suiteApis);
       const { member, memberIdentity } = fixture;
       const permissionId1 = randomUUID();
       const permissionId2 = randomUUID();
@@ -842,106 +1182,10 @@ describe("Desktop Shell command pipeline", () => {
   );
 
   it(
-    "desktop-shell-006 (1/2) scopes approval to the owning member and only accepts human decisions",
-    { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
-    async () => {
-      const fixture = createDesktopShellFixture(context);
-      const { member, memberIdentity } = fixture;
-      const otherMember = fixture.bdd.user({ orgId: member.orgId });
-      const permissionId = randomUUID();
-
-      await fixture.run(() => {
-        return updateFeatureSwitchesForUser(context, memberIdentity, {
-          [FeatureSwitchKey.DesktopShell]: true,
-        });
-      });
-      await fixture.run(() => {
-        return updateFeatureSwitchesForUser(context, orgActor(otherMember), {
-          [FeatureSwitchKey.DesktopShell]: true,
-        });
-      });
-
-      const host = await fixture.computerUse.startComputerUseHost(
-        member,
-        shellHostOptions(permissionId, { hostName: "Scoped Desktop" }),
-      );
-      const run1 = await fixture.launchRun(host.hostId);
-
-      const auth1 = await fixture.computerUse.requestDesktopShellAccess(
-        { bearer: run1.token },
-        "Inspect build environment",
-      );
-      expect(auth1.body).toMatchObject({
-        status: "pending",
-        approvalBlockedReason: "run_active",
-      });
-      await fixture.computerUse.actDesktopShellAccess(
-        member,
-        expectShellAuth(auth1).id,
-        "approve",
-        [409],
-      );
-
-      await fixture.cancelRun(run1.runId, run1.sandboxToken);
-      const approved = await fixture.computerUse.actDesktopShellAccess(
-        member,
-        expectShellAuth(auth1).id,
-        "approve",
-        [200],
-      );
-      const approvedAuth = expectShellAuth(approved);
-      expect(approvedAuth.status).toBe("approved");
-      if (!approvedAuth.approvedAt || !approvedAuth.grantExpiresAt) {
-        throw new Error("Expected approval and grant expiry timestamps");
-      }
-      expect(
-        Date.parse(approvedAuth.grantExpiresAt) -
-          Date.parse(approvedAuth.approvedAt),
-      ).toBe(ONE_HOUR_MS);
-
-      const run2 = await fixture.launchRun(host.hostId, run1.threadId);
-      const cliToken = await fixture.createCliToken(member);
-
-      await fixture.computerUse.readDesktopShellAccess(
-        otherMember,
-        expectShellAuth(auth1).id,
-        [404],
-      );
-      await fixture.computerUse.actDesktopShellAccess(
-        otherMember,
-        expectShellAuth(auth1).id,
-        "revoke",
-        [404],
-      );
-      await fixture.computerUse.actDesktopShellAccess(
-        { bearer: run2.token },
-        expectShellAuth(auth1).id,
-        "approve",
-        [403],
-      );
-      await fixture.computerUse.requestDesktopShellAccess(
-        member,
-        "Direct session attempt",
-        [403],
-      );
-      await fixture.computerUse.requestCreateDesktopShellCommand(
-        member,
-        { kind: "shell.list", waitMs: 10_000 },
-        [403],
-      );
-      await fixture.computerUse.requestCreateDesktopShellCommand(
-        { bearer: cliToken.token },
-        { kind: "shell.list", waitMs: 10_000 },
-        [403],
-      );
-    },
-  );
-
-  it(
     "desktop-shell-006 (2/2) scopes approval to the owning chat and computer",
     { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const fixture = createDesktopShellFixture(context);
+      const fixture = createDesktopShellFixture(context, suiteApis);
       const { member, memberIdentity } = fixture;
       const permissionId1 = randomUUID();
       const permissionId2 = randomUUID();
@@ -1044,7 +1288,7 @@ describe("Desktop Shell command pipeline", () => {
       const baseTime = now();
       mockNow(baseTime);
 
-      const fixture = createDesktopShellFixture(context);
+      const fixture = createDesktopShellFixture(context, suiteApis);
       const { member, memberIdentity } = fixture;
       const permissionId = randomUUID();
       const capabilities = shellCapabilities(permissionId);
@@ -1158,7 +1402,7 @@ describe("Desktop Shell command pipeline", () => {
     "desktop-shell-009 uses the authorized computer, explicit local capabilities and the existing result channel",
     { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
     async () => {
-      const fixture = createDesktopShellFixture(context);
+      const fixture = createDesktopShellFixture(context, suiteApis);
       const { member, memberIdentity } = fixture;
       const permissionId = randomUUID();
       const capabilities = shellCapabilities(permissionId);
