@@ -3886,33 +3886,48 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
 
     @Test
     fun moveToProjectDeletedDuringTheRequestKeepsTheConfirmedMembership() = runTest {
-        val source = ProjectOrganizationService()
-        val response = CompletableDeferred<Unit>()
-        source.moveResponse = { _, _, _ ->
-            response.await()
-            throw ApiFailure.Network(IOException("Move response unavailable"))
-        }
-        withCatchUpModel(source) { model ->
-            model.refresh()
-            runCurrent()
-            val original = model.uiState.value.threads.single { it.id == CHAT_PERSONAL }
+        for (responseLost in listOf(false, true)) {
+            val source = ProjectOrganizationService()
+            val response = CompletableDeferred<Unit>()
+            source.moveResponse = { thread, project, event ->
+                if (!responseLost) source.publishMembership(thread, project, event)
+                response.await()
+                if (responseLost) throw ApiFailure.Network(IOException("Move response unavailable"))
+            }
+            withCatchUpModel(source) { model ->
+                model.refresh()
+                runCurrent()
+                val original = model.uiState.value.threads.single { it.id == CHAT_PERSONAL }
 
-            assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
-            runCurrent()
-            source.publishDeletion("00000022-0000-4000-8000-000000000000")
-            model.refreshMetadata()
-            runCurrent()
-            val pending = model.uiState.value
-            assertTrue(pending.projects.isEmpty())
-            assertEquals(ChatRowAction.MoveProject, pending.pendingRowActions[CHAT_PERSONAL])
+                assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
+                runCurrent()
+                source.publishDeletion("00000022-0000-4000-8000-000000000000")
+                if (!responseLost) {
+                    source.publishMembership(
+                        CHAT_PERSONAL,
+                        null,
+                        "00000023-0000-4000-8000-000000000000",
+                    )
+                    source.chatReadUnavailable = true
+                }
+                model.refreshMetadata()
+                runCurrent()
+                val pending = model.uiState.value
+                assertTrue(pending.projects.isEmpty())
+                assertEquals(ChatRowAction.MoveProject, pending.pendingRowActions[CHAT_PERSONAL])
 
-            response.complete(Unit)
-            runCurrent()
+                response.complete(Unit)
+                runCurrent()
 
-            val settled = model.uiState.value
-            assertEquals(original, settled.threads.single { it.id == CHAT_PERSONAL })
-            assertNull(settled.pendingRowActions[CHAT_PERSONAL])
-            assertEquals(ChatRowAction.MoveProject, settled.rowActionFailures.single().action)
+                val settled = model.uiState.value
+                assertEquals(original, settled.threads.single { it.id == CHAT_PERSONAL })
+                assertNull(settled.pendingRowActions[CHAT_PERSONAL])
+                assertNull(settled.chatMoveNotice)
+                assertEquals(
+                    if (responseLost) ChatRowAction.MoveProject else null,
+                    settled.rowActionFailures.singleOrNull()?.action,
+                )
+            }
         }
     }
 

@@ -1372,7 +1372,12 @@ class ChatListModel(
                             else mutable.value = state
                         } else if (!rolledBack) {
                             if (confirmation.ownWriteConfirmed) recordConfirmedUndo(threadId, undo)
-                            if (movingProject) recordConfirmedProjectMove(edits.single())
+                            if (movingProject) {
+                                // Project metadata can arrive before the chat event readback.
+                                if (!confirmation.ownWriteConfirmed)
+                                    reconcileProjectMoves(mutable.value, rowsChanged = true)
+                                recordConfirmedProjectMove(edits.single())
+                            }
                         }
                     }
                     failure == null
