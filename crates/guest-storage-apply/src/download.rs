@@ -767,8 +767,7 @@ fn find_startable_download(
     selection: DownloadSelection,
     on_conflict: &mut impl FnMut(usize, &Path, usize, &Path),
 ) -> Option<(usize, usize)> {
-    // Independent tasks may bypass blocked work, but conflicting tasks must
-    // retain their order even when the earlier task has not started yet.
+    // Only active reservations restrict the order of ready downloads.
     let mut selected: Option<(usize, usize, u64)> = None;
     for (index, download) in pending.iter().enumerate() {
         let work = match selection {
