@@ -2503,10 +2503,10 @@ runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-di
 runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-001	rewritten	145.5	split n=4: 1/4=99.9; 2/4=145.5; 3/4=121.0; 4/4=130.4	src/signals/routes/__tests__/run-cron.bdd.test.ts	B01	
 runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-002	rewritten	27.4		src/signals/routes/__tests__/run-cron.bdd.test.ts	pilot	
 runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-005	rewritten	14.0		src/signals/routes/__tests__/run-cron.bdd.test.ts	pilot	
-runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-002	planned				pilot	a-run
-runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-003	planned				pilot	a-run
-runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-004	planned				pilot	a-run
-runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-005	planned				pilot	a-run
+runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-002	rewritten	312.1	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	R29	a-run
+runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-003	rewritten	405.1	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	R29	a-run
+runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-004	rewritten	302.8	timeout=800 (TRIPLE_RUN)	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	R29	a-run
+runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-005	rewritten	326.5	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	R29	a-run
 runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-001	rewritten	177.0	split 1->2: (1/2) 200ms (177.0ms), (2/2) 200ms (167.3ms) (7-run idle non-first medians)	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	R26	a-run
 runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-003	rewritten	380.9	split 1->2: (1/2) timeout=400 (211.7ms), (2/2) timeout=600 (380.9ms)	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	R26	a-run
 runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-004	rewritten	301.9	timeout=600 (5-run idle non-first median 301.9ms)	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	R26	a-run
@@ -2615,10 +2615,10 @@ runs	src/signals/routes/__tests__/run-reads.bdd.test.ts	run-reads.bdd-026	planne
 runs	src/signals/routes/__tests__/run-reads.bdd.test.ts	run-reads.bdd-027	planned					a-run
 runs	src/signals/routes/__tests__/run-reads.bdd.test.ts	run-reads.bdd-028	planned					a-run
 runs	src/signals/routes/__tests__/run-reads.bdd.test.ts	run-reads.bdd-030	skipped		"slow-setup: lower bound - the Given requires a paid member with a dispatched Run (""a new dispatched thread run that exposes an `OKOU_TOKEN`""); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14"			a-run
-runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-001	planned				pilot	a-run
-runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-002	planned				pilot	a-run
-runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-006	planned				pilot	a-run
-runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-008	planned				pilot	a-run
+runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-001	rewritten	163.0	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	R29	a-run
+runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-002	rewritten	165.9	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	R29	a-run
+runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-006	rewritten	173.7	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	R29	a-run
+runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-008	rewritten	158.4	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	R29	a-run
 runs	src/signals/routes/__tests__/run-uploaded-files-publication.test.ts	run-uploaded-files-publication-001	rewritten	287.4	timeout=400 (5-run idle non-first median 287.4ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
 runs	src/signals/routes/__tests__/run-uploaded-files-publication.test.ts	run-uploaded-files-publication-002	rewritten	194.2	timeout=400 (5-run idle non-first median 194.2ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
 runs	src/signals/routes/__tests__/runner-app-state.test.ts	runner-app-state-002	rewritten	371.6	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/runners-runtime-operations.test.ts	R29	a-run
