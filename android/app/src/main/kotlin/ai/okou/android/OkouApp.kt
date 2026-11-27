@@ -64,6 +64,7 @@ import ai.okou.android.chat.projectDestinations
 import ai.okou.android.chat.rememberChatAttachmentPicker
 import ai.okou.android.chat.rowActions
 import ai.okou.android.chat.searchCatalog
+import ai.okou.android.chat.searchWorkflowById
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.connectors.ConnectorsPage
@@ -1763,11 +1764,12 @@ internal fun OkouApp(
                                         else workflowState?.searchCatalog(searchState.keyword)
                                     }
                                 val selectedWorkflowId = searchWorkflowId
-                                val intro = selectedWorkflowId?.let { id ->
-                                    (workflowRead as? SearchRead.Ready)?.rows?.firstOrNull {
-                                        it.id == id
+                                val intro =
+                                    remember(workflowState?.catalog, selectedWorkflowId) {
+                                        selectedWorkflowId?.let {
+                                            workflowState?.searchWorkflowById(it)
+                                        }
                                     }
-                                }
                                 val unavailableWorkflowId = selectedWorkflowId.takeIf {
                                     workflowRead == SearchRead.Failed ||
                                         workflowRead == SearchRead.AccessLost ||

@@ -33,6 +33,7 @@ import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -2049,6 +2050,58 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    fun openIntroductionSurvivesARefreshThatRemovesTheSearchMatch() {
+        app.gate.countDown()
+        val entry = compose.onNodeWithContentDescription("Search workspace")
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        val originalTitle = app.fixture.releaseTitle
+        val keyword = "checklist"
+        fun search() {
+            entry.performClick()
+            scope.performClick()
+            query.performTextInput(keyword)
+            waitFor(originalTitle)
+        }
+
+        search()
+        compose.onNodeWithContentDescription("Back").performClick()
+        val catalogRequested = CountDownLatch(1)
+        val releaseCatalog = CountDownLatch(1)
+        app.fixture.beforeCatalog = {
+            catalogRequested.countDown()
+            releaseCatalog.await()
+        }
+        try {
+            search()
+            compose.waitUntil(5_000) { catalogRequested.count == 0L }
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+
+            val renamed = "Deployment review"
+            app.fixture.releaseTitle = renamed
+            releaseCatalog.countDown()
+            waitFor(renamed)
+            compose.onNodeWithText("Add to new chat draft").assertIsDisplayed()
+            compose.onNodeWithText("View workflow details").performClick()
+            waitForTag("workflow_detail_title")
+            compose.onNodeWithTag("workflow_detail_title").assertTextContains(renamed)
+            back()
+
+            query.assertTextContains(keyword)
+            scope.assertIsSelected()
+            compose.onNodeWithText("No matching workflows").assertIsDisplayed()
+            // The cached empty result can appear while the catalog refresh is still running.
+            val focusedResults = hasTestTag("chat_search_results") and isFocused()
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(focusedResults).fetchSemanticsNodes().isNotEmpty()
+            }
+        } finally {
+            releaseCatalog.countDown()
+        }
+    }
+
+    @Test
     fun workflowIntroRestoresResultsFocusWhileOtherSearchTypesAreLoading() {
         val messagesRequested = CountDownLatch(1)
         val releaseMessages = CountDownLatch(1)
@@ -2083,8 +2136,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
 
             compose.onNodeWithText(originalTitle).performClick()
             waitFor("View workflow details")
-            val updatedTitle = "Launch planning"
-            app.fixture.releaseTitle = updatedTitle
+            app.fixture.releaseInCatalog = false
             releaseCatalog.countDown()
 
             compose.waitUntil(10_000) {
@@ -2095,7 +2147,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
             scope.assertIsSelected()
 
             query.performTextReplacement("launch")
-            waitFor(updatedTitle)
+            waitFor(app.fixture.sharedTitle)
             compose.onNodeWithText("View workflow details").assertDoesNotExist()
         } finally {
             releaseCatalog.countDown()
