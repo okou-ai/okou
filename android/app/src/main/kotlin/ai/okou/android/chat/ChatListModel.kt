@@ -2198,11 +2198,11 @@ class ChatListModel(
         listFailures = 0
     }
 
-    private fun recordListReadFailure(delay: Long) {
+    private fun recordListReadFailure(delayMillis: Long) {
         val now = monotonicMillis()
         listFailures = (listFailures + 1).coerceAtMost(continuousRetryDelays.size)
         val maxDelay = Long.MAX_VALUE - now.coerceAtLeast(0L)
-        val nextRetry = now + minOf(delay, maxDelay)
+        val nextRetry = now + minOf(delayMillis, maxDelay)
         listRetryAt = maxOf(nextRetry, listRetryAt ?: nextRetry)
         scheduleListRetry(checkNotNull(listRetryAt))
     }
