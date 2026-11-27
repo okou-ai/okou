@@ -929,3 +929,113 @@ test("assistant BMP images display the original in the thread and lightbox", asy
     ).toHaveAttribute("src", ORIGINAL);
   });
 });
+
+test("inline artifact images navigate within a folded assistant run while external images open in a new tab", async () => {
+  const first = artifactFile("step-one.png", { contentType: "image/png" });
+  const second = artifactFile("step-two.png", { contentType: "image/png" });
+  const externalImage = "https://outside.example.org/banner.png";
+  const externalLink = "https://outside.example.org/diagram.png";
+  mockAttachmentChat(context, {
+    chatEvents: [
+      {
+        role: "assistant",
+        content: "Preparing the screenshots...",
+        runId: ATTACHMENT_RUN_ID,
+        runEventId: "folded-progress-1",
+        sequenceNumber: 1,
+        createdAt: "2026-03-10T00:00:01Z",
+      },
+      {
+        role: "assistant",
+        content: "Still rendering...",
+        runId: ATTACHMENT_RUN_ID,
+        runEventId: "folded-progress-2",
+        sequenceNumber: 2,
+        createdAt: "2026-03-10T00:00:02Z",
+      },
+      {
+        role: "assistant",
+        content: [
+          `![first shot](${first.url})`,
+          `![second shot](${second.url})`,
+          `![external banner](${externalImage})`,
+          `[Remote diagram](${externalLink})`,
+        ].join("\n\n"),
+        runId: ATTACHMENT_RUN_ID,
+        runEventId: "folded-final-3",
+        sequenceNumber: 3,
+        createdAt: "2026-03-10T00:00:03Z",
+      },
+    ],
+  });
+  mockMessageArtifactDetails(context, () => {
+    return [first, second];
+  });
+
+  await setupPage({ context, path: "/chats/" + ATTACHMENT_THREAD_ID });
+
+  const externalImg = await waitFor(() => {
+    const img = document.querySelector<HTMLImageElement>(
+      `[data-role="assistant"] img[alt="external banner"]`,
+    );
+    expect(img).toBeInTheDocument();
+    return img!;
+  });
+  const externalAnchor = externalImg.closest("a");
+  expect(externalAnchor).toHaveAttribute("href", externalImage);
+  expect(externalAnchor).toHaveAttribute("target", "_blank");
+  expect(externalAnchor?.getAttribute("rel")?.split(" ")).toStrictEqual(
+    expect.arrayContaining(["noopener", "noreferrer"]),
+  );
+
+  const remoteLink = await findNamedLink("Remote diagram");
+  expect(remoteLink).toHaveAttribute("href", externalLink);
+  expect(remoteLink).toHaveAttribute("target", "_blank");
+  expect(remoteLink.getAttribute("rel")?.split(" ")).toStrictEqual(
+    expect.arrayContaining(["noopener", "noreferrer"]),
+  );
+
+  // Clicking external images or image links must not open the artifact sidebar.
+  const preventNative = (event: MouseEvent) => {
+    event.preventDefault();
+  };
+  externalAnchor!.addEventListener("click", preventNative);
+  remoteLink.addEventListener("click", preventNative);
+  click(externalAnchor!);
+  click(remoteLink);
+  expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
+
+  const firstInline = await waitFor(() => {
+    const img = document.querySelector<HTMLImageElement>(
+      `[data-role="assistant"] img[alt="first shot"]`,
+    );
+    expect(img).toBeInTheDocument();
+    return img!;
+  });
+  click(firstInline.closest("a, button") ?? firstInline);
+
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  const firstPreview = await within(sidebar).findByRole("group", {
+    name: "step-one.png preview",
+  });
+  expect(queryNamedButton("Previous image artifact", sidebar)).toBeNull();
+  await expect(
+    findNamedButton("Next image artifact", sidebar),
+  ).resolves.toBeEnabled();
+
+  firstPreview.focus();
+  await userEvent.keyboard("{ArrowRight}");
+  const secondPreview = await within(sidebar).findByRole("group", {
+    name: "step-two.png preview",
+  });
+  expect(secondPreview).toBeVisible();
+  expect(queryNamedButton("Next image artifact", sidebar)).toBeNull();
+  await expect(
+    findNamedButton("Previous image artifact", sidebar),
+  ).resolves.toBeEnabled();
+
+  await userEvent.keyboard("{ArrowLeft}");
+  await expect(
+    within(sidebar).findByRole("group", { name: "step-one.png preview" }),
+  ).resolves.toBeVisible();
+});

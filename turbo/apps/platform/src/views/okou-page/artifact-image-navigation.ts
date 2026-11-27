@@ -23,8 +23,8 @@ export type ImageArtifactNavigation = {
 
 /**
  * Minimal shape of a chat event needed to scope image navigation. Images in an
- * event come from canonical user-message file parts and from its rendered
- * markdown tree: artifact card slots, plain images, and image links.
+ * event come from canonical user-message file parts and from artifact image
+ * cards in its rendered markdown tree.
  */
 type EventImageSource = {
   readonly userMessage?: UserMessageDocument;
@@ -61,30 +61,6 @@ type AddImage = (
   descriptor$?: ArtifactSignals["descriptor$"],
 ) => void;
 
-// Matches markdown images `![alt](url)` and links `[label](url)`, capturing the
-// optional image marker, label/alt text, and url while allowing escaped label
-// characters. Agent-generated images can render as markdown image lines or
-// media links rather than dedicated preview blocks.
-function filenameFromImageUrl(url: string): string {
-  const path = url.split("?")[0].split("#")[0];
-  return path.split("/").pop() || "image";
-}
-
-function isMarkdownImageLinkUrl(url: string): boolean {
-  return (
-    /^https?:\/\//i.test(url) &&
-    /\.(png|jpe?g|gif|webp|svg|bmp|avif)(?:\?|#|$)/i.test(url)
-  );
-}
-
-function filenameFromMarkdownLink(label: string, url: string): string {
-  const text = label.trim();
-  if (text.length > 0 && !/^https?:\/\//i.test(text)) {
-    return text;
-  }
-  return filenameFromImageUrl(url);
-}
-
 /** Ordered, de-duplicated images (url + filename) shown in a single event. */
 function eventImages(event: EventImageSource): EventImage[] {
   const images: EventImage[] = [];
@@ -116,18 +92,7 @@ function eventImages(event: EventImageSource): EventImage[] {
   return images;
 }
 
-function nodeText(node: Element): string {
-  return node.children
-    .map((child) => {
-      if (child.type === "text") {
-        return child.value;
-      }
-      return child.type === "element" ? nodeText(child) : "";
-    })
-    .join("");
-}
-
-/** Walks a rendered body for its images: card slots, `<img>`, image links. */
+/** Walks a rendered body for its artifact images. */
 function visitTreeImages(root: Root, add: AddImage): void {
   const visit = (node: Root | Element): void => {
     for (const child of node.children) {
@@ -144,24 +109,6 @@ function visitTreeImages(root: Root, add: AddImage): void {
           add(url, filename, card.signals);
         } else if (kind === "file" && card.signals.artifactReads) {
           add(url, filename, card.signals, card.signals.descriptor$);
-        }
-        continue;
-      }
-      if (child.tagName === "img") {
-        const src = child.properties.src;
-        const alt = child.properties.alt;
-        if (typeof src === "string") {
-          add(
-            src,
-            (typeof alt === "string" && alt) || filenameFromImageUrl(src),
-          );
-        }
-        continue;
-      }
-      if (child.tagName === "a") {
-        const href = child.properties.href;
-        if (typeof href === "string" && isMarkdownImageLinkUrl(href)) {
-          add(href, filenameFromMarkdownLink(nodeText(child), href));
         }
         continue;
       }
