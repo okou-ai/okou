@@ -17,6 +17,7 @@ import { expect, onTestFinished, test } from "vitest";
 import { object, string, literal } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { hostRoutes } from "../host";
@@ -416,6 +417,12 @@ async function add(
 test.each(["ready", "timed_out"] as const)(
   "the background worker publishes %s without a browser and leaves the sharing address intact",
   async (outcome) => {
+    const cronApp = await setupApp({
+      context,
+      routes: cronProcessBackgroundJobsRoutes,
+      isolatePg: true,
+    });
+    const cron = cronApp(cronProcessBackgroundJobsContract);
     const fixture = await scenario();
     const external = domainProvider();
     const added = await add(fixture);
@@ -447,10 +454,6 @@ test.each(["ready", "timed_out"] as const)(
       external.ready();
     }
     mockEnv("CRON_SECRET", "domain-recheck-test");
-    const cron = setupAppWithRoutes({
-      context,
-      routes: cronProcessBackgroundJobsRoutes,
-    })(cronProcessBackgroundJobsContract);
     const wake = () => {
       return accept(
         cron.process({
