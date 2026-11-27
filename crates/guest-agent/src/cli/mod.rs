@@ -1309,7 +1309,7 @@ async fn execute_cli_inner(
     // child.id() returns None after the process has been reaped.
     let process_group = ChildProcessGroup::from_group_leader_child_id(child.id());
 
-    let mut cli_status: Option<std::process::ExitStatus> = None;
+    let mut child_exit = None;
 
     // Drain deadline: after child.wait() fires, allow up to N seconds for
     // stdout EOF before breaking the loop.  Prevents indefinite hangs when
@@ -1378,16 +1378,14 @@ async fn execute_cli_inner(
     let mut heartbeat_failure = None;
     let mut user_cancellation_handled = false;
     let mut pi_user_cancelled = false;
-    let mut cli_exit_at: Option<Instant> = None;
     let mut jsonl_result = None;
     let mut post_result_cleanup_jsonl_result = None;
     let event_result: Result<(), AgentError> = loop {
         tokio::select! {
-            () = user_cancellation.cancelled(), if !user_cancellation_handled && cli_status.is_none() => {
+            () = user_cancellation.cancelled(), if !user_cancellation_handled && child_exit.is_none() => {
                 match try_observe_cli_exit(
                     &mut child,
-                    &mut cli_status,
-                    &mut cli_exit_at,
+                    &mut child_exit,
                     &active_input_controller,
                     &mut termination_runtime,
                     stdout_closed,
@@ -1414,11 +1412,10 @@ async fn execute_cli_inner(
                     termination_deadline.as_mut(),
                 );
             }
-            () = &mut agent_execution_deadline, if agent_execution_deadline_armed && cli_status.is_none() => {
+            () = &mut agent_execution_deadline, if agent_execution_deadline_armed && child_exit.is_none() => {
                 match try_observe_cli_exit(
                     &mut child,
-                    &mut cli_status,
-                    &mut cli_exit_at,
+                    &mut child_exit,
                     &active_input_controller,
                     &mut termination_runtime,
                     stdout_closed,
@@ -1463,8 +1460,7 @@ async fn execute_cli_inner(
                 stdin_write_handle = None;
                 match try_observe_cli_exit(
                     &mut child,
-                    &mut cli_status,
-                    &mut cli_exit_at,
+                    &mut child_exit,
                     &active_input_controller,
                     &mut termination_runtime,
                     stdout_closed,
@@ -1475,7 +1471,7 @@ async fn execute_cli_inner(
                     CliExitObservation::ExitedAndStdoutClosed => break Ok(()),
                 }
                 let can_terminate_for_stdin_error = termination_runtime
-                    .can_begin_initial_prompt_stdin_control_failure(cli_status.is_some());
+                    .can_begin_initial_prompt_stdin_control_failure(child_exit.is_some());
                 match stdin_write_result {
                     Some(Ok(Ok(()))) => {}
                     Some(Ok(Err(error))) if can_terminate_for_stdin_error => {
@@ -1570,7 +1566,7 @@ async fn execute_cli_inner(
                                                 active_input_controller.close_terminal();
                                                 if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
                                                     error,
-                                                    cli_status.is_some(),
+                                                    child_exit.is_some(),
                                                     termination_deadline.as_mut(),
                                                 ) {
                                                     break Err(error);
@@ -1589,7 +1585,7 @@ async fn execute_cli_inner(
                                             active_input_controller.close_terminal();
                                             if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
                                                 error,
-                                                cli_status.is_some(),
+                                                child_exit.is_some(),
                                                 termination_deadline.as_mut(),
                                             ) {
                                                 break Err(error);
@@ -1615,7 +1611,7 @@ async fn execute_cli_inner(
                                         active_input_controller.close_terminal();
                                         if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
                                             error,
-                                            cli_status.is_some(),
+                                            child_exit.is_some(),
                                             termination_deadline.as_mut(),
                                         ) {
                                             break Err(error);
@@ -1659,7 +1655,7 @@ async fn execute_cli_inner(
                                 active_input_controller.close_terminal();
                                 if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
                                     error,
-                                    cli_status.is_some(),
+                                    child_exit.is_some(),
                                     termination_deadline.as_mut(),
                                 ) {
                                     break Err(error);
@@ -1694,8 +1690,7 @@ async fn execute_cli_inner(
                             if post_result_cleanup_was_armed || is_terminal_result_event {
                                 match try_observe_cli_exit(
                                     &mut child,
-                                    &mut cli_status,
-                                    &mut cli_exit_at,
+                                    &mut child_exit,
                                     &active_input_controller,
                                     &mut termination_runtime,
                                     stdout_closed,
@@ -1764,7 +1759,7 @@ async fn execute_cli_inner(
                                 // pending.
                                 if active_input_idle
                                     && termination_runtime.arm_post_result_cleanup(
-                                        cli_status.is_some(),
+                                        child_exit.is_some(),
                                         termination_deadline.as_mut(),
                                     )
                                 {
@@ -1790,7 +1785,7 @@ async fn execute_cli_inner(
                                 event_pipeline.delivery.sender(),
                             ) {
                                 should_send_events = false;
-                                if cli_status.is_some() {
+                                if child_exit.is_some() {
                                     break Err(error);
                                 }
                                 let error_log = error.to_string();
@@ -1812,7 +1807,7 @@ async fn execute_cli_inner(
                             active_input_controller.close_terminal();
                             if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
                                 error,
-                                cli_status.is_some(),
+                                child_exit.is_some(),
                                 termination_deadline.as_mut(),
                             ) {
                                 break Err(error);
@@ -1835,14 +1830,14 @@ async fn execute_cli_inner(
                             let error = pi_rpc::PiRpcStartupBoundary::missing_error();
                             if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
                                 error,
-                                cli_status.is_some(),
+                                child_exit.is_some(),
                                 termination_deadline.as_mut(),
                             ) {
                                 break Err(error);
                             }
                             continue;
                         }
-                        if cli_status.is_some() {
+                        if child_exit.is_some() {
                             break Ok(());
                         }
                     }
@@ -1905,11 +1900,10 @@ async fn execute_cli_inner(
                             }
                         };
 
-                        if cli_status.is_none() {
+                        if child_exit.is_none() {
                             try_observe_cli_exit(
                                 &mut child,
-                                &mut cli_status,
-                                &mut cli_exit_at,
+                                &mut child_exit,
                                 &active_input_controller,
                                 &mut termination_runtime,
                                 stdout_closed,
@@ -1918,7 +1912,7 @@ async fn execute_cli_inner(
                         }
                         if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
                             error,
-                            cli_status.is_some(),
+                            child_exit.is_some(),
                             termination_deadline.as_mut(),
                         ) {
                             break Err(error);
@@ -1926,14 +1920,13 @@ async fn execute_cli_inner(
                     }
                 }
             }
-            status = child.wait(), if cli_status.is_none() => {
+            status = child.wait(), if child_exit.is_none() => {
                 match status {
                     Ok(s) => {
                         if matches!(
                             record_cli_exit(
                                 s,
-                                &mut cli_status,
-                                &mut cli_exit_at,
+                                &mut child_exit,
                                 &active_input_controller,
                                 &mut termination_runtime,
                                 stdout_closed,
@@ -1947,11 +1940,10 @@ async fn execute_cli_inner(
                     Err(e) => break Err(AgentError::Io(e)),
                 }
             }
-            () = &mut termination_deadline, if termination_runtime.has_pending_deadline() && cli_status.is_none() => {
+            () = &mut termination_deadline, if termination_runtime.has_pending_deadline() && child_exit.is_none() => {
                 match try_observe_cli_exit(
                     &mut child,
-                    &mut cli_status,
-                    &mut cli_exit_at,
+                    &mut child_exit,
                     &active_input_controller,
                     &mut termination_runtime,
                     stdout_closed,
@@ -1963,7 +1955,7 @@ async fn execute_cli_inner(
                 }
                 termination_runtime.handle_deadline(termination_deadline.as_mut());
             }
-            () = &mut drain_deadline, if cli_status.is_some() => {
+            () = &mut drain_deadline, if child_exit.is_some() => {
                 log_warn!(
                     LOG_TAG,
                     "Stdout drain deadline reached after {}s, possible orphaned child process",
@@ -1971,7 +1963,7 @@ async fn execute_cli_inner(
                 );
                 break Ok(());
             }
-            _ = stuck_tool_check.tick(), if cli_status.is_none() => {
+            _ = stuck_tool_check.tick(), if child_exit.is_none() => {
                 let timeout_secs = runtime.stuck_tool_timeout_secs;
                 // Find the oldest network tool that has exceeded the timeout.
                 let stuck = stuck_tool_tracker.oldest_expired(timeout_secs);
@@ -1979,8 +1971,7 @@ async fn execute_cli_inner(
                 {
                     match try_observe_cli_exit(
                         &mut child,
-                        &mut cli_status,
-                        &mut cli_exit_at,
+                        &mut child_exit,
                         &active_input_controller,
                         &mut termination_runtime,
                         stdout_closed,
@@ -2012,12 +2003,11 @@ async fn execute_cli_inner(
                             .await
                     }
                 }
-            }, if !heartbeat_done && cli_status.is_none() => {
+            }, if !heartbeat_done && child_exit.is_none() => {
                 heartbeat_done = true;
                 match try_observe_cli_exit(
                     &mut child,
-                    &mut cli_status,
-                    &mut cli_exit_at,
+                    &mut child_exit,
                     &active_input_controller,
                     &mut termination_runtime,
                     stdout_closed,
@@ -2155,18 +2145,23 @@ async fn execute_cli_inner(
             diagnostic: None,
         },
     };
-    let status = match cli_status {
-        Some(s) => s,
+    let ObservedChildExit {
+        status,
+        observed_at,
+    } = match child_exit {
+        Some(exit) => exit,
         None => {
             let status = child.wait().await?;
-            cli_exit_at = Some(Instant::now());
-            status
+            ObservedChildExit {
+                status,
+                observed_at: Instant::now(),
+            }
         }
     };
-    if let (Some(last_read_event_at), Some(cli_exit_at)) = (last_read_event_at, cli_exit_at) {
+    if let Some(last_read_event_at) = last_read_event_at {
         record_sandbox_op(
             "last_read_event_to_cli_exit",
-            cli_exit_at
+            observed_at
                 .checked_duration_since(last_read_event_at)
                 .unwrap_or(Duration::ZERO),
             true,
@@ -2264,6 +2259,11 @@ pub(crate) fn cli_exit_summary_from_status(
     (1, None)
 }
 
+struct ObservedChildExit {
+    status: ExitStatus,
+    observed_at: Instant,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CliExitObservation {
     NoNewExit,
@@ -2273,14 +2273,13 @@ enum CliExitObservation {
 
 fn try_observe_cli_exit(
     child: &mut tokio::process::Child,
-    cli_status: &mut Option<ExitStatus>,
-    cli_exit_at: &mut Option<Instant>,
+    child_exit: &mut Option<ObservedChildExit>,
     active_input_controller: &ActiveInputController,
     termination_runtime: &mut CliTerminationRuntime,
     stdout_closed: bool,
     drain_deadline: Pin<&mut Sleep>,
 ) -> Result<CliExitObservation, AgentError> {
-    if cli_status.is_some() {
+    if child_exit.is_some() {
         return Ok(CliExitObservation::NoNewExit);
     }
 
@@ -2290,8 +2289,7 @@ fn try_observe_cli_exit(
 
     Ok(record_cli_exit(
         status,
-        cli_status,
-        cli_exit_at,
+        child_exit,
         active_input_controller,
         termination_runtime,
         stdout_closed,
@@ -2301,20 +2299,22 @@ fn try_observe_cli_exit(
 
 fn record_cli_exit(
     status: ExitStatus,
-    cli_status: &mut Option<ExitStatus>,
-    cli_exit_at: &mut Option<Instant>,
+    child_exit: &mut Option<ObservedChildExit>,
     active_input_controller: &ActiveInputController,
     termination_runtime: &mut CliTerminationRuntime,
     stdout_closed: bool,
     mut drain_deadline: Pin<&mut Sleep>,
 ) -> CliExitObservation {
-    debug_assert!(cli_status.is_none(), "CLI exit recorded more than once");
-    *cli_exit_at = Some(Instant::now());
+    debug_assert!(child_exit.is_none(), "CLI exit recorded more than once");
+    let observed_at = Instant::now();
     log_info!(
         LOG_TAG,
         "CLI process exited (status: {status}), draining stdout"
     );
-    *cli_status = Some(status);
+    *child_exit = Some(ObservedChildExit {
+        status,
+        observed_at,
+    });
     active_input_controller.close_terminal();
     // CLI exited on its own (possibly in response to our SIGTERM). Park the
     // termination FSM so it can't re-arm on late result/control events while
