@@ -2123,7 +2123,10 @@ export function createThreadClaimRunObjects(
       framework: route.framework,
       sources: startupSources,
     });
-    const selected = selectExecutionPackages(packageSources, ordinaryAutomation);
+    const selected = selectExecutionPackages(
+      packageSources,
+      ordinaryAutomation,
+    );
     if ("error" in selected) {
       return conflict(selected.error);
     }
