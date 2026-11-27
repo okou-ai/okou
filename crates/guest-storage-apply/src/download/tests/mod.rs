@@ -117,22 +117,50 @@ fn direct_decoded_dispatch_requires_independent_resolved_targets() {
     let mut pending = (0..16)
         .map(|id| decoded_at(id, &format!("/storage-{id}")))
         .collect::<VecDeque<_>>();
-    assert!(decoded::can_dispatch(&pending));
+    assert!(direct::can_dispatch_decoded(&pending));
 
     let original_path = pending[0].task.effective_mount_path.clone();
     pending[0].task.effective_mount_path = pending[1].task.effective_mount_path.clone();
-    assert!(!decoded::can_dispatch(&pending));
+    assert!(!direct::targets_are_independent(&pending));
     pending[0].task.effective_mount_path = original_path;
 
     let original_task = pending.pop_front().unwrap();
     pending.push_front(decoded_at(0, "/storage-1/child"));
-    assert!(!decoded::can_dispatch(&pending));
+    assert!(!direct::targets_are_independent(&pending));
+    pending[0] = original_task;
+
+    let duplicate = pending_at(0, "/storage-1");
+    let original_task = std::mem::replace(&mut pending[0], duplicate);
+    assert!(!direct::targets_are_independent(&pending));
     pending[0] = original_task;
 
     pending[0].task.task.files = None;
-    assert!(!decoded::can_dispatch(&pending));
+    assert!(!direct::can_dispatch_decoded(&pending));
     pending.pop_front();
-    assert!(!decoded::can_dispatch(&pending));
+    assert!(!direct::can_dispatch_decoded(&pending));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn direct_inline_dispatch_keeps_the_first_wave_priorities() {
+    for (artifact_bytes, expected) in [(1024 * 1024, [1, 3, 0, 2]), (3 * 1024 * 1024, [3, 0, 1, 2])]
+    {
+        let mut pending = (0..4)
+            .map(|id| pending_at(id, &format!("/archive-{id}")))
+            .collect::<VecDeque<_>>();
+        pending[0].estimated_work = 256 * 1024;
+        pending[1].estimated_work = 2 * 1024 * 1024;
+        pending[2].estimated_work = pending[1].estimated_work;
+        pending[3].task.task = DownloadTask::artifact(
+            "artifact".into(),
+            "file:///tmp/artifact.tar.gz".into(),
+            "/archive-3".into(),
+        );
+        pending[3].estimated_work = artifact_bytes;
+
+        direct::prioritize_inline_archives(&mut pending);
+        assert!(pending.iter().map(|download| download.id).eq(expected));
+    }
 }
 
 #[cfg(target_os = "linux")]
