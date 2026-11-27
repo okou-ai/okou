@@ -347,29 +347,34 @@ fn run_manifest_with_files_in_runtime(
         .iter()
         .map(|entry| entry.mount_path.clone())
         .collect::<Vec<_>>();
-    let stale_cleanup = telemetry::CleanupPhase::StalePaths.measure(cleanup_paths.len(), || {
-        match quarantine.as_ref() {
-            Some(quarantine) => cleanup::cleanup_stale_paths_with_quarantine(
-                &cleanup_paths,
-                &preserved_paths,
-                &retained_roots,
-                quarantine,
-            ),
-            None => cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths, &retained_roots),
+    let (stale_cleanup, stale_result) =
+        telemetry::CleanupPhase::StalePaths.measure(cleanup_paths.len(), || {
+            match quarantine.as_ref() {
+                Some(quarantine) => cleanup::cleanup_stale_paths_with_quarantine(
+                    &cleanup_paths,
+                    &preserved_paths,
+                    &retained_roots,
+                    quarantine,
+                ),
+                None => {
+                    cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths, &retained_roots)
+                }
+            }
+        });
+    let (instruction_cleanup, cleanup_result) = match stale_result {
+        Ok(()) => {
+            let (observation, result) = telemetry::CleanupPhase::Instructions
+                .measure(instruction_cleanups.len(), || {
+                    instructions::cleanup_instruction_files(&instruction_cleanups)
+                });
+            (Some(observation), result)
         }
-    });
-    let instruction_cleanup = stale_cleanup.success().then(|| {
-        telemetry::CleanupPhase::Instructions.measure(instruction_cleanups.len(), || {
-            instructions::cleanup_instruction_files(&instruction_cleanups)
-        })
-    });
-    let cleanup_success = instruction_cleanup
-        .as_ref()
-        .is_some_and(|observation| observation.success());
+        Err(error) => (None, Err(error)),
+    };
     record_sandbox_op(
         "guest_storage_apply_cleanup",
         cleanup_start.elapsed(),
-        cleanup_success,
+        cleanup_result.is_ok(),
         None,
     );
     // Keep the new diagnostic writes outside the combined and phase timers.
@@ -377,9 +382,9 @@ fn run_manifest_with_files_in_runtime(
     if let Some(observation) = instruction_cleanup {
         observation.record();
     }
-    if !cleanup_success {
-        log_error!(LOG_TAG, "Required storage cleanup failed");
-        return Err(ApplyFailure::TargetUnavailable);
+    if let Err(error) = cleanup_result {
+        log_error!(LOG_TAG, "Required storage cleanup failed: {error}");
+        return Err(ApplyFailure::from_target_io(&error));
     }
 
     // Resolve all logical and physical target identities before downloads.

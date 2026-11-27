@@ -217,7 +217,7 @@ fn try_extract(
         Some(match worker.join() {
             Ok(body_read) => (result, body_read),
             Err(_) => (
-                result.and(Err(DownloadError::new("Archive inflate worker panicked"))),
+                Err(DownloadError::new("Archive inflate worker panicked")),
                 Duration::ZERO,
             ),
         })

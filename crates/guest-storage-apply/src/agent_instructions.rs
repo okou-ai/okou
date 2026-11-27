@@ -32,7 +32,7 @@ pub fn apply_agent_instructions_with_result(
                 crate::LOG_TAG,
                 "Agent instruction application failed: {error}"
             );
-            Err(crate::ApplyFailure::TargetUnavailable)
+            Err(crate::ApplyFailure::from_target_io(&error))
         }
     }
 }
@@ -111,12 +111,14 @@ fn resolve_existing_root(path: &Path) -> io::Result<PathBuf> {
 }
 
 fn apply(home: &Path, input: InstructionApplication, paths: InstructionPaths) -> io::Result<()> {
-    let source_directory = CleanupDirectory::open(&paths.staging)?;
+    let source_directory = CleanupDirectory::open(&paths.staging).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            io::Error::other(error)
+        } else {
+            error
+        }
+    })?;
     let source = source_directory.proc_path().join(SOURCE_FILENAME);
-    if !crate::instructions::apply_agent_instructions(home, &input.framework, &source) {
-        return Err(io::Error::other(
-            "Required instruction file application failed",
-        ));
-    }
+    crate::instructions::apply_agent_instructions(home, &input.framework, &source)?;
     fs::remove_dir_all(paths.staging)
 }

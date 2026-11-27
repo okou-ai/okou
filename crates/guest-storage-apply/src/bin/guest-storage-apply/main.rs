@@ -41,6 +41,7 @@ fn main() {
         match read_instruction_metadata(
             guest_contracts::agent_instructions::MAX_CHECK_METADATA_BYTES,
         )
+        .map_err(io::Error::other)
         .and_then(|metadata| {
             guest_storage_apply::check_agent_instructions(
                 std::path::Path::new("/home/user"),

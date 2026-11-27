@@ -1,7 +1,7 @@
 use super::*;
 
 fn cleanup_stale_paths(paths: &[String], preserved: &[String]) -> bool {
-    super::cleanup_stale_paths(paths, preserved, &[])
+    super::cleanup_stale_paths(paths, preserved, &[]).is_ok()
 }
 use std::cell::{Cell, RefCell};
 use std::ffi::OsStr;
@@ -80,7 +80,8 @@ fn cleanup_preserves_unicode_mountpoints_without_preserving_their_prefixes() {
                 &[path_string(&mountpoint), path_string(&prefix)],
                 &[],
                 || Ok(mountinfo.clone()),
-            );
+            )
+            .unwrap();
 
             assert!(mountpoint.is_dir());
             assert!(!mountpoint.join("stale.txt").exists());
@@ -110,7 +111,8 @@ fn cleanup_mountinfo_detector_loads_mountinfo_once_for_multiple_paths() {
             load_count.set(load_count.get() + 1);
             Ok(mountinfo.as_bytes().to_vec())
         },
-    );
+    )
+    .unwrap();
 
     assert_eq!(load_count.get(), 1);
     assert!(first.exists());
@@ -137,7 +139,8 @@ fn cleanup_preserved_children_do_not_load_mountinfo() {
             load_count.set(load_count.get() + 1);
             Ok(Vec::new())
         },
-    );
+    )
+    .unwrap();
 
     assert_eq!(load_count.get(), 0);
     assert!(parent.exists());
@@ -155,7 +158,7 @@ fn cleanup_mountinfo_read_failure_stops_before_removing_paths() {
     fs::create_dir_all(&second).unwrap();
     let load_count = Cell::new(0);
 
-    let success = cleanup_stale_paths_with_mountinfo_loader(
+    let error = cleanup_stale_paths_with_mountinfo_loader(
         &[path_string(&first), path_string(&second)],
         &[],
         || {
@@ -165,10 +168,14 @@ fn cleanup_mountinfo_read_failure_stops_before_removing_paths() {
                 "mountinfo unavailable",
             ))
         },
-    );
+    )
+    .unwrap_err();
 
     assert_eq!(load_count.get(), 1);
-    assert!(!success);
+    assert_eq!(
+        crate::ApplyFailure::from_target_io(&error),
+        crate::ApplyFailure::Failed
+    );
     assert!(first.exists());
     assert!(second.exists());
 }
@@ -189,7 +196,8 @@ fn cleanup_does_not_treat_preserved_sibling_prefix_as_child() {
         &[path_string(&cleanup_path)],
         &[path_string(&preserved_sibling)],
         |_| false,
-    );
+    )
+    .unwrap();
 
     assert!(!cleanup_path.exists());
     assert!(preserved_sibling.join("keep.txt").exists());
@@ -235,7 +243,8 @@ fn cleanup_mountpoint_removes_contents_but_keeps_root() {
 
     cleanup_stale_paths_with_mount_detector(&[path_string(&cleanup_path)], &[], |candidate| {
         candidate == path
-    });
+    })
+    .unwrap();
 
     assert!(path.exists());
     assert!(!path.join("agent.txt").exists());
@@ -251,7 +260,7 @@ fn cleanup_mountpoint_continues_after_protected_root_entry() {
     fs::create_dir_all(&metadata_dir).unwrap();
     fs::write(path.join("agent.txt"), "old").unwrap();
 
-    let success = cleanup_stale_paths_with_options(
+    cleanup_stale_paths_with_options(
         &[path_string(&path)],
         &[],
         &[],
@@ -267,9 +276,9 @@ fn cleanup_mountpoint_continues_after_protected_root_entry() {
             }
         },
         remove_directory_tree,
-    );
+    )
+    .unwrap();
 
-    assert!(success);
     assert!(path.exists());
     assert!(metadata_dir.exists());
     assert!(!path.join("agent.txt").exists());
@@ -285,7 +294,8 @@ fn cleanup_does_not_globally_skip_lost_found() {
 
     cleanup_stale_paths_with_mount_detector(&[path_string(&path)], &[], |candidate| {
         candidate == path
-    });
+    })
+    .unwrap();
 
     assert!(path.exists());
     assert!(!path.join("lost+found").exists());
@@ -300,7 +310,7 @@ fn cleanup_non_mount_lost_found_is_removed_with_parent() {
     fs::create_dir_all(path.join("lost+found")).unwrap();
     fs::create_dir_all(path.join("stale").join("lost+found")).unwrap();
 
-    cleanup_stale_paths_with_mount_detector(&[path_string(&path)], &[], |_| false);
+    cleanup_stale_paths_with_mount_detector(&[path_string(&path)], &[], |_| false).unwrap();
 
     assert!(!path.exists());
 }
@@ -319,7 +329,8 @@ fn cleanup_mountpoint_preserves_cached_child() {
         &[path_string(&path)],
         &[path_string(&child)],
         |candidate| candidate == path,
-    );
+    )
+    .unwrap();
 
     assert!(path.exists());
     assert!(child.join("keep.txt").exists());
@@ -347,7 +358,8 @@ fn cleanup_parent_before_child_ordering_with_mountpoint_root() {
             observed.borrow_mut().push(candidate.to_path_buf());
             candidate == parent
         },
-    );
+    )
+    .unwrap();
 
     assert_eq!(*observed.borrow(), [parent.clone(), child.clone()]);
     assert!(parent.exists());
