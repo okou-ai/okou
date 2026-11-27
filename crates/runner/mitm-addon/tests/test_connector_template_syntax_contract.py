@@ -1,11 +1,11 @@
 """Shared connector-template reference grammar contract tests."""
 
-import json
 from pathlib import Path
 
 import pytest
 
 import connector_template_syntax
+from tests.contract_cases import contract_case_name, load_named_contract_cases
 
 _CONTRACT_PATH = (
     Path(__file__).resolve().parents[4]
@@ -16,24 +16,6 @@ _CONTRACT_PATH = (
     / "__tests__"
     / "firewall-template-reference-contract.json"
 )
-
-
-def _load_cases() -> list[dict[str, object]]:
-    raw_contract = json.loads(_CONTRACT_PATH.read_text(encoding="utf-8"))
-    assert isinstance(raw_contract, dict)
-    cases = raw_contract["simpleReferenceCases"]
-    assert isinstance(cases, list)
-    assert cases
-    assert all(isinstance(case, dict) for case in cases)
-    names = [_case_name(case) for case in cases]
-    assert len(names) == len(set(names))
-    return cases
-
-
-def _case_name(case: dict[str, object]) -> str:
-    name = case["name"]
-    assert isinstance(name, str)
-    return name
 
 
 def _expected_references(case: dict[str, object]) -> list[tuple[str, str, int, int]]:
@@ -60,10 +42,10 @@ def _expected_references(case: dict[str, object]) -> list[tuple[str, str, int, i
     return references
 
 
-_SIMPLE_REFERENCE_CASES = _load_cases()
+_SIMPLE_REFERENCE_CASES = load_named_contract_cases(_CONTRACT_PATH, "simpleReferenceCases")
 
 
-@pytest.mark.parametrize("case", _SIMPLE_REFERENCE_CASES, ids=_case_name)
+@pytest.mark.parametrize("case", _SIMPLE_REFERENCE_CASES, ids=contract_case_name)
 def test_simple_reference_scanner_matches_connector_contract(case: dict[str, object]) -> None:
     template = case["template"]
     assert isinstance(template, str)
