@@ -158,7 +158,7 @@ internal class ConversationHistoryTest : ConversationHistoryTestFixture() {
             Service().apply {
                 rowsRead = { _, _ ->
                     attempts += testScheduler.currentTime
-                    throw ApiFailure.Http(503, null, null, null)
+                    throw ApiFailure.Http(503, null, null, 1L.takeIf { attempts.size == 1 })
                 }
             }
         val lease = cache().open(identity) { true }
@@ -178,12 +178,12 @@ internal class ConversationHistoryTest : ConversationHistoryTestFixture() {
                 checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
             model.uiState.first { it.consecutiveReadFailures == 1 }
             val start = attempts.single()
-            for (interval in listOf(3_000L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 48_000L)) {
+            for (interval in listOf(1_000L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 48_000L)) {
                 advanceTimeBy(interval)
                 runCurrent()
             }
             assertEquals(
-                listOf(0L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 96_000L, 144_000L),
+                listOf(0L, 1_000L, 4_000L, 10_000L, 22_000L, 46_000L, 94_000L, 142_000L),
                 attempts.map { it - start },
             )
             assertEquals(HistoryPhase.Loading, model.uiState.value.phase)
@@ -253,16 +253,30 @@ internal class ConversationHistoryTest : ConversationHistoryTestFixture() {
                 assertEquals(HistoryPhase.Loading, throttled.phase)
                 assertEquals(2, throttled.consecutiveReadFailures)
 
-                fixture.historyArchive = { MockResponse().setBody(archiveBody) }
+                fixture.historyArchive = {
+                    MockResponse().setResponseCode(503).addHeader("Retry-After", "-1")
+                }
                 advanceTimeBy(11_999)
                 assertEquals(listOf(0L, 3_000L), snapshotStarts)
+                advanceTimeBy(1)
+                runCurrent()
+                val invalidDelay =
+                    model.uiState.first {
+                        it.phase != HistoryPhase.Loading || it.consecutiveReadFailures == 3
+                    }
+                assertEquals(HistoryPhase.Loading, invalidDelay.phase)
+                assertEquals(3, invalidDelay.consecutiveReadFailures)
+
+                fixture.historyArchive = { MockResponse().setBody(archiveBody) }
+                advanceTimeBy(5_999)
+                assertEquals(listOf(0L, 3_000L, 15_000L), snapshotStarts)
                 advanceTimeBy(1)
                 runCurrent()
                 val loaded = model.uiState.first { it.phase != HistoryPhase.Loading }
                 assertEquals(HistoryPhase.Ready, loaded.phase)
                 assertEquals(0, loaded.consecutiveReadFailures)
                 assertEquals(HISTORY_LAST_EVENT, loaded.transcript?.messages?.single()?.id)
-                assertEquals(listOf(0L, 3_000L, 15_000L), snapshotStarts)
+                assertEquals(listOf(0L, 3_000L, 15_000L, 21_000L), snapshotStarts)
                 assertEquals(
                     HistoryCursor(HISTORY_LAST_EVENT, 37),
                     lease.loadHistory(CHAT_PERSONAL)?.checkpoint?.cursor,
