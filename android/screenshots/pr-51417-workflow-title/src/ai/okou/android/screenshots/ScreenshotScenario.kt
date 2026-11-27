@@ -1,0 +1,180 @@
+package ai.okou.android.screenshots
+
+import ai.okou.android.ChatCacheSnapshot
+import ai.okou.android.ConnectorApiFixture
+import ai.okou.android.MainActivity
+import ai.okou.android.R
+import ai.okou.android.ScreenshotCapture
+import ai.okou.android.TestAuthentication
+import ai.okou.android.TestOkouApplication
+import ai.okou.android.WorkflowApiFixture
+import ai.okou.android.api.generated.UserPreferencesLocale
+import ai.okou.android.api.generated.UserPreferencesTheme
+import ai.okou.android.testAuthenticationState
+import ai.okou.android.testPreferences
+import android.content.res.Configuration
+import android.graphics.Rect
+import android.os.LocaleList
+import androidx.test.core.app.ActivityScenario
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.StaleObjectException
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.UiObject2
+import java.util.UUID
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class ScreenshotScenario {
+    @Test
+    fun blankDisplayNameHasAVisibleTitleOnPhoneAndWide() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as TestOkouApplication
+        val device = UiDevice.getInstance(instrumentation)
+        val auth = app.authentication as TestAuthentication
+        val originalAuth = auth.state.value
+        val originalChats = app.chatService
+        val originalSearch = app.searchService
+        val originalComposer = app.composerService
+        val originalWorkflows = app.workflows
+        val originalConnectors = app.connectorService
+        val apiPreferences = app.snapshotApiPreferences()
+        val initialPreferences = app.initialPreferences
+        val cache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
+        val size =
+            device.executeShellCommand("wm size").substringAfter("Override size: ", "").trim()
+        val density =
+            device.executeShellCommand("wm density").substringAfter("Override density: ", "").trim()
+        val fontScale = device.executeShellCommand("settings get system font_scale").trim()
+        val localized =
+            app.createConfigurationContext(
+                Configuration(app.resources.configuration).apply {
+                    setLocales(LocaleList.forLanguageTags("zh-Hans"))
+                },
+            )
+        fun label(id: Int) = localized.getString(id)
+        fun <T : Any> observe(selector: BySelector, read: (List<UiObject2>) -> T?): T =
+            checkNotNull(
+                device.wait(
+                    object : Condition<UiDevice, T> {
+                        override fun apply(device: UiDevice): T? =
+                            try {
+                                read(device.findObjects(selector))
+                            } catch (_: StaleObjectException) {
+                                // The loading placeholder can leave the tree between the read and traversal.
+                                null
+                            }
+                    },
+                    12_000,
+                ),
+            ) { "Missing workflow element $selector" }
+
+        fun text(value: String) = By.pkg(app.packageName).text(value)
+        fun bounds(selector: BySelector) =
+            observe(selector) { nodes -> nodes.firstOrNull()?.visibleBounds }
+        fun controlBounds(selector: BySelector, allowSelectedTab: Boolean = false) =
+            observe(selector) { nodes ->
+                nodes.firstNotNullOfOrNull { node ->
+                    generateSequence(node) { it.parent }
+                        .firstOrNull { it.isEnabled && (it.isClickable || allowSelectedTab && it.isSelected) }
+                        ?.visibleBounds
+                }
+            }
+        fun tap(bounds: Rect) {
+            assertTrue(device.click(bounds.centerX(), bounds.centerY()))
+        }
+        fun restoreSetting(scope: String, name: String, value: String) {
+            if (value.toFloatOrNull() == null)
+                device.executeShellCommand("settings delete $scope $name")
+            else device.executeShellCommand("settings put $scope $name $value")
+        }
+
+        val connectorFixture = ConnectorApiFixture()
+        try {
+            app.connectorService = connectorFixture.service
+            device.executeShellCommand("wm density 160")
+            device.executeShellCommand("settings put system font_scale 1.0")
+            for (layout in listOf("phone", "wide")) {
+                val wide = layout == "wide"
+                device.executeShellCommand("wm size ${if (wide) "1000x800" else "412x892"}")
+                auth.state.value = testAuthenticationState(user = "workflow-title-${UUID.randomUUID()}")
+                app.initialPreferences =
+                    testPreferences().copy(
+                        locale = UserPreferencesLocale.ZH_HANS,
+                        theme = if (wide) UserPreferencesTheme.DARK else UserPreferencesTheme.LIGHT,
+                    )
+                WorkflowApiFixture(chinese = true).use { fixture ->
+                    app.chatService = fixture.service
+                    app.searchService = fixture.service
+                    app.composerService = fixture.service
+                    app.workflows = fixture.service
+                    fixture.releaseTitle = "   "
+                    fixture.active.set(wide)
+                    val command = "release-review"
+                    ActivityScenario.launch(MainActivity::class.java).use {
+                        tap(bounds(By.pkg(app.packageName).desc(label(R.string.workspace_workflows))))
+                        assertTrue(controlBounds(text(command)).height() >= 80)
+                        val search = bounds(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                        assertEquals(48, search.height())
+                        if (!wide) ScreenshotCapture.capture("workflow-directory-phone.png")
+                        tap(controlBounds(text(command)))
+
+                        bounds(text("/$command"))
+                        val edit = text(label(R.string.workflow_edit_instructions))
+                        controlBounds(edit)
+                        val footer = controlBounds(text(label(R.string.workflow_use_in_chat)))
+                        assertTrue(footer.height() >= 48)
+                        assertEquals(if (wide) 968 else 392, footer.right)
+                        if (!wide) assertEquals(20, footer.left)
+                        val title = observe(text(command)) { nodes ->
+                            nodes.map { it.visibleBounds }.maxByOrNull { it.left }
+                        }
+                        assertEquals(if (wide) 352 else 20, title.left)
+                        val tabIds = listOf(
+                            R.string.workflow_instructions,
+                            R.string.workflow_automations,
+                            R.string.workflow_history,
+                        )
+                        val tabs = tabIds.map { id -> controlBounds(text(label(id)), allowSelectedTab = true) }
+                        val tabWidths = tabs.map { it.width() }
+                        assertTrue(tabWidths.max() - tabWidths.min() <= 1)
+                        assertTrue(tabs.all { it.height() >= 48 })
+                        ScreenshotCapture.capture("workflow-detail-$layout.png")
+                        if (wide) {
+                            tap(controlBounds(text(label(R.string.workflow_automations))))
+                            bounds(text(label(R.string.workflow_trigger_rules)))
+                            bounds(text(fixture.ruleTitle))
+                            controlBounds(text(label(R.string.workflow_view_connection)))
+                            ScreenshotCapture.capture("workflow-automation-wide.png")
+                            tap(controlBounds(text(label(R.string.workflow_instructions))))
+                        }
+
+                        tap(controlBounds(edit))
+                        bounds(text(command).clazz("android.widget.EditText").enabled(true))
+                        ScreenshotCapture.capture("workflow-editor-$layout.png")
+                    }
+                }
+            }
+        } finally {
+            app.chatService = originalChats
+            app.searchService = originalSearch
+            app.composerService = originalComposer
+            app.workflows = originalWorkflows
+            app.connectorService = originalConnectors
+            auth.state.value = originalAuth
+            app.restoreApiPreferences(apiPreferences)
+            app.initialPreferences = initialPreferences
+            cache.restore()
+            restoreSetting("system", "font_scale", fontScale)
+            device.executeShellCommand("wm size ${size.ifEmpty { "reset" }}")
+            device.executeShellCommand("wm density ${density.ifEmpty { "reset" }}")
+            connectorFixture.close()
+        }
+    }
+}
