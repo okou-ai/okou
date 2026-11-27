@@ -99,3 +99,4 @@ runner-finalizing-source-001	\[WARN\]\[webhook:complete\] Run failed	Given: BDD 
 runner-finalizing-source-006	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed initialized Claude Code thread Run (exitCode 1) on Runner A before switching to Codex
 runner-finalizing-source-007	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed predecessor thread Run (exitCode 1 without native init) on Runner A before continuing on the active failed producer
 runner-finalizing-source-016	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed predecessor thread Run (exitCode 1 without native init) on Runner A before starting a first Run in a separate thread
+run-reads.bdd-028	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately completes the second chat run via POST /api/webhooks/run/complete with exitCode 1 and error "bdd failure" to verify failed run-log detail returns failureReason "unknown"
