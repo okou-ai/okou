@@ -399,6 +399,7 @@ internal fun OkouApp(
                 (listWidth != null || !searchActive)
         }
     val conversationSnackbar = remember(chats) { SnackbarHostState() }
+    var conversationFeedbackInOptions by remember(chats, target) { mutableStateOf(false) }
     val savedCodeVisit = rememberConversationCodeVisit()
     val codeReading = remember(savedCodeVisit) { ConversationCodeReading(savedCodeVisit) }
     val codeThread = (target as? WorkspaceTarget.Chat)?.id
@@ -2192,7 +2193,8 @@ internal fun OkouApp(
                                                 stopPlacement = stopPlacement,
                                                 feedback =
                                                     conversationSnackbar.takeIf {
-                                                        visibleConversationId == target.id
+                                                        visibleConversationId == target.id &&
+                                                            !conversationFeedbackInOptions
                                                     },
                                                 feedbackBottomPadding =
                                                     if (hasComposer) 8.dp - ChatComposerTopInset
@@ -2288,6 +2290,13 @@ internal fun OkouApp(
                                                                 actionableThread,
                                                                 modelEdits,
                                                             ),
+                                                        conversationSnackbar =
+                                                            conversationSnackbar.takeIf {
+                                                                visibleConversationId == target.id
+                                                            },
+                                                        onOptionsFeedbackInOverlay = {
+                                                            conversationFeedbackInOptions = it
+                                                        },
                                                         connectorOptions =
                                                             connectors?.chatOptions.takeIf {
                                                                 canOpenConnectors

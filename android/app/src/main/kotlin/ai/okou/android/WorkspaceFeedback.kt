@@ -289,6 +289,18 @@ internal fun WorkspaceChatFeedback(
     val controlError = controlErrors.firstNotNullOfOrNull { (receipt, message) ->
         message?.let { receipt to it }
     }
+    val modelError = visibleConversationId?.let { id ->
+        list.conversationModelEdits[id]?.failures?.firstOrNull()?.let { id to it }
+    }
+    val hiddenModelErrors =
+        list.conversationModelEdits.filter { (id, edits) ->
+            id != visibleConversationId && edits.failures.isNotEmpty()
+        }
+    LaunchedEffect(chats, hiddenModelErrors) {
+        hiddenModelErrors.forEach { (id, edits) ->
+            edits.failures.forEach { chats.dismissConversationModelFailure(id, it) }
+        }
+    }
     val codeError = codeFeedback.firstOrNull { it.value == R.string.conversation_code_copy_failed }
     val codeResult = codeFeedback.firstOrNull { it.value == R.string.conversation_code_copied }
     val renameTarget = savedRename
@@ -323,6 +335,17 @@ internal fun WorkspaceChatFeedback(
                                 ControlFailureSnackbar(message, receipt.value.kind),
                             )
                             model.consumeActionFailure(receipt)
+                        }
+                    }
+                },
+                modelError?.let { (id, receipt) ->
+                    PaneFeedbackError(receipt.order) {
+                        PaneFeedbackMessage(
+                            conversationSnackbar,
+                            receipt,
+                            stringResource(receipt.value),
+                        ) {
+                            chats.dismissConversationModelFailure(id, receipt)
                         }
                     }
                 },

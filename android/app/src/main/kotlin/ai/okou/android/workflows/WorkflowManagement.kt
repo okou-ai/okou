@@ -5,6 +5,7 @@ import ai.okou.android.NativeAboveLabelPadding
 import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouActionTreatment
 import ai.okou.android.OkouFormLayout
+import ai.okou.android.OkouOutlinedSelectionField
 import ai.okou.android.R
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFilterRow
@@ -31,13 +32,11 @@ import ai.okou.android.updates.updateFocusOutline
 import android.app.TimePickerDialog
 import android.text.format.DateFormat as AndroidDateFormat
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,10 +51,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -80,7 +76,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -940,7 +935,7 @@ private fun WorkflowChoice(
                 )
             },
         ) { trigger, open ->
-            WorkflowSelection(title, options[selected], enabled, trigger, onClick = open)
+            OkouOutlinedSelectionField(title, options[selected], trigger, enabled, onClick = open)
         }
     }
 }
@@ -953,11 +948,11 @@ private fun WorkflowTimezone(current: String, enabled: Boolean, pick: (String) -
             enabled = enabled,
             content = { dismiss -> TimezoneSelectionSheet(current, title, dismiss, pick) },
         ) { trigger, open ->
-            WorkflowSelection(
+            OkouOutlinedSelectionField(
                 title,
                 timezoneLabel(current),
-                enabled,
                 trigger.testTag("workflow_timezone"),
+                enabled,
                 onClick = open,
             )
         }
@@ -997,64 +992,11 @@ private fun WorkflowTime(value: String, enabled: Boolean, pick: (String) -> Unit
             }
         }
     }
-    WorkflowSelection(
+    OkouOutlinedSelectionField(
         stringResource(R.string.workflow_time),
         value,
-        enabled,
+        enabled = enabled,
         icon = R.drawable.ic_schedule,
         onClick = { showing = true },
     )
-}
-
-@Composable
-private fun WorkflowSelection(
-    label: String,
-    value: String,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-    icon: Int = R.drawable.ic_expand_more,
-    onClick: () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    var focused by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(NativeAboveLabelPadding)) {
-        Text(
-            label,
-            Modifier.padding(horizontal = NativeAboveLabelPadding),
-            color =
-                when {
-                    !enabled -> colors.onSurface.copy(alpha = 0.38f)
-                    focused -> colors.primary
-                    else -> colors.onSurfaceVariant
-                },
-            style = MaterialTheme.typography.bodySmall,
-        )
-        OutlinedButton(
-            onClick,
-            modifier
-                .fillMaxWidth()
-                .heightIn(min = OutlinedTextFieldDefaults.MinHeight)
-                .onFocusChanged { focused = it.isFocused }
-                .semantics { contentDescription = label },
-            enabled = enabled,
-            shape = OutlinedTextFieldDefaults.shape,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
-            border =
-                when {
-                    !enabled -> BorderStroke(1.dp, colors.onSurface.copy(alpha = 0.12f))
-                    focused -> BorderStroke(2.dp, colors.primary)
-                    else -> BorderStroke(1.dp, colors.outline)
-                },
-            contentPadding = OutlinedTextFieldDefaults.contentPaddingWithoutLabel(),
-        ) {
-            Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-            Spacer(Modifier.size(8.dp))
-            Icon(
-                painterResource(icon),
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = if (enabled) colors.onSurfaceVariant else LocalContentColor.current,
-            )
-        }
-    }
 }

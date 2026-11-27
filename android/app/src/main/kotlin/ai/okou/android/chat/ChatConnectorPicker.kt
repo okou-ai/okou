@@ -61,6 +61,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,6 +72,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -111,6 +113,8 @@ internal fun ChatConnectorOptionsButton(
     manageConnectors: (ConnectorAccountTarget?) -> Unit,
     defaultModel: DefaultModelSettings? = null,
     conversationModel: ConversationModelControls? = null,
+    conversationSnackbar: SnackbarHostState? = null,
+    onOptionsFeedbackInOverlay: (Boolean) -> Unit = {},
     attachmentPickerActive: Boolean = false,
     pickAttachment: ((photos: Boolean) -> Unit)? = null,
     buttonFocus: FocusRequester = remember { FocusRequester() },
@@ -130,6 +134,16 @@ internal fun ChatConnectorOptionsButton(
     val readAnnouncements = remember(options, target.key) { ConnectorReadAnnouncements() }
     val page = presentation.page
     val open = page != ComposerOptionsPage.Closed
+    val feedbackInOptions =
+        conversationSnackbar != null &&
+            (page == ComposerOptionsPage.Model || page == ComposerOptionsPage.Options)
+    val routeFeedback by rememberUpdatedState(onOptionsFeedbackInOverlay)
+    if (feedbackInOptions) {
+        DisposableEffect(Unit) {
+            routeFeedback(true)
+            onDispose { routeFeedback(false) }
+        }
+    }
     DisposableEffect(defaultModel, open) {
         if (open) defaultModel?.showComposerOptions(true)
         onDispose { if (open) defaultModel?.showComposerOptions(false) }
@@ -338,8 +352,10 @@ internal fun ChatConnectorOptionsButton(
                 }
             },
             dismiss = ::back,
+            snackbar = conversationSnackbar,
+            footerHasAction = edits?.phase == ConversationModelSave.NeedsCheck,
             footer = {
-                (edits?.failure ?: edits?.phase?.message)?.let { message ->
+                edits?.phase?.message?.let { message ->
                     ConnectorOptionFeedback(message, Modifier.padding(top = 8.dp))
                 }
                 if (edits?.phase == ConversationModelSave.NeedsCheck) {
@@ -427,6 +443,7 @@ internal fun ChatConnectorOptionsButton(
             back = if (showingConnectors || isShortSettingsPanelWindow()) ::back else null,
             actions = footer,
             feedback = readFeedback.takeIf { hasReadContent },
+            actionFeedback = conversationSnackbar.takeIf { feedbackInOptions },
             inContentFeedbackMessage =
                 if (hasReadContent) stringResource(R.string.connector_refresh_failed) else null,
             centerCompactContent =

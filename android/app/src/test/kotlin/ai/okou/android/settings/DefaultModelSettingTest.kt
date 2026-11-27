@@ -15,6 +15,7 @@ import ai.okou.android.state.SettingsDestination
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -48,6 +49,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -141,22 +143,39 @@ class DefaultModelSettingTest {
                 awaitSave(1)
                 assertEquals(JsonPrimitive("priority"), fixture.writes.last()["serviceTier"])
 
-                claude.performClick().assertIsSelected()
+                val effort = compose.onNodeWithContentDescription("Reasoning effort")
+                effort.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+                effort.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+                val medium = compose.onNode(hasText("Medium") and isSelectable())
+                medium.assertIsSelected().performKeyInput { pressKey(Key.Tab) }
+                medium.assertDoesNotExist()
+                effort.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+                compose.onNode(hasText("High") and isSelectable()).performClick()
+                effort.assertIsFocused()
                 awaitSave(2)
+                assertEquals(JsonPrimitive("priority"), fixture.writes.last()["serviceTier"])
+                assertEquals(
+                    JsonPrimitive("high"),
+                    fixture.writes.last()["modelSettingsPatch"]?.jsonObject?.get("effort"),
+                )
+
+                claude.performClick().assertIsSelected()
+                awaitSave(3)
                 fast.assertDoesNotExist()
                 assertEquals(JsonNull, fixture.writes.last()["serviceTier"])
 
                 gpt.performClick().assertIsSelected()
-                awaitSave(3)
-                fast.assertIsOff()
-                auto.performClick().assertIsSelected()
                 awaitSave(4)
+                fast.assertIsOff()
+                compose.onNodeWithText("High").assertIsDisplayed()
+                auto.performClick().assertIsSelected()
+                awaitSave(5)
                 fast.assertDoesNotExist()
                 assertEquals(JsonNull, fixture.writes.last()["selectedModel"])
                 assertEquals(JsonNull, fixture.writes.last()["serviceTier"])
 
                 gpt.performClick().assertIsSelected()
-                awaitSave(5)
+                awaitSave(6)
                 fast.assertIsOff()
                 fast.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
                 setMultiplier(0.0)
@@ -181,10 +200,61 @@ class DefaultModelSettingTest {
                 }
                 fast.assertDoesNotExist()
                 compose.onNodeWithContentDescription("Back").assertIsFocused()
-                assertEquals(5, fixture.writes.size)
+                assertEquals(6, fixture.writes.size)
             }
         } finally {
             scope.cancel()
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    fun catalogChangesReturnFocusWhenTheReasoningFieldDisappears() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            val model =
+                DefaultModelChoice(
+                    "gpt",
+                    "GPT 6.2 Sol",
+                    canSelect = true,
+                    efforts = listOf(ModelEffort.MEDIUM),
+                    defaultEffort = ModelEffort.MEDIUM,
+                    fastMultiplier = null,
+                )
+            val choices = mutableStateOf(listOf(model))
+            compose.setContent {
+                OkouTheme(dark = false) {
+                    ModelPickerSheet(
+                        title = "Default model",
+                        choices = choices.value,
+                        selectedId = model.id,
+                        effort = ModelEffort.MEDIUM,
+                        fast = false,
+                        select = {},
+                        selectEffort = {},
+                        selectFast = {},
+                        dismiss = {},
+                    )
+                }
+            }
+            val effort = compose.onNodeWithContentDescription("Reasoning effort")
+            val gpt = compose.onNode(hasText(model.label) and isSelectable())
+            effort.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            effort.assertIsFocused()
+
+            compose.runOnIdle { choices.value = listOf(model.copy(efforts = emptyList())) }
+            effort.assertDoesNotExist()
+            gpt.assertIsFocused()
+
+            compose.runOnIdle { choices.value = listOf(model) }
+            effort.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            effort.assertIsFocused()
+            compose.runOnIdle { choices.value = listOf(model.copy(canSelect = false)) }
+
+            effort.assertDoesNotExist()
+            compose.onNodeWithContentDescription("Back").assertIsFocused()
+        } finally {
             instrumentation.resetInTouchMode()
         }
     }

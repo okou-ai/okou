@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.FeedbackReceipt
 import ai.okou.android.R
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.continuousRetryDelays
@@ -1726,7 +1727,10 @@ class ChatListModel(
                 serviceTierEventId = UUID.randomUUID().toString(),
             )
         val edit = ConversationModelEdit(request, expected)
-        publishModelEdits(threadId, edits.copy(pending = edits.pending + edit, failure = null))
+        publishModelEdits(
+            threadId,
+            edits.copy(pending = edits.pending + edit, failures = emptyList()),
+        )
         if (edits.pending.isEmpty()) writeConversationModel(threadId)
     }
 
@@ -1776,6 +1780,14 @@ class ChatListModel(
         viewModelScope.launch { checkConversationModelWrite(threadId) }
     }
 
+    internal fun dismissConversationModelFailure(threadId: String, receipt: FeedbackReceipt<Int>) {
+        if (!current()) return
+        val edits = mutable.value.conversationModelEdits[threadId] ?: return
+        if (receipt in edits.failures) {
+            publishModelEdits(threadId, edits.copy(failures = edits.failures - receipt))
+        }
+    }
+
     private suspend fun checkConversationModelWrite(threadId: String) {
         val read = readListForConfirmation { true }
         requireCurrent()
@@ -1807,15 +1819,19 @@ class ChatListModel(
         val edits = checkNotNull(state.conversationModelEdits[threadId])
         val chat = state.confirmedThreads.firstOrNull { it.id == threadId && it.hidden != true }
         val remaining = chat?.let { edits.pending.drop(1).rebaseOn(it) }.orEmpty()
-        val next = ConversationModelEdits(pending = remaining, failure = failure ?: edits.failure)
-        publishModelEdits(threadId, next.takeIf { remaining.isNotEmpty() || it.failure != null })
+        val failures = edits.failures + listOfNotNull(failure?.let(::FeedbackReceipt))
+        publishModelEdits(
+            threadId,
+            ConversationModelEdits(pending = remaining, failures = failures),
+        )
         if (remaining.isNotEmpty()) writeConversationModel(threadId)
     }
 
-    private fun publishModelEdits(threadId: String, edits: ConversationModelEdits?) {
+    private fun publishModelEdits(threadId: String, edits: ConversationModelEdits) {
         val state = mutable.value
         val updates =
-            if (edits == null) state.conversationModelEdits - threadId
+            if (edits.pending.isEmpty() && edits.failures.isEmpty())
+                state.conversationModelEdits - threadId
             else state.conversationModelEdits + (threadId to edits)
         mutable.value = state.copy(conversationModelEdits = updates)
     }

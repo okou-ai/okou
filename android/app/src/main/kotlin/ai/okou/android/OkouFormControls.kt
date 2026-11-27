@@ -1,28 +1,42 @@
 package ai.okou.android
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -50,6 +64,59 @@ internal fun okouFormInputStyle() = MaterialTheme.typography.bodyLarge.copy(lett
 
 // Compose Material 3 adds 4 dp below and on either side of an above-field label.
 internal val NativeAboveLabelPadding = 4.dp
+
+@Composable
+internal fun OkouOutlinedSelectionField(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    icon: Int = R.drawable.ic_expand_more,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    var focused by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(NativeAboveLabelPadding)) {
+        Text(
+            label,
+            Modifier.padding(horizontal = NativeAboveLabelPadding),
+            color =
+                when {
+                    !enabled -> colors.onSurface.copy(alpha = 0.38f)
+                    focused -> colors.primary
+                    else -> colors.onSurfaceVariant
+                },
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedButton(
+            onClick,
+            modifier
+                .fillMaxWidth()
+                .heightIn(min = OutlinedTextFieldDefaults.MinHeight)
+                .onFocusChanged { focused = it.isFocused }
+                .semantics { contentDescription = label },
+            enabled = enabled,
+            shape = OutlinedTextFieldDefaults.shape,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
+            border =
+                when {
+                    !enabled -> BorderStroke(1.dp, colors.onSurface.copy(alpha = 0.12f))
+                    focused -> BorderStroke(2.dp, colors.primary)
+                    else -> BorderStroke(1.dp, colors.outline)
+                },
+            contentPadding = OutlinedTextFieldDefaults.contentPaddingWithoutLabel(),
+        ) {
+            Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.size(8.dp))
+            Icon(
+                painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = if (enabled) colors.onSurfaceVariant else LocalContentColor.current,
+            )
+        }
+    }
+}
 
 @Composable
 internal fun OkouFormLabel(label: String) {

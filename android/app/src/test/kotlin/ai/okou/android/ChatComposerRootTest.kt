@@ -19,6 +19,7 @@ import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -240,7 +241,7 @@ internal class ChatComposerRootTest : ChatComposerRootTestFixture() {
                 val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                 requests += body
                 val attempt = requests.size
-                if (attempt == 2) {
+                if (attempt == 2 || attempt == 6) {
                     jsonResponse("""{"code":"BAD_REQUEST","message":"Unavailable"}""")
                         .setResponseCode(400)
                 } else {
@@ -344,13 +345,15 @@ internal class ChatComposerRootTest : ChatComposerRootTestFixture() {
             assertTrue(input.keys.none { it in setOf("inputModel", "model", "runOptions") })
             assertEquals(1, requests.size)
 
-            release.countDown()
+            val saveFailure = hasText("Couldn’t save the model for this chat.")
+            val conversationFeedback = hasTestTag("conversation_feedback")
             openModel()
+            release.countDown()
             compose.waitUntilExactlyOneExists(
-                hasText("Couldn’t save the model for this chat.") and
-                    hasAnyAncestor(hasTestTag("model-picker")),
+                saveFailure and hasAnyAncestor(hasTestTag("model-picker")),
                 8_000,
             )
+            compose.onAllNodes(saveFailure).assertCountEquals(1)
             compose.waitUntilExactlyOneExists(hasText("Fast mode") and isOff(), 8_000)
             gpt.assertIsSelected()
             compose.onNodeWithText("High").assertExists()
@@ -403,6 +406,39 @@ internal class ChatComposerRootTest : ChatComposerRootTestFixture() {
             assertEquals(JsonNull, unsupportedTierWrite.getValue("codexServiceTier"))
             assertTrue(app.fixture.created.isEmpty())
             assertTrue(app.modelFixture.writes.isEmpty())
+
+            compose.waitUntilDoesNotExist(saveFailure, 8_000)
+            compose.onNodeWithText("Medium").performClick()
+            compose.onNodeWithText("High").performClick()
+            compose.waitUntilExactlyOneExists(
+                saveFailure and hasAnyAncestor(hasTestTag("model-picker")),
+                8_000,
+            )
+            compose.onNodeWithText("Medium").assertIsDisplayed()
+            // Drive each transition without consuming the notice's accessible timeout.
+            compose.mainClock.autoAdvance = false
+            try {
+                compose
+                    .onNode(
+                        hasContentDescription("Back") and
+                            hasAnyAncestor(hasTestTag("model-picker")),
+                    )
+                    .performClick()
+                compose.mainClock.advanceTimeBy(500)
+                compose
+                    .onNode(
+                        hasContentDescription("Drag handle") and
+                            SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss),
+                    )
+                    .performSemanticsAction(SemanticsActions.Dismiss)
+                compose.mainClock.advanceTimeBy(500)
+                compose
+                    .onNode(saveFailure and hasAnyAncestor(conversationFeedback))
+                    .assertIsDisplayed()
+                compose.onAllNodes(saveFailure).assertCountEquals(1)
+            } finally {
+                compose.mainClock.autoAdvance = true
+            }
         } finally {
             release.countDown()
             instrumentation.resetInTouchMode()
