@@ -887,12 +887,15 @@ private fun SearchResult(
                 .semantics { role = Role.Button },
         shapes = shapes,
         supportingContent =
-            if (snippet == null && metadata == null) null
-            else {
-                {
-                    Column {
-                        snippet?.invoke()
-                        if (metadata != null) {
+            when {
+                metadata == null -> snippet
+                snippet == null -> {
+                    { Text(metadata, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+                else -> {
+                    {
+                        Column {
+                            snippet()
                             Text(metadata, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
