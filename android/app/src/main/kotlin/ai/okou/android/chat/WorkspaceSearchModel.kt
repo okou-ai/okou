@@ -43,10 +43,9 @@ data class SearchMessageHit(
     val seqId: Long,
     val content: String,
     val ranges: List<IntRange>,
-) {
-    internal val firstRange
-        get() = ranges.minByOrNull { it.first }
-}
+    // Navigation uses the indexed source, while ranges describe the readable excerpt.
+    internal val sourceRange: IntRange? = ranges.minByOrNull { it.first },
+)
 
 internal data class SearchMessageAnchor(val sequence: Long, val range: IntRange?)
 

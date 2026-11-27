@@ -688,6 +688,26 @@ private val workspaceSearchMarkdownParser by lazy {
         .build()
 }
 
+internal fun workspaceSearchMarkdownExcerpt(
+    source: String,
+    ranges: List<IntRange>,
+): SearchMessageExcerpt {
+    val document = workspaceSearchMarkdownParser.parse(source)
+    val first = ranges.minByOrNull { it.first }
+    if (first != null) {
+        val block = document.workspaceSearchReadingBlock(first)?.second
+        if (block != null) {
+            val part = block.markdownImages().containingMatch(first)?.value ?: block
+            val excerpt = part.searchExcerpt(source, ranges)
+            if (excerpt.text.isNotBlank()) return excerpt
+        }
+    }
+    return document
+        .children()
+        .map { it.searchExcerpt(source, emptyList()) }
+        .firstOrNull { it.text.isNotBlank() } ?: SearchMessageExcerpt("", emptyList())
+}
+
 internal fun HistoryMessage.workspaceSearchTarget(
     range: IntRange?,
     inlineImages: Boolean,
@@ -704,9 +724,8 @@ internal fun HistoryMessage.workspaceSearchTarget(
     if (prefix < 0 || range.last >= source.length - prefix) return ConversationFindTarget(id, null)
     val sourceMatch = (prefix + range.first)..(prefix + range.last)
     val document = workspaceSearchMarkdownParser.parse(source)
-    val (index, node) =
-        document.children().containingMatch(sourceMatch) ?: return ConversationFindTarget(id, null)
-    val (path, block) = node.matchedReadingBlock(index.toString(), sourceMatch)
+    val (path, block) =
+        document.workspaceSearchReadingBlock(sourceMatch) ?: return ConversationFindTarget(id, null)
     if (block is LinkReferenceDefinition) return ConversationFindTarget(id, null)
     val imagePath =
         if (inlineImages && "![" in source && block !is ListBlock && block !is TableBlock) {
@@ -714,6 +733,11 @@ internal fun HistoryMessage.workspaceSearchTarget(
         } else null
     return ConversationFindTarget(id, path, bodyIndex = 0, markdownImage = imagePath)
 }
+
+private fun Node.workspaceSearchReadingBlock(range: IntRange): Pair<String, Node>? =
+    children().containingMatch(range)?.let { (index, node) ->
+        node.matchedReadingBlock(index.toString(), range)
+    }
 
 private fun Sequence<Node>.containingMatch(range: IntRange): IndexedValue<Node>? =
     withIndex().firstOrNull { (_, node) ->

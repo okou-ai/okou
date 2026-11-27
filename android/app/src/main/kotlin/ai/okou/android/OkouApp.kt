@@ -782,7 +782,7 @@ internal fun OkouApp(
             result.id,
             WorkspaceTarget.Chat(result.id),
             fromSearch = true,
-            searchMessageAnchor = SearchMessageAnchor(hit.seqId, hit.firstRange),
+            searchMessageAnchor = SearchMessageAnchor(hit.seqId, hit.sourceRange),
         )
         composer?.acknowledge(result.id)
         activeChats.history.open(result)

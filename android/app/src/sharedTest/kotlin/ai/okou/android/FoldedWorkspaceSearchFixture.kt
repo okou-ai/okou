@@ -17,7 +17,7 @@ internal class FoldedWorkspaceSearchFixture(chats: ChatListApiFixture) {
         val otherHitSequence = 23L
         val otherRun = "a9999999-9999-4999-8999-999999999999"
         val lastEvent = "a8888888-8888-4888-8888-888888888888"
-        val indexedBody = "$leadingParagraph\n\n$hit"
+        val indexedBody = "$leadingParagraph\n\n${hit.replace(keyword, "**$keyword**")}"
         chats.setHistoryEvents(
             CHAT_PERSONAL,
             listOf(

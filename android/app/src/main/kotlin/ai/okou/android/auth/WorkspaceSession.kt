@@ -6,6 +6,7 @@ import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.SignedTransferClient
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.ChatArchive
+import ai.okou.android.api.generated.ChatMessageSearchResponseResultsItemMatchedMessageRole
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.DefaultModelPreference
@@ -62,6 +63,7 @@ import ai.okou.android.chat.WorkspaceSearchService
 import ai.okou.android.chat.asConfirmedProject
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
+import ai.okou.android.chat.workspaceSearchMarkdownExcerpt
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsService
 import ai.okou.android.settings.BuiltInToolsService
@@ -77,6 +79,7 @@ import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -215,25 +218,41 @@ class CanonicalWorkspaceSession(
         )
     }
 
-    override suspend fun searchMessages(keyword: String): List<SearchMessageHit> =
-        api.searchChatMessages(keyword).results.mapNotNull { result ->
-            val match = result.matchedMessage
-            if (result.chatThreadId != match.chatThreadId) return@mapNotNull null
-            SearchMessageHit(
-                match.chatThreadId,
-                match.seqId,
-                match.content,
-                result.matchedRanges.mapNotNull { range ->
+    override suspend fun searchMessages(keyword: String): List<SearchMessageHit> {
+        val results = api.searchChatMessages(keyword).results
+        if (results.isEmpty()) return emptyList()
+        return withContext(Dispatchers.Default) {
+            results.mapNotNull { result ->
+                ensureActive()
+                val match = result.matchedMessage
+                if (result.chatThreadId != match.chatThreadId) return@mapNotNull null
+                val ranges =
+                    result.matchedRanges.mapNotNull { range ->
+                        if (
+                            range.start < 0 ||
+                                range.end <= range.start ||
+                                range.end > match.content.length
+                        )
+                            null
+                        else range.start.toInt() until range.end.toInt()
+                    }
+                val excerpt =
                     if (
-                        range.start < 0 ||
-                            range.end <= range.start ||
-                            range.end > match.content.length
+                        match.role ==
+                            ChatMessageSearchResponseResultsItemMatchedMessageRole.ASSISTANT
                     )
-                        null
-                    else range.start.toInt() until range.end.toInt()
-                },
-            )
+                        workspaceSearchMarkdownExcerpt(match.content, ranges)
+                    else null
+                SearchMessageHit(
+                    match.chatThreadId,
+                    match.seqId,
+                    excerpt?.text ?: match.content,
+                    excerpt?.ranges ?: ranges,
+                    sourceRange = ranges.minByOrNull { it.first },
+                )
+            }
         }
+    }
 
     override suspend fun observeRealtime(
         target: StateFlow<RunOutputTarget?>,
