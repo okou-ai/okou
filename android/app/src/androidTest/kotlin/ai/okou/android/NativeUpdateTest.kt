@@ -590,7 +590,13 @@ class NativeUpdateTest {
                 focusReadingRegion()
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_UP))
                 captureState("details-extreme-short")
-                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_DOWN))
+                // A page shows only about one line here. Read down to the error from the title.
+                repeat(6) {
+                    if (!device.hasObject(downloadError)) {
+                        assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_DOWN))
+                        device.wait(Until.hasObject(downloadError), 1_000)
+                    }
+                }
                 exists(R.string.updates_error_download)
                 assertEquals(footer, button(close).visibleBounds to button(retry).visibleBounds)
                 captureState("details-extreme-short-recovery")
