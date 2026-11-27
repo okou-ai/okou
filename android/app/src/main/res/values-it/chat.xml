@@ -8,9 +8,7 @@
     <string name="chat_undo_marked_read">Chat contrassegnata come letta</string>
     <string name="chat_undo">Annulla</string>
     <string name="chat_action_connection_failed">Impossibile connettersi. Controlla la connessione e riprova.</string>
-    <string name="chat_undo_checking">Verifica dell’annullamento…</string>
     <string name="chat_undo_failed">Impossibile annullare la modifica.</string>
-    <string name="chat_undo_unconfirmed">Impossibile confermare l’annullamento.</string>
     <string name="chat_feedback_dismiss">Chiudi</string>
     <string name="chat_list_first_load_failed">Caricamento temporaneamente non disponibile</string>
     <string name="chat_list_title">Chat</string>
@@ -21,15 +19,8 @@
     <string name="chat_metadata_unavailable">Le informazioni sui progetti non sono temporaneamente disponibili.</string>
     <string name="chat_inbox">Posta in arrivo</string>
     <string name="chat_mark_all_read">Segna tutto come letto</string>
-    <string name="chat_mark_all_read_unconfirmed">Alcune chat potrebbero essere ancora da leggere.</string>
     <string name="chat_mark_all_read_failed">Impossibile contrassegnare le chat come lette.</string>
     <string name="chat_mark_all_read_partial_failed">Contrassegnate come lette: %1$d. Non riuscite: %2$d.</string>
-    <string name="chat_mark_all_read_mixed">Contrassegnate come lette: %1$d. Non riuscite: %2$d. Non confermate: %3$d.</string>
-    <plurals name="chat_mark_all_read_partial">
-        <item quantity="one">Segnata come letta %1$d chat su %2$d.</item>
-        <item quantity="many">Segnate come lette %1$d chat su %2$d.</item>
-        <item quantity="other">Segnate come lette %1$d chat su %2$d.</item>
-    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d chat segnata come letta.</item>
         <item quantity="many">%1$d chat segnate come lette.</item>
