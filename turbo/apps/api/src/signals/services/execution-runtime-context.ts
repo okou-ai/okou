@@ -34,6 +34,7 @@ export type ExecutionContextRun = Pick<
   | "id"
   | "orgId"
   | "userId"
+  | "triggerSource"
   | "modelUsageProvider"
   | "modelLongContextMinTotalInputTokens"
   | "reasoningEffort"
@@ -169,7 +170,8 @@ export const prepareExecutionRuntimeContext$ = command(
             ...executionModelConfiguration(
               run,
               model,
-              packages.officialWorkflowBundles.length > 0,
+              run.triggerSource === "proactive" ||
+                packages.officialWorkflowBundles.length > 0,
             ),
             featureFlags: facts.featureFlags,
             realAgentInPreview: facts.realAgentInPreview,
@@ -232,7 +234,7 @@ function executionModelConfiguration(
     readonly provider: AdmittedExecutionFacts["modelProvider"];
     readonly piModelConfig: AdmittedExecutionFacts["modelProvider"]["piModelConfig"];
   },
-  isOfficialWorkflow: boolean,
+  useRunSession: boolean,
 ): Pick<
   PreparedExecutionContext,
   | "cliAgentType"
@@ -259,7 +261,7 @@ function executionModelConfiguration(
     piLaunchConfig: framework === "pi" ? { schemaVersion: 2 } : undefined,
     piSessionId:
       framework === "pi"
-        ? isOfficialWorkflow
+        ? useRunSession
           ? run.id
           : run.chatThreadId
         : undefined,

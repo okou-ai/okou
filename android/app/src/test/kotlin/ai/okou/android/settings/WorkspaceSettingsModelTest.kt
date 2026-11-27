@@ -487,7 +487,8 @@ class WorkspaceSettingsModelTest {
                         override suspend fun usagePackCredits(): UsagePackCredits {
                             if (available) return confirmed
                             failedAttempts += testScheduler.currentTime
-                            throw ApiFailure.Http(503, null, null, null)
+                            val retryAfter = if (failedAttempts.size == 1) 1L else null
+                            throw ApiFailure.Http(503, null, null, retryAfter)
                         }
                     }
                 val model = settings(store, api, service = service) { time }
@@ -504,9 +505,12 @@ class WorkspaceSettingsModelTest {
                 assertTrue(model.uiState.value.usagePack.refreshing)
                 assertFalse(model.uiState.value.usagePack.unavailable)
 
-                advanceTimeBy(3_000L)
+                advanceTimeBy(999L)
                 runCurrent()
-                assertEquals(listOf(0L, 3_000L), failedAttempts)
+                assertEquals(listOf(0L), failedAttempts)
+                advanceTimeBy(1L)
+                runCurrent()
+                assertEquals(listOf(0L, 1_000L), failedAttempts)
                 assertTrue(model.uiState.value.usagePack.refreshing)
                 assertFalse(model.uiState.value.usagePack.unavailable)
 
@@ -519,7 +523,36 @@ class WorkspaceSettingsModelTest {
 
                 advanceTimeBy(60_000L)
                 runCurrent()
-                assertEquals(listOf(0L, 3_000L, 6_000L), failedAttempts)
+                assertEquals(listOf(0L, 1_000L, 4_000L), failedAttempts)
+            }
+        } finally {
+            closeOwners(store)
+        }
+    }
+
+    @Test
+    fun closingCreditBalanceCancelsItsRetryWait() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                val attempts = mutableListOf<Long>()
+                val service =
+                    object : WorkspaceSession by api.service {
+                        override suspend fun usagePackCredits(): UsagePackCredits {
+                            attempts += testScheduler.currentTime
+                            throw ApiFailure.Http(503, null, null, 1L)
+                        }
+                    }
+                val model = settings(store, api, service = service)
+                model.visible(SettingsDestination.CreditBalance)
+                runCurrent()
+                assertEquals(listOf(0L), attempts)
+                advanceTimeBy(500L)
+                model.visible(null)
+                advanceTimeBy(10_000L)
+                runCurrent()
+                assertEquals(listOf(0L), attempts)
             }
         } finally {
             closeOwners(store)

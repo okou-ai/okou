@@ -1,46 +1,21 @@
 import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { command } from "ccstate";
 
-import { logger } from "../../lib/log";
 import type { RouteEntry } from "../route-entry";
 import { executeDueNotionAutomationEvents$ } from "../services/notion-automation-event.service";
 import { executeDueWorkflowAutomations$ } from "../services/workflow-automation-poller.service";
-import { reconcileProactiveWorkflows$ } from "../services/proactive-workflows-lifecycle.service";
-import { recoverDueOfficialWorkflowSchedules$ } from "../services/official-workflow-schedule-recovery.service";
-import { settle } from "../utils";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
-const log = logger("OfficialWorkflowReconciliationCron");
-
-// Recover due schedules first. Installation repair runs after dispatch.
 const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (!get(hasValidCronSecret$)) {
       return cronUnauthorized();
     }
 
-    const recovery = await settle(
-      set(recoverDueOfficialWorkflowSchedules$, signal),
-      signal,
-    );
-    if (!recovery.ok) {
-      log.error("Official Workflow schedule recovery failed", {
-        error: recovery.error,
-      });
-    }
     const result = await set(executeDueWorkflowAutomations$, signal);
     const notionResult = await set(executeDueNotionAutomationEvents$, signal);
     signal.throwIfAborted();
 
-    const proactive = await settle(
-      set(reconcileProactiveWorkflows$, signal),
-      signal,
-    );
-    if (!proactive.ok) {
-      log.error("Proactive workflow reconciliation failed", {
-        error: proactive.error,
-      });
-    }
     return {
       status: 200 as const,
       body: {

@@ -1,7 +1,4 @@
-import {
-  proactiveDispatchPhase$,
-  legacyProactiveInstallation,
-} from "./proactive-dispatch-ownership.service";
+import { isLegacyProactiveWorkflow } from "./proactive-workflow-definitions";
 import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
@@ -23,7 +20,6 @@ import {
   ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
   hasEnabledGoogleMeetConsumer$,
 } from "./google-meet-automation-watch.service";
-import { persistMorningBriefAutomationToggle$ } from "./morning-brief-automation-toggle.service";
 import {
   prepareNotionChildPageEventConfigForPersist$,
   prepareNotionDatabaseItemEventConfigForPersist$,
@@ -6118,13 +6114,7 @@ export const enableWorkflowAutomation$ = command(
     if ("kind" in owned) {
       return owned;
     }
-    if (
-      legacyProactiveInstallation(
-        owned.officialDefinitionName,
-        owned.automation.officialBlueprintKey,
-      ) &&
-      (await set(proactiveDispatchPhase$, signal)) !== "automation"
-    ) {
+    if (isLegacyProactiveWorkflow(owned.officialDefinitionName)) {
       return {
         kind: "conflict",
         message: "Manage this built-in task in the Proactive settings.",
@@ -6155,34 +6145,6 @@ export const enableWorkflowAutomation$ = command(
       if (failure) {
         return failure;
       }
-    }
-    const morningBriefRow = await set(
-      persistMorningBriefAutomationToggle$,
-      {
-        automation,
-        officialDefinitionName: owned.officialDefinitionName,
-        enabled: true,
-        nextRunAt,
-        now,
-        inheritedAutonomyBudget: args.inheritedAutonomyBudget,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (morningBriefRow.kind === "conflict") {
-      return {
-        kind: "conflict",
-        message: OFFICIAL_AUTOMATION_CHANGED_MESSAGE,
-      };
-    }
-    if (morningBriefRow.kind === "applied") {
-      return await set(
-        publishEnabledWorkflowAutomation$,
-        morningBriefRow.row,
-        args.member.userId,
-        owned.officialDefinitionName,
-        signal,
-      );
     }
     return await set(
       persistAndReconcileEnabledWorkflowAutomation$,
@@ -6266,13 +6228,7 @@ export const disableWorkflowAutomation$ = command(
     if ("kind" in owned) {
       return owned;
     }
-    if (
-      legacyProactiveInstallation(
-        owned.officialDefinitionName,
-        owned.automation.officialBlueprintKey,
-      ) &&
-      (await set(proactiveDispatchPhase$, signal)) !== "automation"
-    ) {
+    if (isLegacyProactiveWorkflow(owned.officialDefinitionName)) {
       return {
         kind: "conflict",
         message: "Manage this built-in task in the Proactive settings.",
@@ -6281,28 +6237,11 @@ export const disableWorkflowAutomation$ = command(
     const now = nowDate();
     const nextRunAt =
       owned.automation.kind === "schedule" ? null : owned.automation.nextRunAt;
-    const morningBriefRow = await set(
-      persistMorningBriefAutomationToggle$,
-      {
-        automation: owned.automation,
-        officialDefinitionName: owned.officialDefinitionName,
-        enabled: false,
-        nextRunAt,
-        now,
-      },
+    const row = await set(
+      persistDisabledWorkflowAutomation$,
+      { automation: owned.automation, nextRunAt, now },
       signal,
     );
-    signal.throwIfAborted();
-    const row =
-      morningBriefRow.kind === "applied"
-        ? morningBriefRow.row
-        : morningBriefRow.kind === "conflict"
-          ? undefined
-          : await set(
-              persistDisabledWorkflowAutomation$,
-              { automation: owned.automation, nextRunAt, now },
-              signal,
-            );
     signal.throwIfAborted();
     if (!row) {
       if (owned.automation.officialBlueprintKey !== null) {

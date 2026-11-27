@@ -62,7 +62,7 @@ pub(crate) fn extract_tar_gz_checked(
     target: &Path,
     concurrency: usize,
     max_unpacked_bytes: u64,
-    validate_entry: impl FnMut(&Path, tar::EntryType, u64, &tar::Header) -> io::Result<()>,
+    validate_entry: impl FnMut(&Path, tar::EntryType, u64, &tar::Header) -> Result<(), DownloadError>,
 ) -> Result<(), DownloadError> {
     let (reader, http_body_read_failure) = source.into_parts();
     extract_tar(
@@ -81,7 +81,12 @@ fn extract_tar(
     target: &Path,
     concurrency: usize,
     max_unpacked_bytes: u64,
-    mut validate_entry: impl FnMut(&Path, tar::EntryType, u64, &tar::Header) -> io::Result<()>,
+    mut validate_entry: impl FnMut(
+        &Path,
+        tar::EntryType,
+        u64,
+        &tar::Header,
+    ) -> Result<(), DownloadError>,
 ) -> Result<(), DownloadError> {
     debug_assert!(concurrency > 0);
     let mut skipped_entries = SkippedEntries { target, skipped: 0 };
@@ -111,8 +116,7 @@ fn extract_tar(
             .into_owned();
 
         let entry_type = entry.header().entry_type();
-        validate_entry(&entry_path, entry_type, entry.size(), entry.header())
-            .map_err(|e| archive_error("Invalid archive entry", e))?;
+        validate_entry(&entry_path, entry_type, entry.size(), entry.header())?;
 
         #[cfg(target_os = "linux")]
         {
@@ -124,9 +128,10 @@ fn extract_tar(
                     .map_err(|e| archive_error("Failed to read entry metadata", e))?
                     .is_none()
                 && rooted.try_unpack(&entry_path, &mut entry).map_err(|e| {
-                    archive_error(
+                    unpack_error(
                         format!("Failed to extract entry {}", entry_path.display()),
                         e,
+                        &http_body_read_failure,
                     )
                 })?
             {
@@ -218,9 +223,10 @@ fn extract_tar(
         // below. Safety relies on the caller's lifecycle/exclusivity assumptions documented on
         // `extract_tar_gz`.
         entry.unpack_in(target).map_err(|e| {
-            archive_error(
+            unpack_error(
                 format!("Failed to extract entry {}", entry_path.display()),
                 e,
+                &http_body_read_failure,
             )
         })?;
     }
@@ -311,6 +317,18 @@ fn diagnostic_path(path: &Path) -> String {
 
 fn archive_error(message: impl Into<String>, error: io::Error) -> DownloadError {
     DownloadError::new(format!("{}: {error}", message.into()))
+}
+
+fn unpack_error(
+    message: String,
+    error: io::Error,
+    http_body_read_failure: &crate::source::HttpBodyReadFailure,
+) -> DownloadError {
+    if http_body_read_failure.failed() {
+        archive_error(message, error)
+    } else {
+        DownloadError::writing_target(message, error)
+    }
 }
 
 /// Check whether `path` stays within `target` after lexical normalization.

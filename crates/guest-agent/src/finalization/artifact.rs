@@ -63,13 +63,13 @@ async fn build_artifact_snapshot_plan(
     match vas::walk_files_for_snapshot(&entry.mount_path).await {
         Ok(files) => Ok(ArtifactSnapshotPlan::Snapshot { entry, files }),
         Err(error)
-            if error.is_missing_root()
+            if error.is_root_unavailable()
                 && matches!(
                     entry.missing_root_policy,
                     Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion)
                 ) =>
         {
-            error.record_preserved_missing_root(&entry.name, &entry.mount_path);
+            error.record_preserved_unavailable_root(&entry.name, &entry.mount_path);
             Ok(ArtifactSnapshotPlan::PreserveParentVersion { entry })
         }
         Err(error) => Err(error),
@@ -103,7 +103,7 @@ async fn snapshot_artifact_plan(
         ArtifactSnapshotPlan::PreserveParentVersion { entry } => {
             log_info!(
                 LOG_TAG,
-                "VAS artifact snapshot preserved parent version for missing root: {}@{}",
+                "VAS artifact snapshot preserved parent version for unavailable root: {}@{}",
                 entry.name,
                 entry.version_id
             );

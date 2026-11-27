@@ -155,7 +155,7 @@ class CanonicalWorkspaceSession(
     private val identity: WorkspaceIdentity,
     tokens: WorkspaceTokenProvider,
     private val locale: InitializePreferencesRequestLocale = initialLocale(Locale.getDefault()),
-    private val timezone: String = TimeZone.getDefault().id,
+    private val timezone: String? = initialTimezone(),
     onUpdateRequired: (RequiredUpdate) -> Unit = {},
 ) : WorkspaceSession, WorkflowService, ChatAttachmentService {
     override val attachmentService: ChatAttachmentService
@@ -548,7 +548,7 @@ private fun UserPreferences.initialized(): Boolean =
         // The canonical API validates IANA names. Older Android tzdata must not reject newer zones.
         !timezone.isNullOrBlank()
 
-/** Bootstrap fallback only. Server preference presentation/synchronization belongs to A5. */
+/** Use the same device language match for initialization and the Settings preview. */
 internal fun initialLocale(locale: Locale): InitializePreferencesRequestLocale =
     when (locale.language) {
         "pt" -> InitializePreferencesRequestLocale.PT_BR
@@ -570,3 +570,7 @@ internal fun initialLocale(locale: Locale): InitializePreferencesRequestLocale =
             else InitializePreferencesRequestLocale.ZH_HANS
         else -> InitializePreferencesRequestLocale.EN_US
     }
+
+internal fun initialTimezone(id: String = TimeZone.getDefault().id): String? = id.takeIf {
+    it in TimeZone.getAvailableIDs()
+}

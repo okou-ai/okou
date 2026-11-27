@@ -3,43 +3,16 @@ import SwiftUI
 
 struct RecommendedFollowupList: View {
   let source: ChatRecommendedFollowupSource
-  let finishedAt: Date?
   let select: (String) -> Void
 
   var body: some View {
-    let contentInsets = UIEdgeInsets(top: 0, left: 26, bottom: 0, right: 20)
-    VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      // The web's run-section divider: a quiet serif italic label and a faint rule.
-      HStack(spacing: OkouSpace.sm) {
-        // The label keeps its line; the rule takes what is left.
-        Group {
-          if let finishedAt {
-            Text("Keep going · \(Self.timestamp.string(from: finishedAt))")
-          } else {
-            Text("Keep going")
-          }
-        }
-        .lineLimit(1)
-        .layoutPriority(1)
-        Rectangle()
-          .fill(OkouColor.divider.opacity(0.4))
-          .frame(height: 1)
-          .accessibilityHidden(true)
-      }
-      .font(.okou(.subheadline, design: .serif).italic())
-      .foregroundStyle(OkouColor.mutedForeground.opacity(0.5))
-      .padding(.leading, contentInsets.left)
-      .padding(.trailing, contentInsets.right)
-      RecommendedFollowupRail(source: source, contentInsets: contentInsets, select: select)
-    }
+    RecommendedFollowupRail(
+      source: source,
+      contentInsets: UIEdgeInsets(
+        top: 0, left: ConversationCollectionRow.messageHorizontalInset + OkouSpace.six,
+        bottom: 0, right: ConversationCollectionRow.messageHorizontalInset),
+      select: select)
   }
-
-  /// The web's chat timestamp: "Sep 8, 6:33 PM", localized.
-  private static let timestamp: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.setLocalizedDateFormatFromTemplate("MMMdjmm")
-    return formatter
-  }()
 
 }
 

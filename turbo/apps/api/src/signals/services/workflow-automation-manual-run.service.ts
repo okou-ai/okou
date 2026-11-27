@@ -1,3 +1,4 @@
+import { isLegacyProactiveWorkflow } from "./proactive-workflow-definitions";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import {
@@ -66,7 +67,10 @@ export const runOwnedWorkflowAutomationNow$ = command(
     if (!target) {
       return { kind: "not-found" };
     }
-    if (automation.officialBlueprintKey !== null) {
+    if (
+      automation.officialBlueprintKey !== null ||
+      isLegacyProactiveWorkflow(owned.officialDefinitionName)
+    ) {
       return {
         kind: "conflict",
         message: OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE,

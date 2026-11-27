@@ -64,6 +64,7 @@
     <string name="chat_resources_messages">Messaggi</string>
     <string name="artifact_preview_loading">Caricamento anteprima…</string>
     <string name="artifact_image_unavailable">Immagine non disponibile</string>
+    <string name="artifact_image_original_unavailable">Immagine originale non disponibile</string>
     <string name="artifact_image_actions">Azioni immagine</string>
     <string name="artifact_image_expand">Espandi il visualizzatore di immagini</string>
     <string name="artifact_image_collapse">Riduci il visualizzatore di immagini</string>

@@ -3,7 +3,12 @@ package ai.okou.android
 import ai.okou.android.state.rememberSettingsChoiceFocus
 import ai.okou.android.state.rememberSettingsFlag
 import ai.okou.android.updates.updateFocusOutline
+import android.os.Build
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -64,6 +69,7 @@ import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -89,6 +95,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -110,6 +117,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 
@@ -389,12 +397,13 @@ internal fun SettingsModal(
     confirmDismiss: (() -> Boolean)? = null,
     reserveTopInset: Boolean = false,
     snackbar: SnackbarHostState? = null,
+    onBack: (() -> Unit)? = null,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
     if (fullScreen || workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
-            onDismissRequest = { if (confirmDismiss?.invoke() != false) onDismiss() },
+            onDismissRequest = { if (confirmDismiss?.invoke() != false) (onBack ?: onDismiss)() },
             properties =
                 DialogProperties(
                     dismissOnBackPress = dismissible,
@@ -457,19 +466,47 @@ internal fun SettingsModal(
                 } else null,
             properties =
                 ModalBottomSheetProperties(
-                    shouldDismissOnBackPress = dismissible && confirmDismiss == null,
+                    shouldDismissOnBackPress =
+                        dismissible && confirmDismiss == null && onBack == null,
                     shouldDismissOnClickOutside = dismissible,
                 ),
         ) {
-            // A vetoed native predictive hide can leave the sheet scaled after Back.
             val imeVisible = WindowInsets.isImeVisible
             val keyboard = LocalSoftwareKeyboardController.current
-            BackHandler(enabled = confirmDismiss != null) {
+            val handleBack: () -> Unit = {
                 if (imeVisible) keyboard?.hide()
-                else if (dismissible && confirmDismiss?.invoke() != false) onDismiss()
+                else if (dismissible && confirmDismiss?.invoke() != false) (onBack ?: onDismiss)()
             }
+            if (onBack == null) BackHandler(enabled = confirmDismiss != null, onBack = handleBack)
+            else SettingsSheetBackHandler(handleBack)
             content(false)
         }
+    }
+}
+
+@Composable
+private fun SettingsSheetBackHandler(onBack: () -> Unit) {
+    val view = LocalView.current
+    val window = (view.parent as? DialogWindowProvider)?.window
+    if (Build.VERSION.SDK_INT >= 33 && window != null) {
+        val handleBack by rememberUpdatedState(onBack)
+        // A nested page changes within this dialog and leaves the sheet in its expanded state.
+        DisposableEffect(window) {
+            val dispatcher = window.onBackInvokedDispatcher
+            val callback = OnBackInvokedCallback { handleBack() }
+            dispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_OVERLAY,
+                callback,
+            )
+            onDispose { dispatcher.unregisterOnBackInvokedCallback(callback) }
+        }
+    } else {
+        val owner = view.findViewTreeOnBackPressedDispatcherOwner()
+        if (owner == null) BackHandler(onBack = onBack)
+        else
+            CompositionLocalProvider(LocalOnBackPressedDispatcherOwner provides owner) {
+                BackHandler(onBack = onBack)
+            }
     }
 }
 

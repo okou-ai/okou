@@ -33,6 +33,7 @@ internal enum class ArtifactProblem {
     Missing,
     Temporary,
     Unavailable,
+    OriginalUnavailable,
     Unsupported,
 }
 
@@ -56,7 +57,10 @@ internal data class ArtifactPreviewState(
                 (item?.kind == ArtifactKind.Website || item?.kind == ArtifactKind.Presentation)
 
     val hasReadableContent: Boolean
-        get() = content is ArtifactContent.Text || content is ArtifactContent.Image
+        get() =
+            content is ArtifactContent.Text ||
+                content is ArtifactContent.Image ||
+                content is ArtifactContent.EncodedImage
 }
 
 internal enum class ArtifactSaveResult {
@@ -133,6 +137,7 @@ internal constructor(
     private var workflowRefreshPending = false
     private var workflowReferences: Pair<String, Set<String>>? = null
     private var previewJob: Job? = null
+    private var useImageViewer = false
     private var missingThread: String? = null
 
     init {
@@ -250,9 +255,11 @@ internal constructor(
         readCatalog(append = true)
     }
 
-    internal fun select(id: String?, item: ArtifactItem? = null) {
-        if (mutable.value.preview?.id == id) return
+    internal fun select(id: String?, item: ArtifactItem? = null, showImageViewer: Boolean = true) {
+        val useImageViewer = id != null && showImageViewer && isGeneratedArtifactPreview(id)
+        if (mutable.value.preview?.id == id && this.useImageViewer == useImageViewer) return
         previewJob?.cancel()
+        this.useImageViewer = useImageViewer
         val initial = id?.let {
             previews[it]
                 ?: run {
@@ -269,13 +276,25 @@ internal constructor(
         if (id != null) readPreview(id)
     }
 
+    internal fun retainDecodedImage(
+        id: String,
+        source: ArtifactContent.EncodedImage,
+        bitmap: Bitmap,
+    ) {
+        val preview = mutable.value.preview ?: return
+        if (preview.id == id && preview.content === source && preview.access != null) {
+            previews.remember(id, preview.copy(content = ArtifactContent.Image(bitmap)), 3)
+        }
+    }
+
     internal fun retainedExternalImageId(): String? =
         mutable.value.preview?.id?.takeIf { it.startsWith(ExternalImagePreviewPrefix) }
 
-    internal suspend fun thumbnail(url: String): Bitmap? {
+    internal suspend fun thumbnail(url: String, cacheOnly: Boolean = false): Bitmap? {
         thumbnails.get(url)?.let {
             return it
         }
+        if (cacheOnly) return null
         return try {
             retryArtifactOperation { service.thumbnail(url) }?.also { thumbnails.put(url, it) }
         } catch (cancelled: CancellationException) {
@@ -815,7 +834,12 @@ internal constructor(
                                 val access = info.resolvedAccess ?: service.fileAccess(resource)
                                 fileAccessAuthorized = !externalImage
                                 updatePreview(id) { copy(access = access) }
-                                service.fileContent(resource, access)
+                                service.fileContent(
+                                    resource,
+                                    access,
+                                    keepImageSource =
+                                        useImageViewer && info.item.kind == ArtifactKind.Image,
+                                )
                             }
                             is ArtifactResource.Site ->
                                 ArtifactContent.Website(
@@ -830,19 +854,58 @@ internal constructor(
                         val browser = (info.resource as? ArtifactResource.Site)?.url
                         copy(
                                 info = info.copy(browserUrl = browser ?: info.browserUrl),
-                                content = content,
+                                content =
+                                    if (content is ArtifactContent.EncodedImage) {
+                                        val fallback =
+                                            previews[id]?.content as? ArtifactContent.Image
+                                        ArtifactContent.EncodedImage(
+                                            content.bytes,
+                                            fallback?.bitmap,
+                                        )
+                                    } else content,
                                 problem = null,
                             )
                             .also {
-                                if (it.hasReadableContent) previews.remember(id, it, 3)
-                                else previews.remove(id)
+                                when {
+                                    content is ArtifactContent.EncodedImage -> Unit
+                                    it.hasReadableContent -> previews.remember(id, it, 3)
+                                    else -> previews.remove(id)
+                                }
                             }
                     }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
                 val errorType = problem(error)
+                val failedPreview = mutable.value.preview
+                if (
+                    useImageViewer &&
+                        detailAuthorized &&
+                        errorType == ArtifactProblem.Missing &&
+                        failedPreview != null &&
+                        failedPreview.id == id &&
+                        failedPreview.isImage &&
+                        failedPreview.info?.thumbnailUrl != null
+                ) {
+                    updatePreview(id) {
+                        previews.remove(id)
+                        copy(
+                            content = null,
+                            access = null,
+                            problem = ArtifactProblem.OriginalUnavailable,
+                        )
+                    }
+                    val thumbnail =
+                        readThumbnailAfterMissingOriginal(id, failedPreview.access?.url?.toString())
+                    if (thumbnail != null) {
+                        updatePreview(id) {
+                            copy(content = ArtifactContent.Image(thumbnail))
+                        }
+                        return@launch
+                    }
+                }
                 val revoked =
                     errorType == ArtifactProblem.Denied || errorType == ArtifactProblem.Missing
                 val discardContent = revoked || errorType == ArtifactProblem.Unsupported
@@ -870,6 +933,23 @@ internal constructor(
             }
         }
     }
+
+    private suspend fun readThumbnailAfterMissingOriginal(
+        id: String,
+        originalUrl: String?,
+    ): Bitmap? =
+        try {
+            // A failed original URL can also mean access was revoked. Recheck the thumbnail path.
+            val info = service.info(id)
+            if (info.item.kind == ArtifactKind.Image)
+                service.thumbnail(info.independentThumbnailUrl(originalUrl))
+            else null
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            handleSessionFailure(error)
+            null
+        }
 
     private suspend fun updatePreview(
         id: String,

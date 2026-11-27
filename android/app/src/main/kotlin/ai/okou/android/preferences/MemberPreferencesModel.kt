@@ -1,6 +1,7 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.boundedRetryDelayMillis
 import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequestColorTheme
@@ -133,8 +134,15 @@ data class MemberPreferencesState(
     val theme: UserPreferencesTheme
         get() = pending?.theme ?: localTheme ?: confirmed.theme ?: UserPreferencesTheme.SYSTEM
 
-    internal val appearance: MemberAppearance
-        get() = MemberAppearance(theme, colorTheme)
+    internal val localSnapshot: CachedMemberPreferences
+        get() =
+            CachedMemberPreferences(
+                theme,
+                colorTheme,
+                locale = confirmed.locale?.let(::supportedLocale),
+                timezone = confirmed.timezone,
+                cloudBrowser = confirmed.cloudBrowserEnabledByDefault,
+            )
 
     val timezone: String
         get() = pending?.timezone ?: checkNotNull(confirmed.timezone)
@@ -151,9 +159,10 @@ data class MemberPreferencesState(
         get() = confirmed.supportedLocales.map { UserPreferencesLocale.valueOf(it.name) }
 
     val locale: UserPreferencesLocale
-        get() =
-            (pending?.locale ?: checkNotNull(confirmed.locale)).takeIf { it in supportedLocales }
-                ?: UserPreferencesLocale.EN_US
+        get() = supportedLocale(pending?.locale ?: checkNotNull(confirmed.locale))
+
+    private fun supportedLocale(locale: UserPreferencesLocale): UserPreferencesLocale =
+        locale.takeIf { it in supportedLocales } ?: UserPreferencesLocale.EN_US
 }
 
 private fun MemberPreferencesState.afterTimezoneConflict(
@@ -190,6 +199,8 @@ class MemberPreferencesModel(
     private val onFailure: (Exception) -> Unit,
     initialPending: PreferenceChange? = null,
 ) : ViewModel() {
+    private class Recovery(val job: Job, val protectsReadback: Boolean)
+
     private val mutable =
         MutableStateFlow(MemberPreferencesState(initial, initialPending?.afterReadback(initial)))
     val uiState = mutable.asStateFlow()
@@ -197,7 +208,7 @@ class MemberPreferencesModel(
     internal val notices = saveNotice.asStateFlow()
     private var retired = false
     private var request: Job? = null
-    private var recovery: Job? = null
+    private var recovery: Recovery? = null
     private var saveFailures = 0
     private var readFailures = 0
     private var readRequested = false
@@ -248,7 +259,12 @@ class MemberPreferencesModel(
     private fun select(change: PreferenceChange) {
         if (!current()) return
         saveNotice.value = null
-        if (saveFailures <= finiteReadRetryDelays.size) saveFailures = 0
+        if (recovery?.protectsReadback == true) {
+            mutable.value = mutable.value.copy(pending = change)
+            return
+        }
+        if ((!needsWriteReadback || request == null) && saveFailures <= finiteReadRetryDelays.size)
+            saveFailures = 0
         mutable.value = mutable.value.copy(pending = change, recovering = false)
         readRequested = false
         clearRecovery()
@@ -277,7 +293,7 @@ class MemberPreferencesModel(
     }
 
     fun retry() {
-        if (!current()) return
+        if (!current() || recovery?.protectsReadback == true) return
         clearRecovery()
         if (mutable.value.pending == null) readRequested = true
         synchronize()
@@ -397,7 +413,7 @@ class MemberPreferencesModel(
     }
 
     private fun clearRecovery() {
-        recovery?.cancel()
+        recovery?.job?.cancel()
         recovery = null
         readFailures = 0
     }
@@ -449,7 +465,7 @@ class MemberPreferencesModel(
             }
         if (!saving) {
             if (pending) return true
-            val wait = if (recoverable) finiteReadRetryDelays.getOrNull(readFailures++) else null
+            val wait = if (recoverable) boundedRetryDelayMillis(readFailures++, error) else null
             val retry = wait != null
             mutable.value =
                 state.copy(
@@ -475,11 +491,12 @@ class MemberPreferencesModel(
             return settled.status == PreferenceStatus.Ready
         }
         if (sent != null) failedWrite = sent
-        val wait = if (recoverable) finiteReadRetryDelays.getOrNull(saveFailures) else null
+        val wait = if (recoverable) boundedRetryDelayMillis(saveFailures, error) else null
         saveFailures = if (wait != null) saveFailures + 1 else finiteReadRetryDelays.size + 1
         if (wait != null) {
             mutable.value = state.copy(status = PreferenceStatus.SaveFailed, recovering = true)
-            scheduleRecovery(wait)
+            val serverDelay = (error as? ApiFailure.Http)?.retryAfterSeconds ?: 0L
+            scheduleRecovery(wait, protectsReadback = needsWriteReadback && serverDelay > 0)
             return false
         }
         if (sent != null) return true // Last write still needs authoritative readback.
@@ -524,12 +541,18 @@ class MemberPreferencesModel(
         )
     }
 
-    private fun scheduleRecovery(wait: Long) {
-        recovery = viewModelScope.launch {
-            delay(wait)
-            recovery = null
-            synchronize()
-        }
+    private fun scheduleRecovery(wait: Long, protectsReadback: Boolean = false) {
+        val failedRequest = checkNotNull(request)
+        val job =
+            viewModelScope.launch(start = CoroutineStart.LAZY) {
+                delay(wait)
+                // A zero-second delay can finish before the failed request releases its slot.
+                failedRequest.join()
+                recovery = null
+                synchronize()
+            }
+        recovery = Recovery(job, protectsReadback)
+        job.start()
     }
 
     override fun onCleared() {

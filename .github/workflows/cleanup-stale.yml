@@ -271,7 +271,7 @@ jobs:
           METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
           RUNNER_PR_NUMBERS: ${{ inputs.runner-pr-numbers }}
           DRY_RUN: ${{ env.DRY_RUN }}
-        run: python3 .github/scripts/runner/cleanup-metal-runners.py
+        run: python3 .github/scripts/runner/cleanup-metal-runners.py --maintain-locks
 
   cleanup-git-branches:
     if: inputs.runner-pr-numbers == ''

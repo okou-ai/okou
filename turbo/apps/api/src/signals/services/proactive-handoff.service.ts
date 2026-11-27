@@ -1,9 +1,23 @@
+import { proactiveDispatchHandoff } from "@okouai/db/schema/proactive-schedule";
 import { command } from "ccstate";
 import { sql } from "drizzle-orm";
 import { boolean, number, object, enum as zEnum } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+
+export const proactiveDispatchPhase$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    const [handoff] = await set(writeDb$)
+      .select({ phase: proactiveDispatchHandoff.phase })
+      .from(proactiveDispatchHandoff);
+    signal.throwIfAborted();
+    if (!handoff) {
+      throw new Error("Missing proactive dispatch handoff");
+    }
+    return handoff.phase;
+  },
+);
 
 const handoffResult = object({
   phase: zEnum(["automation", "draining", "standalone"]),

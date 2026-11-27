@@ -160,7 +160,9 @@ internal fun SessionRoot(
                                 ?.uiState
                                 ?.collectAsStateWithLifecycle()
                                 ?.value
-                                ?.timezone ?: java.util.TimeZone.getDefault().id,
+                                ?.timezone
+                                ?: state.cachedPreferences?.timezone
+                                ?: java.util.TimeZone.getDefault().id,
                         projectExpansion =
                             ready?.projectExpansion
                                 ?: opened?.projectExpansion
@@ -370,7 +372,7 @@ private fun WorkspaceSettingsContent(
             SettingsScreen(
                 appUpdates = appUpdates,
                 workspacePreferences = {
-                    MemberPreferencesSettings(preferenceModel, state.cachedAppearance)
+                    MemberPreferencesSettings(preferenceModel, state.cachedPreferences)
                     if (state.stage == SessionStage.Unavailable && !state.working) {
                         WorkspaceStartupRecovery(retry)
                     }
@@ -406,7 +408,10 @@ private fun WorkspaceSettingsContent(
                         SettingsSwitchRow(
                             stringResource(R.string.settings_cloud_browser),
                             leading = { SettingsIcon(R.drawable.ic_language) },
-                            checked = preferences?.cloudBrowser,
+                            checked =
+                                preferences?.cloudBrowser
+                                    ?: state.cachedPreferences?.cloudBrowser
+                                    ?: true,
                             supportingText = stringResource(R.string.settings_cloud_browser_detail),
                             onCheckedChange = preferenceModel?.let { it::setCloudBrowser },
                         )

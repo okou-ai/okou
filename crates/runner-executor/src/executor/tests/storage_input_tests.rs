@@ -185,7 +185,15 @@ fn instruction_check_with_mounts(
         Ok(present) => {
             sandbox::ExecResult::new(0, serde_json::to_vec(&present).unwrap(), Vec::new())
         }
-        Err(_) => sandbox::ExecResult::new(1, Vec::new(), Vec::new()),
+        Err(error) => {
+            let exit_code = match guest_storage_apply::ApplyFailure::from_target_io(&error) {
+                guest_storage_apply::ApplyFailure::TargetUnavailable => {
+                    guest_storage_apply::TARGET_UNAVAILABLE_EXIT_CODE
+                }
+                guest_storage_apply::ApplyFailure::Failed => 1,
+            };
+            sandbox::ExecResult::new(exit_code, Vec::new(), Vec::new())
+        }
     };
     overrides.add_exec_result_matcher(" --instructions-check-stdin", result);
 }
@@ -978,6 +986,12 @@ async fn home_restored_instruction_reuse_checks_target_and_repairs_missing_or_ta
         let hash = hex::encode(Sha256::digest(&bytes));
         let mut current =
             instruction_context(&hash, bytes.len() as u64, "codex", "home-instructions");
+        let instruction_mount = current
+            .instruction_file
+            .as_ref()
+            .unwrap()
+            .storage_mount
+            .clone();
         current.run_id = runner_types::ids::RunId::new_v4();
         let session = "22222222-2222-4222-8222-222222222222";
         current.reuse_key = Some(format!("thread:home-cache-{session}"));
@@ -1055,16 +1069,10 @@ async fn home_restored_instruction_reuse_checks_target_and_repairs_missing_or_ta
         if let Some(report) = outcome.startup_report.take() {
             report.finish().await;
         }
-        if matches!(state, "unsafe" | "invalid-probe") {
+        if state == "invalid-probe" {
             assert_ne!(outcome.exit_code(), 0);
             assert!(overrides.start_agent_process_calls().is_empty());
             assert!(overrides.storage_manifest_calls().is_empty());
-            if state == "unsafe" {
-                assert_eq!(
-                    fs::read(guest.path().join("external.md")).unwrap(),
-                    b"outside"
-                );
-            }
         } else {
             assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
             assert_eq!(
@@ -1073,8 +1081,24 @@ async fn home_restored_instruction_reuse_checks_target_and_repairs_missing_or_ta
             );
             apply_guest_storage(&overrides, guest.path(), 0, None);
             apply_guest_instructions(&overrides, guest.path(), 0);
-            if state == "present" {
-                assert_eq!(fs::read(&target).unwrap(), b"local Home edit");
+            if matches!(state, "present" | "unsafe") {
+                if state == "present" {
+                    assert_eq!(fs::read(&target).unwrap(), b"local Home edit");
+                } else {
+                    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+                    assert!(fs::symlink_metadata(&target).unwrap().is_symlink());
+                    assert_eq!(
+                        fs::read(guest.path().join("external.md")).unwrap(),
+                        b"outside"
+                    );
+                    assert_eq!(
+                        outcome
+                            .storage_fingerprints
+                            .storages
+                            .get(&instruction_mount),
+                        Some(&StorageFingerprint::tainted())
+                    );
+                }
                 assert!(overrides.storage_manifest_calls().is_empty());
                 assert!(
                     !overrides

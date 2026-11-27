@@ -13,14 +13,19 @@ struct ConversationRowProjection {
   let isSending: Bool
   /// The model selection's graph value for this render, which ChatDetailView also resolves.
   let models: ChatModelSelectionStore.Presentation?
+  var timeline = ConversationTimeline()
   private var history: ChatHistory { transcript.history ?? .empty }
 
   var rows: [ConversationCollectionRow] {
+    timeline.rows(contents, items: window.items, latestRunID: history.latestRunID)
+  }
+
+  private var contents: [ConversationCollectionRow.Content] {
     let items = window.items
     if conversation.sharing.isSelecting {
       let sharing = conversation.sharing
       let visibleIDs = Set(items.compactMap(\.message).map(\.id))
-      var rows: [ConversationCollectionRow] = window.hasEarlierMessages ? [.earlier] : []
+      var rows: [ConversationCollectionRow.Content] = window.hasEarlierMessages ? [.earlier] : []
       rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }
         .enumerated().map { index, group in
           // The preceding row already reserves the selection background's bottom inset.
@@ -28,17 +33,13 @@ struct ConversationRowProjection {
         }
       return rows
     }
-    var result: [ConversationCollectionRow] = []
+    var result: [ConversationCollectionRow.Content] = []
     if window.hasEarlierMessages {
       result.append(.earlier)
     }
     var answerForUsage: ChatMessage?
     for (index, item) in items.enumerated() {
-      let continuesGroup =
-        index > 0 && items[index - 1].role == item.role && !item.beginsWorkSection
-        && item.message?.modelChange == nil
-        && item.message?.userMessage?.annotation?.type != "automation"
-        && items[index - 1].message?.userMessage?.annotation?.type != "automation"
+      let continuesGroup = index > 0 && continues(item, after: items[index - 1])
       let spacing: CGFloat = index == 0 ? 20 : (continuesGroup ? 8 : 24)
       switch item {
       case .work(let section, let expanded):
@@ -50,19 +51,22 @@ struct ConversationRowProjection {
         if let failure = message.failure {
           // A provider's own error line from the same short run belongs inside the failure
           // card, so the reader sees one explanation instead of two that may disagree.
+          var showsAvatar = !continuesGroup
           var topSpacing = spacing
           var providerMessage: String?
-          if case .message(let previous, _, let previousSpacing, _, _, _, _) = result.last,
+          if case .message(let previous, let previousAvatar, let previousSpacing, _, _, _, _) =
+            result.last,
             isProviderMessage(previous, failure: message, in: items)
           {
             result.removeLast()
+            showsAvatar = previousAvatar
             providerMessage = previous.text
             topSpacing = previousSpacing
           }
           result.append(
             .failure(
               message, conversation.failureState(failure, models: models),
-              topSpacing: topSpacing, providerMessage: providerMessage))
+              showsAvatar: showsAvatar, topSpacing: topSpacing, providerMessage: providerMessage))
           continue
         }
         let pendingRetry = transcript.pending.first { $0.id == message.id }?.needsRetry
@@ -85,31 +89,57 @@ struct ConversationRowProjection {
       }
     }
     // Text still streaming from the running run, until its durable event takes the same id.
+    var previousItem = items.last
     for output in transcript.streamed {
-      var continues = false
-      if case .message(let previous, _, _, _, _, _, _) = result.last {
-        continues = previous.role != .user
-      } else if case .work = result.last {
-        continues = true
-      }
+      let message = ChatMessage(
+        id: output.eventID, role: .assistant, text: output.text, createdAt: output.createdAt,
+        runID: output.runID, isQueued: false, isError: false)
+      let item = ConversationItem.message(message)
+      let continuesGroup = previousItem.map { continues(item, after: $0) } == true
       result.append(
         .message(
-          ChatMessage(
-            id: output.eventID, role: .assistant, text: output.text, createdAt: output.createdAt,
-            runID: output.runID, isQueued: false, isError: false),
-          showsAvatar: !continues, topSpacing: continues ? 8 : 24, pendingRetry: nil,
+          message, showsAvatar: !continuesGroup, topSpacing: continuesGroup ? 8 : 24,
+          pendingRetry: nil,
           isSending: false))
+      previousItem = item
     }
-    if models?.snapshot.usesFollowupPlaceholder != true,
-      let source = transcript.recommendedFollowups
-    {
-      result.append(.followups(source, finishedAt: history.latestRunFinishAt))
+    let lastRunMessage = items.last { item in
+      guard let message = item.message, !message.isQueued else { return false }
+      return history.latestRunID == nil || message.runID == nil
+        || message.runID == history.latestRunID
     }
-    let showsActivityAvatar =
-      history.executionState.isActive
-      && items.last(where: { $0.message?.isQueued != true })?.role != .assistant
-    result.append(.footer(history.executionState, showsAvatar: showsActivityAvatar))
+    let statusNeedsAvatar = transcript.streamed.isEmpty && lastRunMessage?.role != .assistant
+    if let completion = transcript.completion {
+      let source =
+        models?.snapshot.usesFollowupPlaceholder == true ? nil : completion.recommendedFollowups
+      result.append(
+        .finished(
+          label: timeline.finishedLabel(
+            completion, followups: source, finishedAt: history.latestRunFinishAt),
+          followups: source, showsAvatar: statusNeedsAvatar))
+    }
+    let showsActivity = history.executionState == .queued || history.executionState == .running
+    result.append(.footer(history.executionState, showsAvatar: showsActivity && statusNeedsAvatar))
     return result
+  }
+
+  private func continues(_ item: ConversationItem, after previous: ConversationItem) -> Bool {
+    guard previous.role == item.role, !item.beginsWorkSection,
+      item.message?.modelChange == nil,
+      item.message?.userMessage?.annotation?.type != "automation",
+      previous.message?.userMessage?.annotation?.type != "automation"
+    else { return false }
+    guard let message = item.message else { return true }
+    switch previous {
+    case .message(let before, _) where message.role == .user:
+      return timeline.calendar.isDate(message.createdAt, inSameDayAs: before.createdAt)
+    case .message(let before, _):
+      return before.runID == message.runID || before.runID == nil || message.runID == nil
+    case .usage(let runID):
+      return runID == message.runID || message.runID == nil
+    case .work:
+      return true
+    }
   }
 
   /// The last assistant answer of a turn gets the copy / share / open actions.

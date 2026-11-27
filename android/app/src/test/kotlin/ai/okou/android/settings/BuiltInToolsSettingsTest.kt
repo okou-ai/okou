@@ -1,6 +1,7 @@
 package ai.okou.android.settings
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.HttpRejection
 import ai.okou.android.auth.WorkspaceIdentity
 import java.net.UnknownHostException
 import kotlinx.coroutines.CompletableDeferred
@@ -69,6 +70,34 @@ class BuiltInToolsSettingsTest {
         runCurrent()
         assertEquals(fixture.families.reversed(), settings.state.value.catalog.value)
         assertNull(settings.state.value.catalog.refreshFailure)
+    }
+
+    @Test
+    fun catalogUsesTheRawServerDelayAndFallsBackForAnInvalidHeader() = runTest {
+        val fixture = ToolFixture()
+        val attempts = mutableListOf<Long>()
+        val service =
+            object : BuiltInToolsService by fixture {
+                override suspend fun catalog(): List<DataToolFamily> {
+                    attempts += testScheduler.currentTime
+                    return when (attempts.size) {
+                        1 -> throw HttpRejection(429, "1", null)
+                        2 -> throw HttpRejection(503, "-1", null)
+                        else -> fixture.families
+                    }
+                }
+            }
+        val settings = model(service)
+        settings.show()
+        runCurrent()
+        advanceTimeBy(1_000L)
+        runCurrent()
+        assertEquals(listOf(0L, 1_000L), attempts)
+        assertNull(settings.state.value.catalog.value)
+        advanceTimeBy(3_000L)
+        runCurrent()
+        assertEquals(listOf(0L, 1_000L, 4_000L), attempts)
+        assertEquals(fixture.families, settings.state.value.catalog.value)
     }
 
     @Test
@@ -168,7 +197,7 @@ class BuiltInToolsSettingsTest {
         val settings = model(service)
         settings.show()
         runCurrent()
-        advanceTimeBy(settingsReadRetryDelayMillis * (settingsReadAttempts - 1))
+        advanceTimeBy(6_000)
         runCurrent()
         assertNull(settings.state.value.enabled(webSearchTool))
         assertNull(settings.state.value.displayedImage)
@@ -267,7 +296,7 @@ class BuiltInToolsSettingsTest {
         runCurrent()
         settings.chooseImage(otherImage)
         runCurrent()
-        advanceTimeBy(settingsReadRetryDelayMillis * (settingsReadAttempts - 1))
+        advanceTimeBy(6_000)
         runCurrent()
         assertEquals(otherImage, settings.state.value.displayedImage)
         assertTrue(settings.state.value.imageFailed)

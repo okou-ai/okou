@@ -20,7 +20,7 @@ import { settle } from "../utils";
 import type { WorkflowMember } from "./workflow-data.service";
 import { markOrgOnboardingComplete$ } from "./onboarding-completion.command";
 import { shouldEnableOnboardingSuggestions$ } from "./onboarding-suggestions.service";
-import { ensureProactiveWorkflows$ } from "./proactive-workflows-lifecycle.service";
+import { syncSuggestionSchedules$ } from "./proactive-dispatch-state.service";
 
 const L = logger("onboarding.service");
 
@@ -283,7 +283,7 @@ export const completeOnboarding$ = command(
     if (enableSuggestions) {
       // The saved preference also makes the owner eligible for scheduled reconciliation.
       const setup = await settle(
-        set(ensureProactiveWorkflows$, owner, signal),
+        set(syncSuggestionSchedules$, owner, signal),
         signal,
       );
       if (!setup.ok) {

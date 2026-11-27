@@ -55,8 +55,19 @@ class DefaultModelSettingsTest {
         scope: CoroutineScope = backgroundScope,
         identity: WorkspaceIdentity = api.identity,
         service: WorkspaceSession = api.service,
+        nowMillis: () -> Long = { currentTime },
         onFailure: (Exception) -> Unit = { throw it },
-    ) = DefaultModelSettings(scope, service, identity, store, { true }, { currentTime }, onFailure)
+    ) =
+        DefaultModelSettings(
+            scope,
+            service,
+            identity,
+            store,
+            { true },
+            nowMillis,
+            monotonicMillis = { currentTime },
+            onFailure = onFailure,
+        )
 
     private fun store(scope: CoroutineScope): DefaultModelStore {
         val file = temporary.newFolder().resolve("default-model.preferences_pb")
@@ -530,6 +541,7 @@ class DefaultModelSettingsTest {
 
                     override suspend fun defaultModelPreference(): DefaultModelPreference {
                         reads += currentTime
+                        if (reads.size == 2) throw ApiFailure.Http(429, null, null, 1L)
                         return preference
                     }
 
@@ -554,9 +566,12 @@ class DefaultModelSettingsTest {
             assertTrue(model.state.value.pending != null)
             assertNull(model.state.value.selected)
 
-            advanceTimeBy(3_000)
+            advanceTimeBy(999)
             runCurrent()
-            assertEquals(listOf(0L, 3_000L, 6_000L), reads)
+            assertEquals(listOf(0L, 3_000L), reads)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 4_000L), reads)
             assertEquals(listOf(DefaultModelNotice.SaveUnconfirmed), notices)
             assertEquals("gpt-test", store.load(api.identity).confirmed.selectedModel)
 
@@ -564,12 +579,12 @@ class DefaultModelSettingsTest {
             model.foreground(false)
             model.foreground(true)
             runCurrent()
-            assertEquals(7_000L, reads.last())
+            assertEquals(5_000L, reads.last())
             assertTrue(model.state.value.pending != null)
             assertEquals(listOf(DefaultModelNotice.SaveUnconfirmed), notices)
 
             model.showSettings(null)
-            advanceTimeBy(593_000)
+            advanceTimeBy(595_000)
             runCurrent()
             assertEquals(600_000L, reads.last())
             assertTrue(model.state.value.pending != null)
@@ -583,6 +598,186 @@ class DefaultModelSettingsTest {
             assertEquals("auto", store.load(api.identity).confirmed.selectedModel)
             assertEquals(listOf(0L), writes)
             assertEquals(listOf(DefaultModelNotice.SaveUnconfirmed), notices)
+        }
+    }
+
+    @Test
+    fun scheduledRefreshLetsPendingReadbackHonorItsServerDelay() = runTest {
+        ChatListApiFixture().use { api ->
+            DefaultModelApiFixture(api)
+            val original = api.service.defaultModelPreference()
+            val catalog = api.service.recoveryCatalog()
+            val models = api.service.recoveryModels()
+            val reads = mutableListOf<Long>()
+            val writes = mutableListOf<Long>()
+            val remote =
+                object : WorkspaceSession by api.service {
+                    override suspend fun recoveryCatalog() = catalog
+
+                    override suspend fun recoveryModels() = models
+
+                    override suspend fun defaultModelPreference(): DefaultModelPreference {
+                        reads += currentTime
+                        return when (reads.size) {
+                            1 -> original
+                            2 -> throw ApiFailure.Http(429, null, null, 1L)
+                            else -> original.copy(selectedModel = "auto")
+                        }
+                    }
+
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference,
+                    ): DefaultModelPreference {
+                        writes += currentTime
+                        throw ApiFailure.Http(503, null, null, null)
+                    }
+                }
+            val model = model(api, service = remote, onFailure = {})
+            model.openAfterSync()
+            advanceTimeBy(596_500)
+            model.select(null)
+            runCurrent()
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(listOf(0L, 599_500L), reads)
+
+            model.showSettings(null)
+            advanceTimeBy(999)
+            runCurrent()
+            assertEquals(listOf(0L, 599_500L), reads)
+            assertTrue(model.state.value.pending != null)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 599_500L, 600_500L), reads)
+            assertEquals(listOf(596_500L), writes)
+            assertNull(model.state.value.pending)
+            assertEquals("auto", model.state.value.record?.confirmed?.selectedModel)
+
+            advanceTimeBy(600_000)
+            runCurrent()
+            assertEquals(listOf(0L, 599_500L, 600_500L, 1_200_500L), reads)
+        }
+    }
+
+    @Test
+    fun aNewChoiceKeepsTheActiveReadbackWait() = runTest {
+        ChatListApiFixture().use { api ->
+            DefaultModelApiFixture(api)
+            val original = api.service.defaultModelPreference()
+            val catalog = api.service.recoveryCatalog()
+            val models = api.service.recoveryModels()
+            val reads = mutableListOf<Long>()
+            val writes = mutableListOf<Pair<Long, String?>>()
+            val remote =
+                object : WorkspaceSession by api.service {
+                    override suspend fun recoveryCatalog() = catalog
+
+                    override suspend fun recoveryModels() = models
+
+                    override suspend fun defaultModelPreference(): DefaultModelPreference {
+                        reads += currentTime
+                        if (reads.size == 2) throw ApiFailure.Http(429, null, null, 1L)
+                        return original
+                    }
+
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference,
+                    ): DefaultModelPreference {
+                        writes += currentTime to update.selectedModel
+                        if (writes.size == 1) throw ApiFailure.Http(503, null, null, null)
+                        return original.copy(selectedModel = update.selectedModel)
+                    }
+                }
+            val model = model(api, service = remote, onFailure = {})
+            model.openAfterSync()
+            model.select(null)
+            runCurrent()
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L), reads)
+
+            advanceTimeBy(400)
+            model.select("claude-test")
+            assertEquals("claude-test", model.state.value.selected?.id)
+            advanceTimeBy(599)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L), reads)
+            assertEquals(listOf(0L to null), writes)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 4_000L), reads)
+            assertEquals(listOf(0L to null, 4_000L to "claude-test"), writes)
+            assertNull(model.state.value.pending)
+        }
+    }
+
+    @Test
+    fun reopeningSettingsKeepsTheScheduledReadbackWaitAfterAClockCorrection() = runTest {
+        ChatListApiFixture().use { api ->
+            DefaultModelApiFixture(api)
+            val original = api.service.defaultModelPreference()
+            val catalog = api.service.recoveryCatalog()
+            val models = api.service.recoveryModels()
+            val reads = mutableListOf<Long>()
+            val writes = mutableListOf<Pair<Long, String?>>()
+            val remote =
+                object : WorkspaceSession by api.service {
+                    override suspend fun recoveryCatalog() = catalog
+
+                    override suspend fun recoveryModels() = models
+
+                    override suspend fun defaultModelPreference(): DefaultModelPreference {
+                        reads += currentTime
+                        if (reads.size == 4) throw ApiFailure.Http(429, null, null, 1L)
+                        return original
+                    }
+
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference,
+                    ): DefaultModelPreference {
+                        writes += currentTime to update.selectedModel
+                        if (writes.size == 1) throw ApiFailure.Http(503, null, null, null)
+                        return original.copy(selectedModel = update.selectedModel)
+                    }
+                }
+            var wallClockOffset = 0L
+            val model =
+                model(
+                    api,
+                    service = remote,
+                    nowMillis = { currentTime + wallClockOffset },
+                    onFailure = {},
+                )
+            model.openAfterSync()
+            model.select(null)
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(DefaultModelNotice.SaveUnconfirmed, model.notices.first())
+
+            model.showSettings(null)
+            advanceTimeBy(594_000)
+            runCurrent()
+            val expectedReads = listOf(0L, 3_000L, 6_000L, 600_000L)
+            assertEquals(expectedReads, reads)
+
+            advanceTimeBy(400)
+            wallClockOffset = -60_000L
+            model.showSettings(SettingsDestination.Overview)
+            runCurrent()
+            assertEquals(expectedReads, reads)
+            model.select("claude-test")
+            advanceTimeBy(599)
+            runCurrent()
+            assertEquals(expectedReads, reads)
+            assertEquals(listOf(0L to null), writes)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(expectedReads + 601_000L, reads)
+            assertEquals(listOf(0L to null, 601_000L to "claude-test"), writes)
+            assertEquals("claude-test", model.state.value.record?.confirmed?.selectedModel)
         }
     }
 
@@ -636,8 +831,14 @@ class DefaultModelSettingsTest {
             val started = CompletableDeferred<Unit>()
             val fail = CompletableDeferred<Unit>()
             val writes = mutableListOf<Pair<String?, String?>>()
+            val reads = mutableListOf<Long>()
             val remote =
                 object : WorkspaceSession by api.service {
+                    override suspend fun defaultModelPreference(): DefaultModelPreference {
+                        reads += currentTime
+                        return api.service.defaultModelPreference()
+                    }
+
                     override suspend fun updateDefaultModelPreference(
                         update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
@@ -645,7 +846,7 @@ class DefaultModelSettingsTest {
                         if (update.serviceTier != null) {
                             started.complete(Unit)
                             fail.await()
-                            throw ApiFailure.Http(503, null, null, null)
+                            throw ApiFailure.Http(503, null, null, 1L)
                         }
                         return api.service.updateDefaultModelPreference(update)
                     }
@@ -658,7 +859,12 @@ class DefaultModelSettingsTest {
             assertEquals("claude-test", model.state.value.selected?.id)
             fail.complete(Unit)
 
+            advanceTimeBy(999)
+            runCurrent()
+            assertEquals(listOf(0L), reads)
+            advanceTimeBy(1)
             val confirmed = model.state.first { it.pending == null }
+            assertEquals(listOf(0L, 1_000L), reads)
             assertEquals(listOf("gpt-test" to "PRIORITY", "claude-test" to null), writes)
             assertEquals("claude-test", confirmed.selected?.id)
             assertEquals(JsonPrimitive("claude-test"), fixture.preference["selectedModel"])

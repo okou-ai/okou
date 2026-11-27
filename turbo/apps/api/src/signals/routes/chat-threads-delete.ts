@@ -1,5 +1,5 @@
 import { synchronizeUserPushBadge$ } from "../services/push-notifications.service";
-import { isOfficialWorkflowThread$ } from "../services/official-workflow-policy.service";
+import { isPlatformTaskThread$ } from "../services/platform-task-thread.service";
 import { command } from "ccstate";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -103,7 +103,7 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     orgId: auth.orgId,
     eventId: query?.eventId,
   };
-  if (await set(isOfficialWorkflowThread$, args, signal)) {
+  if (await set(isPlatformTaskThread$, args, signal)) {
     return chatThreadNotFound();
   }
   signal.throwIfAborted();

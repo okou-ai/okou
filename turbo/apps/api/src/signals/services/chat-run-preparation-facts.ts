@@ -25,7 +25,7 @@ export type PickedChatThread = Readonly<
 
 /** Preparation facts only: neither a connector grant nor commit-time authority. */
 export interface ChatRunPreparationFacts {
-  readonly isOfficialWorkflowThread: boolean;
+  readonly isPlatformTaskThread: boolean;
   readonly hasCompletedPredecessorHistory: boolean;
   readonly captureNetworkBodies: boolean;
   readonly computerUseHostGrant: {

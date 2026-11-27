@@ -110,7 +110,7 @@
     <string name="chat_options_settings">Conversation settings</string>
     <string name="chat_options_model">Model</string>
     <string name="chat_connector_scope">Applies to this chat. Accounts initially follow the workspace defaults.</string>
-    <string name="connector_access_scope">Applies across your chats.</string>
+    <string name="connector_access_scope">Access policies apply to all your chats in this workspace.</string>
     <string name="connector_access_label">Access for %1$s, %2$s</string>
     <string name="connector_access_allow">Allow</string>
     <string name="connector_access_deny">Deny</string>
@@ -125,11 +125,15 @@
     <string name="connector_access_allow_week">Allow for 7d</string>
     <string name="chat_connector_empty">There are no connected accounts in this workspace.</string>
     <string name="chat_connector_manage">Manage connectors</string>
-    <string name="chat_connector_restore_defaults">Restore workspace defaults</string>
+    <string name="chat_connector_restore_defaults">Restore defaults for all connectors</string>
+    <string name="chat_connector_policy_remaining">%1$s remaining</string>
+    <string name="chat_connector_policies_failed">Could not load access policies.</string>
     <string name="chat_connector_saving">Saving connector choice…</string>
     <string name="chat_connector_save_failed">Could not save the connector choice.</string>
     <string name="chat_connector_first_send_failed">Could not apply the connector choices. Review them in Chat options, then retry this message.</string>
     <string name="connector_device_denied">The provider denied authorization.</string>
     <string name="connector_device_expired">The device code expired. Start authorization again.</string>
     <string name="connector_device_failed">Could not complete device authorization.</string>
+    <string name="chat_connector_check_result">Check result</string>
+    <string name="chat_connector_check_before_send">Check the connector choice in Chat options before sending.</string>
 </resources>

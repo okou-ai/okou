@@ -3,64 +3,74 @@ import SwiftUI
 import Textual
 
 /// Presentation revisions include every input that can change a row's measured size.
-enum ConversationCollectionRow: Equatable, Identifiable {
-  case earlier
-  case share(ChatShareGroup, topSpacing: CGFloat)
-  case message(
-    ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool,
-    isWorkHistory: Bool = false, showsActions: Bool = false)
-  case work(
-    ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat, failed: Bool = false)
-  case footer(ChatExecutionState, showsAvatar: Bool)
-  case failure(
-    ChatMessage, AssistantFailureState, topSpacing: CGFloat, providerMessage: String? = nil)
-  case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
-  case usage(runID: String, actionsFor: ChatMessage?)
+struct ConversationCollectionRow: Equatable, Identifiable {
+  let content: Content
+  var animatesAvatar = false
+  /// A share group keeps one selection target even when its user messages span midnight.
+  var interiorDates: [String: String] = [:]
+
+  enum Content: Equatable {
+    case dateDivider(before: String, label: String)
+    case earlier
+    case share(ChatShareGroup, topSpacing: CGFloat)
+    case message(
+      ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool,
+      isWorkHistory: Bool = false, showsActions: Bool = false)
+    case work(
+      ChatWorkSection, expanded: Bool, showsAvatar: Bool, topSpacing: CGFloat, failed: Bool = false)
+    case footer(ChatExecutionState, showsAvatar: Bool)
+    case failure(
+      ChatMessage, AssistantFailureState, showsAvatar: Bool, topSpacing: CGFloat,
+      providerMessage: String? = nil)
+    case finished(label: String, followups: ChatRecommendedFollowupSource?, showsAvatar: Bool)
+    case usage(runID: String, actionsFor: ChatMessage?)
+  }
 
   static let messageHorizontalInset: CGFloat = 20
   static let assistantLeadingInset: CGFloat = 6
 
   var id: String {
-    switch self {
+    switch content {
     case .share(let group, _): group.id
+    case .dateDivider(let id, _): "date:\(id)"
     case .earlier: "conversation-earlier"
     case .message(let message, _, _, _, _, _, _): message.id
     case .work(let section, _, _, _, _): section.id
     case .footer: "conversation-bottom"
-    case .failure(let message, _, _, _): message.id
-    case .followups: "conversation-followups"
+    case .failure(let message, _, _, _, _): message.id
+    case .finished: "conversation-finished"
     case .usage(let runID, _): "usage:\(runID)"
     }
   }
 
   var message: ChatMessage? {
-    if case .message(let message, _, _, _, _, _, _) = self { return message }
-    if case .failure(let message, _, _, _) = self { return message }
-    if case .share(let group, _) = self { return group.messages.first }
+    if case .message(let message, _, _, _, _, _, _) = content { return message }
+    if case .failure(let message, _, _, _, _) = content { return message }
+    if case .share(let group, _) = content { return group.messages.first }
     return nil
   }
 
   var isMessageContent: Bool {
-    switch self {
+    switch content {
     case .message, .failure, .work, .share: true
-    case .earlier, .footer, .followups, .usage: false
+    case .dateDivider, .earlier, .footer, .finished, .usage: false
     }
   }
 
   var readingContentTopSpacing: CGFloat? {
-    switch self {
+    switch content {
     case .message(_, _, let spacing, _, _, _, _), .work(_, _, _, let spacing, _),
-      .failure(_, _, let spacing, _), .share(_, let spacing):
+      .failure(_, _, _, let spacing, _), .share(_, let spacing):
       spacing
     case .usage(_, let answer): answer == nil ? 0 : OkouSpace.sm
-    case .earlier, .footer, .followups: nil
+    case .dateDivider, .earlier, .footer, .finished: nil
     }
   }
 
   /// Sharing replaces a work header with a selection mark above the answer.
   /// Keep the body, rather than that changing header, at the reader's offset.
   var sharingBodyInset: CGFloat {
-    switch self {
+    switch content {
     case .share(let group, _) where group.messages.first?.role == .assistant:
       OkouAvatarSize.message + OkouSpace.sm
     case .message(let message, true, _, _, _, _, _) where message.role == .assistant:
@@ -70,7 +80,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   }
 
   var isShareSelection: Bool {
-    if case .share = self { return true }
+    if case .share = content { return true }
     return false
   }
 }

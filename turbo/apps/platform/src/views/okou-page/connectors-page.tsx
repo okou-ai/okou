@@ -281,12 +281,18 @@ function ConnectorsScopeSegment() {
         })}
         <ConnectedScopeCount />
       </SegmentControlItem>
+      <SegmentControlItem value="custom" data-testid="connectors-scope-custom">
+        {t(($) => {
+          return $.connectors.catalog.scope.custom;
+        })}
+        <CustomScopeCount />
+      </SegmentControlItem>
       <SegmentControlItem
         value="remote-control"
         data-testid="connectors-scope-remote-control"
       >
         {t(($) => {
-          return $.connectors.catalog.scope.remoteControl;
+          return $.remoteDevices.title;
         })}
         <RemoteControlScopeCount />
       </SegmentControlItem>
@@ -298,12 +304,6 @@ function ConnectorsScopeSegment() {
           return $.connectors.catalog.scope.privateNetwork;
         })}
         <PrivateNetworkScopeCount />
-      </SegmentControlItem>
-      <SegmentControlItem value="custom" data-testid="connectors-scope-custom">
-        {t(($) => {
-          return $.connectors.catalog.scope.custom;
-        })}
-        <CustomScopeCount />
       </SegmentControlItem>
     </SegmentControl>
   );
@@ -927,7 +927,7 @@ function ConnectorEmptyState({ message }: { readonly message: string }) {
 }
 
 /**
- * Connected built-in and custom connector accounts. Remote control and private
+ * Connected built-in and custom connector accounts. Remote devices and private
  * network resources have their own scopes.
  */
 function ConnectorsConnectedPanel({

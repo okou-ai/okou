@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.65.1](https://github.com/okou-ai/okou/compare/android-v0.65.0...android-v0.65.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** keep chat list position during dependency failures ([#51294](https://github.com/okou-ai/okou/issues/51294)) ([3ed7148](https://github.com/okou-ai/okou/commit/3ed71485c3a11907d2ec41de69655bb16e64bbfb))
+
+## [0.65.0](https://github.com/okou-ai/okou/compare/android-v0.64.1...android-v0.65.0) (2026-11-27)
+
+
+### Features
+
+* **android:** browse chat connectors before loading accounts ([#51274](https://github.com/okou-ai/okou/issues/51274)) ([0b24058](https://github.com/okou-ai/okou/commit/0b24058401d53466f9b2d05b53feffbc5c8526fe))
+
+
+### Bug Fixes
+
+* **android:** show settings defaults before workspace preferences arrive ([#51273](https://github.com/okou-ai/okou/issues/51273)) ([51ee95a](https://github.com/okou-ai/okou/commit/51ee95ab69678b86b6c6f550c1b2c7488c7efa6f))
+
+
+### Refactoring
+
+* **android:** share bounded retry timing in settings ([#51233](https://github.com/okou-ai/okou/issues/51233)) ([c704636](https://github.com/okou-ai/okou/commit/c704636ff92a460d595ed2cf567da96cf3e24843))
+
+## [0.64.1](https://github.com/okou-ai/okou/compare/android-v0.64.0...android-v0.64.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** align chat list terminal read feedback ([#51272](https://github.com/okou-ai/okou/issues/51272)) ([adace51](https://github.com/okou-ai/okou/commit/adace5196aed90e2d263a0ac14bbc3f5ab8a05f6))
+
 ## [0.64.0](https://github.com/okou-ai/okou/compare/android-v0.63.0...android-v0.64.0) (2026-11-27)
 
 

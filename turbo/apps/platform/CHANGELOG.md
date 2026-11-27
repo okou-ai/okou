@@ -13,6 +13,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1193.2](https://github.com/okou-ai/okou/compare/app-v0.1193.1...app-v0.1193.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **platform:** rename remote control to remote devices ([#51289](https://github.com/okou-ai/okou/issues/51289)) ([536a7d9](https://github.com/okou-ai/okou/commit/536a7d9383f1baee74d2c12050476a2a5c688e3d))
+
+## [0.1193.1](https://github.com/okou-ai/okou/compare/app-v0.1193.0...app-v0.1193.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **app:** use arrow cursor for share selection rows ([#51275](https://github.com/okou-ai/okou/issues/51275)) ([c7bc7e4](https://github.com/okou-ai/okou/commit/c7bc7e49d62a11fb7f97f311467b709b45d3d129))
+
 ## [0.1193.0](https://github.com/okou-ai/okou/compare/app-v0.1192.0...app-v0.1193.0) (2026-11-27)
 
 

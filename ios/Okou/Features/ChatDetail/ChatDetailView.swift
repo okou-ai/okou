@@ -14,6 +14,10 @@ struct ChatDetailView: View {
   let fork: ((ChatFeedbackSelection) -> Void)?
   private var thread: ChatThread { conversation.thread }
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.locale) private var locale
+  @Environment(\.calendar) private var calendar
+  @Environment(\.timeZone) private var timeZone
+  @State private var localDay = Date.now
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.openURL) private var openURL
   @Environment(\.openChatSource) private var openChatSource
@@ -77,9 +81,12 @@ struct ChatDetailView: View {
     (resolvedRecovery ?? conversation.failureRecoveryActions.currentRecovery).isRecovering
   }
   private var rows: [ConversationCollectionRow] {
-    ConversationRowProjection(
+    var localCalendar = calendar
+    localCalendar.timeZone = timeZone
+    return ConversationRowProjection(
       conversation: conversation, transcript: transcript, window: window,
-      isSending: delivery.isSending, models: models
+      isSending: delivery.isSending, models: models,
+      timeline: ConversationTimeline(now: localDay, calendar: localCalendar, locale: locale)
     ).rows
   }
 
@@ -189,8 +196,16 @@ struct ChatDetailView: View {
     .connectorAuthorization(
       store: conversation.connectorActions, failureTitle: "Unable to open connection"
     )
+    .onReceive(
+      NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)
+    ) { _ in
+      localDay = .now
+    }
     .onChange(of: scenePhase) { _, phase in
-      if phase == .active { Task { await conversation.connectorActions.refreshKnown() } }
+      if phase == .active {
+        localDay = .now
+        Task { await conversation.connectorActions.refreshKnown() }
+      }
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       VStack(alignment: .leading, spacing: 0) {
@@ -259,44 +274,39 @@ struct ChatDetailView: View {
   private func rowContent(_ row: ConversationCollectionRow, anchor: ConversationScrollAnchor?)
     -> some View
   {
-    switch row {
+    let motion: OkouAvatar.Motion = row.animatesAvatar && anchor != nil ? .animated : .still
+    switch row.content {
+    case .dateDivider(_, let label):
+      ConversationDivider(label: label, centered: true)
+        .padding(.horizontal, ConversationCollectionRow.messageHorizontalInset)
+        .padding(.top, OkouSpace.xl)
     case .share(let group, let topSpacing):
-      ChatSharingRow(group: group, sharing: conversation.sharing) {
-        VStack(alignment: .leading, spacing: OkouSpace.sm) {
-          ForEach(Array(group.messages.enumerated()), id: \.element.id) { index, message in
-            messageRow(
-              message, pendingRetry: nil, isSending: false,
-              presentation: MessageRowPresentation(
-                showsAvatar: index == 0, isWorkHistory: false, showsActions: false,
-                loadsAttachments: anchor != nil))
-          }
-        }
-      }
+      sharingRow(
+        group, interiorDates: row.interiorDates, motion: motion, loadsAttachments: anchor != nil
+      )
       .background {
         if let anchor { ConversationRowAnchor(messageID: group.id, anchor: anchor) }
       }
       .padding(.horizontal, ConversationCollectionRow.messageHorizontalInset)
       .padding(.top, topSpacing)
-    case .failure(let message, let state, let topSpacing, let providerMessage):
-      AssistantFailureRecoveryCard(
-        failure: state.failure, conversation: conversation, providerMessage: providerMessage
-      )
+    case .failure(let message, let state, let showsAvatar, let topSpacing, let providerMessage):
+      VStack(alignment: .leading, spacing: OkouSpace.sm) {
+        if showsAvatar { assistantAvatar(motion) }
+        AssistantFailureRecoveryCard(
+          failure: state.failure, conversation: conversation, providerMessage: providerMessage)
+      }
       .background {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
       }
       .padding(EdgeInsets(top: topSpacing, leading: 20, bottom: 0, trailing: 20))
-    case .followups(let source, let finishedAt):
-      RecommendedFollowupList(
-        source: source, finishedAt: finishedAt,
-        select: conversation.composer.editor.selectOrAppendText
-      )
-      .padding(.top, OkouSpace.xxl)
+    case .finished(let label, let followups, let showsAvatar):
+      finishedRow(label: label, followups: followups, avatar: showsAvatar ? motion : nil)
     case .earlier:
       ConversationEarlierMessagesButton(conversation: conversation, scrolling: scrolling)
     case .work(let section, let expanded, let showsAvatar, let topSpacing, let failed):
       // The avatar shares the work summary's line instead of taking a line of its own.
       HStack(spacing: OkouSpace.sm) {
-        if showsAvatar { assistantAvatar }
+        if showsAvatar { assistantAvatar(motion) }
         ConversationWorkHeader(section: section, expanded: expanded, failed: failed) {
           scrolling.toggleWorkHistory(section.id)
         }
@@ -313,7 +323,8 @@ struct ChatDetailView: View {
       messageRow(
         message, pendingRetry: pendingRetry, isSending: isSending,
         presentation: MessageRowPresentation(
-          showsAvatar: showsAvatar, isWorkHistory: isWorkHistory, showsActions: showsActions,
+          avatar: showsAvatar ? motion : nil, isWorkHistory: isWorkHistory,
+          showsActions: showsActions,
           loadsAttachments: anchor != nil)
       )
       .background {
@@ -327,7 +338,7 @@ struct ChatDetailView: View {
       VStack(alignment: .leading, spacing: OkouSpace.xxl) {
         if executionState == .queued || executionState == .running {
           HStack(spacing: OkouSpace.sm) {
-            if showsAvatar { assistantAvatar }
+            if showsAvatar { assistantAvatar(motion) }
             ConversationActivityLabel(
               summary: conversation.activitySummary, state: executionState
             )
@@ -355,7 +366,7 @@ struct ChatDetailView: View {
   }
 
   private struct MessageRowPresentation {
-    let showsAvatar: Bool
+    let avatar: OkouAvatar.Motion?
     let isWorkHistory: Bool
     let showsActions: Bool
     let loadsAttachments: Bool
@@ -404,8 +415,8 @@ struct ChatDetailView: View {
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
   }
 
-  private var assistantAvatar: some View {
-    OkouAvatar(size: OkouAvatarSize.message, label: "Okou")
+  private func assistantAvatar(_ motion: OkouAvatar.Motion) -> some View {
+    OkouAvatar(size: OkouAvatarSize.message, motion: motion, label: "Okou")
       .accessibilityIdentifier("assistant-avatar")
   }
 
@@ -413,8 +424,8 @@ struct ChatDetailView: View {
     -> some View
   {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      if message.role == .assistant && presentation.showsAvatar {
-        assistantAvatar
+      if let motion = presentation.avatar {
+        assistantAvatar(motion)
           .padding(
             .leading, conversation.sharing.isSelecting ? OkouAvatarSize.message + OkouSpace.sm : 0)
       }
@@ -483,6 +494,47 @@ struct ChatDetailView: View {
 }
 
 extension ChatDetailView {
+  private func sharingRow(
+    _ group: ChatShareGroup, interiorDates: [String: String], motion: OkouAvatar.Motion,
+    loadsAttachments: Bool
+  ) -> some View {
+    ChatSharingRow(group: group, sharing: conversation.sharing) {
+      VStack(alignment: .leading, spacing: OkouSpace.sm) {
+        ForEach(Array(group.messages.enumerated()), id: \.element.id) { index, message in
+          if let label = interiorDates[message.id] {
+            ConversationDivider(label: label, centered: true)
+          }
+          messageRow(
+            message, pendingRetry: nil, isSending: false,
+            presentation: MessageRowPresentation(
+              avatar: index == 0 ? motion : nil, isWorkHistory: false, showsActions: false,
+              loadsAttachments: loadsAttachments))
+        }
+      }
+    }
+  }
+
+  private func finishedRow(
+    label: String, followups: ChatRecommendedFollowupSource?, avatar: OkouAvatar.Motion?
+  )
+    -> some View
+  {
+    VStack(alignment: .leading, spacing: OkouSpace.sm) {
+      if let avatar {
+        assistantAvatar(avatar).padding(
+          .leading, ConversationCollectionRow.messageHorizontalInset)
+      }
+      ConversationDivider(label: label)
+        .padding(.leading, ConversationCollectionRow.messageHorizontalInset + OkouSpace.six)
+        .padding(.trailing, ConversationCollectionRow.messageHorizontalInset)
+      if let followups {
+        RecommendedFollowupList(
+          source: followups, select: conversation.composer.editor.selectOrAppendText)
+      }
+    }
+    .padding(.top, OkouSpace.xxl)
+  }
+
   /// This render's window and scroll target, with the same fallback as the transcript.
   private var window: ConversationPresentation.Window {
     resolvedWindow ?? conversation.currentWindow

@@ -954,6 +954,9 @@ internal fun OkouApp(
         }
     val activeComposerKey =
         (target as? WorkspaceTarget.Chat)?.let { "thread:${it.id}" } ?: newTarget?.key
+    LaunchedEffect(connectors, activeComposerKey) {
+        connectors?.chatOptions?.activate(activeComposerKey)
+    }
     LaunchedEffect(chatConnectorVisit, activeComposerKey, workspaceReady) {
         if (
             workspaceReady &&
@@ -1018,6 +1021,10 @@ internal fun OkouApp(
     DisposableEffect(chats, needsChatList) {
         chats?.listVisibilityChanged(needsChatList)
         onDispose { chats?.listVisibilityChanged(false) }
+    }
+    DisposableEffect(chats, showChatList) {
+        chats?.listPaneVisibilityChanged(showChatList)
+        onDispose { chats?.listPaneVisibilityChanged(false) }
     }
     LaunchedEffect(newChat, provisionalId, provisionalChat, createdId) {
         if (newChat != null && navigation.target == newChat && provisionalId != null) {

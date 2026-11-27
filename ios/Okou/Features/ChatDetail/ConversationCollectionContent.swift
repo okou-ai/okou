@@ -139,8 +139,8 @@ final class ConversationCollectionContent<Content: View> {
   private func canRetainContent(for row: ConversationCollectionRow) -> Bool {
     guard let input = input() else { return false }
     let source = input.source
-    if case .work(let section, false, _, _, _) = row { return section.endTime != nil }
-    guard case .message(let message, _, _, nil, false, false, _) = row,
+    if case .work(let section, false, _, _, _) = row.content { return section.endTime != nil }
+    guard case .message(let message, _, _, nil, false, false, _) = row.content,
       message.attachments.isEmpty, message.text.utf8.count <= 8_192
     else { return false }
     if message.role == .assistant {
@@ -220,7 +220,7 @@ final class ConversationCollectionContent<Content: View> {
     let below = Array(ids.dropFirst(last + 1).prefix(12))
     let nearby = above + below
     let rich = nearby.filter { id in
-      guard case .message(let message, _, _, nil, false, false, _) = displayedRows[id],
+      guard case .message(let message, _, _, nil, false, false, _) = displayedRows[id]?.content,
         message.role == .assistant, message.attachments.isEmpty,
         (250...8_192).contains(message.text.utf8.count),
         let plan = source.markdown.cachedPlan(
@@ -229,7 +229,7 @@ final class ConversationCollectionContent<Content: View> {
       return plan.hasStableHeight && plan.resources.isEmpty
     }
     let plain = nearby.filter { id in
-      guard case .message(let message, _, _, nil, false, false, _) = displayedRows[id],
+      guard case .message(let message, _, _, nil, false, false, _) = displayedRows[id]?.content,
         message.role == .user, message.attachments.isEmpty, message.modelChange == nil,
         message.inputError == nil, let document = message.userMessage,
         document.annotation == nil, document.bodyParts.count == 1,
@@ -241,7 +241,7 @@ final class ConversationCollectionContent<Content: View> {
     let plainIDs = Set(plain.prefix(6))
     // Prepare the expensive rows above the reader first so a quick follow-up swipe can use them.
     let headers = nearby.filter { id in
-      if case .work(let section, false, _, _, _) = displayedRows[id] {
+      if case .work(let section, false, _, _, _) = displayedRows[id]?.content {
         return section.endTime != nil
       }
       return false

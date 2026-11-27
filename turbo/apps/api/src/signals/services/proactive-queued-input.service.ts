@@ -8,13 +8,13 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { prepareChatEventReplacement } from "./chat-event.service";
-import type { ProactiveWorkflowOwner } from "./proactive-workflows-eligibility.service";
+import type { ProactiveScheduleOwner } from "./proactive-member-preferences.service";
 
 /** Revocation and Run admission compete on the same unique queue-head replacement. */
 export const revokeStaleProactiveInputs$ = command(
   async (
     { set },
-    owner: ProactiveWorkflowOwner | undefined,
+    owner: ProactiveScheduleOwner | undefined,
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);

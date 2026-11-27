@@ -52,6 +52,7 @@ impl From<runner_executor::ExecutorError> for RunnerError {
             ExecutorError::Config(message) => Self::Config(message),
             ExecutorError::Cancelled => Self::Cancelled,
             ExecutorError::Internal(message) => Self::Internal(message),
+            ExecutorError::StorageTargetUnavailable(message) => Self::Internal(message),
             ExecutorError::Snapshot(error) => Self::Snapshot(error),
             ExecutorError::Io(error) => Self::Io(error),
         }

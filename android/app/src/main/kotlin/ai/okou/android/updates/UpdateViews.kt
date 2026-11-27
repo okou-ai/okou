@@ -651,8 +651,6 @@ private fun UpdateUiState.updateProblemMessage(requiresNewerAndroid: Boolean): I
     return when {
         latestProblem != null -> latestProblem
         (check == UpdateCheck.Failed || check == UpdateCheck.Waiting) &&
-            !canDownload &&
-            !canInstall &&
             transfer !is UpdateTransfer.Downloading -> R.string.updates_error_check
         !requiresNewerAndroid &&
             check != UpdateCheck.Checking &&
@@ -780,9 +778,9 @@ private fun UpdateAction(
     if (progress != null) {
         val fraction = downloadPercent?.let { it / 100f }
         val disabledColors = ButtonDefaults.buttonColors()
-        val waitingToInstall =
-            state.canInstall && installProgress == R.string.updates_waiting_to_install
-        val useDisabledColors = checking || waitingToInstall
+        val installing = state.canInstall && installProgress != null
+        val waitingToInstall = installing && installProgress == R.string.updates_waiting_to_install
+        val useDisabledColors = checking || waitingToInstall || (state.required && installing)
         Box(
             controlModifier
                 .focusable()

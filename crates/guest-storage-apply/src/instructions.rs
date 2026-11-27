@@ -1,6 +1,6 @@
 use crate::LOG_TAG;
 use crate::cleanup_directory::CleanupDirectory;
-use guest_telemetry::{log_info, log_warn};
+use guest_telemetry::log_info;
 use std::fs;
 use std::io;
 use std::os::unix::fs::OpenOptionsExt;
@@ -8,30 +8,33 @@ use std::path::{Path, PathBuf};
 
 /// Materialize the current Run's instruction file after ordinary Storage reconciliation.
 /// The caller pins the source directory; only known framework files are replaced.
-pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> bool {
+pub(crate) fn apply_agent_instructions(
+    home: &Path,
+    framework: &str,
+    source: &Path,
+) -> io::Result<()> {
     let (relative_home, filename) = match framework {
         "claude-code" => (".claude", InstructionFilename::Claude),
         "codex" => (".codex", InstructionFilename::Agents),
         "pi" => (".pi/agent", InstructionFilename::Agents),
         "antigravity" => (".gemini", InstructionFilename::Gemini),
-        _ => return false,
+        _ => return Err(io::Error::other("Unsupported instruction framework")),
     };
     // Storage delivered the source into the current Run's staging directory.
-    if !matches!(
-        lstat_instruction_path_state(source),
-        InstructionPathState::RegularFile
-    ) {
-        return false;
+    match lstat_instruction_path_state(source) {
+        InstructionPathState::RegularFile => {}
+        InstructionPathState::MetadataError(error) => return Err(io::Error::other(error)),
+        _ => {
+            return Err(io::Error::other(
+                "Missing or nonregular staged instruction file",
+            ));
+        }
     }
-    if !instruction_dir_is_safe(lstat_instruction_path_state(home)) {
-        return false;
-    }
+    require_instruction_directory(lstat_instruction_path_state(home))?;
     let mut target = home.to_path_buf();
     for component in Path::new(relative_home).components() {
         target.push(component);
-        if !ensure_final_instruction_dir(&target) {
-            return false;
-        }
+        ensure_final_instruction_dir(&target)?;
     }
     copy_instruction_file(source, &target, filename, "Applied Agent instructions")
 }
@@ -87,10 +90,16 @@ impl InstructionFilename {
     }
 }
 
-pub(crate) fn cleanup_instruction_files(entries: &[InstructionCleanup]) -> bool {
+pub(crate) fn cleanup_instruction_files(entries: &[InstructionCleanup]) -> io::Result<()> {
     for entry in entries {
-        let Some(filenames) = cleanup_filenames(entry) else {
-            return false;
+        let filenames = match entry.target_filename.as_deref() {
+            Some(raw) => vec![InstructionFilename::parse(raw).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Invalid instruction cleanup filename",
+                )
+            })?],
+            None => InstructionFilename::ALL.to_vec(),
         };
         let mount_path = Path::new(&entry.mount_path);
         // Preserve the no-op behavior of an empty mount path.
@@ -100,98 +109,61 @@ pub(crate) fn cleanup_instruction_files(entries: &[InstructionCleanup]) -> bool 
         let directory = match CleanupDirectory::open(mount_path) {
             Ok(directory) => directory,
             Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
-            Err(e) => {
-                log_warn!(
-                    LOG_TAG,
-                    "Failed to open instructions cleanup directory: {e}"
-                );
-                return false;
-            }
+            Err(error) => return Err(error),
         };
         // Retain the opened directory through every leaf metadata check and unlink.
         for filename in filenames {
-            if !remove_instruction_file_if_safe(&directory.proc_path().join(filename.as_str())) {
-                return false;
-            }
+            remove_instruction_file_if_safe(
+                &directory.proc_path().join(filename.as_str()),
+                "Removed stale instructions file",
+            )?;
         }
     }
-    true
+    Ok(())
 }
-fn cleanup_filenames(entry: &InstructionCleanup) -> Option<Vec<InstructionFilename>> {
-    match entry.target_filename.as_deref() {
-        Some(raw) => match InstructionFilename::parse(raw) {
-            Some(filename) => Some(vec![filename]),
-            None => {
-                log_warn!(
-                    LOG_TAG,
-                    "Skipping invalid instructions cleanup target filename"
-                );
-                None
-            }
-        },
-        None => Some(InstructionFilename::ALL.to_vec()),
-    }
-}
-fn remove_instruction_file_if_safe(path: &Path) -> bool {
+
+fn remove_instruction_file_if_safe(path: &Path, success_message: &str) -> io::Result<()> {
     match lstat_instruction_path_state(path) {
-        InstructionPathState::Missing => true,
+        InstructionPathState::Missing => return Ok(()),
         InstructionPathState::Directory | InstructionPathState::OtherNonRegular => {
-            log_warn!(LOG_TAG, "Stale instructions path is not a regular file");
-            false
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Instruction cleanup target is not a regular file",
+            ));
         }
-        InstructionPathState::RegularFile | InstructionPathState::Symlink => {
-            match fs::remove_file(path) {
-                Ok(_) => {
-                    log_info!(LOG_TAG, "Removed stale instructions file");
-                    true
-                }
-                Err(e) => {
-                    log_warn!(LOG_TAG, "Failed to remove stale instructions file: {}", e);
-                    false
-                }
-            }
-        }
-        InstructionPathState::MetadataError(e) => {
-            log_warn!(LOG_TAG, "Failed to inspect stale instructions file: {}", e);
-            false
-        }
+        InstructionPathState::RegularFile | InstructionPathState::Symlink => {}
+        InstructionPathState::MetadataError(error) => return Err(error),
     }
+    fs::remove_file(path)?;
+    log_info!(LOG_TAG, "{success_message}");
+    Ok(())
 }
 
-fn ensure_final_instruction_dir(path: &Path) -> bool {
-    match lstat_instruction_path_state(path) {
-        InstructionPathState::Missing => match fs::create_dir_all(path) {
-            Ok(()) => instruction_dir_is_safe(lstat_instruction_path_state(path)),
-            Err(e) => {
-                log_warn!(
-                    LOG_TAG,
-                    "Failed to create final instructions directory: {}",
-                    e
-                );
-                false
-            }
-        },
-        state => instruction_dir_is_safe(state),
-    }
+fn ensure_final_instruction_dir(path: &Path) -> io::Result<()> {
+    let state = match lstat_instruction_path_state(path) {
+        InstructionPathState::Missing => {
+            fs::create_dir_all(path)?;
+            lstat_instruction_path_state(path)
+        }
+        state => state,
+    };
+    require_instruction_directory(state)
 }
 
-fn instruction_dir_is_safe(state: InstructionPathState) -> bool {
+fn require_instruction_directory(state: InstructionPathState) -> io::Result<()> {
     match state {
-        InstructionPathState::Directory => true,
-        InstructionPathState::Missing => false,
+        InstructionPathState::Directory => Ok(()),
+        InstructionPathState::Missing => Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Instruction directory is missing",
+        )),
         InstructionPathState::RegularFile
         | InstructionPathState::Symlink
-        | InstructionPathState::OtherNonRegular => {
-            log_warn!(
-                LOG_TAG,
-                "Skipping instructions operation because framework home is not a directory"
-            );
-            false
-        }
-        InstructionPathState::MetadataError(e) => {
-            log_warn!(LOG_TAG, "Failed to inspect instructions directory: {}", e);
-            false
-        }
+        | InstructionPathState::OtherNonRegular => Err(io::Error::new(
+            io::ErrorKind::NotADirectory,
+            "Instruction parent is not a directory",
+        )),
+        InstructionPathState::MetadataError(error) => Err(error),
     }
 }
 
@@ -200,7 +172,7 @@ fn copy_instruction_file(
     final_mount_path: &Path,
     target_filename: InstructionFilename,
     success_message: &str,
-) -> bool {
+) -> io::Result<()> {
     copy_instruction_file_with(
         source_path,
         final_mount_path,
@@ -216,35 +188,24 @@ fn copy_instruction_file_with(
     target_filename: InstructionFilename,
     success_message: &str,
     copy: impl FnOnce(&mut fs::File, &mut fs::File) -> io::Result<u64>,
-) -> bool {
+) -> io::Result<()> {
     let target_path = final_mount_path.join(target_filename.as_str());
     match lstat_instruction_path_state(&target_path) {
         InstructionPathState::RegularFile | InstructionPathState::Missing => {}
         InstructionPathState::Directory
         | InstructionPathState::Symlink
         | InstructionPathState::OtherNonRegular => {
-            log_warn!(
-                LOG_TAG,
-                "Skipping instructions copy because target is not a regular file"
-            );
-            return false;
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Instruction target is not a regular file",
+            ));
         }
-        InstructionPathState::MetadataError(e) => {
-            log_warn!(LOG_TAG, "Failed to inspect instructions target: {}", e);
-            return false;
-        }
+        InstructionPathState::MetadataError(error) => return Err(error),
     }
 
-    match copy_instruction_file_atomically(source_path, &target_path, copy) {
-        Ok(()) => {
-            log_info!(LOG_TAG, "{}", success_message);
-            remove_alternates_after_successful_copy(final_mount_path, target_filename, &target_path)
-        }
-        Err(e) => {
-            log_warn!(LOG_TAG, "Failed to copy instructions file: {}", e);
-            false
-        }
-    }
+    copy_instruction_file_atomically(source_path, &target_path, copy)?;
+    log_info!(LOG_TAG, "{success_message}");
+    remove_alternates_after_successful_copy(final_mount_path, target_filename, &target_path)
 }
 
 fn copy_instruction_file_atomically(
@@ -255,11 +216,13 @@ fn copy_instruction_file_atomically(
     let mut source = fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(source_path)?;
-    if !source.metadata()?.is_file() {
+        .open(source_path)
+        .map_err(io::Error::other)?;
+    let source_metadata = source.metadata().map_err(io::Error::other)?;
+    if !source_metadata.is_file() {
         return Err(io::Error::other("Instruction source is not a regular file"));
     }
-    let source_permissions = source.metadata()?.permissions();
+    let source_permissions = source_metadata.permissions();
     let (mut temp_file, temp_path) = create_instruction_temp_file(target_path)?;
     let result = (|| {
         copy(&mut source, &mut temp_file)?;
@@ -320,75 +283,33 @@ fn remove_alternates_after_successful_copy(
     mount_path: &Path,
     target_filename: InstructionFilename,
     target_path: &Path,
-) -> bool {
+) -> io::Result<()> {
     match lstat_instruction_path_state(target_path) {
-        InstructionPathState::RegularFile => {
-            return remove_alternate_instruction_files(mount_path, target_filename);
+        InstructionPathState::RegularFile => {}
+        InstructionPathState::Missing => {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "Instruction target is missing after copy",
+            ));
         }
-        InstructionPathState::Directory => log_warn!(
-            LOG_TAG,
-            "Normalized instructions target is a directory after copy"
-        ),
-        InstructionPathState::Missing => log_warn!(
-            LOG_TAG,
-            "Normalized instructions target is missing after copy"
-        ),
-        InstructionPathState::Symlink | InstructionPathState::OtherNonRegular => log_warn!(
-            LOG_TAG,
-            "Normalized instructions target is not a regular file after copy"
-        ),
-        InstructionPathState::MetadataError(e) => log_warn!(
-            LOG_TAG,
-            "Failed to inspect normalized instructions target: {}",
-            e
-        ),
+        InstructionPathState::MetadataError(error) => return Err(error),
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Instruction target is not a regular file after copy",
+            ));
+        }
     }
-    false
-}
 
-fn remove_alternate_instruction_files(
-    mount_path: &Path,
-    target_filename: InstructionFilename,
-) -> bool {
     for candidate in InstructionFilename::ALL {
-        if candidate == target_filename {
-            continue;
-        }
-
-        let path = mount_path.join(candidate.as_str());
-        match lstat_instruction_path_state(&path) {
-            InstructionPathState::Missing => continue,
-            InstructionPathState::Directory | InstructionPathState::OtherNonRegular => {
-                log_warn!(
-                    LOG_TAG,
-                    "Non-runtime instructions path is not a regular file"
-                );
-                return false;
-            }
-            InstructionPathState::RegularFile | InstructionPathState::Symlink => {}
-            InstructionPathState::MetadataError(e) => {
-                log_warn!(
-                    LOG_TAG,
-                    "Failed to inspect non-runtime instructions file: {}",
-                    e
-                );
-                return false;
-            }
-        }
-
-        match fs::remove_file(&path) {
-            Ok(_) => log_info!(LOG_TAG, "Removed non-runtime instructions file"),
-            Err(e) => {
-                log_warn!(
-                    LOG_TAG,
-                    "Failed to remove non-runtime instructions file: {}",
-                    e
-                );
-                return false;
-            }
+        if candidate != target_filename {
+            remove_instruction_file_if_safe(
+                &mount_path.join(candidate.as_str()),
+                "Removed non-runtime instructions file",
+            )?;
         }
     }
-    true
+    Ok(())
 }
 
 #[cfg(test)]

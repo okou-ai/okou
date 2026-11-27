@@ -3,7 +3,7 @@
 use super::super::{
     DEFAULT_EXEC_TIMEOUT, JobTelemetry, RunnerError, RunnerResult, guest_runtime_dir,
 };
-use super::{format_helper_exec_failure, helper_exec_succeeded};
+use super::{format_helper_exec_failure, helper_exec_succeeded, storage_helper_failure};
 use guest_contracts::agent_instructions::{
     InstructionApplication, InstructionCheck, InstructionOperation, MAX_CHECK_METADATA_BYTES,
     MAX_METADATA_BYTES, instruction_paths,
@@ -153,10 +153,10 @@ async fn check_batch(
     )
     .await?;
     if !helper_exec_succeeded(&result) {
-        return Err(RunnerError::Internal(format_helper_exec_failure(
-            "instruction file check",
+        return Err(storage_helper_failure(
+            format_helper_exec_failure("instruction file check", &result),
             &result,
-        )));
+        ));
     }
     serde_json::from_slice::<bool>(&result.stdout)
         .map_err(|_| RunnerError::Internal("Invalid instruction file check response".into()))
@@ -184,10 +184,10 @@ pub(in crate::executor) async fn apply_agent_instructions(
         )
         .await?;
         if !helper_exec_succeeded(&result) {
-            return Err(RunnerError::Internal(format_helper_exec_failure(
-                "Agent instruction application",
+            return Err(storage_helper_failure(
+                format_helper_exec_failure("Agent instruction application", &result),
                 &result,
-            )));
+            ));
         }
         Ok(())
     }

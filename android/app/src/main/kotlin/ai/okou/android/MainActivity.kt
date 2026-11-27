@@ -80,7 +80,7 @@ class MainActivity : AppCompatActivity() {
                     app.instructionsDrafts,
                     app.composerJournal,
                     app.runControlOwners,
-                    app.memberAppearanceCache,
+                    app.memberPreferencesCache,
                     app.projectExpansionStore,
                     app.defaultModelStore,
                     settingsCache = app.workspaceSettingsCache,
@@ -111,7 +111,8 @@ class MainActivity : AppCompatActivity() {
                     // predecessor.
                     sessionState.ready?.preferences?.uiState?.collectAsStateWithLifecycle()?.value
                 }
-            val locale = preferences?.locale
+            val cachedPreferences = sessionState.cachedPreferences
+            val locale = preferences?.locale ?: cachedPreferences?.locale
             val clearLocale =
                 !updateState.preparing &&
                     when (sessionState.stage) {
@@ -130,8 +131,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             val systemDark = isSystemInDarkTheme()
-            val cachedAppearance = sessionState.cachedAppearance
-            val theme = preferences?.theme ?: cachedAppearance?.theme
+            val theme = preferences?.theme ?: cachedPreferences?.theme
             val dark = theme?.resolveDark(systemDark) ?: systemDark
             LaunchedEffect(dark) {
                 val style =
@@ -146,7 +146,7 @@ class MainActivity : AppCompatActivity() {
             OkouTheme(
                 dark,
                 preferences?.colorTheme
-                    ?: cachedAppearance?.colorTheme
+                    ?: cachedPreferences?.colorTheme
                     ?: UserPreferencesColorTheme.DEFAULT,
             ) {
                 val updateDetails = rememberUpdateDetailsOpen()

@@ -116,14 +116,16 @@
     <string name="chat_connector_scope">Si applica a questa chat. All’inizio si usano gli account predefiniti dello spazio di lavoro.</string>
     <string name="chat_connector_empty">In questo spazio di lavoro non ci sono account connessi.</string>
     <string name="chat_connector_manage">Gestisci connettori</string>
-    <string name="chat_connector_restore_defaults">Ripristina le impostazioni dello spazio di lavoro</string>
+    <string name="chat_connector_restore_defaults">Ripristina le impostazioni predefinite di tutti i connettori</string>
+    <string name="chat_connector_policy_remaining">Tempo rimanente: %1$s</string>
+    <string name="chat_connector_policies_failed">Impossibile caricare i criteri di accesso.</string>
     <string name="chat_connector_saving">Salvataggio della scelta del connettore…</string>
     <string name="chat_connector_save_failed">Impossibile salvare la scelta del connettore.</string>
     <string name="chat_connector_first_send_failed">Impossibile applicare le scelte dei connettori. Controllale nelle opzioni della chat, poi riprova a inviare questo messaggio.</string>
     <string name="connector_device_denied">Il fornitore ha negato l’autorizzazione.</string>
     <string name="connector_device_expired">Il codice dispositivo è scaduto. Avvia di nuovo l’autorizzazione.</string>
     <string name="connector_device_failed">Impossibile completare l’autorizzazione del dispositivo.</string>
-    <string name="connector_access_scope">Si applica a tutte le tue chat.</string>
+    <string name="connector_access_scope">I criteri di accesso si applicano a tutte le tue chat in questo spazio di lavoro.</string>
     <string name="connector_access_label">Accesso per %1$s, %2$s</string>
     <string name="connector_access_allow">Consenti</string>
     <string name="connector_access_deny">Nega</string>
@@ -136,4 +138,6 @@
     <string name="connector_access_allow_hour">Consenti per 1 ora</string>
     <string name="connector_access_allow_day">Consenti per 24 ore</string>
     <string name="connector_access_allow_week">Consenti per 7 giorni</string>
+    <string name="chat_connector_check_result">Verifica risultato</string>
+    <string name="chat_connector_check_before_send">Prima di inviare, verifica la scelta del connettore nelle opzioni della chat.</string>
 </resources>

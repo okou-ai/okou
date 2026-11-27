@@ -3998,6 +3998,13 @@
       "when": 1795709312627,
       "tag": "1649_message_artifact_url_lookup",
       "breakpoints": true
+    },
+    {
+      "idx": 1650,
+      "version": "7",
+      "when": 1795745984587,
+      "tag": "1650_invalidate_domain_verification_without_record_checks",
+      "breakpoints": true
     }
   ]
 }

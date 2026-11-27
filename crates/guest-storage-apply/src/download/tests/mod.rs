@@ -99,6 +99,42 @@ fn pending_at(id: usize, path: &str) -> PendingDownload<'static> {
     PendingDownload::new(id, prepared_task_at(path))
 }
 
+#[test]
+fn direct_decoded_dispatch_requires_independent_resolved_targets() {
+    fn decoded_at(id: usize, path: &str) -> PendingDownload<'static> {
+        let mut task = pending_at(id, path);
+        task.task
+            .task
+            .set_files(vec![guest_contracts::storage_files::StorageFile {
+                path: "SKILL.md".into(),
+                mode: 0o644,
+                mtime: 1,
+                content: b"skill",
+            }]);
+        task
+    }
+
+    let mut pending = (0..16)
+        .map(|id| decoded_at(id, &format!("/storage-{id}")))
+        .collect::<VecDeque<_>>();
+    assert!(decoded::can_dispatch(&pending));
+
+    let original_path = pending[0].task.effective_mount_path.clone();
+    pending[0].task.effective_mount_path = pending[1].task.effective_mount_path.clone();
+    assert!(!decoded::can_dispatch(&pending));
+    pending[0].task.effective_mount_path = original_path;
+
+    let original_task = pending.pop_front().unwrap();
+    pending.push_front(decoded_at(0, "/storage-1/child"));
+    assert!(!decoded::can_dispatch(&pending));
+    pending[0] = original_task;
+
+    pending[0].task.task.files = None;
+    assert!(!decoded::can_dispatch(&pending));
+    pending.pop_front();
+    assert!(!decoded::can_dispatch(&pending));
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn scheduler_limits_parallel_inflate_to_a_single_artifact_with_a_small_companion() {

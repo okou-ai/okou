@@ -41,6 +41,9 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
+/// Guest Storage helper exited after it could not use a local destination.
+pub const TARGET_UNAVAILABLE_EXIT_CODE: i32 = 3;
+
 mod readiness;
 mod template_guidance;
 pub use readiness::ArchiveReadiness;
