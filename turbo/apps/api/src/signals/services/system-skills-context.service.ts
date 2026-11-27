@@ -26,7 +26,7 @@ export function createSystemSkills(
       return name !== "gen" || !disabledPaidTools.includes("image-generation");
     });
     const byUrl = new Map(
-      packages.sources.seedSkills.map((skill) => {
+      packages.seedSkills.map((skill) => {
         return [skill.url, skill];
       }),
     );
