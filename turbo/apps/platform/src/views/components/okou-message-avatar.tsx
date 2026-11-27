@@ -33,6 +33,7 @@ export function OkouMessageAvatar({
   return (
     <picture className="contents">
       <source
+        className="hidden"
         media="(prefers-reduced-motion: no-preference)"
         srcSet={okouMessageAvatarAnimated}
       />
