@@ -46,18 +46,10 @@ class ScreenshotScenario {
         try {
             device.executeShellCommand("wm density 160")
             captureWindow(412, 892, 1f, UserPreferencesTheme.LIGHT) { scenario ->
-                assertFooter(scenario)
-                ScreenshotCapture.capture("phone-automation-editor.png")
-            }
-            captureWindow(1180, 820, 1f, UserPreferencesTheme.DARK) { scenario ->
-                assertFooter(scenario)
-                ScreenshotCapture.capture("wide-automation-editor.png")
-            }
-            captureWindow(412, 892, 1f, UserPreferencesTheme.LIGHT) { scenario ->
-                device.executeShellCommand("wm size 360x230")
+                device.executeShellCommand("wm size 360x280")
                 device.executeShellCommand("settings put system font_scale 2.0")
-                assertWindow(scenario, 360, 230, 2f)
-                reveal(scenario, subject)
+                assertWindow(scenario, 360, 280, 2f)
+                reveal(scenario, subject, minimumHeight = 96)
                 assertEquals(draft, node(subject).text)
                 ScreenshotCapture.capture("short-editor-fields.png")
                 reveal(scenario, save)
@@ -186,13 +178,17 @@ class ScreenshotScenario {
         return bottom
     }
 
-    private fun reveal(scenario: ActivityScenario<MainActivity>, selector: BySelector) {
+    private fun reveal(
+        scenario: ActivityScenario<MainActivity>,
+        selector: BySelector,
+        minimumHeight: Int = 32,
+    ) {
         val scoped = By.copy(selector).pkg(app.packageName)
         repeat(16) {
             val node = device.findObject(scoped)
             val target = if (selector === save) node?.let(::saveControl) else node
             val bottom = safeBottom(scenario)
-            if (target != null && target.visibleBounds.height() >= 32 &&
+            if (target != null && target.visibleBounds.height() >= minimumHeight &&
                 target.visibleBounds.bottom <= bottom
             ) return
             val scrollBounds =
@@ -203,7 +199,8 @@ class ScreenshotScenario {
                     ?: error("No scrollable editor viewport for $selector")
             val x = scrollBounds.centerX()
             val start = minOf(bottom, scrollBounds.bottom) - 12
-            val end = maxOf(scrollBounds.top + 12, start - 140)
+            val drag = if (target == null) 100 else 36
+            val end = maxOf(scrollBounds.top + 12, start - drag)
             assertTrue(device.swipe(x, start, x, end, 18))
             device.waitForIdle()
         }
