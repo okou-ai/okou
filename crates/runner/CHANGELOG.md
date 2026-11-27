@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.251.29](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.28...runner-rs-v0.251.29) (2026-11-27)
+
+
+### Refactoring
+
+* **runner:** own held status report fixtures ([#51277](https://github.com/okou-ai/okou/issues/51277)) ([1294728](https://github.com/okou-ai/okou/commit/129472898d3ec767ed03c8e8a3320e247ad01147))
+
 ## [0.251.28](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.27...runner-rs-v0.251.28) (2026-11-27)
 
 ### Release Dependencies
