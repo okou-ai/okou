@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ComposeUiTestConfig
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
@@ -186,6 +187,11 @@ class ChatListViewportTest {
         }
         val viewport = compose.onNodeWithTag("viewport")
         val progress = compose.onNodeWithContentDescription("Syncing chats…")
+        val progressRange =
+            compose.onNode(
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo),
+                useUnmergedTree = true,
+            )
         fun tint(): Float {
             val pixels = viewport.captureToImage().toPixelMap()
             return 1f - (0 until pixels.width).minOf { pixels[it, 2].blue }
@@ -209,22 +215,28 @@ class ChatListViewportTest {
                 entering > 0f && entering < active,
             )
             progress.assertIsDisplayed()
+            progressRange.assertExists()
 
             compose.runOnIdle { syncing.value = false }
             advance(64)
             progress.assertDoesNotExist()
+            progressRange.assertDoesNotExist()
             val exiting = tint()
             assertTrue("Exit tint $exiting, settled tint $active", exiting > 0f && exiting < active)
 
             compose.runOnIdle { syncing.value = true }
-            advance(32)
-            val reversing = tint()
-            assertTrue(
-                "Reversal tint $reversing, settled tint $active",
-                reversing > 0f && reversing < active,
+            advance(16)
+            val reversalStart = tint()
+            // The in-flight exit can advance a frame before Compose observes the new target.
+            assertEquals(
+                "The first reversal frame retains the exit tint",
+                exiting,
+                reversalStart,
+                active * 0.2f,
             )
             advance(200)
             progress.assertIsDisplayed()
+            assertTrue("The reversed transition resumes fading in", tint() > reversalStart)
 
             compose.runOnIdle { syncing.value = false }
             advance(48)
@@ -233,6 +245,15 @@ class ChatListViewportTest {
             advance(32)
             assertEquals(0f, tint())
             progress.assertDoesNotExist()
+
+            compose.runOnIdle { syncing.value = true }
+            advance(192)
+            assertTrue(tint() > 0f)
+            compose.runOnIdle { syncing.value = false }
+            // Allow the first animation frame before checking the completed 150 ms exit.
+            advance(192)
+            assertEquals(0f, tint())
+            progressRange.assertDoesNotExist()
         } finally {
             compose.mainClock.autoAdvance = true
         }
