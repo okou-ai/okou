@@ -1672,6 +1672,10 @@ export function createThreadClaimRunObjects(
   );
   const preparedRunPrompt$ = computed(
     async (get): Promise<PreparedRunPrompt | CreateRunErrorResult> => {
+      const route = await get(threadContext.modelRoute$);
+      if (isRouteError(route)) {
+        return route;
+      }
       const result = await settle(get(promptResources.prompt$));
       if (!result.ok) {
         if (result.error instanceof RunPromptError) {
