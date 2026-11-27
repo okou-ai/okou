@@ -51,6 +51,34 @@ struct ForYouCaughtUp: View {
   }
 }
 
+/// The compact bottom sheet shown when tapping For you while there are no pending items.
+struct ForYouEmptySheet: View {
+  static let detentHeight: CGFloat = 316
+
+  private static let warmth = LinearGradient(
+    stops: [
+      .init(color: OkouColor.brandSubtle.opacity(0.45), location: 0),
+      .init(color: OkouColor.brandSubtle.opacity(0), location: 0.65)
+    ], startPoint: .top, endPoint: .bottom)
+
+  var body: some View {
+    VStack(spacing: OkouSpace.md) {
+      Image("ForYouRest").resizable().scaledToFit().frame(height: 104).accessibilityHidden(true)
+      Text("All caught up").font(.okou(.title3).weight(.semibold))
+        .accessibilityAddTraits(.isHeader).accessibilityIdentifier("for-you-empty")
+      Text("Okou will bring the next thing here when there is something worth your time.")
+        .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: OkouControl.emptyStateWidth)
+    }
+    .padding(.horizontal, OkouControl.pageInset)
+    .padding(.top, OkouSpace.xxl)
+    .padding(.bottom, OkouSpace.lg)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Self.warmth)
+  }
+}
+
 /// The first load draws a card's outline in skeleton grey, shimmering as one, where the card
 /// will appear: its source, title, reason and two directions.
 struct ForYouLoadingCard: View {

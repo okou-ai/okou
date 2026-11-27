@@ -76,6 +76,7 @@ struct ChatSidebarView: View {
   @State private var projectAction: Task<Void, Never>?
   @State private var deletingThreadID: String?
   @State private var showsSettings = false
+  @State private var showsForYouEmptySheet = false
   /// Rows have scrolled under the top bar, so the workspace name gives way to them.
   @State private var isScrolled = false
   @Environment(\.newChatActivation) private var newChatActivation
@@ -121,21 +122,18 @@ struct ChatSidebarView: View {
   var body: some View {
     List {
       if listRead.state == .loading && !hasLoadedThreads {
-        forYouRow
         OkouLoadingRow("Loading chats…", statusColumnWidth: statusColumn)
           .frame(minHeight: OkouControl.listRow)
           .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
       } else if !hasLoadedThreads && listError != nil {
-        forYouRow
         Text("Your chats could not be loaded. Try updating again.")
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
           .listRowInsets(.horizontal, rowInset)
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
       } else if case .hasError(let error) = presentation {
-        forYouRow
         Text(error.localizedDescription)
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
           .listRowInsets(.horizontal, rowInset)
@@ -157,8 +155,6 @@ struct ChatSidebarView: View {
         if !presentation.isInbox {
           showAllChatsRow
         }
-      } else {
-        forYouRow
       }
     }
     // The first snapshot establishes the list; subsequent membership changes animate.
@@ -240,7 +236,12 @@ struct ChatSidebarView: View {
         "This will permanently delete this chat. Any task currently running in this chat will be stopped immediately. Any linked automations will be paused. This action cannot be undone."
       )
     }
-    .onChange(of: newChatActivation) { _, _ in showsSettings = false }
+    .onChange(of: newChatActivation) { _, _ in
+      showsSettings = false
+      showsForYouEmptySheet = false
+    }
+    .sheet(isPresented: $showsSettings) { settingsSheet }
+    .sheet(isPresented: $showsForYouEmptySheet) { forYouEmptySheet }
     .sheet(
       isPresented: Binding(
         get: { searchPresented ?? store.search.isPresented },
@@ -270,22 +271,52 @@ struct ChatSidebarView: View {
           !$0.isMuted && $0.indicator == .unread
         }, markingAllRead: listStatus.markingAllRead,
       updatingChats: !mutations.updatingThreads.isEmpty, needsUpgrade: actionStatus.needsUpgrade,
-      close: close, newProject: { showEditor(creationEditor) })
+      close: close, newProject: { showEditor(creationEditor) },
+      openSettings: {
+        store.prepareSettings()
+        showsSettings = true
+      })
   }
 
-  /// For you is always the list's first row, whatever the chats below it are doing.
-  private var forYouRow: some View {
-    ForYouSidebarRow(
-      summary: forYouSummary, rowInset: rowInset, open: store.sidebarInteraction.openForYou)
+  private var hasForYou: Bool {
+    if case .hasData(true) = forYouSummary { return true }
+    return false
   }
 
-  /// For you, then the projects, oldest first, then the chats outside them. Each list leads
-  /// with its pins in their manual order (a pin on the row marks them); the other chats follow
-  /// by activity.
+  /// Open the full For you deck when pending items exist, or a compact empty sheet otherwise.
+  private func openForYou() {
+    if hasForYou {
+      store.sidebarInteraction.openForYou()
+    } else {
+      showsForYouEmptySheet = true
+    }
+  }
+
+  private var settingsSheet: some View {
+    ChatSettingsView(
+      store: store, authentication: authentication, notifications: notifications,
+      accountError: $accountError
+    )
+    .okouSheetBackground()
+    // The appearance is picked in this sheet while it is open. A sheet keeps the scheme
+    // it opened with, and `preferredColorScheme(nil)` for System does not clear it, so
+    // the sheet takes the scheme the page behind it resolved and switches with it.
+    .preferredColorScheme(colorScheme)
+  }
+
+  private var forYouEmptySheet: some View {
+    ForYouEmptySheet()
+      .presentationDetents([.height(ForYouEmptySheet.detentHeight)])
+      .presentationDragIndicator(.visible)
+      .presentationCornerRadius(OkouRadius.sheet)
+      .okouSheetBackground(ForYouCover.ground)
+  }
+
+  /// Projects, oldest first, then the chats outside them. Each list leads with its pins in
+  /// their manual order (a pin on the row marks them); the other chats follow by activity.
   private func threadSection(_ contents: ChatSidebarPresentation) -> some View {
     let chats = contents.chats
     return Section {
-      forYouRow
       if case .hasError(let error) = projectRead {
         OkouBanner(Text(error.localizedDescription), icon: "folder", tone: .problem) {
           Button("Retry") { Task { await store.projects.refresh() } }
@@ -560,9 +591,8 @@ struct ChatSidebarView: View {
   }
   private var footer: some View {
     ChatSidebarFooter(
-      store: store, authentication: authentication, notifications: notifications,
-      accountError: $accountError, showsSettings: $showsSettings, colorScheme: colorScheme,
-      newChat: newChat, rowInset: rowInset)
+      store: store, hasForYou: hasForYou, openForYou: openForYou, newChat: newChat,
+      rowInset: rowInset)
   }
 
 }
@@ -724,35 +754,5 @@ private struct ChatSidebarThreadStates: View {
         OkouChatRowLabel(row.title, states: states)
       }
     }
-  }
-}
-
-/// The way into For you, drawn as a chat row is: its glyph in the status column at the chat
-/// glyph's size and grey, its title on the chats' edge, and the unread dot in the trailing
-/// column, with the medium title an unread chat has.
-private struct ForYouSidebarRow: View {
-  let summary: Loadable<Bool>
-  let rowInset: CGFloat
-  let open: () -> Void
-
-  private var states: OkouChatStates {
-    if case .hasData(true) = summary { return [.unread] }
-    return []
-  }
-
-  var body: some View {
-    Button(action: open) {
-      OkouChatRowLabel(String(localized: "For you"), states: states) {
-        OkouIcon("hand-heart", size: OkouIconSize.standard)
-          .foregroundStyle(OkouColor.quietMark)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityHidden(true)
-      }
-    }
-    .buttonStyle(.plain)
-    .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
-    .listRowSeparator(.hidden)
-    .listRowBackground(Color.clear)
-    .accessibilityIdentifier("for-you-sidebar")
   }
 }

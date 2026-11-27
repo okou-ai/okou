@@ -2,40 +2,34 @@ import SwiftUI
 
 struct ChatSidebarFooter: View {
   let store: WorkspaceStore
-  let authentication: AuthenticationService
-  let notifications: NotificationService
-  @Binding var accountError: String?
-  @Binding var showsSettings: Bool
-  let colorScheme: ColorScheme
+  let hasForYou: Bool
+  let openForYou: () -> Void
   let newChat: () -> Void
   let rowInset: CGFloat
 
-  /// Thumb-reach bar: settings on the left, a new-message capsule, and search on the right.
+  private static let activeRingWidth: CGFloat = 1.5
+
+  /// Thumb-reach bar: For you on the left, a new-message capsule, and search on the right.
   var body: some View {
     HStack(spacing: OkouSpace.md) {
-      Button {
-        store.prepareSettings()
-        showsSettings = true
-      } label: {
-        let profile = authentication.profile
-        OkouProfileAvatar(
-          imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
-          size: OkouControl.minimumTarget, name: profile?.name ?? profile?.email,
-          cachedImage: authentication.presentation?.image("profile"), usesSharedImage: true)
-      }
-      .accessibilityLabel("Settings")
-      .accessibilityIdentifier("settings")
-      .sheet(isPresented: $showsSettings) {
-        ChatSettingsView(
-          store: store, authentication: authentication, notifications: notifications,
-          accountError: $accountError
+      Button(action: openForYou) {
+        OkouAvatar(
+          size: OkouControl.minimumTarget,
+          mood: hasForYou ? .happy : .idle,
+          motion: hasForYou ? .animated : .still
         )
-        .okouSheetBackground()
-        // The appearance is picked in this sheet while it is open. A sheet keeps the scheme
-        // it opened with, and `preferredColorScheme(nil)` for System does not clear it, so
-        // the sheet takes the scheme the page behind it resolved and switches with it.
-        .preferredColorScheme(colorScheme)
+        .clipShape(Circle())
+        .overlay {
+          if hasForYou {
+            Circle()
+              .strokeBorder(OkouColor.primary, lineWidth: Self.activeRingWidth)
+          }
+        }
+        .modifier(OkouUnreadBadge(isVisible: hasForYou))
       }
+      .accessibilityLabel("For you")
+      .accessibilityValue(hasForYou ? String(localized: "Unread") : "")
+      .accessibilityIdentifier("for-you-sidebar")
       Button {
         newChat()
       } label: {
