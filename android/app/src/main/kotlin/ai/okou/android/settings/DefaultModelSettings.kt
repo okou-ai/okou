@@ -347,6 +347,7 @@ internal class DefaultModelSettings(
             }
             state.first { it.canApplyScheduledRead }
             try {
+                var inconclusive = false
                 val verification: Job? = preferenceRequests.withLock {
                     val before = mutable.value
                     if (!before.canApplyScheduledRead) return@withLock null
@@ -379,16 +380,13 @@ internal class DefaultModelSettings(
                         saveWait?.cancel()
                         synchronizeSaves()
                     } else {
-                        // Update the cache without resolving a write we cannot verify.
-                        publishConfirmed(snapshot)
+                        inconclusive = true
                     }
                     null
                 }
                 failures = 0
-                if (verification != null) {
-                    verification.join()
-                    delay(preferenceRefreshMillis)
-                }
+                verification?.join()
+                if (verification != null || inconclusive) delay(preferenceRefreshMillis)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -563,7 +561,7 @@ internal class DefaultModelSettings(
         val current = mutable.value
         val latest = checkNotNull(current.save)
         val evidence = settingReadback(attempted, latest.request) { it.matches(response) }
-        if (evidence == SettingReadback.Unconfirmed && latest.request == attempted) return false
+        if (evidence == SettingReadback.Unconfirmed) return false
         val fulfilled = evidence == SettingReadback.ConfirmsLatest
 
         unconfirmedWrite = null

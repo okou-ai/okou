@@ -199,12 +199,13 @@ class EmailSubscriptionSettingsTest {
     fun aLostWriteAndFailedReadbackDoNotPermitAnotherWriteUntilRecovered() = runTest {
         ChatListApiFixture().use { api ->
             var failReads = false
+            var confirmed = initial
             var writes = 0
             val service =
                 object : WorkspaceSession by api.service {
                     override suspend fun emailSubscription(): EmailSubscription {
                         if (failReads) throw ApiFailure.Http(503, null, null, null)
-                        return initial
+                        return confirmed
                     }
 
                     override suspend fun updateEmailSubscription(
@@ -234,15 +235,17 @@ class EmailSubscriptionSettingsTest {
             failReads = false
             model.visible(true)
             runCurrent()
+            assertEquals(true, model.state.value.checked)
+            assertEquals(true, model.state.value.unconfirmed)
+            assertEquals(initial, model.state.value.read.value)
+
+            confirmed = initial.copy(subscribed = true)
+            advanceTimeBy(3_000)
+            runCurrent()
             assertTrue(model.state.value.canChange)
-            assertEquals(false, model.state.value.checked)
-            assertEquals(
-                listOf(
-                    SettingsNotice.EmailSubscriptionUnconfirmed,
-                    SettingsNotice.EmailSubscriptionFailed,
-                ),
-                notices,
-            )
+            assertEquals(true, model.state.value.checked)
+            assertNull(model.state.value.unconfirmed)
+            assertEquals(listOf(SettingsNotice.EmailSubscriptionUnconfirmed), notices)
             assertEquals(1, writes)
         }
     }

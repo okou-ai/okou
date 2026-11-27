@@ -141,18 +141,17 @@ class ProactiveSettingsModelTest {
             model.visible(true)
             model.morningBrief.state.first { it.confirmed != null }
             fixture.morningWriteStatus = 503
-            fixture.commitBeforeError = true
-            fixture.readStatus = 503
             val notice = async(start = CoroutineStart.UNDISPATCHED) { model.notices.first() }
             model.morningBrief.choose(true)
             val uncertain = model.morningBrief.state.first { it.checking != null }
-            assertEquals(false, uncertain.enabled)
+            assertEquals(true, uncertain.enabled)
+            assertEquals(false, uncertain.confirmed?.enabled)
             assertFalse(uncertain.canChoose)
             assertEquals(ProactiveSaveFailure.Unconfirmed, notice.await().failure)
             assertEquals(4, fixture.reads.count { it == "morning-brief" })
             model.morningBrief.choose(true)
 
-            fixture.readStatus = 200
+            fixture.morningEnabled = true
             model.refresh()
             model.morningBrief.state.first { it.enabled == true && it.checking == null }
             assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)

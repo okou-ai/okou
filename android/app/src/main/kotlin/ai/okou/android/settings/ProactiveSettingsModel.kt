@@ -121,10 +121,8 @@ internal class ProactiveSettingOwner(
         reading = scope.launch {
             try {
                 restore()
-                val value = readPreference()
                 val sent = mutable.value.checking
-                publish(value)
-                if (sent != null) resolve(sent, value)
+                if (sent == null) publish(readPreference()) else reconcile(sent)
                 if (mutable.value.choice != null) submitChanges()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -262,9 +260,19 @@ internal class ProactiveSettingOwner(
 
     private suspend fun reconcile(sent: ProactiveChoice) {
         try {
-            val value = readPreference()
-            publish(value)
-            resolve(sent, value)
+            if (
+                verifySettingWrite {
+                    val value = readOnce()
+                    if (value != null && !value.matches(sent.enabled)) {
+                        false
+                    } else {
+                        publish(value)
+                        resolve(sent, value, rejected = value == null)
+                        true
+                    }
+                }
+            )
+                return
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -274,10 +282,10 @@ internal class ProactiveSettingOwner(
                 resolve(sent, null, rejected = true)
                 return
             }
-            val remaining = mutable.value.choice.takeUnless { it == sent }
-            mutable.value = mutable.value.copy(choice = remaining, checking = sent)
-            if (remaining == null) notify(sent, ProactiveSaveFailure.Unconfirmed)
         }
+        val current = mutable.value
+        mutable.value = current.copy(checking = sent)
+        if (current.checking != sent) notify(sent, ProactiveSaveFailure.Unconfirmed)
     }
 
     private fun publish(value: ProactivePreference?) {

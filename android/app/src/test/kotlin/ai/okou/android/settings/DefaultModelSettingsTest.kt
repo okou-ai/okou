@@ -678,7 +678,8 @@ class DefaultModelSettingsTest {
                     override suspend fun defaultModelPreference(): DefaultModelPreference {
                         reads += currentTime
                         if (reads.size == 2) throw ApiFailure.Http(429, null, null, 1L)
-                        return original
+                        return if (reads.size == 3) original.copy(selectedModel = null)
+                        else original
                     }
 
                     override suspend fun updateDefaultModelPreference(
@@ -730,8 +731,11 @@ class DefaultModelSettingsTest {
 
                     override suspend fun defaultModelPreference(): DefaultModelPreference {
                         reads += currentTime
-                        if (reads.size == 4) throw ApiFailure.Http(429, null, null, 1L)
-                        return original
+                        return when (reads.size) {
+                            4 -> throw ApiFailure.Http(429, null, null, 1L)
+                            5 -> original.copy(selectedModel = null)
+                            else -> original
+                        }
                     }
 
                     override suspend fun updateDefaultModelPreference(
@@ -825,18 +829,24 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun anExplicitNewChoiceReplacesAnUnconfirmedSave() = runTest {
+    fun anExplicitNewChoiceWaitsForTheUnconfirmedSaveBeforeSubmitting() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
             val started = CompletableDeferred<Unit>()
             val fail = CompletableDeferred<Unit>()
             val writes = mutableListOf<Pair<String?, String?>>()
             val reads = mutableListOf<Long>()
+            var delayed: UpdateDefaultModelPreference? = null
             val remote =
                 object : WorkspaceSession by api.service {
                     override suspend fun defaultModelPreference(): DefaultModelPreference {
                         reads += currentTime
-                        return api.service.defaultModelPreference()
+                        val snapshot = api.service.defaultModelPreference()
+                        delayed?.let {
+                            delayed = null
+                            api.service.updateDefaultModelPreference(it)
+                        }
+                        return snapshot
                     }
 
                     override suspend fun updateDefaultModelPreference(
@@ -846,6 +856,7 @@ class DefaultModelSettingsTest {
                         if (update.serviceTier != null) {
                             started.complete(Unit)
                             fail.await()
+                            delayed = update
                             throw ApiFailure.Http(503, null, null, 1L)
                         }
                         return api.service.updateDefaultModelPreference(update)
@@ -864,11 +875,11 @@ class DefaultModelSettingsTest {
             assertEquals(listOf(0L), reads)
             advanceTimeBy(1)
             val confirmed = model.state.first { it.pending == null }
-            assertEquals(listOf(0L, 1_000L), reads)
+            assertEquals(listOf(0L, 1_000L, 4_000L), reads)
             assertEquals(listOf("gpt-test" to "PRIORITY", "claude-test" to null), writes)
             assertEquals("claude-test", confirmed.selected?.id)
             assertEquals(JsonPrimitive("claude-test"), fixture.preference["selectedModel"])
-            assertEquals(1, fixture.writes.size)
+            assertEquals(2, fixture.writes.size)
         }
     }
 

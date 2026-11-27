@@ -143,8 +143,21 @@ internal class EmailSubscriptionSettings(
                     ),
             )
         try {
-            val snapshot = fetch()
-            publish(snapshot, nowMillis(), attempted)
+            if (attempted == null) {
+                publish(fetch(), nowMillis(), attempted = null)
+            } else if (
+                !verifySettingWrite {
+                    val snapshot = fetchOnce()
+                    if (snapshot.canReceive && snapshot.subscribed != attempted) {
+                        false
+                    } else {
+                        publish(snapshot, nowMillis(), attempted)
+                        true
+                    }
+                }
+            ) {
+                markUnconfirmed(attempted)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -167,10 +180,7 @@ internal class EmailSubscriptionSettings(
                             ),
                     )
             } else {
-                mutable.value = current.copy(unconfirmed = attempted)
-                if (current.unconfirmed == null && !panelOpen) {
-                    notice(SettingsNotice.EmailSubscriptionUnconfirmed)
-                }
+                markUnconfirmed(attempted)
             }
         } finally {
             val current = mutable.value
@@ -178,12 +188,24 @@ internal class EmailSubscriptionSettings(
         }
     }
 
+    private fun markUnconfirmed(attempted: Boolean) {
+        val current = mutable.value
+        mutable.value = current.copy(unconfirmed = attempted)
+        if (current.unconfirmed == null && !panelOpen) {
+            notice(SettingsNotice.EmailSubscriptionUnconfirmed)
+        }
+    }
+
+    private suspend fun fetchOnce(): EmailSubscription {
+        requireOwner()
+        return service.emailSubscription().also { requireOwner() }
+    }
+
     private suspend fun fetch(): EmailSubscription {
         var retries = 0
         while (true) {
-            requireOwner()
             try {
-                return service.emailSubscription().also { requireOwner() }
+                return fetchOnce()
             } catch (error: Exception) {
                 val wait = error.boundedApiRetryDelayMillis(retries++) ?: throw error
                 delay(wait)
