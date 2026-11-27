@@ -6,10 +6,23 @@ import OSLog
 /// This object belongs to one immutable account/workspace scope.
 @MainActor
 final class ComposerWorkflowSource {
+  /// One slash menu's candidates and the recently used order that ranks them.
+  struct Catalog: Sendable {
+    let workflows: [ComposerWorkflow]
+    let recent: [String]
+  }
+
   let id = UUID()
   private let client: APIClient
   private let storage: ChatDraftStorage?
   private var recent: [String] = []
+  /// Advances with each accepted use so an older server read cannot replace its promotion.
+  private var recentRevision = 0
+  /// Accepted uses that the single serial write sends in acceptance order.
+  private var pendingUses: [[String]] = []
+  private var recentWrite: Task<Void, Never>?
+  /// Set by the first successful history read, which may import this device's history.
+  private var hasReadHistory = false
   private(set) var isClosed = false
   private let didFail: @MainActor (Error) -> Void
 
@@ -32,6 +45,13 @@ final class ComposerWorkflowSource {
       if !isClosed, !Task.isCancelled { didFail(error) }
       throw error
     }
+  }
+
+  /// Opening the slash menu reads its candidates and the member's canonical order together.
+  func loadCatalog() async throws -> Catalog {
+    async let order = synchronizeRecent()
+    let workflows = try await load()
+    return Catalog(workflows: workflows, recent: await order)
   }
 
   func recentIDs() -> [String] {
@@ -64,15 +84,78 @@ final class ComposerWorkflowSource {
     }.joined()
   }
 
-  /// Accepted delivery is never turned into a send failure by local history I/O.
+  /// Accepted delivery is never turned into a send failure by history I/O or synchronization.
   func recordUse(_ ids: [String]) {
     guard !isClosed, !ids.isEmpty else { return }
     var seen = Set<String>()
-    recent = (ids + recentIDs()).filter { seen.insert($0).inserted }
-    do { try storage?.save(recent, key: "recent-workflows") } catch { reportHistoryError(error) }
+    saveRecent((ids + recentIDs()).filter { seen.insert($0).inserted })
+    recentRevision += 1
+    pendingUses.append(ids)
+    guard recentWrite == nil else { return }
+    recentWrite = Task { [weak self] in await self?.writeRecentUses() }
   }
 
-  func close() { isClosed = true }
+  func close() {
+    isClosed = true
+    recentWrite?.cancel()
+  }
+
+  /// One write at a time keeps the server's order equal to the acceptance order.
+  private func writeRecentUses() async {
+    // Device history imports before a use can initialize the member's server history.
+    if !hasReadHistory { _ = await synchronizeRecent() }
+    while !isClosed, !Task.isCancelled, !pendingUses.isEmpty {
+      let ids = pendingUses.removeFirst()
+      do {
+        let canonical = try await client.recordComposerWorkflowUse(ids)
+        // A queued use is newer than this response; its own write caches the next order.
+        if !isClosed, pendingUses.isEmpty { saveRecent(canonical) }
+      } catch {
+        reportSynchronizationError(error)
+      }
+    }
+    recentWrite = nil
+  }
+
+  /// The server owns the history; this device's file caches it and orders the menu when a read
+  /// fails.
+  private func synchronizeRecent() async -> [String] {
+    let revision = recentRevision
+    // The server may not have applied a use whose write is still running.
+    let confirmed = recentWrite == nil
+    let local = recentIDs()
+    do {
+      var ids = try await client.recentComposerWorkflowIDs()
+      // Only a never-initialized history imports this device's history; `[]` is initialized.
+      if ids == nil, !local.isEmpty { ids = try await client.importComposerWorkflowHistory(local) }
+      hasReadHistory = true
+      // A use accepted before or during the read is newer than this response.
+      guard !isClosed, !Task.isCancelled, confirmed, revision == recentRevision else {
+        return recentIDs()
+      }
+      let canonical = ids ?? []
+      saveRecent(canonical)
+      return canonical
+    } catch {
+      reportSynchronizationError(error)
+      return recentIDs()
+    }
+  }
+
+  private func saveRecent(_ ids: [String]) {
+    recent = ids
+    do { try storage?.save(ids, key: "recent-workflows") } catch { reportHistoryError(error) }
+  }
+
+  private func reportSynchronizationError(_ error: Error) {
+    guard !isClosed, !Task.isCancelled, !(error is CancellationError) else { return }
+    // A required update closes the workspace; other failures keep this device's order.
+    didFail(error)
+    Logger(subsystem: "ai.okou.ios", category: "Composer")
+      .info(
+        "event=composer.workflows.recent.sync.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code)"
+      )
+  }
 
   private func reportHistoryError(_ error: Error) {
     Logger(subsystem: "ai.okou.ios", category: "Composer")

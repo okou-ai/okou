@@ -19,7 +19,6 @@ final class ComposerWorkflowResources {
 
   private struct Filter: Equatable {
     var query: String?
-    var recent: [String] = []
   }
 
   private enum Action {
@@ -33,7 +32,7 @@ final class ComposerWorkflowResources {
   private let request = CCState.State<Request?>(nil)
   private let filter = CCState.State(Filter())
   private let transition: Command<Void, Action>
-  private var task: Task<[ComposerWorkflow], Error>?
+  private var task: Task<ComposerWorkflowSource.Catalog, Error>?
 
   init(graph: CCState.Store) {
     store = graph
@@ -52,16 +51,16 @@ final class ComposerWorkflowResources {
 
   private lazy var candidates = makeCandidates()
 
-  private func makeCandidates() -> Computed<Task<[ComposerWorkflow], Error>> {
+  private func makeCandidates() -> Computed<Task<ComposerWorkflowSource.Catalog, Error>> {
     Computed { [weak self] get, options in
       guard let self else { throw CancellationError() }
       let request = try get(request)
       let signal = options.signal
       // A 426 may close the workspace; report it after graph evaluation has ended.
-      let task = Task<[ComposerWorkflow], Error> { @MainActor in
-        guard let request else { return [] }
+      let task = Task<ComposerWorkflowSource.Catalog, Error> { @MainActor in
+        guard let request else { return .init(workflows: [], recent: []) }
         try Task.checkCancellation()
-        let result = try await request.source.load()
+        let result = try await request.source.loadCatalog()
         try Task.checkCancellation()
         try signal.checkCancellation()
         return result
@@ -78,18 +77,18 @@ final class ComposerWorkflowResources {
       let filter = try get(filter)
       let pending = try get(candidates)
       let signal = options.signal
-      let workflows = try await pending.value
+      let catalog = try await pending.value
       try Task.checkCancellation()
       try signal.checkCancellation()
       let values =
         filter.query.map {
-          ComposerWorkflowSearch.matches(workflows, query: $0, recent: filter.recent)
+          ComposerWorkflowSearch.matches(catalog.workflows, query: $0, recent: catalog.recent)
         } ?? []
       return Matches(requestID: request?.id, query: filter.query, values: values)
     }
 
-  func update(query: String, recent: [String]) {
-    perform(.filter(Filter(query: query, recent: recent)))
+  func update(query: String) {
+    perform(.filter(Filter(query: query)))
   }
 
   func reload(source: ComposerWorkflowSource) {

@@ -43,6 +43,8 @@ final class MentionNavigationFixture: Sendable {
       case "/api/workflows/for-composer":
         guard let workflows else { throw URLError(.unsupportedURL) }
         return try await workflows(request)
+      case "/api/workflows/recent":
+        return ChatHTTPResponse(body: #"{"workflowIds":null}"#)
       case "/api/feature-switches":
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case "/api/chat-threads/snapshot":
