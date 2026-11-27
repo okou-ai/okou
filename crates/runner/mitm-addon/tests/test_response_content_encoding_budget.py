@@ -19,11 +19,11 @@ from tests.content_encoding_cases import (
 )
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.model_provider_flow_helpers import run_response
 from tests.model_provider_response_helpers import (
     OPENAI_RESPONSES_CASE,
     expected_event_quantities,
     model_provider_flow,
-    run_response,
     standard_success_payload,
 )
 from tests.x_flow_helpers import make_x_pipeline_flow
