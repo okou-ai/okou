@@ -66,10 +66,14 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalAccessibilityManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
@@ -77,6 +81,11 @@ import kotlinx.coroutines.delay
 
 private val feedbackActionGap = 4.dp
 private val feedbackTouchTarget = 48.dp
+private val feedbackSideInset = 12.dp
+private val feedbackMaxWidth = 480.dp
+private val feedbackStartPadding = 16.dp
+private val feedbackEndPadding = 8.dp
+private val feedbackVerticalPadding = 14.dp
 
 private data class ChatFeedbackContent(
     val message: String,
@@ -611,6 +620,32 @@ internal fun WorkspaceFeedbackTimeout(state: SnackbarHostState) {
 }
 
 @Composable
+internal fun workspaceFeedbackMessageHeight(message: String, availableWidth: Dp): Dp {
+    val measurer = rememberTextMeasurer()
+    val style = MaterialTheme.typography.bodyMedium
+    return with(LocalDensity.current) {
+        val surfaceWidth =
+            minOf(
+                availableWidth.roundToPx() - 2 * feedbackSideInset.roundToPx(),
+                feedbackMaxWidth.roundToPx(),
+            )
+        val textWidth =
+            (surfaceWidth - feedbackStartPadding.roundToPx() - feedbackEndPadding.roundToPx())
+                .coerceAtLeast(0)
+        val textHeight =
+            measurer
+                .measure(
+                    message,
+                    style,
+                    constraints = Constraints(maxWidth = textWidth),
+                )
+                .size
+                .height
+        maxOf(feedbackTouchTarget, (textHeight + 2 * feedbackVerticalPadding.roundToPx()).toDp())
+    }
+}
+
+@Composable
 internal fun WorkspaceFeedbackHost(
     state: SnackbarHostState,
     modifier: Modifier,
@@ -638,8 +673,8 @@ internal fun WorkspaceFeedbackHost(
         Surface(
             modifier =
                 modifier
-                    .padding(horizontal = 12.dp)
-                    .widthIn(max = 480.dp)
+                    .padding(horizontal = feedbackSideInset)
+                    .widthIn(max = feedbackMaxWidth)
                     .fillMaxWidth()
                     .then(surfaceModifier),
             shape = SnackbarDefaults.shape,
@@ -651,12 +686,16 @@ internal fun WorkspaceFeedbackHost(
                 modifier =
                     Modifier.animateContentSize(alignment = Alignment.BottomCenter)
                         .padding(
-                            start = 16.dp,
-                            end = if (visuals.withDismissAction) 0.dp else 8.dp,
+                            start = feedbackStartPadding,
+                            end = if (visuals.withDismissAction) 0.dp else feedbackEndPadding,
                         ),
                 textSize = style.fontSize,
                 message = {
-                    Text(visuals.message, Modifier.padding(vertical = 14.dp), style = style)
+                    Text(
+                        visuals.message,
+                        Modifier.padding(vertical = feedbackVerticalPadding),
+                        style = style,
+                    )
                 },
                 actions = {
                     FeedbackActions(
@@ -732,7 +771,7 @@ private fun FeedbackLayout(
             message()
             actions()
         },
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier = modifier.heightIn(min = feedbackTouchTarget),
     ) { children, bounds ->
         val loose = bounds.copy(minWidth = 0, minHeight = 0)
         val buttons = children.getOrNull(1)?.measure(loose)
