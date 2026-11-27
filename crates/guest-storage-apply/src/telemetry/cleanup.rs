@@ -9,6 +9,7 @@
 //! emit these rows. This keeps diagnostic writes out of all cleanup timers.
 
 use guest_telemetry::telemetry::{SandboxOpDimensions, record_sandbox_op_with_dimensions};
+use std::io;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
@@ -21,19 +22,20 @@ impl CleanupPhase {
     pub(crate) fn measure(
         self,
         requested: usize,
-        cleanup: impl FnOnce() -> bool,
-    ) -> CleanupObservation {
+        cleanup: impl FnOnce() -> io::Result<()>,
+    ) -> (CleanupObservation, io::Result<()>) {
         let started = Instant::now();
         let cpu_started = thread_cpu_time();
-        let success = cleanup();
+        let result = cleanup();
         let cpu = cpu_elapsed(cpu_started, thread_cpu_time());
-        CleanupObservation {
+        let observation = CleanupObservation {
             phase: self,
             wall: started.elapsed(),
             cpu,
             requested,
-            success,
-        }
+            success: result.is_ok(),
+        };
+        (observation, result)
     }
 
     pub(super) fn wall_action(self) -> &'static str {
@@ -60,10 +62,6 @@ pub(crate) struct CleanupObservation {
 }
 
 impl CleanupObservation {
-    pub(crate) fn success(&self) -> bool {
-        self.success
-    }
-
     pub(crate) fn record(&self) {
         let reason = Some(requested_bucket(self.requested));
         record_sandbox_op_with_dimensions(

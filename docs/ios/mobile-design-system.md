@@ -601,8 +601,9 @@ shared component.
   `.still` holds that moment for places that cannot or should not move, and
   Reduce Motion always does. An avatar that leaves the screen stops drawing and
   resumes where it left off.
-- **Everywhere.** Every surface that draws the default agent animates: the
-  new-chat greeting, assistant messages and the long-press chat preview. An
+- **Thread motion.** Only the latest assistant group plays in the transcript.
+  Earlier groups use the still frame, including while selecting messages to share.
+  The new-chat greeting and long-press chat preview also play. An
   accessible name comes from the caller; without one the avatar is hidden from
   VoiceOver.
 

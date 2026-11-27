@@ -108,14 +108,16 @@
     <string name="chat_connector_scope">Berlaku untuk chat ini. Pada awalnya akun mengikuti setelan default ruang kerja.</string>
     <string name="chat_connector_empty">Tidak ada akun yang terhubung di ruang kerja ini.</string>
     <string name="chat_connector_manage">Kelola konektor</string>
-    <string name="chat_connector_restore_defaults">Pulihkan setelan default ruang kerja</string>
+    <string name="chat_connector_restore_defaults">Pulihkan setelan default semua konektor</string>
+    <string name="chat_connector_policy_remaining">Tersisa %1$s</string>
+    <string name="chat_connector_policies_failed">Kebijakan akses tidak dapat dimuat.</string>
     <string name="chat_connector_saving">Menyimpan pilihan konektor…</string>
     <string name="chat_connector_save_failed">Pilihan konektor tidak dapat disimpan.</string>
     <string name="chat_connector_first_send_failed">Pilihan konektor tidak dapat diterapkan. Periksa di Opsi chat, lalu coba kirim ulang pesan ini.</string>
     <string name="connector_device_denied">Penyedia menolak otorisasi.</string>
     <string name="connector_device_expired">Kode perangkat telah kedaluwarsa. Mulai otorisasi lagi.</string>
     <string name="connector_device_failed">Otorisasi perangkat tidak dapat diselesaikan.</string>
-    <string name="connector_access_scope">Berlaku di semua chat Anda.</string>
+    <string name="connector_access_scope">Kebijakan akses berlaku untuk semua chat Anda di ruang kerja ini.</string>
     <string name="connector_access_label">Akses untuk %1$s, %2$s</string>
     <string name="connector_access_allow">Izinkan</string>
     <string name="connector_access_deny">Tolak</string>
@@ -128,4 +130,6 @@
     <string name="connector_access_allow_hour">Izinkan selama 1 jam</string>
     <string name="connector_access_allow_day">Izinkan selama 24 jam</string>
     <string name="connector_access_allow_week">Izinkan selama 7 hari</string>
+    <string name="chat_connector_check_result">Periksa hasil</string>
+    <string name="chat_connector_check_before_send">Periksa pilihan konektor di opsi chat sebelum mengirim.</string>
 </resources>

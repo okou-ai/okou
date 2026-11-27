@@ -74,12 +74,17 @@ fn copy_instruction_file_failure_keeps_existing_target() {
     fs::create_dir_all(&final_home).unwrap();
     fs::write(final_home.join("AGENTS.md"), "old instructions").unwrap();
 
-    assert!(!copy_instruction_file(
+    let error = copy_instruction_file(
         &dir.path().join("missing.md"),
         &final_home,
         InstructionFilename::Agents,
         "Copied instructions file",
-    ));
+    )
+    .unwrap_err();
+    assert_eq!(
+        crate::ApplyFailure::from_target_io(&error),
+        crate::ApplyFailure::Failed
+    );
 
     assert_eq!(
         fs::read_to_string(final_home.join("AGENTS.md")).unwrap(),
@@ -105,7 +110,7 @@ fn copy_instruction_file_write_failure_after_partial_copy_preserves_target() {
     let old_mode = fs::metadata(&target).unwrap().permissions().mode();
     let bytes_written = Cell::new(0);
 
-    assert!(!copy_instruction_file_with(
+    let error = copy_instruction_file_with(
         &source,
         &final_home,
         InstructionFilename::Agents,
@@ -120,7 +125,12 @@ fn copy_instruction_file_write_failure_after_partial_copy_preserves_target() {
                 },
             )
         },
-    ));
+    )
+    .unwrap_err();
+    assert_eq!(
+        crate::ApplyFailure::from_target_io(&error),
+        crate::ApplyFailure::Failed
+    );
 
     assert_eq!(bytes_written.get(), 4);
     assert_eq!(fs::read(&target).unwrap(), b"old instructions");
@@ -130,12 +140,13 @@ fn copy_instruction_file_write_failure_after_partial_copy_preserves_target() {
     );
     assert_no_copy_temp_files(&final_home);
 
-    assert!(copy_instruction_file(
+    copy_instruction_file(
         &source,
         &final_home,
         InstructionFilename::Agents,
         "Copied instructions file",
-    ));
+    )
+    .unwrap();
     assert_eq!(fs::read(&target).unwrap(), b"new instructions");
     assert_no_copy_temp_files(&final_home);
 }
@@ -151,7 +162,7 @@ fn copy_instruction_file_read_failure_after_partial_copy_keeps_in_place_alternat
     fs::write(&alternate, "alternate instructions").unwrap();
     let bytes_read = Cell::new(0);
 
-    assert!(!copy_instruction_file_with(
+    let error = copy_instruction_file_with(
         &alternate,
         &mount,
         InstructionFilename::Agents,
@@ -166,19 +177,25 @@ fn copy_instruction_file_read_failure_after_partial_copy_keeps_in_place_alternat
                 temp,
             )
         },
-    ));
+    )
+    .unwrap_err();
+    assert_eq!(
+        crate::ApplyFailure::from_target_io(&error),
+        crate::ApplyFailure::Failed
+    );
 
     assert_eq!(bytes_read.get(), 4);
     assert_eq!(fs::read(&alternate).unwrap(), b"alternate instructions");
     assert!(!target.exists());
     assert_no_copy_temp_files(&mount);
 
-    assert!(copy_instruction_file(
+    copy_instruction_file(
         &alternate,
         &mount,
         InstructionFilename::Agents,
         "Normalized instructions file",
-    ));
+    )
+    .unwrap();
     assert_eq!(fs::read(&target).unwrap(), b"alternate instructions");
     assert!(!alternate.exists());
     assert_no_copy_temp_files(&mount);
@@ -198,10 +215,11 @@ fn cleanup_instruction_files_removes_only_known_instruction_files() {
     )
     .unwrap();
 
-    assert!(cleanup_instruction_files(&[InstructionCleanup::new(
+    cleanup_instruction_files(&[InstructionCleanup::new(
         mount.to_string_lossy().into(),
         None,
-    )]));
+    )])
+    .unwrap();
 
     assert!(!mount.join("AGENTS.md").exists());
     assert!(!mount.join("CLAUDE.md").exists());
@@ -228,7 +246,8 @@ fn cleanup_instruction_files_removes_instruction_symlink_without_following_it() 
     cleanup_instruction_files(&[InstructionCleanup::new(
         mount.to_string_lossy().into(),
         Some("AGENTS.md".into()),
-    )]);
+    )])
+    .unwrap();
 
     assert!(mount.join("AGENTS.md").symlink_metadata().is_err());
     assert_eq!(fs::read_to_string(&linked_target).unwrap(), "outside");
@@ -247,7 +266,8 @@ fn cleanup_instruction_files_does_not_follow_home_symlink() {
     cleanup_instruction_files(&[InstructionCleanup::new(
         mount.to_string_lossy().into(),
         None,
-    )]);
+    )])
+    .unwrap_err();
 
     assert_eq!(
         fs::read_to_string(outside_home.join("AGENTS.md")).unwrap(),

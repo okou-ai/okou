@@ -3192,7 +3192,6 @@
         "custom": "自定義",
         "discover": "發現",
         "privateNetwork": "私人網路",
-        "remoteControl": "遠端控制",
         "searchConnected": "查詢已連線的連接器",
         "searchCustom": "查詢自定義連接器"
       },
@@ -5381,7 +5380,7 @@
     "rsaLogin": "{{login}} {{protection}} RA2 或 RA2_256 須符合 VNC 設定，並使用管理員提供的受信任 RSA 公鑰。",
     "rsaPassword": "使用 VNC 服務中設定的密碼。",
     "sshAddress": "若 VNC 和 SSH 在同一台電腦上執行，請使用 127.0.0.1。若是另一台電腦，請洽管理員索取可從 SSH 電腦連線的位址。",
-    "sshEmptyHelp": "請先在「遠端控制」中新增 SSH 連線。",
+    "sshEmptyHelp": "請先在「{{directory}}」中新增 SSH 連線。",
     "sshEmptyPlaceholder": "尚無可用的 SSH 主機",
     "sshRoute": "透過已儲存的 SSH 連線存取裝置螢幕。",
     "tailscaleRoute": "適用於已連線至 Tailscale 的裝置。選取已儲存的網路，並從裝置上的 Tailscale 複製位址。",

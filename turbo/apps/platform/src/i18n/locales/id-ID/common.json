@@ -3192,7 +3192,6 @@
         "custom": "Kustom",
         "discover": "Jelajahi",
         "privateNetwork": "Jaringan privat",
-        "remoteControl": "Kendali jarak jauh",
         "searchConnected": "Cari konektor yang terhubung",
         "searchCustom": "Cari konektor kustom"
       },
@@ -5381,7 +5380,7 @@
     "rsaLogin": "{{login}} {{protection}} Sesuaikan RA2 atau RA2_256 dengan pengaturan VNC dan gunakan kunci publik RSA tepercaya dari administrator.",
     "rsaPassword": "Gunakan kata sandi yang diatur di layanan VNC.",
     "sshAddress": "Jika VNC dan SSH berjalan di komputer yang sama, gunakan 127.0.0.1. Untuk komputer lain, minta administrator alamat yang dapat dijangkau dari komputer SSH.",
-    "sshEmptyHelp": "Tambahkan koneksi SSH di “Kontrol jarak jauh”, lalu pilih di sini.",
+    "sshEmptyHelp": "Tambahkan koneksi SSH di “{{directory}}”, lalu pilih di sini.",
     "sshEmptyPlaceholder": "Tidak ada koneksi SSH yang tersedia",
     "sshRoute": "Akses layar perangkat melalui koneksi SSH tersimpan.",
     "tailscaleRoute": "Untuk perangkat yang sudah terhubung ke Tailscale. Pilih jaringan tersimpan dan salin alamat dari Tailscale di perangkat.",

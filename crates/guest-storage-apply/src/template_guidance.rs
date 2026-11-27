@@ -1,6 +1,6 @@
 //! Verify the same immutable template bytes on remote and staged archive paths.
 
-use crate::{archive, error::DownloadError, source::ArchiveSource};
+use crate::{ApplyFailure, archive, error::DownloadError, source::ArchiveSource};
 use guest_contracts::storage_manifest::{
     MAX_TEMPLATE_CONTENT_BYTES, MAX_TEMPLATE_FILE_BYTES, MAX_TEMPLATE_FILES,
     MAX_TEMPLATE_TAR_BYTES, TemplateGuidanceReference,
@@ -8,7 +8,7 @@ use guest_contracts::storage_manifest::{
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
-    io::{self, Read, Seek, Write},
+    io::{Read, Seek, Write},
     path::Path,
 };
 
@@ -59,12 +59,13 @@ pub(crate) fn extract(
         concurrency,
         MAX_TEMPLATE_TAR_BYTES,
         |path, entry_type, size, header| {
-            let mode = header.mode()?;
-            let path = path
-                .to_str()
-                .ok_or_else(|| io::Error::other("Template path is not UTF-8"))?;
-            if !archive::ancestors_within_target(&target.join(path), target)
-                || !entry_type.is_file()
+            let mode = header
+                .mode()
+                .map_err(|error| DownloadError::new(format!("Invalid archive entry: {error}")))?;
+            let path = path.to_str().ok_or_else(|| {
+                DownloadError::new("Invalid archive entry: Template path is not UTF-8")
+            })?;
+            if !entry_type.is_file()
                 || mode & 0o7777 != 0o644
                 || path.len() > 4095
                 || path.contains(['\\', '\0'])
@@ -75,13 +76,23 @@ pub(crate) fn extract(
                 || !paths.insert(path.to_owned())
                 || size > MAX_TEMPLATE_FILE_BYTES
             {
-                return Err(io::Error::other("Invalid template guidance entry"));
+                return Err(DownloadError::new(
+                    "Invalid archive entry: Invalid template guidance entry",
+                ));
             }
-            expanded = expanded
-                .checked_add(size)
-                .ok_or_else(|| io::Error::other("Template content size overflow"))?;
+            if !archive::ancestors_within_target(&target.join(path), target) {
+                return Err(DownloadError {
+                    message: "Template guidance entry has an unavailable target parent".into(),
+                    failure: ApplyFailure::TargetUnavailable,
+                });
+            }
+            expanded = expanded.checked_add(size).ok_or_else(|| {
+                DownloadError::new("Invalid archive entry: Template content size overflow")
+            })?;
             if expanded > MAX_TEMPLATE_CONTENT_BYTES {
-                return Err(io::Error::other("Template guidance exceeds content limit"));
+                return Err(DownloadError::new(
+                    "Invalid archive entry: Template guidance exceeds content limit",
+                ));
             }
             Ok(())
         },

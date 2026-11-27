@@ -43,10 +43,7 @@ fn run_manifest_file_and_remove_removes_file_on_success() {
     let path = dir.path().join("storage-manifest.json");
     std::fs::write(&path, br#"{"storageMounts":[]}"#).unwrap();
 
-    assert!(run_manifest_file_and_remove(
-        path.to_str().unwrap(),
-        dir.path()
-    ));
+    assert!(run_manifest_file_and_remove(path.to_str().unwrap(), dir.path()).is_ok());
 
     assert!(!path.exists());
 }
@@ -57,10 +54,7 @@ fn run_manifest_file_and_remove_removes_file_on_parse_failure() {
     let path = dir.path().join("storage-manifest.json");
     std::fs::write(&path, br#"{{not valid json secret-body"#).unwrap();
 
-    assert!(!run_manifest_file_and_remove(
-        path.to_str().unwrap(),
-        dir.path()
-    ));
+    assert!(run_manifest_file_and_remove(path.to_str().unwrap(), dir.path()).is_err());
 
     assert!(!path.exists());
 }
@@ -74,10 +68,7 @@ fn run_manifest_file_and_remove_removes_symlink_on_read_failure() {
     std::fs::create_dir(&target_dir).unwrap();
     std::os::unix::fs::symlink(&target_dir, &path).unwrap();
 
-    assert!(!run_manifest_file_and_remove(
-        path.to_str().unwrap(),
-        dir.path()
-    ));
+    assert!(run_manifest_file_and_remove(path.to_str().unwrap(), dir.path()).is_err());
 
     assert!(!path.exists());
     assert!(target_dir.exists());
@@ -92,10 +83,7 @@ fn run_manifest_file_and_remove_rejects_symlink_to_regular_file() {
     std::fs::write(&target, br#"{"storageMounts":[]}"#).unwrap();
     std::os::unix::fs::symlink(&target, &path).unwrap();
 
-    assert!(!run_manifest_file_and_remove(
-        path.to_str().unwrap(),
-        dir.path()
-    ));
+    assert!(run_manifest_file_and_remove(path.to_str().unwrap(), dir.path()).is_err());
 
     assert!(!path.exists());
     assert!(target.exists());
@@ -176,10 +164,7 @@ fn run_manifest_file_and_remove_rejects_fifo_child() {
     };
     let path = std::path::PathBuf::from(path);
 
-    assert!(!run_manifest_file_and_remove(
-        path.to_str().unwrap(),
-        path.parent().unwrap()
-    ));
+    assert!(run_manifest_file_and_remove(path.to_str().unwrap(), path.parent().unwrap()).is_err());
 
     assert!(!path.exists());
 }

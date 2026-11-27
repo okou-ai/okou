@@ -13,7 +13,6 @@ struct ChatFeedbackComposer: View {
   var followup: String?
   var showsTrailingParagraph = true
   var expanded = false
-  var showsFollowupPlaceholder = true
   var mentionSource: ComposerMentionSource?
   @State private var focusedBlock: UUID?
   @State private var contentHeight: CGFloat = 24
@@ -91,7 +90,6 @@ struct ChatFeedbackComposer: View {
                   placeholder: block.isFeedback
                     ? String(localized: "Ask or comment on this quote") : placeholder,
                   followup: block.isFeedback ? nil : followup,
-                  showsFollowupPlaceholder: showsFollowupPlaceholder,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
                   expanded: expanded || presentation.draft.document.hasFeedback || isFocused,
                   mentionSource: mentionSource, voicePlayback: state.voicePlayback

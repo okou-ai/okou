@@ -106,7 +106,8 @@ final class ConversationRowMeasurer<Content: View> {
     layout: ConversationHeightDiskCache.Layout, source: ConversationCollectionView<Content>
   ) -> ConversationHeightDiskCache.Key? {
     // A row showing the message actions is taller; only rows without them share cached heights.
-    guard case .message(let message, let avatar, let spacing, nil, false, let work, false) = row,
+    guard
+      case .message(let message, let avatar, let spacing, nil, false, let work, false) = row.content,
       message.attachments.isEmpty, message.modelChange == nil, message.inputError == nil,
       !message.isError, message.role != .system
     else { return nil }
@@ -141,7 +142,7 @@ final class ConversationRowMeasurer<Content: View> {
     var unitSessions: [MessageUnitMeasurements.Session] = []
     let hosts = rows.map { row in
       let unitSession: MessageUnitMeasurements.Session?
-      if case .message(let message, _, _, _, _, false, _) = row, message.role == .assistant {
+      if case .message(let answer, _, _, _, _, false, _) = row.content, answer.role == .assistant {
         let session = MessageUnitMeasurements.Session(
           cache: source.markdown.unitMeasurements, layout: layout)
         unitSessions.append(session)
@@ -207,7 +208,7 @@ final class ConversationRowMeasurer<Content: View> {
     guard let input = input() else { return [] }
     let traitCollection = input.controller.traitCollection
     return rows.map { row in
-      switch row {
+      switch row.content {
       case .message(let message, _, let topSpacing, _, _, _, _):
         let font = OkouTypography.font(forTextStyle: .body, compatibleWith: traitCollection)
         let text = NSAttributedString(string: message.text, attributes: [.font: font])

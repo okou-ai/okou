@@ -105,7 +105,6 @@ struct TemplateBundle {
     download_url: String,
     owner_kind: TemplateOwnerKind,
     template_id: String,
-    before_mount_paths: Vec<String>,
 }
 
 impl TemplateBundle {
@@ -256,7 +255,6 @@ fn normalize(
     };
     for template in packages.templates {
         let mount_path = template.mount_path()?;
-        // Ancestor/descendant overlays are valid; a second destination is not.
         if paths
             .iter()
             .any(|path| Path::new(path) == Path::new(&mount_path))
@@ -279,18 +277,7 @@ fn normalize(
             guest_contracts::storage_manifest::MAX_TEMPLATE_ARCHIVE_BYTES,
         )?;
         entry.template_guidance = Some(integrity);
-        // The first surviving anchor preserves the API's selected overlay order.
-        let position = template
-            .before_mount_paths
-            .iter()
-            .find_map(|path| {
-                manifest
-                    .storages
-                    .iter()
-                    .position(|storage| Path::new(&storage.mount_path) == Path::new(path))
-            })
-            .unwrap_or(manifest.storages.len());
-        manifest.storages.insert(position, entry);
+        manifest.storages.push(entry);
     }
     context.storage_manifest = Some(manifest);
     context.instruction_file = instruction_file;

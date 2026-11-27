@@ -1,7 +1,8 @@
 package ai.okou.android.settings
 
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.finiteReadRetryDelays
+import ai.okou.android.api.boundedApiRetryDelayMillis
+import ai.okou.android.api.boundedRetryDelayMillis
 import ai.okou.android.auth.WorkspaceIdentity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -175,15 +176,15 @@ internal class ProactiveSettingOwner(
     }
 
     private suspend fun readPreference(): ProactivePreference? {
-        for (pause in finiteReadRetryDelays) {
+        var retries = 0
+        while (true) {
             try {
                 return readOnce()
             } catch (error: ApiFailure) {
-                if (!error.retryableSettingsRead()) throw error
-                delay(pause)
+                val wait = error.boundedApiRetryDelayMillis(retries++) ?: throw error
+                delay(wait)
             }
         }
-        return readOnce()
     }
 
     private suspend fun readOnce(): ProactivePreference? {
@@ -245,17 +246,18 @@ internal class ProactiveSettingOwner(
     }
 
     private suspend fun send(sent: ProactiveChoice): ProactivePreference? {
-        for (pause in finiteReadRetryDelays) {
+        var retries = 0
+        while (true) {
             try {
                 return service.update(setting, sent.enabled).also { requireCurrent() }
             } catch (error: ApiFailure.Network) {
                 if (!error.connectionFailed) throw error
-                delay(pause)
+                val wait = boundedRetryDelayMillis(retries++, error) ?: throw error
+                delay(wait)
                 requireCurrent()
                 if (mutable.value.choice != sent) return null
             }
         }
-        return service.update(setting, sent.enabled).also { requireCurrent() }
     }
 
     private suspend fun reconcile(sent: ProactiveChoice) {

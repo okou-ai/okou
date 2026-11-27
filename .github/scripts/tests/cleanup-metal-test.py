@@ -5,6 +5,7 @@ import contextlib
 import fcntl
 import json
 import os
+import runpy
 import select
 import signal
 import subprocess
@@ -14,6 +15,8 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 TOOLS = ROOT / ".github/scripts/runner"
@@ -90,6 +93,8 @@ if args[:4]==['sudo','python3','-','inventory']:
   if failure=='malformed':print('{"9999":');sys.exit(0)
 elif args[:3]==['sudo','python3','-c'] and args[4:5]==['session']:
  with history.open('a') as log:log.write('session\n')
+elif args==['sudo','python3','-','maintain-locks']:
+ with history.open('a') as log:log.write('maintain-locks\n')
 if os.environ.get('OFFLINE')==host:sys.exit(255)
 if len(args)==1 and args[0].startswith('sudo bash -c '):
  namespace=os.environ['JOB_REF'];lock=root/host/'var/lock'/f'vm0-runner-lifecycle-{namespace}.lock';lock.parent.mkdir(parents=True,exist_ok=True)
@@ -100,6 +105,10 @@ if len(args)==1 and args[0].startswith('sudo bash -c '):
 os.environ['FIXTURE_HOST']=str(root/host)
 if args[2]=='-c':
  source=shlex.split(args[3])[0]
+ if os.environ.get('CUTOFF_ENOSPC') == host:
+  source=("import errno, os\n"
+          "def no_space(*args): raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))\n"
+          "os.pwrite = no_space\n"+source)
  if os.environ.get('STOP_CLOCK_STEP'):
   source='import runpy;runpy.run_path('+repr(str(root/'clock.py'))+');'+source
  command=[sys.executable,'-c',source,*args[4:],'--root',str(root/host)]
@@ -453,9 +462,9 @@ class CleanupTests(unittest.TestCase):
         )
         return result, json.loads(result.stdout) if result.returncode == 0 else None
 
-    def controller(self, **env):
+    def controller(self, *args, **env):
         return subprocess.run(
-            [sys.executable, str(TOOLS / "cleanup-metal-runners.py")],
+            [sys.executable, str(TOOLS / "cleanup-metal-runners.py"), *args],
             env={**self.env, **env},
             capture_output=True,
             text=True,
@@ -1020,7 +1029,7 @@ class CleanupTests(unittest.TestCase):
 
     def test_dry_run_and_missing_host_preserve_resources(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        result = self.controller(DRY_RUN="true")
+        result = self.controller("--maintain-locks", DRY_RUN="true")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(config.exists())
         self.assertIn('"candidates": [42]', result.stdout)
@@ -1031,6 +1040,120 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(config.exists())
         self.assertEqual((self.root / "metal-a/ssh.log").read_text(), "inventory\n" * 2)
         self.assertEqual((self.root / "metal-b/ssh.log").read_text(), "inventory\n" * 3)
+
+    def test_full_sweep_releases_only_expired_cutoff_blocks(self):
+        methods = self.root / "metal-a" / "var/lock"
+        record = "2000-01-01T00:00:00Z\n"
+        for number in (42, 43, 44, 45):
+            self.resource(
+                f"var/lock/vm0-runner-lifecycle-pr-{number}.lock", contents=record
+            )
+        expired, busy, recent, future = [
+            methods / f"vm0-runner-lifecycle-pr-{n}.lock" for n in (42, 43, 44, 45)
+        ]
+        future.write_text("2099-01-01T00:00:00Z\n")
+        for entry in (expired, busy, future):
+            os.utime(entry, (1, 1))
+        (self.root / "metal-b/var/lock").mkdir(parents=True)
+        with expired.open() as descriptor, busy.open() as held:
+            inode = os.fstat(descriptor.fileno()).st_ino
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            result = self.controller("--maintain-locks")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(descriptor.read(), "")
+        self.assertEqual(expired.stat().st_ino, inode)
+        self.assertEqual(busy.read_text(), record)
+        self.assertEqual(recent.read_text(), record)
+        self.assertEqual(future.read_text(), "2099-01-01T00:00:00Z\n")
+        for host in ("metal-a", "metal-b"):
+            self.assertEqual(
+                (self.root / host / "ssh.log").read_text(),
+                "maintain-locks\ninventory\n",
+            )
+
+    def test_targeted_sweep_writes_close_record_without_maintenance(self):
+        result = self.controller("--maintain-locks", RUNNER_PR_NUMBERS="42")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for host in ("metal-a", "metal-b"):
+            self.assertEqual(
+                (self.root / host / "ssh.log").read_text(), "inventory\nsession\n"
+            )
+            self.assertEqual(
+                (
+                    self.root / host / "var/lock/vm0-runner-lifecycle-pr-42.lock"
+                ).read_text(),
+                "2026-10-02T00:00:00Z\n",
+            )
+
+    def test_cutoff_enospc_reports_path_and_preserves_resources(self):
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        result = self.controller(RUNNER_PR_NUMBERS="42", CUTOFF_ENOSPC="metal-a")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(config.exists())
+        self.assertIn("write PR closure cutoff", result.stderr)
+        self.assertIn("metal-a/var/lock/vm0-runner-lifecycle-pr-42.lock", result.stderr)
+        self.assertIn("[Errno 28]", result.stderr)
+
+    def test_maintenance_grows_exact_tmpfs_preserving_options(self):
+        host_root = self.root / "metal-a"
+        mount = host_root / "run/lock"
+        mount.mkdir(parents=True)
+        (host_root / "var").mkdir()
+        (host_root / "var/lock").symlink_to("../run/lock")
+        host = runpy.run_path(str(TOOLS / "cleanup-metal-resources.py"))["Host"](
+            host_root
+        )
+        small = SimpleNamespace(f_blocks=1280, f_frsize=4096, f_bavail=0)
+        large = SimpleNamespace(f_blocks=32768, f_frsize=4096, f_bavail=31488)
+        calls = []
+
+        def command(*args):
+            calls.append(args)
+            return SimpleNamespace(
+                stdout=json.dumps(
+                    {
+                        "filesystems": [
+                            {
+                                "target": str(mount),
+                                "fstype": "tmpfs",
+                                "vfs-options": "rw,nosuid,nodev,noexec,relatime",
+                            }
+                        ]
+                    }
+                )
+            )
+
+        with (
+            patch("os.statvfs", side_effect=[small, large, large]),
+            patch.dict(host.maintain_locks.__globals__, command=command),
+        ):
+            report = host.maintain_locks()
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "findmnt",
+                    "--json",
+                    "--mountpoint",
+                    str(mount),
+                    "--output",
+                    "TARGET,FSTYPE,VFS-OPTIONS",
+                ),
+                (
+                    "mount",
+                    "-t",
+                    "tmpfs",
+                    "-o",
+                    "remount,rw,nosuid,nodev,noexec,relatime,size=134217728",
+                    "tmpfs",
+                    str(mount),
+                ),
+            ],
+        )
+        self.assertEqual(
+            report,
+            {"capacity_bytes": 134217728, "available_bytes": 128974848, "expired": 0},
+        )
 
     def test_inventory_recovers_single_disconnect_before_cleanup(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
@@ -1131,7 +1254,9 @@ class CleanupTests(unittest.TestCase):
             run_details={str(owner["id"]): owner},
         )
         selected = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
-        reopened = self.resource("var/lib/vm0-runner/stripe/pr-44/config", host="metal-b")
+        reopened = self.resource(
+            "var/lib/vm0-runner/stripe/pr-44/config", host="metal-b"
+        )
         owned, result = self.pre_dispatch_loss("prior-lost")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(all(file.is_file() for file in owned), result.stdout)

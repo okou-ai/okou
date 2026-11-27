@@ -132,6 +132,10 @@ final class ConversationProjectionTests: XCTestCase {
 
     XCTAssertTrue(conversation.streamedOutputs.isEmpty)
     XCTAssertEqual(conversation.messages.map(\.text), ["Start", "New request"])
+    // The first run can deliver a durable answer after the second prompt.
+    fixture.append(try row(3, text: "Late answer from the first run"))
+    fixture.append(try row(4, type: "run.completed"))
+    await conversation.refresh()
     old(
       .init(
         threadID: ConversationHistoryFixture.threadID, runID: Self.runID,
@@ -145,6 +149,17 @@ final class ConversationProjectionTests: XCTestCase {
       conversation.streamedOutputs.first?.text == "New run"
     }
     XCTAssertEqual(conversation.streamedOutputs.map(\.text), ["New run"])
+    func animatedAvatars() -> [String] {
+      ConversationRowProjection(
+        conversation: conversation, transcript: conversation.currentTranscript,
+        window: conversation.currentWindow, isSending: false, models: nil
+      ).rows.filter(\.animatesAvatar).map(\.id)
+    }
+    XCTAssertEqual(animatedAvatars(), [ConversationHistoryFixture.id(11)])
+
+    fixture.append(try row(5, type: "run.failed", runID: newer))
+    await conversation.refresh()
+    XCTAssertEqual(animatedAvatars(), [ConversationHistoryFixture.id(5)])
   }
 
   func testClosingRetiresLivePublicationWithoutChangingTheNativeWindow() async throws {

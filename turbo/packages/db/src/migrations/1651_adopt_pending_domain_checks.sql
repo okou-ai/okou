@@ -15,6 +15,7 @@ WITH adopted AS (
   WHERE site.id = domain.site_id AND site.deleted_at IS NULL
     AND domain.revoked_at IS NULL AND domain.released_at IS NULL
     AND NOT (domain.verification ? 'automatic')
+    AND jsonb_typeof(domain.verification->'recordChecks') = 'array'
     AND domain.verification @> '{"status":"incomplete","checks":{"ownership":{"status":"passed"},"dns":{"status":"passed"}}}'
     AND NOT jsonb_path_exists(domain.verification, '$.checks.* ? (@.status == "failed" || @.status == "unavailable")')
     AND NOT jsonb_path_exists(domain.verification, '$.recordChecks[*] ? (@.status != "passed")')

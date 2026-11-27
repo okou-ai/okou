@@ -112,14 +112,16 @@
     <string name="chat_connector_scope">यह इस चैट पर लागू होता है। शुरुआत में वर्कस्पेस के डिफ़ॉल्ट खातों का उपयोग होता है।</string>
     <string name="chat_connector_empty">इस वर्कस्पेस में कोई खाता कनेक्ट नहीं है।</string>
     <string name="chat_connector_manage">कनेक्टर प्रबंधित करें</string>
-    <string name="chat_connector_restore_defaults">वर्कस्पेस की डिफ़ॉल्ट सेटिंग बहाल करें</string>
+    <string name="chat_connector_restore_defaults">सभी कनेक्टर की डिफ़ॉल्ट सेटिंग बहाल करें</string>
+    <string name="chat_connector_policy_remaining">%1$s शेष</string>
+    <string name="chat_connector_policies_failed">पहुँच नीतियाँ लोड नहीं हो सकीं।</string>
     <string name="chat_connector_saving">कनेक्टर का चुनाव सेव हो रहा है…</string>
     <string name="chat_connector_save_failed">कनेक्टर का चुनाव सेव नहीं हो सका।</string>
     <string name="chat_connector_first_send_failed">कनेक्टर के चुनाव लागू नहीं हो सके। चैट के विकल्पों में उनकी जाँच करें और फिर यह मैसेज भेजने की कोशिश करें।</string>
     <string name="connector_device_denied">सेवा प्रदाता ने अनुमति देने से मना कर दिया।</string>
     <string name="connector_device_expired">डिवाइस कोड की समय-सीमा समाप्त हो गई। अनुमति की प्रक्रिया फिर शुरू करें।</string>
     <string name="connector_device_failed">डिवाइस को अनुमति देने की प्रक्रिया पूरी नहीं हो सकी।</string>
-    <string name="connector_access_scope">आपकी सभी चैट पर लागू होता है।</string>
+    <string name="connector_access_scope">पहुँच नीतियाँ इस वर्कस्पेस में आपकी सभी चैट पर लागू होती हैं।</string>
     <string name="connector_access_label">%1$s के लिए ऐक्सेस, %2$s</string>
     <string name="connector_access_allow">अनुमति दें</string>
     <string name="connector_access_deny">अस्वीकार करें</string>
@@ -132,4 +134,6 @@
     <string name="connector_access_allow_hour">1 घंटे के लिए अनुमति दें</string>
     <string name="connector_access_allow_day">24 घंटे के लिए अनुमति दें</string>
     <string name="connector_access_allow_week">7 दिनों के लिए अनुमति दें</string>
+    <string name="chat_connector_check_result">नतीजा देखें</string>
+    <string name="chat_connector_check_before_send">भेजने से पहले, चैट विकल्पों में कनेक्टर का चयन जाँचें।</string>
 </resources>

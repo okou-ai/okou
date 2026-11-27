@@ -18,6 +18,8 @@ pub enum ExecutorError {
     Cancelled,
     #[error("internal error: {0}")]
     Internal(String),
+    #[error("{0}")]
+    StorageTargetUnavailable(String),
     #[error("snapshot error: {0}")]
     Snapshot(#[from] sandbox::SnapshotError),
     #[error("io error: {0}")]

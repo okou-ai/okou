@@ -292,7 +292,7 @@ function ConnectorsScopeSegment() {
         data-testid="connectors-scope-remote-control"
       >
         {t(($) => {
-          return $.connectors.catalog.scope.remoteControl;
+          return $.remoteDevices.title;
         })}
         <RemoteControlScopeCount />
       </SegmentControlItem>
@@ -927,7 +927,7 @@ function ConnectorEmptyState({ message }: { readonly message: string }) {
 }
 
 /**
- * Connected built-in and custom connector accounts. Remote control and private
+ * Connected built-in and custom connector accounts. Remote devices and private
  * network resources have their own scopes.
  */
 function ConnectorsConnectedPanel({

@@ -108,14 +108,16 @@
     <string name="chat_connector_scope">用於目前對話。初始採用工作區預設啟用的帳號。</string>
     <string name="chat_connector_empty">此工作區還沒有已連線的帳號。</string>
     <string name="chat_connector_manage">管理連接器</string>
-    <string name="chat_connector_restore_defaults">恢復工作區預設</string>
+    <string name="chat_connector_restore_defaults">恢復所有連接器預設</string>
+    <string name="chat_connector_policy_remaining">剩餘 %1$s</string>
+    <string name="chat_connector_policies_failed">暫時無法載入存取政策。</string>
     <string name="chat_connector_saving">正在儲存連接器選擇…</string>
     <string name="chat_connector_save_failed">暫時無法儲存連接器選擇。</string>
     <string name="chat_connector_first_send_failed">無法套用連接器選擇。請在「聊天選項」中檢查後重試這則訊息。</string>
     <string name="connector_device_denied">服務提供者已拒絕授權。</string>
     <string name="connector_device_expired">裝置碼已過期，請重新發起授權。</string>
     <string name="connector_device_failed">暫時無法完成裝置授權。</string>
-    <string name="connector_access_scope">適用於你的所有聊天。</string>
+    <string name="connector_access_scope">存取政策適用於你在此工作區的所有對話。</string>
     <string name="connector_access_label">%1$s 的存取權限, %2$s</string>
     <string name="connector_access_allow">允許</string>
     <string name="connector_access_deny">拒絕</string>
@@ -128,4 +130,6 @@
     <string name="connector_access_allow_hour">允許 1 小時</string>
     <string name="connector_access_allow_day">允許 24 小時</string>
     <string name="connector_access_allow_week">允許 7 天</string>
+    <string name="chat_connector_check_result">核對結果</string>
+    <string name="chat_connector_check_before_send">傳送前，請在聊天選項中核對連接器選擇。</string>
 </resources>

@@ -1245,13 +1245,22 @@ test("only the saved domain serves a website and switching retains configured do
   };
   await select(first.id);
   expect((await resolve(first.hostname))?.siteId).toBe(fixture.prepared.siteId);
-  const secondSettings = await add(
-    fixture,
-    `second-${fixture.name}.customer-example.net`,
-  );
-  const second = secondSettings.domains.find((domain) => {
-    return domain.id !== first.id;
+  const secondHostname = `second-${fixture.name}.customer-example.net`;
+  await add(fixture, secondHostname);
+  const listed = (
+    await accept(
+      fixture.api.siteDomains({
+        headers,
+        params: { siteId: fixture.prepared.siteId },
+      }),
+      [200],
+    )
+  ).body;
+  expect(listed.domains).toContainEqual(settings.domains[0]);
+  const second = listed.domains.find((domain) => {
+    return domain.hostname === secondHostname;
   })!;
+  expect(second).toMatchObject({ ready: false, verification: null });
   external.recordValues(second.records[0]!.name, [second.records[0]!.value]);
   settings = (await accept(verifyDomainRequest(fixture, second), [200])).body;
   await expect(resolve(second.hostname)).resolves.toBeNull();

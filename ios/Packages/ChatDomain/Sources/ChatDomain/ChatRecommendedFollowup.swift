@@ -48,11 +48,19 @@ public struct ChatRecommendedFollowupSource: Equatable, Sendable {
   }
 }
 
-/// Recommendation ownership follows the same run-turn ordering as the PWA,
+/// The last semantic assistant event supplies Web's stable completion phrase and timestamp.
+public struct ChatRunCompletion: Equatable, Sendable {
+  /// The final UTF-16 code unit of the event ID, used by both clients to select the phrase.
+  public let phraseSeed: UInt16
+  public let createdAt: Date
+  public let recommendedFollowups: ChatRecommendedFollowupSource?
+}
+
+/// Completion and recommendation ownership follow the same run-turn ordering as the PWA,
 /// independently of the transcript's rendering window and collapsed work rows.
-enum ChatFollowupProjection {
-  static func source(rows: [ChatEvent], active: Bool)
-    -> ChatRecommendedFollowupSource?
+enum ChatCompletionProjection {
+  static func completion(rows: [ChatEvent], active: Bool) throws
+    -> ChatRunCompletion?
   {
     guard !active else { return nil }
     let revoked = Set(rows.compactMap(\.revokesEventId))
@@ -88,6 +96,15 @@ enum ChatFollowupProjection {
       last.eventType != .runCancelled, last.eventType != .runFailed
     else { return nil }
     guard !hasStatusTail(ordered) else { return nil }
+    guard let phraseSeed = last.id.utf16.last else {
+      throw ChatError.invalidContract("A chat completion event is missing its ID.")
+    }
+    return ChatRunCompletion(
+      phraseSeed: phraseSeed, createdAt: last.createdAt,
+      recommendedFollowups: followups(in: ordered))
+  }
+
+  private static func followups(in ordered: [ChatEvent]) -> ChatRecommendedFollowupSource? {
     for row in ordered.reversed() {
       guard isAssistant(row.eventType) else { return nil }
       if row.eventType == .outputFollowups {

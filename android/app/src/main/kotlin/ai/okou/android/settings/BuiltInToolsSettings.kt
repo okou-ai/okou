@@ -1,6 +1,8 @@
 package ai.okou.android.settings
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.boundedApiRetryDelayMillis
+import ai.okou.android.api.boundedRetryDelayMillis
 import ai.okou.android.api.generated.defaultImageToolModel
 import ai.okou.android.auth.WorkspaceIdentity
 import java.io.IOException
@@ -269,28 +271,29 @@ internal class BuiltInToolsSettings(
         reportFailure: Boolean = true,
         load: suspend () -> T,
     ): T? {
-        repeat(settingsReadAttempts) { attempt ->
-            if (!authorized()) return null
+        var retries = 0
+        while (authorized()) {
             try {
                 return load()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 if (reportFailure) onSessionFailure(error)
-                if (
-                    attempt == settingsReadAttempts - 1 ||
-                        !error.retryableSettingsRead() && error !is IOException
-                )
-                    return null
-                delay(settingsReadRetryDelayMillis)
+                val wait =
+                    if (error is IOException) boundedRetryDelayMillis(retries, error)
+                    else error.boundedApiRetryDelayMillis(retries)
+                if (wait == null) return null
+                retries++
+                delay(wait)
+                currentCoroutineContext().ensureActive()
             }
         }
         return null
     }
 
     private suspend fun <T : Any> save(send: suspend () -> T, readBack: suspend () -> T): T? {
-        repeat(settingsReadAttempts) { attempt ->
-            if (!authorized()) return null
+        var retries = 0
+        while (authorized()) {
             try {
                 return send()
             } catch (error: CancellationException) {
@@ -299,10 +302,11 @@ internal class BuiltInToolsSettings(
                 if (authorized()) onSessionFailure(error)
                 val undelivered = error is ApiFailure.Network && error.connectionFailed
                 val throttled = error is ApiFailure.Http && error.status == 429
-                if ((!undelivered && !throttled) || attempt == settingsReadAttempts - 1) {
-                    return readResource(load = readBack)
-                }
-                delay(settingsReadRetryDelayMillis)
+                val wait =
+                    if (undelivered || throttled) boundedRetryDelayMillis(retries++, error)
+                    else null
+                delay(wait ?: return readResource(load = readBack))
+                currentCoroutineContext().ensureActive()
             }
         }
         return null

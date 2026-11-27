@@ -358,11 +358,11 @@ pub(super) enum ArchiveError {
 }
 
 impl ArchiveError {
-    pub(super) fn is_root_not_found(&self) -> bool {
+    pub(super) fn is_root_unavailable(&self) -> bool {
         matches!(
             self,
             Self::RootOpen { source, .. } | Self::RootRead { source, .. }
-                if source.kind() == io::ErrorKind::NotFound
+                if matches!(source.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory)
         )
     }
 }

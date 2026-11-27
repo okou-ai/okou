@@ -67,7 +67,10 @@ fn read_document(path: &Path) -> io::Result<String> {
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)?;
     if !file.metadata()?.is_file() {
-        return Err(io::Error::other("Workflow document is not a regular file"));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Workflow document is not a regular file",
+        ));
     }
     let mut source = String::new();
     file.take(MAX_DOCUMENT_BYTES + 1)

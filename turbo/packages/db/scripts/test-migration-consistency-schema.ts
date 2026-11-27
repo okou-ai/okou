@@ -92,6 +92,7 @@ import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage
 import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-storage-permanent";
 import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
 import { validateProactiveSchedulePreparation } from "./test-proactive-schedule-preparation";
+import { validateHostedDomainVerificationInvalidation } from "./test-hosted-domain-verification-invalidation";
 import { validateEmailIntegrationMigration } from "./test-email-integration-migration";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validateCustomConnectorCloudflareStorage } from "./test-custom-connector-cloudflare-storage-permanent";
@@ -2921,6 +2922,12 @@ async function main(): Promise<void> {
     await validateProactiveSchedulePreparation(
       dbUrl1,
       await migrationTimestamp("1646_prepare_proactive_schedules"),
+    );
+    await validateHostedDomainVerificationInvalidation(
+      dbUrl1,
+      await migrationTimestamp(
+        "1650_invalidate_domain_verification_without_record_checks",
+      ),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");
