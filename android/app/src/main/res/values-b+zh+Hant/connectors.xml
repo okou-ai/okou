@@ -108,7 +108,9 @@
     <string name="chat_connector_scope">用於目前對話。初始採用工作區預設啟用的帳號。</string>
     <string name="chat_connector_empty">此工作區還沒有已連線的帳號。</string>
     <string name="chat_connector_manage">管理連接器</string>
-    <string name="chat_connector_restore_defaults">恢復工作區預設</string>
+    <string name="chat_connector_restore_defaults">恢復所有連接器預設</string>
+    <string name="chat_connector_policy_remaining">剩餘 %1$s</string>
+    <string name="chat_connector_policies_failed">暫時無法載入存取政策。</string>
     <string name="chat_connector_saving">正在儲存連接器選擇…</string>
     <string name="chat_connector_save_failed">暫時無法儲存連接器選擇。</string>
     <string name="chat_connector_first_send_failed">無法套用連接器選擇。請在「聊天選項」中檢查後重試這則訊息。</string>

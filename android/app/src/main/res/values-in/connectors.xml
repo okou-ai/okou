@@ -108,7 +108,9 @@
     <string name="chat_connector_scope">Berlaku untuk chat ini. Pada awalnya akun mengikuti setelan default ruang kerja.</string>
     <string name="chat_connector_empty">Tidak ada akun yang terhubung di ruang kerja ini.</string>
     <string name="chat_connector_manage">Kelola konektor</string>
-    <string name="chat_connector_restore_defaults">Pulihkan setelan default ruang kerja</string>
+    <string name="chat_connector_restore_defaults">Pulihkan setelan default semua konektor</string>
+    <string name="chat_connector_policy_remaining">Tersisa %1$s</string>
+    <string name="chat_connector_policies_failed">Kebijakan akses tidak dapat dimuat.</string>
     <string name="chat_connector_saving">Menyimpan pilihan konektor…</string>
     <string name="chat_connector_save_failed">Pilihan konektor tidak dapat disimpan.</string>
     <string name="chat_connector_first_send_failed">Pilihan konektor tidak dapat diterapkan. Periksa di Opsi chat, lalu coba kirim ulang pesan ini.</string>

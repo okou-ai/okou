@@ -84,6 +84,7 @@ class ChatConnectorOptionsTest {
 
     private val primaryTag = "chat-connector-selection-$CONNECTOR_CALENDAR_PRIMARY"
     private val repairTag = "chat-connector-repair-$CONNECTOR_CALENDAR_SECONDARY"
+    private val calendarTag = "chat-connector-service-$CONNECTOR_CALENDAR"
 
     @After
     fun close() {
@@ -121,7 +122,7 @@ class ChatConnectorOptionsTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
-    fun existingChatKeepsConfirmedChoiceWhileSavingAndReconcilesALostResponse() {
+    fun existingChatShowsThePendingChoiceAndReconcilesALostResponse() {
         waitText("Personal chat")
         compose.onNodeWithText("Personal chat").performClick()
         openPicker()
@@ -136,7 +137,7 @@ class ChatConnectorOptionsTest {
         try {
             account.assertIsOn().performClick()
             compose.waitUntil(10_000) { app.connectors.chatOverrideRequests.size == 1 }
-            account.assertIsOn().assertIsNotEnabled()
+            account.assertIsOff().assertIsNotEnabled()
         } finally {
             pending.countDown()
         }
@@ -186,7 +187,7 @@ class ChatConnectorOptionsTest {
         try {
             account.assertIsOn().performClick()
             waitText("Checking account…")
-            account.assertIsOn().assertIsNotEnabled()
+            account.assertIsOff().assertIsNotEnabled()
         } finally {
             readback.countDown()
         }
@@ -194,6 +195,70 @@ class ChatConnectorOptionsTest {
         account.assertIsOn()
         assertEquals(listOf(CHAT_PERSONAL to CONNECTOR_CALENDAR), app.connectors.chatOverrideReads)
         assertEquals(1, app.connectors.chatOverrideRequests.size)
+    }
+
+    @Test
+    fun overviewAndSelectedServiceUseSeparateCachedReads() {
+        openNewChat()
+        val overview = "/api/chat-connector-overview" to null
+        val held = CountDownLatch(1)
+        app.connectors.overviewReplyGate = held
+        try {
+            openOverview(waitForRows = false)
+            compose.waitUntil(10_000) { app.connectors.chatConnectorReads.contains(overview) }
+            inSheet(hasContentDescription("Back")).performClick()
+            dismissParentOptions()
+            openOverview(waitForRows = false)
+            assertEquals(listOf(overview), app.connectors.chatConnectorReads.toList())
+        } finally {
+            held.countDown()
+        }
+        waitTag(calendarTag)
+        assertEquals(listOf(overview), app.connectors.chatConnectorReads.toList())
+        compose.onNodeWithTag("chat-connector-service-slack").assertExists()
+        val row = compose.onNodeWithTag(calendarTag).getUnclippedBoundsInRoot()
+        assertEquals(56.dp, row.bottom - row.top)
+        inSheet(hasContentDescription("Back")).performClick()
+        dismissParentOptions()
+        openOverview()
+        assertEquals(listOf(overview), app.connectors.chatConnectorReads.toList())
+
+        compose.onNodeWithTag(calendarTag).performClick()
+        waitTag(primaryTag)
+        val expected =
+            listOf(
+                overview,
+                "/api/connector-accounts/connections" to CONNECTOR_CALENDAR,
+                "/api/feature-switches" to null,
+            )
+        assertEquals(expected.toSet(), app.connectors.chatConnectorReads.toSet())
+        assertEquals(expected.size, app.connectors.chatConnectorReads.size)
+        inSheet(hasContentDescription("Back")).performClick()
+        waitTag(calendarTag)
+        compose.onNodeWithTag(calendarTag).assertIsFocused().performClick()
+        waitTag(primaryTag)
+        assertEquals(expected.size, app.connectors.chatConnectorReads.size)
+    }
+
+    @Test
+    fun aPolicyReadFailureLeavesTheSelectedServiceAndRepairVisible() {
+        app.connectors.memberAccess = true
+        app.connectors.denyPolicyReads = true
+        openNewChat()
+        openOverview()
+        assertEquals(
+            listOf("/api/chat-connector-overview" to null),
+            app.connectors.chatConnectorReads.toList(),
+        )
+        compose.onNodeWithTag(calendarTag).performClick()
+        waitTag(repairTag)
+        waitText("Could not load access policies.")
+        compose.onNodeWithText("calendar@example.com").assertIsDisplayed()
+        compose.onNodeWithTag(repairTag).assertIsDisplayed()
+        assertEquals(
+            listOf("/api/connector-account-access/policies" to CONNECTOR_CALENDAR),
+            app.connectors.chatConnectorReads.filter { it.first.endsWith("/policies") },
+        )
     }
 
     @Test
@@ -410,24 +475,31 @@ class ChatConnectorOptionsTest {
     }
 
     private fun openPicker() {
+        openOverview()
+        compose.onNodeWithTag(calendarTag).performClick()
+        waitTag(primaryTag)
+    }
+
+    private fun openOverview(waitForRows: Boolean = true) {
         waitTag("chat-options-button")
         val options = compose.onNodeWithTag("chat-options-button")
         val bounds = options.getUnclippedBoundsInRoot()
         assertEquals(48.dp, bounds.bottom - bounds.top)
         options.performClick()
         compose.onNodeWithTag("chat-options-connectors").performClick()
-        waitTag(primaryTag)
+        waitTag(if (waitForRows) calendarTag else "chat-connector-manage")
     }
 
     private fun backToComposer() {
         inSheet(hasContentDescription("Back")).performClick()
         waitTag(primaryTag)
         compose.onNodeWithTag(primaryTag).assertIsOff()
-        dismissSheet()
-        dismissParentOptions()
+        closeOptions()
     }
 
     private fun closeOptions() {
+        inSheet(hasContentDescription("Back")).performClick()
+        waitTag(calendarTag)
         inSheet(hasContentDescription("Back")).performClick()
         dismissParentOptions()
     }

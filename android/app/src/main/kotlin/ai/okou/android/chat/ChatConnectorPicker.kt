@@ -2,10 +2,10 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
-import ai.okou.android.connectors.ChatConnectorAccount
 import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ChatConnectorOverride
 import ai.okou.android.connectors.ChatConnectorSavePhase
+import ai.okou.android.connectors.ChatConnectorSummary
 import ai.okou.android.connectors.ConnectorAccountPolicyMenu
 import ai.okou.android.connectors.ConnectorAccountStatus
 import ai.okou.android.connectors.ConnectorAccountTarget
@@ -14,9 +14,9 @@ import ai.okou.android.connectors.ConnectorButtonTreatment
 import ai.okou.android.connectors.ConnectorChevron
 import ai.okou.android.connectors.ConnectorMark
 import ai.okou.android.connectors.ConnectorReadError
+import ai.okou.android.connectors.ConnectorSavedAccount
 import ai.okou.android.connectors.ConnectorSheet
 import ai.okou.android.connectors.ConnectorSkeleton
-import ai.okou.android.connectors.connectorAccountStatus
 import ai.okou.android.connectors.connectorBodyType
 import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.connectors.connectorSmallType
@@ -30,6 +30,7 @@ import ai.okou.android.state.ComposerOptionsPresentation
 import ai.okou.android.state.rememberComposerOptions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
@@ -69,6 +71,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -108,6 +111,7 @@ internal fun ChatConnectorOptionsButton(
     var restoreEntry by remember { mutableStateOf<ComposerOptionsPage?>(null) }
     var restoredAccount by remember { mutableStateOf<String?>(null) }
     var sheetGeneration by remember { mutableIntStateOf(0) }
+    val overviewScroll = rememberScrollState()
     val page = presentation.page
     val open = page != ComposerOptionsPage.Closed
     DisposableEffect(defaultModel, open) {
@@ -172,31 +176,57 @@ internal fun ChatConnectorOptionsButton(
             modelChoices != null &&
             (conversationModel != null || composerState.canEditDraftModel(target))
 
-    val showingAccounts = page == ComposerOptionsPage.Connectors
+    val showingOverview = page == ComposerOptionsPage.Connectors
+    val showingAccounts = page == ComposerOptionsPage.ConnectorAccounts
+    val showingConnectors = showingOverview || showingAccounts
     val state =
         options?.state?.collectAsStateWithLifecycle()?.value?.takeIf { it.target == target.key }
-    val reading = state?.read
-    val groups = reading?.data?.groups
+    val overview = state?.overview
+    val overviewData = overview?.data
+    val slug = presentation.connectorSlug
+    val summary = overviewData?.find { it.entry.slug == slug }
+    val detail = state?.details?.get(slug)
+    val reading = detail?.accounts
+    val rows = reading?.data?.accounts
     val save = state?.save
     val saving = save?.saving == true
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(options, target, showingAccounts, lifecycle) {
-        if (showingAccounts && options != null)
+    LaunchedEffect(options, target, showingConnectors, state?.revision, lifecycle) {
+        if (showingConnectors && options != null && state != null)
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                options.show(target)
+                options.showOverview(target)
+            }
+    }
+    LaunchedEffect(options, target, showingAccounts, summary, state?.revision, lifecycle) {
+        if (showingAccounts && options != null && summary != null)
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                options.showAccounts(target, summary.entry.slug)
             }
     }
 
     fun back() {
         if (saving) return
-        options?.close(target)
-        if (showingAccounts || page == ComposerOptionsPage.Model) {
-            presentation =
-                presentation.copy(page = ComposerOptionsPage.Options, returnAccount = null)
-            restoreEntry = page
-        } else {
-            presentation = presentation.copy(page = ComposerOptionsPage.Closed)
-            restoreTrigger = true
+        options?.dismissFailure(target)
+        when (page) {
+            ComposerOptionsPage.ConnectorAccounts -> {
+                restoreEntry = page
+                presentation =
+                    presentation.copy(page = ComposerOptionsPage.Connectors, returnAccount = null)
+            }
+            ComposerOptionsPage.Connectors,
+            ComposerOptionsPage.Model -> {
+                restoreEntry = page
+                presentation =
+                    presentation.copy(
+                        page = ComposerOptionsPage.Options,
+                        returnAccount = null,
+                        connectorSlug = null,
+                    )
+            }
+            else -> {
+                presentation = presentation.copy(page = ComposerOptionsPage.Closed)
+                restoreTrigger = true
+            }
         }
     }
 
@@ -286,32 +316,68 @@ internal fun ChatConnectorOptionsButton(
 
     val returnAccount = presentation.returnAccount
     val accountToFocus = returnAccount ?: restoredAccount
-    val focusAccount = accountToFocus?.takeIf { id ->
-        groups?.any { group -> group.accounts.any { it.account.id == id } } == true
-    }
-    LaunchedEffect(showingAccounts, groups, returnAccount) {
-        if (showingAccounts && groups != null && returnAccount != null) {
+    val focusAccount = accountToFocus?.takeIf { id -> rows?.any { it.account.id == id } == true }
+    val serviceFocus = remember { FocusRequester() }
+    LaunchedEffect(showingAccounts, rows, returnAccount) {
+        if (showingAccounts && rows != null && returnAccount != null) {
             withFrameNanos {}
-            accountFocus.requestFocus()
+            if (focusAccount != null) accountFocus.requestFocus()
             restoredAccount = returnAccount
             presentation = presentation.copy(returnAccount = null)
         }
     }
+    LaunchedEffect(showingAccounts, overviewData, slug) {
+        if (showingAccounts && overviewData != null && summary == null) back()
+    }
+    LaunchedEffect(showingOverview, overviewData, restoreEntry, returnAccount) {
+        val returning =
+            restoreEntry == ComposerOptionsPage.ConnectorAccounts || returnAccount != null
+        if (showingOverview && overviewData != null && returning) {
+            withFrameNanos {}
+            if (summary != null && restoreEntry == ComposerOptionsPage.ConnectorAccounts)
+                serviceFocus.requestFocus()
+            else accountFocus.requestFocus()
+            restoreEntry = null
+            presentation = presentation.copy(returnAccount = null)
+        }
+    }
 
-    val title = if (showingAccounts) R.string.connector_title else R.string.chat_options_title
+    val title =
+        when (page) {
+            ComposerOptionsPage.ConnectorAccounts ->
+                summary?.entry?.name ?: stringResource(R.string.connector_title)
+            ComposerOptionsPage.Connectors -> stringResource(R.string.connector_title)
+            else -> stringResource(R.string.chat_options_title)
+        }
+    val footer: (@Composable () -> Unit)? =
+        if (showingOverview) {
+            {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    ConnectorButton(
+                        stringResource(R.string.chat_connector_manage),
+                        onClick = { openDirectory(null) },
+                        modifier =
+                            Modifier.focusRequester(accountFocus).testTag("chat-connector-manage"),
+                        treatment = ConnectorButtonTreatment.Text,
+                    )
+                }
+            }
+        } else null
     key(sheetGeneration) {
         ConnectorSheet(
-            stringResource(title),
+            title,
             dismiss = {
                 // Material has already hidden the sheet. Start a fresh one for the parent page.
-                if (showingAccounts && !saving) sheetGeneration++
+                if (showingConnectors && !saving) sheetGeneration++
                 back()
             },
             dismissible = !saving,
             expandInShortWindow = true,
-            back = if (showingAccounts || currentWindowSizeDp().height < 480) ::back else null,
+            back = if (showingConnectors || currentWindowSizeDp().height < 480) ::back else null,
+            actions = footer,
+            retainedScroll = overviewScroll.takeIf { showingOverview },
         ) {
-            if (!showingAccounts) {
+            if (!showingConnectors) {
                 var positioned by remember { mutableStateOf(false) }
                 LaunchedEffect(restoreEntry, positioned, modelEnabled) {
                     if (restoreEntry != null && positioned) {
@@ -380,144 +446,174 @@ internal fun ChatConnectorOptionsButton(
                             stringResource(R.string.connector_title),
                             onClick = {
                                 presentation =
-                                    presentation.copy(page = ComposerOptionsPage.Connectors)
+                                    presentation.copy(
+                                        page = ComposerOptionsPage.Connectors,
+                                        connectorSlug = null,
+                                    )
                             },
                             modifier =
                                 Modifier.focusRequester(entryFocus)
                                     .testTag("chat-options-connectors"),
                         )
                 }
-            } else if (groups == null) {
+            } else if (showingOverview) {
                 when {
-                    reading?.failure != null ->
-                        ConnectorReadError(R.string.connector_accounts_failed)
+                    overviewData == null && overview?.failure != null ->
+                        ConnectorReadError(R.string.connector_load_failed)
+                    overviewData == null ->
+                        ConnectorSkeleton(stringResource(R.string.connector_loading), rows = 2)
+                    overviewData.isEmpty() -> ConnectorOptionFeedback(R.string.chat_connector_empty)
                     else ->
-                        ConnectorSkeleton(
-                            stringResource(R.string.connector_loading_accounts),
-                            rows = 2,
-                        )
-                }
-            } else {
-                val newChat = target.threadId == null
-                val memberAccess = reading.data.memberAccess
-                val draftChoices =
-                    composerState.connectorOverrides(target).associateBy { it.connectionId }
-                val canEdit =
-                    !saving &&
-                        (memberAccess || !newChat || composerState.canEditDraftConnectors(target))
-                if (!memberAccess) {
-                    Text(
-                        stringResource(R.string.chat_connector_scope),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = connectorSmallType(),
-                    )
-                }
-                if (groups.isEmpty()) ConnectorOptionFeedback(R.string.chat_connector_empty)
-                for (group in groups) {
-                    Column {
-                        Row(
-                            Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            ConnectorMark(
-                                group.entry.icon,
-                                20.dp,
-                                Modifier.background(
-                                    MaterialTheme.colorScheme.surfaceVariant,
-                                    RoundedCornerShape(4.dp),
-                                ),
-                            )
-                            Text(
-                                group.entry.name,
-                                Modifier.semantics { heading() },
-                                style = connectorBodyType(),
-                            )
-                        }
-                        for (row in group.accounts) {
-                            key(row.account.id) {
-                                val id = row.account.id
-                                val chosen =
-                                    if (newChat) draftChoices[id]?.enabled else row.override
-                                val enabled = chosen ?: (row.account.defaultEnabled == true)
-                                val choice = ChatConnectorOverride(group.entry.slug, id, !enabled)
-                                ChatConnectorRow(
-                                    row,
-                                    enabled,
-                                    canEdit,
-                                    canManage = !saving,
-                                    memberAccess = memberAccess,
-                                    modifier =
-                                        if (id == focusAccount)
-                                            Modifier.focusRequester(accountFocus)
-                                        else Modifier,
-                                    onToggle = {
-                                        if (newChat) composer.editConnectorOverride(target, choice)
-                                        else options.save(target, listOf(choice))
-                                    },
-                                    onPolicy = {
-                                        options.savePolicy(target, group.entry.slug, id, it)
-                                    },
-                                    onRepair = {
-                                        openDirectory(ConnectorAccountTarget(group.entry.slug, id))
-                                    },
-                                )
-                                if (save?.connectionId == id) {
-                                    ConnectorOptionFeedback(
-                                        when (save.phase) {
-                                            ChatConnectorSavePhase.Saving ->
-                                                R.string.chat_connector_saving
-                                            ChatConnectorSavePhase.Checking ->
-                                                R.string.connector_working
-                                            ChatConnectorSavePhase.Unconfirmed ->
-                                                R.string.connector_verify_pending
-                                            ChatConnectorSavePhase.Failed ->
-                                                R.string.chat_connector_save_failed
+                        Column {
+                            for (service in overviewData) {
+                                val entry = service.entry
+                                val count = service.accounts.size
+                                key(entry.slug) {
+                                    ChatConnectorServiceRow(
+                                        service,
+                                        onClick = {
+                                            presentation =
+                                                presentation.copy(
+                                                    page = ComposerOptionsPage.ConnectorAccounts,
+                                                    connectorSlug = entry.slug,
+                                                )
                                         },
-                                        Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp),
+                                        modifier =
+                                            if (entry.slug == slug)
+                                                Modifier.focusRequester(serviceFocus)
+                                            else Modifier,
+                                        count = count,
                                     )
                                 }
                             }
                         }
+                }
+                if (overviewData != null && overview.failure != null)
+                    ConnectorOptionFeedback(R.string.connector_refresh_failed)
+            } else if (rows == null || summary == null) {
+                if (reading?.failure != null || (overviewData == null && overview?.failure != null))
+                    ConnectorReadError(R.string.connector_accounts_failed)
+                else
+                    ConnectorSkeleton(stringResource(R.string.connector_loading_accounts), rows = 2)
+            } else {
+                val serviceSlug = summary.entry.slug
+                val newChat = target.threadId == null
+                val memberAccess = reading.data.memberAccess
+                val draftChoices =
+                    composerState.connectorOverrides(target).associateBy { it.connectionId }
+                val pendingChoices = save?.pending.orEmpty().associateBy { it.connectionId }
+                val canEdit =
+                    !saving &&
+                        (memberAccess || !newChat || composerState.canEditDraftConnectors(target))
+                ConnectorOptionFeedback(
+                    if (memberAccess) R.string.connector_access_scope
+                    else R.string.chat_connector_scope,
+                    Modifier.padding(horizontal = 8.dp),
+                )
+                if (rows.isEmpty()) ConnectorOptionFeedback(R.string.chat_connector_empty)
+                val policies = detail.policies
+                Column {
+                    for (row in rows) {
+                        key(row.account.id) {
+                            val id = row.account.id
+                            val pending = pendingChoices[id]
+                            val chosen =
+                                if (newChat) draftChoices[id]?.enabled
+                                else if (pending != null) pending.enabled else row.override
+                            val enabled = chosen ?: (row.account.defaultEnabled == true)
+                            val choice = ChatConnectorOverride(serviceSlug, id, !enabled)
+                            ChatConnectorRow(
+                                row.account.copy(policy = policies.data?.get(id)),
+                                enabled,
+                                canEdit,
+                                canManage = !saving,
+                                memberAccess = memberAccess,
+                                modifier =
+                                    if (id == focusAccount) Modifier.focusRequester(accountFocus)
+                                    else Modifier,
+                                onToggle = {
+                                    if (newChat) composer.editConnectorOverride(target, choice)
+                                    else options.save(target, serviceSlug, listOf(choice))
+                                },
+                                onPolicy = { options.savePolicy(target, serviceSlug, id, it) },
+                                onRepair = {
+                                    openDirectory(ConnectorAccountTarget(serviceSlug, id))
+                                },
+                            )
+                            if (save?.connectionId == id) {
+                                ConnectorOptionFeedback(
+                                    save.phase.message(),
+                                    Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp),
+                                )
+                            }
+                        }
                     }
                 }
+                if (save != null && rows.none { it.account.id == save.connectionId })
+                    ConnectorOptionFeedback(
+                        save.phase.message(),
+                        Modifier.padding(horizontal = 12.dp),
+                    )
                 if (reading.failure != null)
                     ConnectorOptionFeedback(R.string.connector_refresh_failed)
-                val resets = groups.flatMap { group ->
-                    group.accounts
-                        .filter { it.override != null }
-                        .map {
-                            ChatConnectorOverride(group.entry.slug, it.account.id, null)
-                        }
-                }
-                if (
-                    !memberAccess &&
-                        (if (newChat) draftChoices.values.any { it.enabled != null }
-                        else resets.isNotEmpty())
-                ) {
+                if (policies.failure != null)
+                    ConnectorOptionFeedback(R.string.chat_connector_policies_failed)
+                val resets = overviewData.flatMap { it.overrides() }
+                val canReset =
+                    if (newChat) draftChoices.values.any { it.enabled != null }
+                    else resets.isNotEmpty()
+                if (!memberAccess && canReset) {
                     ConnectorButton(
                         stringResource(R.string.chat_connector_restore_defaults),
                         onClick = {
                             if (newChat) composer.editConnectorOverride(target, null)
-                            else options.save(target, resets)
+                            else options.save(target, serviceSlug, resets)
                         },
                         enabled = canEdit,
                         modifier = Modifier.testTag("chat-connector-reset"),
                         treatment = ConnectorButtonTreatment.Text,
                     )
                 }
-                val manageFocus =
-                    if (accountToFocus != null && focusAccount == null)
-                        Modifier.focusRequester(accountFocus)
-                    else Modifier
-                ConnectorOptionRow(
-                    stringResource(R.string.chat_connector_manage),
-                    onClick = { openDirectory(null) },
-                    enabled = !saving,
-                    modifier = manageFocus.testTag("chat-connector-manage"),
-                )
             }
         }
+    }
+}
+
+private fun ChatConnectorSavePhase.message(): Int =
+    when (this) {
+        ChatConnectorSavePhase.Saving -> R.string.chat_connector_saving
+        ChatConnectorSavePhase.Checking -> R.string.connector_working
+        ChatConnectorSavePhase.Unconfirmed -> R.string.connector_verify_pending
+        ChatConnectorSavePhase.Failed -> R.string.chat_connector_save_failed
+    }
+
+@Composable
+private fun ChatConnectorServiceRow(
+    service: ChatConnectorSummary,
+    onClick: () -> Unit,
+    modifier: Modifier,
+    count: Int,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .testTag("chat-connector-service-${service.entry.slug}")
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ConnectorMark(service.entry.icon, 24.dp)
+        Text(service.entry.name, Modifier.weight(1f), style = connectorBodyType())
+        if (count > 1)
+            Text(
+                pluralStringResource(R.plurals.connector_accounts_count, count, count),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = connectorFeedbackType(),
+            )
+        Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(24.dp))
     }
 }
 
@@ -533,7 +629,7 @@ private fun ChatOptionsHeading(label: Int) {
 
 @Composable
 private fun ChatConnectorRow(
-    row: ChatConnectorAccount,
+    account: ConnectorSavedAccount,
     enabled: Boolean,
     canEdit: Boolean,
     canManage: Boolean,
@@ -543,32 +639,31 @@ private fun ChatConnectorRow(
     onPolicy: (ConnectorAccountPolicyRequestPolicy) -> Unit,
     onRepair: () -> Unit,
 ) {
-    val account = row.account
-    val canToggle = canEdit && account.status == ConnectorAccountStatus.Connected
+    val needsRepair = account.status.needsAttention
+    val showCheckbox = !memberAccess && !needsRepair
     val action =
-        if (account.status.needsAttention)
-            Modifier.testTag("chat-connector-repair-${account.id}")
-                .clickable(
-                    enabled = canManage,
-                    role = Role.Button,
-                    onClick = onRepair,
-                )
-        else if (memberAccess) Modifier
-        else
-            Modifier.testTag("chat-connector-selection-${account.id}")
+        if (showCheckbox)
+            Modifier.then(modifier)
+                .testTag("chat-connector-selection-${account.id}")
                 .toggleable(
                     value = enabled,
-                    enabled = canToggle,
+                    enabled = canEdit && account.status == ConnectorAccountStatus.Connected,
                     role = Role.Checkbox,
                     onValueChange = { onToggle() },
                 )
+        else if (memberAccess && !needsRepair && account.policy == null && modifier != Modifier)
+            modifier.focusable()
+        else Modifier
     val label = account.label()
     val identity = account.identity?.takeIf { it != label }
+    val selected = showCheckbox && enabled
+    val colors = MaterialTheme.colorScheme
+    val supporting = if (selected) colors.onSecondaryContainer else colors.onSurfaceVariant
     Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = if (identity != null || account.status.needsAttention) 72.dp else 56.dp)
+        Modifier.fillMaxWidth()
+            .heightIn(min = 72.dp)
             .clip(RoundedCornerShape(12.dp))
+            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .then(action)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -577,26 +672,35 @@ private fun ChatConnectorRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label, style = connectorBodyType())
             identity?.let {
-                Text(
-                    it,
-                    style = connectorSmallType(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (account.status.needsAttention) {
-                Text(
-                    connectorAccountStatus(account),
-                    style = connectorSmallType(),
-                    color = MaterialTheme.colorScheme.error,
-                )
+                Text(it, color = supporting, style = connectorFeedbackType())
             }
         }
-        if (memberAccess) {
-            account.policy?.let { ConnectorAccountPolicyMenu(account, it, canEdit, onPolicy) }
+        when {
+            needsRepair ->
+                TextButton(
+                    onClick = onRepair,
+                    enabled = canManage,
+                    modifier = modifier.testTag("chat-connector-repair-${account.id}"),
+                ) {
+                    val label =
+                        if (account.status == ConnectorAccountStatus.UpdatePermissions)
+                            R.string.connector_update_permissions
+                        else R.string.connector_reauthorize
+                    Text(stringResource(label), style = connectorFeedbackType())
+                }
+            memberAccess ->
+                account.policy?.let {
+                    ConnectorAccountPolicyMenu(
+                        account,
+                        it,
+                        canEdit,
+                        onPolicy,
+                        outlined = true,
+                        modifier = modifier,
+                    )
+                }
+            showCheckbox -> Checkbox(checked = enabled, onCheckedChange = null, enabled = canEdit)
         }
-        if (account.status.needsAttention) ConnectorChevron()
-        else if (!memberAccess)
-            Checkbox(checked = enabled, onCheckedChange = null, enabled = canToggle)
     }
 }
 

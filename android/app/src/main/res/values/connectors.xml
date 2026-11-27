@@ -125,7 +125,9 @@
     <string name="connector_access_allow_week">Allow for 7d</string>
     <string name="chat_connector_empty">There are no connected accounts in this workspace.</string>
     <string name="chat_connector_manage">Manage connectors</string>
-    <string name="chat_connector_restore_defaults">Restore workspace defaults</string>
+    <string name="chat_connector_restore_defaults">Restore defaults for all connectors</string>
+    <string name="chat_connector_policy_remaining">%1$s remaining</string>
+    <string name="chat_connector_policies_failed">Could not load access policies.</string>
     <string name="chat_connector_saving">Saving connector choice…</string>
     <string name="chat_connector_save_failed">Could not save the connector choice.</string>
     <string name="chat_connector_first_send_failed">Could not apply the connector choices. Review them in Chat options, then retry this message.</string>

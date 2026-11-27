@@ -108,7 +108,9 @@
     <string name="chat_connector_scope">이 채팅에 적용됩니다. 처음에는 워크스페이스의 기본 계정이 사용됩니다.</string>
     <string name="chat_connector_empty">이 워크스페이스에 연결된 계정이 없습니다.</string>
     <string name="chat_connector_manage">커넥터 관리</string>
-    <string name="chat_connector_restore_defaults">워크스페이스 기본값 복원</string>
+    <string name="chat_connector_restore_defaults">모든 커넥터 기본값 복원</string>
+    <string name="chat_connector_policy_remaining">%1$s 남음</string>
+    <string name="chat_connector_policies_failed">액세스 정책을 불러올 수 없습니다.</string>
     <string name="chat_connector_saving">커넥터 선택 저장 중…</string>
     <string name="chat_connector_save_failed">커넥터 선택을 저장하지 못했습니다.</string>
     <string name="chat_connector_first_send_failed">커넥터 선택을 적용하지 못했습니다. 채팅 옵션에서 확인한 후 이 메시지를 다시 보내세요.</string>

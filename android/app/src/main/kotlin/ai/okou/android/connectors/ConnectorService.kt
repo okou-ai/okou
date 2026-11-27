@@ -107,7 +107,6 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -244,47 +243,29 @@ class ConnectorService(private val api: ApiClient) {
             }
             .toMap()
 
-    internal suspend fun chatAccounts(threadId: String?): ChatConnectorAccounts {
-        val memberAccess = memberAccessEnabled()
-        val overview = api.read { connectorOverview(it, threadId) }
-        val builtIns = overview.filter {
-            it.target is ConnectorOverviewItemTargetVariant1 && it.accounts.isNotEmpty()
-        }
-        // The overview has the current allowance, while the account list reports scope mismatch.
-        val groups =
-            builtIns.chunked(4).flatMap { entries ->
-                coroutineScope {
-                    entries
-                        .map { entry ->
-                            async {
-                                val slug =
-                                    (entry.target as ConnectorOverviewItemTargetVariant1)
-                                        .connectorSlug
-                                val byId = entry.accounts.associateBy { it.connectionId }
-                                val accounts =
-                                    if (memberAccess) {
-                                        accounts(slug, emptyMap(), accountPolicies(slug))
-                                    } else {
-                                        accounts(slug, byId.mapValues { it.value.defaultEnabled })
-                                    }
-                                ChatConnectorGroup(
-                                    entry.directoryEntry(slug),
-                                    accounts.mapNotNull { account ->
-                                        byId[account.id]?.let {
-                                            ChatConnectorAccount(
-                                                account,
-                                                it.overrideEnabled.takeUnless { memberAccess },
-                                            )
-                                        }
-                                    },
-                                )
-                            }
-                        }
-                        .awaitAll()
-                        .filter { it.accounts.isNotEmpty() }
-                }
+    internal suspend fun chatOverview(threadId: String?): List<ChatConnectorSummary> =
+        api.read { connectorOverview(it, threadId) }
+            .mapNotNull { entry ->
+                val target = entry.target as? ConnectorOverviewItemTargetVariant1
+                if (target == null || entry.accounts.isEmpty()) null
+                else
+                    ChatConnectorSummary(entry.directoryEntry(target.connectorSlug), entry.accounts)
             }
-        return ChatConnectorAccounts(groups, memberAccess)
+
+    internal suspend fun chatAccounts(
+        summary: ChatConnectorSummary,
+        cachedMemberAccess: Boolean? = null,
+    ): ChatConnectorAccounts = coroutineScope {
+        val memberAccess = async { cachedMemberAccess ?: memberAccessEnabled() }
+        val byId = summary.accounts.associateBy { it.connectionId }
+        val accounts = accounts(summary.entry.slug, byId.mapValues { it.value.defaultEnabled })
+        val usePolicy = memberAccess.await()
+        ChatConnectorAccounts(
+            accounts.mapNotNull { account ->
+                byId[account.id]?.let { ChatConnectorAccount(account, it.overrideEnabled) }
+            },
+            usePolicy,
+        )
     }
 
     private suspend fun chatAccess(
@@ -489,7 +470,7 @@ class ConnectorService(private val api: ApiClient) {
         }
     }
 
-    private suspend fun accountPolicies(slug: String): Map<String, ConnectorMemberPolicy> =
+    internal suspend fun accountPolicies(slug: String): Map<String, ConnectorMemberPolicy> =
         api.read {
                 connectorAccountPolicies(
                     it,

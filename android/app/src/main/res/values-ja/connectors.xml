@@ -108,7 +108,9 @@
     <string name="chat_connector_scope">このチャットに適用されます。初期設定ではワークスペースの既定のアカウントを使用します。</string>
     <string name="chat_connector_empty">このワークスペースには接続済みのアカウントがありません。</string>
     <string name="chat_connector_manage">コネクターを管理</string>
-    <string name="chat_connector_restore_defaults">ワークスペースの既定値に戻す</string>
+    <string name="chat_connector_restore_defaults">すべてのコネクタを既定値に戻す</string>
+    <string name="chat_connector_policy_remaining">残り %1$s</string>
+    <string name="chat_connector_policies_failed">アクセス ポリシーを読み込めませんでした。</string>
     <string name="chat_connector_saving">コネクターの選択を保存中…</string>
     <string name="chat_connector_save_failed">コネクターの選択を保存できませんでした。</string>
     <string name="chat_connector_first_send_failed">コネクターの選択を適用できませんでした。チャットオプションで確認してから、このメッセージの送信を再試行してください。</string>

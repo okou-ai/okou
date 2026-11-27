@@ -580,11 +580,12 @@ internal fun ConnectorSheet(
     back: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
     feedback: SnackbarHostState? = null,
+    retainedScroll: androidx.compose.foundation.ScrollState? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val shortWindow = isShortSettingsPanelWindow()
     val fullScreen = expandInShortWindow && shortWindow
-    val scroll = key(title) { rememberScrollState() }
+    val scroll = retainedScroll ?: key(title) { rememberScrollState() }
     val titleStyle =
         if (fullScreen)
             MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 24.sp)

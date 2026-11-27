@@ -116,7 +116,9 @@
     <string name="chat_connector_scope">Si applica a questa chat. All’inizio si usano gli account predefiniti dello spazio di lavoro.</string>
     <string name="chat_connector_empty">In questo spazio di lavoro non ci sono account connessi.</string>
     <string name="chat_connector_manage">Gestisci connettori</string>
-    <string name="chat_connector_restore_defaults">Ripristina le impostazioni dello spazio di lavoro</string>
+    <string name="chat_connector_restore_defaults">Ripristina le impostazioni predefinite di tutti i connettori</string>
+    <string name="chat_connector_policy_remaining">Tempo rimanente: %1$s</string>
+    <string name="chat_connector_policies_failed">Impossibile caricare i criteri di accesso.</string>
     <string name="chat_connector_saving">Salvataggio della scelta del connettore…</string>
     <string name="chat_connector_save_failed">Impossibile salvare la scelta del connettore.</string>
     <string name="chat_connector_first_send_failed">Impossibile applicare le scelte dei connettori. Controllale nelle opzioni della chat, poi riprova a inviare questo messaggio.</string>

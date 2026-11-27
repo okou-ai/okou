@@ -2,20 +2,33 @@ package ai.okou.android.connectors
 
 import ai.okou.android.R
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
+import android.icu.text.MeasureFormat
+import android.icu.util.Measure
+import android.icu.util.MeasureUnit
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -23,7 +36,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.DurationUnit
+import kotlinx.coroutines.delay
 
 @Composable
 internal fun ConnectorAccountPolicyMenu(
@@ -31,18 +46,45 @@ internal fun ConnectorAccountPolicyMenu(
     policy: ConnectorMemberPolicy,
     enabled: Boolean,
     update: (ConnectorAccountPolicyRequestPolicy) -> Unit,
+    outlined: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val expiration = policy.expiresAt
+    val now by
+        produceState(Clock.System.now(), expiration, outlined) {
+            if (outlined && expiration != null) {
+                value = Clock.System.now()
+                while (value < expiration) {
+                    delay(minOf(1.minutes, expiration - value))
+                    value = Clock.System.now()
+                }
+            }
+        }
+    val allowed = policy.enabled && (!outlined || expiration == null || expiration > now)
     val status =
         stringResource(
-            if (policy.enabled) R.string.connector_access_allow else R.string.connector_access_deny,
+            if (allowed) R.string.connector_access_allow else R.string.connector_access_deny,
         )
-    val expiration = policy.expiresAt
     val duration =
         when {
-            expiration == null && policy.enabled -> stringResource(R.string.connector_access_always)
+            expiration == null && allowed -> stringResource(R.string.connector_access_always)
             expiration == null -> null
-            !policy.enabled -> stringResource(R.string.connector_access_expired)
+            !allowed -> stringResource(R.string.connector_access_expired)
+            outlined -> {
+                val minutes = (expiration - now).inWholeMinutes.coerceAtLeast(1)
+                val format =
+                    MeasureFormat.getInstance(
+                        LocalConfiguration.current.locales[0],
+                        MeasureFormat.FormatWidth.WIDE,
+                    )
+                if (minutes < 60) format.formatMeasures(Measure(minutes, MeasureUnit.MINUTE))
+                else
+                    format.formatMeasures(
+                        Measure(minutes / 60, MeasureUnit.HOUR),
+                        Measure(minutes % 60, MeasureUnit.MINUTE),
+                    )
+            }
             else -> {
                 val remaining = expiration - Clock.System.now()
                 val hours = remaining.toDouble(DurationUnit.HOURS).roundToInt()
@@ -59,14 +101,43 @@ internal fun ConnectorAccountPolicyMenu(
         }
     val label = if (duration == null) status else "$status $duration"
     val description = stringResource(R.string.connector_access_label, account.label(), label)
+    val semantics = modifier.semantics { contentDescription = description }
     Box {
-        TextButton(
-            onClick = { expanded = true },
-            enabled = enabled,
-            modifier = Modifier.semantics { contentDescription = description },
-        ) {
-            Text(label)
-            Icon(painterResource(R.drawable.ic_expand_more), null, Modifier.size(16.dp))
+        if (outlined) {
+            Column(Modifier.widthIn(max = 164.dp)) {
+                if (expiration != null && duration != null)
+                    Text(
+                        if (allowed)
+                            stringResource(R.string.chat_connector_policy_remaining, duration)
+                        else duration,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = connectorFeedbackType(),
+                    )
+                OutlinedButton(
+                    onClick = { expanded = true },
+                    enabled = enabled,
+                    modifier = semantics.heightIn(min = 56.dp),
+                    shape = MaterialTheme.shapes.extraSmall,
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (expiration == null) label else status,
+                            Modifier.weight(1f, fill = false),
+                        )
+                        Icon(painterResource(R.drawable.ic_expand_more), null, Modifier.size(16.dp))
+                    }
+                }
+            }
+        } else {
+            TextButton(
+                onClick = { expanded = true },
+                enabled = enabled,
+                modifier = semantics,
+            ) {
+                Text(label)
+                Icon(painterResource(R.drawable.ic_expand_more), null, Modifier.size(16.dp))
+            }
         }
         DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
             for (choice in policyChoices) {

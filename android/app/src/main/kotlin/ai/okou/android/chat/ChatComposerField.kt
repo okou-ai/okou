@@ -77,6 +77,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 // Keep original line breaks in the journal and preserve native selection offsets.
 private val CompactDraftDisplay = VisualTransformation { text ->
@@ -101,6 +103,15 @@ internal fun ChatComposerField(
     attachmentImages: InlineArtifactImages? = null,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
+    val connectorSaving =
+        remember(connectorOptions, target.key) {
+                connectorOptions
+                    ?.state
+                    ?.map { it.target == target.key && it.save?.saving == true }
+                    ?.distinctUntilChanged()
+            }
+            ?.collectAsStateWithLifecycle(initialValue = false)
+            ?.value == true
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
     val attachments = state.attachments(target)
@@ -304,7 +315,7 @@ internal fun ChatComposerField(
                             model.send(target, defaultModel?.state?.value?.options)
                         },
                         modifier = Modifier.semantics { contentDescription = sendLabel },
-                        enabled = state.canSend(target),
+                        enabled = state.canSend(target) && !connectorSaving,
                         shape = CircleShape,
                         colors =
                             IconButtonDefaults.filledIconButtonColors(

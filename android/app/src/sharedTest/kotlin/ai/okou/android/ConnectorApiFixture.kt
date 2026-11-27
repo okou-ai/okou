@@ -82,6 +82,9 @@ internal class ConnectorApiFixture(
     @Volatile var failPermissionReads = false
     @Volatile var denyPermissionReads = false
     @Volatile var memberAccess = false
+    @Volatile var denyPolicyReads = false
+    @Volatile var overviewReplyGate: CountDownLatch? = null
+    val chatConnectorReads = CopyOnWriteArrayList<Pair<String, String?>>()
     @Volatile var devicePollStatus = "pending"
     @Volatile var devicePollInterval = 5
     @Volatile var deviceExpiresIn = 900
@@ -209,6 +212,18 @@ internal class ConnectorApiFixture(
                     if (url.encodedPath.startsWith("/fixture-icons/")) return rejected(404)
                     if (request.getHeader("Authorization") != "Bearer connector-test")
                         return rejected(401)
+                    when (url.encodedPath) {
+                        "/api/chat-connector-overview" ->
+                            chatConnectorReads.add(
+                                url.encodedPath to url.queryParameter("threadId"),
+                            )
+                        "/api/feature-switches",
+                        "/api/connector-accounts/connections",
+                        "/api/connector-account-access/policies" ->
+                            chatConnectorReads.add(
+                                url.encodedPath to url.queryParameter("connectorSlug"),
+                            )
+                    }
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
                         discoveryRequested.countDown()
                         discoveryGate?.await()
@@ -357,7 +372,8 @@ internal class ConnectorApiFixture(
                 jsonResponse(
                     """{"effectiveSwitches":{"memberConnectorAccountAccess":$memberAccess}}""",
                 )
-            path == "/api/chat-connector-overview" ->
+            path == "/api/chat-connector-overview" -> {
+                overviewReplyGate?.await()
                 json(
                     JsonArray(
                         accounts.entries
@@ -405,6 +421,7 @@ internal class ConnectorApiFixture(
                             },
                     ),
                 )
+            }
             parts.getOrNull(1) == "chat-threads" && parts.getOrNull(3) == "connector-access" ->
                 chatAccess(request, parts[2], parts.getOrNull(4), querySlug)
             parts.getOrNull(1) == "connector-catalog" -> {
@@ -519,7 +536,8 @@ internal class ConnectorApiFixture(
                     ),
                 )
             path == "/api/connector-account-access/policies" ->
-                if (!memberAccess || url.queryParameter("kind") != "builtin") rejected(403)
+                if (denyPolicyReads || !memberAccess || url.queryParameter("kind") != "builtin")
+                    rejected(403)
                 else
                     json(
                         JsonArray(

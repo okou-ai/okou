@@ -112,7 +112,9 @@
     <string name="chat_connector_scope">Gilt für diesen Chat. Zunächst gelten die Standardkonten des Arbeitsbereichs.</string>
     <string name="chat_connector_empty">In diesem Arbeitsbereich sind keine Konten verbunden.</string>
     <string name="chat_connector_manage">Konnektoren verwalten</string>
-    <string name="chat_connector_restore_defaults">Arbeitsbereichsstandards wiederherstellen</string>
+    <string name="chat_connector_restore_defaults">Standards für alle Konnektoren wiederherstellen</string>
+    <string name="chat_connector_policy_remaining">Noch %1$s</string>
+    <string name="chat_connector_policies_failed">Zugriffsrichtlinien konnten nicht geladen werden.</string>
     <string name="chat_connector_saving">Konnektorauswahl wird gespeichert…</string>
     <string name="chat_connector_save_failed">Die Konnektorauswahl konnte nicht gespeichert werden.</string>
     <string name="chat_connector_first_send_failed">Die Konnektorauswahl konnte nicht angewendet werden. Prüfe sie in den Chatoptionen und sende diese Nachricht erneut.</string>
