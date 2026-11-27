@@ -7,13 +7,15 @@ import pytest
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import usage
+from tests.deferred_callback_helpers import (
+    ScheduledCallback,
+    capture_deferred_callbacks,
+)
 from tests.model_provider_flow_helpers import (
     make_openai_responses_websocket_flow,
     model_provider_usage_sources,
 )
 from tests.model_provider_websocket_helpers import (
-    ScheduledWebSocketTrim,
-    capture_deferred_websocket_trims,
     feed_websocket_server_message,
     openai_websocket_usage_frame,
 )
@@ -23,8 +25,8 @@ from tests.usage_helpers import assert_usage_event_rows
 @pytest.fixture(autouse=True)
 def deferred_websocket_trim_scheduler(
     monkeypatch: pytest.MonkeyPatch,
-) -> list[ScheduledWebSocketTrim]:
-    return capture_deferred_websocket_trims(monkeypatch)
+) -> list[ScheduledCallback]:
+    return capture_deferred_callbacks(monkeypatch)
 
 
 class TestModelProviderWebSocketUsageMetadata:
