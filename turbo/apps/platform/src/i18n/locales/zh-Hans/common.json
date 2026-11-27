@@ -1596,8 +1596,6 @@
           "option": "封面 {{index}}"
         },
         "loading": "正在加载建议",
-        "next": "下一条建议",
-        "previous": "上一条建议",
         "remaining": "还有 {{total}} 条",
         "sources": {
           "description": "选择今后接收的内容。已收到的卡片会保留，直到你处理它们。未读提示只包含已开启的来源。",
@@ -1613,9 +1611,7 @@
       "homeCard": {
         "completeDescription": "有值得你花时间的事时，Okou 会把下一件带到这里。",
         "completeTitle": "全部处理完了",
-        "feedback": "建议操作",
-        "navigation": "切换建议",
-        "show": "查看第 {{index}} 条建议（共 {{total}} 条）"
+        "feedback": "建议操作"
       },
       "label": "建议",
       "later": "晚点再看",

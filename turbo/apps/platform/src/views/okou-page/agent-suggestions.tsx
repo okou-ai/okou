@@ -34,7 +34,6 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { captureSuggestionCard } from "../../lib/posthog.ts";
 import { Link } from "../router/link.tsx";
 import { ForYouCardHeading } from "./for-you-card-heading.tsx";
-import { useForYouSimplifiedDeck } from "./for-you-deck-switch.ts";
 import { ChatComposer } from "./composer.tsx";
 
 // Option rows and the direction trigger share one shape. The rows and the
@@ -47,8 +46,8 @@ const SUGGESTION_ROW =
 // Option rows and the direction panel match the composer's 24px corners.
 const SUGGESTION_ROW_RADIUS = "rounded-3xl";
 
-// An option is a raised button on the card, and in the simplified deck its
-// text can still be selected; the direction trigger stays a quiet input-like row in the muted fill, the
+// An option is a raised button on the card whose text can still be selected;
+// the direction trigger stays a quiet input-like row in the muted fill, the
 // gray ramp's Linen stop that the brand's Off White sits on. The option's
 // outline is a real hairline border on a pointer-transparent layer, so it
 // rounds to device pixels exactly like the feedback buttons' border beside it,
@@ -128,14 +127,12 @@ function SuggestionOptionAction({
 
 function SuggestionOptionContent({
   option,
-  labeled,
 }: {
   readonly option: SuggestionOption;
-  readonly labeled: boolean;
 }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col gap-0.5 wrap-break-word">
-      {labeled && <SuggestionOptionAction option={option} />}
+      <SuggestionOptionAction option={option} />
       <span className="leading-6">{option.label}</span>
       {option.description && (
         <span className="text-[13px] leading-5 text-muted-foreground">
@@ -501,9 +498,7 @@ export function AgentSuggestionCard({
   const { t } = useTranslation();
   const { item } = entry;
   const start = useSet(startAgentSuggestion$);
-  const submitFeedback = useSet(submitSuggestionFeedbackWithUndo$);
   const signal = useGet(pageSignal$);
-  const simplified = useForYouSimplifiedDeck();
   return (
     <article
       aria-labelledby={`suggestion-title-${item.id}`}
@@ -521,7 +516,7 @@ export function AgentSuggestionCard({
                 SUGGESTION_ROW,
                 SUGGESTION_ROW_RADIUS,
                 SUGGESTION_OPTION,
-                simplified && "select-text",
+                "select-text",
               )}
               aria-label={option.label}
               aria-description={[
@@ -537,7 +532,7 @@ export function AgentSuggestionCard({
                 .filter(Boolean)
                 .join(" ")}
               onClick={(event) => {
-                if (simplified && selectsOptionText(event)) {
+                if (selectsOptionText(event)) {
                   return;
                 }
                 detach(
@@ -546,7 +541,7 @@ export function AgentSuggestionCard({
                 );
               }}
             >
-              <SuggestionOptionContent option={option} labeled={simplified} />
+              <SuggestionOptionContent option={option} />
               {option.threadId ? (
                 <SquarePen
                   aria-hidden
@@ -561,30 +556,6 @@ export function AgentSuggestionCard({
         {active && <SuggestionDirection entry={entry} />}
       </div>
       <SuggestionFeedback entry={entry} />
-      {/* The simplified deck closes a card only through the feedback row, so
-          the corner Dismiss stays on the original deck alone. It sits on the
-          card's corner, its icon on the content's right edge, and comes last
-          so ordinary paint order keeps it above the artwork. */}
-      {!simplified && (
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          showTooltip
-          aria-label={t(($) => {
-            return $.chat.agentSuggestions.dismiss;
-          })}
-          className="absolute top-5.5 right-5 sm:top-8.5 sm:right-8"
-          onClick={() => {
-            detach(
-              submitFeedback(item.id, "dismissed", signal),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          <X />
-        </Button>
-      )}
     </article>
   );
 }
@@ -598,7 +569,6 @@ function SuggestionFeedback({
   const { item } = entry;
   const signal = useGet(pageSignal$);
   const submitFeedback = useSet(submitSuggestionFeedbackWithUndo$);
-  const simplified = useForYouSimplifiedDeck();
   const feedbackActions = [
     {
       kind: "already_done" as const,
@@ -635,10 +605,7 @@ function SuggestionFeedback({
       aria-label={t(($) => {
         return $.chat.agentSuggestions.feedbackPrompt;
       })}
-      className={cn(
-        "-mx-4 mt-auto grid grid-cols-2 gap-2",
-        simplified ? "@min-[42rem]/for-you:grid-cols-4" : "sm:grid-cols-4",
-      )}
+      className="-mx-4 mt-auto grid grid-cols-2 gap-2 @min-[42rem]/for-you:grid-cols-4"
     >
       {feedbackActions.map(({ kind, label, Icon }) => {
         return (
@@ -646,10 +613,7 @@ function SuggestionFeedback({
             key={kind}
             type="button"
             variant="neutral"
-            className={cn(
-              "h-auto min-h-9 gap-1.5 border-border bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground",
-              simplified ? "rounded-xl" : "rounded-3xl",
-            )}
+            className="h-auto min-h-9 gap-1.5 rounded-xl border-border bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
             onClick={() => {
               detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
             }}

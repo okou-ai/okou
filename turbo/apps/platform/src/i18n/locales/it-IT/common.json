@@ -1625,8 +1625,6 @@
           "option": "Copertina {{index}}"
         },
         "loading": "Caricamento dei suggerimenti",
-        "next": "Suggerimento successivo",
-        "previous": "Suggerimento precedente",
         "remaining": "{{total}} rimanenti",
         "sources": {
           "description": "Scegli cosa ricevere in futuro. Le schede già ricevute restano finché non le gestisci. Gli avvisi di contenuti non letti includono solo le fonti attivate.",
@@ -1642,9 +1640,7 @@
       "homeCard": {
         "completeDescription": "Okou porterà qui la prossima cosa quando ci sarà qualcosa che merita il tuo tempo.",
         "completeTitle": "Tutto fatto",
-        "feedback": "Azioni del suggerimento",
-        "navigation": "Sfoglia suggerimenti",
-        "show": "Mostra il suggerimento {{index}} di {{total}}"
+        "feedback": "Azioni del suggerimento"
       },
       "label": "Suggerimenti",
       "later": "Più tardi",
