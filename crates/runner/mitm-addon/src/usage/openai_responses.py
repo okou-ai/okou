@@ -44,6 +44,7 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_OUTPUT,
     MODEL_USAGE_IDENTITY_FIELD,
     MODEL_USAGE_QUANTITY_FIELD,
+    has_positive_model_provider_usage,
     update_model_usage_quantity,
 )
 from .openai_tokens import partition_input_tokens
@@ -435,14 +436,6 @@ def _is_known_non_usage_event(value: object) -> bool:
     return isinstance(value, str) and value in openai_responses_events.KNOWN_NON_USAGE_EVENTS
 
 
-def _has_positive_usage_quantity(values: dict) -> bool:
-    for category in MODEL_USAGE_CATEGORIES:
-        value = values.get(category)
-        if _is_usage_quantity(value) and value > 0:
-            return True
-    return False
-
-
 def _has_usage_quantity(values: dict) -> bool:
     return any(_is_usage_quantity(values.get(category)) for category in MODEL_USAGE_CATEGORIES)
 
@@ -567,10 +560,10 @@ def merge_openai_responses_usage_result(target: dict, source: dict) -> None:
     ``service_tier`` values from the source are copied.
     """
 
-    target_has_positive_quantity = _has_positive_usage_quantity(target)
+    target_has_positive_quantity = has_positive_model_provider_usage(target)
     if source.get("input_partition_incomplete") is True:
         target["input_partition_incomplete"] = True
-    source_has_positive_quantity = _has_positive_usage_quantity(source)
+    source_has_positive_quantity = has_positive_model_provider_usage(source)
     _merge_input_partition(target, source)
     update_model_usage_quantity(
         target,
@@ -637,7 +630,7 @@ def _store_sse_result_values(
     if on_observation is not None:
         on_observation(target, terminal)
 
-    if not _has_positive_usage_quantity(source):
+    if not has_positive_model_provider_usage(source):
         return None
     if not data_event_identity_consistent:
         return None

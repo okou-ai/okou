@@ -48,8 +48,9 @@ from ..model_tokens import (
     MODEL_USAGE_CATEGORY_CACHE_READ,
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
+    has_positive_model_provider_usage,
 )
-from ..quantities import is_usage_quantity
+from ..quantities import is_positive_usage_quantity, is_usage_quantity
 from ..reporting_context import (
     UsageReportingContext,
     log_usage_reporting_context_missing,
@@ -128,11 +129,6 @@ def is_model_provider_usage_billable(flow: http.HTTPFlow) -> bool:
     if not flow_metadata.is_model_provider_firewall(firewall_name):
         return False
     return flow_metadata.is_firewall_billable(flow.metadata)
-
-
-def has_positive_model_provider_usage(source_usage: dict) -> bool:
-    """Return whether normalized model-provider usage contains billable quantity."""
-    return any(_is_positive_int(source_usage.get(category)) for category in MODEL_USAGE_CATEGORIES)
 
 
 def report_model_provider_usage(
@@ -321,7 +317,7 @@ def log_ignored_model_provider_usage_source(
         usage={
             category: quantity
             for category in MODEL_USAGE_CATEGORIES
-            if _is_positive_int(quantity := source_usage.get(category))
+            if is_positive_usage_quantity(quantity := source_usage.get(category))
         },
         usage_events=[],
         **url_projection.truncation_fields(),
@@ -534,7 +530,7 @@ def _log_model_provider_usage_source(
         usage={
             category: quantity
             for category in MODEL_USAGE_CATEGORIES
-            if _is_positive_int(quantity := source.usage.get(category))
+            if is_positive_usage_quantity(quantity := source.usage.get(category))
         },
         usage_events=[
             {
@@ -561,7 +557,7 @@ def _build_usage_events(
     events: list[UsageEvent] = []
     for category in MODEL_USAGE_CATEGORIES:
         quantity = usage.get(category)
-        if not _is_positive_int(quantity):
+        if not is_positive_usage_quantity(quantity):
             continue
         billable_category = _billable_model_usage_category(
             category,
@@ -760,10 +756,6 @@ def _reported_model(flow: http.HTTPFlow, usage: dict) -> str:
         or _string_or_none(usage.get("model"))
         or "unknown"
     )
-
-
-def _is_positive_int(value: object) -> TypeGuard[int]:
-    return is_usage_quantity(value) and value > 0
 
 
 def _is_non_negative_int(value: object) -> TypeGuard[int]:
