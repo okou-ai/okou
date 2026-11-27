@@ -33,10 +33,16 @@ internal fun WorkflowDirectorySkeleton(modifier: Modifier) {
     if (!rememberContentReadSkeleton()) return
     Column(modifier.workflowLoading()) {
         repeat(5) {
-            WorkspaceToolDirectoryRowSkeleton {
+            WorkspaceToolDirectoryRowSkeleton(
+                Modifier.heightIn(min = 88.dp),
+                supportingContent = {
+                    Column {
+                        WorkflowSkeletonLine(.82f, 20.sp)
+                        WorkflowSkeletonLine(.5f, 20.sp)
+                    }
+                },
+            ) {
                 WorkflowSkeletonLine(.7f, 24.sp)
-                WorkflowSkeletonLine(.82f, 20.sp)
-                WorkflowSkeletonLine(.5f, 20.sp)
             }
         }
     }

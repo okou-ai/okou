@@ -101,6 +101,7 @@ internal class ArtifactApiFixture(
         MockResponse().setBody(Buffer().write(imageBody ?: sampleImage()))
     }
     var pageSize = 40
+    @Volatile var removedCatalogIds: Set<String> = emptySet()
     var downloadGranted = true
     val catalogQueries = CopyOnWriteArrayList<Pair<String?, String?>>()
     val catalogScopes = CopyOnWriteArrayList<Pair<String?, String?>>()
@@ -227,8 +228,10 @@ internal class ArtifactApiFixture(
         catalogScopes.add(threadId to url.queryParameter("cursor"))
         val offset = url.queryParameter("cursor")?.toInt() ?: 0
         catalogQueries.add(kind to keyword)
+        val removed = removedCatalogIds
         val items = allItems.filter {
-            (threadId == null || threadId == CHAT_PERSONAL && it != image) &&
+            it.id !in removed &&
+                (threadId == null || threadId == CHAT_PERSONAL && it != image) &&
                 (kind == null || it.kind == kind) &&
                 (keyword == null || it.title.contains(keyword, ignoreCase = true))
         }

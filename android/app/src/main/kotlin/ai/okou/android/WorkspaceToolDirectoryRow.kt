@@ -2,35 +2,27 @@ package ai.okou.android
 
 import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
-private val rowShape = RoundedCornerShape(8.dp)
 private val mediaShape = RoundedCornerShape(12.dp)
-private val rowBounds = Modifier.fillMaxWidth().heightIn(min = 80.dp)
 private val trailingSize = 18.dp
 
 @Composable
@@ -41,72 +33,63 @@ internal fun WorkspaceToolDirectoryRow(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     leading: @Composable () -> Unit,
-    supportingContent: @Composable (Color) -> Unit,
+    supportingContent: @Composable (() -> Unit)? = null,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val foreground = if (selected) colors.onSecondaryContainer else colors.onBackground
-    WorkspaceToolDirectoryRowLayout(
-        modifier
-            .then(rowBounds)
-            .clip(rowShape)
-            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
-            .updateFocusOutline(rowShape, foreground, keyboardOnly = true)
-            .selectable(selected, enabled = enabled, role = Role.Button, onClick = onClick),
-        leading = leading,
-        trailing = {
+    val activeShape = MaterialTheme.shapes.extraLarge
+    val shapes =
+        ListItemDefaults.shapes(
+            selectedShape = activeShape,
+            pressedShape = activeShape,
+            focusedShape = activeShape,
+        )
+    val colors = ListItemDefaults.colors()
+    val foreground = if (selected) colors.selectedContentColor else colors.contentColor
+    ListItem(
+        selected = selected,
+        onClick = onClick,
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .semantics { role = Role.Button }
+                .updateFocusOutline(shapes.focusedShape, foreground, keyboardOnly = true),
+        enabled = enabled,
+        leadingContent = { DirectoryRowMedia(leading) },
+        trailingContent = {
             Icon(
                 painterResource(R.drawable.ic_chevron_right),
                 contentDescription = null,
-                modifier = Modifier.align(Alignment.CenterVertically).size(trailingSize),
-                tint = foreground,
+                modifier = Modifier.size(trailingSize),
             )
         },
+        supportingContent = supportingContent,
+        shapes = shapes,
+        colors = colors,
     ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp),
-            fontWeight = FontWeight.SemiBold,
-            color = foreground,
-        )
-        supportingContent(if (selected) foreground else colors.onSurfaceVariant)
+        Text(title)
     }
 }
 
 @Composable
 internal fun WorkspaceToolDirectoryRowSkeleton(
     modifier: Modifier = Modifier,
+    supportingContent: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    WorkspaceToolDirectoryRowLayout(
-        modifier.then(rowBounds),
-        leading = {},
-        trailing = { Spacer(Modifier.size(trailingSize)) },
+    ListItem(
+        modifier = modifier.fillMaxWidth(),
+        leadingContent = { DirectoryRowMedia {} },
+        trailingContent = { Spacer(Modifier.size(trailingSize)) },
+        supportingContent = supportingContent,
         content = content,
     )
 }
 
 @Composable
-private fun WorkspaceToolDirectoryRowLayout(
-    modifier: Modifier,
-    leading: @Composable () -> Unit,
-    trailing: @Composable RowScope.() -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Row(
-        modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+private fun DirectoryRowMedia(content: @Composable () -> Unit) {
+    Box(
+        Modifier.size(40.dp).clip(mediaShape).background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier.size(40.dp)
-                .clip(mediaShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            leading()
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            content()
-        }
-        trailing()
+        content()
     }
 }
