@@ -1,8 +1,4 @@
 import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
-import {
-  iosVoiceDraftTransforms,
-  androidVoiceDraftTransforms,
-} from "@okouai/api-contracts/client-transforms/voice-draft";
 import { command, computed } from "ccstate";
 import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import { composerDrafts } from "@okouai/db/schema/composer-draft";
@@ -109,10 +105,6 @@ const auth = {
 export const composerDraftRoutes: readonly RouteEntry[] = [
   {
     route: composerDraftContract.get,
-    responseTransforms: [
-      iosVoiceDraftTransforms.composer,
-      androidVoiceDraftTransforms.composer,
-    ],
     handler: authRoute(auth, getComposerDraft$),
   },
   {

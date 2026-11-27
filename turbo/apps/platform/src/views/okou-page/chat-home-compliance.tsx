@@ -1,84 +1,28 @@
-import { useGet, useSet } from "ccstate-react";
-import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
-import { Button, cn } from "@okouai/ui";
 import {
   ComplianceBadges,
   useComplianceTitle,
 } from "../components/compliance-badges.tsx";
-import {
-  finishHomeComplianceFold$,
-  hideHomeCompliance$,
-  homeComplianceFolding$,
-  homeComplianceHidden$,
-} from "../../signals/okou-page/home-compliance.ts";
 
 /**
  * Compliance at the foot of the capability cards: every framework and its
  * status, in a block one tier quieter than the cards — their surface at 60%,
- * no drawing, nothing to press but the hide control — so it closes the grid
- * without competing with it. It sits 12px under the cards, the same step as
- * between the card rows. A member can hide it for good on this device; the
- * block then folds its own height away, so the cards settle instead of
- * jumping.
+ * no drawing, nothing to press — so it closes the grid without competing with
+ * it. It sits 12px under the cards, the same step as between the card rows.
  *
- * Desktop only; mobile keeps the composer at the foot of the page.
+ * Shown only when the container is wide enough to fit all five items on a
+ * single line; narrower layouts hide it rather than wrapping or clipping.
  */
-export function CapabilityHomeCompliance({
-  onHidden,
-}: {
-  /** Takes focus off the hide control, which leaves with the block. */
-  readonly onHidden: () => void;
-}) {
-  const { t } = useTranslation();
+export function CapabilityHomeCompliance() {
   const title = useComplianceTitle();
-  const hidden = useGet(homeComplianceHidden$);
-  const folding = useGet(homeComplianceFolding$);
-  const hide = useSet(hideHomeCompliance$);
-  const finishFold = useSet(finishHomeComplianceFold$);
-  if (hidden && !folding) {
-    return null;
-  }
   return (
     <section
       aria-label={title}
-      aria-hidden={folding || undefined}
-      inert={folding}
-      className={cn(
-        "-mt-2 hidden grid-rows-[1fr] transition-[grid-template-rows,opacity,margin-top] duration-[240ms] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none sm:grid",
-        folding && "-mt-5 grid-rows-[0fr] opacity-0",
-      )}
-      onTransitionEnd={(event) => {
-        // Rows, opacity and margin fold on one timing; the first of them to
-        // end on the block itself, not a control inside it, ends the fold.
-        if (folding && event.target === event.currentTarget) {
-          finishFold();
-        }
-      }}
+      className="-mt-2 hidden min-h-12 items-center overflow-hidden rounded-surface bg-muted/60 px-6 py-2.5 @[840px]:flex"
     >
-      <div className="min-h-0 overflow-hidden">
-        <div className="flex min-h-12 items-center gap-4 rounded-surface bg-muted/60 py-2.5 pr-3 pl-6">
-          <ComplianceBadges
-            quiet
-            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 [&_li>span]:text-xs [&_li>span]:leading-5 [&_svg]:size-3.5"
-          />
-          <Button
-            variant="quiet"
-            size="icon-sm"
-            aria-label={t(($) => {
-              return $.shared.compliance.hide;
-            })}
-            className="-mr-1.5 size-7 shrink-0 text-muted-foreground"
-            onClick={() => {
-              // Reduced motion has no fold to wait for, so the block goes at once.
-              hide(!matchMedia("(prefers-reduced-motion: reduce)").matches);
-              onHidden();
-            }}
-          >
-            <X aria-hidden />
-          </Button>
-        </div>
-      </div>
+      <ComplianceBadges
+        quiet
+        className="flex min-w-0 flex-1 flex-nowrap items-center gap-x-4 [&_li>span]:text-xs [&_li>span]:leading-5 [&_svg]:size-3.5"
+      />
     </section>
   );
 }

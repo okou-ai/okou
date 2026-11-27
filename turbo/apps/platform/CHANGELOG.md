@@ -13,6 +13,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1195.0](https://github.com/okou-ai/okou/compare/app-v0.1194.2...app-v0.1195.0) (2026-11-27)
+
+
+### Features
+
+* **platform:** add preset radio options to connector account name dialog ([#51381](https://github.com/okou-ai/okou/issues/51381)) ([0325542](https://github.com/okou-ai/okou/commit/0325542ca8441ef321df3f1c5d4134ca6f49a14f))
+
+
+### Bug Fixes
+
+* **app:** hide home compliance bar on narrow widths and remove dismiss control ([#51396](https://github.com/okou-ai/okou/issues/51396)) ([2609808](https://github.com/okou-ai/okou/commit/2609808a5f0d6652caf53208ebdea266d1f97057))
+
+## [0.1194.2](https://github.com/okou-ai/okou/compare/app-v0.1194.1...app-v0.1194.2) (2026-11-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.137.3
+    * @okouai/core bumped to 8.887.4
+    * @okouai/ui bumped to 1.22.43
+
 ## [0.1194.1](https://github.com/okou-ai/okou/compare/app-v0.1194.0...app-v0.1194.1) (2026-11-27)
 
 

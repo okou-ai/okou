@@ -331,9 +331,9 @@ impl FreshDeliveryScanSummary {
 ///
 /// Clones share one semaphore, so concurrent executor attempts draw from the
 /// same `FRESH_DELIVERY_RUNNER_LIMIT`. For an admitted archive, the owned
-/// permit follows the downloaded body through atomic cache publication and
-/// remains held until the guest staging attempt completes. This bounds
-/// retained runner-owned archive bodies across runs, not only active fetches.
+/// permit follows the downloaded body through atomic cache publication.
+/// Staging completion or inline input encoding releases the original body and
+/// its permit. This bounds retained runner-owned archive bodies across runs.
 /// Clones also share one lazy same-origin HTTP pool with at most eight idle
 /// sockets and a 30-second idle timeout. Origin replacement releases the cached
 /// client; admitted fetches can retain its old pool until their owned tasks end.
@@ -1047,26 +1047,43 @@ struct GuestStageBatch {
     content_bytes: usize,
 }
 
-/// A single warm batch still owned by Blank startup. The caller attaches it
-/// to its ordinary apply or settles it through the existing file writer.
+/// A batch still owned by Blank startup. The caller attaches it to its
+/// ordinary apply or settles it through the existing file writer.
 #[derive(Default)]
-pub struct PendingGuestArchives(GuestStageBatch);
+pub struct PendingGuestArchives {
+    batch: GuestStageBatch,
+    fresh_permit: Option<FreshArchivePermit>,
+    stage_metrics: StorageCacheStageMetrics,
+}
 
 impl PendingGuestArchives {
     /// Whether the caller has any archive delivery work to settle.
     pub fn is_empty(&self) -> bool {
-        self.0.writes.is_empty()
+        self.batch.writes.is_empty()
+    }
+
+    /// Whether this batch owns admission for a published fresh body.
+    pub fn is_fresh(&self) -> bool {
+        self.fresh_permit.is_some()
     }
 
     /// Try attaching the held sources within the existing binary input limit.
     pub fn inline_input(&self, manifest: &[u8]) -> Option<Vec<u8>> {
         let sources = self
-            .0
+            .batch
             .writes
             .iter()
             .map(|write| (write.guest_path.as_str(), write.bytes.as_ref()))
             .collect::<Vec<_>>();
         guest_contracts::storage_files::inline_archives::encode_input(manifest, &sources)
+    }
+
+    /// Release the pending archive and report any staging writes already completed.
+    pub fn finish_without_staging(self, telemetry: &mut JobTelemetry) {
+        let metrics = self.stage_metrics;
+        drop(self.batch);
+        drop(self.fresh_permit);
+        metrics.record_total(telemetry);
     }
 
     /// Write the original staging inputs before applying an ineligible request.
@@ -1075,18 +1092,25 @@ impl PendingGuestArchives {
         sandbox: &dyn Sandbox,
         telemetry: &mut JobTelemetry,
     ) -> RunnerResult<()> {
-        let mut metrics = StorageCacheStageMetrics::start();
         let result = flush_guest_stage_batch(
-            &mut self.0,
+            &mut self.batch,
             &mut GuestStageRecorder {
                 sandbox,
                 guest_writes: &GuestWriteLocks::default(),
                 telemetry,
-                metrics: &mut metrics,
+                metrics: &mut self.stage_metrics,
             },
         )
         .await;
-        metrics.record_total(telemetry);
+        self.stage_metrics.record_total(telemetry);
+        if result.is_ok() && self.is_fresh() {
+            telemetry.record(
+                STORAGE_CACHE_FRESH_DELIVERY_STAGED,
+                Duration::ZERO,
+                true,
+                None,
+            );
+        }
         result
     }
 }
@@ -1104,6 +1128,7 @@ struct FreshGuestStageBatch {
 }
 
 /// Aggregates actual guest write time, excluding cache probe/download work.
+#[derive(Default)]
 struct StorageCacheStageMetrics {
     total_duration: Duration,
     attempted: bool,
@@ -1434,14 +1459,6 @@ impl FreshGuestStageBatch {
 }
 
 impl StorageCacheStageMetrics {
-    fn start() -> Self {
-        Self {
-            total_duration: Duration::ZERO,
-            attempted: false,
-            failed: false,
-        }
-    }
-
     fn record_write_result(
         &mut self,
         telemetry: &mut JobTelemetry,
@@ -1759,7 +1776,7 @@ async fn populate_cache_inner(
     }
 
     let guest_writes = GuestWriteLocks::default();
-    let mut stage_metrics = StorageCacheStageMetrics::start();
+    let mut stage_metrics = StorageCacheStageMetrics::default();
     let owned_keys = fresh_delivery
         .as_ref()
         .map(|delivery| delivery.owned_keys.clone())
@@ -1792,8 +1809,8 @@ async fn populate_cache_inner(
         };
 
         let mut outcomes = if let Some(delivery) = fresh_delivery.as_deref_mut() {
-            // Keep the existing four-body envelope: cold bodies retain their
-            // admission until staging, including bodies already downloaded.
+            // Count every admitted cold body against the four-body envelope,
+            // including those already downloaded and waiting for Guest delivery.
             let ordinary_concurrency = CONCURRENCY.saturating_sub(owned_keys.len());
             // Decoded inputs make an early handoff useful at saturation. Any
             // ordinary cache reads must wait for fresh staging to free slots.

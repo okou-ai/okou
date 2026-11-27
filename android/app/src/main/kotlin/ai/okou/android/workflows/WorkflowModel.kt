@@ -11,6 +11,7 @@ import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryShadowedBy
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.api.retryBoundedRead
+import ai.okou.android.isFreshMemorySnapshot
 import ai.okou.android.state.WorkflowTab
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
@@ -134,7 +135,7 @@ internal constructor(
         if (searchingCatalog == open) return
         searchingCatalog = open
         if (open) {
-            if (!visible && !catalogRead.readAt.isFresh(monotonicMillis())) {
+            if (!visible && !catalogRead.readAt.isFreshMemorySnapshot(monotonicMillis())) {
                 mutable.value = mutable.value.copy(catalog = null, catalogFailure = null)
             }
             refresh(catalogScope)
@@ -225,9 +226,10 @@ internal constructor(
         mutable.value =
             current.copy(
                 detail =
-                    if (newSelection) cached?.takeIf { it.readAt.isFresh(now) }?.detail
+                    if (newSelection)
+                        cached?.takeIf { it.readAt.isFreshMemorySnapshot(now) }?.detail
                     else current.detail,
-                history = history?.takeIf { it.readAt.isFresh(now) }?.page,
+                history = history?.takeIf { it.readAt.isFreshMemorySnapshot(now) }?.page,
                 detailFailure = current.detailFailure.takeUnless { newSelection },
                 historyFailure = null,
                 toggles = if (newSelection) emptyMap() else current.toggles,
@@ -253,16 +255,20 @@ internal constructor(
     private fun presentCachedRanges() {
         val current = mutable.value
         val now = monotonicMillis()
-        val catalog = current.catalog.takeIf { searchingCatalog || catalogRead.readAt.isFresh(now) }
-        val rules = current.rules.takeIf { rulesRead.readAt.isFresh(now) }
-        val connections = current.connections.takeIf { connectionsRead.readAt.isFresh(now) }
+        val catalog =
+            current.catalog.takeIf {
+                searchingCatalog || catalogRead.readAt.isFreshMemorySnapshot(now)
+            }
+        val rules = current.rules.takeIf { rulesRead.readAt.isFreshMemorySnapshot(now) }
+        val connections =
+            current.connections.takeIf { connectionsRead.readAt.isFreshMemorySnapshot(now) }
         val detail = selected?.let {
-            details[it]?.takeIf { entry -> entry.readAt.isFresh(now) }?.detail
+            details[it]?.takeIf { entry -> entry.readAt.isFreshMemorySnapshot(now) }?.detail
         }
         val history =
             selected
                 ?.let(histories::get)
-                ?.takeIf { tab == WorkflowTab.History && it.readAt.isFresh(now) }
+                ?.takeIf { tab == WorkflowTab.History && it.readAt.isFreshMemorySnapshot(now) }
                 ?.page
         mutable.value =
             current.copy(
@@ -1047,11 +1053,7 @@ private class WorkflowRangeAttempt(val sequence: Long) {
     }
 }
 
-private const val WORKFLOW_CACHE_TTL_MILLIS = 600_000L
 private const val WORKFLOW_DETAIL_CACHE_CAPACITY = 8
-
-private fun Long?.isFresh(now: Long): Boolean =
-    this != null && now - this in 0 until WORKFLOW_CACHE_TTL_MILLIS
 
 private class WorkflowDirectoryUpdate(detail: WorkflowDetail) {
     private val name = detail.name

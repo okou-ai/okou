@@ -4,7 +4,6 @@ import ai.okou.android.api.generated.ChatConnectorAccessAccountsItem
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.api.generated.ConnectorOverviewItemAccountsItem
 import ai.okou.android.chat.ComposerTarget
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -95,6 +94,7 @@ internal class ChatConnectorOptions(
     private var overviewRequest: Job? = null
     private val accountRequests = mutableMapOf<String, Job>()
     private var targetGeneration = 0L
+    private var readFailureRound = 0L
 
     fun activate(key: String?) {
         val previous = mutable.value
@@ -120,7 +120,7 @@ internal class ChatConnectorOptions(
         accountRequests.remove(slug)?.cancel()
         mutable.value =
             previous.copy(
-                overview = previous.overview.copy(expiresAt = null),
+                overview = previous.overview.copy(confirmedAt = null),
                 details = previous.details - slug,
                 revision = previous.revision + 1,
             )
@@ -128,7 +128,10 @@ internal class ChatConnectorOptions(
 
     fun showOverview(target: ComposerTarget) {
         if (!current(target) || overviewRequest?.isActive == true) return
-        if (mutable.value.overview.forEntry().data != null) return
+        val snapshot = mutable.value
+        if (snapshot.overview.forEntry().data != null) return
+        if (snapshot.overview.data == null && snapshot.overview.failureRound != null)
+            mutable.value = snapshot.copy(overview = snapshot.overview.confirmed())
         val request = scope.launch(start = CoroutineStart.LAZY) { readOverview(target) }
         overviewRequest = request
         request.start()
@@ -170,6 +173,8 @@ internal class ChatConnectorOptions(
         val summary = snapshot.overview.data?.find { it.entry.slug == slug } ?: return
         val previous = snapshot.details[slug] ?: ChatConnectorDetails()
         if (previous.accounts.forEntry().data == null) {
+            if (previous.accounts.data == null && previous.accounts.failureRound != null)
+                updateDetails(slug) { it.copy(accounts = it.accounts.confirmed()) }
             val memberAccess =
                 snapshot.details.values.firstNotNullOfOrNull {
                     it.accounts.forEntry().data?.memberAccess
@@ -364,7 +369,7 @@ internal class ChatConnectorOptions(
         val retainedAccountCount =
             overview?.find { it.entry.slug == choice.slug }?.accounts?.size ?: 0
         val hasNewAccounts = accounts.size > retainedAccountCount
-        val overviewExpiry = snapshot.overview.expiresAt.takeUnless { hasNewAccounts }
+        val overviewConfirmation = snapshot.overview.confirmedAt.takeUnless { hasNewAccounts }
         val details = snapshot.details[choice.slug]
         val existing = details?.accounts?.data
         val confirmedDetails =
@@ -393,7 +398,8 @@ internal class ChatConnectorOptions(
             snapshot
                 .withChatSave(key, save)
                 .copy(
-                    overview = snapshot.overview.copy(data = overview, expiresAt = overviewExpiry),
+                    overview =
+                        snapshot.overview.copy(data = overview, confirmedAt = overviewConfirmation),
                     details = confirmedDetails,
                 )
     }
@@ -459,7 +465,11 @@ internal class ChatConnectorOptions(
     private fun saveInProgress() = mutable.value.save?.let { it.saving || it.blocksSend } == true
 
     private fun <T> ConnectorRead<T>.cached() =
-        if (data == null) this else copy(expiresAt = TimeSource.Monotonic.markNow() + 10.minutes)
+        when {
+            data != null -> copy(confirmedAt = TimeSource.Monotonic.markNow())
+            failure == ConnectorReadFailure.Unavailable -> this
+            else -> copy(failureRound = ++readFailureRound)
+        }
 
     private fun current(target: ComposerTarget) = authorized() && mutable.value.target == target.key
 }

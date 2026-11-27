@@ -55,7 +55,7 @@ final class ChatModelConfigurationTests: XCTestCase {
     XCTAssertEqual(configuration.requestedEffort(for: configuration.defaultSelection), "ultra")
   }
 
-  func testMissingExecutionMetadataFailsClearlyAndAutoWritesExplicitNull() async throws {
+  func testMissingExecutionMetadataLoadsNormallyAndAutoWritesExplicitNull() async throws {
     let requests = Mutex<[URLRequest]>([])
     let fixture = ChatHTTPFixture { request in
       requests.withLock { $0.append(request) }
@@ -69,12 +69,8 @@ final class ChatModelConfigurationTests: XCTestCase {
       return response
     }
     let service = ChatModelService(client: fixture.client)
-    do {
-      _ = try await service.load()
-      XCTFail("The native panel requires canonical runtime metadata")
-    } catch let error as APIClientError {
-      if case .incompatibleData = error {} else { XCTFail("Unexpected contract error") }
-    }
+    let configuration = try await service.load()
+    XCTAssertEqual(configuration.defaultSelection.model, "codex-model")
     try await service.save(ChatModelSelection(), effort: nil, threadID: ModelHTTPFixtures.threadID)
     let body = try XCTUnwrap(requests.withLock { $0.last }).bodyObject()
     XCTAssertTrue(body["model"] is NSNull)

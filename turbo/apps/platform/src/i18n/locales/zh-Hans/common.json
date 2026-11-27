@@ -3028,6 +3028,16 @@
       "loading": "正在加载账号…",
       "loadMore": "加载更多",
       "managerTitle": "管理{{connector}}账号",
+      "namePresetCustom": "自定义",
+      "namePresets": {
+        "company": "公司",
+        "customer": "客户",
+        "personal": "个人",
+        "primary": "主账号",
+        "secondary": "备用",
+        "work": "工作"
+      },
+      "namePromptCustomHint": "留空则不设置名称直接保存。",
       "namePromptDescription": "可以跳过，稍后再命名。",
       "namePromptTitle": "给你的{{connector}}账号起个名字",
       "noAccounts": "暂无账号",
@@ -6397,7 +6407,6 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
-      "hide": "隐藏合规信息",
       "link": "安全详情",
       "status": {
         "aligned": "已对标",

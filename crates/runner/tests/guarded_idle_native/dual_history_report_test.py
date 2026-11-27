@@ -65,7 +65,7 @@ class DualHistoryReportTests(unittest.TestCase):
                     (2,original,run,run,old,thread,[run],[4,8192,2],[2,4096,1]),
                     (5,continued,continued_run,incoming_run,new,incoming_thread,[incoming_run,continued_run],[2,4096,1],[0,0,0])):
                 restore_run, restore_id, restore_backing = [str(uuid.uuid4()) for _ in range(3)]
-                payload = (origin.encode()*2048)[:65536]
+                payload = report.history_payload(origin)
                 values[index] = {"source_run_id":generation,"original_run_id":origin,"source_sandbox_id":source_id,
                     "restoration_run_id":restore_run,"restoration_sandbox_id":restore_id,
                     "restoration_backing_generation":restore_backing,"thread_id":source_thread,"cache_key":key,

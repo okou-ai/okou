@@ -22,7 +22,8 @@ import {
   cachedContentBundleUrlSchema,
   contentBundleUrlCacheContext$,
   contentBundleUrlCacheSnapshotSql,
-  type PrefetchedContentBundleUrls,
+  readRememberedContentBundleUrls,
+  rememberContentBundleUrls,
   type ContentBundleUrlCacheSnapshot,
 } from "./content-bundle-presigned-url-cache";
 import {
@@ -90,47 +91,43 @@ const bundleCacheRowSchema = object({
 
 export function createExecutionBundleCache(
   bundles$: Computed<
-    Promise<{
-      readonly bundles: ExecutionBundleCacheObservation["bundles"];
-      readonly prefetchedUrls: PrefetchedContentBundleUrls | null;
-    } | null>
+    Promise<ExecutionBundleCacheObservation["bundles"] | null>
   >,
 ) {
   return computed(
     async (get): Promise<ExecutionBundleCacheObservation | null> => {
-      const input = await get(bundles$);
-      if (input === null) {
+      const bundles = await get(bundles$);
+      if (bundles === null) {
         return null;
       }
-      const { bundles, prefetchedUrls } = input;
       const cache = get(contentBundleUrlCacheContext$);
-      // A covered hash with no cached URL is already known to require signing.
-      const covered = new Set(prefetchedUrls?.hashes);
-      const remaining = bundles.hashes.filter((hash) => {
-        return !covered.has(hash);
-      });
+      const { rows, remaining } = readRememberedContentBundleUrls(
+        cache,
+        bundles.hashes,
+      );
       const timestamp = nowDate().toISOString();
       const startedAt = monotonicNow();
       if (remaining.length === 0) {
         return {
           bundles,
-          bundleUrlCache: { context: cache, rows: prefetchedUrls?.rows ?? [] },
+          bundleUrlCache: { context: cache, rows },
           timing: { timestamp, startedAt, readyAt: startedAt },
         };
       }
       const db = get(rawSqlReadDb$);
-      const rows = await db.execute(sql`SELECT
+      const result = await db.execute(sql`SELECT
         ${contentBundleUrlCacheSnapshotSql(cache, remaining)} AS "cachedBundleUrls"`);
-      const [row] = parseRawRows(bundleCacheRowSchema, rows);
+      const [row] = parseRawRows(bundleCacheRowSchema, result);
       if (!row) {
         throw new Error("Execution bundle cache query returned no row");
       }
       const readyAt = monotonicNow();
+      rememberContentBundleUrls(cache, row.cachedBundleUrls);
       return {
         bundles,
         bundleUrlCache: {
           context: cache,
-          rows: [...(prefetchedUrls?.rows ?? []), ...row.cachedBundleUrls],
+          rows: [...rows, ...row.cachedBundleUrls],
         },
         timing: { timestamp, startedAt, readyAt },
       };

@@ -4,6 +4,8 @@ use super::*;
 use guest_contracts::storage_manifest::{ArchiveReadiness, Manifest};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+const MAX_LATE_INLINE_ARTIFACT_BYTES: usize = 64 * 1024;
+
 /// One transport phase. StoragePlan remains the only semantic planner.
 pub struct GuestStorageBatch {
     pub manifest: Manifest,
@@ -16,6 +18,7 @@ pub struct GuestStorageBatch {
 pub struct GuestStorageInput {
     pub initial: GuestStorageBatch,
     pub decoded_tail: Option<GuestStorageBatch>,
+    pub pending_archives: PendingGuestArchives,
 }
 
 impl GuestStorageInput {
@@ -27,6 +30,7 @@ impl GuestStorageInput {
                 files,
             },
             decoded_tail: None,
+            pending_archives: PendingGuestArchives::default(),
         }
     }
 
@@ -118,6 +122,8 @@ pub struct GuestApplication {
     host_failed: Arc<AtomicBool>,
     pending: Option<ArchiveReadiness>,
     published: HashSet<usize>,
+    blank_startup: bool,
+    pending_archives: PendingGuestArchives,
 }
 
 impl GuestApplication {
@@ -149,14 +155,58 @@ impl GuestApplication {
             host_failed,
             pending: None,
             published: HashSet::new(),
+            blank_startup: false,
+            pending_archives: PendingGuestArchives::default(),
         })
     }
 
-    fn send(&mut self, input: GuestStorageInput) -> RunnerResult<()> {
+    /// Permit the late handoff to use the existing Blank inline archive path.
+    pub fn with_blank_startup(mut self) -> Self {
+        self.blank_startup = true;
+        self
+    }
+
+    pub(super) fn retain_small_fresh_artifact(
+        &mut self,
+        ready: &mut Vec<FreshArchiveResolved>,
+        stage_metrics: &mut StorageCacheStageMetrics,
+    ) -> Option<(CacheTargetGroup, TargetOutcome)> {
+        let [entry] = ready.as_slice() else {
+            return None;
+        };
+        if !self.blank_startup
+            || !entry.group.representative.handle.is_artifact()
+            || !entry.group.additional_targets.is_empty()
+            || entry.archive.bytes.len() > MAX_LATE_INLINE_ARTIFACT_BYTES
+        {
+            return None;
+        }
+        let FreshArchiveResolved {
+            group,
+            archive: FreshArchivePublished { bytes, permit },
+        } = ready.pop()?;
+        self.pending_archives.batch.push(GuestStageWrite {
+            guest_path: guest_archive_path(
+                &group.representative.name,
+                &group.representative.version,
+            ),
+            bytes,
+        });
+        self.pending_archives.fresh_permit = Some(permit);
+        // Include any late staging attempt in the same total as the ordinary writes.
+        self.pending_archives.stage_metrics = std::mem::take(stage_metrics);
+        Some((group, TargetOutcome::Hit))
+    }
+
+    fn send(&mut self, mut input: GuestStorageInput) -> RunnerResult<()> {
         let sender = self.input.take().ok_or_else(|| {
             RunnerError::Internal("Guest storage input already handed off".into())
         })?;
-        sender.send(input).map_err(|_| RunnerError::Cancelled)
+        input.pending_archives = std::mem::take(&mut self.pending_archives);
+        sender.send(input).map_err(|input| {
+            self.pending_archives = input.pending_archives;
+            RunnerError::Cancelled
+        })
     }
 
     pub(super) async fn start_if_useful(
@@ -374,6 +424,7 @@ pub async fn populate_cache_for_guest(
     }
     .await;
     if result.is_err() {
+        std::mem::take(&mut application.pending_archives).finish_without_staging(telemetry);
         application.host_failed.store(true, Ordering::Release);
         prepared.delivery.cancel_and_drain(telemetry).await;
         if let Some(readiness) = &application.pending {
