@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::IpAddr;
 
 use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
@@ -206,6 +206,9 @@ pub enum FirewallEntry {
 pub struct Firewall {
     pub name: String,
     pub apis: Vec<FirewallApi>,
+    /// Declared synthetic markers carried with the firewall definition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholders: Option<BTreeMap<String, String>>,
 }
 
 impl Firewall {

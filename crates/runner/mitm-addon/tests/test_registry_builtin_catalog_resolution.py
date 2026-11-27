@@ -151,10 +151,12 @@ class TestRegistryBuiltinCatalogResolution:
         source_id = "550e8400-e29b-41d4-a716-446655440001"
         sandbox = builtin_sandbox("run-github", "github")
         sandbox["firewalls"][0]["sourceId"] = source_id
+        firewall = github_cache_firewall()
+        firewall["placeholders"] = {"GITHUB_TOKEN": "fixture-github-token"}
         registry_path, cache_path = write_registry_with_cache(
             tmp_path,
             {"10.200.0.1": sandbox},
-            {"github": github_cache_firewall()},
+            {"github": firewall},
         )
 
         with mitm_ctx(
@@ -167,6 +169,9 @@ class TestRegistryBuiltinCatalogResolution:
         sandbox_info, compiled_firewalls, _ = context
         assert compiled_firewalls is not None
         assert sandbox_info["firewalls"][0]["name"] == "github"
+        assert sandbox_info["firewalls"][0]["placeholders"] == {
+            "GITHUB_TOKEN": "fixture-github-token"
+        }
         assert sandbox_info["firewalls"][0]["apis"][0]["base"] == "https://api.github.com"
         assert sandbox_info["firewalls"][0]["apis"][0]["id"] == "run-github:0"
         assert sandbox_info["firewalls"][0]["sourceId"] == source_id

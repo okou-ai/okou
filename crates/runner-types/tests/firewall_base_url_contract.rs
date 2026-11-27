@@ -89,6 +89,7 @@ fn firewall_cache_validation_accepts_encoded_partial_alabels() {
 fn firewall(base: String) -> Firewall {
     Firewall {
         name: "contract-test".to_string(),
+        placeholders: None,
         apis: vec![FirewallApi {
             network_intent: None,
             id: String::new(),

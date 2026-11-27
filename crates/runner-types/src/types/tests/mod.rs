@@ -167,6 +167,7 @@ fn execution_context_rejects_unknown_firewall_kind() {
 fn firewall_round_trip() {
     let fw = Firewall {
         name: "github".into(),
+        placeholders: None,
         apis: vec![FirewallApi {
             network_intent: None,
             id: "api-1".into(),

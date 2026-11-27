@@ -18,6 +18,7 @@ interface RunnerRuntimeApiSource {
 export interface RunnerRuntimeFirewallSource {
   readonly name: string;
   readonly apis: readonly RunnerRuntimeApiSource[];
+  readonly placeholders?: Readonly<Record<string, string>>;
 }
 
 export interface RunnerRuntimeFirewallCatalog {
@@ -36,6 +37,9 @@ export function projectRunnerRuntimeFirewall(
 ): Firewall {
   return {
     name: firewall.name,
+    ...(firewall.placeholders === undefined
+      ? {}
+      : { placeholders: { ...firewall.placeholders } }),
     apis: firewall.apis.map((api) => {
       return {
         base: api.base,

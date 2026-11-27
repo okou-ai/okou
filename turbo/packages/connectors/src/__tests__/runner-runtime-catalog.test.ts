@@ -30,4 +30,25 @@ describe("Runner runtime firewall content identity", () => {
     });
     expect(changed.catalogDigest).not.toBe(publication.catalogDigest);
   });
+
+  it("includes declared placeholders in the runtime firewall and catalog identity", () => {
+    function catalog(marker: string) {
+      return createRunnerRuntimeFirewallCatalog([
+        projectRunnerRuntimeFirewall({
+          name: "example",
+          apis: [{ base: "https://api.example.test", auth: { headers: {} } }],
+          placeholders: { EXAMPLE_TOKEN: marker },
+        }),
+      ]);
+    }
+
+    const original = catalog("fixture-example-token");
+    const changed = catalog("fixture-updated-example-token");
+
+    expect(original.firewalls.example?.placeholders).toStrictEqual({
+      EXAMPLE_TOKEN: "fixture-example-token",
+    });
+    expect(changed.catalogDigest).not.toBe(original.catalogDigest);
+    expect(changed.catalogVersion).not.toBe(original.catalogVersion);
+  });
 });

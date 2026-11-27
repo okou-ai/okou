@@ -64,6 +64,7 @@ fn firewall_rule_validation_matches_shared_contract() {
 fn firewall(rule: String) -> Firewall {
     Firewall {
         name: "contract-test".to_string(),
+        placeholders: None,
         apis: vec![FirewallApi {
             network_intent: None,
             id: String::new(),
