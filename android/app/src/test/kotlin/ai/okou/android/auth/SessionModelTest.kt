@@ -33,6 +33,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
+import com.clerk.api.network.serialization.ClerkResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,9 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -349,12 +353,33 @@ class SessionEntryModelTest : SessionModelTestFixture() {
     }
 
     @Test
-    fun transientInitialMembershipFailureRetriesAndPublishesOnlyAConfirmedResult() {
+    fun clerkMembershipFailuresHonorRetryAfterAndPublishOnlyAConfirmedResult() {
         val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        val request =
+            Request.Builder()
+                .url("https://clerk.example.test/v1/me/organization_memberships")
+                .build()
+        fun rejected(status: Int, header: String): List<WorkspaceMembership> {
+            val response =
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(status)
+                    .message("Fixture rejection")
+                    .header("Retry-After", header)
+                    .build()
+            val result: ClerkResult<List<WorkspaceMembership>, Unit> =
+                ClerkResult.httpFailure<Unit>(status).withTags(mapOf(Response::class to response))
+            return result.required()
+        }
         var attempts = 0
         auth.membershipsAction = {
-            if (++attempts <= 3) throw ApiFailure.Http(503, null, null, 1L.takeIf { attempts == 1 })
-            auth.available
+            when (++attempts) {
+                1 -> rejected(429, "1")
+                2 -> rejected(503, "-1")
+                3 -> throw ApiFailure.Http(503, null, null, null)
+                else -> auth.available
+            }
         }
         check(auth) { model, _ ->
             model.foregroundChanged(true)
@@ -367,17 +392,94 @@ class SessionEntryModelTest : SessionModelTestFixture() {
             runCurrent()
             assertEquals(2, attempts)
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
-            advanceTimeBy(3_000)
+            advanceTimeBy(2_999)
+            runCurrent()
+            assertEquals(2, attempts)
+            advanceTimeBy(1)
             runCurrent()
             assertEquals(3, attempts)
             assertEquals(SessionStage.Unavailable, model.uiState.value.stage)
             assertTrue(model.uiState.value.entryReadFailed)
-            advanceTimeBy(6_000)
+            advanceTimeBy(5_999)
+            runCurrent()
+            assertEquals(3, attempts)
+            advanceTimeBy(1)
             runCurrent()
             assertEquals(4, attempts)
             assertEquals(SessionStage.ChooseWorkspace, model.uiState.value.stage)
             assertEquals(auth.available, model.uiState.value.memberships)
             assertFalse(model.uiState.value.entryReadFailed)
+        }
+    }
+
+    @Test
+    fun initialMembershipRetrySurvivesRejectedSignOutAndWaitsForForeground() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        val signOutResult = CompletableDeferred<Unit>()
+        var attempts = 0
+        auth.membershipsAction = {
+            if (++attempts <= 3) throw ApiFailure.Http(503, null, null, null)
+            auth.available
+        }
+        auth.signOutAction = { signOutResult.await() }
+        check(auth) { model, _ ->
+            model.foregroundChanged(true)
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(3, attempts)
+            val failure = model.uiState.value
+            assertTrue(failure.entryReadFailed)
+
+            model.signOut(failure.generation)
+            runCurrent()
+            assertTrue(model.uiState.value.signingOut)
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(3, attempts)
+
+            model.foregroundChanged(false)
+            signOutResult.completeExceptionally(IllegalStateException("sign-out rejected"))
+            runCurrent()
+            val recovered = model.uiState.value
+            assertEquals(SessionStage.Unavailable, recovered.stage)
+            assertTrue(recovered.entryReadFailed)
+            assertFalse(recovered.signingOut)
+            assertEquals(SessionEntryFailure.SignOut, recovered.entryFailure)
+            assertEquals(3, attempts)
+
+            model.foregroundChanged(true)
+            runCurrent()
+            assertEquals(4, attempts)
+            assertEquals(SessionStage.ChooseWorkspace, model.uiState.value.stage)
+            assertEquals(auth.available, model.uiState.value.memberships)
+            assertEquals(SessionEntryFailure.SignOut, model.uiState.value.entryFailure)
+        }
+    }
+
+    @Test
+    fun confirmedSignOutCancelsTheScheduledInitialMembershipRetry() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        var attempts = 0
+        auth.membershipsAction = {
+            attempts++
+            throw ApiFailure.Http(503, null, null, null)
+        }
+        check(auth) { model, _ ->
+            model.foregroundChanged(true)
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(3, attempts)
+            val failure = model.uiState.value
+            assertTrue(failure.entryReadFailed)
+
+            model.signOut(failure.generation)
+            runCurrent()
+            assertEquals(SessionStage.SignIn, model.uiState.value.stage)
+            advanceTimeBy(48_000)
+            runCurrent()
+            assertEquals(3, attempts)
         }
     }
 
