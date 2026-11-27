@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.64.0](https://github.com/okou-ai/okou/compare/android-v0.63.0...android-v0.64.0) (2026-11-27)
+
+
+### Features
+
+* **artifacts:** add visual browsing to library ([#51115](https://github.com/okou-ai/okou/issues/51115)) ([d11e612](https://github.com/okou-ai/okou/commit/d11e6120de54a6d91addd74541361e0497d5ae0a))
+
 ## [0.63.0](https://github.com/okou-ai/okou/compare/android-v0.62.1...android-v0.63.0) (2026-11-26)
 
 

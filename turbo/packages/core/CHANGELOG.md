@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.887.1](https://github.com/okou-ai/okou/compare/core-v8.887.0...core-v8.887.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **lab:** show feature switch slugs and descriptions ([#51264](https://github.com/okou-ai/okou/issues/51264)) ([bdb24a5](https://github.com/okou-ai/okou/commit/bdb24a5be24c0a172d11b195a824cc6af0e637c5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.137.0
+
 ## [8.887.0](https://github.com/okou-ai/okou/compare/core-v8.886.1...core-v8.887.0) (2026-11-26)
 
 
