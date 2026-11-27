@@ -32,6 +32,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -282,6 +283,45 @@ class UpdateRootTest {
             assertEquals(titleBounds, title.getUnclippedBoundsInRoot())
         } finally {
             RuntimeEnvironment.setFontScale(originalFontScale)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w360dp-h160dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun extremelyShortUpdateDetailsScrollTheHeadingWithoutMovingEitherAction() {
+        val originalFontScale = RuntimeEnvironment.getFontScale()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            allowInstallAndDiscoverUpdate()
+            openUpdateSettings()
+            updateSettingsRow().performScrollTo().performClick()
+
+            val close = updateDetailText(app.getString(R.string.updates_close))
+            val download = updateDetailText(app.getString(R.string.updates_download))
+            val closeBounds = close.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val downloadBounds = download.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val title = updateDetailsHeading()
+            val titleTop = title.getUnclippedBoundsInRoot().top
+            val installed = app.getString(R.string.updates_installed, BuildConfig.VERSION_NAME)
+            val reader = compose.onNode(hasScrollAction() and hasAnyDescendant(hasText(installed)))
+            reader.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            val scroll =
+                reader.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+            val initialOffset = scroll.value()
+            reader.performKeyInput { pressKey(Key.PageDown) }
+            compose.waitUntil(5_000) { scroll.value() > initialOffset }
+            assertTrue(title.getUnclippedBoundsInRoot().top < titleTop)
+            assertEquals(closeBounds, close.assertIsDisplayed().getUnclippedBoundsInRoot())
+            assertEquals(downloadBounds, download.assertIsDisplayed().getUnclippedBoundsInRoot())
+            close.performClick()
+            title.assertDoesNotExist()
+        } finally {
+            RuntimeEnvironment.setFontScale(originalFontScale)
+            instrumentation.resetInTouchMode()
         }
     }
 
