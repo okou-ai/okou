@@ -17,6 +17,7 @@ import ai.okou.android.chat.RenameStatus
 import ai.okou.android.chat.WorkspaceRenameTarget
 import ai.okou.android.chat.canDeleteProject
 import ai.okou.android.chat.canRenameProject
+import ai.okou.android.chat.hasUsableList
 import ai.okou.android.chat.label
 import ai.okou.android.chat.nextChatFeedbackOrder
 import ai.okou.android.chat.recoversInBackground
@@ -274,7 +275,9 @@ internal fun WorkspaceChatFeedback(
         if (showChatList) {
             listOfNotNull(
                     list.listRefreshFailureOrder?.let { it to R.string.chat_list_sync_failed },
-                    list.indicatorsRefreshFailureOrder?.let { it to R.string.chat_refresh_failed },
+                    list.indicatorsRefreshFailureOrder
+                        ?.takeIf { list.hasUsableList }
+                        ?.let { it to R.string.chat_refresh_failed },
                     list.projectList.refreshFailureOrder?.let {
                         it to R.string.chat_metadata_unavailable
                     },

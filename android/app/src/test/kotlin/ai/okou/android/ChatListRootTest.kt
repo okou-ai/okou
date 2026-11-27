@@ -1516,6 +1516,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             compose.onNodeWithContentDescription(loading).assertDoesNotExist()
             compose.onNodeWithText("No unread chats").assertDoesNotExist()
             compose.onNodeWithText("Try again").assertDoesNotExist()
+            compose.onNodeWithText(app.getString(R.string.chat_refresh_failed)).assertDoesNotExist()
             val statusBounds = status.getUnclippedBoundsInRoot()
             val illustrationBounds = illustration.getUnclippedBoundsInRoot()
             assertTrue(illustrationBounds.top > heading.bottom)

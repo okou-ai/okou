@@ -87,7 +87,7 @@ internal class ProjectListOwner(
     private val dispatcher: CoroutineDispatcher,
     private val wallMillis: () -> Long,
     private val syncChatsAfterDelete: suspend () -> Unit,
-    private val visibleListReadScope: () -> Any?,
+    private val visibleListFeedbackScope: () -> Any?,
     private val readState: () -> ProjectListUiState,
     private val publish: (ProjectListUiState) -> Unit,
 ) {
@@ -610,7 +610,7 @@ internal class ProjectListOwner(
 
     fun refresh(verifyWrite: Boolean = false) {
         if (current() && projectsJob?.isActive != true) {
-            val feedbackScope = visibleListReadScope().takeUnless { verifyWrite }
+            val feedbackScope = visibleListFeedbackScope().takeUnless { verifyWrite }
             val retry = if (verifyWrite) null else ChatDependencyRetry()
             projectsRetry = retry
             state = state.copy(phase = ChatReadPhase.Loading)
@@ -752,7 +752,7 @@ internal class ProjectListOwner(
                                         if (
                                             snapshot.source != null &&
                                                 feedbackScope != null &&
-                                                feedbackScope === visibleListReadScope()
+                                                feedbackScope === visibleListFeedbackScope()
                                         )
                                             nextChatFeedbackOrder()
                                         else snapshot.refreshFailureOrder,

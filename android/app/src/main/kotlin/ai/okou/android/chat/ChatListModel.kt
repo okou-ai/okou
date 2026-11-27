@@ -443,7 +443,7 @@ class ChatListModel(
             dispatcher = dispatcher,
             wallMillis = wallMillis,
             syncChatsAfterDelete = { awaitListRead { true } },
-            visibleListReadScope = { listReadScope.takeIf { needsListRead } },
+            visibleListFeedbackScope = { visibleListFeedbackScope },
             readState = { mutable.value.projectList },
             publish = { reconcileProjectMoves(mutable.value.copy(projectList = it)) },
         )
@@ -515,6 +515,11 @@ class ChatListModel(
     private var listReadScope = Any()
     private val needsListRead: Boolean
         get() = listIsVisible && listInForeground
+
+    // A conversation can keep list reads active after the list pane leaves the screen.
+    private var listFeedbackScope: Any? = Any()
+    private val visibleListFeedbackScope: Any?
+        get() = listFeedbackScope.takeIf { needsListRead }
 
     private var listRefreshJob: Job? = null
     private var listRebaseJob: Job? = null
@@ -1783,8 +1788,15 @@ class ChatListModel(
         }
     }
 
+    internal fun listPaneVisibilityChanged(visible: Boolean) {
+        if (visible == (listFeedbackScope != null)) return
+        listFeedbackScope = if (visible) Any() else null
+        if (!visible && current()) mutable.value = mutable.value.clearRefreshFailures()
+    }
+
     private fun endListReadScope() {
         listReadScope = Any()
+        if (listFeedbackScope != null) listFeedbackScope = Any()
         val listRefresh = listRefreshJob
         val indicatorRefresh = indicatorsJob.takeIf { indicatorsRetry != null }
         listRebaseJob?.cancel()
@@ -2004,6 +2016,7 @@ class ChatListModel(
         requireCurrent()
         // Explicit readbacks can outlive the visit that started them.
         val retryScope = listReadScope.takeIf { needsListRead }
+        val feedbackScope = visibleListFeedbackScope
         // Keep the exact IDs selected by an explicit refresh until a read succeeds.
         rowDiscardsAfterRead.addAll(batch.discardOnSuccess)
         val previous = mutable.value
@@ -2051,8 +2064,8 @@ class ChatListModel(
                         listRefreshFailureOrder =
                             if (
                                 batch.refresh &&
-                                    needsListRead &&
-                                    retryScope === listReadScope &&
+                                    feedbackScope != null &&
+                                    feedbackScope === visibleListFeedbackScope &&
                                     state.hasUsableList
                             )
                                 nextChatFeedbackOrder()
@@ -2293,7 +2306,7 @@ class ChatListModel(
         afterWrite: Boolean = false,
     ) {
         if (!current() || indicatorsJob?.isCompleted == false) return
-        val feedbackScope = listReadScope.takeIf { !afterWrite && needsListRead }
+        val feedbackScope = visibleListFeedbackScope.takeUnless { afterWrite }
         val retry = if (afterWrite) null else ChatDependencyRetry()
         indicatorsRetry = retry
         mutable.value =
@@ -2457,9 +2470,8 @@ class ChatListModel(
                         indicatorsRefreshFailureOrder =
                             if (
                                 !retryable &&
-                                    feedbackScope === listReadScope &&
-                                    needsListRead &&
-                                    state.hasUsableList
+                                    feedbackScope != null &&
+                                    feedbackScope === visibleListFeedbackScope
                             )
                                 nextChatFeedbackOrder()
                             else state.indicatorsRefreshFailureOrder,
