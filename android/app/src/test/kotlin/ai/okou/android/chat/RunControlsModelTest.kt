@@ -733,7 +733,16 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
     @Test
     fun newerRecoveryReadSurvivesAnOlderOutcomeReadFailure() = runTest {
         withControls { f ->
+            f.api.historyDetail = {
+                jsonResponse(
+                    """{"lastReadAt":"$CHAT_DATE","cancellationRecoveryPending":false}""",
+                )
+            }
             val intent = f.acceptStop()
+            // The stop also refreshes detail. Finish that read before starting the overlap.
+            f.history.uiState.first {
+                it.detailPhase == ChatReadPhase.Ready && it.detail?.lastReadAt == CHAT_DATE
+            }
             val entered = CompletableDeferred<Unit>()
             val release = CountDownLatch(1)
             val firstRead = AtomicBoolean(true)
