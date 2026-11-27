@@ -1,7 +1,7 @@
-import type { ProactiveWorkflowOwner } from "./proactive-workflows-eligibility.service";
-import { officialScheduleOwnerHash } from "./official-workflow-owner-schedule";
+import type { ProactiveScheduleOwner } from "./proactive-member-preferences.service";
+import { proactiveScheduleOwnerHash } from "./proactive-cadence";
 
 /** Spread Learning starts across the first half-hour after 02:00 local time. */
-export function proactiveNightlyCron(owner: ProactiveWorkflowOwner) {
-  return `${officialScheduleOwnerHash(owner) % 30} 2 * * *`;
+export function proactiveNightlyCron(owner: ProactiveScheduleOwner) {
+  return `${proactiveScheduleOwnerHash(owner) % 30} 2 * * *`;
 }

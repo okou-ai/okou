@@ -43,7 +43,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -159,10 +158,7 @@ internal fun ArtifactPreview(
                         Text(
                             item.title,
                             Modifier.semantics { heading() }.testTag("artifact_preview_title"),
-                            style =
-                                MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
+                            style = MaterialTheme.typography.titleLarge,
                             color = colors.onSurface,
                         )
                         val kind = stringResource(item.kind.label())
@@ -364,8 +360,7 @@ private fun PreviewContent(preview: ArtifactPreviewState?) {
     val waiting = content == null && problem == null
     val showLoading =
         key(preview?.id.takeIf { imageStatus }) {
-            val delay = if (imageStatus) ContentReadFeedbackDelayMillis else 100L
-            rememberContentReadFeedbackAfter(delay.takeIf { waiting })
+            rememberContentReadFeedbackAfter(ContentReadFeedbackDelayMillis.takeIf { waiting })
         }
     if (!hosted && !imageStatus && waiting && !showLoading) return
     val colors = MaterialTheme.colorScheme
@@ -375,7 +370,12 @@ private fun PreviewContent(preview: ArtifactPreviewState?) {
             .then(if (hosted) Modifier.aspectRatio(PreviewAspectRatio) else Modifier)
             .testTag("artifact_preview_surface"),
         shape = RoundedCornerShape(16.dp),
-        color = if (!hosted && documentSurface) colors.surface else colors.surfaceVariant,
+        color =
+            when {
+                showLoading -> colors.surfaceContainerHigh
+                !hosted && documentSurface -> colors.surface
+                else -> colors.surfaceVariant
+            },
         border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
         if (hosted) {
@@ -476,7 +476,10 @@ private fun HostedPreviewContent(
 
 @Composable
 private fun PreviewLoading() {
-    CircularProgressIndicator(Modifier.size(24.dp).testTag("artifact_preview_loading"))
+    PreviewStatusText(
+        R.string.artifact_preview_loading,
+        Modifier.testTag("artifact_preview_loading"),
+    )
 }
 
 @Composable
@@ -498,10 +501,10 @@ private fun PreviewStatusFrame(ratio: Boolean, content: @Composable BoxScope.() 
 }
 
 @Composable
-private fun PreviewStatusText(@StringRes label: Int) {
+private fun PreviewStatusText(@StringRes label: Int, modifier: Modifier = Modifier) {
     Text(
         stringResource(label),
-        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        modifier.semantics { liveRegion = LiveRegionMode.Polite },
         textAlign = TextAlign.Center,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -513,6 +516,7 @@ private fun ArtifactProblem.previewLabel(): Int =
     when (this) {
         ArtifactProblem.Denied -> R.string.artifact_access_denied
         ArtifactProblem.Missing -> R.string.artifact_preview_source_unavailable
+        ArtifactProblem.OriginalUnavailable -> R.string.artifact_image_original_unavailable
         ArtifactProblem.Unsupported -> R.string.artifact_preview_unsupported
         ArtifactProblem.Temporary,
         ArtifactProblem.Unavailable -> R.string.artifact_preview_unavailable

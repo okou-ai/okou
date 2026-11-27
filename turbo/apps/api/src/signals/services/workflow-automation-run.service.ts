@@ -1,4 +1,3 @@
-import { legacyProactiveClaimAllowed } from "./proactive-dispatch-ownership.service";
 import { visibleWorkflowCondition } from "./workflow-visibility";
 import {
   publishChatThreadMessageCreated$,
@@ -37,13 +36,11 @@ import {
   censusWorkflowAdmission,
   recordWorkflowAdmissionDuration,
   type WorkflowAdmissionOutcome,
-  type WorkflowAdmissionSchedulePath,
 } from "./workflow-queue-admission-timing.service";
-import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { now, nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -54,10 +51,6 @@ import {
 } from "./workflow-input-commit-plan";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
-import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
-import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
-import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
-import { calculateNextRun } from "./time-automation";
 import {
   workflowCallbackReceiptPlan,
   workflowWebhookReceiptPlan,
@@ -135,16 +128,6 @@ function workflowEnqueueResult(
         : "superseded"
       : undefined,
   };
-}
-
-function workflowAdmissionSchedulePath(
-  kind: string,
-  hasScheduleClaim: boolean,
-): WorkflowAdmissionSchedulePath {
-  if (kind !== "schedule") {
-    return "non_schedule";
-  }
-  return hasScheduleClaim ? "journaled_schedule" : "unjournaled_schedule";
 }
 
 /** Flush completed admission telemetry without replacing its result or error. */
@@ -352,99 +335,6 @@ interface PreparedWorkflowInputCommit {
   readonly timing: ApiDispatchTimingCollector;
 }
 
-/** Each Proactive schedule anchor and its queue input commit together. */
-const commitProactiveWorkflowInput$ = command(
-  async (
-    { set },
-    input: PreparedWorkflowInputCommit,
-    signal: AbortSignal,
-  ): Promise<ChatInputEnqueueCommit | null> => {
-    const { args, plan, source, model } = input;
-    const { automation, chatThreadId } = args;
-    if (
-      source.steps.length !== 0 ||
-      automation.officialBlueprintKey === null ||
-      model.threadModelReplacement !== null ||
-      args.scheduleClaim
-    ) {
-      throw new Error(
-        "Proactive admission requires an Official schedule without an external event source",
-      );
-    }
-    const database = set(writeDb$);
-    const at = nowDate();
-    const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
-    const kind = proactiveWorkflowKind(args.automationContext.workflowName);
-    if (kind !== "learning") {
-      throw new Error("Expected a Learning schedule");
-    }
-    if (automation.cronExpression === null) {
-      throw new Error("Nightly workflow is missing its cron schedule");
-    }
-    const next = calculateNextRun(
-      automation.cronExpression,
-      automation.timezone,
-      at,
-    );
-    const claim = database
-      .update(workflowAutomations)
-      .set({ nextRunAt: next, lastRunAt: at, updatedAt: at })
-      .where(
-        and(
-          legacyProactiveClaimAllowed(),
-          eq(workflowAutomations.id, automation.id),
-          eq(workflowAutomations.enabled, true),
-          eq(
-            workflowAutomations.officialBlueprintKey,
-            automation.officialBlueprintKey,
-          ),
-          automation.nextRunAt === null
-            ? isNull(workflowAutomations.nextRunAt)
-            : eq(workflowAutomations.nextRunAt, automation.nextRunAt),
-          sql`${workflowAutomations.lastRunAt} IS NOT DISTINCT FROM ${automation.lastRunAt}::timestamp`,
-          proactiveWorkflowOwnerEnabledSql(owner),
-          sql`EXISTS (SELECT 1 FROM org_members_metadata AS preference
-                WHERE preference.org_id = ${owner.orgId} AND preference.user_id = ${owner.userId}
-                  AND preference.timezone = ${automation.timezone})`,
-          sql`NOT EXISTS (SELECT 1 FROM agent_runs AS running WHERE running.workflow_automation_id = ${automation.id}::uuid AND running.status IN ('pending', 'running'))`,
-          sql`NOT EXISTS (SELECT 1 FROM chat_events AS pending JOIN chat_automation_context AS context ON context.id = pending.context_id WHERE context.automation_id = ${automation.id}::uuid AND pending.run_id IS NULL AND pending.event_type = 'input.automation' AND NOT EXISTS (SELECT 1 FROM chat_events AS revoker WHERE revoker.revokes_event_id = pending.id))`,
-        ),
-      )
-      .returning({ id: workflowAutomations.id });
-    const queue = queuedChatThreadEnqueuePlan({
-      chatThreadId,
-      orgId: automation.orgId,
-    });
-    // Context is inserted only for the canonical event accepted in this statement.
-    const inserted = (
-      await database.execute(sql`WITH accepted_proactive_anchor AS (${claim.getSQL()}),
-    ${canonicalChatEventAppendCtes([plan.row], plan.conflict, sql`EXISTS (SELECT 1 FROM accepted_proactive_anchor)`)},
-    automation_context AS (
-      INSERT INTO chat_automation_context (id, chat_thread_id, automation_id, workflow_name, event_type, event_payload, connector_source_id, trigger_brief, created_at)
-      SELECT ${plan.context.id}::uuid, ${plan.context.chatThreadId}::uuid, ${plan.context.automationId}::uuid, ${plan.context.workflowName}, ${plan.context.eventType}, ${sql.param(plan.context.eventPayload, chatAutomationContext.eventPayload)}, ${plan.context.connectorSourceId}::uuid, ${plan.context.triggerBrief}, ${sql.param(plan.context.createdAt, chatAutomationContext.createdAt)} FROM inserted
-      ON CONFLICT DO NOTHING RETURNING id
-    ), queued AS (
-      INSERT INTO queued_chat_threads (chat_thread_id, org_id, queued_at)
-      SELECT ${chatThreadId}::uuid, ${automation.orgId}, ${sql.param(queue.values.queuedAt, queuedChatThreads.queuedAt)} FROM automation_context
-      ON CONFLICT (chat_thread_id) DO UPDATE SET queued_at = greatest(EXCLUDED.queued_at, queued_chat_threads.queued_at + interval '1 millisecond')
-    ) SELECT id FROM inserted`)
-    ).rowCount;
-    signal.throwIfAborted();
-    return inserted === 0 ? null : { eventId: plan.row.id, committedAt: now() };
-  },
-);
-
-function usesProactiveWorkflowInput(args: RunWorkflowAutomationNowArgs) {
-  const proactiveKind =
-    args.automation.officialBlueprintKey === null
-      ? null
-      : proactiveWorkflowKind(args.automationContext.workflowName);
-  return (
-    args.automationContext.eventType === "schedule" &&
-    proactiveKind === "learning"
-  );
-}
-
 function workflowRewardSource({ args, plan }: PreparedWorkflowInputCommit) {
   const { automation } = args;
   return {
@@ -506,9 +396,6 @@ const commitWorkflowInput$ = command(
     input: PreparedWorkflowInputCommit,
     signal: AbortSignal,
   ): Promise<WorkflowInputCommit | null> => {
-    if (usesProactiveWorkflowInput(input.args)) {
-      return await set(commitProactiveWorkflowInput$, input, signal);
-    }
     signal.throwIfAborted();
     const { args, plan, source, replacePendingTicks, model, timing } = input;
     const { automation, chatThreadId } = args;
@@ -553,7 +440,6 @@ const commitWorkflowInput$ = command(
       recurringScheduleClaim: args.recurringScheduleClaim
         ? { binding: args, claim: args.recurringScheduleClaim }
         : undefined,
-      scheduleClaim: args.scheduleClaim,
       queueStatement,
       replacement: replacementPlan,
       rewardSource: workflowRewardSource(input),
@@ -592,9 +478,6 @@ const commitWorkflowInput$ = command(
       }
       if (reason === "SCHEDULE") {
         throw new ScheduleOccurrenceUnavailableError();
-      }
-      if (reason === "JOURNAL") {
-        throw new Error("Morning Brief schedule claim was not journaled");
       }
       const failed = source.steps.find((_, index) => {
         return reason === `SOURCE_${String(index)}`;
@@ -748,10 +631,7 @@ export const runWorkflowAutomationNow$ = command(
     const { automation, chatThreadId } = args;
     const timing = workflowAutomationAdmissionTiming(args);
 
-    const { scheduleClaim } = args;
-    const claimsUnjournaledSchedule =
-      args.recurringScheduleClaim !== undefined ||
-      usesProactiveWorkflowInput(args);
+    const claimsRecurringSchedule = args.recurringScheduleClaim !== undefined;
     const { model, source, plan, replacePendingTicks } = await set(
       prepareWorkflowAdmission$,
       args,
@@ -759,10 +639,8 @@ export const runWorkflowAutomationNow$ = command(
       signal,
     );
 
-    const schedulePath = workflowAdmissionSchedulePath(
-      automation.kind,
-      scheduleClaim !== undefined,
-    );
+    const schedulePath =
+      automation.kind === "schedule" ? "unjournaled_schedule" : "non_schedule";
     let admissionOutcome: WorkflowAdmissionOutcome = "failed";
     let enqueueCommit: WorkflowInputCommit | undefined;
     const enqueued = await flushWorkflowAdmission(
@@ -794,7 +672,7 @@ export const runWorkflowAutomationNow$ = command(
                 }
                 throw attempt.error;
               }
-              if (attempt.value === null && claimsUnjournaledSchedule) {
+              if (attempt.value === null && claimsRecurringSchedule) {
                 admissionOutcome = "superseded";
                 return false;
               }
@@ -867,9 +745,6 @@ export const runWorkflowAutomationNow$ = command(
       );
       waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
     }
-    return workflowEnqueueResult(
-      scheduleClaim !== undefined || claimsUnjournaledSchedule,
-      enqueued,
-    );
+    return workflowEnqueueResult(claimsRecurringSchedule, enqueued);
   },
 );

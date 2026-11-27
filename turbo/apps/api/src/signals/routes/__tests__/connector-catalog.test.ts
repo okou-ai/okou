@@ -79,6 +79,65 @@ function stateFromAuthorizationUrl(authorizationUrl: string): string {
   return state;
 }
 
+describe("GET /api/connector-catalog/:connectorSlug/icon", () => {
+  it("redirects signed-out callers to the published logo and keeps the alias cacheable", async () => {
+    const client = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const response = await accept(
+      client.icon({ params: { connectorSlug: "github" } }),
+      [302],
+    );
+    expect(response.headers.get("location")).toBe(
+      "https://static.vm0.io/test-fixtures/connectors/github.svg",
+    );
+    expect(response.headers.get("cache-control")).toContain("max-age=");
+  });
+
+  it("returns 404 for an unknown logo", async () => {
+    const client = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const response = await accept(
+      client.icon({ params: { connectorSlug: "unknown-logo" } }),
+      [404],
+    );
+    expect(response.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it.each([
+    ["slack", 'x="-50" y="-50" width="200" height="200"'],
+    ["openai", "@media(prefers-color-scheme:dark){image{filter:invert(1)}}"],
+  ] as const)(
+    "serves the catalog treatment for %s as a standalone image",
+    async (slug, treatment) => {
+      const source =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="5"/></svg>';
+      server.use(
+        http.get(
+          `https://static.vm0.io/test-fixtures/connectors/${slug}.svg`,
+          () => {
+            return new HttpResponse(source, {
+              headers: { "Content-Type": "image/svg+xml" },
+            });
+          },
+        ),
+      );
+      const client = setupApp({ context, routes: connectorCatalogRoutes })(
+        connectorCatalogContract,
+      );
+      const response = await accept(
+        client.icon({ params: { connectorSlug: slug } }),
+        [200],
+      );
+      expect(response.headers.get("content-type")).toBe("image/svg+xml");
+      const svg = await response.body.text();
+      expect(svg).toContain(treatment);
+      expect(svg).toContain(Buffer.from(source).toString("base64"));
+    },
+  );
+});
+
 describe("GET /api/connector-catalog", () => {
   const seededFeatureSwitches: {
     readonly orgId: string;

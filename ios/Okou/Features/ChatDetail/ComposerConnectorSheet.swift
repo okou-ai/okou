@@ -128,6 +128,8 @@ private struct ComposerConnectorSheetContent: View {
       ) {
         if let resources = connectorStatus.directory {
           ComposerConnectorDirectory(store: store, resources: resources)
+            .navigationTitle("Add connectors")
+            .navigationBarTitleDisplayMode(.inline)
             .id(ObjectIdentifier(resources))
         }
       }

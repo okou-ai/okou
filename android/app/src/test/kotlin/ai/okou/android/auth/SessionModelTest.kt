@@ -12,6 +12,7 @@ import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferencesColorTheme
+import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerService
@@ -20,8 +21,8 @@ import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlOwners
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
-import ai.okou.android.preferences.MemberAppearance
-import ai.okou.android.preferences.MemberAppearanceCache
+import ai.okou.android.preferences.CachedMemberPreferences
+import ai.okou.android.preferences.MemberPreferencesCache
 import ai.okou.android.settings.DefaultModelStore
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testOrganization
@@ -118,7 +119,7 @@ abstract class SessionModelTestFixture {
     protected fun check(
         auth: TestAuthentication = TestAuthentication(),
         configure: (Resource) -> Unit = {},
-        prepareAppearance: suspend MemberAppearanceCache.() -> Unit = {},
+        preparePreferences: suspend MemberPreferencesCache.() -> Unit = {},
         block: suspend TestScope.(SessionModel, MutableList<Resource>) -> Unit,
     ) = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -144,8 +145,8 @@ abstract class SessionModelTestFixture {
                 dispatcher,
             )
         val controls = RunControlOwners()
-        val appearanceDirectory = temporary.newFolder()
-        val appearance = MemberAppearanceCache({ appearanceDirectory }, dispatcher)
+        val preferencesDirectory = temporary.newFolder()
+        val preferencesCache = MemberPreferencesCache({ preferencesDirectory }, dispatcher)
         val expansionFile = temporary.newFolder().resolve("project-expansion.preferences_pb")
         val expansion =
             ProjectExpansionStore(
@@ -158,7 +159,7 @@ abstract class SessionModelTestFixture {
                 backgroundScope,
             )
         try {
-            appearance.prepareAppearance()
+            preferencesCache.preparePreferences()
             val model =
                 ViewModelProvider(
                     store,
@@ -177,7 +178,7 @@ abstract class SessionModelTestFixture {
                                 drafts,
                                 journal,
                                 controls,
-                                appearance,
+                                preferencesCache,
                                 expansion,
                                 defaultModelStore,
                                 dispatcher,
@@ -509,31 +510,55 @@ class SessionModelTest : SessionModelTestFixture() {
     }
 
     @Test
-    fun startupAppearanceIsScopedAndReplacedByTheConfirmedWorkspacePreferences() {
+    fun startupPreferencesRestorePerWorkspaceAndPersistOnlyConfirmedRegionAndBrowser() {
         val auth = TestAuthentication()
-        val cached = MemberAppearance(UserPreferencesTheme.DARK, UserPreferencesColorTheme.DAYDREAM)
+        val cached =
+            CachedMemberPreferences(
+                UserPreferencesTheme.DARK,
+                UserPreferencesColorTheme.DAYDREAM,
+                locale = UserPreferencesLocale.EN_US,
+                timezone = "Asia/Shanghai",
+                cloudBrowser = false,
+            )
         val confirmed =
-            MemberAppearance(UserPreferencesTheme.LIGHT, UserPreferencesColorTheme.BERRY_BLUSH)
+            CachedMemberPreferences(
+                UserPreferencesTheme.LIGHT,
+                UserPreferencesColorTheme.BERRY_BLUSH,
+                locale = UserPreferencesLocale.EN_US,
+                timezone = "UTC",
+                cloudBrowser = true,
+            )
         val previousSession = WorkspaceIdentity("https://api.okou.ai", "user-a", "old", "org-a")
+        val otherWorkspace = cached.copy(timezone = "Europe/Berlin")
         var preferences = CompletableDeferred<Unit>()
-        lateinit var disk: MemberAppearanceCache
+        val write = CompletableDeferred<Unit>()
+        var remote =
+            testPreferences()
+                .copy(
+                    theme = confirmed.theme,
+                    colorTheme = confirmed.colorTheme,
+                    timezone = confirmed.timezone,
+                    cloudBrowserEnabledByDefault = true,
+                )
+        lateinit var disk: MemberPreferencesCache
         check(
             auth,
             configure = { resource ->
                 resource.loadPreferences = {
                     preferences.await()
-                    testPreferences()
-                        .copy(theme = confirmed.theme, colorTheme = confirmed.colorTheme)
+                    remote
                 }
+                resource.update = { write.await() }
             },
-            prepareAppearance = {
+            preparePreferences = {
                 disk = this
                 save(previousSession, cached)
+                save(previousSession.copy(workspaceId = "org-b"), otherWorkspace)
             },
         ) { model, _ ->
             runCurrent()
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
-            assertEquals(cached, model.uiState.value.cachedAppearance)
+            assertEquals(cached, model.uiState.value.cachedPreferences)
             assertNull(model.uiState.value.ready)
             val opened = model.uiState.value.opening as OpeningWorkspace.Authorized
 
@@ -545,16 +570,25 @@ class SessionModelTest : SessionModelTestFixture() {
             assertEquals(confirmed.colorTheme, ready.preferences.uiState.value.colorTheme)
             assertEquals(confirmed, disk.load(ready.identity))
 
+            remote = remote.copy(cloudBrowserEnabledByDefault = false)
+            ready.preferences.setCloudBrowser(false)
+            runCurrent()
+            assertFalse(ready.preferences.uiState.value.cloudBrowser)
+            assertEquals(confirmed, disk.load(ready.identity))
+            write.complete(Unit)
+            runCurrent()
+            assertEquals(confirmed.copy(cloudBrowser = false), disk.load(ready.identity))
+
             preferences = CompletableDeferred()
             model.chooseWorkspace("org-b", model.uiState.value.generation)
             runCurrent()
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
-            assertNull(model.uiState.value.cachedAppearance)
+            assertEquals(otherWorkspace, model.uiState.value.cachedPreferences)
 
             auth.state.value = testAuthenticationState("user-b", "session-b", "org-a")
             runCurrent()
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
-            assertNull(model.uiState.value.cachedAppearance)
+            assertNull(model.uiState.value.cachedPreferences)
         }
     }
 

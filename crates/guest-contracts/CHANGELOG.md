@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.8](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.7...guest-contracts-v0.33.8) (2026-11-27)
+
+
+### Bug Fixes
+
+* **runner:** continue on reused home storage path conflicts ([#51209](https://github.com/okou-ai/okou/issues/51209)) ([3b5b850](https://github.com/okou-ai/okou/commit/3b5b850feefe88f6001e7ea90a8dcf48e20d568e))
+
 ## [0.33.7](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.6...guest-contracts-v0.33.7) (2026-11-26)
 
 ## [0.33.6](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.5...guest-contracts-v0.33.6) (2026-11-26)

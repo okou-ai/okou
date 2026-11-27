@@ -782,7 +782,7 @@ internal fun OkouApp(
             result.id,
             WorkspaceTarget.Chat(result.id),
             fromSearch = true,
-            searchMessageAnchor = SearchMessageAnchor(hit.seqId, hit.firstRange),
+            searchMessageAnchor = SearchMessageAnchor(hit.seqId, hit.sourceRange),
         )
         composer?.acknowledge(result.id)
         activeChats.history.open(result)
@@ -1022,6 +1022,10 @@ internal fun OkouApp(
         chats?.listVisibilityChanged(needsChatList)
         onDispose { chats?.listVisibilityChanged(false) }
     }
+    DisposableEffect(chats, showChatList) {
+        chats?.listPaneVisibilityChanged(showChatList)
+        onDispose { chats?.listPaneVisibilityChanged(false) }
+    }
     LaunchedEffect(newChat, provisionalId, provisionalChat, createdId) {
         if (newChat != null && navigation.target == newChat && provisionalId != null) {
             conversations.open(provisionalId)
@@ -1178,6 +1182,7 @@ internal fun OkouApp(
             snackbar,
             conversationSnackbar,
             showChatList,
+            provisionalChats,
             visibleConversationId,
             navigationError =
                 conversationNavigationErrors.firstOrNull { it.threadId == visibleConversationId },

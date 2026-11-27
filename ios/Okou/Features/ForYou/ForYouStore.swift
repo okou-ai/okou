@@ -46,8 +46,8 @@ final class ForYouStore {
   /// The visit's deck, kept in the workspace session's Store. Views resolve it; `deck` and its
   /// accessors serve actions and tests.
   let deckValue: Computed<Deck>
-  /// Whether a deck action is running, for the navigation that holds the page while it does.
   let busyValue: Computed<Bool>
+  let navigationState: Computed<NavigationState>
 
   var current: ForYouCard? { deck.current }
   var summary: Computed<Task<Bool, Error>> { resources.forYouSummary }
@@ -63,6 +63,7 @@ final class ForYouStore {
     let deckState = deckState
     deckValue = Computed { try $0(deckState) }
     busyValue = Computed { try $0(deckState).busy }
+    navigationState = Computed { try $0(deckState).navigationState }
   }
 
   /// A visit starts without the previous one's confirmations.
@@ -322,6 +323,10 @@ final class ForYouStore {
 }
 
 extension ForYouStore {
+  enum NavigationState: Equatable {
+    case empty, showingCard, busy
+  }
+
   /// The visit's cards and the one in front, the load and action phases, the last failure and
   /// notice, the cards it settled, and the open direction composer, which compares by identity.
   struct Deck: Equatable {
@@ -335,6 +340,11 @@ extension ForYouStore {
     var direction: ForYouDirection?
 
     var current: ForYouCard? { cards.indices.contains(position) ? cards[position] : nil }
+
+    var navigationState: NavigationState {
+      if busy { return .busy }
+      return cards.isEmpty ? .empty : .showingCard
+    }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
       lhs.cards == rhs.cards && lhs.position == rhs.position && lhs.loaded == rhs.loaded

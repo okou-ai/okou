@@ -45,7 +45,7 @@ private struct SettingsConnectorsContent: View {
     let current = status ?? store.status
     Group {
       if tab == "discover", let directory = current.directory {
-        ComposerConnectorDirectory(store: store, resources: directory, showsCustom: false)
+        ComposerConnectorDirectory(store: store, resources: directory)
       } else if !current.isClosed, let resources = store.resources {
         StoreProvider(resources.store) {
           SettingsConnectedConnectors(store: store, resources: resources)
@@ -60,9 +60,8 @@ private struct SettingsConnectorsContent: View {
       .background(OkouColor.background)
     }
     .navigationTitle("Connectors").navigationBarTitleDisplayMode(.inline)
-    .task {
+    .onAppear {
       if store.directory == nil { store.openDirectory() }
-      await store.refresh()
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { Task { await store.refresh() } }
@@ -72,7 +71,8 @@ private struct SettingsConnectorsContent: View {
 
 private struct SettingsConnectedConnectors: View {
   let store: ComposerConnectorStore
-  @LoadableValue private var connected: Loadable<[ChatComposerConnector]>
+  @LoadableValue private var overview: Loadable<[ChatComposerConnector]>
+  @ResolvedValue private var snapshot: ComposerConnectorStore.Snapshot?
   /// The composer's writes, kept in the session Store.
   @ResolvedValue private var connectorStatus: ComposerConnectorStore.Status?
   @State private var search = ""
@@ -80,14 +80,15 @@ private struct SettingsConnectedConnectors: View {
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
     self.store = store
-    _connected = LoadableValue(task: resources.connected, keepLast: true)
+    _overview = LoadableValue(task: resources.overview, keepLast: true)
+    _snapshot = ResolvedValue(store.snapshotValue)
     _connectorStatus = ResolvedValue(store.statusValue)
   }
 
   var body: some View {
     List {
       ComposerConnectorReadError(store: store) { await store.refresh() }
-      switch connected {
+      switch overview {
       case .loading:
         Section {
           ForEach(0..<6, id: \.self) { _ in
@@ -100,21 +101,22 @@ private struct SettingsConnectedConnectors: View {
         .accessibilityRepresentation { ProgressView("Loading connectors…") }
       case .hasError: EmptyView()
       case .hasData(let entries):
+        let current = snapshot ?? store.snapshot
         let matches = entries.filter {
           search.isEmpty || $0.label.localizedCaseInsensitiveContains(search)
         }
-        let attention = matches.filter(\.needsAttention)
-        let ready = matches.filter { !$0.needsAttention }
+        let attention = matches.filter { !current.reconnectAccountIDs(for: $0).isEmpty }
+        let ready = matches.filter { current.reconnectAccountIDs(for: $0).isEmpty }
         if !attention.isEmpty {
           Section {
-            ForEach(attention) { row($0) }
+            ForEach(attention) { row($0, needsAttention: true) }
           } header: {
             Text("Needs attention").okouSectionHeader()
           }
         }
         if !ready.isEmpty {
           Section {
-            ForEach(ready) { row($0) }
+            ForEach(ready) { row($0, needsAttention: false) }
           } header: {
             Text("Connected").okouSectionHeader()
           }
@@ -146,7 +148,7 @@ private struct SettingsConnectedConnectors: View {
     }
   }
 
-  private func row(_ connector: ChatComposerConnector) -> some View {
+  private func row(_ connector: ChatComposerConnector, needsAttention: Bool) -> some View {
     Button {
       detail = store.openAccounts(connector, managesDefaults: true)
     } label: {
@@ -155,13 +157,13 @@ private struct SettingsConnectedConnectors: View {
           .frame(width: OkouControl.rowLeadingSlot, height: OkouControl.rowLeadingSlot)
         VStack(alignment: .leading, spacing: OkouSpace.xs) {
           Text(connector.label).foregroundStyle(OkouColor.foreground)
-          if connector.needsAttention {
+          if needsAttention {
             Text("Reconnect required").font(.okou(.footnote))
               .foregroundStyle(OkouStatusColor.warning)
           }
         }
         Spacer(minLength: 0)
-        if !connector.needsAttention {
+        if !needsAttention {
           accountCount(connector.access.accounts.count)
             .font(.okou(.body)).foregroundStyle(OkouColor.trailingValue)
         }

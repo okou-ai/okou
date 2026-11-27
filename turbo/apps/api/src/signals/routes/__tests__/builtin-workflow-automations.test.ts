@@ -1,3 +1,5 @@
+import { createProactiveCronApi } from "./helpers/proactive-cron";
+import { cronProactiveRoutes } from "../cron-proactive";
 import { randomUUID } from "node:crypto";
 import { array, boolean, object, string } from "zod";
 import {
@@ -5,27 +7,14 @@ import {
   type SuggestionContent,
 } from "@okouai/api-contracts/contracts/feed";
 import { feedRoutes } from "../feed";
-import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
-import { now, withMockNowForTest } from "../../../lib/time";
-import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { expect, test } from "vitest";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
-import {
-  workflowAutomationsContract,
-  workflowsCollectionContract,
-  workflowsDetailContract,
-  type WorkflowAutomationSummary,
-  type WorkflowSummary,
-} from "@okouai/api-contracts/contracts/workflows";
-import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { proactiveSuggestionsRoutes } from "../proactive-preferences";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { workflowsRoutes } from "../workflows";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { joinAll } from "../../utils";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import {
   createChatEventsFixture,
@@ -34,14 +23,12 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRouteMocks } from "./helpers/route-test";
-import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 
 const context = testContext();
-// The API test baseline's managed key for platform-paid Official Runs.
+// The API test baseline's managed key for platform-paid Runs.
 const PROACTIVE_MANAGED_KEY = "okou-fake-proactive-model-key-sentinel-8d2b6f41";
 
 async function saveCompletedActionFeedback(
@@ -119,64 +106,11 @@ async function withFeedbackRun<T>(
   });
 }
 
-/** An ordinary chat is the manual Run that keeps Official schedules serving the owner. */
+/** An ordinary chat is the manual Run that keeps platform schedules serving the owner. */
 function startOwnerChat(owned: Awaited<ReturnType<typeof publicChatActor>>) {
   return withFeedbackRun(owned, () => {
     return Promise.resolve();
   });
-}
-
-/** Settle Official Runs still in flight, such as those launched by the same cron tick. */
-async function failActiveOfficialRuns(
-  owned: Awaited<ReturnType<typeof publicChatActor>>,
-  workflows: readonly WorkflowSummary[],
-  include: (workflow: WorkflowSummary) => boolean,
-) {
-  const fixture = createChatEventsFixture(context);
-  const app = setupApp({ context, routes: workflowAutomationsRoutes });
-  const headers = { authorization: "Bearer clerk-session" };
-  for (const item of workflows.filter(include)) {
-    const schedules = await owned.run(() => {
-      return accept(
-        app(workflowAutomationsContract).list({
-          headers,
-          params: { workflowId: item.id },
-        }),
-        [200],
-      );
-    });
-    const threadId = schedules.body[0]?.chatThreadId;
-    if (!threadId) {
-      continue;
-    }
-    const events = await owned.run(() => {
-      return createChatFilesBddApi(context).listThreadEventRows(
-        owned.actor,
-        threadId,
-      );
-    });
-    for (const event of events) {
-      if (event.eventType !== "input.prompt" || !event.runId) {
-        continue;
-      }
-      const runId = event.runId;
-      const run = await owned.run(() => {
-        return createRunsApi(context).readRun(owned.actor, runId);
-      });
-      if (run.status !== "pending" && run.status !== "running") {
-        continue;
-      }
-      const { sandboxHeaders } = await owned.runExecution(runId);
-      await owned.run(() => {
-        return fixture.failChatRun(
-          runId,
-          sandboxHeaders,
-          "Concurrent Official Run inspected",
-        );
-      });
-      await owned.run(flushWaitUntilForTest);
-    }
-  }
 }
 
 async function saveFeedback(
@@ -315,7 +249,10 @@ async function saveFeedback(
   };
 }
 
-async function prepareForeignFeedback(definitionName: string) {
+async function prepareForeignFeedback(
+  definitionName: string,
+  peerOrgId: string,
+) {
   if (
     definitionName !== "agent-suggestions" &&
     definitionName !== "proactive-learning"
@@ -330,7 +267,9 @@ async function prepareForeignFeedback(definitionName: string) {
       "Private foreign workspace preference",
     );
   });
-  const peer = await publicChatActor(context);
+  const peer = await publicChatActor(context, {
+    actor: createChatEventsFixture(context).bdd.user({ orgId: peerOrgId }),
+  });
   await withFeedbackRun(peer, (token) => {
     return saveFeedback(
       token,
@@ -338,7 +277,6 @@ async function prepareForeignFeedback(definitionName: string) {
       "Private same-workspace preference",
     );
   });
-  return peer.actor.orgId;
 }
 
 type ExpectedFeedback = Awaited<ReturnType<typeof saveFeedback>>["expected"];
@@ -434,18 +372,11 @@ function readFeedbackContext(
 
 async function expectSuggestionFeedbackLifecycle(
   owned: Awaited<ReturnType<typeof publicChatActor>>,
-  workflowId: string,
   { startedAt, existing, selected, undo }: SuggestionFeedbackLifecycle,
 ) {
   const fixture = createChatEventsFixture(context);
-  const app = setupApp({
-    context,
-    routes: [
-      ...proactiveSuggestionsRoutes,
-      ...workflowAutomationsRoutes,
-      ...cronExecuteWorkflowAutomationsRoutes,
-    ],
-  });
+  const app = setupApp({ context, routes: proactiveSuggestionsRoutes });
+  const cron = createProactiveCronApi(context);
   const headers = { authorization: "Bearer clerk-session" };
   const day = 86_400_000;
   function readFeedback(at: number, expectedComplete = true) {
@@ -461,92 +392,43 @@ async function expectSuggestionFeedbackLifecycle(
           [200],
         );
       });
-      const schedules = await owned.run(() => {
-        return accept(
-          app(workflowAutomationsContract).list({
-            headers,
-            params: { workflowId },
-          }),
-          [200],
+      return withMockNowForTest(at + 60_000, async () => {
+        await owned.run(() => {
+          return createRunsApi(context).registerDirectRunner(owned.runnerGroup);
+        });
+        await owned.run(cron.dispatch);
+        const runId = await owned.run(() => {
+          return cron.latestRun(owned.actor, "Proactive Suggestions");
+        });
+        const { execution, sandboxHeaders } = await owned.runExecution(runId);
+        const feedback = readFeedbackContext(
+          execution.appendSystemPrompt,
+          expectedComplete,
         );
-      });
-      const schedule = schedules.body[0];
-      if (!schedule?.nextRunAt) {
-        throw new Error("Expected the Suggestions schedule");
-      }
-      return withMockNowForTest(
-        Math.max(at, Date.parse(schedule.nextRunAt)),
-        async () => {
-          await owned.run(() => {
-            return createRunsApi(context).registerDirectRunner(
-              owned.runnerGroup,
-            );
-          });
-          await owned.run(() => {
-            return accept(
-              app(cronExecuteWorkflowAutomationsContract).execute({
-                headers: {
-                  authorization: "Bearer workflow-automation-cron-secret",
-                },
-              }),
-              [200],
-            );
-          });
-          await owned.run(flushWaitUntilForTest);
-          const current = await owned.run(() => {
-            return accept(
-              app(workflowAutomationsContract).get({
-                headers,
-                params: { id: schedule.id },
-              }),
-              [200],
-            );
-          });
-          if (!current.body.chatThreadId) {
-            throw new Error("Expected the Suggestions execution thread");
-          }
-          const events = await owned.run(() => {
-            return createChatFilesBddApi(context).listThreadEventRows(
-              owned.actor,
-              current.body.chatThreadId ?? "",
-            );
-          });
-          const runId = [...events].reverse().find((event) => {
-            return event.eventType === "input.prompt" && event.runId;
-          })?.runId;
-          if (!runId) {
-            throw new Error("Expected a scheduled Suggestions Run");
-          }
-          const { execution, sandboxHeaders } = await owned.runExecution(runId);
-          const feedback = readFeedbackContext(
-            execution.appendSystemPrompt,
-            expectedComplete,
+        await owned.run(() => {
+          return fixture.failChatRun(
+            runId,
+            sandboxHeaders,
+            "Feedback lifecycle inspected",
           );
-          await owned.run(() => {
-            return fixture.failChatRun(
-              runId,
-              sandboxHeaders,
-              "Feedback lifecycle inspected",
-            );
-          });
-          await owned.run(flushWaitUntilForTest);
-          await owned.run(() => {
-            return accept(
-              app(proactiveSuggestionsContract).update({
-                headers,
-                body: { enabled: false },
-              }),
-              [200],
-            );
-          });
-          return feedback;
-        },
-      );
+        });
+        await owned.run(flushWaitUntilForTest);
+        await owned.run(() => {
+          return accept(
+            app(proactiveSuggestionsContract).update({
+              headers,
+              body: { enabled: false },
+            }),
+            [200],
+          );
+        });
+        return feedback;
+      });
     });
   }
   await withMockNowForTest(startedAt, async () => {
     await owned.run(undo);
-    const afterUndo = await readFeedback(startedAt);
+    const afterUndo = await readFeedback(startedAt + 60 * 60_000);
     expect(afterUndo).toHaveLength(2);
     expect(afterUndo).toStrictEqual(
       expect.arrayContaining([existing, selected]),
@@ -570,7 +452,7 @@ async function expectSuggestionFeedbackLifecycle(
       });
       // The real scheduled Run must disclose omitted action facts so its
       // instructions skip maintenance instead of repeating completed work.
-      const bounded = await readFeedback(now(), false);
+      const bounded = await readFeedback(now() + 60 * 60_000, false);
       const completed = bounded.filter((feedback) => {
         return completedTitles.includes(feedback.title);
       });
@@ -588,143 +470,6 @@ async function expectSuggestionFeedbackLifecycle(
   });
 }
 
-async function expectMorningBriefRecovery(
-  owned: Awaited<ReturnType<typeof publicChatActor>>,
-  automationId: string,
-  workflowId: string,
-) {
-  const fixture = createChatEventsFixture(context);
-  const app = setupApp({
-    context,
-    routes: [
-      ...cronExecuteWorkflowAutomationsRoutes,
-      ...workflowAutomationsRoutes,
-      ...morningBriefPreferenceRoutes,
-      ...feedRoutes,
-    ],
-  });
-  const headers = { authorization: "Bearer clerk-session" };
-  async function readAutomation() {
-    return (
-      await accept(
-        app(workflowAutomationsContract).get({
-          headers,
-          params: { id: automationId },
-        }),
-        [200],
-      )
-    ).body;
-  }
-  const failures: {
-    runId: string;
-    headers: { authorization: string };
-    completedAt: string;
-  }[] = [];
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const before = await readAutomation();
-    if (!before.enabled || !before.nextRunAt) {
-      throw new Error("Expected the published Morning Brief's next occurrence");
-    }
-    failures.push(
-      await withMockNowForTest(Date.parse(before.nextRunAt), async () => {
-        await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
-        await accept(
-          app(cronExecuteWorkflowAutomationsContract).execute({
-            headers: {
-              authorization: "Bearer workflow-automation-cron-secret",
-            },
-          }),
-          [200],
-        );
-        await flushWaitUntilForTest();
-        const current = await readAutomation();
-        if (!current.chatThreadId) {
-          throw new Error("Expected the published Morning Brief's thread");
-        }
-        const events = await createChatFilesBddApi(context).listThreadEventRows(
-          owned.actor,
-          current.chatThreadId,
-        );
-        const runId = [...events].reverse().find((event) => {
-          return event.eventType === "input.prompt" && event.runId;
-        })?.runId;
-        if (!runId) {
-          throw new Error("Expected the next Morning Brief Run");
-        }
-        const { sandboxHeaders } = await owned.runExecution(runId);
-        await fixture.failChatRun(
-          runId,
-          sandboxHeaders,
-          "Morning Brief execution failed",
-        );
-        await flushWaitUntilForTest();
-        return {
-          runId,
-          headers: sandboxHeaders,
-          completedAt: before.nextRunAt!,
-        };
-      }),
-    );
-  }
-  const threshold = failures.at(-1);
-  if (!threshold) {
-    throw new Error("Expected the third Morning Brief failure");
-  }
-  const disabled = await readAutomation();
-  expect(disabled).toMatchObject({
-    enabled: false,
-    official: { intendedEnabled: true },
-  });
-  expect(Date.parse(disabled.nextRunAt ?? "")).toBeGreaterThan(
-    Date.parse(threshold.completedAt),
-  );
-  const unchanged = await accept(
-    app(morningBriefPreferenceContract).update({
-      headers,
-      body: { enabled: true },
-    }),
-    [200],
-  );
-  expect(unchanged.body).toMatchObject({ enabled: true, status: "error" });
-  await expect(readAutomation()).resolves.toMatchObject({
-    enabled: false,
-    nextRunAt: disabled.nextRunAt,
-  });
-  const delivered = await accept(
-    app(feedContract).list({ headers, query: { type: "event" } }),
-    [200],
-  );
-  expect(delivered.body.items).toStrictEqual([
-    expect.objectContaining({
-      type: "event",
-      content: expect.objectContaining({
-        eventType: "automation-disabled",
-        automationId,
-        workflowId,
-        workspaceId: owned.actor.orgId,
-        automationDescription: expect.stringMatching(/\S/u),
-        consecutiveFailures: 3,
-        recoveryScheduled: true,
-      }),
-    }),
-  ]);
-  await fixture.failChatRun(
-    threshold.runId,
-    threshold.headers,
-    "Morning Brief execution failed",
-  );
-  await flushWaitUntilForTest();
-  const repeated = await accept(
-    app(feedContract).list({ headers, query: { type: "event" } }),
-    [200],
-  );
-  expect(repeated.body.items).toStrictEqual(delivered.body.items);
-  await expect(readAutomation()).resolves.toMatchObject({
-    enabled: false,
-    nextRunAt: disabled.nextRunAt,
-  });
-}
-
 function expectScopeGuidance(
   instruction: string | null | undefined,
   learning: boolean,
@@ -738,79 +483,6 @@ function expectScopeGuidance(
     );
   } else {
     expect(instruction).toContain("okou chat list --help");
-  }
-}
-
-function expectBuiltinCronSchedule(
-  automation: WorkflowAutomationSummary,
-  learning: boolean,
-) {
-  if (automation.kind !== "schedule" || automation.schedule.type !== "cron") {
-    throw new Error("Expected an Official cron schedule");
-  }
-  const { schedule } = automation;
-  expect(automation.official?.parameterBindings).toStrictEqual([
-    { key: "cron", value: schedule.cronExpression },
-  ]);
-  if (learning) {
-    expect(schedule.cronExpression.split(" ")[1]).toBe("2");
-    expect(schedule.timezone).toBe("Asia/Shanghai");
-  }
-  return schedule;
-}
-
-function isProactiveProfileWorkflow(workflow: WorkflowSummary) {
-  return (
-    workflow.official?.definitionName === "agent-suggestions" ||
-    workflow.official?.definitionName === "proactive-learning"
-  );
-}
-
-async function expectSharedProactiveSchedules(
-  owned: Awaited<ReturnType<typeof publicChatActor>>,
-  workflows: readonly WorkflowSummary[],
-  enabled: boolean,
-) {
-  const proactive = workflows.filter(isProactiveProfileWorkflow);
-  if (proactive.length === 0) {
-    return;
-  }
-  expect(
-    proactive
-      .map((workflow) => {
-        return workflow.official?.definitionName;
-      })
-      .sort(),
-  ).toStrictEqual(["agent-suggestions", "proactive-learning"]);
-  const app = setupApp({
-    context,
-    routes: [...proactiveSuggestionsRoutes, ...workflowAutomationsRoutes],
-  });
-  const headers = { authorization: "Bearer clerk-session" };
-  if (!enabled) {
-    await owned.run(() => {
-      return accept(
-        app(proactiveSuggestionsContract).update({
-          headers,
-          body: { enabled: false },
-        }),
-        [200],
-      );
-    });
-  }
-  for (const workflow of proactive) {
-    const schedules = await owned.run(() => {
-      return accept(
-        app(workflowAutomationsContract).list({
-          headers,
-          params: { workflowId: workflow.id },
-        }),
-        [200],
-      );
-    });
-    expect(schedules.body).toMatchObject([
-      { enabled, official: { intendedEnabled: enabled } },
-    ]);
   }
 }
 
@@ -844,26 +516,6 @@ const scenarios = [
   };
 });
 
-function officialWorkflowBundle(
-  execution: ExecutionContext,
-  definitionName: string,
-) {
-  const bundles = execution.startupInputs.contentBundles.skills.filter(
-    (bundle) => {
-      return bundle.name === definitionName;
-    },
-  );
-  expect(bundles).toHaveLength(1);
-  const [bundle] = bundles;
-  if (!bundle) {
-    throw new Error("Expected an Official Workflow bundle in execution input");
-  }
-  expect(execution.piSessionId).toBe(
-    execution.cliAgentType === "pi" ? execution.runId : undefined,
-  );
-  return bundle;
-}
-
 function expectWorkflowInstructions(
   instruction: string | null | undefined,
   definitionName: string,
@@ -889,35 +541,39 @@ test.each(scenarios)(
     heading,
     preferenceContract,
   }) => {
-    mockEnv("CRON_SECRET", "workflow-automation-cron-secret");
     const app = await setupApp({
       context,
       isolatePg: true,
       routes: [
-        ...cronExecuteWorkflowAutomationsRoutes,
+        ...cronProactiveRoutes,
         ...proactiveSuggestionsRoutes,
         ...morningBriefPreferenceRoutes,
-        ...workflowAutomationsRoutes,
-        ...workflowsRoutes,
       ],
     });
-    const peerOrgId = await prepareForeignFeedback(definitionName);
+    // This member's UTC slots are 02:12 for Learning, :42 for Suggestions and 06:57 for Morning Brief.
+    const at =
+      definitionName === "morning-brief"
+        ? Date.UTC(2030, 0, 2, 6, 57)
+        : learning
+          ? Date.UTC(2030, 0, 2, 2, 12)
+          : Date.UTC(2030, 0, 2, 12, 42);
+    mockNow(at - 30_000);
+    const cron = createProactiveCronApi(context);
+    await cron.activate();
+    await prepareForeignFeedback(definitionName, "org_proactive_content");
     const fixture = createChatEventsFixture(context);
-    const owned = await publicChatActor(context, {
-      actor: peerOrgId ? fixture.bdd.user({ orgId: peerOrgId }) : undefined,
+    const actor = fixture.bdd.user({
+      orgId: "org_proactive_content",
+      userId: "user_proactive_content3",
     });
-    installWorkflowVolumeS3Fixture(context);
-    const cronHeaders = {
-      authorization: "Bearer workflow-automation-cron-secret",
-    };
-    const actor = owned.actor;
+    const owned = await publicChatActor(context, { actor });
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected an organization owner");
     }
     await owned.run(() => {
       return fixture.bdd.completeOnboarding(actor, {
-        timezone: "Asia/Shanghai",
+        timezone: "UTC",
       });
     });
     createRouteMocks(context).clerk.session(
@@ -945,93 +601,21 @@ test.each(scenarios)(
       return accept<Awaited<typeof request>, 200>(request, [200]);
     });
     expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
-    // Official schedules serve an owner with a recent manual Run.
+    // Platform schedules serve an owner with a recent manual Run.
     await startOwnerChat(owned);
     const feedback = await prepareWorkflowFeedback(owned, definitionName);
     createRouteMocks(context).clerk.session(actor.userId, orgId, actor.orgRole);
-    const workflows = await owned.run(() => {
-      return accept(
-        app(workflowsCollectionContract).list({ headers, query: {} }),
-        [200],
-      );
-    });
-    await expectSharedProactiveSchedules(owned, workflows.body, true);
-    const workflow = workflows.body.find((item) => {
-      return item.official?.definitionName === definitionName;
-    });
-    if (!workflow) {
-      throw new Error("Expected the Official workflow installation");
-    }
-    const selectedWorkflowId = workflow.id;
-    const detail = await owned.run(() => {
-      return accept(
-        app(workflowsDetailContract).get({
-          headers,
-          params: { workflowId: workflow.id },
-        }),
-        [200],
-      );
-    });
-    expect(detail.body.instruction).toBe("");
-    expect(detail.body.fileContents).toStrictEqual([]);
-    const automations = await owned.run(() => {
-      return accept(
-        app(workflowAutomationsContract).list({
-          headers,
-          params: { workflowId: workflow.id },
-        }),
-        [200],
-      );
-    });
-    const automation = automations.body[0];
-    if (!automation) {
-      throw new Error("Expected the Official workflow automation");
-    }
-    if (!automation.nextRunAt) {
-      throw new Error("Expected the next Official workflow schedule");
-    }
-    const schedule = expectBuiltinCronSchedule(automation, learning);
-    // Feedback setup may finish after this occurrence becomes due.
-    const dispatchedAt = Math.max(now(), Date.parse(automation.nextRunAt));
-    await withMockNowForTest(dispatchedAt, async () => {
-      await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
-      await owned.run(() => {
-        return accept(
-          app(cronExecuteWorkflowAutomationsContract).execute({
-            headers: cronHeaders,
-          }),
-          [200],
-        );
-      });
-      await owned.run(flushWaitUntilForTest);
-    });
-    const current = await owned.run(() => {
-      return accept(
-        app(workflowAutomationsContract).get({
-          headers,
-          params: { id: automation.id },
-        }),
-        [200],
-      );
-    });
-    const chatThreadId = current.body.chatThreadId;
-    if (!chatThreadId) {
-      throw new Error("Expected the Official workflow execution thread");
-    }
-    const events = await owned.run(() => {
-      return createChatFilesBddApi(context).listThreadEventRows(
-        actor,
-        chatThreadId,
-      );
-    });
-    const launched = events.find((event) => {
-      return event.eventType === "input.prompt" && event.runId;
-    });
-    if (!launched?.runId) {
-      throw new Error("Expected the Official Workflow Run");
-    }
-    const runId = launched.runId;
-    const { execution, sandboxHeaders } = await owned.runExecution(runId);
+    const { execution, sandboxHeaders, runId } = await withMockNowForTest(
+      at,
+      () => {
+        return owned.run(async () => {
+          await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
+          await expect(cron.dispatch()).resolves.toMatchObject({ enqueued: 1 });
+          const runId = await cron.latestRun(actor, heading.slice(2));
+          return { ...(await owned.runExecution(runId)), runId };
+        });
+      },
+    );
     if (learning || curatesSuggestions) {
       const initial = readFeedbackContext(execution.appendSystemPrompt);
       expect(initial).toHaveLength(feedback.initial.length);
@@ -1054,9 +638,8 @@ test.each(scenarios)(
         );
       });
     }
-    const bundle = officialWorkflowBundle(execution, definitionName);
-    expect(bundle.bundle.downloadUrl).toBe(
-      `https://static.vm0.io/workflows/builtin-skills/${bundle.bundle.sha256}.tar.gz`,
+    expect(execution.piSessionId).toBe(
+      execution.cliAgentType === "pi" ? runId : undefined,
     );
     expect(execution.prompt).toContain(heading);
     expectWorkflowInstructions(execution.prompt, definitionName, learning);
@@ -1065,277 +648,198 @@ test.each(scenarios)(
         "# Suggestion source and publishing reference",
       );
     }
-    await withMockNowForTest(dispatchedAt, async () => {
-      await owned.run(() => {
-        return fixture.failChatRun(
-          runId,
+    await withMockNowForTest(at, async () => {
+      await owned.run(async () => {
+        // An older standalone producer can finish with the hidden thread's ID
+        // before its initialization events have been delivered.
+        const threadId = execution.platformEnvironment.OKOU_CHAT_THREAD_ID;
+        if (!threadId) {
+          throw new Error("Expected the proactive Run's chat thread");
+        }
+        expect(threadId).not.toBe(runId);
+        const completed = await fixture.webhooks.requestAgentRunOutputs(
+          {
+            runId,
+            cliAgentType: "pi",
+            cliAgentSessionId: threadId,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
           sandboxHeaders,
-          "Official Workflow inspected",
+          [200],
         );
+        expect(completed.body).toStrictEqual({
+          success: true,
+          status: "completed",
+        });
       });
       await owned.run(flushWaitUntilForTest);
     });
     if (feedback.lifecycle) {
-      await expectSuggestionFeedbackLifecycle(
-        owned,
-        workflow.id,
-        feedback.lifecycle,
-      );
-    }
-    if (definitionName === "morning-brief") {
-      await expectMorningBriefRecovery(owned, automation.id, workflow.id);
-    }
-    await failActiveOfficialRuns(owned, workflows.body, (item) => {
-      return item.id !== selectedWorkflowId && isProactiveProfileWorkflow(item);
-    });
-    await expectSharedProactiveSchedules(owned, workflows.body, false);
-    if (learning) {
-      await owned.run(async () => {
-        const client = app(workflowsDetailContract);
-        const copy = await accept(
-          client.copy({
-            headers,
-            params: { workflowId: workflow.id },
-            body: {},
-          }),
-          [201],
-        );
-        expect(copy.body.official).toBeNull();
-        const detail = await accept(
-          client.get({ headers, params: { workflowId: copy.body.id } }),
-          [200],
-        );
-        expect(detail.body.instruction).toContain(heading);
-        const copied = await accept(
-          app(workflowAutomationsContract).list({
-            headers,
-            params: { workflowId: copy.body.id },
-          }),
-          [200],
-        );
-        expect(copied.body).toMatchObject([{ official: null, schedule }]);
-      });
+      await expectSuggestionFeedbackLifecycle(owned, feedback.lifecycle);
     }
   },
 );
 
-const activityScenarios = Object.freeze([
+test.each([
   {
-    schedules: "Suggestions and Learning",
-    definitionNames: ["agent-suggestions", "proactive-learning"],
-    preferenceContract: proactiveSuggestionsContract,
+    title: "Proactive Learning",
+    hour: 2,
+    minute: 12,
+    contract: proactiveSuggestionsContract,
   },
   {
-    schedules: "Morning Brief",
-    definitionNames: ["morning-brief"],
-    preferenceContract: morningBriefPreferenceContract,
+    title: "Proactive Suggestions",
+    hour: 12,
+    minute: 42,
+    contract: proactiveSuggestionsContract,
   },
-]);
-
-test.each(activityScenarios)(
-  "serves $schedules only within seven days of the owner's manual Run",
-  { timeout: 15_000 },
-  async ({ definitionNames, preferenceContract }) => {
-    mockEnv("CRON_SECRET", "workflow-automation-cron-secret");
+  {
+    title: "Morning Brief",
+    hour: 6,
+    minute: 57,
+    contract: morningBriefPreferenceContract,
+  },
+])(
+  "serves $title only while the member has recent manual activity",
+  async ({ title, hour, minute, contract }) => {
     const app = await setupApp({
       context,
       isolatePg: true,
       routes: [
-        ...cronExecuteWorkflowAutomationsRoutes,
-        ...proactiveSuggestionsRoutes,
+        ...cronProactiveRoutes,
         ...morningBriefPreferenceRoutes,
-        ...workflowAutomationsRoutes,
-        ...workflowsRoutes,
+        ...proactiveSuggestionsRoutes,
       ],
     });
+    const day = 86_400_000;
+    const firstSlot = Date.UTC(2030, 0, 2, hour, minute);
+    mockNow(firstSlot - 30_000);
+    const cron = createProactiveCronApi(context);
+    await cron.activate();
     const fixture = createChatEventsFixture(context);
-    const owned = await publicChatActor(context);
-    installWorkflowVolumeS3Fixture(context);
-    const cronHeaders = {
-      authorization: "Bearer workflow-automation-cron-secret",
-    };
-    const { actor } = owned;
-    await owned.run(() => {
-      return fixture.bdd.completeOnboarding(actor, {
-        timezone: "Asia/Shanghai",
-      });
+    const actor = fixture.bdd.user({
+      orgId: "org_proactive_content",
+      userId: "user_proactive_content3",
     });
-    createRouteMocks(context).clerk.session(
-      actor.userId,
-      actor.orgId,
-      actor.orgRole,
-    );
-    const headers = { authorization: "Bearer clerk-session" };
+    const owned = await publicChatActor(context, { actor });
     await owned.run(() => {
-      const request = app(preferenceContract).update({
+      return fixture.bdd.completeOnboarding(actor, { timezone: "UTC" });
+    });
+    const headers = { authorization: "Bearer clerk-session" };
+    await owned.run(async () => {
+      const request = app(contract).update({
         headers,
         body: { enabled: true },
       });
-      return accept<Awaited<typeof request>, 200>(request, [200]);
+      await accept<Awaited<typeof request>, 200>(request, [200]);
     });
-    const workflows = await owned.run(() => {
-      return accept(
-        app(workflowsCollectionContract).list({ headers, query: {} }),
-        [200],
-      );
+    mockNow(firstSlot);
+    await expect(owned.run(cron.dispatch)).resolves.toMatchObject({
+      enqueued: 0,
+      inactive: 1,
     });
-    const watched = definitionNames.map((name) => {
-      const workflow = workflows.body.find((item) => {
-        return item.official?.definitionName === name;
-      });
-      if (!workflow) {
-        throw new Error(`Expected the ${name} installation`);
-      }
-      return workflow;
-    });
-    async function readSchedules() {
-      const schedules = [];
-      for (const workflow of watched) {
-        const listed = await owned.run(() => {
-          return accept(
-            app(workflowAutomationsContract).list({
-              headers,
-              params: { workflowId: workflow.id },
-            }),
-            [200],
-          );
-        });
-        const schedule = listed.body[0];
-        if (!schedule) {
-          throw new Error("Expected the Official schedule");
-        }
-        schedules.push(schedule);
-      }
-      return schedules;
-    }
-    async function readLaunchedRunIds(threadId: string | null) {
-      if (!threadId) {
-        return [];
-      }
-      const events = await owned.run(() => {
-        return createChatFilesBddApi(context).listThreadEventRows(
-          actor,
-          threadId,
-        );
-      });
-      return events.flatMap((event) => {
-        return event.eventType === "input.prompt" && event.runId
-          ? [event.runId]
-          : [];
-      });
-    }
-    async function dispatch(at: number) {
-      await withMockNowForTest(at, async () => {
-        await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
-        await owned.run(() => {
-          return accept(
-            app(cronExecuteWorkflowAutomationsContract).execute({
-              headers: cronHeaders,
-            }),
-            [200],
-          );
-        });
-        await owned.run(flushWaitUntilForTest);
-      });
-      return await readSchedules();
-    }
-    function latestDue(schedules: readonly WorkflowAutomationSummary[]) {
-      return Math.max(
-        ...schedules.map((schedule) => {
-          if (!schedule.nextRunAt) {
-            throw new Error("Expected the next Official occurrence");
-          }
-          return Date.parse(schedule.nextRunAt);
-        }),
-      );
-    }
-    async function expectSkipped(
-      schedules: readonly WorkflowAutomationSummary[],
-      due: number,
-      launched: readonly (readonly string[])[],
-    ) {
-      for (const [index, schedule] of schedules.entries()) {
-        expect(schedule).toMatchObject({
-          enabled: true,
-          official: { intendedEnabled: true },
-        });
-        expect(Date.parse(schedule.nextRunAt ?? "")).toBeGreaterThan(due);
-        await expect(
-          readLaunchedRunIds(schedule.chatThreadId),
-        ).resolves.toStrictEqual(launched[index] ?? []);
-      }
-    }
-    const day = 86_400_000;
-
-    // An owner without a manual Run receives no occurrence, and the schedule
-    // moves on without pausing their preference.
-    const firstDue = latestDue(await readSchedules());
-    await expectSkipped(await dispatch(firstDue), firstDue, []);
     const preference = await owned.run(() => {
-      const request = app(preferenceContract).get({ headers });
+      const request = app(contract).get({ headers });
       return accept<Awaited<typeof request>, 200>(request, [200]);
     });
     expect(preference.body).toMatchObject({ enabled: true, status: "enabled" });
-
-    // A manual Run brings back the next occurrence.
-    const activeDue = latestDue(await readSchedules());
-    const chattedAt = activeDue - 10 * 60_000;
-    await withMockNowForTest(chattedAt, () => {
-      return startOwnerChat(owned);
+    const activeSlot =
+      firstSlot + (title === "Proactive Suggestions" ? 60 * 60_000 : day);
+    mockNow(activeSlot - 60_000);
+    await startOwnerChat(owned);
+    mockNow(activeSlot);
+    await owned.run(() => {
+      return createRunsApi(context).registerDirectRunner(owned.runnerGroup);
     });
-    const active = await dispatch(activeDue);
-    const launched = [];
-    for (const schedule of active) {
-      launched.push(await readLaunchedRunIds(schedule.chatThreadId));
+    await owned.run(cron.dispatch);
+    const id = await owned.run(() => {
+      return cron.latestRun(actor, title);
+    });
+    const { execution, sandboxHeaders } = await owned.runExecution(id);
+    const resolved = await owned.run(() => {
+      return createFirewallApi(context).requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
+        {
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
+          },
+          firewallBillable: true,
+        },
+        [200],
+      );
+    });
+    expect(resolved.body).toMatchObject({
+      headers: { Authorization: `Bearer ${PROACTIVE_MANAGED_KEY}` },
+      resolvedSecrets: ["OPENROUTER_API_KEY"],
+    });
+    // Report the session the Runner actually received from the standalone cron.
+    const sessionId = execution.piSessionId;
+    const threadId = execution.platformEnvironment.OKOU_CHAT_THREAD_ID;
+    if (!sessionId || !threadId) {
+      throw new Error(
+        "Expected a Pi session and chat thread for the proactive Run",
+      );
     }
-    expect(
-      launched.map((runIds) => {
-        return runIds.length;
-      }),
-    ).toStrictEqual(
-      active.map(() => {
-        return 1;
-      }),
-    );
-    // Platform-paid Official Runs spend from their own managed key.
-    for (const runId of launched.flat()) {
-      const { execution, sandboxHeaders } = await owned.runExecution(runId);
-      await withMockNowForTest(activeDue, async () => {
-        const resolved = await owned.run(() => {
-          return createFirewallApi(context).requestFirewallAuth(
-            { authorization: `Bearer ${execution.firewallToken}` },
+    expect(sessionId).toBe(id);
+    expect(threadId).not.toBe(sessionId);
+    await owned.run(async () => {
+      await fixture.webhooks.requestAgentEvents(
+        {
+          runId: id,
+          events: [
             {
-              authHeaders: {
-                Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
-              },
-              firewallBillable: true,
+              type: "system",
+              subtype: "init",
+              session_id: sessionId,
+              sequenceNumber: 0,
             },
-            [200],
-          );
-        });
-        expect(resolved.body).toMatchObject({
-          headers: { Authorization: `Bearer ${PROACTIVE_MANAGED_KEY}` },
-          resolvedSecrets: ["OPENROUTER_API_KEY"],
-        });
-        await owned.run(() => {
-          return fixture.failChatRun(
-            runId,
-            sandboxHeaders,
-            "Official Run key inspected",
-          );
-        });
-        await owned.run(flushWaitUntilForTest);
+          ],
+        },
+        sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const output = {
+        runId: id,
+        cliAgentType: "pi",
+        cliAgentSessionId: sessionId,
+        cliAgentSessionHistoryDisposition: "native_only",
+      } as const;
+      await fixture.webhooks.requestAgentRunOutputs(
+        { ...output, cliAgentSessionId: threadId },
+        sandboxHeaders,
+        [400],
+      );
+      const complete = await fixture.webhooks.requestAgentRunOutputs(
+        output,
+        sandboxHeaders,
+        [200],
+      );
+      expect(complete.body).toStrictEqual({
+        success: true,
+        status: "completed",
       });
-    }
-    await withMockNowForTest(activeDue, () => {
-      return failActiveOfficialRuns(owned, workflows.body, (item) => {
-        return item.official !== null;
+      const replay = await fixture.webhooks.requestAgentRunOutputs(
+        output,
+        sandboxHeaders,
+        [200],
+      );
+      expect(replay.body).toStrictEqual(complete.body);
+      await expect(fixture.api.readRun(actor, id)).resolves.toMatchObject({
+        status: "completed",
+        result: { framework: "pi", frameworkSessionId: sessionId },
       });
     });
-
-    // Scheduled Runs do not count as activity: one week after the manual Run,
-    // fresh occurrences are skipped again.
-    const lapsedDue = latestDue(await dispatch(chattedAt + 7 * day + 60_000));
-    await expectSkipped(await dispatch(lapsedDue), lapsedDue, launched);
+    await owned.run(flushWaitUntilForTest);
+    mockNow(activeSlot + 7 * day);
+    await owned.run(cron.dispatch);
+    mockNow(activeSlot + 8 * day);
+    const lapsed = await owned.run(cron.dispatch);
+    expect(lapsed).toMatchObject({ enqueued: 0 });
+    await expect(
+      owned.run(() => {
+        return cron.latestRun(actor, title);
+      }),
+    ).resolves.toBe(id);
   },
 );

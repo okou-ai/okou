@@ -45,6 +45,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -103,6 +104,75 @@ class WorkspaceSearchScreenTest {
         field.assertIsFocused()
         assertEquals(bounds, field.getUnclippedBoundsInRoot())
         assertSurface()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun messageMatchStaysVisibleInTwoLinesAtLargeFontScale() {
+        val keyword = "发布排期图"
+        val content = "背景".repeat(15) + keyword + "已更新"
+        val start = content.indexOf(keyword)
+        val hit = SearchMessageHit("chat", 23L, content, listOf(start until start + keyword.length))
+        val search = ChatSearchState(TextFieldValue(keyword), type = WorkspaceSearchType.Messages)
+        val chat =
+            ConfirmedChat(
+                id = "chat",
+                title = "Release checklist",
+                sortAt = "2026-11-26T00:00:00Z",
+                createdAt = "2026-11-26T00:00:00Z",
+                updatedAt = "2026-11-26T00:00:00Z",
+                pinnedAt = null,
+                archived = false,
+                renamedAt = null,
+            )
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalDensity provides Density(LocalDensity.current.density, 2f),
+            ) {
+                OkouTheme(false) {
+                    Box(Modifier.width(288.dp)) {
+                        WorkspaceSearchScreen(
+                            state =
+                                ChatListUiState(confirmedAt = 1, threadsByRecency = listOf(chat)),
+                            search = search,
+                            widthDp = 288,
+                            listWidth = null,
+                            focusOnEntry = false,
+                            onFocused = {},
+                            onClose = {},
+                            onOpen = {},
+                            remote = WorkspaceSearchResults(keyword, SearchRead.Ready(listOf(hit))),
+                        )
+                    }
+                }
+            }
+        }
+
+        val excerpt =
+            compose.onNode(
+                hasText(keyword, substring = true) and
+                    hasAnyAncestor(hasTestTag("chat_search_results")),
+                useUnmergedTree = true,
+            )
+        val layouts = mutableListOf<TextLayoutResult>()
+        excerpt.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val layout = layouts.single()
+        val text = layout.layoutInput.text
+        val match = text.text.indexOf(keyword)
+        assertTrue(layout.lineCount in 1..2)
+        assertTrue(
+            match + keyword.length <= layout.getLineEnd(layout.lineCount - 1, visibleEnd = true),
+        )
+        assertEquals(13.sp, layout.layoutInput.style.fontSize)
+        assertEquals(20.sp, layout.layoutInput.style.lineHeight)
+        val style = text.spanStyles.single()
+        assertEquals(match, style.start)
+        assertEquals(match + keyword.length, style.end)
+        assertEquals(FontWeight(650), style.item.fontWeight)
+        assertEquals(
+            resolvePalette(UserPreferencesColorTheme.DEFAULT, false).onSurface,
+            style.item.color,
+        )
     }
 
     @Test

@@ -133,10 +133,3 @@ export function priceUsageEvents(
   }
   return pricedEvents;
 }
-
-export function isPlatformPaidPolicy(
-  policy:
-    typeof billingRunAttribution.$inferSelect.creditChargePolicy | undefined,
-) {
-  return policy === "platform_proactive" || policy === "official_workflow_free";
-}

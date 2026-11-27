@@ -1,6 +1,6 @@
-import { storedTemplateGuidanceBundleSchema } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import type { PreparedExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import {
+  runContextResponseSchema,
   runContextStorageMountSchema,
   type RunContextResponse,
   type RunContextStorageMount,
@@ -687,9 +687,10 @@ export function normalizeRunContextSnapshot(
     snapshot.templateGuidanceBundles === null
       ? {}
       : {
-          templateGuidanceBundles: array(
-            storedTemplateGuidanceBundleSchema,
-          ).parse(snapshot.templateGuidanceBundles),
+          templateGuidanceBundles:
+            runContextResponseSchema.shape.templateGuidanceBundles
+              .unwrap()
+              .parse(snapshot.templateGuidanceBundles),
         }),
     featureFlags: featureFlagsFromEntries(snapshot.featureFlagEntries),
   };

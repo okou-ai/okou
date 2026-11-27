@@ -23,7 +23,7 @@ import type {
   InternalRunCallbackEnvelope,
   InternalRunCallbackKind,
 } from "./internal-run-callback";
-import { settleMorningBriefScheduleForRun$ } from "./morning-brief-schedule-claim.service";
+import { settleMorningBriefScheduleForRun$ } from "./legacy-morning-brief-settlement.service";
 import {
   automationCronCallbackPayloadSchema,
   type AutomationCronCallbackPayload,

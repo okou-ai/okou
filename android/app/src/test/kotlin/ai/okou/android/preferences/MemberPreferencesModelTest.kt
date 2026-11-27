@@ -769,7 +769,7 @@ class MemberPreferencesModelTest {
             model.selectTheme(UserPreferencesTheme.LIGHT)
             runCurrent()
             assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
-            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.appearance.theme)
+            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.localSnapshot.theme)
             assertEquals(UserPreferencesTheme.DARK, model.uiState.value.confirmed.theme)
             assertNull(model.uiState.value.pending)
             val notice = model.notices.value as PreferenceSaveNotice.Rejected

@@ -1,3 +1,4 @@
+import { processHostedDomainChecks$ } from "../services/hosted-domain-verification-jobs.service";
 import { recoverLinkApprovalWorkflows$ } from "../services/link-approval-workflow.service";
 import { command } from "ccstate";
 import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
@@ -57,6 +58,7 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
     rewardEvents,
     rewardProjections,
     invitationObservations,
+    domainChecks,
   ] = await Promise.all([
     set(executeDurableUserExportWork$, {}, workSignal),
     set(executeOnboardingRecommendationWork$, { maxJobs: 1 }, workSignal),
@@ -65,6 +67,7 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
     set(deliverMarketingRewardEvents$, {}, workSignal),
     set(deliverMarketingRewardProjections$, workSignal),
     set(captureMarketingInvitationAuthority$, {}, workSignal),
+    set(processHostedDomainChecks$, workSignal),
   ]);
   signal.throwIfAborted();
   return {
@@ -77,7 +80,8 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
         attachments +
         rewardEvents.processed +
         rewardProjections +
-        invitationObservations.processed,
+        invitationObservations.processed +
+        domainChecks,
       cleaned: cleanedExports.processed + cleanedRecommendations.processed,
     },
   };

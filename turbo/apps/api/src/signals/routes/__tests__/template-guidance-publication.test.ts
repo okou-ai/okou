@@ -552,22 +552,18 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
     {
       framework: "claude-code",
       model: "claude-fable-5-1",
-      memoryMountPath:
-        "/home/user/.claude/projects/-home-user-workspace/memory",
     },
     {
       framework: "codex",
       model: "gpt-6-luna",
-      memoryMountPath: "/home/user/.codex/memories",
     },
     {
       framework: "pi",
       model: "gpt-6-luna",
-      memoryMountPath: "/home/user/.pi/agent/memory",
     },
   ] as const)(
     "captures $framework guidance at dispatch and rejects later selection of a deleted template",
-    async ({ framework, model, memoryMountPath }) => {
+    async ({ framework, model }) => {
       const owner = await publicChatActor(context);
       owner.ownsFeatureSwitches();
       await owner.run(async () => {
@@ -638,7 +634,7 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
       expect(
         first.execution.startupInputs.contentBundles.templates?.[0]
           ?.beforeMountPaths,
-      ).toStrictEqual([memoryMountPath]);
+      ).toStrictEqual([]);
       await owner.run(() => {
         return remove(kind, id);
       });

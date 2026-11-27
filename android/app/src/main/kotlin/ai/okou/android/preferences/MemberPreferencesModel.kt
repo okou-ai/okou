@@ -134,8 +134,15 @@ data class MemberPreferencesState(
     val theme: UserPreferencesTheme
         get() = pending?.theme ?: localTheme ?: confirmed.theme ?: UserPreferencesTheme.SYSTEM
 
-    internal val appearance: MemberAppearance
-        get() = MemberAppearance(theme, colorTheme)
+    internal val localSnapshot: CachedMemberPreferences
+        get() =
+            CachedMemberPreferences(
+                theme,
+                colorTheme,
+                locale = confirmed.locale?.let(::supportedLocale),
+                timezone = confirmed.timezone,
+                cloudBrowser = confirmed.cloudBrowserEnabledByDefault,
+            )
 
     val timezone: String
         get() = pending?.timezone ?: checkNotNull(confirmed.timezone)
@@ -152,9 +159,10 @@ data class MemberPreferencesState(
         get() = confirmed.supportedLocales.map { UserPreferencesLocale.valueOf(it.name) }
 
     val locale: UserPreferencesLocale
-        get() =
-            (pending?.locale ?: checkNotNull(confirmed.locale)).takeIf { it in supportedLocales }
-                ?: UserPreferencesLocale.EN_US
+        get() = supportedLocale(pending?.locale ?: checkNotNull(confirmed.locale))
+
+    private fun supportedLocale(locale: UserPreferencesLocale): UserPreferencesLocale =
+        locale.takeIf { it in supportedLocales } ?: UserPreferencesLocale.EN_US
 }
 
 private fun MemberPreferencesState.afterTimezoneConflict(

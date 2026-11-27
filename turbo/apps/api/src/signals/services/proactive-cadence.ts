@@ -1,14 +1,8 @@
 import { createHash } from "node:crypto";
-interface OfficialScheduleOwner {
-  readonly orgId: string;
-  readonly userId: string;
-}
+import type { ProactiveScheduleOwner } from "./proactive-member-preferences.service";
 
-/**
- * Stable per-owner shard shared by Official schedules. Proactive Suggestions
- * repeats the same digest in SQL to page its owners by minute.
- */
-export function officialScheduleOwnerHash(owner: OfficialScheduleOwner) {
+/** All three platform schedules retain their original per-member minute. */
+export function proactiveScheduleOwnerHash(owner: ProactiveScheduleOwner) {
   return Number.parseInt(
     createHash("sha256")
       .update(`${owner.orgId}/${owner.userId}`)
@@ -24,12 +18,12 @@ export function officialScheduleOwnerHash(owner: OfficialScheduleOwner) {
  * same instant. The 15-minute shift keeps it at least 15 minutes away from the
  * owner's hourly Proactive Suggestions minute in whole-hour time zones.
  */
-export function morningBriefCronExpression(owner: OfficialScheduleOwner) {
-  const minute = 30 + ((officialScheduleOwnerHash(owner) + 15) % 30);
+export function morningBriefCronExpression(owner: ProactiveScheduleOwner) {
+  const minute = 30 + ((proactiveScheduleOwnerHash(owner) + 15) % 30);
   return `${minute} 6 * * *`;
 }
 
 /** Suggestions is sharded by owner in UTC, including owners without a timezone. */
-export function hourlySuggestionsCron(owner: OfficialScheduleOwner) {
-  return `${officialScheduleOwnerHash(owner) % 60} * * * *`;
+export function hourlySuggestionsCron(owner: ProactiveScheduleOwner) {
+  return `${proactiveScheduleOwnerHash(owner) % 60} * * * *`;
 }

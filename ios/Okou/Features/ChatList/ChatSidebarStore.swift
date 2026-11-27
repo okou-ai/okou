@@ -107,7 +107,8 @@ final class ChatSidebarStore {
   let stateStore: CCState.Store
   private let selection = CCState.State(ChatListFilter.recent)
   private let lifetime = CCState.State(true)
-  private let selectFilter: Command<Void, ChatListFilter>
+  private let selectFilter: Command<Bool, ChatListFilter>
+  private let didChangeFilter: @MainActor () -> Void
   private let retire: Command<Void, Void>
   let contents: Computed<ChatListContents>
   let presentation: Computed<ChatSidebarPresentation>
@@ -115,14 +116,16 @@ final class ChatSidebarStore {
 
   init(
     store: CCState.Store, threads: Signal<[ChatThread]>,
-    projects: Signal<[ChatProject]>
+    projects: Signal<[ChatProject]>, didChangeFilter: @escaping @MainActor () -> Void = {}
   ) {
+    self.didChangeFilter = didChangeFilter
     stateStore = store
     let selection = selection
     let lifetime = lifetime
     selectFilter = Command { context, value in
-      guard try context.get(lifetime), try context.get(selection) != value else { return }
+      guard try context.get(lifetime), try context.get(selection) != value else { return false }
       try context.set(selection, value)
+      return true
     }
     retire = Command { context in
       guard try context.get(lifetime) else { return }
@@ -159,7 +162,9 @@ final class ChatSidebarStore {
   }
 
   func select(_ filter: ChatListFilter) {
-    do { try stateStore.set(selectFilter, filter) } catch {
+    do {
+      if try stateStore.set(selectFilter, filter) { didChangeFilter() }
+    } catch {
       preconditionFailure("Cannot select the local sidebar filter: \(error)")
     }
   }

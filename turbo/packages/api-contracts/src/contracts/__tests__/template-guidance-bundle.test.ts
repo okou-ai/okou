@@ -55,6 +55,12 @@ describe("template guidance execution and retained context", () => {
         mountPath: "/home/user",
       }).success,
     ).toBe(false);
+    expect(
+      storedTemplateGuidanceBundleSchema.safeParse({
+        ...template,
+        templateId: "../../escape",
+      }).success,
+    ).toBe(false);
     const reference = {
       ...template,
       downloadUrl: "https://example.test/archive",
@@ -97,11 +103,19 @@ describe("template guidance execution and retained context", () => {
     expect(runContextArchiveSchema.parse(context)).not.toHaveProperty(
       "templateGuidanceBundles",
     );
+    const { beforeMountPaths: _beforeMountPaths, ...bundle } = template;
+    const withoutAnchors = {
+      ...bundle,
+      templateId: "f0fbad48-3d7f-4468-83d1-221e9a27a1a9",
+    };
     const parsed = runContextArchiveSchema.parse({
       ...context,
-      templateGuidanceBundles: [template],
+      templateGuidanceBundles: [template, withoutAnchors],
     });
-    expect(parsed.templateGuidanceBundles).toEqual([template]);
+    expect(parsed.templateGuidanceBundles).toStrictEqual([
+      template,
+      withoutAnchors,
+    ]);
     expect(parsed.storageMounts).toEqual([]);
   });
 });

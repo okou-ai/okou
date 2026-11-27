@@ -1,3 +1,4 @@
+import { isPlatformPaidPolicy } from "./platform-paid-run.service";
 import {
   usageSnapshotCondition,
   type PendingUsageSnapshot,
@@ -11,11 +12,10 @@ import { and, eq, sql } from "drizzle-orm";
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import { LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS } from "./credit-low-balance-threshold";
-import {
-  isPlatformPaidPolicy,
-  type PricedUsageEvent,
-  type ProcessOrgUsageEventsResult,
-  type SettlementWorkObservation,
+import type {
+  PricedUsageEvent,
+  ProcessOrgUsageEventsResult,
+  SettlementWorkObservation,
 } from "./credit-usage-pricing";
 
 function initialSettlementObservation(): SettlementWorkObservation {

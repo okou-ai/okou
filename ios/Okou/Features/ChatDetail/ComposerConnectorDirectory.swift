@@ -6,12 +6,10 @@ import SwiftUI
 struct ComposerConnectorDirectory: View {
   let store: ComposerConnectorStore
   let resources: ComposerConnectorDirectoryResources
-  var showsCustom = true
 
   var body: some View {
     StoreProvider(resources.store) {
-      ComposerConnectorDirectoryContent(
-        store: store, resources: resources, showsCustom: showsCustom)
+      ComposerConnectorDirectoryContent(store: store, resources: resources)
     }
   }
 }
@@ -19,20 +17,20 @@ struct ComposerConnectorDirectory: View {
 private struct ComposerConnectorDirectoryContent: View {
   let store: ComposerConnectorStore
   let resources: ComposerConnectorDirectoryResources
-  let showsCustom: Bool
   @LoadableValue private var selection: Loadable<ComposerConnectorDirectoryResources.Selection>
+  @LoadableValue private var catalog: Loadable<ChatConnectorDiscovery>
+  @LoadableStatus<ChatConnectorDiscovery> private var catalogStatus: LoadableState
   /// The composer's confirmed connectors and remote access, kept in the session Store.
   @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
   /// The web page a connector action opened, kept in the same Store.
   @ResolvedValue private var connectorStatus: ComposerConnectorStore.Status?
 
-  init(
-    store: ComposerConnectorStore, resources: ComposerConnectorDirectoryResources, showsCustom: Bool
-  ) {
+  init(store: ComposerConnectorStore, resources: ComposerConnectorDirectoryResources) {
     self.store = store
     self.resources = resources
-    self.showsCustom = showsCustom
     _selection = LoadableValue(resources.selection)
+    _catalog = LoadableValue(task: resources.catalog, keepLast: true)
+    _catalogStatus = LoadableStatus(task: resources.catalog)
     _resolvedSnapshot = ResolvedValue(store.snapshotValue)
     _connectorStatus = ResolvedValue(store.statusValue)
   }
@@ -57,33 +55,11 @@ private struct ComposerConnectorDirectoryContent: View {
   private func content(_ selection: ComposerConnectorDirectoryResources.Selection) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: OkouSpace.lg) {
-        if showsCustom {
-          OkouSegmentControl(
-            selection: Binding(
-              get: { selection.tab },
-              set: { tab in
-                resources.update(tab: tab)
-              }),
-            options: [(.discover, "Discover"), (.custom, "Custom")]
-          )
-          .padding(.horizontal, OkouSpace.lg)
-        }
-        if selection.tab == .discover {
-          ConnectorDirectoryRead(signal: resources.catalog) { value, isLoading in
-            discover(value, selection: selection, isLoading: isLoading)
-          }
-        } else {
-          ConnectorDirectoryRead(signal: resources.customMatches) { value, isLoading in
-            custom(value, selection: selection, isLoading: isLoading)
-          }
-          remoteAccess
-        }
+        discover(selection)
       }
       .padding(.bottom, OkouSpace.xxl)
     }
     .okouGroupedBackground(OkouColor.background)
-    .navigationTitle(showsCustom ? "Add connectors" : "Connectors")
-    .navigationBarTitleDisplayMode(.inline)
     .searchable(
       text: Binding(
         get: { selection.search },
@@ -98,15 +74,16 @@ private struct ComposerConnectorDirectoryContent: View {
     }
   }
 
-  @ViewBuilder private func discover(
-    _ value: Loadable<ChatConnectorDiscovery>,
-    selection: ComposerConnectorDirectoryResources.Selection, isLoading: Bool
-  ) -> some View {
-    switch value {
+  @ViewBuilder private func discover(_ selection: ComposerConnectorDirectoryResources.Selection)
+    -> some View
+  {
+    switch catalog {
     case .loading:
       ComposerConnectorDirectorySkeleton()
     case .hasError(let error):
-      ConnectorLoadError(error: ChatRequestFailure.message(for: error), isLoading: isLoading) {
+      ConnectorLoadError(
+        error: ChatRequestFailure.message(for: error), isLoading: catalogStatus == .loading
+      ) {
         await resources.refresh()
       }
       .padding(.horizontal, OkouSpace.lg)
@@ -129,30 +106,10 @@ private struct ComposerConnectorDirectoryContent: View {
         ForEach(result.connectors) { catalogCard($0) }
       }
       .padding(.horizontal, OkouSpace.lg)
-      if result.connectors.isEmpty { emptyState(selection) }
-    }
-  }
-
-  @ViewBuilder private func custom(
-    _ value: Loadable<[ChatCustomConnector]>,
-    selection: ComposerConnectorDirectoryResources.Selection, isLoading: Bool
-  ) -> some View {
-    LazyVStack(spacing: OkouSpace.sm) {
-      switch value {
-      case .loading:
-        customCards([])
-        ProgressView().frame(maxWidth: .infinity).padding(.top, OkouSpace.xxl)
-      case .hasError(let error):
-        ConnectorLoadError(error: ChatRequestFailure.message(for: error), isLoading: isLoading) {
-          await resources.refresh()
-        }
-        customCards([])
-      case .hasData(let connectors):
-        customCards(connectors)
-        if connectors.isEmpty { emptyState(selection) }
+      if result.connectors.isEmpty && !selection.search.isEmpty {
+        OkouEmptyState("No results", icon: "search", description: Text("Try another search."))
       }
     }
-    .padding(.horizontal, OkouSpace.lg)
   }
 
   private func catalogCard(_ connector: ChatCatalogConnector) -> some View {
@@ -205,106 +162,6 @@ private struct ComposerConnectorDirectoryContent: View {
     .padding(.vertical, OkouSpace.md)
     .modifier(OkouSurfaceStyle())
   }
-
-  @ViewBuilder private func customCards(_ connectors: [ChatCustomConnector]) -> some View {
-    Button {
-      store.openWeb(path: "connectors", query: [URLQueryItem(name: "scope", value: "custom")])
-    } label: {
-      customCard(title: Text("Create custom connector"), icon: "plus", trailing: "arrow-up-right")
-    }
-    .buttonStyle(.plain)
-    ForEach(connectors, id: \.id) { connector in
-      Button {
-        if connector.managed || connector.permissionBundleRef != nil {
-          openConnector(connector.slug)
-        } else {
-          store.connect(target: .custom(connector.id))
-        }
-      } label: {
-        customCard(title: Text(connector.displayName), icon: "puzzle", trailing: nil)
-      }
-      .buttonStyle(.plain)
-    }
-  }
-
-  private var remoteAccess: some View {
-    VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      Text("Remote access").okouSectionHeader()
-        .padding(.top, OkouSpace.sm)
-      Button {
-        store.setupRemote(.ssh)
-      } label: {
-        customCard(title: Text("Set up SSH"), icon: "terminal", trailing: "chevron-right")
-      }
-      .buttonStyle(.plain)
-      Button {
-        store.setupRemote(.vnc)
-      } label: {
-        customCard(title: Text("Set up VNC"), icon: "monitor", trailing: "chevron-right")
-      }
-      .buttonStyle(.plain)
-    }
-    .padding(.horizontal, OkouSpace.lg)
-  }
-
-  private func customCard(title: Text, icon: String, trailing: String?) -> some View {
-    HStack(spacing: OkouSpace.md) {
-      OkouLogoTile(size: OkouControl.logoTile) {
-        OkouIcon(icon, size: OkouIconSize.standard).foregroundStyle(OkouColor.mutedForeground)
-      }
-      title
-        .font(.okou(.body).weight(.medium))
-        .foregroundStyle(OkouColor.foreground)
-        .lineLimit(1)
-      Spacer(minLength: 0)
-      if let trailing {
-        OkouIcon(trailing, size: OkouIconSize.inline)
-          .foregroundStyle(OkouColor.mutedForeground)
-          .accessibilityHidden(true)
-      }
-    }
-    .padding(.horizontal, OkouSpace.lg)
-    .padding(.vertical, OkouSpace.md)
-    .modifier(OkouSurfaceStyle())
-    .contentShape(Rectangle())
-  }
-
-  @ViewBuilder private func emptyState(_ selection: ComposerConnectorDirectoryResources.Selection)
-    -> some View
-  {
-    if !selection.search.isEmpty {
-      OkouEmptyState(
-        "No results", icon: "search", description: Text("Try another search."))
-    } else if selection.tab == .custom {
-      OkouEmptyState(
-        "No custom connectors yet", icon: "puzzle",
-        description: Text("Add your own MCP server or API on the web, then use it here."))
-    }
-  }
-
-  private func openConnector(_ slug: String) {
-    store.openWeb(
-      path: "connectors/\(slug)/connect")
-  }
-
-}
-
-/// Both native phase projections observe the same cached request Task.
-private struct ConnectorDirectoryRead<Value: Sendable, Content: View>: View {
-  @LoadableValue private var value: Loadable<Value>
-  @LoadableStatus<Value> private var status: LoadableState
-  let content: (Loadable<Value>, Bool) -> Content
-
-  init(
-    signal: Computed<Task<Value, Error>>,
-    @ViewBuilder content: @escaping (Loadable<Value>, Bool) -> Content
-  ) {
-    _value = LoadableValue(task: signal, keepLast: true)
-    _status = LoadableStatus(task: signal)
-    self.content = content
-  }
-
-  var body: some View { content(value, status == .loading) }
 }
 
 /// A connector's page in the manner of Manus: the mark, name and what it does on one card,

@@ -688,6 +688,46 @@ private val workspaceSearchMarkdownParser by lazy {
         .build()
 }
 
+internal fun workspaceSearchMarkdownExcerpt(
+    source: String,
+    ranges: List<IntRange>,
+): SearchMessageExcerpt {
+    val document = workspaceSearchMarkdownParser.parse(source)
+    val orderedRanges = ranges.sortedBy { it.last }
+    val first = orderedRanges.firstOrNull()
+    val initial = first?.let { document.searchExcerptAt(source, orderedRanges, it) }
+    if (first != null) {
+        if (initial?.sourceRange == first) return initial
+        val readable = document.firstReadableSearchRange(source, orderedRanges)
+        if (readable != null) {
+            val excerpt = document.searchExcerptAt(source, orderedRanges, readable)
+            if (excerpt?.sourceRange == readable) return excerpt
+        }
+    }
+    val context =
+        initial?.text
+            ?: document
+                .children()
+                .firstNotNullOfOrNull {
+                    it.searchExcerpt(source, emptyList()).text.takeIf(String::isNotBlank)
+                }
+                .orEmpty()
+    return SearchMessageExcerpt(context, emptyList(), first)
+}
+
+private fun Node.searchExcerptAt(
+    source: String,
+    ranges: List<IntRange>,
+    anchor: IntRange,
+): SearchMessageExcerpt? {
+    val (_, block) = workspaceSearchReadingBlock(anchor) ?: return null
+    val escapes = block.tablePipeEscapes(source)
+    val image = block.markdownImages().containingMatch(anchor, escapes)?.value
+    val description = image?.searchExcerpt(source, ranges, escapes)
+    if (description != null && description.text.isNotBlank()) return description
+    return block.searchExcerpt(source, ranges, escapes).takeIf { it.text.isNotBlank() }
+}
+
 internal fun HistoryMessage.workspaceSearchTarget(
     range: IntRange?,
     inlineImages: Boolean,
@@ -704,23 +744,34 @@ internal fun HistoryMessage.workspaceSearchTarget(
     if (prefix < 0 || range.last >= source.length - prefix) return ConversationFindTarget(id, null)
     val sourceMatch = (prefix + range.first)..(prefix + range.last)
     val document = workspaceSearchMarkdownParser.parse(source)
-    val (index, node) =
-        document.children().containingMatch(sourceMatch) ?: return ConversationFindTarget(id, null)
-    val (path, block) = node.matchedReadingBlock(index.toString(), sourceMatch)
+    val (path, block) =
+        document.workspaceSearchReadingBlock(sourceMatch) ?: return ConversationFindTarget(id, null)
     if (block is LinkReferenceDefinition) return ConversationFindTarget(id, null)
     val imagePath =
         if (inlineImages && "![" in source && block !is ListBlock && block !is TableBlock) {
-            block.markdownImages().containingMatch(sourceMatch)?.let { "$path/${it.index}" }
+            block
+                .markdownImages()
+                .containingMatch(sourceMatch, block.tablePipeEscapes(source))
+                ?.let { "$path/${it.index}" }
         } else null
     return ConversationFindTarget(id, path, bodyIndex = 0, markdownImage = imagePath)
 }
 
-private fun Sequence<Node>.containingMatch(range: IntRange): IndexedValue<Node>? =
+private fun Node.workspaceSearchReadingBlock(range: IntRange): Pair<String, Node>? =
+    children().containingMatch(range)?.let { (index, node) ->
+        node.matchedReadingBlock(index.toString(), range)
+    }
+
+private fun Sequence<Node>.containingMatch(
+    range: IntRange,
+    escapes: List<Int> = emptyList(),
+): IndexedValue<Node>? =
     withIndex().firstOrNull { (_, node) ->
         val spans = node.sourceSpans
         val first = spans.firstOrNull() ?: return@firstOrNull false
         val last = spans.last()
-        range.first >= first.inputIndex && range.last < last.inputIndex + last.length
+        range.first >= escapes.originalMarkdownIndex(first.inputIndex) &&
+            range.last < escapes.originalMarkdownIndex(last.inputIndex + last.length)
     }
 
 private fun Node.matchedReadingBlock(path: String, range: IntRange): Pair<String, Node> {

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.15...runner-executor-v0.24.16) (2026-11-27)
+
+## [0.24.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.14...runner-executor-v0.24.15) (2026-11-27)
+
+
+### Bug Fixes
+
+* **runner:** continue on reused home storage path conflicts ([#51209](https://github.com/okou-ai/okou/issues/51209)) ([3b5b850](https://github.com/okou-ai/okou/commit/3b5b850feefe88f6001e7ea90a8dcf48e20d568e))
+
 ## [0.24.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.13...runner-executor-v0.24.14) (2026-11-27)
 
 ## [0.24.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.12...runner-executor-v0.24.13) (2026-11-26)

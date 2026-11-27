@@ -1,3 +1,4 @@
+import { createProactiveCronApi } from "./helpers/proactive-cron";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactReferencePath } from "@okouai/api-contracts/validators/artifact-references";
@@ -19,11 +20,6 @@ import {
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
-import {
-  workflowAutomationsContract,
-  workflowsCollectionContract,
-} from "@okouai/api-contracts/contracts/workflows";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { hostRoutes } from "../host";
@@ -32,7 +28,7 @@ import { uploadsMultipartRoutes } from "../uploads-multipart";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
@@ -40,9 +36,6 @@ import { artifactCatalogRoutes } from "../artifact-catalog";
 import { sharedThreadRoutes } from "../shared-threads";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
-import { workflowsRoutes } from "../workflows";
 import {
   createBddApi,
   expectApiError,
@@ -59,7 +52,6 @@ import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
-import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -744,18 +736,14 @@ describe("GET /api/artifacts/catalog", () => {
     await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
   });
 
-  it("keeps artifacts from a hidden Official conversation without disclosing its source", async () => {
+  it("keeps artifacts from a hidden Morning Brief conversation without disclosing its source", async () => {
     // The production schedule trigger scans all owners, so this case owns its DB.
     const client = await setupApp({
       context,
       isolatePg: true,
-      routes: [
-        ...morningBriefPreferenceRoutes,
-        ...workflowsRoutes,
-        ...workflowAutomationsRoutes,
-        ...cronExecuteWorkflowAutomationsRoutes,
-      ],
+      routes: morningBriefPreferenceRoutes,
     });
+    mockNow(Date.UTC(2030, 0, 1, 4));
     const owner = await catalogActor("Hidden source owner");
     await bdd.updateUserTimezone(owner.actor, "UTC");
     // Official schedules serve owners who have recently started a manual Run.
@@ -764,7 +752,6 @@ describe("GET /api/artifacts/catalog", () => {
     });
     const manualExecution = await runExecution(owner.runnerGroup, manual.runId);
     await completeChatRunOk(manual.runId, manualExecution.sandboxHeaders);
-    installWorkflowVolumeS3Fixture(context, undefined, { bundlesOnly: true });
     const headers = authenticateSharedThread(owner.actor);
     await accept(
       client(morningBriefPreferenceContract).update({
@@ -773,65 +760,23 @@ describe("GET /api/artifacts/catalog", () => {
       }),
       [200],
     );
-    const workflows = await accept(
-      client(workflowsCollectionContract).list({ headers, query: {} }),
-      [200],
-    );
-    const workflow = workflows.body.find((item) => {
-      return item.official?.definitionName === "morning-brief";
-    });
-    if (!workflow) {
-      throw new Error("Expected the installed Morning Brief workflow");
-    }
-    const schedules = await accept(
-      client(workflowAutomationsContract).list({
-        headers,
-        params: { workflowId: workflow.id },
-      }),
-      [200],
-    );
-    const schedule = schedules.body[0];
-    if (!schedule?.nextRunAt) {
-      throw new Error("Expected the Morning Brief schedule");
-    }
-    mockEnv("CRON_SECRET", "artifact-library-cron-secret");
-    mockNow(new Date(schedule.nextRunAt));
-    // Keep the dispatchable Runner's heartbeat fresh at the scheduled time.
+    const cron = createProactiveCronApi(context);
+    await cron.activate();
+    mockNow(Date.UTC(2030, 0, 1, 6, 59));
     await api.registerDirectRunner(owner.runnerGroup);
-    await accept(
-      client(cronExecuteWorkflowAutomationsContract).execute({
-        headers: { authorization: "Bearer artifact-library-cron-secret" },
-      }),
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const fired = await accept(
-      client(workflowAutomationsContract).get({
-        headers,
-        params: { id: schedule.id },
-      }),
-      [200],
-    );
-    const threadId = fired.body.chatThreadId;
-    if (!threadId) {
-      throw new Error("Expected the scheduled Official conversation");
-    }
-    const events = await chat.listThreadEventRows(owner.actor, threadId);
-    const runId = events.find((event) => {
-      return event.eventType === "input.prompt" && event.runId !== undefined;
-    })?.runId;
-    if (!runId) {
-      throw new Error("Expected the Official automation to launch a Run");
-    }
-    await expect(
-      chat.readThreadMetadata(owner.actor, threadId),
-    ).resolves.toMatchObject({
-      hidden: true,
-    });
+    await cron.dispatch();
+    const runId = await cron.latestRun(owner.actor, "Morning Brief");
     const { execution, sandboxHeaders } = await runExecution(
       owner.runnerGroup,
       runId,
     );
+    const threadId = execution.platformEnvironment.OKOU_CHAT_THREAD_ID;
+    if (!threadId) {
+      throw new Error("Expected the scheduled Morning Brief conversation");
+    }
+    await expect(
+      chat.readThreadMetadata(owner.actor, threadId),
+    ).resolves.toMatchObject({ hidden: true });
     const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
     const content = "Official morning brief";
     installHostedUploadTransport(context, owner.storage);
@@ -868,6 +813,8 @@ describe("GET /api/artifacts/catalog", () => {
       sandboxHeaders,
       [200],
     );
+    // The terminal webhook settles the Morning Brief schedule in the background.
+    await flushWaitUntilForTest();
     await enableArtifactLibrary(owner.actor);
     const catalog = await chat.listArtifactCatalog(owner.actor, {
       direction: "asc",
@@ -883,13 +830,14 @@ describe("GET /api/artifacts/catalog", () => {
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, catalog.artifacts[0]!.id),
     ).resolves.not.toHaveProperty("sourceChatThreadId");
-    await accept(
+    const disabled = await accept(
       client(morningBriefPreferenceContract).update({
         headers: authenticateSharedThread(owner.actor),
         body: { enabled: false },
       }),
       [200],
     );
+    expect(disabled.body).toMatchObject({ enabled: false, status: "paused" });
   });
 
   it("withdraws the owned object for a historical public file", async () => {
