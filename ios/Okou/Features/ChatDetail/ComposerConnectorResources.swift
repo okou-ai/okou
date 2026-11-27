@@ -21,13 +21,15 @@ final class ComposerConnectorResources {
   private let memberAccessEnabled: @MainActor () -> Bool
   private let sleep: @Sendable (Duration) async throws -> Void
   private let didLoadConnected: @MainActor ([ChatComposerConnector]) -> Void
+  private let didInspect: @MainActor (Set<String>) -> Void
   private let didLoadRemote: @MainActor (Remote) -> Void
   private let didFail: @MainActor (Error) -> Void
   private let options: CCState.State<ChatComposerOptions>
   private let revision = CCState.State(0)
   private let lifetime = CCState.State(true)
   private let reload: Command<Void, ChatComposerOptions>
-  private var connectedTask: Task<[ChatComposerConnector], Error>?
+  private var overviewTask: Task<[ChatComposerConnector], Error>?
+  private var inspectionTask: Task<[ChatComposerConnector], Error>?
   private var remoteTask: Task<Remote, Error>?
   private var closed = false
 
@@ -37,6 +39,7 @@ final class ComposerConnectorResources {
     memberAccessEnabled: @escaping @MainActor () -> Bool,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     didLoadConnected: @escaping @MainActor ([ChatComposerConnector]) -> Void,
+    didInspect: @escaping @MainActor (Set<String>) -> Void,
     didLoadRemote: @escaping @MainActor (Remote) -> Void,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
@@ -47,6 +50,7 @@ final class ComposerConnectorResources {
     self.memberAccessEnabled = memberAccessEnabled
     self.sleep = sleep
     self.didLoadConnected = didLoadConnected
+    self.didInspect = didInspect
     self.didLoadRemote = didLoadRemote
     self.didFail = didFail
     let options = CCState.State(options)
@@ -58,9 +62,9 @@ final class ComposerConnectorResources {
     }
   }
 
-  lazy var connected = makeConnected()
+  lazy var overview = makeOverview()
 
-  private func makeConnected() -> Computed<Task<[ChatComposerConnector], Error>> {
+  private func makeOverview() -> Computed<Task<[ChatComposerConnector], Error>> {
     Computed { [weak self] get, options in
       guard let self, !closed, try get(lifetime) else { throw CancellationError() }
       _ = try get(revision)
@@ -74,7 +78,7 @@ final class ComposerConnectorResources {
             try await service.validate(threadID: threadID)
             try Task.checkCancellation()
             if !includesRemote {
-              return try await service.managedConnectors(memberAccess: memberAccess)
+              return try await service.managedConnectorOverview(memberAccess: memberAccess)
             }
             return try await service.connectors(
               threadID: threadID, options: pending, memberAccess: memberAccess)
@@ -89,7 +93,37 @@ final class ComposerConnectorResources {
           throw error
         }
       }
-      connectedTask = task
+      overviewTask = task
+      signal.onCancel { task.cancel() }
+      return task
+    }
+  }
+
+  /// Settings renders the shared overview before this account inspection finishes.
+  lazy var connected = includesRemote ? overview : makeInspectedOverview()
+
+  private func makeInspectedOverview() -> Computed<Task<[ChatComposerConnector], Error>> {
+    Computed { [weak self] get, options in
+      guard let self, !closed, try get(lifetime) else { throw CancellationError() }
+      let pending = try get(overview)
+      let signal = options.signal
+      let task = Task { @MainActor [weak self, service] in
+        guard let self else { throw CancellationError() }
+        // The overview owns its own retry and error reporting.
+        let entries = try await pending.value
+        do {
+          let reconnect = try await read { try await service.reconnectAccountIDs(for: entries) }
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          guard !closed else { throw CancellationError() }
+          didInspect(reconnect)
+          return entries
+        } catch {
+          if !closed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
+          throw error
+        }
+      }
+      inspectionTask = task
       signal.onCancel { task.cancel() }
       return task
     }
@@ -148,7 +182,8 @@ final class ComposerConnectorResources {
 
   func invalidate(options: ChatComposerOptions) throws {
     guard !closed else { throw CancellationError() }
-    connectedTask?.cancel()
+    overviewTask?.cancel()
+    inspectionTask?.cancel()
     remoteTask?.cancel()
     try store.set(reload, options)
   }
@@ -183,15 +218,18 @@ final class ComposerConnectorResources {
   func close() {
     guard !closed else { return }
     closed = true
-    connectedTask?.cancel()
+    overviewTask?.cancel()
+    inspectionTask?.cancel()
     remoteTask?.cancel()
-    connectedTask = nil
+    inspectionTask = nil
+    overviewTask = nil
     remoteTask = nil
     do { try store.set(lifetime, false) } catch { didFail(error) }
   }
 
   isolated deinit {
-    connectedTask?.cancel()
+    overviewTask?.cancel()
+    inspectionTask?.cancel()
     remoteTask?.cancel()
   }
 }

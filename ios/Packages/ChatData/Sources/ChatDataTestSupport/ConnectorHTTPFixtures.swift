@@ -80,6 +80,29 @@ public enum ConnectorHTTPFixtures {
     return nil
   }
 
+  public static let managedOverview = """
+    [{"target":{"kind":"builtin","connectorSlug":"slack"},"label":"Slack","hasPermissions":true,
+      "icon":{"url":"https://example.invalid/slack.svg","invertInDarkMode":true},
+      "accounts":[
+        {"connectionId":"\(accountID)","displayName":"Work","defaultEnabled":true,"isDefault":true,"enabled":false},
+        {"connectionId":"\(siblingID)","displayName":"Personal","defaultEnabled":false,"isDefault":false,"enabled":false}],
+      "currentConnectionId":null},
+     {"target":{"kind":"custom","customConnectorId":"\(customID)"},"label":"Custom","hasPermissions":false,
+      "accounts":[],"currentConnectionId":null}]
+    """
+
+  public static func managedInspection(kind: String = "available", slug: String = "slack") -> String
+  {
+    let status = kind == "available" ? #","connectionStatus":"reconnect-required""# : ""
+    return """
+      {"results":[
+        {"kind":"available","connectionId":"\(accountID)",
+         "target":{"kind":"builtin","connectorSlug":"slack"},"connectionStatus":"connected"},
+        {"kind":"\(kind)","connectionId":"\(siblingID)",
+         "target":{"kind":"builtin","connectorSlug":"\(slug)"}\(status)}]}
+      """
+  }
+
   public static func access(slug: String = "slack", currentID: String? = accountID) -> String {
     let current = currentID.map { "\"\($0)\"" } ?? "null"
     return """

@@ -19,6 +19,7 @@ final class ComposerConnectorStore {
   /// publication is a new revision.
   struct Snapshot: Equatable {
     fileprivate(set) var connectors: [ChatComposerConnector] = []
+    fileprivate var reconnectIDs: Set<String> = []
     fileprivate(set) var remotes: ChatRemotesOverview?
     fileprivate(set) var threadAccess: ChatThreadRemoteAccess?
     fileprivate(set) var currentComputerAccess: ChatComputerAccess?
@@ -29,6 +30,11 @@ final class ComposerConnectorStore {
 
     static func == (lhs: Self, rhs: Self) -> Bool {
       lhs.origin == rhs.origin && lhs.revision == rhs.revision
+    }
+
+    /// Only offer reconnect for an inspected account that is still in this overview.
+    func reconnectAccountIDs(for connector: ChatComposerConnector) -> [String] {
+      connector.access.accounts.compactMap { reconnectIDs.contains($0.id) ? $0.id : nil }
     }
 
     /// A chat's own hosts, or the workspace's before the chat exists.
@@ -215,6 +221,10 @@ final class ComposerConnectorStore {
           }
         }
         for page in accountPages { page.reconcile() }
+      },
+      didInspect: { [weak self] ids in
+        guard let self, !closed, request == generation, snapshot.reconnectIDs != ids else { return }
+        publish { $0.reconnectIDs = ids }
       },
       didLoadRemote: { [weak self] value in
         guard let self, !closed, request == generation else { return }
