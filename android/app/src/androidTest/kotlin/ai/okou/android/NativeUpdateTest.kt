@@ -559,7 +559,9 @@ class NativeUpdateTest {
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_UP))
                 captureState("details-extreme-short")
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_DOWN))
+                exists(R.string.updates_error_download)
                 assertEquals(footer, button(close).visibleBounds to button(retry).visibleBounds)
+                captureState("details-extreme-short-recovery")
             }
             click(R.string.updates_retry_download)
             assertNotNull(text(progressLabel))
