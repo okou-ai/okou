@@ -13,14 +13,26 @@ use std::{
 
 /// Consume instruction staging after Storage reconciliation and before Agent startup.
 pub fn apply_agent_instructions(home: &Path, metadata: &[u8]) -> bool {
-    match apply(home, metadata) {
-        Ok(()) => true,
+    apply_agent_instructions_with_result(home, metadata).is_ok()
+}
+
+/// Apply a validated instructions input and distinguish unavailable local targets.
+pub fn apply_agent_instructions_with_result(
+    home: &Path,
+    metadata: &[u8],
+) -> Result<(), crate::ApplyFailure> {
+    let (input, paths) = input(home, metadata).map_err(|error| {
+        guest_telemetry::log_error!(crate::LOG_TAG, "Invalid instruction input: {error}");
+        crate::ApplyFailure::Failed
+    })?;
+    match apply(home, input, paths) {
+        Ok(()) => Ok(()),
         Err(error) => {
             guest_telemetry::log_error!(
                 crate::LOG_TAG,
                 "Agent instruction application failed: {error}"
             );
-            false
+            Err(crate::ApplyFailure::TargetUnavailable)
         }
     }
 }
@@ -71,7 +83,10 @@ pub fn check_agent_instructions(home: &Path, metadata: &[u8]) -> io::Result<bool
             }
             Ok(true)
         }
-        Ok(_) => Err(io::Error::other("Instruction target is not a regular file")),
+        Ok(_) => Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Instruction target is not a regular file",
+        )),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }
@@ -95,8 +110,7 @@ fn resolve_existing_root(path: &Path) -> io::Result<PathBuf> {
     ))
 }
 
-fn apply(home: &Path, metadata: &[u8]) -> io::Result<()> {
-    let (input, paths) = input(home, metadata)?;
+fn apply(home: &Path, input: InstructionApplication, paths: InstructionPaths) -> io::Result<()> {
     let source_directory = CleanupDirectory::open(&paths.staging)?;
     let source = source_directory.proc_path().join(SOURCE_FILENAME);
     if !crate::instructions::apply_agent_instructions(home, &input.framework, &source) {

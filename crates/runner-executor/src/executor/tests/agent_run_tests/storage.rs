@@ -519,7 +519,7 @@ async fn run_in_sandbox_drops_deferred_cache_fill_when_guest_storage_apply_fails
 }
 
 #[tokio::test]
-async fn run_in_sandbox_checks_unchanged_storage_without_downloading_it() {
+async fn run_in_sandbox_records_storage_manifest_no_work_timing_without_guest_storage_apply() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let sandbox = sandbox_mock::MockSandbox::new("test");
@@ -559,16 +559,7 @@ async fn run_in_sandbox_checks_unchanged_storage_without_downloading_it() {
     .await
     .unwrap();
 
-    let calls = sandbox.storage_manifest_calls();
-    let [call] = calls.as_slice() else {
-        panic!("expected one validation request for the reused target");
-    };
-    let input: serde_json::Value = serde_json::from_slice(&call.manifest_json).unwrap();
-    assert_eq!(
-        input["startupTargets"]["additionalMounts"],
-        serde_json::json!(["/home/user/.codex"])
-    );
-    assert_eq!(input["storageMounts"], serde_json::json!([]));
+    assert!(sandbox.storage_manifest_calls().is_empty());
     let ops = telemetry.pending_ops_snapshot();
     assert_successful_action_once(&ops, "runner_storage_manifest_fingerprint_reuse");
     assert_successful_action_once(&ops, "runner_storage_manifest_has_work");
@@ -646,6 +637,81 @@ async fn run_in_sandbox_records_storage_manifest_guest_storage_apply_failure_tim
             apply_failures, 1,
             "top-level storage manifest apply failure should still be recorded once, got: {ops:?}"
         );
+    }
+}
+
+#[tokio::test]
+async fn reused_home_can_start_after_a_local_storage_target_failure() {
+    use runner_types::types::HomeReuseResult;
+
+    for reused in [true, false] {
+        let home = tempfile::tempdir().unwrap();
+        let config = test_executor_config(home.path()).await;
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        overrides.push_storage_manifest_result(Ok(ExecResult::new(
+            guest_contracts::storage_manifest::TARGET_UNAVAILABLE_EXIT_CODE,
+            Vec::new(),
+            b"local destination unavailable".to_vec(),
+        )));
+        let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+        let mut context = minimal_context();
+        let mut memory = api_artifact(
+            "memory",
+            "/home/user/.codex/memories",
+            "member-memory",
+            "memory-version",
+            "https://example.invalid/unused.tar.gz",
+        );
+        memory.archive_url = None;
+        memory.empty = Some(true);
+        context.storage_manifest = Some(StorageManifest {
+            storages: Vec::new(),
+            artifacts: vec![memory],
+        });
+        let mut telemetry = test_telemetry(&config, &context);
+        let result = run_in_sandbox(
+            sandbox.as_ref(),
+            &context,
+            &config,
+            RunStart {
+                restore_guest_state: false,
+                reuse_result: if reused {
+                    SandboxReuseResult::Reused
+                } else {
+                    SandboxReuseResult::NoReuseKey
+                },
+                home_reuse_result: if reused {
+                    HomeReuseResult::SandboxReused
+                } else {
+                    HomeReuseResult::NoReuseKey
+                },
+                sandbox_startup_path: SandboxStartupPath::Blank,
+                prev_storage: None,
+            },
+            &mut telemetry,
+            RunControls::new(tokio_util::sync::CancellationToken::new(), None),
+        )
+        .await;
+        if reused {
+            assert!(result.unwrap().failure.is_none());
+            assert_eq!(overrides.start_agent_process_calls().len(), 1);
+            let path = crate::executor::env::guest_run_payload_file_path(context.run_id).unwrap();
+            let files = overrides.private_write_files_calls();
+            let payload = files
+                .iter()
+                .flat_map(|batch| &batch.files)
+                .find(|file| file.path == path)
+                .unwrap();
+            let payload: guest_contracts::env::RunPayload =
+                serde_json::from_slice(&payload.content).unwrap();
+            assert!(payload.artifacts.is_empty());
+        } else {
+            assert!(matches!(
+                result,
+                Err(crate::ExecutorError::StorageTargetUnavailable(_))
+            ));
+            assert!(overrides.start_agent_process_calls().is_empty());
+        }
     }
 }
 

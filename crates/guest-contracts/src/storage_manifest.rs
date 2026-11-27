@@ -41,6 +41,9 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
+/// Guest Storage helper exited after it could not use a local destination.
+pub const TARGET_UNAVAILABLE_EXIT_CODE: i32 = 3;
+
 mod readiness;
 mod template_guidance;
 pub use readiness::ArchiveReadiness;
@@ -75,37 +78,6 @@ struct ManifestWire {
     instruction_cleanups: Vec<InstructionCleanupEntry>,
     #[serde(default)]
     archive_readiness: Option<ArchiveReadiness>,
-    #[serde(default)]
-    startup_targets: Option<StartupTargets>,
-}
-
-/// Startup-wide target validation carried by the first Storage operation.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    tag = "phase",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum StartupTargets {
-    /// Include roots that do not occur in the first manifest, and the final instruction file.
-    Check {
-        /// Current directory targets omitted from this batch.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        additional_mounts: Vec<String>,
-        /// The managed framework instruction file written outside Storage staging.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        instruction_file: Option<String>,
-    },
-    /// A subsequent operation sent only after the first succeeds.
-    Checked,
-}
-
-/// Serialize the canonical manifest with startup validation metadata.
-pub struct StartupManifest<'a> {
-    /// Current transport batch.
-    pub manifest: &'a Manifest,
-    /// The batch's validation phase.
-    pub targets: &'a StartupTargets,
 }
 
 #[derive(Serialize)]
@@ -117,8 +89,6 @@ struct CanonicalManifest<'a> {
     instruction_cleanups: &'a [InstructionCleanupEntry],
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_readiness: &'a Option<ArchiveReadiness>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    startup_targets: Option<&'a StartupTargets>,
 }
 
 struct BorrowedStorageMounts<'a> {
@@ -153,23 +123,6 @@ impl Serialize for Manifest {
     where
         S: serde::Serializer,
     {
-        self.serialize_with_startup_targets(serializer, None)
-    }
-}
-
-impl Serialize for StartupManifest<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.manifest
-            .serialize_with_startup_targets(serializer, Some(self.targets))
-    }
-}
-
-impl Manifest {
-    fn serialize_with_startup_targets<S: serde::Serializer>(
-        &self,
-        serializer: S,
-        startup_targets: Option<&StartupTargets>,
-    ) -> Result<S::Ok, S::Error> {
         CanonicalManifest {
             storage_mounts: BorrowedStorageMounts {
                 storages: &self.storages,
@@ -178,7 +131,6 @@ impl Manifest {
             cleanup_paths: &self.cleanup_paths,
             instruction_cleanups: &self.instruction_cleanups,
             archive_readiness: &self.archive_readiness,
-            startup_targets,
         }
         .serialize(serializer)
     }
@@ -189,15 +141,6 @@ impl<'de> Deserialize<'de> for Manifest {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::deserialize_with_startup_targets(deserializer).map(|(manifest, _)| manifest)
-    }
-}
-
-impl Manifest {
-    /// Decode the manifest and retain the validation instructions used by Guest apply.
-    pub fn deserialize_with_startup_targets<'de, D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<(Self, Option<StartupTargets>), D::Error> {
         let wire = ManifestWire::deserialize(deserializer)?;
         let mut manifest = Self::from_storage_mounts(
             wire.storage_mounts,
@@ -211,9 +154,11 @@ impl Manifest {
                 .validate(&manifest)
                 .map_err(serde::de::Error::custom)?;
         }
-        Ok((manifest, wire.startup_targets))
+        Ok(manifest)
     }
+}
 
+impl Manifest {
     fn from_storage_mounts(
         storage_mounts: Vec<StorageMountEntry>,
         cleanup_paths: Vec<String>,

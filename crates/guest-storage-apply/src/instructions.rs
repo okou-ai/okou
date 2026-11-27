@@ -117,7 +117,7 @@ pub(crate) fn cleanup_instruction_files(entries: &[InstructionCleanup]) -> bool 
     }
     true
 }
-pub(crate) fn cleanup_filenames(entry: &InstructionCleanup) -> Option<Vec<InstructionFilename>> {
+fn cleanup_filenames(entry: &InstructionCleanup) -> Option<Vec<InstructionFilename>> {
     match entry.target_filename.as_deref() {
         Some(raw) => match InstructionFilename::parse(raw) {
             Some(filename) => Some(vec![filename]),

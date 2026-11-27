@@ -3,7 +3,7 @@
 use super::super::{
     DEFAULT_EXEC_TIMEOUT, JobTelemetry, RunnerError, RunnerResult, guest_runtime_dir,
 };
-use super::{format_helper_exec_failure, helper_exec_succeeded};
+use super::{format_helper_exec_failure, helper_exec_succeeded, storage_helper_failure};
 use guest_contracts::agent_instructions::{
     InstructionApplication, InstructionCheck, InstructionOperation, MAX_CHECK_METADATA_BYTES,
     MAX_METADATA_BYTES, instruction_paths,
@@ -71,13 +71,19 @@ pub(in crate::executor) async fn check_instruction_reuse(
         owned_plan = build_storage_plan(manifest, Some(previous))?;
         &owned_plan
     };
-    if plan.cleans_instruction_file(&target) {
+    if plan.replaces_existing_file(&target, Path::new(HOME_DIR)) {
         let mut repaired = previous.clone();
         repaired.storages.remove(&instruction.storage_mount);
         return Ok(InstructionReuse::Repair(repaired));
     }
     let started = Instant::now();
-    let checked = check_final_file(sandbox, context, framework).await;
+    let checked = check_preserved_targets(
+        sandbox,
+        context,
+        framework,
+        plan.preserved_download_mounts(),
+    )
+    .await;
     telemetry.record(
         "runner_agent_instructions_check",
         started.elapsed(),
@@ -96,28 +102,61 @@ pub(in crate::executor) async fn check_instruction_reuse(
     }
 }
 
-async fn check_final_file(
+async fn check_preserved_targets(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     framework: &str,
+    mounts: Vec<String>,
 ) -> RunnerResult<bool> {
-    let input = InstructionCheck {
+    let mut batch = InstructionCheck {
         framework: framework.into(),
         preserved_download_mounts: Vec::new(),
     };
+    let empty_size = serde_json::to_vec(&batch)
+        .map_err(|_| RunnerError::Internal("Instruction metadata encoding failed".into()))?
+        .len();
+    let mut size = empty_size;
+    for mount in mounts {
+        let encoded_size = serde_json::to_vec(&mount)
+            .map_err(|_| RunnerError::Internal("Instruction path encoding failed".into()))?
+            .len();
+        if empty_size + encoded_size > MAX_CHECK_METADATA_BYTES {
+            return Err(RunnerError::Internal(
+                "Instruction check path exceeds bound".into(),
+            ));
+        }
+        let comma = usize::from(!batch.preserved_download_mounts.is_empty());
+        if size + encoded_size + comma > MAX_CHECK_METADATA_BYTES {
+            if !check_batch(sandbox, context, &batch).await? {
+                return Ok(false);
+            }
+            batch.preserved_download_mounts.clear();
+            size = empty_size;
+        }
+        size += encoded_size + usize::from(!batch.preserved_download_mounts.is_empty());
+        batch.preserved_download_mounts.push(mount);
+    }
+    check_batch(sandbox, context, &batch).await
+}
+
+async fn check_batch(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    input: &InstructionCheck,
+) -> RunnerResult<bool> {
     let result = exec(
         sandbox,
         context,
         InstructionOperation::Check,
-        &input,
+        input,
         MAX_CHECK_METADATA_BYTES,
     )
     .await?;
     if !helper_exec_succeeded(&result) {
-        return Err(RunnerError::Internal(format_helper_exec_failure(
-            "instruction file check",
+        return Err(storage_helper_failure(
+            format_helper_exec_failure("instruction file check", &result),
             &result,
-        )));
+        ));
     }
     serde_json::from_slice::<bool>(&result.stdout)
         .map_err(|_| RunnerError::Internal("Invalid instruction file check response".into()))
@@ -145,10 +184,10 @@ pub(in crate::executor) async fn apply_agent_instructions(
         )
         .await?;
         if !helper_exec_succeeded(&result) {
-            return Err(RunnerError::Internal(format_helper_exec_failure(
-                "Agent instruction application",
+            return Err(storage_helper_failure(
+                format_helper_exec_failure("Agent instruction application", &result),
                 &result,
-            )));
+            ));
         }
         Ok(())
     }

@@ -1,22 +1,14 @@
 use std::{fmt, fs};
 
-use guest_contracts::storage_manifest::StartupTargets;
 pub(crate) use guest_contracts::storage_manifest::{ArtifactEntry, Manifest, StorageEntry};
 
-pub(crate) type ParsedManifest = (Manifest, Option<StartupTargets>);
-
-pub(crate) fn load(manifest_path: &str) -> Result<ParsedManifest, ManifestLoadError> {
+pub(crate) fn load(manifest_path: &str) -> Result<Manifest, ManifestLoadError> {
     let manifest_json = fs::read_to_string(manifest_path).map_err(ManifestLoadError::Read)?;
     parse(manifest_json.as_bytes()).map_err(ManifestLoadError::Parse)
 }
 
-pub(crate) fn parse(manifest_json: &[u8]) -> Result<ParsedManifest, ManifestParseError> {
-    let mut decoder = serde_json::Deserializer::from_slice(manifest_json);
-    let result = Manifest::deserialize_with_startup_targets(&mut decoder).and_then(|manifest| {
-        decoder.end()?;
-        Ok(manifest)
-    });
-    result.map_err(|error| ManifestParseError {
+pub(crate) fn parse(manifest_json: &[u8]) -> Result<Manifest, ManifestParseError> {
+    serde_json::from_slice(manifest_json).map_err(|error| ManifestParseError {
         category: error.classify(),
         line: error.line(),
         column: error.column(),

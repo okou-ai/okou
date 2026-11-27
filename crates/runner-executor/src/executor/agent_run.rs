@@ -827,6 +827,15 @@ pub(super) struct RunStart<'a> {
     pub(super) prev_storage: Option<&'a crate::storage_fingerprints::StorageFingerprints>,
 }
 
+impl RunStart<'_> {
+    fn has_reused_home(&self) -> bool {
+        matches!(
+            self.home_reuse_result,
+            HomeReuseResult::Reused | HomeReuseResult::SandboxReused
+        )
+    }
+}
+
 pub(super) struct RunControls {
     pub(super) sandbox_recovery: Option<super::SandboxRecoveryHooks>,
     pub(super) disk_recovery: bool,
@@ -1065,12 +1074,21 @@ struct PreparedAgentProcess {
     env_pairs: Vec<(String, String)>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InstructionPreparation {
+    Ready,
+    Apply,
+    Unavailable,
+}
+
 struct AgentBootstrapInputs {
     user_env_map: HashMap<String, String>,
     env_map: HashMap<String, String>,
     run_payload: guest_contracts::env::RunPayload,
     original_native_continuation: Option<String>,
-    apply_instructions: bool,
+    instructions: InstructionPreparation,
+    storage_available: bool,
+    reused_home: bool,
 }
 
 // This subscription reports a published binding; it never authorizes one.
@@ -1142,11 +1160,19 @@ impl AgentBootstrapInputs {
                     // Storage reconciliation already finished. Prepare from
                     // captured inputs within this timed, cancellable owner.
                     let preparation_started = Instant::now();
-                    let prepared = prepare_required_agent_files(
-                        context,
-                        &mut self.user_env_map,
-                        &self.run_payload,
-                    );
+                    let degraded_payload;
+                    let payload = if self.storage_available {
+                        &self.run_payload
+                    } else {
+                        // Keep the original receipt for a possible sandbox replacement.
+                        degraded_payload = guest_contracts::env::RunPayload {
+                            artifacts: String::new(),
+                            ..self.run_payload.clone()
+                        };
+                        &degraded_payload
+                    };
+                    let prepared =
+                        prepare_required_agent_files(context, &mut self.user_env_map, payload);
                     telemetry.record(
                         "runner_bootstrap_file_prepare",
                         preparation_started.elapsed(),
@@ -1156,9 +1182,17 @@ impl AgentBootstrapInputs {
                     let files = prepared?;
                     super::storage::publish_bootstrap_files(sandbox, &files.entries(), telemetry)
                         .await?;
-                    if self.apply_instructions {
-                        super::storage::apply_agent_instructions(sandbox, context, telemetry)
-                            .await?;
+                    if self.instructions == InstructionPreparation::Apply {
+                        self.instructions = match super::storage::apply_agent_instructions(sandbox, context, telemetry)
+                            .await
+                        {
+                            Ok(()) => InstructionPreparation::Ready,
+                            Err(RunnerError::StorageTargetUnavailable(error)) if self.reused_home => {
+                                warn!(run_id = %context.run_id, %error, "Continuing with unavailable Instructions target");
+                                InstructionPreparation::Unavailable
+                            }
+                            Err(error) => return Err(error),
+                        };
                     }
                     RunnerResult::Ok(files.into_paths())
                 }))
@@ -1463,7 +1497,6 @@ async fn apply_prepared_storage(
                     &initial.files,
                     guest_telemetry,
                     &cancel,
-                    false,
                 )
                 .await?;
                 if let Some(tail) = decoded_tail {
@@ -1480,7 +1513,6 @@ async fn apply_prepared_storage(
                         &tail.files,
                         guest_telemetry,
                         &cancel,
-                        true,
                     )
                     .await?;
                 }
@@ -1576,7 +1608,8 @@ async fn prepare_guest_runtime_state_phase(
 
 struct GuestStoragePreparation {
     background_fill: Option<crate::storage_cache::DeferredBackgroundFill>,
-    apply_instructions: bool,
+    instructions: InstructionPreparation,
+    storage_available: bool,
 }
 
 async fn prepare_guest_storage(
@@ -1587,18 +1620,30 @@ async fn prepare_guest_storage(
     telemetry: &mut JobTelemetry,
     prepared_storage: &mut Option<crate::storage_cache::PreparedStorage>,
 ) -> RunnerResult<GuestStoragePreparation> {
-    let reuse = super::storage::check_instruction_reuse(
+    let reuse = match super::storage::check_instruction_reuse(
         sandbox,
         context,
         start.prev_storage,
         prepared_storage.as_ref().map(|prepared| &prepared.plan),
         telemetry,
     )
-    .await?;
-    let apply_instructions = context.instruction_file.is_some()
-        && !matches!(&reuse, super::storage::InstructionReuse::Reused);
+    .await
+    {
+        Ok(reuse) => Some(reuse),
+        Err(RunnerError::StorageTargetUnavailable(error)) if start.has_reused_home() => {
+            warn!(run_id = %context.run_id, %error, "Continuing with unavailable Instructions target");
+            None
+        }
+        Err(error) => return Err(error),
+    };
+    let instructions = match &reuse {
+        None => InstructionPreparation::Unavailable,
+        Some(super::storage::InstructionReuse::Reused) => InstructionPreparation::Ready,
+        Some(_) if context.instruction_file.is_some() => InstructionPreparation::Apply,
+        Some(_) => InstructionPreparation::Ready,
+    };
     let previous = match &reuse {
-        super::storage::InstructionReuse::Repair(previous) => {
+        Some(super::storage::InstructionReuse::Repair(previous)) => {
             // Early candidate groups predate the instruction reuse decision.
             // Retire their IO before ordinary planning/classification repairs it.
             if let Some(mut prepared) = prepared_storage.take() {
@@ -1630,12 +1675,8 @@ async fn prepare_guest_storage(
             );
             if !has_work {
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
-                let has_targets = prepared.plan.entry_count() > 0;
                 prepared.delivery.cancel_and_drain(telemetry).await;
                 let _ = prepared_storage.take();
-                if has_targets {
-                    super::storage::validate_reused_storage(sandbox, context, telemetry).await?;
-                }
                 Ok(None)
             } else {
                 let cache_started = Instant::now();
@@ -1692,9 +1733,6 @@ async fn prepare_guest_storage(
             );
             if !has_work {
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
-                if plan.entry_count() > 0 {
-                    super::storage::validate_reused_storage(sandbox, context, telemetry).await?;
-                }
                 Ok(None)
             } else {
                 let (mut deferred, pending_archives) = populate_storage_plan(
@@ -1715,10 +1753,25 @@ async fn prepare_guest_storage(
         result.is_ok(),
         error.as_deref(),
     );
-    result.map(|background_fill| GuestStoragePreparation {
-        background_fill,
-        apply_instructions,
-    })
+    match result {
+        Ok(background_fill) => Ok(GuestStoragePreparation {
+            background_fill,
+            instructions,
+            storage_available: true,
+        }),
+        Err(RunnerError::StorageTargetUnavailable(error)) if start.has_reused_home() => {
+            if let Some(mut prepared) = prepared_storage.take() {
+                prepared.delivery.cancel_and_drain(telemetry).await;
+            }
+            warn!(run_id = %context.run_id, %error, "Continuing with incomplete Storage on reused Home");
+            Ok(GuestStoragePreparation {
+                background_fill: None,
+                instructions: InstructionPreparation::Unavailable,
+                storage_available: false,
+            })
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn pre_spawn_cancelled(
@@ -1914,7 +1967,11 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         }
     };
     model_catalog_prefetch.record_outcome(telemetry);
-    let (deferred_background_fill, apply_instructions) = {
+    let GuestStoragePreparation {
+        background_fill: deferred_background_fill,
+        instructions,
+        storage_available,
+    } = {
         let storage_result = model_catalog_prefetch
             .race(run_pre_spawn_phase(
                 PreparationCancellation::new(&controls.cancel, &controls.hard_cancel),
@@ -1942,7 +1999,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             None => Err(None),
         };
         match storage_preparation {
-            Ok(prepared) => (prepared.background_fill, prepared.apply_instructions),
+            Ok(prepared) => prepared,
             Err(error) => {
                 if let Some(prepared) = controls.prepared_storage.as_mut() {
                     prepared.delivery.cancel_and_drain(telemetry).await;
@@ -1967,8 +2024,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             }
         }
     };
-    lifecycle.storage_preparation_complete = true;
-    lifecycle.instruction_preparation_complete = !apply_instructions;
+    lifecycle.storage_preparation_complete = storage_available;
+    lifecycle.instruction_preparation_complete = instructions == InstructionPreparation::Ready;
     let RunControls {
         sandbox_recovery,
         disk_recovery,
@@ -2102,7 +2159,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     env_map,
                     run_payload,
                     original_native_continuation,
-                    apply_instructions,
+                    instructions,
+                    storage_available,
+                    reused_home: start.has_reused_home(),
                 })
             },
         ))
@@ -2190,7 +2249,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             };
         }
     };
-    lifecycle.instruction_preparation_complete = true;
+    lifecycle.instruction_preparation_complete =
+        bootstrap.instructions == InstructionPreparation::Ready;
     let AgentBootstrapInputs {
         user_env_map,
         mut env_map,

@@ -1,6 +1,6 @@
 //! A packed request carries complete decoded batches in their original order.
 
-use crate::{LOG_TAG, run_manifest_with_files_in_runtime};
+use crate::{ApplyFailure, LOG_TAG, run_manifest_with_files_in_runtime};
 use guest_contracts::storage_files::{PACKED_BATCH_FILE_URL, PACKED_BATCH_START_URL, StorageFiles};
 use guest_contracts::storage_manifest::Manifest;
 use guest_telemetry::log_error;
@@ -25,16 +25,15 @@ pub(super) fn apply(
     manifest: Manifest,
     files: Vec<StorageFiles<&[u8]>>,
     runtime_dir: Option<&Path>,
-    independent: bool,
-) -> bool {
+) -> Result<(), ApplyFailure> {
     let Some(sizes) = batch_sizes(&manifest, &files) else {
         log_error!(LOG_TAG, "Invalid packed storage batch order");
-        return false;
+        return Err(ApplyFailure::Failed);
     };
     let mut storages = manifest.storages.into_iter();
     let mut artifacts = manifest.artifacts.into_iter();
     let mut files = files.into_iter();
-    sizes.into_iter().all(|size| {
+    for size in sizes {
         let storages = storages.by_ref().take(size).collect::<Vec<_>>();
         let artifacts = artifacts.by_ref().take(size - storages.len()).collect();
         let batch = Manifest {
@@ -49,9 +48,9 @@ pub(super) fn apply(
             files.by_ref().take(size).collect(),
             None,
             runtime_dir,
-            independent,
-        )
-    })
+        )?;
+    }
+    Ok(())
 }
 
 fn batch_sizes(manifest: &Manifest, files: &[StorageFiles<&[u8]>]) -> Option<Vec<usize>> {

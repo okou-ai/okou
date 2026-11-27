@@ -1,3 +1,4 @@
+use crate::ApplyFailure;
 use crate::LOG_TAG;
 use crate::archive;
 use crate::error::DownloadError;
@@ -121,23 +122,25 @@ impl<'input> DownloadTask<'input> {
         }
     }
 
-    fn prepare(self, independent: bool) -> Result<PreparedDownloadTask<'input>, String> {
+    fn prepare(self) -> Result<PreparedDownloadTask<'input>, DownloadError> {
         fs::create_dir_all(&self.mount_path).map_err(|e| {
-            format!(
-                "{} target preparation failed: failed to create directory {}: {e}",
-                self.label, self.mount_path
+            DownloadError::writing_target(
+                format!(
+                    "{} target preparation failed: failed to create directory {}",
+                    self.label, self.mount_path
+                ),
+                e,
             )
         })?;
-        let effective_mount_path = if independent {
-            self.normalized_mount_path.clone()
-        } else {
-            Path::new(&self.mount_path).canonicalize().map_err(|e| {
+        let effective_mount_path = Path::new(&self.mount_path).canonicalize().map_err(|e| {
+            DownloadError::writing_target(
                 format!(
-                    "{} target preparation failed: failed to resolve directory {}: {e}",
+                    "{} target preparation failed: failed to resolve directory {}",
                     self.label, self.mount_path
-                )
-            })?
-        };
+                ),
+                e,
+            )
+        })?;
 
         Ok(PreparedDownloadTask {
             task: self,
@@ -227,7 +230,7 @@ impl<'input> StartedDownload<'input> {
         }
     }
 
-    fn finish(self, result: Result<(), DownloadError>) -> bool {
+    fn finish(self, result: Result<(), DownloadError>) -> Result<(), ApplyFailure> {
         match result {
             Ok(()) => {
                 let elapsed = self.start.elapsed();
@@ -247,7 +250,7 @@ impl<'input> StartedDownload<'input> {
                         elapsed.as_millis()
                     );
                 }
-                true
+                Ok(())
             }
             Err(error) => {
                 let failure_detail = self.task.failure_detail(&error);
@@ -260,7 +263,7 @@ impl<'input> StartedDownload<'input> {
                     self.local_metrics.as_ref(),
                 );
                 log_error!(LOG_TAG, "{failure_detail}");
-                false
+                Err(error.failure)
             }
         }
     }
@@ -306,10 +309,10 @@ enum DownloadSelection {
 
 struct DownloadScheduler<'input> {
     pending: VecDeque<PendingDownload<'input>>,
-    reservations: Option<Vec<DownloadReservation>>,
+    reservations: Vec<DownloadReservation>,
     active_attempts: usize,
     concurrency: usize,
-    all_success: bool,
+    result: Result<(), ApplyFailure>,
     prioritize_large: bool,
     prioritize_artifact: bool,
     #[cfg(target_os = "linux")]
@@ -321,7 +324,6 @@ impl<'input> DownloadScheduler<'input> {
         pending: VecDeque<PendingDownload<'input>>,
         concurrency: usize,
         allow_artifact_priority: bool,
-        independent: bool,
     ) -> Self {
         let prioritize_large = pending.iter().any(|download| download.estimated_work > 0);
         let prioritize_artifact = allow_artifact_priority
@@ -335,10 +337,10 @@ impl<'input> DownloadScheduler<'input> {
         };
         Self {
             pending,
-            reservations: (!independent).then(Vec::new),
+            reservations: Vec::new(),
             active_attempts: 0,
             concurrency,
-            all_success: true,
+            result: Ok(()),
             prioritize_large,
             prioritize_artifact,
             #[cfg(target_os = "linux")]
@@ -347,7 +349,7 @@ impl<'input> DownloadScheduler<'input> {
     }
 
     fn has_work(&self) -> bool {
-        !self.pending.is_empty() || self.active_attempts > 0
+        !self.pending.is_empty() || !self.reservations.is_empty()
     }
 
     fn can_make_progress(&self) -> bool {
@@ -375,7 +377,7 @@ impl<'input> DownloadScheduler<'input> {
             };
             let Some((index, _)) = find_startable_download(
                 &self.pending,
-                self.reservations.as_deref(),
+                &self.reservations,
                 selection,
                 &mut |pending_id, pending_path, active_id, active_path| {
                     telemetry.record_conflict(pending_id, pending_path, active_id, active_path);
@@ -410,9 +412,7 @@ impl<'input> DownloadScheduler<'input> {
                 #[cfg(target_os = "linux")]
                 inflate_load,
             );
-            if let Some(reservations) = &mut self.reservations {
-                reservations.push(DownloadReservation::new(&download));
-            }
+            self.reservations.push(DownloadReservation::new(&download));
 
             if work_tx.send(download).is_err() {
                 log_error!(LOG_TAG, "Download scheduler worker channel closed");
@@ -425,19 +425,22 @@ impl<'input> DownloadScheduler<'input> {
 
     fn record_completion(&mut self, completion: DownloadCompletion<'input>) {
         self.active_attempts -= 1;
-        if let Some(reservations) = &mut self.reservations {
-            reservations.retain(|reserved| reserved.id != completion.download.id);
-        }
 
         match completion.outcome {
             AttemptOutcome::Finished(result) => {
-                if !completion.download.finish(result) {
-                    self.all_success = false;
+                self.reservations
+                    .retain(|reserved| reserved.id != completion.download.id);
+                if let Err(failure) = completion.download.finish(result)
+                    && self.result != Err(ApplyFailure::Failed)
+                {
+                    self.result = Err(failure);
                 }
             }
             AttemptOutcome::Panicked(msg) => {
+                self.reservations
+                    .retain(|reserved| reserved.id != completion.download.id);
                 log_error!(LOG_TAG, "Thread panicked: {msg}");
-                self.all_success = false;
+                self.result = Err(ApplyFailure::Failed);
             }
         }
     }
@@ -476,24 +479,18 @@ fn paired_inflater(pending: &VecDeque<PendingDownload<'_>>) -> Option<usize> {
 /// Prepare download targets before any archive worker can start.
 pub(crate) fn prepare_download_tasks(
     tasks: Vec<DownloadTask<'_>>,
-    independent: bool,
-) -> Result<Vec<PreparedDownloadTask<'_>>, String> {
-    tasks
-        .into_iter()
-        .map(|task| task.prepare(independent))
-        .collect()
+) -> Result<Vec<PreparedDownloadTask<'_>>, DownloadError> {
+    tasks.into_iter().map(DownloadTask::prepare).collect()
 }
 
 /// Download all prepared tasks in parallel using std::thread.
 /// Allows additional overlap for remote header waits while keeping local-only
 /// extraction bounded. Serializes logically or physically overlapping mounts.
-/// Returns true if all downloads succeeded, false if any failed.
 pub(crate) fn download_all_parallel(
     tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
-    independent: bool,
-) -> bool {
-    download_with_readiness(tasks, readiness, run_download_attempt, independent)
+) -> Result<(), ApplyFailure> {
+    download_with_readiness(tasks, readiness, run_download_attempt)
 }
 
 #[cfg(test)]
@@ -501,7 +498,7 @@ fn download_all_parallel_with_runner(
     tasks: Vec<PreparedDownloadTask<'_>>,
     attempt_runner: AttemptRunner,
 ) -> bool {
-    download_with_readiness(tasks, None, attempt_runner, false)
+    download_with_readiness(tasks, None, attempt_runner).is_ok()
 }
 
 fn download_concurrency(remote_count: usize, task_count: usize) -> usize {
@@ -527,8 +524,7 @@ fn download_with_readiness(
     mut tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
     attempt_runner: AttemptRunner,
-    independent: bool,
-) -> bool {
+) -> Result<(), ApplyFailure> {
     if let Some(readiness) = &readiness {
         for task in &mut tasks {
             task.source_ready = readiness.gate(&task.task.url);
@@ -569,18 +565,15 @@ fn download_with_readiness(
             pending
         })
         .collect::<VecDeque<_>>();
-    let mut telemetry = DownloadRunTelemetry::start(
-        pending.iter().map(|download| {
-            (
-                download.task.task.telemetry,
-                download.task.logical_mount_path(),
-            )
-        }),
-        independent,
-    );
+    let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
+        (
+            download.task.task.telemetry,
+            download.task.logical_mount_path(),
+        )
+    }));
     if pending.is_empty() {
         telemetry.finish();
-        return true;
+        return Ok(());
     }
 
     log_info!(
@@ -608,7 +601,7 @@ fn download_with_readiness(
             Ok(watcher) => watcher,
             Err(error) => {
                 log_error!(LOG_TAG, "Archive readiness startup failed: {error}");
-                return false;
+                return Err(ApplyFailure::Failed);
             }
         };
         // Admission counts queued and running attempts together, so this queue
@@ -647,17 +640,16 @@ fn download_with_readiness(
         drop(work_rx);
         drop(completion_tx);
         drop(event_tx);
-        let mut scheduler =
-            DownloadScheduler::new(pending, concurrency, allow_artifact_priority, independent);
+        let mut scheduler = DownloadScheduler::new(pending, concurrency, allow_artifact_priority);
 
         while scheduler.has_work() {
             if !scheduler.start_ready_attempts(&work_tx, &mut telemetry) {
-                return false;
+                return Err(ApplyFailure::Failed);
             }
 
             if !scheduler.can_make_progress() && watcher.is_none() {
                 log_error!(LOG_TAG, "Download scheduler cannot make progress");
-                return false;
+                return Err(ApplyFailure::Failed);
             }
 
             let completion = match event_rx.recv() {
@@ -665,17 +657,17 @@ fn download_with_readiness(
                     Ok(completion) => completion,
                     Err(error) => {
                         log_error!(LOG_TAG, "Download completion channel closed: {error}");
-                        return false;
+                        return Err(ApplyFailure::Failed);
                     }
                 },
                 Ok(DownloadEvent::SourceReadiness(Ok(()))) => continue,
                 Ok(DownloadEvent::SourceReadiness(Err(error))) => {
                     log_error!(LOG_TAG, "Archive readiness failed: {error}");
-                    return false;
+                    return Err(ApplyFailure::Failed);
                 }
                 Err(e) => {
                     log_error!(LOG_TAG, "Download scheduler failed: {e}");
-                    return false;
+                    return Err(ApplyFailure::Failed);
                 }
             };
             scheduler.record_completion(completion);
@@ -684,9 +676,9 @@ fn download_with_readiness(
         let sources_finished = watcher.as_mut().map(|watcher| watcher.finish()).transpose();
         if let Err(error) = sources_finished {
             log_error!(LOG_TAG, "Archive readiness completion failed: {error}");
-            return false;
+            return Err(ApplyFailure::Failed);
         }
-        scheduler.all_success
+        scheduler.result
     });
     telemetry.finish();
     success
@@ -694,7 +686,7 @@ fn download_with_readiness(
 
 fn find_startable_download(
     pending: &VecDeque<PendingDownload<'_>>,
-    reservations: Option<&[DownloadReservation]>,
+    reservations: &[DownloadReservation],
     selection: DownloadSelection,
     on_conflict: &mut impl FnMut(usize, &Path, usize, &Path),
 ) -> Option<(usize, usize)> {
@@ -725,31 +717,29 @@ fn find_startable_download(
         {
             continue;
         }
-        if let Some(reservations) = reservations {
-            if let Some((blocking, pending_path, reserved_path)) =
-                reservations.iter().find_map(|reservation| {
-                    conflicting_mount_paths(
-                        &download.task,
-                        &reservation.logical_mount_path,
-                        &reservation.effective_mount_path,
-                    )
-                    .map(|(pending_path, reserved_path)| (reservation, pending_path, reserved_path))
-                })
-            {
-                on_conflict(download.id, pending_path, blocking.id, reserved_path);
-                continue;
-            }
-
-            if pending.iter().take(index).any(|earlier| {
+        if let Some((blocking, pending_path, reserved_path)) =
+            reservations.iter().find_map(|reservation| {
                 conflicting_mount_paths(
                     &download.task,
-                    earlier.task.logical_mount_path(),
-                    earlier.task.effective_mount_path(),
+                    &reservation.logical_mount_path,
+                    &reservation.effective_mount_path,
                 )
-                .is_some()
-            }) {
-                continue;
-            }
+                .map(|(pending_path, reserved_path)| (reservation, pending_path, reserved_path))
+            })
+        {
+            on_conflict(download.id, pending_path, blocking.id, reserved_path);
+            continue;
+        }
+
+        if pending.iter().take(index).any(|earlier| {
+            conflicting_mount_paths(
+                &download.task,
+                earlier.task.logical_mount_path(),
+                earlier.task.effective_mount_path(),
+            )
+            .is_some()
+        }) {
+            continue;
         }
 
         if selection == DownloadSelection::Fifo {
@@ -800,7 +790,7 @@ fn run_download_attempt(download: &mut StartedDownload<'_>) -> Result<(), Downlo
             download.task.effective_mount_path(),
             download.concurrency,
         )
-        .map_err(|error| DownloadError::new(format!("Decoded storage write failed: {error}")));
+        .map_err(|error| DownloadError::writing_target("Decoded storage write failed", error));
     }
     download_and_extract(download)
 }
@@ -809,10 +799,10 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
     let task = &download.task.task;
     let target_path = download.task.effective_mount_path();
     fs::create_dir_all(target_path).map_err(|e| {
-        DownloadError::new(format!(
-            "Failed to create directory {}: {e}",
-            target_path.display()
-        ))
+        DownloadError::writing_target(
+            format!("Failed to create directory {}", target_path.display()),
+            e,
+        )
     })?;
 
     let attempt_metrics = download

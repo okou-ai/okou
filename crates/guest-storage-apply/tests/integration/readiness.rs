@@ -312,7 +312,10 @@ fn ordinary_application_owns_cleanup_and_required_permission_failures() {
         // The query does not predict cleanup success or suppress a real apply
         // failure. Without cleanup, the same active target still fails EACCES.
         let descriptor = manifest.archive_readiness.take();
-        assert_eq!(run(&manifest).status.code(), Some(1));
+        assert_eq!(
+            run(&manifest).status.code(),
+            Some(guest_storage_apply::TARGET_UNAVAILABLE_EXIT_CODE)
+        );
         manifest.archive_readiness = descriptor;
         if cleanup == "stale-path" {
             manifest.cleanup_paths.push(work.display().to_string());

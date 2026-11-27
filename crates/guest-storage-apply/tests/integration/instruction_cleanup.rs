@@ -46,7 +46,7 @@ fn instruction_cleanup_rejects_symlinked_pi_parent_before_later_work() {
 
         assert_eq!(
             output.status.code(),
-            Some(1),
+            Some(guest_contracts::storage_manifest::TARGET_UNAVAILABLE_EXIT_CODE),
             "instruction_only={instruction_only}, target files: {:?}, {:?}",
             fs::read(target.join("CLAUDE.md")),
             fs::read(target.join("AGENTS.md"))
@@ -208,7 +208,7 @@ fn instruction_cleanup_rejects_non_file_leaves_without_removing_them() {
 
         assert_eq!(
             fixture.run_manifest_stdin(&manifest).unwrap().status.code(),
-            Some(1)
+            Some(guest_contracts::storage_manifest::TARGET_UNAVAILABLE_EXIT_CODE)
         );
     }
 
