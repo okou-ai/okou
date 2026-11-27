@@ -795,6 +795,44 @@ class MemberPreferencesModelTest {
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MemberPreferencesRefreshTest {
     @Test
+    fun staleReadbackKeepsTheLatestSwitchChoice() = check { model, service, _ ->
+        service.stored = service.stored.copy(cloudBrowserEnabledByDefault = false)
+        model.refresh()
+        runCurrent()
+        val firstWrite = CompletableDeferred<Unit>()
+        val commit = service.write
+        var delayed: UpdatePreferencesRequest? = null
+        service.write = { request ->
+            if (request.cloudBrowserEnabledByDefault == true) {
+                firstWrite.await()
+                delayed = request
+                throw IOException("response lost")
+            }
+            commit(request)
+        }
+        service.load = {
+            val before = service.stored
+            // The first write commits after the read takes its snapshot.
+            delayed?.let { commit(it) }
+            before
+        }
+
+        model.setCloudBrowser(true)
+        runCurrent()
+        model.setCloudBrowser(false)
+        assertFalse(model.uiState.value.cloudBrowser)
+        firstWrite.complete(Unit)
+        runCurrent()
+        advanceTimeBy(3_000)
+        runCurrent()
+
+        assertEquals(listOf(true, false), service.requests.map { it.cloudBrowserEnabledByDefault })
+        assertFalse(service.stored.cloudBrowserEnabledByDefault)
+        assertFalse(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
+        assertNull(model.uiState.value.pending)
+    }
+
+    @Test
     fun overdueRefreshRunsOnResumeAndWaitsUntilTheSettingsVisitEnds() = check { model, service, _ ->
         val attempts = mutableListOf<Long>()
         service.load = {
