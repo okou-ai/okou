@@ -21,6 +21,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -102,8 +103,15 @@ class ScreenshotScenario {
         generateSequence(node(selector)) { it.parent }.first { it.isClickable }
 
     private fun isFocused(selector: BySelector): Boolean {
-        val row = device.findObject(By.copy(selector).pkg(app.packageName))
-        return generateSequence(row) { it.parent }.any { it.isFocused }
+        repeat(3) {
+            try {
+                val row = device.findObject(By.copy(selector).pkg(app.packageName))
+                return generateSequence(row) { it.parent }.any { it.isFocused }
+            } catch (_: StaleObjectException) {
+                // Keyboard insets can replace nodes while Tab moves through the catalog.
+            }
+        }
+        return false
     }
 
     private fun await(message: String, ready: () -> Boolean) {
