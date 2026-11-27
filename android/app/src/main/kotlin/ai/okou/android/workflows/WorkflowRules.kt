@@ -267,9 +267,16 @@ internal data class InstructionsFields(
 private fun changedText(before: String, after: String): CanonicalOptional<String?> =
     if (after == before) CanonicalOptional.Absent else CanonicalOptional.Present(after)
 
+internal fun workflowDisplayTitle(name: String, displayName: String?): String =
+    displayName?.takeIf(String::isNotBlank) ?: name
+
 internal fun WorkflowDetail.editableInstructions() =
     WorkflowEdit.Instructions(
-        InstructionsFields(displayName ?: name, description.orEmpty(), instruction.orEmpty()),
+        InstructionsFields(
+            workflowDisplayTitle(name, displayName),
+            description.orEmpty(),
+            instruction.orEmpty(),
+        ),
     )
 
 internal enum class EditableTrigger(val source: RuleSource) {

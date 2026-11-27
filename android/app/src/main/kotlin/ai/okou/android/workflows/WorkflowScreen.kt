@@ -238,7 +238,7 @@ internal fun WorkflowScreen(
             Text(
                 stringResource(
                     R.string.workflow_discard_detail,
-                    detail.displayName ?: detail.name,
+                    workflowDisplayTitle(detail.name, detail.displayName),
                 ),
             )
         }
@@ -711,7 +711,7 @@ private fun WorkflowRow(
             else -> sources.map { stringResource(it.label) }.joinToString(" · ")
         }
     WorkspaceToolDirectoryRow(
-        title = item.displayName ?: item.name,
+        title = workflowDisplayTitle(item.name, item.displayName),
         selected = selected,
         onClick = onSelect,
         modifier = modifier.testTag("workflow_row_${item.id}"),
@@ -1058,7 +1058,7 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail, modifier: Modifier = Mo
     val colors = MaterialTheme.colorScheme
     Column(modifier.padding(bottom = 20.dp)) {
         Text(
-            detail.displayName ?: detail.name,
+            workflowDisplayTitle(detail.name, detail.displayName),
             Modifier.semantics { heading() }.testTag("workflow_detail_title"),
             style =
                 MaterialTheme.typography.headlineSmall.copy(

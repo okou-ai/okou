@@ -25,6 +25,7 @@ import ai.okou.android.chat.ChatAttachmentReference
 import ai.okou.android.chat.isAttachmentImage
 import ai.okou.android.chat.isAttachmentVideo
 import ai.okou.android.chat.renderHistoryMarkdown
+import ai.okou.android.workflows.workflowDisplayTitle
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -170,7 +171,7 @@ internal constructor(
     internal suspend fun relatedWorkflows(ids: Set<String>): List<WorkflowResource> =
         api.workflows().mapNotNull {
             if (it.id in ids && it.official == null)
-                WorkflowResource(it.id, it.displayName ?: it.name)
+                WorkflowResource(it.id, workflowDisplayTitle(it.name, it.displayName))
             else null
         }
 
