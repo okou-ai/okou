@@ -397,7 +397,6 @@ internal fun SettingsModal(
     showDragHandle: Boolean = true,
     fitContentInsets: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
-    reserveTopInset: Boolean = false,
     snackbar: SnackbarHostState? = null,
     onBack: (() -> Unit)? = null,
     content: @Composable (centered: Boolean) -> Unit,
@@ -440,12 +439,9 @@ internal fun SettingsModal(
         val confirm by rememberUpdatedState(confirmDismiss)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
+            // Keep the content viewport stable as the sheet moves below the status bar.
             modifier =
-                if (reserveTopInset)
-                    Modifier.windowInsetsPadding(
-                        WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
-                    )
-                else Modifier,
+                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)),
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
@@ -580,8 +576,6 @@ internal fun SettingsSheet(
         fullScreen = compactHeight && fullScreenInShortWindow,
         fitContentInsets = compactHeight && fullScreenInShortWindow,
         confirmDismiss = confirmDismiss,
-        // Give native scroll bodies stable height as the sheet opens and consumes the top inset.
-        reserveTopInset = scroll == SettingsSheetScroll.None,
     ) { centered ->
         var panelBottom by remember { mutableFloatStateOf(0f) }
         var actionTop by remember { mutableStateOf<Float?>(null) }
