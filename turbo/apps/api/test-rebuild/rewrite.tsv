@@ -2463,7 +2463,7 @@ chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-r
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-006	planned					a-run
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-008	planned					a-run
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-009	planned					a-run
-chat	src/signals/routes/__tests__/project-run-context.test.ts	project-run-context-001	planned					a-run
+chat	src/signals/routes/__tests__/project-run-context.test.ts	project-run-context-001	rewritten	403.0	timeout=600 (5-run idle non-first median 403.0ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
 chat	src/signals/routes/__tests__/projects.test.ts	projects-001	rewritten	80.1	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
 chat	src/signals/routes/__tests__/projects.test.ts	projects-002	rewritten	95.5	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
 chat	src/signals/routes/__tests__/projects.test.ts	projects-006	skipped		slow-setup: Given+first When/Then 364 ms and 365 ms (the dispatched member Run from createRunExecutionCredentials with plan limited-free dominates; it is the only Run row in the file, and the two Project requests themselves stay under 20 ms)		B09	a-run
@@ -2496,10 +2496,10 @@ runs	src/signals/routes/__tests__/remote-runtime-invalidation.test.ts	remote-run
 remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-003	rewritten	120.5	extension after sandbox reset	src/signals/routes/__tests__/remotes.test.ts	pilot	
 remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-004	rewritten	35.5	extension after sandbox reset	src/signals/routes/__tests__/remotes.test.ts	pilot	
 remote-access	src/signals/routes/__tests__/remotes.test.ts	remotes-005	rewritten	105.7	extension after sandbox reset	src/signals/routes/__tests__/remotes.test.ts	pilot	
-runs	src/signals/routes/__tests__/run-bootstrap.catalog-generation.test.ts	run-bootstrap.catalog-generation-001	planned					a-run
-runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-001	planned				pilot	a-run
-runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-004	planned				pilot	a-run
-runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-005	planned				pilot	a-run
+runs	src/signals/routes/__tests__/run-bootstrap.catalog-generation.test.ts	run-bootstrap.catalog-generation-001	rewritten	235.6	timeout=600 (5-run idle non-first median 235.6ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
+runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-001	rewritten	155.1	timeout=400 (5-run idle non-first median 155.1ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
+runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-004	rewritten	165.7	timeout=400 (5-run idle non-first median 165.7ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
+runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-005	rewritten	187.6	timeout=400 (5-run idle non-first median 187.6ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
 runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-001	rewritten	145.5	split n=4: 1/4=99.9; 2/4=145.5; 3/4=121.0; 4/4=130.4	src/signals/routes/__tests__/run-cron.bdd.test.ts	B01	
 runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-002	rewritten	27.4		src/signals/routes/__tests__/run-cron.bdd.test.ts	pilot	
 runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-005	rewritten	14.0		src/signals/routes/__tests__/run-cron.bdd.test.ts	pilot	
@@ -2513,9 +2513,9 @@ runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecy
 runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-005	rewritten	153.4	split 1->2: both 200ms non-Run (71.8ms / 153.4ms)	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	R26	a-run
 runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-007	rewritten	154.4	split n=4: 1/4=88.4; 2/4=149.2; 3/4=154.4; 4/4=92.1	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts		d-other
 runs	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	run-lifecycle-admission.bdd-008	rewritten	232.7	timeout=600 (5-run idle non-first median 232.7ms)	src/signals/routes/__tests__/run-lifecycle-admission.bdd.test.ts	R26	a-run
-runs	src/signals/routes/__tests__/run-lifecycle-automatic.bdd.test.ts	run-lifecycle-automatic.bdd-001	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-automatic.bdd.test.ts	run-lifecycle-automatic.bdd-002	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-billing.bdd.test.ts	run-lifecycle-billing.bdd-001	revisit		revisit: reclassify to a-run: requires assigned Runs submitting GPT Image and Nano Banana usage, failing, and settling			d-other
+runs	src/signals/routes/__tests__/run-lifecycle-automatic.bdd.test.ts	run-lifecycle-automatic.bdd-001	rewritten	208.6	timeout=400 (5-run idle non-first median 208.6ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-automatic.bdd.test.ts	run-lifecycle-automatic.bdd-002	rewritten	370.5	timeout=600 (5-run idle non-first median 370.5ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-billing.bdd.test.ts	run-lifecycle-billing.bdd-001	rewritten	388.9	timeout=600 (5-run idle non-first median 388.9ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	d-other
 runs	src/signals/routes/__tests__/run-lifecycle-chain.bdd.test.ts	run-lifecycle-chain.bdd-002	planned					a-run
 runs	src/signals/routes/__tests__/run-lifecycle-chain.bdd.test.ts	run-lifecycle-chain.bdd-003	planned					a-run
 runs	src/signals/routes/__tests__/run-lifecycle-chain.bdd.test.ts	run-lifecycle-chain.bdd-006	planned					a-run
@@ -2619,8 +2619,8 @@ runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-star
 runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-002	planned				pilot	a-run
 runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-006	planned				pilot	a-run
 runs	src/signals/routes/__tests__/run-runner-startup.bdd.test.ts	run-runner-startup.bdd-008	planned				pilot	a-run
-runs	src/signals/routes/__tests__/run-uploaded-files-publication.test.ts	run-uploaded-files-publication-001	planned					a-run
-runs	src/signals/routes/__tests__/run-uploaded-files-publication.test.ts	run-uploaded-files-publication-002	planned					a-run
+runs	src/signals/routes/__tests__/run-uploaded-files-publication.test.ts	run-uploaded-files-publication-001	rewritten	287.4	timeout=400 (5-run idle non-first median 287.4ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
+runs	src/signals/routes/__tests__/run-uploaded-files-publication.test.ts	run-uploaded-files-publication-002	rewritten	194.2	timeout=400 (5-run idle non-first median 194.2ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
 runs	src/signals/routes/__tests__/runner-app-state.test.ts	runner-app-state-002	planned					a-run
 runs	src/signals/routes/__tests__/runner-cancellation.test.ts	runner-cancellation-001	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a thread run dispatched to a Runner ... the sandbox holds the run's sandbox token"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14		pilot	a-run
 runs	src/signals/routes/__tests__/runner-cancellation.test.ts	runner-cancellation-003	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("each have one thread run dispatched to the same Runner, each with its own sandbox token"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14		pilot	a-run
