@@ -8,10 +8,7 @@ import {
 import { expect, test, vi } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  openBrowserChat,
-  remoteBrowserInput,
-} from "./conversation-browser-fixtures.ts";
+import { openBrowserChat } from "./conversation-browser-fixtures.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
 function nativeGeometry(budget: number) {
@@ -137,8 +134,10 @@ test("chat-navigation-browser-016 Resizing during a disconnected viewer takes ef
   });
   const resize = nativeGeometry(800);
   click(open);
-  const field = await waitFor(readyBrowserInput);
-  await admission(12, "Example");
+  const field = await waitFor(() => {
+    expectAdmission(12, "Example");
+    return readyBrowserInput();
+  });
   disconnected = true;
   cdp.setAutoOpen(false);
   cdp.disconnect({ code: 1006, reason: "Reconnect the native browser" });
@@ -167,7 +166,7 @@ test("chat-navigation-browser-012 Narrow Page 12 admission releases after both n
     many: true,
   });
   click(open);
-  await remoteBrowserInput();
+  await waitFor(readyBrowserInput);
   await selectLast();
   await admission(2, "Page 12");
   const hide = await findFastControl("button", "Hide chat list");
@@ -204,7 +203,7 @@ test.each([
       many: true,
     });
     click(open);
-    await remoteBrowserInput();
+    await waitFor(readyBrowserInput);
     await selectLast();
     await admission(2, "Page 12");
     click(await findFastControl("button", "Hide chat list"));
@@ -227,11 +226,13 @@ test.each([
       history.back();
     });
     click(await findFastControl("button", /Open .*browser/i));
-    await remoteBrowserInput();
+    await waitFor(() => {
+      expectAdmission(2, "Example");
+      readyBrowserInput();
+    });
     expect(old).not.toBeInTheDocument();
     expect(list).toBeInTheDocument();
     const restored = owner("panel");
-    await admission(2, "Example");
     const expected = reportsActivePage ? "Page 12" : "Example";
     if (reportsActivePage) {
       cdp.event("BrowserUse.activeTargetChanged", { targetId: "page-12" });
@@ -262,7 +263,7 @@ test.each(["panel", "chat-list"] as const)(
     const setMotion = nativeTransitions();
     const chat = await openBrowserChat(context, "live", false, { many: true });
     click(chat.open);
-    await remoteBrowserInput();
+    await waitFor(readyBrowserInput);
     await selectLast();
     await admission(2, "Page 12");
 
@@ -293,7 +294,7 @@ test.each(["panel", "chat-list"] as const)(
       return history.back();
     });
     click(await findFastControl("button", /Open .*browser/i));
-    await remoteBrowserInput();
+    await waitFor(readyBrowserInput);
     expect(owner("chat-list")).toBe(list);
     const returning = owner("panel");
     expect(returning).not.toBe(leaving);
