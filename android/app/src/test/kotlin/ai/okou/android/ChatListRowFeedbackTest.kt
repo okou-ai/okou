@@ -15,7 +15,6 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.platform.app.InstrumentationRegistry
@@ -83,11 +82,11 @@ internal class ChatListRowFeedbackTest : ChatListRootTestFixture() {
         assertFocusOutline(project, colors.surface, colors.onSurface)
         assertTopColor(chat, ordinaryHover)
         chat.performMouseInput { exit() }
+        // Keep the native press ripple out of the hover and focus captures.
         chat
-            .performClick()
+            .performSemanticsAction(SemanticsActions.OnClick)
             .assertIsSelected()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
-        instrumentation.setInTouchMode(false)
         chat.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         assertFocusOutline(chat, colors.secondaryContainer, colors.onSecondaryContainer)
         chat.performMouseInput { enter(center) }
