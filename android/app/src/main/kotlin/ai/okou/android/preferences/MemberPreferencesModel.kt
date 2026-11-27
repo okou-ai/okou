@@ -38,16 +38,32 @@ enum class PreferenceStatus {
     RefreshFailed,
 }
 
-internal sealed class PreferenceSaveNotice {
-    val order = nextPaneFeedbackOrder()
+internal enum class PreferenceField(val retainsLocalValue: Boolean = false) {
+    Theme(retainsLocalValue = true),
+    ColorTheme(retainsLocalValue = true),
+    Locale,
+    Timezone,
+    CloudBrowser,
+}
 
+internal sealed class PreferenceSaveNotice(val order: Long = nextPaneFeedbackOrder()) {
     class Unconfirmed : PreferenceSaveNotice()
 
     class Rejected(
-        val timezoneOnly: Boolean,
-        val rolledBack: Boolean,
-        val keptAppearance: Boolean,
-    ) : PreferenceSaveNotice()
+        private val fields: Set<PreferenceField>,
+        order: Long = nextPaneFeedbackOrder(),
+    ) : PreferenceSaveNotice(order) {
+        val timezoneOnly =
+            PreferenceField.Timezone in fields && fields.count { !it.retainsLocalValue } == 1
+        val rolledBack = fields.any { !it.retainsLocalValue }
+        val keptAppearance = fields.any { it.retainsLocalValue }
+
+        fun without(field: PreferenceField): Rejected? {
+            if (field !in fields) return this
+            val remaining = fields - field
+            return if (remaining.isEmpty()) null else Rejected(remaining, order)
+        }
+    }
 }
 
 data class PreferenceChange(
@@ -233,8 +249,8 @@ class MemberPreferencesModel(
     private val mutable =
         MutableStateFlow(MemberPreferencesState(initial, initialPending?.afterReadback(initial)))
     val uiState = mutable.asStateFlow()
-    private val saveNotice = MutableStateFlow<PreferenceSaveNotice?>(null)
-    internal val notices = saveNotice.asStateFlow()
+    private val saveNotices = MutableStateFlow<List<PreferenceSaveNotice>>(emptyList())
+    internal val notices = saveNotices.asStateFlow()
     private var retired = false
     private var request: Job? = null
     private var recovery: Recovery? = null
@@ -259,44 +275,63 @@ class MemberPreferencesModel(
             status == PreferenceStatus.SaveUnconfirmed ||
             pending.isScheduleRepairOnly
 
-    internal fun dismissNotice(notice: PreferenceSaveNotice) {
-        if (saveNotice.value === notice) saveNotice.value = null
+    internal fun dismissNotice(order: Long) {
+        saveNotices.value = saveNotices.value.filterNot { it.order == order }
     }
 
     fun selectTheme(value: UserPreferencesTheme) {
         val state = mutable.value
-        if (state.theme != value) select((state.pending ?: PreferenceChange()).copy(theme = value))
+        if (state.theme != value)
+            select((state.pending ?: PreferenceChange()).copy(theme = value), PreferenceField.Theme)
     }
 
     fun selectColorTheme(value: UserPreferencesColorTheme) {
         val state = mutable.value
         if (state.colorTheme != value)
-            select((state.pending ?: PreferenceChange()).copy(colorTheme = value))
+            select(
+                (state.pending ?: PreferenceChange()).copy(colorTheme = value),
+                PreferenceField.ColorTheme,
+            )
     }
 
     fun selectLocale(value: UserPreferencesLocale) {
         val state = mutable.value
         if (value in state.supportedLocales && state.locale != value)
-            select((state.pending ?: PreferenceChange()).copy(locale = value))
+            select(
+                (state.pending ?: PreferenceChange()).copy(locale = value),
+                PreferenceField.Locale,
+            )
     }
 
     fun selectTimezone(value: String, missingOnServer: Boolean = false) {
         if (!current()) return
         val state = mutable.value
         if (state.pending?.timezoneToWrite != value && (state.timezone != value || missingOnServer))
-            select((state.pending ?: PreferenceChange()).copy(timezone = value))
+            select(
+                (state.pending ?: PreferenceChange()).copy(timezone = value),
+                PreferenceField.Timezone,
+            )
     }
 
     fun setCloudBrowser(enabled: Boolean) {
         val state = mutable.value
         if (state.cloudBrowser != enabled) {
-            select((state.pending ?: PreferenceChange()).copy(cloudBrowser = enabled))
+            select(
+                (state.pending ?: PreferenceChange()).copy(cloudBrowser = enabled),
+                PreferenceField.CloudBrowser,
+            )
         }
     }
 
-    private fun select(change: PreferenceChange) {
+    private fun select(change: PreferenceChange, field: PreferenceField) {
         if (!current()) return
-        saveNotice.value = null
+        saveNotices.value =
+            saveNotices.value.mapNotNull { notice ->
+                when (notice) {
+                    is PreferenceSaveNotice.Rejected -> notice.without(field)
+                    is PreferenceSaveNotice.Unconfirmed -> null
+                }
+            }
         if (recovery?.protectsReadback == true) {
             mutable.value = mutable.value.copy(pending = change)
             return
@@ -331,7 +366,7 @@ class MemberPreferencesModel(
     internal fun showSettings(visible: Boolean) {
         if (settingsOpen == visible) return
         settingsOpen = visible
-        saveNotice.value = null
+        saveNotices.value = emptyList()
         if (visible) {
             pauseRefresh()
             if (mutable.value.status == PreferenceStatus.SaveUnconfirmed) refresh()
@@ -520,8 +555,11 @@ class MemberPreferencesModel(
                                 pending?.includesAnyOf(failed) != true
                         )
                             saveFailures = 0
-                        if (finalReadback && saveNotice.value is PreferenceSaveNotice.Unconfirmed)
-                            saveNotice.value = null
+                        if (finalReadback)
+                            saveNotices.value =
+                                saveNotices.value.filterNot {
+                                    it is PreferenceSaveNotice.Unconfirmed
+                                }
                         val settled =
                             if (rejected == null) updated else finishRejected(updated, rejected)
                         mutable.value = settled
@@ -641,7 +679,7 @@ class MemberPreferencesModel(
         if (sent != null) return true // Last write still needs authoritative readback.
         nextRefreshAt = monotonicMillis() + preferenceRefreshMillis
         if (state.status != PreferenceStatus.SaveUnconfirmed)
-            saveNotice.value = PreferenceSaveNotice.Unconfirmed()
+            saveNotices.value += PreferenceSaveNotice.Unconfirmed()
         mutable.value = state.copy(status = PreferenceStatus.SaveUnconfirmed, recovering = false)
         return false
     }
@@ -653,18 +691,16 @@ class MemberPreferencesModel(
         val latest = state.pending
         val theme = sent.theme?.takeIf { it == latest?.theme }
         val palette = sent.colorTheme?.takeIf { it == latest?.colorTheme }
-        val timezone = sent.timezone != null && sent.timezone == latest?.timezone
-        val other =
-            (sent.locale != null && sent.locale == latest?.locale) ||
-                (sent.cloudBrowser != null && sent.cloudBrowser == latest?.cloudBrowser)
-        val keptAppearance = theme != null || palette != null
-        if (timezone || other || keptAppearance)
-            saveNotice.value =
-                PreferenceSaveNotice.Rejected(
-                    timezone && !other,
-                    timezone || other,
-                    keptAppearance,
-                )
+        val fields = buildSet {
+            if (theme != null) add(PreferenceField.Theme)
+            if (palette != null) add(PreferenceField.ColorTheme)
+            if (sent.timezone != null && sent.timezone == latest?.timezone)
+                add(PreferenceField.Timezone)
+            if (sent.locale != null && sent.locale == latest?.locale) add(PreferenceField.Locale)
+            if (sent.cloudBrowser != null && sent.cloudBrowser == latest?.cloudBrowser)
+                add(PreferenceField.CloudBrowser)
+        }
+        if (fields.isNotEmpty()) saveNotices.value += PreferenceSaveNotice.Rejected(fields)
         val remaining =
             latest?.copy(timezoneToReconcile = null)?.after(sent.copy(timezoneToReconcile = null))
         val repair = latest?.timezoneToReconcile?.takeIf { it == state.confirmed.timezone }

@@ -132,7 +132,7 @@ class OkouAppTest {
         chatService: ChatListService = TestChatService(),
         inputModeManager: InputModeManager? = null,
         defaultModel: DefaultModelSettings? = null,
-    ) {
+    ): MemberPreferencesModel {
         val models = compose.runOnIdle {
             val provider =
                 ViewModelProvider(
@@ -321,6 +321,7 @@ class OkouAppTest {
                 }
             }
         }
+        return models.second
     }
 
     @After
@@ -517,6 +518,32 @@ class OkouAppTest {
             .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Light").assertIsDisplayed()
         notice.assertDoesNotExist()
+    }
+
+    @Test
+    fun separatePreferenceRejectionsAreShownInOrder() {
+        val preferences = render(failPreferenceSave = { true })
+        compose.openChatListSettings()
+        selectAppearance("Dark")
+        val appearanceFailure =
+            compose.onNodeWithText(
+                compose.activity.getString(R.string.settings_appearance_sync_failed),
+            )
+        val timezoneFailure =
+            compose.onNodeWithText(
+                compose.activity.getString(R.string.settings_timezone_save_rejected),
+            )
+        appearanceFailure.assertIsDisplayed()
+
+        compose.runOnIdle { preferences.selectTimezone("Asia/Kathmandu") }
+
+        appearanceFailure.assertIsDisplayed()
+        timezoneFailure.assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(5_000)
+        appearanceFailure.assertDoesNotExist()
+        timezoneFailure.assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(5_000)
+        timezoneFailure.assertDoesNotExist()
     }
 
     @Test

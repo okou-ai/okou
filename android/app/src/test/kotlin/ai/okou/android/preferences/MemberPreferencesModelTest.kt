@@ -693,7 +693,7 @@ class MemberPreferencesModelTest {
             )
             assertEquals(confirmed, model.uiState.value.locale)
             assertNull(model.uiState.value.pending)
-            val notice = model.notices.value as PreferenceSaveNotice.Rejected
+            val notice = model.notices.value.single() as PreferenceSaveNotice.Rejected
             assertTrue(notice.rolledBack)
             assertFalse(notice.keptAppearance)
             advanceTimeBy(60_000)
@@ -717,7 +717,7 @@ class MemberPreferencesModelTest {
             assertEquals(PreferenceStatus.SaveUnconfirmed, model.uiState.value.status)
             assertTrue(model.uiState.value.cloudBrowser)
             assertNull(model.pendingForWorkspaceRestore())
-            assertTrue(model.notices.value is PreferenceSaveNotice.Unconfirmed)
+            assertTrue(model.notices.value.single() is PreferenceSaveNotice.Unconfirmed)
 
             api.load = { api.stored }
             model.foreground(true)
@@ -725,7 +725,7 @@ class MemberPreferencesModelTest {
             assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
             assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
             assertNull(model.uiState.value.pending)
-            assertNull(model.notices.value)
+            assertTrue(model.notices.value.isEmpty())
             assertEquals(1, api.requests.size)
         }
 
@@ -748,7 +748,7 @@ class MemberPreferencesModelTest {
             assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.localSnapshot.theme)
             assertEquals(UserPreferencesTheme.DARK, model.uiState.value.confirmed.theme)
             assertNull(model.uiState.value.pending)
-            val notice = model.notices.value as PreferenceSaveNotice.Rejected
+            val notice = model.notices.value.single() as PreferenceSaveNotice.Rejected
             assertFalse(notice.rolledBack)
             assertTrue(notice.keptAppearance)
             assertEquals(

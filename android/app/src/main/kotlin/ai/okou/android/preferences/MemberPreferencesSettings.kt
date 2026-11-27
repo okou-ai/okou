@@ -211,7 +211,7 @@ internal fun memberPreferenceSaveError(
     model: MemberPreferencesModel,
     snackbar: SnackbarHostState,
 ): PaneFeedbackError? {
-    val notice = model.notices.collectAsStateWithLifecycle().value ?: return null
+    val notice = model.notices.collectAsStateWithLifecycle().value.firstOrNull() ?: return null
     return PaneFeedbackError(notice.order) {
         val message =
             when (notice) {
@@ -232,7 +232,7 @@ internal fun memberPreferenceSaveError(
                         }
                         .joinToString(" ")
             }
-        PaneFeedbackMessage(snackbar, notice, message) { model.dismissNotice(notice) }
+        PaneFeedbackMessage(snackbar, notice.order, message) { model.dismissNotice(notice.order) }
     }
 }
 
