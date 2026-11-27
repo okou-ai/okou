@@ -559,7 +559,6 @@ test.each(scenarios)(
           : Date.UTC(2030, 0, 2, 12, 42);
     mockNow(at - 30_000);
     const cron = createProactiveCronApi(context);
-    await cron.activate();
     await prepareForeignFeedback(definitionName, "org_proactive_content");
     const fixture = createChatEventsFixture(context);
     const actor = fixture.bdd.user({
@@ -715,7 +714,6 @@ test.each([
     const firstSlot = Date.UTC(2030, 0, 2, hour, minute);
     mockNow(firstSlot - 30_000);
     const cron = createProactiveCronApi(context);
-    await cron.activate();
     const fixture = createChatEventsFixture(context);
     const actor = fixture.bdd.user({
       orgId: "org_proactive_content",

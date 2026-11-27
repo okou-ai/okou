@@ -181,16 +181,7 @@ export const cronMonitorChatEventQueueContract: ClientDescriptor<
 export const cronProactiveContract: ClientDescriptor<
   typeof OriginalCronProactiveContract
 > = {
-  handoff: {
-    method: "POST",
-    path: "/api/cron/proactive/handoff",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-    },
-  },
-  compare: {
+  dispatch: {
     method: "GET",
     path: "/api/cron/proactive",
     statuses: {

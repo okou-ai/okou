@@ -761,7 +761,6 @@ describe("GET /api/artifacts/catalog", () => {
       [200],
     );
     const cron = createProactiveCronApi(context);
-    await cron.activate();
     mockNow(Date.UTC(2030, 0, 1, 6, 59));
     await api.registerDirectRunner(owner.runnerGroup);
     await cron.dispatch();

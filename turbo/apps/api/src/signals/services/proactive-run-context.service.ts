@@ -60,7 +60,6 @@ export function proactiveInputSql(
       AND o.settled_at IS NULL AND o.run_id IS NULL AND o.preference_revision=s.preference_revision
       AND s.enabled AND s.intended_enabled AND (o.task='morning-brief' OR ${suggestions})
       AND EXISTS (${activePlatformScheduleOwnerQuery(identity, nowDate())})
-      AND EXISTS (SELECT 1 FROM proactive_dispatch_handoff WHERE phase='standalone')
       ${commit ? sql`AND ${suggestions}=${commit.suggestionsEnabled} AND coalesce(f.suggestions,true)=${commit.cardDeliveryEnabled} FOR UPDATE OF s,o` : sql.empty()}`;
 }
 

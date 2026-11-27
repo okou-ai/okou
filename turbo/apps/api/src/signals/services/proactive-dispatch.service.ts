@@ -55,7 +55,6 @@ interface DueSchedule {
     readonly lastMessageAt: Date;
   } | null;
 }
-const standalone = sql`EXISTS (SELECT 1 FROM proactive_dispatch_handoff WHERE phase='standalone')`;
 const currentMember = sql`EXISTS (SELECT 1 FROM org_members_cache m WHERE m.org_id=${proactiveSchedules.orgId} AND m.user_id=${proactiveSchedules.userId})`;
 const noOutstanding = sql`NOT EXISTS (SELECT 1 FROM proactive_occurrences o
   WHERE (o.org_id,o.user_id,o.task)=(${proactiveSchedules.orgId},${proactiveSchedules.userId},${proactiveSchedules.task}) AND o.settled_at IS NULL)`;
@@ -68,7 +67,6 @@ function observedSlot(row: Schedule, anchor: Date) {
     eq(proactiveSchedules.enabled, true),
     eq(proactiveSchedules.intendedEnabled, true),
     eq(proactiveSchedules.nextRunAt, anchor),
-    standalone,
     noOutstanding,
   );
 }
@@ -419,7 +417,6 @@ const recoverProactiveSchedules$ = command(
             row.nextRunAt
               ? eq(proactiveSchedules.nextRunAt, row.nextRunAt)
               : isNull(proactiveSchedules.nextRunAt),
-            standalone,
           ),
         );
     }
