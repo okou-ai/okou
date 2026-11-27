@@ -10,9 +10,6 @@ export const PRESENTATION_STATIC_HTML_INSTRUCTION =
 export const PRESENTATION_DELIVERY_INSTRUCTION =
   "- Presentation delivery: when a native PPTX template is selected, follow its native authoring and verification workflow; do not author or convert HTML first. Otherwise, first author and check the deck as HTML. Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX. Do not infer a conversion request from remembered preferences or intended use. Deliver one format unless the user requests multiple formats.";
 
-export const PRESENTATION_OUTPUT_FORMAT_INSTRUCTION =
-  "- Presentation output: explicit current request → CURRENT message's saved `# Presentation Output Preference` → HTML. Do not ask for, query or save a preference, or infer a format from history, Memory or intended use. A default does not request a presentation or affect other artifact types. Use the template version matching this format; template instructions do not override it. Deliver one format unless multiple are requested.";
-
 export function presentationImageInstructions(
   imageGenerationEnabled: boolean,
 ): readonly string[] {
@@ -23,34 +20,22 @@ export function presentationDeliveryInstructions(
   options: {
     readonly outputFormat?: PresentationOutputFormat;
     readonly hostCommand?: string;
-    readonly presentationOutputFormatEnabled?: boolean;
   } = {},
 ): readonly string[] {
   if (options.outputFormat === "pptx") {
-    return options.presentationOutputFormatEnabled
-      ? [
-          "- For a new deck with resolved PPTX output, author an editable native PPTX with this package, not HTML. Follow its export and verification workflow, render and inspect the slides, then upload the .pptx with this integration's upload-file command and return its exact URL.",
-        ]
-      : [
-          "- Author an editable native PPTX directly with the selected package; do not author HTML first or convert an HTML deck.",
-          "- Follow the package's PowerPoint export and verification workflow, then render and inspect its slide images before delivery.",
-          "- Deliver the final .pptx with this integration's upload-file command. Do not host an HTML deck instead. Deliver one format unless the user requests multiple formats.",
-          "- Return the exact URL printed by the file delivery command.",
-        ];
+    return [
+      "- Author an editable native PPTX directly with the selected package; do not author HTML first or convert an HTML deck.",
+      "- Follow the package's PowerPoint export and verification workflow, then render and inspect its slide images before delivery.",
+      "- Deliver the final .pptx with this integration's upload-file command. Do not host an HTML deck instead. Deliver one format unless the user requests multiple formats.",
+      "- Return the exact URL printed by the file delivery command.",
+    ];
   }
   const hostCommand =
     options.hostCommand ??
     "okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png --json";
   return [
-    ...(options.presentationOutputFormatEnabled
-      ? [
-          "- For PPTX delivery from an HTML-only template, use the enabled HTML-to-PPTX conversion workflow without another conversion request and deliver the converted PPTX. If conversion is unavailable or fails, report the blocker instead of changing format or style.",
-          "- For HTML delivery only, follow the preview and hosting steps below.",
-        ]
-      : [
-          PRESENTATION_DELIVERY_INSTRUCTION,
-          "- For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions. Otherwise, follow the HTML preview and hosting steps below.",
-        ]),
+    PRESENTATION_DELIVERY_INSTRUCTION,
+    "- For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions. Otherwise, follow the HTML preview and hosting steps below.",
     ...artifactPreviewInstructions(),
     `- For HTML delivery, host the finished deck: ${hostCommand}`,
     "- Return the exact URL printed by the selected delivery command.",

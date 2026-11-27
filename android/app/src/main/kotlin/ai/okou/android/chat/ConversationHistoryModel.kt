@@ -40,6 +40,7 @@ data class ConversationUiState(
     val initialReadFailed: Boolean = false,
     val syncProgressDelayMillis: Long? = null,
     val consecutiveReadFailures: Int = 0,
+    val readRound: Any? = null,
 )
 
 /** A completed network read, distinct from both selection identity and the event cursor. */
@@ -213,11 +214,13 @@ class ConversationHistoryModel(
         if (retired || !authorized() || job?.isActive == true) return
         val ticket = generation
         val eviction = accessEvictions[thread.id]
+        val readRound = Any()
         publish(
             state.copy(
                 phase = if (eviction == null) HistoryPhase.Loading else HistoryPhase.Missing,
                 confirmation = null,
                 syncProgressDelayMillis = confirmed?.history?.progressDelayMillis(),
+                readRound = readRound,
                 consecutiveReadFailures = 0,
                 initialReadFailed = false,
             ),
@@ -284,6 +287,7 @@ class ConversationHistoryModel(
                         cacheUnavailable = diskFailed,
                         initialReadFailed = false,
                         syncProgressDelayMillis = null,
+                        readRound = null,
                         consecutiveReadFailures = 0,
                         // Equal rows still complete a new read; StateFlow may conflate phases.
                         confirmation =
@@ -291,6 +295,16 @@ class ConversationHistoryModel(
                     ),
                 )
             } catch (cancelled: CancellationException) {
+                val currentState = mutable.value
+                if (current(ticket) && currentState.readRound === readRound) {
+                    publish(
+                        currentState.copy(
+                            readRound = null,
+                            syncProgressDelayMillis = null,
+                            consecutiveReadFailures = 0,
+                        ),
+                    )
+                }
                 throw cancelled
             } catch (error: Exception) {
                 requireCurrent(ticket)
@@ -310,6 +324,7 @@ class ConversationHistoryModel(
                                     state.transcript == null &&
                                         chatReadRetryDelayMillis(error, 0) == null,
                                 syncProgressDelayMillis = null,
+                                readRound = null,
                                 consecutiveReadFailures = 0,
                             ),
                         )
@@ -403,6 +418,7 @@ class ConversationHistoryModel(
                 confirmation = null,
                 initialReadFailed = false,
                 syncProgressDelayMillis = null,
+                readRound = null,
                 consecutiveReadFailures = 0,
                 detail = null,
                 detailPhase = ChatReadPhase.Failed,

@@ -80,7 +80,6 @@ import androidx.compose.ui.unit.sp
 
 private enum class ConnectorPanel {
     Account,
-    Rename,
     Authorize,
     Permissions,
 }
@@ -120,10 +119,15 @@ internal fun ConnectorDetails(
     val accounts = accountContent.orEmpty()
     val hasAccountContent = accountContent != null
     val showsAddAccount = hasAccountContent && detail?.methods?.isNotEmpty() == true
-    var panel by remember { mutableStateOf<ConnectorPanel?>(null) }
-    var accountId by remember { mutableStateOf<String?>(null) }
+    val renameEditor = model.renameEditor?.takeIf { it.target.slug == state.slug }
+    var panel by remember {
+        mutableStateOf(if (renameEditor != null) ConnectorPanel.Account else null)
+    }
+    var accountId by remember { mutableStateOf(renameEditor?.accountId) }
     var resolvingInitialAccount by
-        remember(initialAccountId) { mutableStateOf(initialAccountId != null) }
+        remember(initialAccountId) {
+            mutableStateOf(initialAccountId != null && renameEditor == null)
+        }
     var restoreAccountFocus by remember { mutableStateOf(false) }
     var restoreActionFocus by remember { mutableStateOf<FocusRequester?>(null) }
     val permissionAnnouncements = remember(model) { ConnectorReadAnnouncements() }
@@ -135,10 +139,11 @@ internal fun ConnectorDetails(
     val disconnectFocus = remember { FocusRequester() }
     val account = accounts.find { it.id == accountId }
     val disconnectImpact = state.impact?.takeIf { it.accountId == accountId }
-    val action = state.action?.takeIf { it.target.slug == entry?.slug }
+    val action = state.action?.takeIf { it.target.slug == state.slug }
     val busy = action?.busy == true
     val canModify = state.canChangeAccounts
     val color = MaterialTheme.colorScheme
+    val unnamedAccount = stringResource(R.string.connector_account)
 
     LaunchedEffect(initialAccountId, state.accounts.isConfirmed) {
         if (resolvingInitialAccount && state.accounts.isConfirmed) {
@@ -164,23 +169,22 @@ internal fun ConnectorDetails(
             onCloseInitialAccount()
             return
         }
-        when (previous) {
-            ConnectorPanel.Rename,
-            ConnectorPanel.Authorize -> {
-                panel = if (account != null) ConnectorPanel.Account else null
-                if (account != null) {
-                    restoreActionFocus =
-                        if (previous == ConnectorPanel.Rename) renameFocus else primaryAccountFocus
-                }
-            }
-            else -> panel = null
-        }
+        panel =
+            if (previous == ConnectorPanel.Authorize && account != null) ConnectorPanel.Account
+            else null
+        if (panel == ConnectorPanel.Account) restoreActionFocus = primaryAccountFocus
         if (panel == null) {
             if (previous == ConnectorPanel.Permissions) {
                 if (detail?.hasPermissions == true) permissionsFocus.requestFocus()
             } else if (account != null) restoreAccountFocus = true
             else if (showsAddAccount && state.accounts.data != null) addFocus.requestFocus()
         }
+    }
+
+    fun returnFromRename(editor: ConnectorRenameEditor) {
+        model.closeRename(editor)
+        model.dismissAction()
+        restoreActionFocus = renameFocus
     }
 
     val confirmingDisconnect = disconnectImpact != null
@@ -223,11 +227,9 @@ internal fun ConnectorDetails(
                 model.dismissAction()
             }
             ConnectorResult.Renamed -> {
-                if (panel == ConnectorPanel.Rename && accountId == action.target.connectionId) {
-                    panel = ConnectorPanel.Account
-                    restoreActionFocus = renameFocus
-                }
-                model.dismissAction()
+                if (renameEditor != null && renameEditor.target == action.target)
+                    returnFromRename(renameEditor)
+                else model.dismissAction()
             }
             ConnectorResult.Authorized -> {
                 if (panel == ConnectorPanel.Authorize) {
@@ -398,7 +400,18 @@ internal fun ConnectorDetails(
         }
     }
 
-    if (panel != null && entry != null) {
+    if (renameEditor != null) {
+        val confirmedAccount = account?.takeIf { state.accounts.data != null }
+        ConnectorRenameSheet(
+            renameEditor,
+            confirmedLabel = confirmedAccount?.label(),
+            canModify = canModify && confirmedAccount != null,
+            action = action?.takeIf { it.target == renameEditor.target },
+            save = { model.submitRename(renameEditor, it) },
+            cancel = { if (!busy) returnFromRename(renameEditor) },
+            readFeedback = rememberConnectorReadFeedback(accountNotice, announcements),
+        )
+    } else if (panel != null && entry != null) {
         if (panel != ConnectorPanel.Permissions && accountId != null && account == null) {
             ConnectorSheet(
                 entry.name,
@@ -442,7 +455,7 @@ internal fun ConnectorDetails(
                                 disconnectFocus = disconnectFocus,
                                 rename = {
                                     model.dismissAction()
-                                    panel = ConnectorPanel.Rename
+                                    model.openRename(account.id, unnamedAccount)
                                 },
                                 reauthorize = {
                                     model.dismissAction()
@@ -468,18 +481,6 @@ internal fun ConnectorDetails(
                                 }
                             }
                         }
-                    }
-                ConnectorPanel.Rename ->
-                    if (account != null) {
-                        ConnectorRenameSheet(
-                            account,
-                            canModify,
-                            action,
-                            save = { model.rename(account.id, it) },
-                            cancel = ::dismissPanel,
-                            readFeedback =
-                                rememberConnectorReadFeedback(accountNotice, announcements),
-                        )
                     }
                 ConnectorPanel.Authorize ->
                     ConnectorAuthorizationSheet(

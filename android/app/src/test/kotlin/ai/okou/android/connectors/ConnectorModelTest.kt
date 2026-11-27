@@ -864,7 +864,7 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
         }
 
     @Test
-    fun repeatedUnmatchedReadbacksLeaveTheOutcomeUnconfirmedAndRestoreEditing() =
+    fun exhaustedUnmatchedReadbacksRestoreEditingAndUseLaterAccountData() =
         withModel(CONNECTOR_CALENDAR) { fixture, model ->
             fixture.deferRenameCommit = true
             model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
@@ -875,10 +875,41 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
                 model.await { it.action?.busy == false }
             }
 
-            val unresolved = model.uiState.value
-            assertTrue(unresolved.canChangeAccounts)
-            assertEquals(ConnectorProblem.VerificationPending, unresolved.action?.problem)
-            assertNull(unresolved.action?.result)
+            val failed = model.uiState.value
+            assertTrue(failed.canChangeAccounts)
+            assertEquals(ConnectorProblem.Failed, failed.action?.problem)
+            assertNull(failed.action?.result)
+            assertEquals(1, fixture.renameRequests.get())
+
+            fixture.commitDeferredRename()
+            model.resume()
+            val refreshed = model.await {
+                it.accounts.data?.any { account ->
+                    account.id == CONNECTOR_CALENDAR_PRIMARY &&
+                        account.displayName == "Meeting calendar"
+                } == true
+            }
+            assertNull(refreshed.action?.result)
+            assertEquals(1, fixture.renameRequests.get())
+        }
+
+    @Test
+    fun failedReadbacksUseTheSameRenameVerificationBudget() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            fixture.loseRenameReply = true
+            fixture.failAccountReads = true
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+            model.await { it.action?.reconciling == true && !it.action.busy }
+
+            repeat(2) {
+                model.resume()
+                model.await { it.action?.busy == false }
+            }
+
+            val failed = model.uiState.value
+            assertTrue(failed.canChangeAccounts)
+            assertEquals(ConnectorProblem.Failed, failed.action?.problem)
+            assertNull(failed.action?.result)
             assertEquals(1, fixture.renameRequests.get())
         }
 

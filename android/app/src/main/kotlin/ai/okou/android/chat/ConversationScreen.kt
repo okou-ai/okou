@@ -236,13 +236,21 @@ internal fun ConversationRoute(
                 }
             }
         }
-    val syncDelay = state.syncProgressDelayMillis.takeIf { transcript != null }
-    val syncDelayReached = key(threadId) { rememberContentReadFeedbackAfter(syncDelay) }
+    val historyRound =
+        state.readRound.takeIf {
+            transcript != null && state.phase == HistoryPhase.Loading
+        }
+    var historyProgressShown by remember(model, historyRound) { mutableStateOf(false) }
+    val historyStale =
+        rememberContentReadFeedbackAfter(
+            state.syncProgressDelayMillis.takeIf { historyRound != null },
+            historyRound,
+        )
     val showHistoryProgress =
-        transcript != null &&
-            state.phase == HistoryPhase.Loading &&
-            (state.consecutiveReadFailures >= 3 ||
-                syncDelayReached &&
+        historyRound != null &&
+            (historyProgressShown ||
+                state.consecutiveReadFailures >= 3 ||
+                historyStale &&
                     activity == null &&
                     queue.isEmpty() &&
                     content.none { it.preview?.pendingDelivery != null })
@@ -922,6 +930,7 @@ internal fun ConversationRoute(
                     )
                 }
                 if (showTimeline && showHistoryProgress) {
+                    if (visible && !historyProgressShown) SideEffect { historyProgressShown = true }
                     Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
                         ContentReadProgress(R.string.history_syncing)
                     }

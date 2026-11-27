@@ -85,10 +85,6 @@ export const featureSwitches$ = computed(async (get) => {
   );
   applySwitches(combined, getEmailEnabledFeatureStates(identity.email));
   applySwitches(combined, result.body.switches);
-  // Presentation preferences are readable only when the API enables them.
-  combined[FeatureSwitchKey.PresentationOutputFormat] =
-    result.body.effectiveSwitches[FeatureSwitchKey.PresentationOutputFormat] ===
-    true;
   // Reapply audience restrictions after both server and stored overrides.
   return getAllFeatureStates({ ...identity, overrides: combined });
 });

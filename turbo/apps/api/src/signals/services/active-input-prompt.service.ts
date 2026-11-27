@@ -12,11 +12,7 @@ import {
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import type { SelectResultFields } from "drizzle-orm/query-builders/select.types";
 import { and, eq } from "drizzle-orm";
 
@@ -301,10 +297,6 @@ const materializeActiveInputPrompt$ = command(
       explicit: projection.primaryTemplate,
       explicitTemplates: projection.templates,
       includeManagedImageInstructions: disabledImageGeneration === undefined,
-      presentationOutputFormatEnabled: isFeatureEnabled(
-        FeatureSwitchKey.PresentationOutputFormat,
-        args.featureSwitchContext,
-      ),
       // Steer cannot change the volumes fixed at Run creation, so private and
       // custom templates contribute no guidance pointing at an unmounted path.
       mountedUserPresentationTemplateIds: [],

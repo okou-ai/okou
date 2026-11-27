@@ -10,7 +10,6 @@ import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.currentWindowSizeDp
-import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.DrawableRes
@@ -336,33 +335,18 @@ internal fun ChatListScreen(
                     (startupRecovery == null || state.listPhase != ChatReadPhase.Idle),
         )
     val unreadFilter = state.filter == ChatListFilter.Unread
-    val syncConfirmation =
-        if (!hasUsableList) null
-        else {
-            val listRead =
-                state.confirmedAt.takeIf {
-                    startupSyncPending || state.listPhase == ChatReadPhase.Loading
-                }
-            val unreadRead =
-                state.unreadConfirmedAt?.takeIf {
-                    unreadFilter && state.indicatorsPhase == ChatReadPhase.Loading
-                }
-            when {
-                listRead == null -> unreadRead
-                unreadRead == null -> listRead
-                else -> minOf(listRead, unreadRead)
-            }
+    val startupSyncVisible =
+        remember(startupSyncPending, state.confirmedAt) {
+            startupSyncPending &&
+                state.confirmedAt?.let {
+                    chatSyncNoticeDelayMillis(it, System.currentTimeMillis()) == 0L
+                } == true
         }
-    val syncDelay =
-        remember(syncConfirmation) {
-            syncConfirmation?.let { chatSyncNoticeDelayMillis(it, System.currentTimeMillis()) }
-        }
-    val syncDelayReached = rememberContentReadFeedbackAfter(syncDelay)
     val syncVisible =
         hasUsableList &&
-            (state.listRetryProgressVisible ||
-                unreadFilter && state.indicatorsRetryProgressVisible ||
-                syncDelayReached)
+            (state.listRefreshProgressVisible ||
+                unreadFilter && state.indicatorsRefreshProgressVisible ||
+                startupSyncVisible)
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
         remember(groups, pendingByProject) {

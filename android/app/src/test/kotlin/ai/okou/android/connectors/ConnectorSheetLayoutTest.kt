@@ -22,6 +22,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
@@ -40,8 +41,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -347,18 +351,147 @@ class ConnectorSheetLayoutTest {
     @Test
     @OptIn(ExperimentalTestApi::class)
     @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun restoringTheRenameKeepsInvalidInputAndReturnsToTheSameAccount() {
+        ConnectorApiFixture().use { fixture ->
+            val restoration = StateRestorationTester(compose)
+            withConnectors(fixture, restoration) {
+                openCalendarRename()
+                val input = compose.onNodeWithTag("connector-input")
+                val selection = TextRange(1, 2)
+                input.performClick().performTextReplacement("   ")
+                input.performTextInputSelection(selection)
+
+                restoration.emulateSavedInstanceStateRestore()
+
+                input
+                    .assertIsFocused()
+                    .assert(
+                        SemanticsMatcher.expectValue(
+                            SemanticsProperties.TextSelectionRange,
+                            selection,
+                        ),
+                    )
+                compose.onNodeWithText("Enter an account name.").assertIsDisplayed()
+                compose.onNodeWithText("Save").assertIsNotEnabled()
+                compose.onNodeWithText("Cancel").performClick()
+                val rename = hasText("Rename") and isEnabled()
+                val panel = hasAnyAncestor(hasTestTag("connector-sheet"))
+                compose.onNode(hasText("工作日历") and panel).assertIsDisplayed()
+                compose.waitUntilAtLeastOneExists(rename, 10_000)
+                compose.onNode(rename).performClick()
+                input.assertTextContains("工作日历").performTextReplacement("  Team calendar  ")
+                compose.onNodeWithText("Save").assertIsEnabled().performClick()
+                val confirmedName = hasText("Team calendar") and panel
+                compose.waitUntilAtLeastOneExists(confirmedName, 10_000)
+                compose.onNode(confirmedName).assertIsDisplayed()
+                assertEquals(1, fixture.renameRequests.get())
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun confirmedReadsAdoptThePristineNameAndPreserveADirtySelection() {
+        ConnectorApiFixture().use { fixture ->
+            withConnectors(fixture) {
+                openCalendarRename()
+                val fieldTag = "connector-input"
+                val input = compose.onNodeWithTag(fieldTag).performClick()
+                val selection = TextRange(1, 3)
+                val save = compose.onNodeWithText("Save")
+                fun refreshName(name: String) {
+                    compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+                    fixture.setAccountName(CONNECTOR_CALENDAR_PRIMARY, name)
+                    compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+                    val accountRow = hasTestTag("connector-account-$CONNECTOR_CALENDAR_PRIMARY")
+                    compose.waitUntilAtLeastOneExists(accountRow and hasText(name), 10_000)
+                }
+                fun assertSelection() {
+                    input
+                        .assertIsFocused()
+                        .assert(
+                            SemanticsMatcher.expectValue(
+                                SemanticsProperties.TextSelectionRange,
+                                selection,
+                            ),
+                        )
+                }
+
+                input.performTextInputSelection(selection)
+                refreshName("Shared calendar")
+                compose.waitUntilAtLeastOneExists(
+                    hasTestTag(fieldTag) and hasText("Shared calendar"),
+                    10_000,
+                )
+                assertSelection()
+                save.assertIsNotEnabled()
+
+                input.performTextReplacement("Edited calendar")
+                input.performTextInputSelection(selection)
+                refreshName("Remote calendar")
+                input.assertTextContains("Edited calendar")
+                assertSelection()
+                save.assertIsEnabled()
+
+                assertEquals(0, fixture.renameRequests.get())
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun exhaustedVerificationKeepsTheDraftWithTerminalFieldFeedback() {
+        ConnectorApiFixture().use { fixture ->
+            fixture.deferRenameCommit = true
+            withConnectors(fixture) { model ->
+                openCalendarRename()
+                val input = compose.onNodeWithTag("connector-input").performClick()
+                val draft = "Meeting calendar"
+                val selection = TextRange(0, 7)
+                val save = compose.onNodeWithText("Save")
+                val checking = hasText("The outcome is still unconfirmed.")
+                val message = "Could not save. Your changes are still here."
+                input.performTextReplacement(draft)
+                input.performTextInputSelection(selection)
+                val saveBounds = save.getUnclippedBoundsInRoot()
+                save.performClick()
+                compose.waitUntilAtLeastOneExists(checking, 10_000)
+                repeat(2) {
+                    compose.runOnIdle { model.resume() }
+                    compose.waitUntilAtLeastOneExists(
+                        checking or hasText(message),
+                        10_000,
+                    )
+                }
+
+                compose.waitUntilAtLeastOneExists(hasText(message), 10_000)
+                input
+                    .assertTextContains(draft)
+                    .assertIsFocused()
+                    .assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, message))
+                    .assert(
+                        SemanticsMatcher.expectValue(
+                            SemanticsProperties.TextSelectionRange,
+                            selection,
+                        ),
+                    )
+                save.assertIsEnabled()
+                assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+                assertEquals(1, fixture.renameRequests.get())
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
     fun accountRefreshFeedbackKeepsTheRenameDraftAndDoesNotReplayOnReturn() {
         ConnectorApiFixture().use { fixture ->
             withConnectors(fixture) { model ->
-                val calendar = "Google Calendar"
-                compose.waitUntilAtLeastOneExists(hasText(calendar), 10_000)
-                compose.onNodeWithText(calendar).performClick()
-                val account = "connector-account-$CONNECTOR_CALENDAR_PRIMARY"
-                compose.waitUntilAtLeastOneExists(hasTestTag(account), 10_000)
-                compose.onNodeWithTag(account).performClick()
+                openCalendarRename()
                 val rename = hasText("Rename") and isEnabled()
-                compose.waitUntilAtLeastOneExists(rename, 10_000)
-                compose.onNode(rename).performClick()
                 val input = compose.onNodeWithTag("connector-input")
                 val save = compose.onNodeWithText("Save")
                 val cancel = compose.onNodeWithText("Cancel")
@@ -400,15 +533,8 @@ class ConnectorSheetLayoutTest {
     fun shortAccountRenameKeepsTheFieldAndFooterReachable() {
         ConnectorApiFixture().use { fixture ->
             withConnectors(fixture) {
-                val calendar = hasText("Google Calendar")
-                compose.waitUntilAtLeastOneExists(calendar, 10_000)
-                compose.onNode(calendar).performClick()
-                val account = hasTestTag("connector-account-$CONNECTOR_CALENDAR_PRIMARY")
-                compose.waitUntilAtLeastOneExists(account, 10_000)
-                compose.onNode(account).performClick()
+                openCalendarRename()
                 val rename = hasText("Rename") and isEnabled()
-                compose.waitUntilAtLeastOneExists(rename, 10_000)
-                compose.onNode(rename).performClick()
 
                 val panel = compose.onNodeWithTag("connector-sheet")
                 panel.assertWidthIsEqualTo(820.dp)
@@ -448,6 +574,19 @@ class ConnectorSheetLayoutTest {
         assertEquals(12.dp, panel.getUnclippedBoundsInRoot().bottom - footer.bottom)
         compose.onNodeWithText("Permission 22").performScrollTo().assertIsDisplayed()
         assertEquals(footer, actions.getUnclippedBoundsInRoot())
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    private fun openCalendarRename() {
+        val calendar = hasText("Google Calendar")
+        compose.waitUntilAtLeastOneExists(calendar, 10_000)
+        compose.onNode(calendar).performClick()
+        val account = hasTestTag("connector-account-$CONNECTOR_CALENDAR_PRIMARY")
+        compose.waitUntilAtLeastOneExists(account, 10_000)
+        compose.onNode(account).performClick()
+        val rename = hasText("Rename") and isEnabled()
+        compose.waitUntilAtLeastOneExists(rename, 10_000)
+        compose.onNode(rename).performClick()
     }
 
     @OptIn(ExperimentalTestApi::class)

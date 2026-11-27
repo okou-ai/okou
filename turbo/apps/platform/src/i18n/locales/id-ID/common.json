@@ -1611,8 +1611,6 @@
           "option": "Sampul {{index}}"
         },
         "loading": "Memuat saran",
-        "next": "Saran berikutnya",
-        "previous": "Saran sebelumnya",
         "remaining": "{{total}} tersisa",
         "sources": {
           "description": "Pilih konten yang akan diterima. Kartu yang sudah ada tetap tersedia sampai Anda menanganinya. Pemberitahuan belum dibaca hanya mencakup sumber yang diaktifkan.",
@@ -1628,9 +1626,7 @@
       "homeCard": {
         "completeDescription": "Okou akan membawa hal berikutnya ke sini saat ada sesuatu yang layak untuk waktumu.",
         "completeTitle": "Semua beres",
-        "feedback": "Tindakan saran",
-        "navigation": "Jelajahi saran",
-        "show": "Tampilkan saran {{index}} dari {{total}}"
+        "feedback": "Tindakan saran"
       },
       "label": "Saran",
       "later": "Nanti",
@@ -1971,7 +1967,6 @@
         "documentPlaceholder": "Apa yang ingin Anda sertakan dalam dokumen?",
         "imagePlaceholder": "Jelaskan gambar yang ingin Anda buat…",
         "presentationPlaceholder": "Apa topik presentasi Anda?",
-        "presentationPlaceholderWithDefault": "Presentasi Anda tentang apa? (default: {{format}})",
         "slideCount": "Jumlah slide",
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
@@ -1983,16 +1978,6 @@
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
-      "presentationFormatSetup": {
-        "htmlDescription": "Tautan yang terbuka di browser mana pun",
-        "htmlLabel": "Slide web",
-        "openSettings": "Buka pengaturan",
-        "pptxDescription": "File .pptx yang dapat diedit",
-        "pptxLabel": "PowerPoint",
-        "savedDefault": "{{format}} sekarang menjadi format default presentasi Anda",
-        "settingsHint": "Dipakai untuk setiap presentasi baru. Anda bisa mengubahnya di Pengaturan.",
-        "title": "Pilih format default untuk memulai"
-      },
       "selectedModelUnavailable": "Model yang dipilih tidak tersedia. Konfigurasikan sebelum mengirim.",
       "selectedModelUnavailableToast": "Model yang dipilih tidak tersedia",
       "selectModel": "Pilih model",
@@ -2663,6 +2648,11 @@
       "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis."
     },
     "taskChips": {
+      "presentationFormat": "Format presentasi",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
       "shelf": {
@@ -6098,14 +6088,6 @@
           "title": "Model default"
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
-        "presentationFormat": {
-          "htmlDescription": "Presentasi baru terbuka sebagai tautan di browser",
-          "pptxDescription": "Presentasi baru dikirim sebagai file .pptx yang dapat diedit",
-          "saveFailed": "Tidak dapat menyimpan format default. Coba lagi.",
-          "title": "Format presentasi default",
-          "unavailable": "Tidak dapat memuat format default Anda",
-          "unsetDescription": "Kami akan bertanya saat Anda pertama kali membuat presentasi"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

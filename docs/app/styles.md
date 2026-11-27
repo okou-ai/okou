@@ -590,6 +590,12 @@ lands on `gray-200`, which is dark `--muted`. The tile then reads as the row.
 An image thumbnail in the same slot keeps its own fill behind `object-cover`;
 the rule is for fills that are seen.
 
+A `Kbd` keycap inside a neutral `Button` or other `bg-control-surface` control
+takes `bg-state-pressed` instead. `nested-fill` is solved against the white
+card, so on the `gray-50` control surface it is too faint to read as a key. The
+pressed layer is still translucent, so the keycap keeps its step above the
+control's hover and pressed overlays.
+
 ### Inline references
 
 `inlineReferenceVariants` from `@okouai/ui` owns the shared treatment of

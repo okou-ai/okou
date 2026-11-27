@@ -1611,8 +1611,6 @@
           "option": "封面 {{index}}"
         },
         "loading": "正在加载建议",
-        "next": "下一条建议",
-        "previous": "上一条建议",
         "remaining": "还有 {{total}} 条",
         "sources": {
           "description": "选择今后接收的内容。已收到的卡片会保留，直到你处理它们。未读提示只包含已开启的来源。",
@@ -1628,9 +1626,7 @@
       "homeCard": {
         "completeDescription": "有值得你花时间的事时，Okou 会把下一件带到这里。",
         "completeTitle": "全部处理完了",
-        "feedback": "建议操作",
-        "navigation": "切换建议",
-        "show": "查看第 {{index}} 条建议（共 {{total}} 条）"
+        "feedback": "建议操作"
       },
       "label": "建议",
       "later": "晚点再看",
@@ -1971,7 +1967,6 @@
         "documentPlaceholder": "你希望文档包含哪些内容？",
         "imagePlaceholder": "描述你想生成的图片…",
         "presentationPlaceholder": "你的演示文稿要讲什么？",
-        "presentationPlaceholderWithDefault": "你的演示文稿是关于什么的？（默认{{format}}）",
         "slideCount": "幻灯片数量",
         "slideCountAuto": "自动",
         "slideCountRange": "{{range}} 页"
@@ -1983,16 +1978,6 @@
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
-      "presentationFormatSetup": {
-        "htmlDescription": "可在任意浏览器中打开的链接",
-        "htmlLabel": "网页幻灯片",
-        "openSettings": "打开设置",
-        "pptxDescription": "可编辑的 .pptx 文件",
-        "pptxLabel": "PowerPoint",
-        "savedDefault": "{{format}}已设为演示文稿的默认格式",
-        "settingsHint": "之后的新演示文稿都会使用它，可在设置中修改。",
-        "title": "选择一个默认格式开始"
-      },
       "selectedModelUnavailable": "所选模型当前不可用。配置好之后再发送。",
       "selectedModelUnavailableToast": "所选模型当前不可用",
       "selectModel": "选择模型",
@@ -2663,6 +2648,11 @@
       "unsupported": "不支持手动重置；用量将自然恢复。"
     },
     "taskChips": {
+      "presentationFormat": "演示文稿格式",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "演示文稿模板",
       "removeTask": "移除{{task}}",
       "shelf": {
@@ -6098,14 +6088,6 @@
           "title": "默认模型"
         },
         "description": "设置新聊天的默认项和消息发送方式。",
-        "presentationFormat": {
-          "htmlDescription": "新演示文稿以链接形式在浏览器中打开",
-          "pptxDescription": "新演示文稿以可编辑的 .pptx 文件交付",
-          "saveFailed": "无法保存默认格式，请重试。",
-          "title": "默认演示文稿格式",
-          "unavailable": "无法加载默认格式",
-          "unsetDescription": "首次制作演示文稿时会询问你"
-        },
         "sectionTitle": "聊天"
       },
       "debug": {

@@ -13,6 +13,7 @@ import {
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
 } from "../../contracts/model-providers";
+import { MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS } from "../../contracts/model-provider-firewalls";
 import {
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
@@ -656,6 +657,16 @@ const expectedBindings = [
     value: rustString(MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_REFRESH_TOKEN),
     rustDoc: placeholderRustDoc("CHATGPT_REFRESH_TOKEN"),
   },
+  ...Object.entries(MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS).map(
+    ([name, value]) => {
+      return {
+        rustModulePath: ["model_provider_env", "namespaced_placeholders"],
+        rustConstName: name,
+        value: rustString(value),
+        rustDoc: placeholderRustDoc(name),
+      };
+    },
+  ),
 ] as const;
 
 const exampleModuleDocs = [

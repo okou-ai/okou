@@ -10,7 +10,6 @@ import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -23,11 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -158,31 +153,18 @@ private fun EmailSubscriptionSwitch(
 @Composable
 private fun EmailSubscriptionFeedback(state: EmailSubscriptionState, modifier: Modifier) {
     val saving = stringResource(R.string.settings_email_saving)
-    val unconfirmed = stringResource(R.string.settings_email_save_unconfirmed)
     val failed = stringResource(R.string.settings_email_save_failed)
-    val messages = listOf(saving, unconfirmed, failed)
     val status =
         when {
             state.updateFailed -> failed
-            state.unconfirmed != null -> unconfirmed
             state.desired != null -> saving
             else -> ""
         }
     val colors = MaterialTheme.colorScheme
-    val style = MaterialTheme.typography.bodyMedium
-    val textMeasurer = rememberTextMeasurer(cacheSize = messages.size)
-    SettingsDetailStatus(
+    SettingsWriteStatus(
         status,
-        modifier.fillMaxWidth().layout { measurable, constraints ->
-            // Size the slot for wrapped translations before showing feedback in the bottom sheet.
-            val textConstraints = Constraints(maxWidth = constraints.maxWidth)
-            val reservedHeight = messages.maxOf {
-                textMeasurer.measure(it, style, constraints = textConstraints).size.height
-            }
-            val content = measurable.measure(constraints)
-            val height = constraints.constrainHeight(maxOf(content.height, reservedHeight))
-            layout(content.width, height) { content.placeRelative(0, 0) }
-        },
+        listOf(saving, failed),
+        modifier,
         color = if (state.updateFailed) colors.error else colors.onSurfaceVariant,
     )
 }

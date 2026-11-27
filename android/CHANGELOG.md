@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.66.3](https://github.com/okou-ai/okou/compare/android-v0.66.2...android-v0.66.3) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** keep workflow names visible when display names are blank ([#51417](https://github.com/okou-ai/okou/issues/51417)) ([63a47f6](https://github.com/okou-ai/okou/commit/63a47f68d5de6b20e1ec4b897f0552e22eb20e61))
+
 ## [0.66.2](https://github.com/okou-ai/okou/compare/android-v0.66.1...android-v0.66.2) (2026-11-27)
 
 

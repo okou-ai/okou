@@ -1615,8 +1615,6 @@
           "option": "कवर {{index}}"
         },
         "loading": "सुझाव लोड हो रहे हैं",
-        "next": "अगला सुझाव",
-        "previous": "पिछला सुझाव",
         "remaining": "{{total}} बाकी",
         "sources": {
           "description": "चुनें कि आगे क्या प्राप्त करना है। पहले से मिले कार्ड आपके निपटाने तक बने रहते हैं। अपठित सूचनाओं में केवल चालू स्रोतों की सामग्री शामिल होती है।",
@@ -1632,9 +1630,7 @@
       "homeCard": {
         "completeDescription": "जब कुछ आपके समय के लायक होगा, Okou अगली चीज़ यहाँ ले आएगा।",
         "completeTitle": "सब पूरा हो गया",
-        "feedback": "सुझाव के विकल्प",
-        "navigation": "सुझाव देखें",
-        "show": "{{total}} में से सुझाव {{index}} दिखाएँ"
+        "feedback": "सुझाव के विकल्प"
       },
       "label": "सुझाव",
       "later": "बाद में",
@@ -1977,7 +1973,6 @@
         "documentPlaceholder": "आप अपने दस्तावेज़ में क्या शामिल करना चाहते हैं?",
         "imagePlaceholder": "आप जो छवि बनाना चाहते हैं उसका वर्णन करें…",
         "presentationPlaceholder": "आपकी प्रस्तुति का विषय क्या है?",
-        "presentationPlaceholderWithDefault": "आपका प्रेज़ेंटेशन किस बारे में है? (डिफ़ॉल्ट: {{format}})",
         "slideCount": "स्लाइड की संख्या",
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
@@ -1989,16 +1984,6 @@
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
-      "presentationFormatSetup": {
-        "htmlDescription": "एक लिंक जो किसी भी ब्राउज़र में खुलता है",
-        "htmlLabel": "वेब स्लाइड",
-        "openSettings": "सेटिंग्स खोलें",
-        "pptxDescription": "एक संपादन योग्य .pptx फ़ाइल",
-        "pptxLabel": "PowerPoint",
-        "savedDefault": "{{format}} अब प्रेज़ेंटेशन के लिए आपका डिफ़ॉल्ट है",
-        "settingsHint": "हर नए प्रेज़ेंटेशन के लिए इस्तेमाल होगा। आप इसे सेटिंग्स में बदल सकते हैं।",
-        "title": "शुरू करने के लिए डिफ़ॉल्ट फ़ॉर्मैट चुनें"
-      },
       "selectedModelUnavailable": "चयनित मॉडल उपलब्ध नहीं है. भेजने से पहले इसे कॉन्फ़िगर करें.",
       "selectedModelUnavailableToast": "चयनित मॉडल उपलब्ध नहीं है",
       "selectModel": "मॉडल चुनें",
@@ -2678,6 +2663,11 @@
       "unsupported": "मैन्युअल रीसेट समर्थित नहीं है; उपयोग अपने आप पुनः उपलब्ध होगा।"
     },
     "taskChips": {
+      "presentationFormat": "प्रस्तुति का प्रारूप",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
       "shelf": {
@@ -6122,14 +6112,6 @@
           "title": "डिफ़ॉल्ट मॉडल"
         },
         "description": "नए चैट के लिए डिफ़ॉल्ट सेटिंग और संदेश भेजने का तरीका चुनें।",
-        "presentationFormat": {
-          "htmlDescription": "नए प्रेज़ेंटेशन ब्राउज़र में लिंक के रूप में खुलते हैं",
-          "pptxDescription": "नए प्रेज़ेंटेशन संपादन योग्य .pptx फ़ाइल के रूप में मिलते हैं",
-          "saveFailed": "डिफ़ॉल्ट फ़ॉर्मैट सहेजा नहीं जा सका। फिर से कोशिश करें।",
-          "title": "डिफ़ॉल्ट प्रस्तुति फ़ॉर्मैट",
-          "unavailable": "आपका डिफ़ॉल्ट फ़ॉर्मैट लोड नहीं हो सका",
-          "unsetDescription": "पहली बार प्रेज़ेंटेशन बनाते समय हम पूछेंगे"
-        },
         "sectionTitle": "चैट"
       },
       "debug": {

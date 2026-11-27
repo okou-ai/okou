@@ -1,36 +1,22 @@
 import type { SendMode } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  PRESENTATION_OUTPUT_FORMATS,
-  type PresentationOutputFormat,
-} from "@okouai/core/presentation-output-format";
 import { ToggleButton } from "@okouai/ui";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import {
-  useGet,
-  useLastResolved,
-  useLastLoadable,
-  useLoadable,
-} from "ccstate-react";
+import { useGet, useLastResolved, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Cpu, Globe, Keyboard, Presentation } from "lucide-react";
+import { Cpu, Globe, Keyboard } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { cloudBrowserEnabledByDefault$ } from "../../../../../signals/cloud-browser-preference.ts";
-import { featureSwitches$ } from "../../../../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../../../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../../../../signals/external/run-models.ts";
 import { userModelPreference$ } from "../../../../../signals/external/user-model-preference.ts";
 import { resolveModelFirstStoredUserSelection } from "../../../../../signals/okou-page/model-default-selection.ts";
-import { presentationOutputFormat$ } from "../../../../../signals/okou-page/presentation-output-format.ts";
 import { updateCloudBrowserEnabledByDefault$ } from "../../../../../signals/okou-page/settings/cloud-browser-preference.ts";
 import { updateDefaultModelPreference$ } from "../../../../../signals/okou-page/settings/default-model-preference.ts";
-import { updatePresentationFormat$ } from "../../../../../signals/okou-page/settings/presentation-format-preference.ts";
 import { updateSendMode$ } from "../../../../../signals/okou-page/settings/send-mode-preference.ts";
 import { pageSignal$ } from "../../../../../signals/page-signal.ts";
 import { sendMode$ } from "../../../../../signals/send-mode.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
-import { LoadingSkeleton } from "../../../../components/loading-skeleton.tsx";
 import { ModelProviderPicker } from "../../model-provider-picker.tsx";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
 
@@ -177,119 +163,12 @@ function SendModePreference() {
   );
 }
 
-function PresentationFormatDescription({
-  failed,
-  current,
-}: {
-  readonly failed: boolean;
-  /** `undefined` while the saved default is still loading. */
-  readonly current: PresentationOutputFormat | null | undefined;
-}) {
-  const { t } = useTranslation();
-  if (failed) {
-    return t(($) => {
-      return $.settings.preferences.chat.presentationFormat.unavailable;
-    });
-  }
-  if (current === undefined) {
-    return (
-      <LoadingSkeleton
-        variant="text"
-        label={t(($) => {
-          return $.settings.preferences.chat.presentationFormat.title;
-        })}
-      />
-    );
-  }
-  if (current === "html") {
-    return t(($) => {
-      return $.settings.preferences.chat.presentationFormat.htmlDescription;
-    });
-  }
-  if (current === "pptx") {
-    return t(($) => {
-      return $.settings.preferences.chat.presentationFormat.pptxDescription;
-    });
-  }
-  return t(($) => {
-    return $.settings.preferences.chat.presentationFormat.unsetDescription;
-  });
-}
-
-function PresentationFormatPreference() {
-  const { t } = useTranslation();
-  const preference = useLoadable(presentationOutputFormat$);
-  const current = preference.state === "hasData" ? preference.data : undefined;
-  const [save, update] = useLoadableSet(updatePresentationFormat$);
-  const signal = useGet(pageSignal$);
-  const title = t(($) => {
-    return $.settings.preferences.chat.presentationFormat.title;
-  });
-
-  return (
-    <PreferenceCardRow
-      icon={Presentation}
-      title={title}
-      description={
-        <PresentationFormatDescription
-          failed={preference.state === "hasError"}
-          current={current}
-        />
-      }
-      status={
-        save.state === "hasError" && (
-          <p role="alert" className="text-sm text-destructive">
-            {t(($) => {
-              return $.settings.preferences.chat.presentationFormat.saveFailed;
-            })}
-          </p>
-        )
-      }
-    >
-      {/* Two options, so the same pair of toggles as "Send message with". */}
-      <div
-        role="group"
-        aria-label={title}
-        className="flex shrink-0 flex-wrap gap-2"
-      >
-        {PRESENTATION_OUTPUT_FORMATS.map((value) => {
-          return (
-            <ToggleButton
-              key={value}
-              type="button"
-              selected={current === value}
-              disabled={current === undefined || save.state === "loading"}
-              onClick={() => {
-                if (current === undefined || value === current) {
-                  return;
-                }
-                detach(update(value, signal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return value === "html"
-                  ? $.chat.composer.presentationFormatSetup.htmlLabel
-                  : $.chat.composer.presentationFormatSetup.pptxLabel;
-              })}
-            </ToggleButton>
-          );
-        })}
-      </div>
-    </PreferenceCardRow>
-  );
-}
-
 export function ChatSection() {
-  const switches = useLastResolved(featureSwitches$);
-  const showPresentationFormat =
-    switches?.[FeatureSwitchKey.PresentationOutputFormat] ?? false;
-
   return (
     <section className="flex flex-col gap-3">
       <DefaultModelPreference />
       <CloudBrowserDefaultPreference />
       <SendModePreference />
-      {showPresentationFormat && <PresentationFormatPreference />}
     </section>
   );
 }

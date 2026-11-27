@@ -119,7 +119,6 @@ export function createThreadContext(
     pickedEvent$,
     templateOrgId$,
     sourceSettings.disabledPaidTools$,
-    sourceSettings.featureSwitches$,
     bootstrap,
   );
   const runIds$ = createRunIds();

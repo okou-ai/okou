@@ -31,6 +31,10 @@ export const clientDescriptorManifest = [
     contracts: ["artifactGoogleDriveContract"],
   },
   {
+    module: "artifact-library-previews",
+    contracts: ["artifactLibraryPreviewsContract"],
+  },
+  {
     module: "artifact-og",
     contracts: ["artifactOgContract"],
   },
