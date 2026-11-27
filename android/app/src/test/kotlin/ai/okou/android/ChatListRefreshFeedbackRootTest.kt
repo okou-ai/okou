@@ -3,6 +3,7 @@ package ai.okou.android
 import ai.okou.android.chat.ChatReadPhase
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -21,6 +22,53 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ChatListRefreshFeedbackRootTest : ChatListRootTestFixture() {
+    @Test
+    fun emptyInboxWaitsForProjectsAndRecoversFromTheirFirstFailure() {
+        val app = compose.activity.application as ChatListApplication
+        val finishProjects = CountDownLatch(1)
+        app.fixture.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
+        app.fixture.projects = {
+            check(finishProjects.await(10, TimeUnit.SECONDS))
+            MockResponse().setResponseCode(400)
+        }
+        val loading = hasContentDescription(app.getString(R.string.chat_loading))
+        val inboxEmpty = compose.onNodeWithText(app.getString(R.string.chat_empty))
+        val filter = compose.onNodeWithContentDescription("Filter")
+        val newChat = compose.onNodeWithText(app.getString(R.string.composer_new))
+        val failure = hasTestTag("content-read-failure-illustration")
+
+        try {
+            app.responseGate.countDown()
+            compose.waitUntil(10_000) { currentList()?.confirmedAt != null }
+            compose.waitUntilExactlyOneExists(loading, 5_000)
+            inboxEmpty.assertDoesNotExist()
+            filter.performClick()
+            compose.onNodeWithText("Archived").performClick()
+            compose.onNodeWithText("No archived chats").assertIsDisplayed()
+            compose.onNodeWithText("Back to Inbox").performClick()
+
+            finishProjects.countDown()
+            compose.waitUntilExactlyOneExists(failure, 5_000)
+            compose.onNode(failure).assertIsDisplayed()
+            compose.onNode(loading).assertDoesNotExist()
+            inboxEmpty.assertDoesNotExist()
+            newChat.assertIsDisplayed()
+            compose
+                .onNodeWithText(app.getString(R.string.chat_metadata_unavailable))
+                .assertDoesNotExist()
+
+            app.fixture.projects = {
+                jsonResponse("""{"projects":[],"latestEventId":null,"latestSeqId":0}""")
+            }
+            refreshWorkspaceChats()
+            compose.waitUntilExactlyOneExists(hasText(app.getString(R.string.chat_empty)), 5_000)
+            inboxEmpty.assertIsDisplayed()
+            compose.onNode(failure).assertDoesNotExist()
+        } finally {
+            finishProjects.countDown()
+        }
+    }
+
     @Test
     fun aTerminalIndicatorFailureNotifiesWhenTheFirstListArrives() {
         val app = compose.activity.application as ChatListApplication
