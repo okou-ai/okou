@@ -132,9 +132,13 @@ internal abstract class ArtifactCatalogRootTestFixture {
     }
 
     protected fun assertToolbarTouchTarget(label: String) {
-        val bounds = compose.onNodeWithContentDescription(label).fetchSemanticsNode().touchBoundsInRoot
+        val bounds =
+            compose.onNodeWithContentDescription(label).fetchSemanticsNode().touchBoundsInRoot
         val minimum = with(compose.density) { 48.dp.roundToPx() }
-        assertTrue("Touch bounds for $label: $bounds", bounds.width >= minimum && bounds.height >= minimum)
+        assertTrue(
+            "Touch bounds for $label: $bounds",
+            bounds.width >= minimum && bounds.height >= minimum,
+        )
     }
 
     protected fun loadedWebsiteUrl(): String? = websiteView()?.let { shadowOf(it).lastLoadedUrl }
