@@ -8,9 +8,7 @@
     <string name="chat_undo_marked_read">已标为已读</string>
     <string name="chat_undo">撤销</string>
     <string name="chat_action_connection_failed">未能连接，请检查网络后重试。</string>
-    <string name="chat_undo_checking">正在核对撤销结果</string>
     <string name="chat_undo_failed">未能撤销</string>
-    <string name="chat_undo_unconfirmed">撤销结果尚未确认</string>
     <string name="chat_feedback_dismiss">关闭提示</string>
     <string name="chat_list_first_load_failed">暂时无法加载</string>
     <string name="chat_list_title">聊天</string>
@@ -21,13 +19,8 @@
     <string name="chat_metadata_unavailable">暂时无法获取 Project 信息。</string>
     <string name="chat_inbox">收件箱</string>
     <string name="chat_mark_all_read">全部标为已读</string>
-    <string name="chat_mark_all_read_unconfirmed">有些聊天可能仍未读。</string>
     <string name="chat_mark_all_read_failed">未能将聊天标为已读</string>
     <string name="chat_mark_all_read_partial_failed">已将 %1$d 条聊天标为已读，%2$d 条未能更新</string>
-    <string name="chat_mark_all_read_mixed">已读 %1$d 条，失败 %2$d 条，尚未确认 %3$d 条</string>
-    <plurals name="chat_mark_all_read_partial">
-        <item quantity="other">已将 %2$d 个聊天中的 %1$d 个标为已读。</item>
-    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="other">已将 %1$d 条聊天标为已读</item>
     </plurals>

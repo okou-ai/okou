@@ -8,9 +8,7 @@
     <string name="chat_undo_marked_read">Chat ditandai sudah dibaca</string>
     <string name="chat_undo">Urungkan</string>
     <string name="chat_action_connection_failed">Tidak dapat terhubung. Periksa koneksi dan coba lagi.</string>
-    <string name="chat_undo_checking">Memeriksa hasil pengurungan…</string>
     <string name="chat_undo_failed">Perubahan tidak dapat diurungkan.</string>
-    <string name="chat_undo_unconfirmed">Pengurungan perubahan tidak dapat dikonfirmasi.</string>
     <string name="chat_feedback_dismiss">Tutup</string>
     <string name="chat_list_first_load_failed">Untuk sementara tidak dapat dimuat</string>
     <string name="chat_list_title">Chat</string>
@@ -21,13 +19,8 @@
     <string name="chat_metadata_unavailable">Informasi proyek untuk sementara tidak tersedia.</string>
     <string name="chat_inbox">Kotak masuk</string>
     <string name="chat_mark_all_read">Tandai semua sebagai telah dibaca</string>
-    <string name="chat_mark_all_read_unconfirmed">Beberapa chat mungkin masih belum dibaca.</string>
     <string name="chat_mark_all_read_failed">Chat tidak dapat ditandai sudah dibaca.</string>
     <string name="chat_mark_all_read_partial_failed">Ditandai sudah dibaca: %1$d. Gagal: %2$d.</string>
-    <string name="chat_mark_all_read_mixed">Ditandai sudah dibaca: %1$d. Gagal: %2$d. Belum dikonfirmasi: %3$d.</string>
-    <plurals name="chat_mark_all_read_partial">
-        <item quantity="other">%1$d dari %2$d chat ditandai sudah dibaca.</item>
-    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="other">%1$d chat ditandai telah dibaca.</item>
     </plurals>

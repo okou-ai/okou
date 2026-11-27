@@ -8,9 +8,7 @@
     <string name="chat_undo_marked_read">チャットを既読にしました</string>
     <string name="chat_undo">元に戻す</string>
     <string name="chat_action_connection_failed">接続できませんでした。接続を確認してから、もう一度お試しください。</string>
-    <string name="chat_undo_checking">元に戻せたか確認しています…</string>
     <string name="chat_undo_failed">元に戻せませんでした</string>
-    <string name="chat_undo_unconfirmed">元に戻せたか確認できませんでした</string>
     <string name="chat_feedback_dismiss">閉じる</string>
     <string name="chat_list_first_load_failed">一時的に読み込めません</string>
     <string name="chat_list_title">チャット</string>
@@ -21,13 +19,8 @@
     <string name="chat_metadata_unavailable">プロジェクト情報を一時的に取得できません。</string>
     <string name="chat_inbox">受信トレイ</string>
     <string name="chat_mark_all_read">すべて既読にする</string>
-    <string name="chat_mark_all_read_unconfirmed">一部のチャットが未読のままの可能性があります。</string>
     <string name="chat_mark_all_read_failed">チャットを既読にできませんでした。</string>
     <string name="chat_mark_all_read_partial_failed">既読にしたチャット: %1$d件、更新できなかったチャット: %2$d件</string>
-    <string name="chat_mark_all_read_mixed">既読にしたチャット：%1$d件。失敗：%2$d件。未確認：%3$d件。</string>
-    <plurals name="chat_mark_all_read_partial">
-        <item quantity="other">%2$d件のチャットのうち %1$d件を既読にしました。</item>
-    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="other">%1$d件のチャットを既読にしました。</item>
     </plurals>
