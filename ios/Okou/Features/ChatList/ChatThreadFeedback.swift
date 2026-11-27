@@ -1,34 +1,9 @@
 import CCStateSwiftUI
 import SwiftUI
 
-/// A failure can be retried on its source page. An Undo belongs to one visit to that page.
-struct ArchiveFeedbackVisit: Equatable {
-  enum Page: Equatable {
-    case list(ChatListFilter)
-    case chat(String?)
-    case forYou
-  }
-
-  let id: UUID
-  let page: Page
-
-  @MainActor init(_ workspace: WorkspaceStore) {
-    let sidebar = workspace.sidebarInteraction
-    id = sidebar.visit
-    if sidebar.isOpen {
-      page = .list(workspace.sidebar.filter)
-    } else if sidebar.showsChat {
-      page = .chat(workspace.selectedThreadID)
-    } else {
-      page = .forYou
-    }
-  }
-}
-
 struct ChatThreadFeedback: Identifiable {
-  enum Kind: Equatable {
+  enum Kind {
     case operation, error
-    case archiveUndo(showsBanner: Bool)
   }
 
   let id = UUID()
@@ -37,18 +12,17 @@ struct ChatThreadFeedback: Identifiable {
   let actionTitle: String?
   let actionHint: String
   let persists: Bool
-  var requiresNavigation: Bool
+  let requiresNavigation: Bool
   /// The action targets a chat its own pending change hides from the list (a delete retry).
   let actsOnHiddenChat: Bool
   let isWorking: Bool
-  var kind: Kind
-  let archiveVisit: ArchiveFeedbackVisit?
+  let kind: Kind
   let action: @MainActor () async -> Void
 
   init(
     threadID: String, message: String, actionTitle: String?, actionHint: String = "",
     persists: Bool = false, requiresNavigation: Bool = false, actsOnHiddenChat: Bool = false,
-    isWorking: Bool = false, kind: Kind = .operation, archiveVisit: ArchiveFeedbackVisit? = nil,
+    isWorking: Bool = false, kind: Kind = .operation,
     action: @escaping @MainActor () async -> Void
   ) {
     self.threadID = threadID
@@ -60,7 +34,6 @@ struct ChatThreadFeedback: Identifiable {
     self.actsOnHiddenChat = actsOnHiddenChat
     self.isWorking = isWorking
     self.kind = kind
-    self.archiveVisit = archiveVisit
     self.action = action
   }
 }
@@ -99,10 +72,10 @@ struct ChatThreadFeedbackView: View {
         && !workspace.needsUpgrade
         && (!feedback.requiresNavigation || !workspace.isCreating),
       actionHint: feedback.actionHint,
-      showsDismiss: feedback.kind != .archiveUndo(showsBanner: true),
       autoDismissAfter: feedback.persists ? nil : .seconds(6),
       action: {
-        Task { await store.navigationActions.performThreadFeedback(feedback.id) }
+        store.dismissThreadFeedback(feedback.id)
+        Task { await feedback.action() }
       },
       dismiss: {
         store.dismissThreadFeedback(feedback.id)

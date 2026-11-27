@@ -1,4 +1,3 @@
-import Foundation
 import Observation
 
 enum WorkspacePage {
@@ -8,16 +7,7 @@ enum WorkspacePage {
 @MainActor @Observable
 final class SidebarInteraction {
   /// The chat list is the root of every path.
-  var path: [WorkspacePage] = [] {
-    didSet {
-      if oldValue != path { beginVisit() }
-    }
-  }
-  /// Returning to the same page starts a new opportunity for feedback.
-  private(set) var visit = UUID()
-
-  func beginVisit() { visit = UUID() }
-
+  var path: [WorkspacePage] = []
   var isOpen: Bool { path.isEmpty }
   var showsChat: Bool { path.last == .chat }
   private(set) var isTransitioning = false

@@ -121,7 +121,6 @@ final class ThreadActionsFixture: Sendable {
     XCTAssertEqual(
       request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
     XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Type"), "iOS")
-    let threadID = String(try XCTUnwrap(path.split(separator: "/").dropFirst(2).first))
     let action =
       request.httpMethod == "DELETE" ? "delete" : String(path.split(separator: "/").last ?? "")
     let renameBody =
@@ -180,7 +179,7 @@ final class ThreadActionsFixture: Sendable {
       state.events.append(
         Self.event(
           kind: kind, id: eventID ?? UUID().uuidString, seq: state.events.count + 1,
-          extra: extra, threadID: threadID))
+          extra: extra))
     }
     return ChatHTTPResponse(status: 204, body: "")
   }
@@ -202,14 +201,11 @@ final class ThreadActionsFixture: Sendable {
           "{\"id\":\"\(Self.thread)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
       )
     case "/api/chat-threads/\(Self.thread)/event-snapshot":
-      return state.value.withLock { $0.parentStatus == 404 } ? missingThread : missingSnapshot
-    case "/api/chat-threads/\(Self.createdThread)/event-snapshot":
-      return missingSnapshot
-    case "/api/chat-threads/\(Self.createdThread)/event-rows":
+      if state.value.withLock({ $0.parentStatus == 404 }) { return missingThread }
       return ChatHTTPResponse(
-        body: #"{"rows":[],"cursor":{"lastEventId":null,"lastSeqId":0},"hasMore":false}"#)
-    case "/api/chat-threads/\(Self.createdThread)":
-      return ChatHTTPResponse(body: #"{"lastReadAt":null,"cancellationRecoveryPending":false}"#)
+        status: 404,
+        body:
+          "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
     case "/api/chat-threads/\(Self.thread)/event-rows":
       if state.value.withLock({ $0.parentStatus == 404 }) { return missingThread }
       let since =
@@ -305,35 +301,22 @@ final class ThreadActionsFixture: Sendable {
     return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
   }
 
-  private static var missingSnapshot: ChatHTTPResponse {
-    ChatHTTPResponse(
-      status: 404,
-      body: #"{"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"No snapshot"}}"#)
-  }
-
   private static var missingThread: ChatHTTPResponse {
     ChatHTTPResponse(
       status: 404, body: #"{"error":{"code":"NOT_FOUND","message":"Chat thread not found"}}"#)
   }
 
-  func remote(
-    kind: String, extra: String = "", threadID: String = ThreadActionsFixture.thread,
-    eventID: String = UUID().uuidString
-  ) {
+  func remote(kind: String, extra: String = "") {
     state.value.withLock {
       if kind == "archived" { $0.archived = true }
       if kind == "unarchived" { $0.archived = false }
       $0.events.append(
-        Self.event(
-          kind: kind, id: eventID, seq: $0.events.count + 1, extra: extra, threadID: threadID))
+        Self.event(kind: kind, id: UUID().uuidString, seq: $0.events.count + 1, extra: extra))
     }
   }
 
-  private static func event(
-    kind: String, id: String, seq: Int, extra: String,
-    threadID: String = ThreadActionsFixture.thread
-  ) -> String {
-    "{\"id\":\"\(id.lowercased())\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(threadID)\",\"createdAt\":\"\(date)\"\(extra)}"
+  private static func event(kind: String, id: String, seq: Int, extra: String) -> String {
+    "{\"id\":\"\(id.lowercased())\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(thread)\",\"createdAt\":\"\(date)\"\(extra)}"
   }
 
   private static func messageID(_ seq: Int) -> String {
