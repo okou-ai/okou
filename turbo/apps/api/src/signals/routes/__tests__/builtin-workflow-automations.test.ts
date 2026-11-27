@@ -649,12 +649,28 @@ test.each(scenarios)(
       );
     }
     await withMockNowForTest(at, async () => {
-      await owned.run(() => {
-        return fixture.failChatRun(
-          runId,
+      await owned.run(async () => {
+        // An older standalone producer can finish with the hidden thread's ID
+        // before its initialization events have been delivered.
+        const threadId = execution.platformEnvironment.OKOU_CHAT_THREAD_ID;
+        if (!threadId) {
+          throw new Error("Expected the proactive Run's chat thread");
+        }
+        expect(threadId).not.toBe(runId);
+        const completed = await fixture.webhooks.requestAgentRunOutputs(
+          {
+            runId,
+            cliAgentType: "pi",
+            cliAgentSessionId: threadId,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
           sandboxHeaders,
-          "Proactive task inspected",
+          [200],
         );
+        expect(completed.body).toStrictEqual({
+          success: true,
+          status: "completed",
+        });
       });
       await owned.run(flushWaitUntilForTest);
     });
@@ -756,8 +772,63 @@ test.each([
       headers: { Authorization: `Bearer ${PROACTIVE_MANAGED_KEY}` },
       resolvedSecrets: ["OPENROUTER_API_KEY"],
     });
-    await owned.run(() => {
-      return fixture.failChatRun(id, sandboxHeaders, "Platform key verified");
+    // Report the session the Runner actually received from the standalone cron.
+    const sessionId = execution.piSessionId;
+    const threadId = execution.platformEnvironment.OKOU_CHAT_THREAD_ID;
+    if (!sessionId || !threadId) {
+      throw new Error(
+        "Expected a Pi session and chat thread for the proactive Run",
+      );
+    }
+    expect(sessionId).toBe(id);
+    expect(threadId).not.toBe(sessionId);
+    await owned.run(async () => {
+      await fixture.webhooks.requestAgentEvents(
+        {
+          runId: id,
+          events: [
+            {
+              type: "system",
+              subtype: "init",
+              session_id: sessionId,
+              sequenceNumber: 0,
+            },
+          ],
+        },
+        sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const output = {
+        runId: id,
+        cliAgentType: "pi",
+        cliAgentSessionId: sessionId,
+        cliAgentSessionHistoryDisposition: "native_only",
+      } as const;
+      await fixture.webhooks.requestAgentRunOutputs(
+        { ...output, cliAgentSessionId: threadId },
+        sandboxHeaders,
+        [400],
+      );
+      const complete = await fixture.webhooks.requestAgentRunOutputs(
+        output,
+        sandboxHeaders,
+        [200],
+      );
+      expect(complete.body).toStrictEqual({
+        success: true,
+        status: "completed",
+      });
+      const replay = await fixture.webhooks.requestAgentRunOutputs(
+        output,
+        sandboxHeaders,
+        [200],
+      );
+      expect(replay.body).toStrictEqual(complete.body);
+      await expect(fixture.api.readRun(actor, id)).resolves.toMatchObject({
+        status: "completed",
+        result: { framework: "pi", frameworkSessionId: sessionId },
+      });
     });
     await owned.run(flushWaitUntilForTest);
     mockNow(activeSlot + 7 * day);
