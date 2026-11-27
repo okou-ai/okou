@@ -7,44 +7,47 @@ import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
 import ai.okou.android.api.generated.WorkflowRunHistoryEntryTrigger
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.updates.updateFocusOutline
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import ai.okou.android.workspaceToolListItemShapes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val historyRowBounds = Modifier.fillMaxWidth().heightIn(min = 52.dp)
 private val historyIconSize = 18.dp
 
 internal class WorkflowHistoryLayout(padding: PaddingValues) {
@@ -87,13 +90,13 @@ internal fun WorkflowHistoryPending(
             },
         ) {
             repeat(3) {
-                WorkflowHistoryRowLayout(
-                    historyRowBounds.testTag("workflow_history_loading_row"),
-                    leading = { ChatSkeletonBlock(Modifier.size(historyIconSize)) },
-                    trailing = { Spacer(Modifier.size(historyIconSize)) },
+                ListItem(
+                    modifier = Modifier.fillMaxWidth().testTag("workflow_history_loading_row"),
+                    leadingContent = { ChatSkeletonBlock(Modifier.size(historyIconSize)) },
+                    trailingContent = { Spacer(Modifier.size(historyIconSize)) },
+                    supportingContent = { WorkflowSkeletonLine(.32f, 20.sp) },
                 ) {
                     WorkflowSkeletonLine(.56f, 24.sp)
-                    WorkflowSkeletonLine(.32f, 20.sp)
                 }
             }
         }
@@ -111,7 +114,6 @@ internal fun WorkflowHistoryRow(
 ) {
     val colors = MaterialTheme.colorScheme
     val source = run.chatThreadId?.takeIf(sourceChatAvailable)
-    val openChatLabel = stringResource(R.string.workflow_history_open_chat)
     val statusColor =
         when (run.status) {
             WorkflowRunHistoryEntryStatus.RUNNING -> MaterialTheme.colorScheme.primary
@@ -119,84 +121,71 @@ internal fun WorkflowHistoryRow(
             WorkflowRunHistoryEntryStatus.TIMEOUT -> colors.error
             else -> colors.onSurfaceVariant
         }
-    val shape = RoundedCornerShape(8.dp)
-    WorkflowHistoryRowLayout(
-        modifier
-            .then(historyRowBounds)
-            .clip(shape)
-            .testTag("workflow_run_${run.id}")
-            .then(
-                if (source == null) Modifier.semantics(mergeDescendants = true) {}
-                else
-                    Modifier.updateFocusOutline(shape, colors.onBackground)
-                        .clickable(
-                            enabled = sourceNavigationEnabled,
-                            onClickLabel = openChatLabel,
-                            role = Role.Button,
-                            onClick = { onOpenChat(run.id, source) },
-                        ),
-            ),
-        leading = {
-            Icon(
-                painterResource(R.drawable.ic_schedule),
-                null,
-                Modifier.size(historyIconSize),
-                tint = colors.onSurfaceVariant,
-            )
-        },
-        trailing = {
-            if (source != null)
+    val row = modifier.fillMaxWidth().testTag("workflow_run_${run.id}")
+    val leading: @Composable () -> Unit = {
+        Icon(
+            painterResource(R.drawable.ic_schedule),
+            null,
+            Modifier.size(historyIconSize),
+        )
+    }
+    val title: @Composable () -> Unit = { Text(workflowTimestamp(run.createdAt, timezone)) }
+    val supporting: @Composable () -> Unit = {
+        val trigger = stringResource(run.triggerLabel)
+        val status = stringResource(run.status.label)
+        val indicator =
+            with(LocalDensity.current) {
+                Placeholder(12.dp.toSp(), 7.dp.toSp(), PlaceholderVerticalAlign.TextCenter)
+            }
+        // One text layout gives ListItem the real supporting line count at every font scale.
+        Text(
+            buildAnnotatedString {
+                append(trigger)
+                append(" · ")
+                appendInlineContent("statusIndicator", "\u2060")
+                withStyle(SpanStyle(fontSize = 12.sp, color = colors.onSurfaceVariant)) {
+                    append(status)
+                }
+            },
+            inlineContent =
+                mapOf(
+                    "statusIndicator" to
+                        InlineTextContent(indicator) {
+                            Box(Modifier.size(7.dp).background(statusColor, CircleShape))
+                        },
+                ),
+        )
+    }
+    if (source == null) {
+        ListItem(
+            modifier = row.semantics(mergeDescendants = true) {},
+            leadingContent = leading,
+            supportingContent = supporting,
+            content = title,
+        )
+    } else {
+        val openChatLabel = stringResource(R.string.workflow_history_open_chat)
+        val shapes = workspaceToolListItemShapes()
+        ListItem(
+            onClick = { onOpenChat(run.id, source) },
+            modifier =
+                row.updateFocusOutline(shapes.focusedShape, colors.onBackground).semantics {
+                    role = Role.Button
+                    onClick(label = openChatLabel, action = null)
+                },
+            enabled = sourceNavigationEnabled,
+            leadingContent = leading,
+            trailingContent = {
                 Icon(
                     painterResource(R.drawable.ic_chevron_right),
                     null,
                     Modifier.size(historyIconSize),
                 )
-        },
-    ) {
-        Text(
-            workflowTimestamp(run.createdAt, timezone),
-            style = workflowBodyStyle(),
-            fontWeight = FontWeight.SemiBold,
+            },
+            supportingContent = supporting,
+            shapes = shapes,
+            content = title,
         )
-        FlowRow(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            itemVerticalAlignment = Alignment.CenterVertically,
-        ) {
-            WorkflowSecondary(stringResource(run.triggerLabel), small = true)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "·",
-                    Modifier.clearAndSetSemantics {},
-                    color = colors.onSurfaceVariant,
-                    style = workflowSmallStyle(),
-                )
-                WorkflowStatus(stringResource(run.status.label), statusColor)
-            }
-        }
-    }
-}
-
-@Composable
-private fun WorkflowHistoryRowLayout(
-    modifier: Modifier,
-    leading: @Composable () -> Unit,
-    trailing: @Composable () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Row(
-        modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        leading()
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            content()
-        }
-        trailing()
     }
 }
 
