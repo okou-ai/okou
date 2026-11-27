@@ -21,11 +21,6 @@ export const sshConnections = pgTable(
           remoteDevices.userId,
         ],
       }).onDelete("restrict"),
-      foreignKey({
-        name: "ssh_connections_remote_device_active_fk",
-        columns: [table.remoteDeviceId],
-        foreignColumns: [remoteDevices.activeId],
-      }),
       index("idx_ssh_connections_remote_device").on(table.remoteDeviceId),
       unique("uq_ssh_connections_owner_id").on(
         table.id,

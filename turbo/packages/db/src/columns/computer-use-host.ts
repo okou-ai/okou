@@ -1,5 +1,4 @@
 import { integer, jsonb, text, timestamp, uuid } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
 import type {
   ComputerUsePermissions,
   ComputerUseSupportedCapabilities,
@@ -36,8 +35,5 @@ export function computerUseHostColumns() {
     revokedAt: timestamp("revoked_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
-    activeRemoteDeviceId: uuid("active_remote_device_id").generatedAlwaysAs(
-      sql`CASE WHEN revoked_at IS NULL THEN remote_device_id END`,
-    ),
   };
 }

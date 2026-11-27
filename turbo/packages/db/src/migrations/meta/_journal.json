@@ -4012,13 +4012,6 @@
       "when": 1795748958015,
       "tag": "1651_drop_user_artifact_favorites",
       "breakpoints": true
-    },
-    {
-      "idx": 1652,
-      "version": "7",
-      "when": 1795765281307,
-      "tag": "1652_remote_device_deletion",
-      "breakpoints": true
     }
   ]
 }

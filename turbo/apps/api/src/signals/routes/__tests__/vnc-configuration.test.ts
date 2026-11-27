@@ -485,7 +485,10 @@ describe("VNC channel attachment", () => {
       params: { deviceId: sshDevice.id },
       body: undefined,
     };
-    await accept(devices.delete(deletion), [409]);
+    const blocked = await accept(devices.delete(deletion), [409]);
+    expect(blocked.body.error.message).toContain(
+      "dependency on the other device",
+    );
     const before = await accept(devices.list({ headers }), [200]);
     expect(before.body.devices).toHaveLength(2);
     await accept(

@@ -6,6 +6,10 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import {
+  computerUseCommandAuditEvents,
+  computerUseCommands,
+} from "@okouai/db/schema/computer-use-host";
 import { remoteDevices } from "@okouai/db/schema/remote-device";
 import { and, eq, exists, getTableName, isNull, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
@@ -29,7 +33,6 @@ import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 import {
   ownedRemoteDevice,
-  isRemoteDeviceReferenceViolation,
   remoteDeviceDestination,
   remoteDeviceMode,
   remoteDeviceMode$,
@@ -171,7 +174,12 @@ const moveChannel$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!result.ok) {
-    if (isRemoteDeviceReferenceViolation(result.error, getTableName(table))) {
+    if (
+      isForeignKeyViolation(
+        result.error,
+        `${getTableName(table)}_remote_device_owner_fk`,
+      )
+    ) {
       return missing;
     }
     throw result.error;
@@ -232,22 +240,25 @@ async function deleteRemoteDeviceRows(
   owner: RemoteDeviceOwner,
   deviceId: string,
 ) {
-  const deletedAt = nowDate();
-  // Desktop command history still references its host. Revoke that host
-  // together with the device while removing the other channel configurations.
   return parseRawRows(
     deletionResult,
     await db.execute(sql`
     WITH target AS (
-      UPDATE ${remoteDevices}
-      SET deleted_at = ${deletedAt}, access_allowed = false, access_expires_at = null
+      DELETE FROM ${remoteDevices}
       WHERE ${ownedRemoteDevice(owner, deviceId)}
       RETURNING id
     ), desktop AS (
-      UPDATE ${channelTables.desktop}
-      SET revoked_at = ${deletedAt}, status = 'offline', updated_at = ${deletedAt}
-      WHERE remote_device_id = (SELECT id FROM target) AND revoked_at IS NULL
+      DELETE FROM ${channelTables.desktop}
+      WHERE remote_device_id = (SELECT id FROM target)
       RETURNING id
+    ), desktop_commands AS (
+      DELETE FROM ${computerUseCommands}
+      WHERE host_id IN (SELECT id FROM desktop)
+      RETURNING id
+    ), desktop_audit AS (
+      DELETE FROM ${computerUseCommandAuditEvents}
+      WHERE host_id IN (SELECT id FROM desktop)
+         OR command_id IN (SELECT id FROM desktop_commands)
     ), ios AS (
       DELETE FROM ${channelTables.ios}
       WHERE remote_device_id = (SELECT id FROM target)
@@ -280,20 +291,18 @@ const deleteDevice$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!deleted.ok) {
     if (
-      safeSqlStateCode(deleted.error) === "40P01" ||
-      Object.values(channelTables).some((table) => {
-        return isRemoteDeviceReferenceViolation(
-          deleted.error,
-          getTableName(table),
-        );
-      })
+      isForeignKeyViolation(deleted.error, "vnc_connections_ssh_owner_fk") ||
+      isForeignKeyViolation(deleted.error, "vnc_connections_kdc_ssh_owner_fk")
     ) {
-      return conflict("The device changed. Try deleting it again.");
-    }
-    if (isForeignKeyViolation(deleted.error)) {
       return conflict(
         "Remove the channel dependency on the other device before deleting this one.",
       );
+    }
+    if (
+      isForeignKeyViolation(deleted.error) ||
+      safeSqlStateCode(deleted.error) === "40P01"
+    ) {
+      return conflict("The device changed. Try deleting it again.");
     }
     throw deleted.error;
   }

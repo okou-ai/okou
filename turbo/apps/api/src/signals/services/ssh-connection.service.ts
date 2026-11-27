@@ -1,5 +1,4 @@
 import { publishRemoteChannelDevice } from "./remote-device-publication";
-import { isRemoteDeviceReferenceViolation } from "./remote-device-access";
 import { command } from "ccstate";
 import { readNetworkConfig } from "./network-config-binding";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
@@ -623,7 +622,10 @@ const commitSshConnectionCreation$ = command(
     );
     if (!transaction.ok) {
       if (
-        isRemoteDeviceReferenceViolation(transaction.error, "ssh_connections")
+        isForeignKeyViolation(
+          transaction.error,
+          "ssh_connections_remote_device_owner_fk",
+        )
       ) {
         return failure("remoteDeviceNotFound");
       }

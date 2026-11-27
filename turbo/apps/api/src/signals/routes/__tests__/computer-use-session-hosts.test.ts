@@ -17,6 +17,10 @@ import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { computerUseRoutes } from "../computer-use";
+import { remoteDevicesRoutes } from "../remote-devices";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
@@ -68,6 +72,81 @@ async function app() {
 }
 
 describe("Native Computer Use session authentication", () => {
+  it("deletes the Desktop and command history and registers a fresh device on reconnect", async () => {
+    const api = await app();
+    const actor = identity();
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.RemoteDevices]: true,
+    });
+    authenticate(actor);
+    const client = api(contract);
+    const commands = api(computerUseCommandContract);
+    const devices = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    const { body: first } = await accept(
+      client.register({ headers, body: runtimeBody }),
+      [200],
+    );
+    const { body: directory } = await accept(devices.list({ headers }), [200]);
+    const [original] = directory.devices;
+    if (!original) {
+      throw new Error("Expected the registered Desktop device");
+    }
+    await accept(
+      devices.setAccess({
+        headers,
+        params: { deviceId: original.id },
+        body: { mode: "always" },
+      }),
+      [200],
+    );
+    const { body: queued } = await accept(
+      commands.create({
+        headers,
+        body: { kind: "apps.list", timeoutMs: 10_000 },
+      }),
+      [200],
+    );
+    await accept(
+      devices.delete({
+        headers,
+        params: { deviceId: original.id },
+        body: undefined,
+      }),
+      [204],
+    );
+
+    const { body: empty } = await accept(devices.list({ headers }), [200]);
+    expect(empty.devices).toStrictEqual([]);
+    await accept(
+      commands.get({ headers, params: { commandId: queued.commandId } }),
+      [404],
+    );
+    await accept(
+      client.next({
+        headers,
+        params: { hostId: first.hostId },
+        body: { connectionGeneration: first.connectionGeneration },
+      }),
+      [409],
+    );
+
+    const { body: second } = await accept(
+      client.register({ headers, body: runtimeBody }),
+      [200],
+    );
+    expect(second.hostId).not.toBe(first.hostId);
+    const { body: current } = await accept(devices.list({ headers }), [200]);
+    expect(current.devices[0]?.id).not.toBe(original.id);
+    expect(current.devices).toMatchObject([
+      {
+        accessAllowed: false,
+        channels: [{ id: second.hostId, kind: "desktop" }],
+      },
+    ]);
+  });
+
   it("enforces the supported Native version at registration", async () => {
     const api = await app();
     authenticate(identity());
