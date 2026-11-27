@@ -34,11 +34,13 @@ import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
-  type BuiltInModelRuntimeRoute,
   builtInModelRuntimeRouteFromSnapshot,
   unpricedBuiltInModelMessage,
 } from "./built-in-model-runtime-route.service";
-import { builtInRoutePricingFromSnapshot } from "./built-in-route-pricing";
+import {
+  builtInRoutePricingFromSnapshot,
+  type PricedBuiltInRoute,
+} from "./built-in-route-pricing";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
@@ -106,15 +108,14 @@ type QueuedModelContext =
       readonly featureSwitchContext: FeatureSwitchContext;
       readonly runCodexServiceTier: "fast" | "ultrafast" | undefined;
       readonly reasoningEffort: ReasoningEffort | undefined;
-      readonly builtInModelRuntimeRoute:
-        BuiltInModelRuntimeRoute | null | undefined;
+      readonly pricedBuiltInRoute: PricedBuiltInRoute | null | undefined;
     };
 
 /** The selected model facts shared by prompt preparation and Run persistence. */
 export interface ThreadModelSelection {
   readonly owner: { readonly userId: string; readonly orgId: string };
   readonly pin: ModelFirstPin;
-  readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
+  readonly pricedBuiltInRoute: PricedBuiltInRoute | undefined;
   readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly reasoningEffort: ReasoningEffort | undefined;
   readonly piExecution: boolean;
@@ -232,7 +233,7 @@ function createQueuedModel(
     });
     return "status" in pin ? pin : { pin, selection };
   });
-  const builtInRuntimeRoute$ = createBuiltInRuntimeRoute(
+  const pricedBuiltInRoute$ = createPricedBuiltInRoute(
     bootstrap,
     modelPin$,
     creditsWaived$,
@@ -252,12 +253,12 @@ function createQueuedModel(
       return resolved;
     }
     const { pin, selection } = resolved;
-    const [admission, builtInModelRuntimeRoute] = await Promise.all([
+    const [admission, pricedBuiltInRoute] = await Promise.all([
       get(providerAdmission$),
-      get(builtInRuntimeRoute$),
+      get(pricedBuiltInRoute$),
     ]);
     const unpriced =
-      builtInModelRuntimeRoute === null && pin.selectedModel
+      pricedBuiltInRoute === null && pin.selectedModel
         ? unpricedBuiltInModelRejection(
             {
               catalog: await get(bootstrap.modelCatalog$),
@@ -280,18 +281,18 @@ function createQueuedModel(
       reasoningEffort: isAutoSelectedModel(pin.selectedModel)
         ? undefined
         : (selection.reasoningEffort ?? undefined),
-      builtInModelRuntimeRoute,
+      pricedBuiltInRoute,
     };
   });
   return queuedModel$;
 }
 
-function createBuiltInRuntimeRoute(
+function createPricedBuiltInRoute(
   bootstrap: AgentRunContextSignals,
   modelPin$: QueuedModelPinSignal,
   creditsWaived$: Computed<Promise<boolean>>,
 ) {
-  const builtInRuntimeRoute$ = computed(async (get) => {
+  const pricedBuiltInRoute$ = computed(async (get) => {
     const resolved = await get(modelPin$);
     if (
       "status" in resolved ||
@@ -300,7 +301,7 @@ function createBuiltInRuntimeRoute(
     ) {
       return undefined;
     }
-    const [catalog, pricing, keys, creditsWaived] = await Promise.all([
+    const [catalog, modelPricing, keys, creditsWaived] = await Promise.all([
       get(bootstrap.modelCatalog$),
       get(bootstrap.modelPricing$),
       get(bootstrap.managedModelKeys$),
@@ -310,19 +311,21 @@ function createBuiltInRuntimeRoute(
     const vendor = creditsWaived
       ? PROACTIVE_RUN_KEY_VENDOR
       : AUTO_RUN_KEY_VENDOR;
-    return builtInModelRuntimeRouteFromSnapshot({
+    const pricing = builtInRoutePricingFromSnapshot(
+      { serviceTier: undefined },
+      modelPricing,
+    );
+    const runtimeRoute = builtInModelRuntimeRouteFromSnapshot({
       catalog,
       selectedModel: resolved.pin.selectedModel,
       modelKeyId: keys.find((key) => {
         return key.vendor === vendor;
       })?.id,
-      routePricing: builtInRoutePricingFromSnapshot(
-        { serviceTier: undefined },
-        pricing,
-      ),
+      routePricing: pricing,
     });
+    return runtimeRoute ? { runtimeRoute, catalog, pricing } : null;
   });
-  return builtInRuntimeRoute$;
+  return pricedBuiltInRoute$;
 }
 
 function createProviderAdmission(
@@ -390,9 +393,10 @@ function createModelSelection(
         return model.admissionError;
       }
       const modelProviderType = model.pin.modelProviderType;
+      const pricedBuiltInRoute = model.pricedBuiltInRoute ?? undefined;
       if (
         isBuiltInModelProviderType(modelProviderType) &&
-        !model.builtInModelRuntimeRoute
+        !pricedBuiltInRoute
       ) {
         return {
           status: 503,
@@ -412,12 +416,12 @@ function createModelSelection(
         modelProviderType,
         catalogModel: piCatalogModel(catalog, model.pin.selectedModel),
         codexServiceTier: model.runCodexServiceTier,
-        builtInModelRuntimeRoute: model.builtInModelRuntimeRoute ?? undefined,
+        builtInModelRuntimeRoute: pricedBuiltInRoute?.runtimeRoute,
       });
       return {
         owner: { userId: bootstrap.userId, orgId: bootstrap.orgId },
         pin: model.pin,
-        builtInModelRuntimeRoute: model.builtInModelRuntimeRoute ?? undefined,
+        pricedBuiltInRoute,
         codexServiceTier: model.runCodexServiceTier,
         reasoningEffort: resolveReasoningEffortForDispatch({
           catalog,
@@ -425,7 +429,7 @@ function createModelSelection(
           modelProviderType,
           effort: model.reasoningEffort,
           runtimeProviderType:
-            model.builtInModelRuntimeRoute?.providerType ?? modelProviderType,
+            pricedBuiltInRoute?.runtimeRoute.providerType ?? modelProviderType,
           piExecution,
         }),
         piExecution,
@@ -519,7 +523,7 @@ function createModelEnvironment(
       const { selection, framework } = context;
       const pin = selection.pin;
       if (isBuiltInModelProviderType(pin.modelProviderType)) {
-        const route = selection.builtInModelRuntimeRoute;
+        const route = selection.pricedBuiltInRoute?.runtimeRoute;
         if (!route) {
           return null;
         }

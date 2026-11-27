@@ -1,19 +1,70 @@
+import { randomUUID } from "node:crypto";
+import { orgOpenrouterPresetContract } from "@okouai/api-contracts/contracts/org-openrouter-preset";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { orgOpenrouterPresetRoutes } from "../org-openrouter-preset";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 
 const context = testContext();
 const {
   api,
+  bdd,
+  chat,
   mockPiObjectStore,
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
 
 describe("Auto native routing", () => {
+  it("rejects an Auto Run when its workspace preset is missing prices", async () => {
+    const orgId = `org_${randomUUID()}`;
+    const actor = bdd.user({ orgId, orgRole: "org:admin" });
+    const owner = await publicChatActor(context, { actor });
+    owner.ownsFeatureSwitches();
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      {
+        [FeatureSwitchKey.OkouDebug]: true,
+      },
+    );
+    const presets = setupApp({ context, routes: orgOpenrouterPresetRoutes })(
+      orgOpenrouterPresetContract,
+    );
+    await accept(
+      presets.update({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { openrouterPreset: "@preset/okou-experimental" },
+      }),
+      [200],
+    );
+
+    const clientEventId = randomUUID();
+    const sent = await owner.requestSendEvent(
+      actor,
+      { prompt: "start with Auto", model: "auto", clientEventId },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the Auto input to be queued");
+    }
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "model_provider_unavailable",
+      }),
+    );
+  });
+
   it("claims the OpenRouter preset for a completed initial run and its successor", async () => {
     const {
       actor,

@@ -1699,6 +1699,7 @@ export function createThreadClaimRunObjects(
         args,
         officialWorkflow: assembly.officialWorkflow,
         runPrompt: assembly.runPrompt,
+        pricedBuiltInRoute: model.pricedBuiltInRoute,
       }
     );
   });
@@ -1843,6 +1844,7 @@ export function createThreadClaimRunObjects(
           catalog,
           modelProvider: runtime.modelProvider,
           providerPermissions: runtime.providerPermissions,
+          pricedRoute: input.pricedBuiltInRoute,
           routePricing: runRoutePricingFromSnapshot(
             {
               modelProvider: runtime.modelProvider,
