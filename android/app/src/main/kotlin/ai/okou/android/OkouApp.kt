@@ -68,6 +68,7 @@ import ai.okou.android.chat.searchWorkflowById
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.connectors.ConnectorsPage
+import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.ArtifactsDestination
 import ai.okou.android.state.ChatConnectorVisit
@@ -200,6 +201,7 @@ internal fun OkouApp(
     workflowReadAnnouncements: WorkflowReadAnnouncements? = null,
     workflowTimezone: String = TimeZone.getDefault().id,
     defaultModel: DefaultModelSettings? = null,
+    memberPreferences: MemberPreferencesModel? = null,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     feedbackInOverlay: Boolean = false,
     namePresentation: WorkspaceNamePresentation? = null,
@@ -283,7 +285,10 @@ internal fun OkouApp(
                 SettingsDestination.Overview
             else -> navigation.settings
         }
-    SideEffect { defaultModel?.showSettings(settings) }
+    SideEffect {
+        defaultModel?.showSettings(settings)
+        memberPreferences?.showSettings(settings != null)
+    }
     val requestedTarget = artifactSource?.let { WorkspaceTarget.Chat(it) } ?: navigation.target
     val restoringFirstSend =
         !workspaceReady &&
