@@ -223,13 +223,13 @@ internal fun ChatArtifactResources(
             hasContent = related?.confirmed != null,
             awaitingRead = related?.checking == true && (result != null || failure != null),
         )
-    val showSkeleton =
-        rememberContentReadSkeleton(hasContent = result != null, awaitingRead = failure == null)
+    val showSkeleton = rememberArtifactCatalogSkeleton(state.takeIf { matchesQuery })
     val historyStale =
         rememberContentReadFeedbackAfter(
             history.syncProgressDelayMillis.takeIf {
                 references != null && history.phase == HistoryPhase.Loading
             },
+            readScope = history.readRound,
         )
     val dates = rememberArtifactDates()
     val historySettled = history.transcript != null || history.phase == HistoryPhase.Failed

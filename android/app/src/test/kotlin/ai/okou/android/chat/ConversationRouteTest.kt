@@ -492,9 +492,58 @@ class ConversationRouteTest {
     fun staleConversationShowsFixedProgressWithoutMovingMessages() {
         var now = System.currentTimeMillis()
         val model = createListModel(wallMillis = { now })
+        val showQueue = mutableStateOf(false)
+        val controls = compose.runOnIdle {
+            ViewModelProvider(
+                owners,
+                viewModelFactory {
+                    initializer {
+                        RunControlsModel(
+                            fixture.service,
+                            RunControlOwners(),
+                            fixture.identity,
+                            model.history,
+                            { true },
+                            {},
+                        )
+                    }
+                },
+            )[RunControlsModel::class.java]
+        }
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
-            OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
+            val state by model.history.uiState.collectAsStateWithLifecycle()
+            val queuedControls =
+                if (showQueue.value) {
+                    val presentation =
+                        conversationContent(
+                            state.transcript,
+                            model.history.output.state.value,
+                            CHAT_IN_PROJECT,
+                            emptyList(),
+                            emptySet(),
+                        )
+                    val queued =
+                        HistoryMessage(
+                            scrollEventId(40),
+                            null,
+                            HistoryRole.User,
+                            listOf(HistoryBlock(HistoryBlockKind.Text, "Check the rollout")),
+                            queued = true,
+                        )
+                    ConversationRunControls(
+                        controls,
+                        CHAT_IN_PROJECT,
+                        RunControlsState(),
+                        state,
+                        null,
+                        emptyList(),
+                        presentation.copy(queue = listOf(ConversationMessage(queued))),
+                    )
+                } else null
+            OkouTheme {
+                ConversationRoute(model.history, CHAT_IN_PROJECT, list, controls = queuedControls)
+            }
         }
         compose.waitUntil(10_000) {
             compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
@@ -536,6 +585,9 @@ class ConversationRouteTest {
             assertEquals(viewport.right, bar.right)
             assertEquals(4.dp, bar.bottom - bar.top)
             assertEquals(bounds, reply.getUnclippedBoundsInRoot())
+            compose.runOnIdle { showQueue.value = true }
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNode(progress).assertIsDisplayed()
         } finally {
             compose.mainClock.autoAdvance = true
             allowRefreshResponse.countDown()
