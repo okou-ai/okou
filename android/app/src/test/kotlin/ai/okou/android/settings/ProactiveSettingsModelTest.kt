@@ -121,13 +121,10 @@ class ProactiveSettingsModelTest {
             assertEquals(true, confirmed.enabled)
 
             fixture.morningWriteStatus = 400
-            val feedback = async(start = CoroutineStart.UNDISPATCHED) { model.notices.first() }
+            val feedback = async(start = CoroutineStart.UNDISPATCHED) { model.rejections.first() }
             model.morningBrief.choose(false)
             assertEquals(false, model.morningBrief.state.value.enabled)
-            assertEquals(
-                ProactiveNotice(ProactiveSetting.MorningBrief, ProactiveSaveFailure.Rejected),
-                feedback.await(),
-            )
+            assertEquals(ProactiveSetting.MorningBrief, feedback.await())
             assertEquals(true, model.morningBrief.state.value.enabled)
             assertEquals(listOf(true, false), fixture.writes.map { it.second })
         }
@@ -141,13 +138,14 @@ class ProactiveSettingsModelTest {
             model.visible(true)
             model.morningBrief.state.first { it.confirmed != null }
             fixture.morningWriteStatus = 503
-            val notice = async(start = CoroutineStart.UNDISPATCHED) { model.notices.first() }
+            val rejection = async(start = CoroutineStart.UNDISPATCHED) { model.rejections.first() }
             model.morningBrief.choose(true)
             val uncertain = model.morningBrief.state.first { it.checking != null }
             assertEquals(true, uncertain.enabled)
             assertEquals(false, uncertain.confirmed?.enabled)
             assertFalse(uncertain.canChoose)
-            assertEquals(ProactiveSaveFailure.Unconfirmed, notice.await().failure)
+            assertFalse(rejection.isCompleted)
+            rejection.cancel()
             assertEquals(4, fixture.reads.count { it == "morning-brief" })
             model.morningBrief.choose(true)
 

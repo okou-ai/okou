@@ -16,16 +16,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-internal enum class ProactiveSaveFailure {
-    Rejected,
-    Unconfirmed,
-}
-
-internal data class ProactiveNotice(
-    val setting: ProactiveSetting,
-    val failure: ProactiveSaveFailure,
-)
-
 internal data class ProactiveChoice(val enabled: Boolean, val visit: Long)
 
 internal data class ProactiveSettingState(
@@ -54,8 +44,8 @@ internal class ProactiveSettingsModel(
     authorized: () -> Boolean,
     onSessionFailure: (Exception) -> Unit,
 ) {
-    private val mutableNotices = MutableSharedFlow<ProactiveNotice>(extraBufferCapacity = 4)
-    val notices = mutableNotices.asSharedFlow()
+    private val mutableRejections = MutableSharedFlow<ProactiveSetting>(extraBufferCapacity = 4)
+    val rejections = mutableRejections.asSharedFlow()
 
     private val settings =
         ProactiveSetting.entries.associateWith { setting ->
@@ -67,8 +57,8 @@ internal class ProactiveSettingsModel(
                 cache,
                 authorized,
                 onSessionFailure,
-            ) { failure ->
-                mutableNotices.tryEmit(ProactiveNotice(setting, failure))
+            ) {
+                mutableRejections.tryEmit(setting)
             }
         }
     val morningBrief = settings.getValue(ProactiveSetting.MorningBrief)
@@ -88,7 +78,7 @@ internal class ProactiveSettingOwner(
     private val cache: WorkspaceSettingsCache?,
     private val authorized: () -> Boolean,
     private val onSessionFailure: (Exception) -> Unit,
-    private val notice: (ProactiveSaveFailure) -> Unit,
+    private val reportRejection: () -> Unit,
 ) {
     private val mutable = MutableStateFlow(ProactiveSettingState())
     val state = mutable.asStateFlow()
@@ -283,9 +273,7 @@ internal class ProactiveSettingOwner(
                 return
             }
         }
-        val current = mutable.value
-        mutable.value = current.copy(checking = sent)
-        if (current.checking != sent) notify(sent, ProactiveSaveFailure.Unconfirmed)
+        mutable.value = mutable.value.copy(checking = sent)
     }
 
     private fun publish(value: ProactivePreference?) {
@@ -324,8 +312,13 @@ internal class ProactiveSettingOwner(
         val current = mutable.value.choice == sent
         val remaining = mutable.value.choice.takeUnless { current }
         mutable.value = mutable.value.copy(choice = remaining, checking = null)
-        if (remaining == null && (rejected || current && value?.matches(sent.enabled) != true)) {
-            notify(sent, ProactiveSaveFailure.Rejected)
+        if (
+            remaining == null &&
+                (rejected || current && value?.matches(sent.enabled) != true) &&
+                visible &&
+                sent.visit == visit
+        ) {
+            reportRejection()
         }
     }
 
@@ -335,10 +328,6 @@ internal class ProactiveSettingOwner(
         requireCurrent()
         if (error is ApiFailure.Http && error.status == 403) discardConfirmation()
         else mutable.value = mutable.value.copy(readFailed = true)
-    }
-
-    private fun notify(sent: ProactiveChoice, failure: ProactiveSaveFailure) {
-        if (visible && sent.visit == visit) notice(failure)
     }
 
     private suspend fun requireCurrent() {
