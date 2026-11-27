@@ -29,7 +29,7 @@ import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
 import ai.okou.android.chat.SearchRead
 import ai.okou.android.chat.cursor
-import ai.okou.android.preferences.MemberAppearance
+import ai.okou.android.preferences.CachedMemberPreferences
 import ai.okou.android.updates.ControlledUpdates
 import ai.okou.android.updates.UpdateCheck
 import ai.okou.android.updates.updateRelease
@@ -179,9 +179,12 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
                     }
             }
             if (selectedAccess != null) {
-                memberAppearanceCache.save(
+                memberPreferencesCache.save(
                     identity,
-                    MemberAppearance(UserPreferencesTheme.DARK, UserPreferencesColorTheme.DAYDREAM),
+                    CachedMemberPreferences(
+                        UserPreferencesTheme.DARK,
+                        UserPreferencesColorTheme.DAYDREAM,
+                    ),
                 )
             }
         }

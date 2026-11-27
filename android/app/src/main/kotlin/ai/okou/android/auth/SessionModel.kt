@@ -21,8 +21,8 @@ import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
-import ai.okou.android.preferences.MemberAppearance
-import ai.okou.android.preferences.MemberAppearanceCache
+import ai.okou.android.preferences.CachedMemberPreferences
+import ai.okou.android.preferences.MemberPreferencesCache
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.PreferenceChange
 import ai.okou.android.settings.DefaultModelStore
@@ -124,7 +124,7 @@ data class SessionUiState(
     val memberships: List<WorkspaceMembership> = emptyList(),
     val ready: ReadyWorkspace? = null,
     val working: Boolean = false,
-    val cachedAppearance: MemberAppearance? = null,
+    val cachedPreferences: CachedMemberPreferences? = null,
     val opening: OpeningWorkspace? = null,
     val checkingWorkspace: Boolean = false,
     val entryFailure: SessionEntryFailure? = null,
@@ -170,7 +170,7 @@ class SessionModel(
     private val instructionsDrafts: PersonalInstructionsDraftStore,
     private val composerJournal: ComposerJournalStore,
     private val runControlOwners: RunControlOwners,
-    private val appearanceCache: MemberAppearanceCache,
+    private val preferencesCache: MemberPreferencesCache,
     private val projectExpansionStore: ProjectExpansionStore,
     private val defaultModelStore: DefaultModelStore,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
@@ -257,13 +257,17 @@ class SessionModel(
 
     private fun enterRequiredUpdate() {
         val state = mutable.value
-        val appearance =
-            state.ready?.preferences?.uiState?.value?.appearance ?: state.cachedAppearance
+        val cachedPreferences =
+            state.ready?.preferences?.uiState?.value?.localSnapshot ?: state.cachedPreferences
         requiredUpdate = true
         cancelSignOut()
         retire()
         mutable.value =
-            SessionUiState(generation, SessionStage.UpdateRequired, cachedAppearance = appearance)
+            SessionUiState(
+                generation,
+                SessionStage.UpdateRequired,
+                cachedPreferences = cachedPreferences,
+            )
     }
 
     private fun reconcile(snapshot: AuthenticationState, force: Boolean = false) {
@@ -347,15 +351,18 @@ class SessionModel(
             var preparation = preparedIdentity?.let { identity ->
                 async { prepareChatList(identity) }
             }
-            val appearanceRead = initialIdentity?.let { identity ->
-                launch readCache@{
-                    val appearance = appearanceCache.load(identity) ?: return@readCache
-                    val state = mutable.value
-                    if (current(ticket, snapshot) && state.opening != null) {
-                        mutable.value = state.copy(cachedAppearance = appearance)
-                    }
+            fun restorePreferences(identity: WorkspaceIdentity) = launch {
+                val preferences = preferencesCache.load(identity) ?: return@launch
+                val state = mutable.value
+                if (
+                    current(ticket, snapshot) &&
+                        state.opening?.identity?.workspaceId == identity.workspaceId
+                ) {
+                    mutable.value = state.copy(cachedPreferences = preferences)
                 }
             }
+            var preferencesRead =
+                initialIdentity?.takeIf { mutable.value.opening != null }?.let(::restorePreferences)
             val cacheWarm =
                 initialIdentity
                     ?.takeIf { preparedIdentity == null }
@@ -570,6 +577,7 @@ class SessionModel(
                         checkingWorkspace = false,
                         entryFailure = null,
                     )
+                preferencesRead = preferencesRead ?: restorePreferences(identity)
                 preparation?.let(chats::restoreStartupCache)
                 // The list owns restoration after handoff, including during bootstrap retries.
                 preparation = null
@@ -606,14 +614,14 @@ class SessionModel(
                         SessionUiState(
                             generation,
                             SessionStage.Unavailable,
-                            cachedAppearance = state.cachedAppearance,
+                            cachedPreferences = state.cachedPreferences,
                             opening = initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
                             entryReadFailed = initialIdentity == null,
                         ),
                     )
                 }
             } finally {
-                appearanceRead?.cancel()
+                preferencesRead?.cancel()
                 cacheWarm?.cancel()
                 preparation?.cancel()
             }
@@ -875,13 +883,13 @@ class SessionModel(
                         namePresentation = opened.namePresentation,
                     ),
                 working = false,
-                cachedAppearance = null,
+                cachedPreferences = null,
                 opening = null,
             )
         preferences.uiState
-            .map { it.appearance }
+            .map { it.localSnapshot }
             .distinctUntilChanged()
-            .collect { appearanceCache.save(opened.identity, it) }
+            .collect { preferencesCache.save(opened.identity, it) }
     }
 
     private suspend fun <T : Any> readWorkspacePreparation(

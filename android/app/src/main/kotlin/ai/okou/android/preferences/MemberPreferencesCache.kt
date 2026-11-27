@@ -1,6 +1,7 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.api.generated.UserPreferencesColorTheme
+import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.workspaceStorageKey
@@ -19,27 +20,30 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
 @Serializable
-data class MemberAppearance(
+data class CachedMemberPreferences(
     val theme: UserPreferencesTheme,
     val colorTheme: UserPreferencesColorTheme,
+    val locale: UserPreferencesLocale? = null,
+    val timezone: String? = null,
+    val cloudBrowser: Boolean? = null,
 )
 
-/** Stores the last applied appearance for the next first display. */
-class MemberAppearanceCache(
+/** Restores applied appearance and confirmed settings on the next workspace open. */
+class MemberPreferencesCache(
     private val directory: () -> File,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val io = Mutex()
 
-    suspend fun load(identity: WorkspaceIdentity): MemberAppearance? =
+    suspend fun load(identity: WorkspaceIdentity): CachedMemberPreferences? =
         withContext(dispatcher) { io.withLock { read(file(identity)) } }
 
-    suspend fun save(identity: WorkspaceIdentity, appearance: MemberAppearance): Unit =
+    suspend fun save(identity: WorkspaceIdentity, preferences: CachedMemberPreferences): Unit =
         withContext(dispatcher) {
             io.withLock {
                 val file = file(identity)
-                if (read(file) == appearance) return@withLock
-                val data = Json.encodeToString(appearance).encodeToByteArray()
+                if (read(file) == preferences) return@withLock
+                val data = Json.encodeToString(preferences).encodeToByteArray()
                 try {
                     val output = file.startWrite()
                     try {
@@ -50,7 +54,7 @@ class MemberAppearanceCache(
                         throw error
                     }
                 } catch (_: IOException) {
-                    Log.w("MemberAppearanceCache", "Could not update the appearance cache")
+                    Log.w("MemberPreferencesCache", "Could not update the preferences cache")
                 }
             }
         }
@@ -58,16 +62,16 @@ class MemberAppearanceCache(
     private fun file(identity: WorkspaceIdentity): AtomicFile =
         AtomicFile(directory().resolve("${identity.workspaceStorageKey()}.json"))
 
-    private fun read(file: AtomicFile): MemberAppearance? =
+    private fun read(file: AtomicFile): CachedMemberPreferences? =
         try {
-            Json.decodeFromString<MemberAppearance>(file.readFully().decodeToString())
+            Json.decodeFromString<CachedMemberPreferences>(file.readFully().decodeToString())
         } catch (_: FileNotFoundException) {
             null
         } catch (_: IOException) {
-            Log.w("MemberAppearanceCache", "Could not read the appearance cache")
+            Log.w("MemberPreferencesCache", "Could not read the preferences cache")
             null
         } catch (_: SerializationException) {
-            Log.w("MemberAppearanceCache", "Could not decode the appearance cache")
+            Log.w("MemberPreferencesCache", "Could not decode the preferences cache")
             null
         }
 }

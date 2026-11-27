@@ -69,7 +69,7 @@ private const val defaultTimezone = "America/Los_Angeles"
 @Composable
 internal fun MemberPreferencesSettings(
     model: MemberPreferencesModel?,
-    cachedAppearance: MemberAppearance? = null,
+    cachedPreferences: CachedMemberPreferences? = null,
 ) {
     val state = model?.uiState?.collectAsStateWithLifecycle()?.value
     if (model != null) {
@@ -80,9 +80,9 @@ internal fun MemberPreferencesSettings(
             onDispose { model.settingsVisibilityChanged(false) }
         }
     }
-    val theme = state?.theme ?: cachedAppearance?.theme ?: UserPreferencesTheme.SYSTEM
+    val theme = state?.theme ?: cachedPreferences?.theme ?: UserPreferencesTheme.SYSTEM
     val colorTheme =
-        state?.colorTheme ?: cachedAppearance?.colorTheme ?: UserPreferencesColorTheme.DEFAULT
+        state?.colorTheme ?: cachedPreferences?.colorTheme ?: UserPreferencesColorTheme.DEFAULT
     val systemDark = isSystemInDarkTheme()
     val dark = theme.resolveDark(systemDark)
     SettingsSection(stringResource(R.string.settings_appearance_group)) {
@@ -128,6 +128,7 @@ internal fun MemberPreferencesSettings(
             val languageTitle = stringResource(R.string.preference_language)
             val locale =
                 state?.locale
+                    ?: cachedPreferences?.locale
                     ?: run {
                         val deviceLocale =
                             LocaleManagerCompat.getSystemLocales(LocalContext.current)[0]
@@ -153,7 +154,9 @@ internal fun MemberPreferencesSettings(
             }
             HorizontalDivider()
             TimezonePicker(
-                state?.timezone ?: remember { initialTimezone() ?: defaultTimezone },
+                state?.timezone
+                    ?: cachedPreferences?.timezone
+                    ?: remember { initialTimezone() ?: defaultTimezone },
                 model?.let { owner -> { owner.selectTimezone(it) } },
             )
         }
