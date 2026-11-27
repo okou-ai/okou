@@ -1,6 +1,6 @@
 import { writeToClipboard } from "./okou-page/clipboard.ts";
 import { i18n } from "../i18n/index.ts";
-import { command, computed, state, type Computed, type Command } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/client/host";
 import type { hostedSiteUrlSchema } from "@okouai/api-contracts/contracts/host";
@@ -10,11 +10,10 @@ import { accept } from "../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "./api-client.ts";
 import { featureSwitches$ } from "./external/feature-switch.ts";
 import { openSettingsBillingPlansDialog$ } from "./okou-page/settings/settings-dialog.ts";
-import { resetSignal, setLoop } from "./utils.ts";
-import {
-  hostedDomainProgress,
-  type DomainSetupStage,
-} from "../lib/hosted-site-domains.ts";
+import { onRef, resetSignal } from "./utils.ts";
+import { delay } from "signal-timers";
+import { now } from "../lib/time.ts";
+import { setAblyLoop$ } from "./realtime.ts";
 
 type Settings = zInfer<typeof hostedDomainSettingsSchema>;
 type SiteSignal = Computed<Promise<zInfer<typeof hostedSiteUrlSchema> | null>>;
@@ -23,21 +22,26 @@ function createDomainState(site$: SiteSignal) {
     | ((
         createClient: ApiClientFactory,
         siteId: string,
+        readSignal?: AbortSignal,
       ) => Promise<Settings | null>)
     | null
   >(null);
   const initialize$ = command(({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(request$, () => {
-      return async (createClient: ApiClientFactory, siteId: string) => {
+      return async (
+        createClient: ApiClientFactory,
+        siteId: string,
+        readSignal = signal,
+      ) => {
         signal.throwIfAborted();
         const result = await accept(
           createClient(hostContract).siteDomains({
             params: { siteId },
-            fetchOptions: { cache: "no-store", signal },
+            fetchOptions: { cache: "no-store", signal: readSignal },
           }),
           [200, 403, 404],
-          signal,
+          readSignal,
         );
         return result.status === 200 ? result.body : null;
       };
@@ -48,7 +52,6 @@ function createDomainState(site$: SiteSignal) {
   const addressMode$ = state<"platform" | "custom">("platform");
   const selectedDomainId$ = state<string | null>(null);
   const managedDomainId$ = state<string | null>(null);
-  const viewedStage$ = state<DomainSetupStage | null>(null);
   const hostname$ = state("");
   const notice$ = state<string | null>(null);
   const removalConfirmation$ = state(false);
@@ -101,12 +104,12 @@ function createDomainState(site$: SiteSignal) {
   });
   return {
     initialize$,
+    request$,
     saved$,
     open$,
     addressMode$,
     selectedDomainId$,
     managedDomainId$,
-    viewedStage$,
     hostname$,
     notice$,
     removalConfirmation$,
@@ -117,51 +120,76 @@ function createDomainState(site$: SiteSignal) {
   };
 }
 type DomainState = ReturnType<typeof createDomainState>;
-type ResumeVerification = Command<void, [AbortSignal]>;
-function createDomainWizard(
-  scope: DomainState,
-  resumeVerification$: ResumeVerification,
-) {
-  const wizard$ = computed(async (get) => {
-    const settings = await get(scope.settings$);
-    const domain = settings?.domains.find((item) => {
-      return item.id === get(scope.managedDomainId$);
-    });
-    if (!domain) {
-      return null;
-    }
-    const progress = hostedDomainProgress(domain);
-    const stage = get(scope.viewedStage$) ?? progress.initialStage;
-    const currentStage: DomainSetupStage = domain.ready
-      ? 2
-      : domain.verification || stage === 1
-        ? 1
-        : 0;
-    return { ...progress, currentStage, stage };
-  });
-  const reviewStage$ = command(
-    ({ set }, stage: DomainSetupStage, signal: AbortSignal) => {
-      set(scope.resetVerificationSignal$);
-      set(scope.viewedStage$, stage);
-      set(scope.notice$, null);
-      if (stage === 1) {
-        set(resumeVerification$, signal);
+function createDomainUpdates(scope: DomainState, site$: SiteSignal) {
+  const { request$, saved$ } = scope;
+  const expiredThrough$ = state(0);
+  const reconciledThrough$ = state(0);
+  const latestRead$ = state(0);
+  const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const read = get(latestRead$) + 1;
+    set(latestRead$, read);
+    const previous = get(saved$);
+    const request = get(request$);
+    const site = await get(site$);
+    signal.throwIfAborted();
+    if (request && site?.isActive) {
+      const fresh = await request(get(apiClient$), site.siteId, signal);
+      signal.throwIfAborted();
+      // An older read must not overwrite a later read or mutation.
+      if (get(latestRead$) === read && previous === get(saved$)) {
+        set(saved$, fresh);
       }
-    },
+    }
+    return false;
+  });
+  const mountDeadline$ = onRef(
+    command(async ({ get, set }, el: HTMLElement, signal: AbortSignal) => {
+      const expiresAt = el.dataset.verificationExpiresAt;
+      if (!expiresAt) {
+        return;
+      }
+      const deadline = Date.parse(expiresAt);
+      await delay(Math.max(0, deadline - now()), { signal });
+      signal.throwIfAborted();
+      set(expiredThrough$, Math.max(deadline, get(expiredThrough$)));
+      if (deadline > get(reconciledThrough$)) {
+        // A missed final push may have left a ready domain showing as pending.
+        // If navigation cancels this read, the new view can finish it.
+        await set(refresh$, signal);
+        signal.throwIfAborted();
+        set(reconciledThrough$, Math.max(deadline, get(reconciledThrough$)));
+      }
+    }),
   );
-  return { wizard$, reviewStage$ };
+  const mountCustomTab$ = onRef(
+    command(async ({ get, set }, _el: HTMLElement, signal: AbortSignal) => {
+      const site = await get(site$);
+      signal.throwIfAborted();
+      if (!site?.isActive) {
+        return;
+      }
+      // The subscription and offline entry read must be able to recover independently.
+      set(
+        setAblyLoop$,
+        {
+          topic: `hostedSiteDomainsChanged:${site.siteId}`,
+          loopCommand$: refresh$,
+          options: { runOnSubscribe: true },
+        },
+        signal,
+      );
+      await set(refresh$, signal);
+    }),
+  );
+  return { mountCustomTab$, mountDeadline$, expiredThrough$ };
 }
 type DomainAction = "create" | "verify" | "remove";
-function createDomainNavigation(
-  scope: DomainState,
-  resumeVerification$: ResumeVerification,
-) {
+function createDomainNavigation(scope: DomainState) {
   const {
     open$,
     addressMode$,
     selectedDomainId$,
     managedDomainId$,
-    viewedStage$,
     hostname$,
     notice$,
     removalConfirmation$,
@@ -172,7 +200,6 @@ function createDomainNavigation(
     const settings = await get(settings$);
     signal.throwIfAborted();
     set(open$, false);
-    set(viewedStage$, null);
     set(notice$, null);
     const selected =
       settings?.allowed &&
@@ -194,7 +221,6 @@ function createDomainNavigation(
       return;
     }
     set(managedDomainId$, null);
-    set(viewedStage$, null);
     set(hostname$, "");
     set(notice$, null);
     set(open$, true);
@@ -235,13 +261,11 @@ function createDomainNavigation(
       }
     },
   );
-  const manage$ = command(({ set }, id: string | null, signal: AbortSignal) => {
+  const manage$ = command(({ set }, id: string | null) => {
     set(scope.resetVerificationSignal$);
     set(managedDomainId$, id);
-    set(viewedStage$, null);
     set(notice$, null);
     set(open$, true);
-    set(resumeVerification$, signal);
   });
   const requestRemoval$ = command(({ set }, id: string) => {
     set(scope.resetVerificationSignal$);
@@ -330,16 +354,6 @@ const applyDomainSettings$ = command(
       open$,
     } = scope;
     set(saved$, settings);
-    set(
-      scope.viewedStage$,
-      action === "verify"
-        ? settings.domains.find((domain) => {
-            return domain.id === domainId;
-          })?.ready
-          ? 2
-          : 1
-        : null,
-    );
     if (
       get(selectedDomainId$) &&
       !settings.domains.some((domain) => {
@@ -458,67 +472,20 @@ function createDomainMutations(scope: DomainState) {
   const create$ = command(({ set }, signal: AbortSignal) => {
     return set(mutate$, "create", signal);
   });
-  const resumeVerification$ = command(({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    const pollingSignal = set(scope.resetVerificationSignal$, signal);
-    const id = get(scope.managedDomainId$);
-    let first = true;
-    setLoop(
-      async () => {
-        const settings = await get(scope.settings$);
-        pollingSignal.throwIfAborted();
-        const domain = settings?.domains.find((item) => {
-          return item.id === id;
-        });
-        const checks = domain?.verification?.checks;
-        const stage =
-          get(scope.viewedStage$) ??
-          (domain && hostedDomainProgress(domain).initialStage);
-        if (
-          !get(scope.open$) ||
-          get(scope.managedDomainId$) !== id ||
-          stage !== 1 ||
-          get(scope.notice$) ||
-          !domain ||
-          domain.ready ||
-          !checks ||
-          checks.ownership.status !== "passed" ||
-          checks.dns.status !== "passed" ||
-          Object.values(checks).some((check) => {
-            return check.status === "failed" || check.status === "unavailable";
-          })
-        ) {
-          return true;
-        }
-        if (first) {
-          first = false;
-          return false;
-        }
-        await set(mutate$, "verify", pollingSignal);
-        pollingSignal.throwIfAborted();
-        return false;
-      },
-      30_000,
-      pollingSignal,
-      { testIntervalMs: 100 },
-    );
-  });
   const verify$ = command(async ({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     const verificationSignal = set(scope.resetVerificationSignal$, signal);
-    set(scope.viewedStage$, 1);
     set(scope.notice$, null);
     await set(mutate$, "verify", verificationSignal);
     signal.throwIfAborted();
     verificationSignal.throwIfAborted();
-    set(resumeVerification$, signal);
   });
   const remove$ = command(async ({ set }, signal: AbortSignal) => {
     await set(mutate$, "remove", signal);
     signal.throwIfAborted();
     set(removalConfirmation$, false);
   });
-  return { create$, verify$, remove$, resumeVerification$ };
+  return { create$, verify$, remove$ };
 }
 function createDomainSelection(scope: DomainState, site$: SiteSignal) {
   const { settings$, selectedDomainId$, notice$, saved$ } = scope;
@@ -567,9 +534,9 @@ export function createHostedSiteDomainSignals(site$: SiteSignal) {
   const mutations = createDomainMutations(scope);
   return {
     ...scope,
-    ...createDomainWizard(scope, mutations.resumeVerification$),
-    ...createDomainNavigation(scope, mutations.resumeVerification$),
+    ...createDomainNavigation(scope),
     ...mutations,
+    ...createDomainUpdates(scope, site$),
     ...createDomainSelection(scope, site$),
   };
 }

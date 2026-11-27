@@ -24,7 +24,8 @@ function DomainRecord({
   const { t } = useTranslation();
   const copy = useSet(session.domains.copy$);
   const signal = useGet(session.signal$);
-  const passed = domainRecordCheck(domain, record)?.status === "passed";
+  const check = domainRecordCheck(domain, record);
+  const passed = check?.status === "passed";
   const certificate = domain.verification?.validationRecords.some((item) => {
     return (
       item.type === record.type &&
@@ -108,6 +109,11 @@ function DomainRecord({
           );
         })}
       </div>
+      {check && !passed && check.status !== "not_checked" && (
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+          {check.message}
+        </p>
+      )}
     </div>
   );
 }
