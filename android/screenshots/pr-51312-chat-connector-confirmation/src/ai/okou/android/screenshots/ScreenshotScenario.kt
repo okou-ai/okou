@@ -152,6 +152,7 @@ class ScreenshotScenario {
 
                             refreshedCalendar.click()
                             text("replacement@example.com")
+                            check(!device.hasObject(By.pkg(app.packageName).text("此账号已不可用。")))
                             check(!device.hasObject(By.pkg(app.packageName).text("工作日历")))
                             check(activeWindowId() == sheetWindow)
                             val details = "/api/connector-accounts/connections" to CONNECTOR_CALENDAR
