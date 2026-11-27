@@ -131,6 +131,12 @@ internal abstract class ArtifactCatalogRootTestFixture {
         scenario.moveToState(Lifecycle.State.RESUMED)
     }
 
+    protected fun assertToolbarTouchTarget(label: String) {
+        val bounds = compose.onNodeWithContentDescription(label).fetchSemanticsNode().touchBoundsInRoot
+        val minimum = with(compose.density) { 48.dp.roundToPx() }
+        assertTrue("Touch bounds for $label: $bounds", bounds.width >= minimum && bounds.height >= minimum)
+    }
+
     protected fun loadedWebsiteUrl(): String? = websiteView()?.let { shadowOf(it).lastLoadedUrl }
 
     protected fun scrollWebsitePreview() {
@@ -1502,6 +1508,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         val artifacts = compose.onNodeWithContentDescription("Artifacts")
         val backToWorkspace = compose.onNodeWithContentDescription("Back to workspace")
         artifacts.performClick()
+        assertToolbarTouchTarget("Back to workspace")
         backToWorkspace.performClick()
         query.assertTextContains("Native history").assertIsNotFocused()
         awaitText("1 matching message")
@@ -2069,6 +2076,8 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
                 assertEquals(pending.height, surface.getUnclippedBoundsInRoot().height)
                 compose.mainClock.autoAdvance = true
                 compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
+                assertToolbarTouchTarget("Back to artifacts")
+                assertToolbarTouchTarget("Image actions")
                 compose.onNodeWithContentDescription("Image actions").performClick()
                 compose.onNodeWithText("Save image").assertIsEnabled()
                 pending
