@@ -894,6 +894,47 @@ class MemberPreferencesRefreshTest {
             runCurrent()
             assertEquals(2, reads)
         }
+
+    @Test
+    fun dueForegroundRefreshVerifiesAnUnconfirmedWriteWithoutResubmittingIt() =
+        check { model, service, _ ->
+            val save = service.write
+            service.write = {
+                save(it)
+                throw IOException("response lost")
+            }
+            var reads = 0
+            service.load = {
+                reads++
+                throw IOException("cannot confirm")
+            }
+            model.foreground(true)
+            model.showSettings(true)
+            model.setCloudBrowser(true)
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveUnconfirmed, model.uiState.value.status)
+            val readsBeforeExit = reads
+
+            model.showSettings(false)
+            advanceTimeBy(599_999)
+            runCurrent()
+            assertEquals(readsBeforeExit, reads)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(readsBeforeExit + 1, reads)
+            assertEquals(PreferenceStatus.SaveUnconfirmed, model.uiState.value.status)
+
+            service.load = { service.stored.also { reads++ } }
+            advanceTimeBy(600_000)
+            runCurrent()
+            assertEquals(readsBeforeExit + 2, reads)
+            assertEquals(1, service.requests.size)
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
+            assertNull(model.uiState.value.pending)
+        }
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)

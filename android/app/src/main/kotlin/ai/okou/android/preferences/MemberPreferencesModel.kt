@@ -315,13 +315,14 @@ class MemberPreferencesModel(
     private fun scheduleRefresh() {
         refreshTimer?.cancel()
         refreshTimer = null
+        val state = mutable.value
         if (
             !current() ||
                 !foreground ||
                 settingsOpen ||
                 request != null ||
                 recovery != null ||
-                mutable.value.pending != null
+                (state.pending != null && state.status != PreferenceStatus.SaveUnconfirmed)
         )
             return
         val timer =
@@ -573,6 +574,7 @@ class MemberPreferencesModel(
             return false
         }
         if (sent != null) return true // Last write still needs authoritative readback.
+        nextRefreshAt = monotonicMillis() + preferenceRefreshMillis
         if (state.status != PreferenceStatus.SaveUnconfirmed)
             saveNotice.value = PreferenceSaveNotice.Unconfirmed()
         mutable.value = state.copy(status = PreferenceStatus.SaveUnconfirmed, recovering = false)
