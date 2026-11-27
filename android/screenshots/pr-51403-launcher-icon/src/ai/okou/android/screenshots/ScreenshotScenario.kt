@@ -23,11 +23,17 @@ class ScreenshotScenario {
         checkNotNull(icon.monochrome) { "The API 35 launcher icon must provide a monochrome layer" }
 
         val device = UiDevice.getInstance(instrumentation)
-        val launcher = checkNotNull(device.launcherPackageName)
+        val home =
+            device.executeShellCommand(
+                "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME",
+            )
+        val launcher = home.lineSequence().last { '/' in it }.substringBefore('/')
         val label = context.applicationInfo.loadLabel(context.packageManager).toString()
         device.pressHome()
-        check(device.wait(Until.hasObject(By.pkg(launcher).depth(0)), 5_000))
         try {
+            check(device.wait(Until.hasObject(By.pkg(launcher)), 5_000)) {
+                "Expected Home $launcher, visible package was ${device.currentPackageName}"
+            }
             val x = device.displayWidth / 2
             val height = device.displayHeight
             check(device.swipe(x, height * 4 / 5, x, height / 4, 20))
