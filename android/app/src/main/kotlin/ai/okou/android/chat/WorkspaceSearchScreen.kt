@@ -541,10 +541,14 @@ private fun SearchResults(
             !pending &&
             !readFailed &&
             reads.all { it == null || it is SearchRead.Ready }
-    // A refresh may retain the empty state already presented for this query and tab.
+    val showFailure = readFailed && !pending && items.isEmpty()
+    // While refreshing, retain the empty state already presented for this query and tab.
     var hadConfirmedEmpty by remember(keyword, type) { mutableStateOf(false) }
     val canRetainEmpty =
-        items.isEmpty() && !sourceUnavailable && reads.none { it == SearchRead.AccessLost }
+        items.isEmpty() &&
+            !showFailure &&
+            !sourceUnavailable &&
+            reads.none { it == SearchRead.AccessLost }
     val showEmpty = confirmedEmpty || canRetainEmpty && hadConfirmedEmpty
     SideEffect {
         hadConfirmedEmpty = showEmpty
@@ -560,7 +564,6 @@ private fun SearchResults(
     val showProgress =
         (items.isNotEmpty() || showEmpty) &&
             (showDelayedFeedback || needsChatList && list.listRetryProgressVisible)
-    val showFailure = readFailed && !pending && items.isEmpty() && !showEmpty
     val failureLabel =
         if (chatRefreshFailed && showChats && !grouped) R.string.chat_search_chats_failed
         else R.string.chat_list_first_load_failed
