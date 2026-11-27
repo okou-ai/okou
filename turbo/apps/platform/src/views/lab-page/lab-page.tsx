@@ -43,18 +43,6 @@ interface MaintainerFilterOption {
   readonly count: number;
 }
 
-function sortedFeatureSwitchKeys(
-  metadata: FeatureSwitchMetadataByKey,
-): FeatureSwitchKey[] {
-  return Object.values(FeatureSwitchKey).sort((a, b) => {
-    return (metadata[a].displayName ?? a).localeCompare(
-      metadata[b].displayName ?? b,
-      undefined,
-      { sensitivity: "base" },
-    );
-  });
-}
-
 function maintainerLabel(email: string): string {
   return email.replace(/@.*$/u, "");
 }
@@ -128,8 +116,6 @@ function LabFeatureGroup(props: {
   readonly busy: boolean;
   readonly onToggle: (key: FeatureSwitchKey, checked: boolean) => void;
 }) {
-  const { t } = useTranslation();
-
   return (
     <section>
       <h2 className="mb-2 px-1 text-sm font-medium text-muted-foreground">
@@ -147,27 +133,23 @@ function LabFeatureGroup(props: {
             <li key={key}>
               <label className="flex cursor-default items-center justify-between px-4 py-3 transition-colors hover:bg-state-hover">
                 <div className="flex min-w-0 flex-col gap-1 pr-4">
-                  <span className="text-sm text-foreground">
-                    {featureMetadata.displayName ?? key}
+                  <span
+                    id={`lab-slug-${key}`}
+                    className="text-sm text-foreground"
+                  >
+                    {key}
                   </span>
-                  {featureMetadata.description && (
-                    <span className="text-xs text-muted-foreground">
-                      {featureMetadata.description}
-                    </span>
-                  )}
-                  <span className="break-all text-xs text-muted-foreground">
-                    {t(
-                      ($) => {
-                        return $.settings.lab.maintainer;
-                      },
-                      {
-                        maintainer: featureMetadata.maintainer,
-                      },
-                    )}
+                  <span
+                    id={`lab-description-${key}`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    {featureMetadata.description}
                   </span>
                 </div>
                 <Switch
                   className="shrink-0"
+                  aria-labelledby={`lab-slug-${key}`}
+                  aria-describedby={`lab-description-${key}`}
                   checked={enabled}
                   disabled={props.busy}
                   onCheckedChange={(checked) => {
@@ -275,11 +257,15 @@ export function LabPage() {
   const busy = resetting || toggling;
   const pageSignal = useGet(pageSignal$);
   const metadata = getFeatureSwitchMetadata();
-  const sorted = sortedFeatureSwitchKeys(metadata).filter((key) => {
-    return (
-      availableKeys.state === "hasData" && availableKeys.data.includes(key)
-    );
-  });
+  const sorted = Object.values(FeatureSwitchKey)
+    .sort((a, b) => {
+      return a.localeCompare(b, undefined, { sensitivity: "base" });
+    })
+    .filter((key) => {
+      return (
+        availableKeys.state === "hasData" && availableKeys.data.includes(key)
+      );
+    });
   const maintainerOptions = maintainerFilterOptions({
     keys: sorted,
     metadata,
