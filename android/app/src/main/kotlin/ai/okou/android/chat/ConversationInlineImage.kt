@@ -149,7 +149,7 @@ internal fun ConversationInlineImage(
                     { links.open(outer, focusKey) }
                 }
                 else -> {
-                    { artifacts.open(grant.previewId, focusKey) }
+                    { (artifacts.openInlineImage ?: artifacts.open)(grant.previewId, focusKey) }
                 }
             }
         val opensLink = outerArtifact != null || outer != null
