@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.67.0](https://github.com/okou-ai/okou/compare/android-v0.66.4...android-v0.67.0) (2026-11-27)
+
+
+### Features
+
+* **android:** browse draft and sent chat images in the shared viewer ([#51484](https://github.com/okou-ai/okou/issues/51484)) ([e382375](https://github.com/okou-ai/okou/commit/e382375726d5a5d0491469de504d13c695b8a885))
+
+
+### Bug Fixes
+
+* **android:** align artifact catalog rows, preview actions, and return focus ([#51456](https://github.com/okou-ai/okou/issues/51456)) ([9734b0f](https://github.com/okou-ai/okou/commit/9734b0f3f1c9511734b97f38dc3c9c24fc51857c))
+* **android:** align workflow history with material list items ([#51507](https://github.com/okou-ai/okou/issues/51507)) ([26ae576](https://github.com/okou-ai/okou/commit/26ae5762277826d4c169050427415b382493aa4f))
+* **android:** align workspace search rows and feedback with design ([#51509](https://github.com/okou-ai/okou/issues/51509)) ([b32b72c](https://github.com/okou-ai/okou/commit/b32b72c169bb1bdc60016ede6d35e09e85275285))
+* **android:** use leading-icon padding in artifact previews ([#51502](https://github.com/okou-ai/okou/issues/51502)) ([e790f73](https://github.com/okou-ai/okou/commit/e790f73296fe7dd9b981a4ed0e9a19b23ff8610c))
+
 ## [0.66.4](https://github.com/okou-ai/okou/compare/android-v0.66.3...android-v0.66.4) (2026-11-27)
 
 
