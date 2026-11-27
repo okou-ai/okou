@@ -658,12 +658,14 @@ const expectedBindings = [
     rustDoc: placeholderRustDoc("CHATGPT_REFRESH_TOKEN"),
   },
   ...Object.entries(MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS).map(
-    ([name, value]) => ({
-      rustModulePath: ["model_provider_env", "namespaced_placeholders"],
-      rustConstName: name,
-      value: rustString(value),
-      rustDoc: placeholderRustDoc(name),
-    }),
+    ([name, value]) => {
+      return {
+        rustModulePath: ["model_provider_env", "namespaced_placeholders"],
+        rustConstName: name,
+        value: rustString(value),
+        rustDoc: placeholderRustDoc(name),
+      };
+    },
   ),
 ] as const;
 
