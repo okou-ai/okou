@@ -782,7 +782,12 @@ const insertAssistantErrorEvent$ = command(
       signal,
     );
     if (shouldDispatchProjectRecall(input)) {
-      await set(dispatchProjectRecall$, input, inserted.markerCreatedAt, signal);
+      await set(
+        dispatchProjectRecall$,
+        input,
+        inserted.markerCreatedAt,
+        signal,
+      );
     }
     await set(publishAssistantErrorEventSignals$, input, signal);
     signal.throwIfAborted();
@@ -2582,7 +2587,9 @@ const processTerminalChatCallback$ = command(
           return null;
         }
         if (context.kind === "missing-source-callback") {
-          throw new Error("Canonical delivery run is missing its chat callback");
+          throw new Error(
+            "Canonical delivery run is missing its chat callback",
+          );
         }
         const { run, chatThread, sourceCallbackId } = context;
         const preparation = {

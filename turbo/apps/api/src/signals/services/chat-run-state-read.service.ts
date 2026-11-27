@@ -26,30 +26,6 @@ import { chatEventTypeIn } from "./chat-event-type.service";
 
 const log = logger("callback:chat");
 
-function terminalChatCallbackRunReadPlan(runId: string) {
-  return {
-    columns: {
-      threadId: agentRuns.chatThreadId,
-      triggerSource: agentRuns.triggerSource,
-    },
-    condition: eq(agentRuns.id, runId),
-    limit: 1,
-  };
-}
-
-export const loadTerminalChatCallbackLocator$ = command(
-  async ({ get }, runId: string) => {
-    const db = get(db$);
-    const plan = terminalChatCallbackRunReadPlan(runId);
-    const [run] = await db
-      .select(plan.columns)
-      .from(agentRuns)
-      .where(plan.condition)
-      .limit(plan.limit);
-    return run;
-  },
-);
-
 export function canonicalDeliveryEventReadPlan(runId: string) {
   return {
     columns: { id: chatEvents.id },
@@ -89,29 +65,6 @@ export function runLifecycleMarkerReadPlan(
     limit: 1,
   };
 }
-
-export const requireSourceChatCallback$ = command(
-  async (
-    { get },
-    args: { readonly runId: string; readonly sourceCallbackId: string },
-  ): Promise<string> => {
-    const [source] = await get(db$)
-      .select({ id: agentRunCallbacks.id })
-      .from(agentRunCallbacks)
-      .where(
-        and(
-          eq(agentRunCallbacks.id, args.sourceCallbackId),
-          eq(agentRunCallbacks.runId, args.runId),
-          eq(agentRunCallbacks.internalKind, "chat"),
-        ),
-      )
-      .limit(1);
-    if (!source) {
-      throw new Error("Canonical delivery run is missing its chat callback");
-    }
-    return source.id;
-  },
-);
 
 export interface ChatThreadForRunRow {
   readonly chatThreadId: string;
@@ -212,7 +165,13 @@ export const loadTerminalChatCallbackContext$ = command(
     }
 
     const persistedThreadId = row.chatThreadId;
-    if (!row.joinedThreadId || !row.joinedUserId) {
+    if (
+      !row.joinedThreadId ||
+      !row.joinedUserId ||
+      row.joinedArchived === null ||
+      row.joinedMuted === null ||
+      row.joinedHidden === null
+    ) {
       log.debug("Skipping terminal chat callback for missing chat thread", {
         runId: args.runId,
         status: args.callbackStatus,
@@ -252,10 +211,10 @@ export const loadTerminalChatCallbackContext$ = command(
         userId: row.joinedUserId,
         orgId: row.orgId,
         title: row.joinedTitle,
-        archived: row.joinedArchived ?? false,
+        archived: row.joinedArchived,
         projectId: row.joinedProjectId,
-        muted: row.joinedMuted ?? false,
-        hidden: row.joinedHidden ?? false,
+        muted: row.joinedMuted,
+        hidden: row.joinedHidden,
       },
       sourceCallbackId: row.sourceCallbackId,
     };

@@ -177,12 +177,18 @@ export const dispatchCancelSideEffects$ = command(
     // cancelled run may have accumulated usage events. Billing reconciliation
     // is independent of terminal callback dispatch, so run both concurrently.
     const billingTask = (async () => {
-      await tapError(set(settleDataRouterRun$, result.runId, signal), (error) => {
-        L.error("Data Router cancellation billing failed; no retry scheduled", {
-          runId: result.runId,
-          error,
-        });
-      });
+      await tapError(
+        set(settleDataRouterRun$, result.runId, signal),
+        (error) => {
+          L.error(
+            "Data Router cancellation billing failed; no retry scheduled",
+            {
+              runId: result.runId,
+              error,
+            },
+          );
+        },
+      );
       signal.throwIfAborted();
       await set(processOrgUsageEvents$, result.orgId, signal);
     })();
