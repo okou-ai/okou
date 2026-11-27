@@ -387,13 +387,13 @@ private fun ConnectorDirectory(
     val startedAt =
         when {
             entries != null || failure != null -> null
-            route.connected && connected == null ->
-                listOfNotNull(
-                        directory.connected.startedAt,
-                        filtered?.startedAt?.takeIf { serviceEntries == null },
-                    )
-                    .maxByOrNull { it.elapsedNow() }
-            else -> catalogRead.startedAt
+            !route.connected || connected != null -> catalogRead.startedAt
+            filtered == null || serviceEntries != null -> directory.connected.startedAt
+            // Connected with a cold category needs both of these results.
+            else ->
+                listOfNotNull(directory.connected.startedAt, filtered.startedAt)
+                    .takeIf { it.size == 2 }
+                    ?.minByOrNull { it.elapsedNow() }
         }
     val showSkeleton =
         key(route.connected, filter) {

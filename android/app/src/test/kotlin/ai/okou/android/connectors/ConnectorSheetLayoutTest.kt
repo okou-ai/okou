@@ -58,6 +58,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TestTimeSource
 import kotlin.time.TimeSource
 import org.junit.Assert.assertEquals
@@ -147,6 +148,59 @@ class ConnectorSheetLayoutTest {
                 } finally {
                     fastReply.countDown()
                     slowReply.countDown()
+                    compose.mainClock.autoAdvance = true
+                }
+            }
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun coldConnectedCategoryWaitsForBothReadsAndKeepsItsSkeleton() {
+        ConnectorApiFixture().use { fixture ->
+            val overview = CountDownLatch(1)
+            val category = CountDownLatch(1)
+            fixture.overviewReplyGate = overview
+            val clock = TestTimeSource()
+            withConnectors(fixture, snapshotClock = clock) { model ->
+                val row = hasTestTag("connector-$CONNECTOR_CALENDAR")
+                compose.waitUntilAtLeastOneExists(row, 10_000)
+                clock += 1.seconds
+                compose.onNodeWithText("Connected").performClick()
+                val filter = compose.onNode(hasContentDescription("Filter by service category"))
+                filter.performClick()
+                val meetings = compose.onNodeWithText("Meetings and scheduling").assertIsDisplayed()
+                fixture.discoveryGate = category
+                val skeletons = compose.onAllNodesWithTag("connector-directory-skeleton-row")
+                val mainLooper = shadowOf(Looper.getMainLooper())
+                compose.mainClock.autoAdvance = false
+                try {
+                    meetings.performClick()
+                    compose.mainClock.advanceTimeBy(64)
+                    checkNotNull(model.uiState.value.matches?.entries?.startedAt)
+                    skeletons.assertCountEquals(0)
+                    compose.mainClock.advanceTimeBy(288)
+                    skeletons.assertCountEquals(3)
+
+                    category.countDown()
+                    compose.waitUntil(10_000) {
+                        mainLooper.idle()
+                        model.uiState.value.matches?.entries?.data != null
+                    }
+                    compose.mainClock.advanceTimeBy(64)
+                    skeletons.assertCountEquals(3)
+
+                    overview.countDown()
+                    compose.waitUntil(10_000) {
+                        mainLooper.idle()
+                        model.uiState.value.connected.data != null
+                    }
+                    compose.mainClock.advanceTimeBy(64)
+                    compose.onNode(row).assertIsDisplayed()
+                    skeletons.assertCountEquals(0)
+                } finally {
+                    overview.countDown()
+                    category.countDown()
                     compose.mainClock.autoAdvance = true
                 }
             }

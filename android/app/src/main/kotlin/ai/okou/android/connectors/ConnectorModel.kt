@@ -253,6 +253,7 @@ class ConnectorModel(
     private fun refreshDirectory(browse: Boolean = true, accounts: Boolean = true) {
         if (browse && browseJob?.isActive != true) {
             browseJob = viewModelScope.launch {
+                if (!canLoad()) return@launch
                 val startedAt = snapshotClock.markNow()
                 mutableState.update { it.copy(browse = it.browse.starting(startedAt)) }
                 load({ service.discover(null, null) }) { read ->
@@ -275,6 +276,7 @@ class ConnectorModel(
         }
         if (accounts && connectedJob?.isActive != true) {
             connectedJob = viewModelScope.launch {
+                if (!canLoad()) return@launch
                 val startedAt = snapshotClock.markNow()
                 mutableState.update { it.copy(connected = it.connected.starting(startedAt)) }
                 load(service::connected) { read ->
@@ -332,6 +334,7 @@ class ConnectorModel(
         if (matchesJob?.isActive == true) return
         matchesJob = viewModelScope.launch {
             if (selected.keyword != null) delay(250)
+            if (!canLoad()) return@launch
             val startedAt = snapshotClock.markNow()
             mutableState.update { state ->
                 val matches = state.matches?.takeIf { it.filter == selected } ?: return@update state
@@ -1195,10 +1198,12 @@ class ConnectorModel(
         if (read.data == null && read.failureRound != null) mutableState.update(update)
     }
 
+    private fun canLoad(): Boolean = authorized() && open && foreground
+
     private suspend fun <T : Any> load(read: suspend () -> T, publish: (ConnectorRead<T>) -> Unit) =
         retryConnectorRead(
             read,
-            canRead = { authorized() && open && foreground },
+            canRead = ::canLoad,
             onError = ::reportSessionFailure,
             publish = {
                 publish(
