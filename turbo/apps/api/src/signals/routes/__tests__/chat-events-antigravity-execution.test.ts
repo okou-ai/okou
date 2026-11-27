@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
@@ -14,8 +15,11 @@ import {
   executionEnvironment,
   requireOrgId,
 } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { publicChatActor } from "./helpers/public-chat-actor";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRouteMocks } from "./helpers/route-test";
 import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
@@ -76,61 +80,75 @@ async function connectGoogleAccount(orgId: string, userId: string) {
 describe("Antigravity execution", () => {
   beforeEach(mockSecretKmsHttp);
 
-  it("launches agy with the selected model and a freshly minted credential", async () => {
-    mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_ID", "agy-client.example");
-    mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_SECRET", "agy-client-secret");
-    const refreshes = mockGoogle();
-    const owned = await publicChatActor(context, {
-      actor: fixture.bdd.user({ orgId: createUniqueStaffOrgIdFixture() }),
-    });
-    owned.ownsFeatureSwitches();
-    await owned.run(async () => {
-      const { actor, sendChatRun, runExecution } = owned;
+  it(
+    "pf-049 launches agy with the selected model and a freshly minted credential",
+    { timeout: TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_ID", "agy-client.example");
+      mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_SECRET", "agy-client-secret");
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      const refreshes = mockGoogle();
+      fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      fixture.chatCallbacks.disableVapid();
+      const actor = fixture.bdd.user({
+        orgId: createUniqueStaffOrgIdFixture(),
+      });
       const orgId = requireOrgId(actor);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.GeminiAntigravity]: true },
-      );
-      await connectGoogleAccount(orgId, actor.userId);
+      const owner = publicRunOwner(context, actor, {
+        afterRuns: () => {
+          return deleteFeatureSwitchesForUser(context, { ...actor, orgId });
+        },
+      });
+      await fixture.api.configureRunnerGroup();
+      await owner.run(async () => {
+        await fixture.api.grantProEntitlement(actor);
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId },
+          { [FeatureSwitchKey.GeminiAntigravity]: true },
+        );
+        await connectGoogleAccount(orgId, actor.userId);
 
-      const run = await sendChatRun(actor, {
-        model: "gemini-4-neon",
-        prompt: "say hello from Gemini",
-        runOptions: { reasoningEffort: "high" },
-      });
-      const { execution } = await runExecution(run.runId);
+        const run = await fixture.sendChatRun(actor, {
+          model: "gemini-4-neon",
+          prompt: "say hello from Gemini",
+          runOptions: { reasoningEffort: "high" },
+        });
+        const { execution } = await fixture.runExecution(run.runId);
+        owner.rememberExecution(run.runId, execution.sandboxToken);
 
-      expect(execution.cliAgentType).toBe("antigravity");
-      expect(execution.piModelConfig).toBeUndefined();
-      const environment = executionEnvironment(execution);
-      expect(environment).toMatchObject({
-        OKOU_ANTIGRAVITY_MODEL: "gemini-4-neon",
-        OKOU_REASONING_EFFORT: "high",
+        expect(execution.cliAgentType).toBe("antigravity");
+        expect(execution.piModelConfig).toBeUndefined();
+        const environment = executionEnvironment(execution);
+        expect(environment).toMatchObject({
+          OKOU_ANTIGRAVITY_MODEL: "gemini-4-neon",
+          OKOU_REASONING_EFFORT: "high",
+        });
+        const token = {
+          access_token: "test-google-run-access",
+          refresh_token: "test-google-refresh",
+          token_type: "Bearer",
+        };
+        // agy reads the nested token and personal-account auth method; the
+        // guest validates the top-level token fields.
+        expect(
+          JSON.parse(environment.OKOU_ANTIGRAVITY_OAUTH_TOKEN ?? "null"),
+        ).toMatchObject({
+          ...token,
+          token,
+          auth_method: "consumer",
+        });
+        // The credential never resolves through firewall secret references.
+        expect(execution.secretConnectorMetadataMap ?? {}).toStrictEqual({});
+        expect(Object.fromEntries(refreshes[0] ?? [])).toMatchObject({
+          grant_type: "refresh_token",
+          refresh_token: "test-google-refresh",
+          client_id: "agy-client.example",
+          client_secret: "agy-client-secret",
+        });
       });
-      const token = {
-        access_token: "test-google-run-access",
-        refresh_token: "test-google-refresh",
-        token_type: "Bearer",
-      };
-      // agy reads the nested token and personal-account auth method; the
-      // guest validates the top-level token fields.
-      expect(
-        JSON.parse(environment.OKOU_ANTIGRAVITY_OAUTH_TOKEN ?? "null"),
-      ).toMatchObject({
-        ...token,
-        token,
-        auth_method: "consumer",
-      });
-      // The credential never resolves through firewall secret references.
-      expect(execution.secretConnectorMetadataMap ?? {}).toStrictEqual({});
-      expect(refreshes).toHaveLength(1);
-      expect(Object.fromEntries(refreshes[0] ?? [])).toMatchObject({
-        grant_type: "refresh_token",
-        refresh_token: "test-google-refresh",
-        client_id: "agy-client.example",
-        client_secret: "agy-client-secret",
-      });
-    });
-  });
+    },
+  );
 });

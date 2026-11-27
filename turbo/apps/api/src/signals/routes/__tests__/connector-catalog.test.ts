@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { DomUtils, parseDocument } from "htmlparser2";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -592,5 +595,73 @@ describe("GET /api/connector-catalog", () => {
       expect.arrayContaining(Object.keys(body.permissions[0] ?? {})),
     );
     assertPublicConnectorCatalogHasNoPrivateFields(permissions.body);
+  });
+
+  it("pf-141 redirects signed-out callers to a plain catalog logo with cache headers", async () => {
+    const listed = await accept(catalog().list({ headers: signIn() }), [200]);
+    const plain = listed.body.connectors.find((connector) => {
+      return (
+        !connector.icon.invertInDarkMode && (connector.icon.scale ?? 1) === 1
+      );
+    });
+    if (!plain) {
+      throw new Error("Expected a connector with an untreated icon");
+    }
+
+    const icon = await accept(
+      catalog().icon({ params: { connectorSlug: plain.slug } }),
+      [302],
+    );
+
+    expect(icon.headers.get("location")).toBe(plain.icon.url);
+    expect(icon.headers.get("cache-control")).toBe("public, max-age=300");
+  });
+
+  it("pf-143 serves the scaled Slack catalog mark as a sandboxed standalone SVG", async () => {
+    const detail = await accept(
+      catalog().get({ headers: signIn(), params: { connectorSlug: "slack" } }),
+      [200],
+    );
+    const sourceSvg =
+      '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="8"/></svg>';
+    server.use(
+      http.get(detail.body.connector.icon.url, () => {
+        return new HttpResponse(sourceSvg, {
+          headers: { "content-type": "image/svg+xml" },
+        });
+      }),
+    );
+
+    const icon = await accept(
+      catalog().icon({ params: { connectorSlug: "slack" } }),
+      [200],
+    );
+
+    expect(icon.headers.get("content-type")).toContain("image/svg+xml");
+    expect(icon.headers.get("cache-control")).toBe("public, max-age=300");
+    expect(icon.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(icon.headers.get("content-security-policy")).toContain("sandbox");
+    const rendered = await icon.body.text();
+    const doc = parseDocument(rendered, { xmlMode: true });
+    const image = DomUtils.findOne(
+      (element) => {
+        return element.name === "image";
+      },
+      doc.children,
+      true,
+    );
+    expect(image?.attribs).toMatchObject({
+      x: "-50",
+      y: "-50",
+      width: "200",
+      height: "200",
+    });
+    const href = image?.attribs.href ?? "";
+    expect(href.startsWith("data:image/svg+xml;base64,")).toBeTruthy();
+    const decoded = Buffer.from(
+      href.slice("data:image/svg+xml;base64,".length),
+      "base64",
+    ).toString("utf8");
+    expect(decoded).toBe(sourceSvg);
   });
 });
