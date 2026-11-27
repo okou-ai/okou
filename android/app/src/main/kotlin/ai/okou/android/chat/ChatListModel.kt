@@ -305,6 +305,15 @@ internal val ChatListUiState.waitingForUnreadIndicators: Boolean
 internal val ChatListUiState.hasUsableList: Boolean
     get() = confirmedAt != null && !waitingForUnreadIndicators
 
+internal fun ChatListUiState.needsProjectsToConfirmEmptyInbox(
+    provisionalChats: List<ProvisionalChat>,
+): Boolean =
+    filter == ChatListFilter.Inbox &&
+        projectsSource == null &&
+        projects.isEmpty() &&
+        threads.none { !it.archived && it.hidden != true } &&
+        provisionalChats.none { provisional -> threads.none { it.id == provisional.threadId } }
+
 private fun ChatListUiState.clearRefreshFailures() =
     copy(
         listRefreshFailureOrder = null,
