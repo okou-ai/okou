@@ -181,7 +181,6 @@
     "src/signals/services/google-forms-automation-watch.service.ts",
     "src/signals/services/google-meet-automation-watch.service.ts",
     "src/signals/services/notion-automation-preparation.service.ts",
-    "src/signals/services/official-workflow-constants.ts",
     "src/signals/services/proactive-cadence.ts",
     "src/signals/services/proactive-nightly-schedule.ts",
     "src/signals/services/workflow-automation.service.ts",

@@ -257,6 +257,7 @@
     "src/lib/morning-brief-notification-source.ts",
     "src/lib/canonical-json.ts",
     "src/signals/services/builtin-workflows.ts",
+    "src/signals/services/official-workflow-constants.ts",
     "src/signals/services/proactive-task-instructions.ts",
     "src/signals/services/proactive-nightly-instructions.ts",
     "src/signals/services/suggestion-curation-reference.ts",
