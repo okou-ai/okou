@@ -7,6 +7,9 @@ import ai.okou.android.connectors.ChatConnectorOverride
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.settings.DefaultModelOptions
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
@@ -42,6 +45,12 @@ class ChatComposerModel(
         )
     private val owner = store.attach(identity, connection)
     val uiState = owner.uiState
+    internal var draftImageVisit by mutableStateOf<ChatDraftImageVisit?>(null)
+        private set
+
+    internal fun showDraftImages(visit: ChatDraftImageVisit?) {
+        draftImageVisit = visit
+    }
 
     init {
         if (history != null)

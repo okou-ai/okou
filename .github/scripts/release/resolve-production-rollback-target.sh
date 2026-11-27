@@ -19,6 +19,7 @@ readonly CHAT_INDICATORS_CHANGED_PUBLISHER_COMMIT=ac0609591b2a0a5f159afb50b7561d
 # Guests during the Runner-first rollback interval, even for an older API target.
 readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
 readonly DIRECT_DISPATCH_GZIP_READER_COMMIT=dcb3ce10bce5c4d9e8f7c27586b5ccb876fcf290
+readonly MODEL_PROVIDER_PLACEHOLDER_READER_PATH=.github/rollback-floors/model-provider-placeholder-reader
 # Project lifecycle events require the CLI reader installed by #44617.
 readonly PROJECT_READER_PREPARATION_COMMIT=428f46154beb1a11cdf09f150650c388826e539c
 readonly PROJECT_WIRE_CONTRACTS_PATH=.github/rollback-floors/project-wire-contracts
@@ -789,6 +790,20 @@ if ! git merge-base --is-ancestor "$official_storage_retirement_commit" "$TARGET
   fail "Rollback target predates the Official Workflow storage retirement: ${official_storage_retirement_commit}."
 fi
 
+# The first API release with archive readers only prepares storage. Physical
+# retirement requires a second distinct verified API release and a drained writer.
+proactive_history_reader=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- turbo/packages/db/src/migrations/1653_archive_proactive_workflow_history.sql | sed -n '1p')
+if [[ ! "$proactive_history_reader" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the proactive history reader on main."
+fi
+proactive_reader_releases=$(git for-each-ref --contains="$proactive_history_reader" --merged=origin/main \
+  --format='%(objectname) %(*objectname)' 'refs/tags/api-v*' \
+  | awk '{ commits[($2 ? $2 : $1)] = 1 } END { print length(commits) }')
+if (( proactive_reader_releases >= 2 )) && ! git merge-base --is-ancestor "$proactive_history_reader" "$TARGET_COMMIT"; then
+  fail "Rollback target predates archived proactive workflow history: ${proactive_history_reader}."
+fi
+
 # Physical needs_rebind contraction requires the independently released runtime
 # preparation. Earlier canonical APIs still name it in implicit ORM statements.
 ssh_needs_rebind_independent_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
@@ -1395,6 +1410,21 @@ fi
 if ! git merge-base --is-ancestor "$DIRECT_DISPATCH_GZIP_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates gzip direct dispatch: ${DIRECT_DISPATCH_GZIP_READER_COMMIT}."
 fi
+
+# The serving API can emit the namespaced placeholders while Runner rolls back.
+if ! model_provider_placeholder_reader_commit=$(git show "origin/main:${MODEL_PROVIDER_PLACEHOLDER_READER_PATH}"); then
+  fail "Cannot read the model-provider placeholder reader rollback floor from main."
+fi
+if [[ ! "$model_provider_placeholder_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid model-provider placeholder reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$model_provider_placeholder_reader_commit" origin/main; then
+  fail "Model-provider placeholder reader rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$model_provider_placeholder_reader_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates namespaced model-provider placeholder support: ${model_provider_placeholder_reader_commit}."
+fi
+
 teams_upload_v2_cli_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
   origin/main -- "$TEAMS_UPLOAD_V2_CLI_PATH" | sed -n '1p')
 if [[ ! "$teams_upload_v2_cli_commit" =~ ^[0-9a-f]{40}$ ]]; then

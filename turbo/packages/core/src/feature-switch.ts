@@ -132,19 +132,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.MarkdownFirstOutput]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Use Markdown for text-focused documents and HTML for visual or interactive deliverables, with structured Markdown previews and DOCX and PDF exports.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.MarkdownArtifactQuote]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Copy or quote selected Markdown passages into the owning chat in desktop split view.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ChatThreadFork]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -157,14 +144,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description: "Show For you in the chat list only when the feed has cards.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatListHoverPreview]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Preview the hidden chat list in a popover on hover.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"],
-    enabledEmailHashes: ["6490c77f"],
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatListAllFilter]: {
@@ -312,10 +291,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Convert an HTML presentation into an editable pptx from the CLI.",
     enabled: false,
-    // Limit the rollout to the maintainer across workspaces while conversion
-    // fidelity is being evaluated.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",

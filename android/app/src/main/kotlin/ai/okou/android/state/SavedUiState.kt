@@ -139,6 +139,11 @@ internal fun rememberDraftAttachmentPreview(): MutableState<String?> = rememberS
 }
 
 @Composable
+internal fun rememberDraftImageSaveTarget(): MutableState<String?> = rememberSaveable {
+    mutableStateOf(null)
+}
+
+@Composable
 internal fun rememberDraftAttachmentsOpen(): MutableState<Boolean> = rememberSaveable {
     mutableStateOf(false)
 }
@@ -689,11 +694,13 @@ internal class ArtifactPageState(
     selectedId: String? = null,
     restoreSource: Boolean = false,
     pickerArtifactId: String? = null,
+    selectedRowIndex: Int? = null,
 ) {
     var filter by mutableStateOf(filter)
     var selectedId by mutableStateOf(selectedId)
     var restoreSource by mutableStateOf(restoreSource)
     var pickerArtifactId by mutableStateOf(pickerArtifactId)
+    var selectedRowIndex by mutableStateOf(selectedRowIndex)
 }
 
 @Composable
@@ -702,22 +709,25 @@ internal fun rememberArtifactPageState(): ArtifactPageState =
         saver =
             listSaver<ArtifactPageState, Any>(
                 save = {
-                    listOf(
+                    listOfNotNull(
                         it.filter.name,
                         it.selectedId.orEmpty(),
                         "", // Former pending row slot. Keep the following fields at their saved
                         // indices.
                         it.restoreSource,
                         it.pickerArtifactId.orEmpty(),
+                        it.selectedRowIndex,
                     )
                 },
-                restore = { (filter, selectedId, _, restoreSource, pickerArtifactId) ->
+                restore = { saved ->
+                    val (filter, selectedId, _, restoreSource, pickerArtifactId) = saved
                     ArtifactPageState(
                         ArtifactFilter.entries.firstOrNull { it.name == filter }
                             ?: ArtifactFilter.All,
                         (selectedId as String).ifEmpty { null },
                         restoreSource as Boolean,
                         (pickerArtifactId as String).ifEmpty { null },
+                        selectedRowIndex = saved.getOrNull(5) as Int?,
                     )
                 },
             ),
@@ -727,6 +737,11 @@ internal fun rememberArtifactPageState(): ArtifactPageState =
 
 @Composable
 internal fun rememberArtifactPageHolder(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
+internal fun rememberImageViewerExpanded(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
 
 @Composable
 internal fun rememberArtifactImageViewerState(

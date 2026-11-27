@@ -14,6 +14,7 @@ fail() {
 }
 
 target_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+model_provider_placeholder_reader_floor=$(<"${repo_root}/.github/rollback-floors/model-provider-placeholder-reader")
 connector_resource_split_floor=$(<"${repo_root}/.github/rollback-floors/connector-resource-split")
 retired_billing_issuance_floor=$(<"${repo_root}/.github/rollback-floors/retired-billing-issuance")
 decoded_storage_reader_floor=$(<"${repo_root}/.github/rollback-floors/decoded-storage-capacity-reader")
@@ -41,9 +42,16 @@ set -euo pipefail
 printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
+  for-each-ref)
+    if [[ "$*" != *refs/tags/api-v* ]]; then exit 1; fi
+    if (( ${MOCK_PROACTIVE_READER_RELEASES:-2} >= 1 )); then echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; fi
+    if (( ${MOCK_PROACTIVE_READER_RELEASES:-2} >= 2 )); then echo bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; fi
+    ;;
   merge-base)
     if [ "${3:-}" = "${MOCK_CONNECTOR_IDENTITY_PREPARATION_COMMIT-c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3}" ]; then
       [ "${MOCK_CONNECTOR_IDENTITY_PREPARATION_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "a149a149a149a149a149a149a149a149a149a149" ]; then
+      [ "${MOCK_PROACTIVE_HISTORY_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eddbe0f4edae253b6a9240e0f312f25b36acad5b" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_STAFF_SINGLE_AGENT_RUNNER_VALID:-1}" = "1" ]
@@ -232,6 +240,8 @@ case "${1:-}" in
       [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dcb3ce10bce5c4d9e8f7c27586b5ccb876fcf290" ] && [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
       [ "${MOCK_DIRECT_DISPATCH_GZIP_READER_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_MODEL_PROVIDER_PLACEHOLDER_READER_FLOOR" ] && [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+      [ "${MOCK_MODEL_PROVIDER_PLACEHOLDER_RUNNER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "37e6bb51029f05ff1d7a7a6c28b03f139dfd067c" ]; then
       [ "${MOCK_LINK_GRANT_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "52525252525252525252525252525252525252ab" ]; then
@@ -502,6 +512,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SSH_CANONICAL_TRANSPORT_COMMIT-4848484848484848484848484848484848484848}"
     elif [[ "$*" == *1382_retire_official_result_email_runtime.sql* ]]; then
       printf '%s\n' '4949494949494949494949494949494949494949'
+    elif [[ "$*" == *1653_archive_proactive_workflow_history.sql* ]]; then
+      echo a149a149a149a149a149a149a149a149a149a149
     elif [[ "$*" == *1638_retire_official_workflow_installation_state.sql* ]]; then
       printf '%s\n' '1638163816381638163816381638163816381638'
     elif [[ "$*" == *1386_drop_official_result_email_storage.sql* ]]; then
@@ -540,6 +552,10 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/model-provider-placeholder-reader" ]; then
+      printf '%s\n' "$MOCK_MODEL_PROVIDER_PLACEHOLDER_READER_FLOOR"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/single-character-skill-bundle-reader" ]; then
       [ "${MOCK_SINGLE_CHARACTER_SKILL_READ_FAIL:-0}" = "0" ] || exit 1
       printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_RUNNER_COMMIT-beefbeefbeefbeefbeefbeefbeefbeefbeefbeef}"
@@ -741,6 +757,7 @@ run_resolver() {
     GITHUB_REPOSITORY=okou-ai/okou \
     METAL_USER=ci \
     MOCK_BOUNDARY_LOG="${tmp_dir}/boundaries.log" \
+    MOCK_MODEL_PROVIDER_PLACEHOLDER_READER_FLOOR="$model_provider_placeholder_reader_floor" \
     MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR="$connector_resource_split_floor" \
     MOCK_RETIRED_BILLING_ISSUANCE_FLOOR="$retired_billing_issuance_floor" \
     MOCK_DECODED_STORAGE_READER_FLOOR="$decoded_storage_reader_floor" \
@@ -808,6 +825,13 @@ grep -Fxq "git merge-base --is-ancestor ${target_commit} ${target_commit}" "${tm
 
 # Staff activation must not select an API or Runner without the separately
 # deployed readers, even when the other artifact contains them.
+: >"${tmp_dir}/boundaries.log"
+# Expansion leaves the outgoing API eligible. Once two archive-capable API tags
+# exist, cleanup can have run and every rollback must preserve archive reads.
+run_resolver "${tmp_dir}/proactive-history-first.output" MOCK_PROACTIVE_READER_RELEASES=1 MOCK_PROACTIVE_HISTORY_READER_VALID=0 >"${tmp_dir}/proactive-history-first.log"
+assert_failure "Rollback target predates archived proactive workflow history" \
+  run_resolver "${tmp_dir}/proactive-history-retired.output" MOCK_PROACTIVE_READER_RELEASES=2 MOCK_PROACTIVE_HISTORY_READER_VALID=0
+
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates staff Single Agent preparation" \
   run_resolver "${tmp_dir}/staff-single-agent-api.output" MOCK_STAFF_SINGLE_AGENT_API_VALID=0
@@ -1885,6 +1909,14 @@ assert_failure "predates bundled-only CLI startup" \
 [ ! -s "${tmp_dir}/bundled-cli-runner.output" ] || fail "incompatible CLI Runner must not publish outputs"
 if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
   fail "incompatible CLI Runner must fail before Runner artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates namespaced model-provider placeholder support" \
+  run_resolver "${tmp_dir}/model-provider-placeholder-runner.output" MOCK_MODEL_PROVIDER_PLACEHOLDER_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/model-provider-placeholder-runner.output" ] || fail "pre-cutover Runner must not publish rollback outputs"
+if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "pre-cutover Runner must fail before Runner artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"

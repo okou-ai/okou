@@ -375,6 +375,45 @@ fn artifact_actions_preserve_repair_and_empty_semantics() {
 }
 
 #[test]
+fn only_current_memory_without_other_storage_work_uses_root_observation() {
+    let memory = "/home/user/.codex/memories";
+    let memory_entry = artifact(memory, "memory", "v1", false);
+    let manifest = manifest(Vec::new(), vec![memory_entry]);
+    let previous = StorageFingerprints::from_manifest(&manifest);
+    let plan = build_storage_plan(&manifest, Some(&previous)).unwrap();
+    assert!(plan.needs_only_memory_root_check(memory));
+    assert!(!plan.needs_only_memory_root_check("/home/user/other"));
+
+    let mut changed = manifest.clone();
+    changed.artifacts[0].vas_version_id = "v2".into();
+    let plan = build_storage_plan(&changed, Some(&previous)).unwrap();
+    assert!(!plan.needs_only_memory_root_check(memory));
+
+    let mut tainted = previous.clone();
+    tainted
+        .artifacts
+        .insert(memory.into(), StorageFingerprint::tainted());
+    let plan = build_storage_plan(&manifest, Some(&tainted)).unwrap();
+    assert!(!plan.needs_only_memory_root_check(memory));
+
+    let mut empty = manifest.clone();
+    empty.artifacts[0].empty = Some(true);
+    let empty_previous = StorageFingerprints::from_manifest(&empty);
+    let plan = build_storage_plan(&empty, Some(&empty_previous)).unwrap();
+    assert!(!plan.needs_only_memory_root_check(memory));
+
+    let mut workflow = manifest;
+    workflow.storages.push(storage(
+        "/home/user/.codex/skills/name--wf-demo",
+        "workflow",
+        "v1",
+    ));
+    let workflow_previous = StorageFingerprints::from_manifest(&workflow);
+    let plan = build_storage_plan(&workflow, Some(&workflow_previous)).unwrap();
+    assert!(!plan.needs_only_memory_root_check(memory));
+}
+
+#[test]
 fn non_empty_artifact_requires_archive_source() {
     let mut artifact = artifact("/workspace", "workspace", "v1", false);
     artifact.archive_url = None;

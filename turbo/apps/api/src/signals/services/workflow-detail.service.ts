@@ -1,5 +1,4 @@
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
-import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 import { command } from "ccstate";
 import type {
@@ -14,7 +13,10 @@ import {
   type WorkflowMember,
   readWorkflowShadowWinner$,
 } from "./workflow-data.service";
-import { visibleWorkflowCondition } from "./workflow-visibility";
+import {
+  readableWorkflows,
+  visibleWorkflowCondition,
+} from "./workflow-visibility";
 import { workflowAttachmentFiles } from "./workflow-attachments.service";
 import { loadWorkflowAutomations$ } from "./workflow-automation.service";
 import { installedOfficialWorkflow } from "./builtin-workflows";
@@ -55,25 +57,21 @@ export const workflowDetail$ = command(
     signal: AbortSignal,
   ): Promise<WorkflowDetailResponse | null> => {
     const db = get(db$);
-    const [visible] = await db
-      .select({
-        workflow: workflows,
-      })
-      .from(workflows)
+    const [workflow] = await db
+      .select()
+      .from(readableWorkflows)
       .where(
         and(
-          eq(workflows.orgId, args.orgId),
-          eq(workflows.id, args.workflowId),
-          visibleWorkflowCondition(args.member.userId),
+          eq(readableWorkflows.orgId, args.orgId),
+          eq(readableWorkflows.id, args.workflowId),
+          visibleWorkflowCondition(args.member.userId, readableWorkflows),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-
-    if (!visible) {
+    if (!workflow) {
       return null;
     }
-    const { workflow } = visible;
 
     const shadowedBy = await set(
       readWorkflowShadowWinner$,
@@ -88,7 +86,9 @@ export const workflowDetail$ = command(
       workflow,
       member: args.member,
       shadowedBy,
-      officialDefinitionLifecycle: official?.lifecycle,
+      officialDefinitionLifecycle: workflow.archived
+        ? "retired"
+        : official?.lifecycle,
     });
     const summary = official
       ? {

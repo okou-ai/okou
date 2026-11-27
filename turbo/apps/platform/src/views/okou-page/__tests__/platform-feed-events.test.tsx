@@ -66,13 +66,13 @@ function showEvent(item: PlatformEvent) {
   });
 }
 
-function workflow(item: PlatformEvent, official = false) {
+function workflow(item: PlatformEvent, lifecycle?: "active" | "retired") {
   const automation: WorkflowAutomationSummary = {
     id: item.content.automationId,
     ownerUserId: "user_default",
     chatThreadId: null,
     kind: "schedule",
-    enabled: official,
+    enabled: Boolean(lifecycle),
     official: null,
     nextRunAt: null,
     lastRunAt: null,
@@ -94,14 +94,14 @@ function workflow(item: PlatformEvent, official = false) {
     instruction: "Review shipments every hour",
     files: null,
     fileContents: null,
-    automations: [automation],
-    canManage: !official,
+    automations: lifecycle === "retired" ? [] : [automation],
+    canManage: !lifecycle,
     canPublish: false,
     importSource: null,
-    official: official
+    official: lifecycle
       ? {
           definitionName: "warehouse-report",
-          definitionLifecycle: "active",
+          definitionLifecycle: lifecycle,
           installationState: "installed",
           readOnly: true,
         }
@@ -197,7 +197,7 @@ test("platform-feed-events-013 the localized pause timestamp and destination des
 
 test("platform-feed-events-011 the system-managed automation is enabled and read-only", async () => {
   const item = pausedEvent(),
-    schedule = workflow(item, true);
+    schedule = workflow(item, "active");
   context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
     return respond(200, schedule);
   });
@@ -211,6 +211,20 @@ test("platform-feed-events-011 the system-managed automation is enabled and read
   expect(location.pathname).toBe(
     "/workflows/" + item.content.workflowId + "/automations",
   );
+});
+
+test("a retired automation feed link opens the authorized read-only workflow snapshot", async () => {
+  const item = pausedEvent();
+  workflow(item, "retired");
+  context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
+    return respond(404, { error: { code: "NOT_FOUND", message: "Missing" } });
+  });
+  await setupPage({ context, path: pathTo(item) });
+  await screen.findByRole("heading", { name: "Warehouse report" });
+  const instruction = await screen.findByLabelText("Workflow instruction");
+  expect(instruction).toHaveTextContent("Review shipments every hour");
+  expect(instruction).toHaveAttribute("contenteditable", "false");
+  expect(screen.queryByRole("switch")).toBeNull();
 });
 
 test("platform-feed-events-006 ordinary workflow tabs preserve the hourly automation after recovery", async () => {

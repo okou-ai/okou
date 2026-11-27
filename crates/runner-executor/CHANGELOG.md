@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.19...runner-executor-v0.25.0) (2026-11-27)
+
+
+### Features
+
+* prepare runner for namespaced model-provider placeholders ([#51465](https://github.com/okou-ai/okou/issues/51465)) ([4a5ade7](https://github.com/okou-ai/okou/commit/4a5ade759f6e280c61cc2b14fa39857a63ceafbb))
+
 ## [0.24.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.18...runner-executor-v0.24.19) (2026-11-27)
 
 

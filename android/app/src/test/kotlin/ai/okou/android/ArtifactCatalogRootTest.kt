@@ -239,6 +239,117 @@ class ArtifactWorkflowResourcesApplication : ChatListApplication() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     @Test
+    fun catalogReturnsFocusToTheNearestVisibleResultWhenTheOpenedImageIsRemoved() =
+        verifyReturnAfterImageRemoval()
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun wideCatalogRestoresFocusWithoutReplacingTheVisibleList() = verifyReturnAfterImageRemoval()
+
+    @Test
+    fun recreatedCatalogReturnsToTheNearestResultWhenTheOpenedImageIsRemoved() =
+        verifyReturnAfterImageRemoval(recreateActivity = true)
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h520dp")
+    fun returningToAPartlyVisibleNeighborKeepsTheCatalogPosition() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.checklist.title)
+
+            val list = compose.onNodeWithTag("artifact_list")
+            val opened = compose.onNodeWithText(fixture.image.title)
+            list.performScrollToNode(hasText(fixture.image.title))
+            opened.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            opened.performKeyInput { pressKey(Key.Enter) }
+            compose.waitUntilExactlyOneExists(hasTestTag("artifact_image_toolbar"), 10_000)
+
+            fixture.removedCatalogIds = setOf(fixture.image.id)
+            resumeArtifactRoute()
+            compose.waitUntil("refreshed catalog omits the original row", 10_000) {
+                artifactModel.state.value.page?.items?.none { it.id == fixture.image.id } == true
+            }
+            val neighbor = compose.onNodeWithText(fixture.video.title)
+            list.performScrollToNode(hasText(fixture.video.title))
+            val viewportBottom = list.getUnclippedBoundsInRoot().bottom
+            val neighborBounds = neighbor.getUnclippedBoundsInRoot()
+            val visibleHeight = viewportBottom - neighborBounds.top
+            list.performSemanticsAction(SemanticsActions.ScrollBy) {
+                it(0f, with(compose.density) { (neighborBounds.height / 2 - visibleHeight).toPx() })
+            }
+            val before = neighbor.assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertTrue(before.top < viewportBottom && before.bottom > viewportBottom)
+
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+
+            neighbor.assertIsFocused()
+            assertEquals(before, neighbor.getUnclippedBoundsInRoot())
+            opened.assertDoesNotExist()
+
+            neighbor.performKeyInput { pressKey(Key.DirectionUp) }
+            compose.onNodeWithText(fixture.slides.title).assertIsFocused().performKeyInput {
+                pressKey(Key.DirectionDown)
+            }
+            assertTrue(
+                neighbor.assertIsFocused().getUnclippedBoundsInRoot().bottom <= viewportBottom,
+            )
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    private fun verifyReturnAfterImageRemoval(recreateActivity: Boolean = false) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            val query = compose.onNodeWithTag("artifact_query")
+            query.performTextReplacement("launch")
+            awaitText(fixture.image.title)
+            val opened = compose.onNodeWithText(fixture.image.title)
+            opened.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            fun openImage() {
+                opened.performKeyInput { pressKey(Key.Enter) }
+                compose.waitUntilExactlyOneExists(hasTestTag("artifact_image_toolbar"), 10_000)
+            }
+            openImage()
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+            opened.assertIsFocused()
+            openImage()
+
+            fixture.removedCatalogIds = setOf(fixture.image.id)
+            if (recreateActivity) {
+                compose.activityRule.scenario.recreate()
+                compose.waitUntilExactlyOneExists(hasTestTag("artifact_image_toolbar"), 10_000)
+            } else resumeArtifactRoute()
+            compose.waitUntil("refreshed catalog omits the original row", 10_000) {
+                artifactModel.state.value.page?.items?.none { it.id == fixture.image.id } == true
+            }
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+
+            val nearest = hasText(fixture.slides.title) and isFocused()
+            compose.waitUntilExactlyOneExists(hasTestTag("artifact_row") and isFocused(), 10_000)
+            compose.onNode(nearest).assertIsDisplayed().assertHeightIsAtLeast(72.dp)
+            query.assertTextContains("launch").assertIsNotFocused()
+            opened.assertDoesNotExist()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun refreshedCatalogReplacesTheThumbnailWithoutMovingTheRow() {
         val fixture = ArtifactApiFixture(app.fixture)
@@ -260,7 +371,7 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         val bounds = row.getUnclippedBoundsInRoot()
         fun thumbnailColor(): Int {
             val image = row.captureToImage().toPixelMap()
-            return with(compose.density) { image[32.dp.roundToPx(), 28.dp.roundToPx()].toArgb() }
+            return with(compose.density) { image[36.dp.roundToPx(), 36.dp.roundToPx()].toArgb() }
         }
         try {
             compose.waitUntil(5_000) { thumbnailColor() == original }
@@ -1141,6 +1252,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun catalogUsesTheDesignedDateSpacingAndRowAlignment() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
@@ -1159,13 +1271,14 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             compose.onNodeWithText("Yesterday").assertIsDisplayed().getUnclippedBoundsInRoot()
         val earlier =
             compose.onNodeWithText("Earlier").assertIsDisplayed().getUnclippedBoundsInRoot()
-        assertTrue(first.height >= 80.dp)
-        assertEquals(8.dp, title.top - first.top)
+        assertEquals("Title bounds $title in row $first", 72.dp, first.height)
+        assertTrue(title.top - first.top >= 10.dp)
+        assertEquals(68.dp, title.left - first.left)
         assertEquals(4.dp, first.top - today.bottom)
         assertEquals(8.dp, nextDay.top - first.bottom)
-        assertEquals(first.left, today.left)
-        assertEquals(first.left, nextDay.left)
-        assertEquals(first.left, earlier.left)
+        assertEquals(first.left + 16.dp, today.left)
+        assertEquals(today.left, nextDay.left)
+        assertEquals(today.left, earlier.left)
     }
 
     @Test
@@ -1203,6 +1316,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun firstDisplayAndSourceReturnUseTheNativeCatalogAndReferenceAuthority() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
@@ -1223,7 +1337,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithText("Today").assertIsDisplayed()
         compose.onNodeWithText("Yesterday").assertIsDisplayed()
         compose.onNodeWithText("Earlier").assertIsDisplayed()
-        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(80.dp)
+        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(72.dp)
         compose.onNodeWithTag("artifact_query").performTextReplacement("Product launch")
         awaitText(fixture.summary.title)
         compose.onNodeWithText("Yesterday").assertDoesNotExist()
@@ -1240,10 +1354,27 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         assertEquals(28.sp, titleStyle.lineHeight)
         assertEquals(FontWeight.Normal, titleStyle.fontWeight)
         compose.onNodeWithText("Save file").assertDoesNotExist()
-        compose
-            .onNodeWithText("View source conversation")
-            .assertHeightIsAtLeast(48.dp)
-            .performClick()
+        val sourceAction =
+            compose.onNodeWithText("View source conversation").assertHeightIsAtLeast(48.dp)
+        val sourceLabel = compose.onNodeWithText("View source conversation", useUnmergedTree = true)
+        val labelLayouts = mutableListOf<TextLayoutResult>()
+        sourceLabel.performSemanticsAction(SemanticsActions.GetTextLayoutResult) {
+            it(labelLayouts)
+        }
+        val labelStyle = labelLayouts.single().layoutInput.style
+        assertEquals(14.sp, labelStyle.fontSize)
+        assertEquals(20.sp, labelStyle.lineHeight)
+        assertEquals(
+            42.dp,
+            sourceLabel.getUnclippedBoundsInRoot().left -
+                sourceAction.getUnclippedBoundsInRoot().left,
+        )
+        assertEquals(
+            24.dp,
+            sourceAction.getUnclippedBoundsInRoot().right -
+                sourceLabel.getUnclippedBoundsInRoot().right,
+        )
+        sourceAction.performClick()
         compose.onNodeWithTag("conversation").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to artifact preview").performClick()
         awaitText("View source conversation")
@@ -2223,7 +2354,8 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun cachedDocumentAndImageStayReadableWhileTheirRefreshIsPending() {
-        val fixture = ArtifactApiFixture(app.fixture)
+        // Viewing a thumbnail alone does not populate the decoded preview cache.
+        val fixture = ArtifactApiFixture(app.fixture).apply { imageThumbnailUrl = null }
         fixture.install()
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
@@ -2242,22 +2374,30 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         backToCatalog.performClick()
 
         val release = CountDownLatch(1)
+        val imageRefresh = CountDownLatch(1)
+        val documentRefresh = CountDownLatch(1)
         val respond = app.fixture.commandResponse
         app.fixture.commandResponse = { request ->
-            if (
-                request.requestUrl?.encodedPath in
-                    setOf("/artifact-bytes/image", "/artifact-bytes/summary")
-            ) {
+            val refresh =
+                when (request.requestUrl?.encodedPath) {
+                    "/api/artifacts/catalog/${fixture.image.id}" -> imageRefresh
+                    "/api/artifacts/catalog/${fixture.summary.id}" -> documentRefresh
+                    else -> null
+                }
+            if (refresh != null) {
+                refresh.countDown()
                 release.await()
             }
             respond(request)
         }
         try {
             compose.onNodeWithText(fixture.image.title).performClick()
+            compose.waitUntil("image refresh requested", 10_000) { imageRefresh.count == 0L }
             compose.onNodeWithContentDescription(fixture.image.title).assertIsDisplayed()
             backToCatalog.performClick()
 
             compose.onNodeWithText(fixture.summary.title).performClick()
+            compose.waitUntil("document refresh requested", 10_000) { documentRefresh.count == 0L }
             compose.onNodeWithText(documentText, substring = true).assertIsDisplayed()
         } finally {
             release.countDown()

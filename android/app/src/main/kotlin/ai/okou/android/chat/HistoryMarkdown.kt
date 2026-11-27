@@ -102,6 +102,7 @@ internal data class ChatArtifactActions(
     val images: InlineArtifactImages? = null,
     val threadId: String = "",
     val restoreReply: () -> Unit = restored,
+    val openImages: ((ChatSentImageVisit, String) -> Unit)? = null,
 )
 
 internal val MessageArtifactCardSpacing = 8.dp

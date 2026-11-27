@@ -106,22 +106,23 @@ test("lab-page-002 Each staff-visible feature has exactly one switch under its r
   expect(getButtonByName("Reset all")).toBeEnabled();
 });
 
-test.each([
-  [FeatureSwitchKey.PresentationOutputFormat, "Beta"],
-  [FeatureSwitchKey.ChatListHoverPreview, "Beta"],
-  [FeatureSwitchKey.MarkdownFirstOutput, "Released"],
-] as const)("Staff see %s enabled by default in %s", async (key, stage) => {
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, {
-      switches: {},
-      effectiveSwitches: getAllFeatureStates({ userId: user.id, orgId }),
+test.each([[FeatureSwitchKey.PresentationOutputFormat, "Beta"]] as const)(
+  "Staff see %s enabled by default in %s",
+  async (key, stage) => {
+    context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+      return respond(200, {
+        switches: {},
+        effectiveSwitches: getAllFeatureStates({ userId: user.id, orgId }),
+      });
     });
-  });
-  await visitLab(false, true);
-  const row = screen.getByText(key, { exact: true }).closest("li")!;
-  expect(row.closest("section")?.querySelector("h2")).toHaveTextContent(stage);
-  expect(within(row).getByRole("switch")).toBeChecked();
-});
+    await visitLab(false, true);
+    const row = screen.getByText(key, { exact: true }).closest("li")!;
+    expect(row.closest("section")?.querySelector("h2")).toHaveTextContent(
+      stage,
+    );
+    expect(within(row).getByRole("switch")).toBeChecked();
+  },
+);
 
 test("lab-page-005 Filtering the Lab catalog preserves the All total and restores its full switch list", async () => {
   await visitLab();
@@ -138,18 +139,8 @@ test("lab-page-005 Filtering the Lab catalog preserves the All total and restore
   expect(screen.getAllByRole("switch")).toHaveLength(original);
 });
 
-test.each([
-  [
-    "lab-page-006 Reset all restores the test OAuth connector's original off state",
-    FeatureSwitchKey.TestOauthConnector,
-    false,
-  ],
-  [
-    "A member can disable Markdown-first output in Lab and reset the override",
-    FeatureSwitchKey.MarkdownFirstOutput,
-    true,
-  ],
-] as const)("%s", async (_title, featureKey, defaultEnabled) => {
+test("lab-page-006 Reset all restores the test OAuth connector's original off state", async () => {
+  const featureKey = FeatureSwitchKey.TestOauthConnector;
   let overrides: Partial<Record<FeatureSwitchKey, boolean>> = {};
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, { switches: overrides, effectiveSwitches: overrides });
@@ -167,13 +158,10 @@ test.each([
     "label",
   )!;
   const toggle = within(label).getByRole("switch");
-  expect(toggle).toHaveAttribute("aria-checked", String(defaultEnabled));
+  expect(toggle).toHaveAttribute("aria-checked", "false");
   click(toggle);
   await waitFor(() => {
-    return expect(toggle).toHaveAttribute(
-      "aria-checked",
-      String(!defaultEnabled),
-    );
+    return expect(toggle).toHaveAttribute("aria-checked", "true");
   });
   const reset = getButtonByName("Reset all");
   await waitFor(() => {
@@ -181,67 +169,57 @@ test.each([
   });
   click(reset);
   await waitFor(() => {
-    return expect(toggle).toHaveAttribute(
-      "aria-checked",
-      String(defaultEnabled),
-    );
+    return expect(toggle).toHaveAttribute("aria-checked", "false");
   });
 });
 
-test.each([
-  [FeatureSwitchKey.PresentationOutputFormat, "Beta"],
-  [FeatureSwitchKey.ChatListHoverPreview, "Beta"],
-] as const)(
-  "Any Lab tester can find %s in %s, opt in, and reset it",
-  async (featureKey, stage) => {
-    let switches: Record<string, boolean> = { [FeatureSwitchKey.Lab]: true };
-    context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-      return respond(200, { switches, effectiveSwitches: switches });
-    });
-    context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
-      switches = { ...switches, ...body.switches };
-      return respond(200, { switches, effectiveSwitches: switches });
-    });
-    context.mocks.api(featureSwitchesContract.delete, ({ respond }) => {
-      switches = { [FeatureSwitchKey.Lab]: true };
-      return respond(200, { deleted: true });
-    });
-    await setupPage({
-      context,
-      path: "/_/lab",
-      auth: {
-        user: {
-          id: "presentation-format-tester",
-          fullName: "bingjie",
-          email: "bingjie-tester@example.test",
-        },
+test("Any Lab tester can find presentation format in Beta, opt in, and reset it", async () => {
+  const featureKey = FeatureSwitchKey.PresentationOutputFormat;
+  let switches: Record<string, boolean> = { [FeatureSwitchKey.Lab]: true };
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+    switches = { ...switches, ...body.switches };
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.delete, ({ respond }) => {
+    switches = { [FeatureSwitchKey.Lab]: true };
+    return respond(200, { deleted: true });
+  });
+  await setupPage({
+    context,
+    path: "/_/lab",
+    auth: {
+      user: {
+        id: "presentation-format-tester",
+        fullName: "bingjie",
+        email: "bingjie-tester@example.test",
       },
-    });
+    },
+  });
 
-    await screen.findByRole("heading", { name: "Lab" });
-    click(getButtonByName("bingjie"));
-    const row = screen.getByText(featureKey, { exact: true }).closest("li")!;
-    expect(row.closest("section")?.querySelector("h2")).toHaveTextContent(
-      stage,
-    );
-    const control = within(row).getByRole("switch");
+  await screen.findByRole("heading", { name: "Lab" });
+  click(getButtonByName("bingjie"));
+  const row = screen.getByText(featureKey, { exact: true }).closest("li")!;
+  expect(row.closest("section")?.querySelector("h2")).toHaveTextContent("Beta");
+  const control = within(row).getByRole("switch");
+  expect(control).toHaveAttribute("aria-checked", "false");
+
+  click(control);
+  await waitFor(() => {
+    expect(control).toHaveAttribute("aria-checked", "true");
+  });
+
+  const reset = getButtonByName("Reset all");
+  await waitFor(() => {
+    return expect(reset).toBeEnabled();
+  });
+  click(reset);
+  await waitFor(() => {
     expect(control).toHaveAttribute("aria-checked", "false");
-
-    click(control);
-    await waitFor(() => {
-      expect(control).toHaveAttribute("aria-checked", "true");
-    });
-
-    const reset = getButtonByName("Reset all");
-    await waitFor(() => {
-      return expect(reset).toBeEnabled();
-    });
-    click(reset);
-    await waitFor(() => {
-      expect(control).toHaveAttribute("aria-checked", "false");
-    });
-  },
-);
+  });
+});
 
 test("Lab reads the embedded Banking preference before showing the service's later updates", async () => {
   const banking = FeatureSwitchKey.Banking;

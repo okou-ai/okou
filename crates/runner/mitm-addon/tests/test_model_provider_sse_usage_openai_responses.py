@@ -17,6 +17,7 @@ import stream_capture
 from tests.flow_helpers import response_stream
 from tests.model_provider_flow_helpers import (
     RealFlowFactory,
+    make_model_provider_sse_flow,
     model_usage_source_entries,
     run_error,
     run_response,
@@ -24,7 +25,6 @@ from tests.model_provider_flow_helpers import (
 from tests.model_provider_sse_usage_helpers import (
     assert_single_model_sse_parse_warning,
     compress_zlib_sse,
-    model_provider_sse_flow,
     model_sse_parse_warnings,
 )
 from tests.repeated_bytes_helpers import repeat_bytes
@@ -37,9 +37,9 @@ def _openai_responses_sse_flow(
     *,
     model_usage_provider: str = "gpt-5.5",
 ) -> http.HTTPFlow:
-    flow = model_provider_sse_flow(
-        tmp_path,
+    flow = make_model_provider_sse_flow(
         real_flow,
+        tmp_path,
         host="openrouter.ai",
         original_url="https://openrouter.ai/api/v1/responses",
         firewall_name="model-provider:openrouter-codex",
@@ -93,9 +93,9 @@ class TestOpenAIResponsesSseUsage:
     def test_full_pipeline_pi_responses_path_reports_usage(
         self, tmp_path, real_flow, captured_provider
     ):
-        flow = model_provider_sse_flow(
-            tmp_path,
+        flow = make_model_provider_sse_flow(
             real_flow,
+            tmp_path,
             host="openrouter.ai",
             original_url="https://openrouter.ai/api/v1/responses",
             firewall_name="model-provider:openrouter-codex",

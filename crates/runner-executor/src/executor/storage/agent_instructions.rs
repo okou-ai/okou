@@ -5,10 +5,12 @@ use super::super::{
 };
 use super::{format_helper_exec_failure, helper_exec_succeeded, storage_helper_failure};
 use guest_contracts::agent_instructions::{
-    InstructionApplication, InstructionCheck, InstructionOperation, MAX_CHECK_METADATA_BYTES,
-    MAX_METADATA_BYTES, instruction_paths,
+    InstructionApplication, InstructionCheck, InstructionCheckResult, InstructionOperation,
+    MAX_CHECK_METADATA_BYTES, MAX_METADATA_BYTES, instruction_paths,
 };
+use guest_contracts::env::CliAgentTypeSelection;
 use guest_contracts::home_mount::HOME_DIR;
+use guest_contracts::storage_manifest::member_memory_mount;
 use runner_storage::storage_plan::{StoragePlan, build_storage_plan};
 use runner_types::{storage_fingerprints::StorageFingerprints, types::ExecutionContext};
 use sandbox::{AgentInstructionsRequest, ExecResult, Sandbox};
@@ -19,7 +21,9 @@ const _: () = assert!(MAX_CHECK_METADATA_BYTES <= guest_control_proto::MAX_EXEC_
 
 pub(in crate::executor) enum InstructionReuse {
     Apply,
-    Reused,
+    Reused {
+        memory_root_present: bool,
+    },
     /// Missing or replaced final files invalidate only this input's prior knowledge.
     Repair(StorageFingerprints),
 }
@@ -56,7 +60,8 @@ pub(in crate::executor) async fn check_instruction_reuse(
     {
         return Ok(InstructionReuse::Apply);
     }
-    let framework = super::super::cli_framework::normalized_cli_agent_type(&context.cli_agent_type);
+    let selection = CliAgentTypeSelection::parse(&context.cli_agent_type);
+    let framework = selection.normalized_cli_agent_type();
     let target = instruction_paths(Path::new(HOME_DIR), framework)
         .ok_or_else(|| RunnerError::Internal("Unsupported instruction framework".into()))?
         .target;
@@ -76,12 +81,15 @@ pub(in crate::executor) async fn check_instruction_reuse(
         repaired.storages.remove(&instruction.storage_mount);
         return Ok(InstructionReuse::Repair(repaired));
     }
+    let memory_mount = member_memory_mount(selection.framework());
+    let check_memory_root = plan.needs_only_memory_root_check(memory_mount);
     let started = Instant::now();
     let checked = check_preserved_targets(
         sandbox,
         context,
         framework,
         plan.preserved_download_mounts(),
+        check_memory_root,
     )
     .await;
     telemetry.record(
@@ -93,8 +101,11 @@ pub(in crate::executor) async fn check_instruction_reuse(
             .err()
             .map(|_| "instruction_file_check_failed"),
     );
-    if checked? {
-        Ok(InstructionReuse::Reused)
+    let checked = checked?;
+    if checked.instructions_current {
+        Ok(InstructionReuse::Reused {
+            memory_root_present: check_memory_root && checked.memory_root_present,
+        })
     } else {
         let mut repaired = previous.clone();
         repaired.storages.remove(&instruction.storage_mount);
@@ -107,10 +118,12 @@ async fn check_preserved_targets(
     context: &ExecutionContext,
     framework: &str,
     mounts: Vec<String>,
-) -> RunnerResult<bool> {
+    check_memory_root: bool,
+) -> RunnerResult<InstructionCheckResult> {
     let mut batch = InstructionCheck {
         framework: framework.into(),
         preserved_download_mounts: Vec::new(),
+        check_memory_root,
     };
     let empty_size = serde_json::to_vec(&batch)
         .map_err(|_| RunnerError::Internal("Instruction metadata encoding failed".into()))?
@@ -127,8 +140,9 @@ async fn check_preserved_targets(
         }
         let comma = usize::from(!batch.preserved_download_mounts.is_empty());
         if size + encoded_size + comma > MAX_CHECK_METADATA_BYTES {
-            if !check_batch(sandbox, context, &batch).await? {
-                return Ok(false);
+            let checked = check_batch(sandbox, context, &batch).await?;
+            if !checked.instructions_current {
+                return Ok(checked);
             }
             batch.preserved_download_mounts.clear();
             size = empty_size;
@@ -143,7 +157,7 @@ async fn check_batch(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     input: &InstructionCheck,
-) -> RunnerResult<bool> {
+) -> RunnerResult<InstructionCheckResult> {
     let result = exec(
         sandbox,
         context,
@@ -158,7 +172,7 @@ async fn check_batch(
             &result,
         ));
     }
-    serde_json::from_slice::<bool>(&result.stdout)
+    serde_json::from_slice(&result.stdout)
         .map_err(|_| RunnerError::Internal("Invalid instruction file check response".into()))
 }
 

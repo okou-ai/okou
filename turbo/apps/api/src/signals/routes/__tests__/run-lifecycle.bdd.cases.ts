@@ -1003,28 +1003,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
-      it("honors Markdown-first output opt-outs in run guidance", async () => {
-        const api = createRunsApi(context);
-        const connectors = createConnectorBddApi(context);
-        const { actor, runnerGroup } = await entitledRunActor();
-        await connectors.updateFeatureSwitches(actor, {
-          [FeatureSwitchKey.MarkdownFirstOutput]: false,
-        });
-        const run = await api.createThreadRun(actor, {
-          prompt: "write a project update",
-        });
-        await api.heartbeatRunner(runnerGroup);
-        const execution = await api.executionInput(run.runId);
-        const appendSystemPrompt = execution.appendSystemPrompt ?? "";
-        expect(appendSystemPrompt).toContain(
-          "choose a suitable format based on the user's preferences and how they will use the result",
-        );
-        expect(appendSystemPrompt).not.toContain(
-          "For Markdown deliverables, use portable Markdown",
-        );
-        await api.requestCancelRun(actor, run.runId, [200]);
-      });
-
       it("advertises the installed Okou CLI in execution input", async () => {
         const api = createRunsApi(context);
         const { actor, runnerGroup } = await entitledRunActor();
@@ -8697,7 +8675,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it.each([false, true])(
-        "defaults presentation delivery to HTML and gates explicitly requested PPTX conversion (%s)",
+        "gates presentation conversion CLI capabilities while preserving delivery guidance (%s)",
         async (enabled) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
@@ -8730,15 +8708,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           if (enabled) {
             expect(capabilities).toContain("presentation-convert:write");
-            expect(prompt).toContain(
-              "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
-            );
-            expect(prompt).toContain(
-              "Only when the user explicitly requests PowerPoint/PPTX",
-            );
           } else {
             expect(capabilities).not.toContain("presentation-convert:write");
-            expect(prompt).not.toContain("okou presentation convert");
           }
           await api.requestCancelRun(actor, run.runId, [200]);
           await webhooks.requestAgentComplete(

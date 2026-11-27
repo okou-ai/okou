@@ -93,7 +93,6 @@ async function openExportMenu(
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.FreePlanArtifactPaywall]: true,
-      [FeatureSwitchKey.MarkdownFirstOutput]: true,
     },
   });
   click(await findNamedLink("Report"));

@@ -8,28 +8,6 @@ from mitmproxy import http
 
 import flow_metadata_keys as metadata_keys
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
-from tests.model_provider_flow_helpers import RealFlowFactory, make_model_provider_sse_flow
-
-
-def model_provider_sse_flow(
-    tmp_path: Path,
-    real_flow: RealFlowFactory,
-    *,
-    host: str,
-    original_url: str,
-    firewall_name: str,
-    model_usage_provider: str | None,
-    cli_agent_type: str | None = None,
-) -> http.HTTPFlow:
-    return make_model_provider_sse_flow(
-        real_flow,
-        tmp_path,
-        host=host,
-        original_url=original_url,
-        firewall_name=firewall_name,
-        cli_agent_type=cli_agent_type,
-        model_usage_provider=model_usage_provider,
-    )
 
 
 def compress_zlib_sse(body: bytes, encoding: str) -> bytes:

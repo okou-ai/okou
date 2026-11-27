@@ -650,13 +650,30 @@ impl StoragePlan {
     /// `ReuseExisting`, and there are no artifacts. Artifact actions require the
     /// guest even when their fingerprints match.
     pub fn requires_guest_work(&self) -> bool {
+        self.has_storage_work() || !self.artifacts.is_empty()
+    }
+
+    /// The existing Instructions check can observe this root without another RPC.
+    /// Pending Workflow document normalization still needs the Storage helper.
+    pub fn needs_only_memory_root_check(&self, mount: &str) -> bool {
+        matches!(
+            self.artifacts.as_slice(),
+            [artifact] if artifact.mount_path == mount
+                && artifact.vas_storage_name == wire::MEMORY_STORAGE_NAME
+                && matches!(artifact.action, ArtifactAction::ReuseOrRepair { .. })
+        ) && !self.has_storage_work()
+            && !self.storages.iter().any(|entry| {
+                wire::needs_workflow_document(&entry.vas_storage_name, &entry.mount_path)
+            })
+    }
+
+    fn has_storage_work(&self) -> bool {
         !self.cleanup_paths.is_empty()
             || !self.instruction_cleanups.is_empty()
             || self
                 .storages
                 .iter()
                 .any(|entry| !matches!(entry.action, StorageAction::ReuseExisting))
-            || !self.artifacts.is_empty()
     }
 
     pub fn reused_entries(&self) -> usize {

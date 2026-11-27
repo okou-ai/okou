@@ -103,4 +103,7 @@
     <string name="artifact_link_who_can_view">谁可以查看</string>
     <string name="artifact_workspace_link_hint">「%1$s」的成员可以打开</string>
     <string name="artifact_public_link_hint">任何拿到链接的人都可以打开</string>
+    <string name="artifact_image_page_description">第 %1$d 张，共 %2$d 张</string>
+    <string name="artifact_image_previous_page">上一张图片</string>
+    <string name="artifact_image_next_page">下一张图片</string>
 </resources>
