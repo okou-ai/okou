@@ -1897,6 +1897,7 @@ jobs:
         shell: bash
         env:
           DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}
+          WORKER_URL: ${{ steps.api-worker-deploy.outputs.worker-url }}
           WORKER_SHA: ${{ steps.api-worker-deploy.outputs.source-sha }}
         run: |
           set -euo pipefail
@@ -1906,11 +1907,24 @@ jobs:
           test "$pending" = "true"
           release_sha=$(git rev-parse HEAD)
           test "$release_sha" = "$WORKER_SHA"
-          curl --fail --silent --show-error --max-time 20 \
-            --retry 3 --retry-delay 2 --retry-max-time 90 \
-            https://api.okou.ai/api/build-info | jq -e --arg sha "$release_sha" \
-            '.commitSha == $sha' > /dev/null
-          result=$(pnpm exec tsx scripts/retire-proactive-installations.ts "$release_sha")
+          verify_serving_release() {
+            for origin in https://api.okou.ai "$WORKER_URL"; do
+              curl --fail --silent --show-error --max-time 20 \
+                --retry 3 --retry-delay 2 --retry-max-time 90 \
+                "$origin/api/build-info" | jq -e --arg sha "$release_sha" \
+                '.commitSha == $sha' > /dev/null
+            done
+          }
+          verify_serving_release
+          result=$(pnpm exec tsx scripts/retire-proactive-installations.ts "$release_sha" --prepare)
+          if [[ $(jq -r '.status' <<< "$result") == "ready-to-drain" ]]; then
+            # An older API may have served again after the first compatible release.
+            # The release queue also serializes rollbacks. Drain this deployment's
+            # incoming handoff before retiring anything, and verify both targets again.
+            sleep 300
+            verify_serving_release
+            result=$(pnpm exec tsx scripts/retire-proactive-installations.ts "$release_sha")
+          fi
           echo "Proactive installation retirement: $result" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report API Worker production failure

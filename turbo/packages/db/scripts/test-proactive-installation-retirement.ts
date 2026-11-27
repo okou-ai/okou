@@ -99,6 +99,16 @@ export async function validateProactiveInstallationRetirement(
     const retire = () => {
       return retireProactiveInstallations(db, second);
     };
+    assert.deepEqual(
+      await retireProactiveInstallations(db, second, "prepare"),
+      {
+        status: "ready-to-drain",
+      },
+    );
+    assert.equal(
+      (await db`SELECT id FROM archived_proactive_workflows`).length,
+      0,
+    );
     await assert.rejects(retire, /member choice has no standalone schedule/);
     await db`INSERT INTO proactive_schedules(org_id,user_id,task,intended_enabled,enabled,timezone,consecutive_failures,preference_revision)
       VALUES(${org},${user},'morning-brief',false,false,'UTC',0,5)`;

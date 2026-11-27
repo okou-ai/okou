@@ -36,6 +36,7 @@ interface RetirementReceipt {
 export async function retireProactiveInstallations(
   db: postgres.Sql,
   verifiedRelease: string,
+  mode: "prepare" | "retire" = "retire",
 ) {
   if (!/^[a-f0-9]{40}$/u.test(verifiedRelease)) {
     throw new Error("Expected the full verified API release SHA");
@@ -79,6 +80,10 @@ export async function retireProactiveInstallations(
         status: "awaiting-distinct-drained-release" as const,
         release: gate.first,
       };
+    }
+
+    if (mode === "prepare") {
+      return { status: "ready-to-drain" as const };
     }
 
     const retirement = await readFile(
