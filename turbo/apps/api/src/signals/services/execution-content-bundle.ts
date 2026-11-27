@@ -21,9 +21,11 @@ export function selectExecutionContentBundles(
   context: ExecutionPackageMounts,
 ) {
   const workflowNames = new Set(
-    packages.workflows.map(({ name }) => {
-      return name;
-    }),
+    [...packages.workflows, ...context.officialWorkflowBundles].map(
+      ({ name }) => {
+        return name;
+      },
+    ),
   );
   const instructions = packages.instructionsBundle;
   const preparedSkills = [

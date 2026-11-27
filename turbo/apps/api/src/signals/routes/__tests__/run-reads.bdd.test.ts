@@ -2028,6 +2028,21 @@ describe("RUN-04: agent run telemetry families", () => {
     });
 
     const runId = agentRun.runId;
+    const templateGuidanceBundles = [
+      {
+        ownerKind: "user-template",
+        templateId: "859550cb-28ad-47ef-8728-f6b3849f8c55",
+        sha256: "a".repeat(64),
+        archiveBytes: 512,
+        beforeMountPaths: ["/home/user/.claude/skills/example"],
+      },
+      {
+        ownerKind: "presentation-template",
+        templateId: "f0fbad48-3d7f-4468-83d1-221e9a27a1a9",
+        sha256: "b".repeat(64),
+        archiveBytes: 1024,
+      },
+    ];
     dispatchAxiomQueries({
       [runId]: {
         network: [
@@ -2092,6 +2107,7 @@ describe("RUN-04: agent run telemetry families", () => {
             runId,
             prompt: "captured diagnostic prompt",
             appendSystemPrompt: "captured system instructions",
+            templateGuidanceBundles,
             secretNames: ["OKOU_TOKEN", "TEST_TOKEN"],
             varEntries: [
               { name: "REGION", value: "launch-region" },
@@ -2237,6 +2253,9 @@ describe("RUN-04: agent run telemetry families", () => {
     if (contextRead.status !== 200) {
       throw new Error("Expected the run context read to succeed");
     }
+    expect(contextRead.body.templateGuidanceBundles).toStrictEqual(
+      templateGuidanceBundles,
+    );
     expect(contextRead.body).toMatchObject({
       runId,
       prompt: "captured diagnostic prompt",

@@ -1,43 +1,41 @@
 import { computed, type Computed } from "ccstate";
 import type { AuthorizedConnectors } from "./authorized-connectors.service";
-import type { RunPromptAndSkills, SkillVolume } from "./run-prompt-and-skills";
+import type { NamedSkillBundle, RunPrompt } from "./run-prompt-and-skills";
 
 const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
 
-function connectorSkillVolumes(
-  connectors: AuthorizedConnectors,
-): readonly SkillVolume[] {
-  const customVolumes: SkillVolume[] = [];
-  const builtinVolumes: SkillVolume[] = [];
+function connectorSkills(connectors: AuthorizedConnectors) {
+  const customConnectorSkills: NamedSkillBundle[] = [];
+  const builtinConnectorSkills: NamedSkillBundle[] = [];
   for (const connector of connectors) {
     if (connector.skill === null) {
       continue;
     }
-    const volume = {
+    const bundle = {
       contentBundle: connector.skill.contentBundle,
-      skillName: connector.skill.skillName,
+      name: connector.skill.skillName,
     };
     if (connector.kind === "custom") {
-      customVolumes.push({ ...volume, source: "custom_connector_skill" });
+      customConnectorSkills.push(bundle);
     } else {
-      builtinVolumes.push({ ...volume, source: "connector_skill" });
+      builtinConnectorSkills.push(bundle);
     }
   }
-  return [...customVolumes, ...builtinVolumes];
+  return { customConnectorSkills, builtinConnectorSkills };
 }
 
 export function createConnectorsContext(
   authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>,
-): Computed<Promise<RunPromptAndSkills>> {
-  return computed(async (get): Promise<RunPromptAndSkills> => {
+) {
+  return computed(async (get) => {
     const connectors = await get(authorizedConnectors$);
     return {
       systemPromptVariables: {
         connectors: connectorPrompt(connectors),
       },
       userPromptVariables: {},
-      skillVolumes: connectorSkillVolumes(connectors),
-    };
+      ...connectorSkills(connectors),
+    } satisfies RunPrompt & ReturnType<typeof connectorSkills>;
   });
 }
 

@@ -2,7 +2,6 @@ import { proactiveInstructions } from "../proactive-run-context.service";
 import {
   mergeRunPrompt,
   renderRunPrompts,
-  type SkillVolume,
   type SystemPromptVariables,
 } from "../run-prompt-and-skills";
 import { createPhoneUsePrompt } from "./phone-use";
@@ -13,7 +12,7 @@ import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
-import { createSystemSkillVolumes } from "../system-skills-context.service";
+import { createSystemSkills } from "../system-skills-context.service";
 import type { ThreadContext } from "../thread-context.signals";
 import { createAgentPrompt } from "./agent";
 import { createAgentPhoneThreadPrompt } from "./agentphone";
@@ -191,36 +190,35 @@ function createSharedPromptSources(
     }
     return templates;
   });
-  const systemSkills$ = createSystemSkillVolumes(
+  const systemSkills$ = createSystemSkills(
     disabledPaidTools$,
     threadContext.executionPackageSources$,
   );
-  const skillVolumes$ = computed(
-    async (get): Promise<readonly SkillVolume[]> => {
-      const [templates, connectors, systemSkills] = await Promise.all([
-        get(templates$),
-        get(connectors$),
-        get(systemSkills$),
-      ]);
-      return [
-        ...(templates?.skillVolumes ?? []),
-        ...connectors.skillVolumes,
-        ...systemSkills,
-      ];
-    },
-  );
+  const packageSources$ = computed(async (get) => {
+    const [templates, connectors, systemSkills] = await Promise.all([
+      get(templates$),
+      get(connectors$),
+      get(systemSkills$),
+    ]);
+    return {
+      templateGuidanceBundles: templates?.templateGuidanceBundles ?? [],
+      customConnectorSkills: connectors.customConnectorSkills,
+      builtinConnectorSkills: connectors.builtinConnectorSkills,
+      systemSkills,
+    };
+  });
   return {
     featureSwitches$,
     disabledPaidTools$,
     contextType$,
     connectors$,
     templates$,
-    skillVolumes$,
+    packageSources$,
   };
 }
 
 /** Share template and Connector contributions between the prompt and package plans. */
-export function createPromptAndSkillVolumesSignals(
+export function createPromptAndPackageSignals(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
@@ -320,7 +318,11 @@ export function createPromptAndSkillVolumesSignals(
       selectedImageModel: runtime.selectedImageModel,
     };
   });
-  return { prompt$, skillVolumes$: shared.skillVolumes$, suggestionsPrompt$ };
+  return {
+    prompt$,
+    packageSources$: shared.packageSources$,
+    suggestionsPrompt$,
+  };
 }
 
 function createDeviceUsePrompts(
