@@ -17,7 +17,7 @@ WITH stage AS MATERIALIZED (
   ORDER BY a.id FOR UPDATE OF a NOWAIT
 ), bindings AS MATERIALIZED (
   SELECT b.workflow_id, b.org_id, b.user_id, b.chat_thread_id,
-    t.org_id AS thread_org, t.user_id AS thread_user
+    t.org_id AS thread_org, t.user_id AS thread_user, t.hidden AS thread_hidden
   FROM workflow_user_automation_threads b JOIN retiring_workflows w ON w.id = b.workflow_id
   LEFT JOIN chat_threads t ON t.id = b.chat_thread_id
 ), run_sources AS MATERIALIZED (
@@ -43,6 +43,9 @@ WITH stage AS MATERIALIZED (
         WHERE (b.org_id, b.user_id) <> (w.org_id, w.owner_user_id) OR (b.chat_thread_id IS NOT NULL
           AND (b.thread_org, b.thread_user) IS DISTINCT FROM (b.org_id, b.user_id))
       ) THEN 'Historical task thread ownership differs from its installation'
+      WHEN EXISTS (
+        SELECT FROM bindings b WHERE b.chat_thread_id IS NOT NULL AND b.thread_hidden IS NOT TRUE
+      ) THEN 'Historical task thread is not hidden'
       WHEN EXISTS (
         SELECT FROM run_sources r JOIN retiring_workflows w ON w.id = r.workflow_id
         WHERE (r.org_id, r.user_id) IS DISTINCT FROM (w.org_id, w.owner_user_id)

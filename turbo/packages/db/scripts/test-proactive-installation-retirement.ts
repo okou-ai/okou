@@ -150,6 +150,9 @@ export async function validateProactiveInstallationRetirement(
       /unrecognized or differently owned automation/,
     );
     await db`UPDATE workflow_automations SET official_blueprint_key='daily-delivery' WHERE id=${automation}`;
+    await db`UPDATE chat_threads SET hidden=false WHERE id=${thread}`;
+    await assert.rejects(retire, /Historical task thread is not hidden/);
+    await db`UPDATE chat_threads SET hidden=true WHERE id=${thread}`;
     const concurrent = postgres(databaseUrl, { max: 1 });
     const outcomes = await Promise.all([
       retire(),
