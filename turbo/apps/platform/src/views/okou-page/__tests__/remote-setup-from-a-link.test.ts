@@ -191,40 +191,40 @@ test.each([
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-test("Opening Remote control lists newly configured devices while the selector shows its previous count", async () => {
+test("Opening Remote devices lists newly configured devices while the selector shows its previous count", async () => {
   const original = vncHost(91, "Night desk");
   const inventory = mockRemoteInventory(context, { vnc: [original] });
   await setupPage({ context, path: "/connectors?scope=connected" });
   const control = await screen.findByTestId("connectors-scope-remote-control");
   await waitFor(() => {
-    expect(control).toHaveTextContent(/Remote control\s*1/);
+    expect(control).toHaveTextContent(/Remote devices\s*1/);
   });
   inventory.vnc.push(vncHost(92, "Day desk"));
   click(control);
   await screen.findByText("Day desk");
   expect(screen.getByText("Night desk")).toBeVisible();
   expect(control).toHaveAttribute("aria-checked", "true");
-  expect(control).toHaveTextContent(/Remote control\s*1/);
+  expect(control).toHaveTextContent(/Remote devices\s*1/);
   click(await findFastControl("link", "Workflows"));
   await screen.findByRole("heading", { name: "Workflows" });
   click(await findFastControl("link", "Connectors"));
   const returned = await screen.findByTestId("connectors-scope-remote-control");
   await waitFor(() => {
-    expect(returned).toHaveTextContent(/Remote control\s*2/);
+    expect(returned).toHaveTextContent(/Remote devices\s*2/);
   });
   click(returned);
   await screen.findByText("Night desk");
   expect(screen.getByText("Day desk")).toBeVisible();
 });
 
-test("remote-control-guided-setup-117 Selecting Remote control keeps the old SSH count until the inventory summary arrives", async () => {
+test("remote-control-guided-setup-117 Selecting Remote devices keeps the old SSH count until the inventory summary arrives", async () => {
   const inventory = mockRemoteInventory(context, {
     ssh: [sshHost(17, "Warehouse scanner")],
   });
   await setupPage({ context, path: "/connectors?scope=custom" });
   const remote = await screen.findByTestId("connectors-scope-remote-control");
   await waitFor(() => {
-    expect(remote).toHaveTextContent(/Remote control\s*1$/);
+    expect(remote).toHaveTextContent(/Remote devices\s*1$/);
   });
   expect(remote).toHaveAttribute("aria-checked", "false");
   const release = context.mocks.deferred<void>();
@@ -242,10 +242,10 @@ test("remote-control-guided-setup-117 Selecting Remote control keeps the old SSH
   await refreshing.promise;
   await screen.findByRole("listitem", { name: "Shipping terminal" });
   expect(remote).toHaveAttribute("aria-checked", "true");
-  expect(remote).toHaveTextContent(/Remote control\s*1$/);
+  expect(remote).toHaveTextContent(/Remote devices\s*1$/);
   release.resolve();
   await waitFor(() => {
-    expect(remote).toHaveTextContent(/Remote control\s*2$/);
+    expect(remote).toHaveTextContent(/Remote devices\s*2$/);
   });
   expect(
     screen.getByRole("listitem", { name: "Warehouse scanner" }),

@@ -927,7 +927,7 @@ function ConnectorEmptyState({ message }: { readonly message: string }) {
 }
 
 /**
- * Connected built-in and custom connector accounts. Remote control and private
+ * Connected built-in and custom connector accounts. Remote devices and private
  * network resources have their own scopes.
  */
 function ConnectorsConnectedPanel({

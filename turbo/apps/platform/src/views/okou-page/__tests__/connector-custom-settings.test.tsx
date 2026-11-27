@@ -293,7 +293,7 @@ test("connectors-directory-custom-002 searching Acme groups both connectors by s
   }
   expect(screen.queryByText(/No connectors matching/)).not.toBeInTheDocument();
 });
-test("connectors-directory-custom-009 Remote control keeps the custom directory off both surfaces", async () => {
+test("connectors-directory-custom-009 Remote devices keeps the custom directory off both surfaces", async () => {
   reports();
   await setupPage({ context, path: "/connectors" });
   await findButton("Connect GitHub");

@@ -164,7 +164,7 @@ test("creates an empty device and moves an existing channel from the directory",
     { channelId, deviceId: createdIds[0], kind: "ssh" },
   ]);
   click(await findFastControl("radio", "Connected"));
-  click(await findFastControl("radio", /^Remote control/));
+  click(await findFastControl("radio", /^Remote devices/));
   await findFastControl("button", "Add device");
   expect(
     screen.queryByRole("heading", { name: "Channels" }),
