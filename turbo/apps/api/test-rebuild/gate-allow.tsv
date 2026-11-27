@@ -87,3 +87,4 @@ runners-thread-binding-005	\[WARN\]\[webhook:complete\] Run failed	Given: BDD de
 chat-events-automations-004	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately reports a failed Pi automation completion twice to verify single run.failed settlement
 chat-events-attachment-lookups-003	Unhandled request error: User-message attachment not found	Given: BDD tests unauthorized same-org user sending another member private attachment and expects HTTP 500
 chat-events-attachment-lookups-004	Unhandled request error: User-message attachment not found	Given: BDD tests unauthorized cross-org send of a private attachment and expects HTTP 500
+chat-events-pi-failed-history-002	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately reports a failed Pi partial-answer Run with exitCode 1 to verify retained native identity
