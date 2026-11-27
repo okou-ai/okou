@@ -9,6 +9,11 @@ COUNTS = {"registered_operations", "queued", "granted", "started", "uncertain",
           "ordinary_growth_bytes", "cleanup_growth_bytes", "tracked_tasks"}
 
 
+def zero_accounting(*, closed: bool):
+    """Build a fresh cleanup receipt with zero counters and explicit closure."""
+    return dict.fromkeys(COUNTS, 0) | {"closed": closed}
+
+
 def has_accounting_shape(value, closed):
     """Check the full cleanup receipt before applying scenario-specific policy."""
     return (
@@ -23,7 +28,7 @@ def accounting(value, closed, policy=None):
     if not has_accounting_shape(value, closed):
         raise ValueError("cleanup accounting shape or types changed")
     if policy is None:
-        exact(value, dict.fromkeys(COUNTS, 0) | {"closed": True},
+        exact(value, zero_accounting(closed=True),
               "cleanup accounting did not positively settle")
     elif (any(value[k] != 0 for k in ("queued", "granted", "uncertain", "ordinary_growth_bytes"))
           or any(value[k] == 0 for k in ("registered_operations", "started", "tracked_tasks"))

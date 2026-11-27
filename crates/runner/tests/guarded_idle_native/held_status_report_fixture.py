@@ -35,7 +35,7 @@ def prepare_status_failure(test):
             event.update(case=case, monotonic_ns=at(clock), unix_ns=at(clock) + 1000)
             test.samples.append(report_test.residency_sample_at(sample, at(clock) + 1))
         test.events.extend(terminal)
-        accounts = {k: 0 for k in cleanup.COUNTS} | {"closed": True}
+        accounts = cleanup.zero_accounting(closed=True)
         active = accounts | {
             "registered_operations": 1,
             "started": 1,
@@ -189,7 +189,7 @@ def prepare_speculative_fault(test):
         }
         empty = {k: v for k, v in initial.items() if k != "idle_sandboxes"}
         empty["updated_at"] = "2026-10-19T01:00:02Z"
-        zero = dict.fromkeys(cleanup.COUNTS, 0) | {"closed": True}
+        zero = cleanup.zero_accounting(closed=True)
         active = zero | {
             "registered_operations": 1,
             "started": 1,
@@ -491,7 +491,7 @@ def prepare_batch_replacement(test, cases):
             )
             test.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
         test.events.extend(terminal)
-        zero = dict.fromkeys(cleanup.COUNTS, 0) | {"closed": False}
+        zero = cleanup.zero_accounting(closed=False)
         active = zero | {
             "registered_operations": 3,
             "queued": 2,
