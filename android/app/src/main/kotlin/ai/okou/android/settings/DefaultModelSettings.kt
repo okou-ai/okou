@@ -15,6 +15,7 @@ import ai.okou.android.api.generated.UpdateDefaultModelPreferenceServiceTier
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
+import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -124,7 +125,7 @@ internal enum class DefaultModelNotice {
 internal data class DefaultModelSave(
     val request: UpdateDefaultModelPreference,
     val failedAttempts: Int = 0,
-    val lastFailureMillis: Long? = null,
+    val lastFailureElapsedMillis: Long? = null,
     val retryDelayMillis: Long? = null,
 ) {
     val canRetry: Boolean
@@ -174,6 +175,7 @@ internal class DefaultModelSettings(
     private val store: DefaultModelStore,
     private val authorized: () -> Boolean,
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val monotonicMillis: () -> Long = SystemClock::elapsedRealtime,
     private val onFailure: (Exception) -> Unit,
 ) {
     private val mutable = MutableStateFlow(DefaultModelState())
@@ -404,7 +406,13 @@ internal class DefaultModelSettings(
         val save = current.save ?: return
         // Reopening Settings can cancel the refresh while the same write still needs readback.
         mutable.value =
-            current.copy(save = save.copy(lastFailureMillis = nowMillis(), retryDelayMillis = wait))
+            current.copy(
+                save =
+                    save.copy(
+                        lastFailureElapsedMillis = monotonicMillis(),
+                        retryDelayMillis = wait,
+                    ),
+            )
     }
 
     private suspend fun refreshCatalog() {
@@ -474,7 +482,7 @@ internal class DefaultModelSettings(
             val retryMillis = preferenceRequests.withLock {
                 if (!canSave()) return
                 val save = checkNotNull(mutable.value.save)
-                val elapsed = save.lastFailureMillis?.let { nowMillis() - it }
+                val elapsed = save.lastFailureElapsedMillis?.let { monotonicMillis() - it }
                 val delay = save.retryDelayMillis
                 if (elapsed != null && delay != null && elapsed in 0 until delay) {
                     return@withLock delay - elapsed
@@ -607,7 +615,7 @@ internal class DefaultModelSettings(
                 save =
                     save.copy(
                         failedAttempts = save.failedAttempts + 1,
-                        lastFailureMillis = nowMillis(),
+                        lastFailureElapsedMillis = monotonicMillis(),
                         retryDelayMillis = wait,
                     ),
             )

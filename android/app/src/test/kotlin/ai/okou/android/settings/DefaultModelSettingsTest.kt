@@ -55,8 +55,19 @@ class DefaultModelSettingsTest {
         scope: CoroutineScope = backgroundScope,
         identity: WorkspaceIdentity = api.identity,
         service: WorkspaceSession = api.service,
+        nowMillis: () -> Long = { currentTime },
         onFailure: (Exception) -> Unit = { throw it },
-    ) = DefaultModelSettings(scope, service, identity, store, { true }, { currentTime }, onFailure)
+    ) =
+        DefaultModelSettings(
+            scope,
+            service,
+            identity,
+            store,
+            { true },
+            nowMillis,
+            monotonicMillis = { currentTime },
+            onFailure = onFailure,
+        )
 
     private fun store(scope: CoroutineScope): DefaultModelStore {
         val file = temporary.newFolder().resolve("default-model.preferences_pb")
@@ -703,7 +714,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun reopeningSettingsKeepsTheScheduledReadbackWait() = runTest {
+    fun reopeningSettingsKeepsTheScheduledReadbackWaitAfterAClockCorrection() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val original = api.service.defaultModelPreference()
@@ -731,7 +742,14 @@ class DefaultModelSettingsTest {
                         return original.copy(selectedModel = update.selectedModel)
                     }
                 }
-            val model = model(api, service = remote, onFailure = {})
+            var wallClockOffset = 0L
+            val model =
+                model(
+                    api,
+                    service = remote,
+                    nowMillis = { currentTime + wallClockOffset },
+                    onFailure = {},
+                )
             model.openAfterSync()
             model.select(null)
             advanceTimeBy(6_000)
@@ -745,6 +763,7 @@ class DefaultModelSettingsTest {
             assertEquals(expectedReads, reads)
 
             advanceTimeBy(400)
+            wallClockOffset = -60_000L
             model.showSettings(SettingsDestination.Overview)
             runCurrent()
             assertEquals(expectedReads, reads)
