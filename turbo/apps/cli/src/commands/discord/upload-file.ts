@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { open } from "node:fs/promises";
 import { basename } from "node:path";
 import { MIMEType } from "node:util";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import {
   MAX_DISCORD_FILE_SIZE_BYTES,
   type DiscordUploadInitResponse,
@@ -141,40 +141,33 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
     size: content.byteLength,
     json: options.json,
   };
-  console.warn(`Upload operation: ${operationId}`);
+  // External IM delivery is fire-and-forget; generate a fresh operationId for
+  // Release 1 backend compatibility without exposing a retry state machine.
+  const initialized = await initDiscordFileUpload({
+    filename,
+    length: content.byteLength,
+    contentType,
+    checksumSha256: createHash("sha256").update(content).digest("hex"),
+    operationId,
+    ...destination,
+    ...(options.guildId === undefined ? {} : { guildId: options.guildId }),
+    ...(options.text === undefined ? {} : { comment: options.text }),
+  });
+  await uploadCanonicalBody(initialized, contentType, content);
+  const operation = { assetId: initialized.assetId, operationId };
+  const materialized = await materializeDiscordFileUpload(operation);
+  if (materialized.delivery.status === "delivered") {
+    printDelivery(materialized, upload);
+    return;
+  }
+  let completed: DiscordUploadMaterializeResponse;
   try {
-    const initialized = await initDiscordFileUpload({
-      filename,
-      length: content.byteLength,
-      contentType,
-      checksumSha256: createHash("sha256").update(content).digest("hex"),
-      operationId,
-      ...destination,
-      ...(options.guildId === undefined ? {} : { guildId: options.guildId }),
-      ...(options.text === undefined ? {} : { comment: options.text }),
-    });
-    await uploadCanonicalBody(initialized, contentType, content);
-    const operation = { assetId: initialized.assetId, operationId };
-    const materialized = await materializeDiscordFileUpload(operation);
-    if (materialized.delivery.status === "delivered") {
-      printDelivery(materialized, upload);
-      return;
-    }
-    let completed: DiscordUploadMaterializeResponse;
-    try {
-      completed = await completeDiscordFileUpload(operation);
-    } catch (error) {
-      // Publication has succeeded even if the delivery response was lost.
-      printDelivery(materialized, upload);
-      throw error;
-    }
-    printDelivery(completed, upload);
+    completed = await completeDiscordFileUpload(operation);
   } catch (error) {
-    console.warn(
-      `To resume publication or check delivery status, reuse the same file and destination with --operation-id ${operationId}; delivery will not be resent.`,
-    );
+    printDelivery(materialized, upload);
     throw error;
   }
+  printDelivery(completed, upload);
 }
 
 export const uploadFileCommand = new Command()
@@ -196,7 +189,12 @@ export const uploadFileCommand = new Command()
   )
   .option("-t, --text <text>", "Comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
-  .option("--operation-id <uuid>", "Reuse a previous upload operation")
+  .addOption(
+    new Option(
+      "--operation-id <uuid>",
+      "Deprecated: internal upload operation ID (kept for script compatibility)",
+    ).hideHelp(),
+  )
   .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
@@ -214,14 +212,11 @@ Output:
 
 Notes:
   - Canonical publication completes before Discord delivery begins.
-  - Reuse the same file, destination and --operation-id to resume publication or
-    check a recorded delivery; it will never resend that delivery.
+  - External delivery is fire-and-forget; check delivery.status in --json output.
   - Uses server-side bot credentials; no Discord token is needed locally.
   - Requires your verified Discord binding; guild targets require shared access.
   - Recipient DMs follow Discord privacy settings and grant no private read access.
   - Like okou slack upload-file, the command exits 0 whenever the server reports a
-    delivery status, even if Discord delivery failed or is pending. Check
-    delivery.status in the --json output. To send again after a failed delivery,
-    start a new upload operation.`,
+    delivery status, even if Discord delivery failed or is pending.`,
   )
   .action(withErrorHandler(uploadFile));

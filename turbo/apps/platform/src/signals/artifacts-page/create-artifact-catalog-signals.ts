@@ -44,9 +44,6 @@ export type CatalogArtifact = ArtifactSummary & {
    */
   readonly thumbnailLoad: ImageLoadSignals;
   readonly thumbnailUrl$: Computed<Promise<string | null>>;
-  /** Original video graph reused when this card opens in the viewer. */
-  readonly videoPreview: AttachmentPreviewSignals | null;
-  readonly videoUrl$: Computed<Promise<string | null>>;
 };
 
 export interface ArtifactCatalogPage {
@@ -101,9 +98,6 @@ function withThumbnailLoad(
   return {
     identity,
     artifacts: page.artifacts.map((artifact) => {
-      const videoPreview = artifact.videoSourceUrl
-        ? createAttachmentPreviewSignals(artifact.videoSourceUrl)
-        : null;
       const thumbnailPreview = artifact.thumbnail
         ? createAttachmentPreviewSignals(artifact.thumbnail.url, {
             thumbnailSize: { width: ARTIFACT_CARD_THUMBNAIL_WIDTH_PX },
@@ -144,10 +138,6 @@ function withThumbnailLoad(
           }
           // Public covers and share aliases keep their existing resolver.
           return await get(thumbnailPreview.thumbnailUrl$);
-        }),
-        videoPreview,
-        videoUrl$: computed(async (get) => {
-          return videoPreview ? await get(videoPreview.resourceUrl$) : null;
         }),
       };
     }),
@@ -533,10 +523,11 @@ function createCatalogPagingSignals({ identity$, firstPage$ }: CatalogSource) {
   return { catalog$, pagingState$, loadMore$, resetPages$ };
 }
 
-function createCatalogSelectionSignals(
-  catalog$: Computed<Promise<ArtifactCatalogPage>>,
-  { reloadVersion$, chatThreadId, driveAccountRevision$ }: CatalogSource,
-): ArtifactCatalogSelection {
+function createCatalogSelectionSignals({
+  reloadVersion$,
+  chatThreadId,
+  driveAccountRevision$,
+}: CatalogSource): ArtifactCatalogSelection {
   const previews = createAttachmentPreviewRegistry();
   const internalDetailVersion$ = state(0);
   const reloadSelectedArtifactDetail$ = command(({ set }) => {
@@ -596,26 +587,10 @@ function createCatalogSelectionSignals(
         return null;
       }
       const source = artifactDetailPreview(detail);
-      let preview: AttachmentPreviewSignals | undefined;
-      if (detail.kind === "video" || detail.kind === "avatar") {
-        const catalog = await get(catalog$);
-        signal.throwIfAborted();
-        const card = catalog.artifacts.find((artifact) => {
-          return artifact.id === detail.id;
-        });
-        if (
-          card?.videoPreview &&
-          card.videoSourceUrl &&
-          publicAttachmentUrl(card.videoSourceUrl) === source.url
-        ) {
-          preview = card.videoPreview;
-        }
-      }
       const registered = set(previews.register$, {
         url: source.url,
         contentType: source.contentType,
         refreshOnArtifactChange: shouldRefreshArtifactPreview(source.kind),
-        ...(preview ? { preview } : {}),
       });
       if (get(internalSelectedArtifactId$) === artifactId) {
         set(internalSelectedArtifactPreview$, registered);
@@ -682,7 +657,7 @@ function createCatalogView(source: CatalogSource) {
     loadMore$,
     loadThroughArtifact$,
     resetPages$,
-    ...createCatalogSelectionSignals(catalog$, source),
+    ...createCatalogSelectionSignals(source),
   };
 }
 

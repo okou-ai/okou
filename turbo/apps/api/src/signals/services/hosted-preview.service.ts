@@ -25,6 +25,7 @@ import {
   privateArtifactUrl,
   privateArtifactsBucket,
 } from "./private-artifact-storage.service";
+import { dualWriteFileUpdate$ } from "./files-dual-write.service";
 
 /** Original-byte identity; never shares an allocation with normalized covers. */
 export function hostedPreviewArtifactId(
@@ -130,6 +131,16 @@ const markHostedPreviewReady$ = command(
     if (!completed) {
       throw new Error("Hosted preview ownership record is unavailable");
     }
+    await set(
+      dualWriteFileUpdate$,
+      {
+        id: completed.id,
+        contentType: args.contentType,
+        sizeBytes: args.size,
+        origin: "system",
+      },
+      signal,
+    );
     return completed.id;
   },
 );
@@ -229,6 +240,7 @@ export const completeHostedPreview$ = command(
         filename: `preview-${args.preview.sha256}.${args.preview.contentType === "image/png" ? "png" : "jpg"}`,
         contentType: args.preview.contentType,
         size: bytes.length,
+        purpose: "hosted-preview",
       },
       signal,
     );

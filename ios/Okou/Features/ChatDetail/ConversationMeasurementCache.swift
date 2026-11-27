@@ -4,12 +4,18 @@ import SwiftUI
 @MainActor
 final class ConversationMeasurementCache {
   struct Measurement: Equatable {
-    let row: ConversationCollectionRow
+    var row: ConversationCollectionRow
     let width: CGFloat
     let category: UIContentSizeCategory
     let environment: ConversationHeightDiskCache.Layout
     var height: CGFloat
     var diskKey: ConversationHeightDiskCache.Key?
+
+    func withRow(_ row: ConversationCollectionRow) -> Self {
+      var copy = self
+      copy.row = row
+      return copy
+    }
   }
 
   let namespace: [String]?
@@ -26,10 +32,10 @@ final class ConversationMeasurementCache {
     for row: ConversationCollectionRow, width: CGFloat, category: UIContentSizeCategory,
     environment: ConversationHeightDiskCache.Layout
   ) -> Measurement? {
-    guard let value = entries[row.id], value.row == row, value.width == width,
-      value.category == category, value.environment == environment
+    guard let value = entries[row.id], value.row.hasSameMeasuredLayout(as: row),
+      value.width == width, value.category == category, value.environment == environment
     else { return nil }
-    return value
+    return value.withRow(row)
   }
 
   func store(_ measurement: Measurement) {

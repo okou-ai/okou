@@ -79,7 +79,6 @@ async function followOrganizationRedirect(entry: string) {
     path: entry,
     host,
     auth: member(),
-    sharedWorkerTestTransport: "message-port",
   });
   await waitFor(() => {
     expect(window.location.pathname).toBe("/sign-in/tasks/choose-organization");
@@ -92,7 +91,6 @@ async function followOrganizationRedirect(entry: string) {
     path: next.pathname + next.search + next.hash,
     host: next.host,
     auth: member(),
-    sharedWorkerTestTransport: "message-port",
   });
   const form = await screen.findByTestId("clerk-sign-in");
   expect(form).toBeVisible();
@@ -126,7 +124,6 @@ test("integration-continuation-039 An external Telegram-looking return leaves th
     host,
     auth: null,
     path: "/sign-in/tasks/choose-organization?" + query,
-    sharedWorkerTestTransport: "message-port",
   });
   await expect(screen.findByTestId("clerk-sign-in")).resolves.toHaveAttribute(
     "data-clerk-force-redirect-url",

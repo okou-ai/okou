@@ -231,17 +231,18 @@ internal interface CanonicalApi {
         @Query("hostname") `queryHostname`: String,
     ): Response<ArtifactSitePreview>
 
-    @POST("/api/artifact-shares/status")
-    suspend fun `artifactShareStatus`(
+    @GET("/api/artifacts/{artifactId}/visibility")
+    suspend fun `artifactVisibility`(
         @Header("Authorization") token: String,
-        @Body body: ArtifactShareTarget,
-    ): Response<ArtifactShareStatus>
+        @Path("artifactId") `pathArtifactId`: String,
+    ): Response<ArtifactVisibility>
 
-    @PUT("/api/artifact-shares")
-    suspend fun `updateArtifactShare`(
+    @PATCH("/api/artifacts/{artifactId}/visibility")
+    suspend fun `updateArtifactVisibility`(
         @Header("Authorization") token: String,
-        @Body body: ArtifactShareUpdate,
-    ): Response<ArtifactShareStatus>
+        @Path("artifactId") `pathArtifactId`: String,
+        @Body body: ArtifactVisibilityUpdate,
+    ): Response<ArtifactVisibility>
 
     @GET("/api/host/sites/{publicSlug}/url")
     suspend fun `artifactSiteUrl`(
@@ -249,19 +250,6 @@ internal interface CanonicalApi {
         @Path("publicSlug") `pathPublicSlug`: String,
         @Query("hostname") `queryHostname`: String,
     ): Response<ArtifactSiteUrl>
-
-    @GET("/api/host/sites/{siteId}/visibility")
-    suspend fun `artifactSiteVisibility`(
-        @Header("Authorization") token: String,
-        @Path("siteId") `pathSiteId`: String,
-    ): Response<ArtifactSiteVisibility>
-
-    @PATCH("/api/host/sites/{siteId}/visibility")
-    suspend fun `updateArtifactSiteVisibility`(
-        @Header("Authorization") token: String,
-        @Path("siteId") `pathSiteId`: String,
-        @Body body: ArtifactSiteVisibilityUpdate,
-    ): Response<ArtifactSiteVisibility>
 
     @GET("/api/connectors/connected")
     suspend fun `connectedConnectors`(

@@ -40,7 +40,6 @@ async function openConversation(
   options: {
     arrange?: (request: ReturnType<typeof installBrowserRequest>) => void;
     initial?: Parameters<typeof installBrowserRequest>[2];
-    transport?: "message-port";
     startPath?: string;
   } = {},
 ) {
@@ -63,7 +62,6 @@ async function openConversation(
     context,
     host: "app.okou.ai",
     path: options.startPath ?? "/chats/" + threadId,
-    sharedWorkerTestTransport: options.transport,
   });
   return request;
 }
@@ -425,13 +423,12 @@ function managedBrowser(initial: "active" | "suspended" = "active") {
   return {
     tid,
     cdp,
-    open: (panel: boolean, transport: "direct" | "message-port" = "direct") => {
+    open: (panel: boolean) => {
       return setupPage({
         context,
         host: "app.okou.ai",
         path: "/chats/" + tid,
         featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: panel },
-        sharedWorkerTestTransport: transport,
       });
     },
     pause: () => {
@@ -465,7 +462,7 @@ test("chat-capability-browser-actions-002 a delayed subscription and interrupted
     "user:test-user-123",
     "browserSessionChanged",
   );
-  await browser.open(true, "message-port");
+  await browser.open(true);
   await checkPreview("Live", "research-first.png?sig=first");
   await subscription.started;
   browser.pause();
@@ -483,9 +480,9 @@ test("chat-capability-browser-actions-002 a delayed subscription and interrupted
     threadId: browser.tid,
   });
   await checkPreview("Stopped", "research-paused.png?X-Amz-Credential=");
-  context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
+  context.mocks.ably.triggerConnectionState("suspended");
   browser.resume();
-  context.mocks.ably.triggerSharedWorkerReconnect();
+  context.mocks.ably.triggerReconnect();
   await waitFor(() => {
     const restored = queryButton("Open Research browser")!;
     expect(within(restored).getByText("Live")).toBeInTheDocument();
@@ -626,7 +623,6 @@ test.each(["explained", "historical"] as const)(
       [originalUrl.href, otherUrl.href],
       {
         initial: version === "explained" ? task : {},
-        transport: "message-port",
         arrange(primary) {
           context.mocks.api(
             browserUserActionsContract.get,

@@ -35,7 +35,6 @@ test("sidebar-account-menu-006 Help offers the public documentation in a separat
     path: "/",
     host: "app.okou.ai",
     auth: { user: { id: "alex", fullName: "Alex Rivera" } },
-    sharedWorkerTestTransport: "message-port",
   });
   const rail = await screen.findByTestId("labeled-nav-rail");
   const account = await within(rail).findByLabelText("Alex Rivera");
@@ -291,7 +290,6 @@ function account(role: "member" | "admin") {
         memberships: [{ id: org.id, role: "org:" + role }],
       },
     },
-    sharedWorkerTestTransport: "message-port",
   });
 }
 

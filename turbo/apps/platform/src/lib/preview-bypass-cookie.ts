@@ -1,7 +1,6 @@
 import { okouAppWorkerPreviewJobRef } from "@okouai/core/platform-service-origin";
 
-import { VERCEL_PROTECTION_BYPASS_NAME } from "./preview-bypass-name.ts";
-
+const VERCEL_PROTECTION_BYPASS_NAME = "x-vercel-protection-bypass";
 const PREVIEW_BYPASS_COOKIE_MAX_AGE_SECONDS = 60 * 60;
 const PREVIEW_API_ROOT_DOMAIN = "vm6.ai";
 const OKOU_PREVIEW_ROOT_DOMAIN = "omby.ai";

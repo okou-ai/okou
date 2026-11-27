@@ -73,7 +73,7 @@ internal class ArtifactApiFixture(
     val video =
         Item(
             "10000000-1000-4000-8000-000000000006",
-            "video",
+            "file",
             title("Release walkthrough", "发布演示视频"),
             date(-6),
         )
@@ -303,14 +303,9 @@ internal class ArtifactApiFixture(
                                 """{"id":"${item.id}","filename":"$filename","contentType":"$type","size":40,"url":"$path","previewImageUrl":null}""",
                             ),
                         )
-                        if (item == image || item == video) {
-                            put("model", kotlinx.serialization.json.JsonNull)
-                        }
                         if (item == image) {
+                            put("model", kotlinx.serialization.json.JsonNull)
                             put("provider", kotlinx.serialization.json.JsonNull)
-                        }
-                        if (item == video) {
-                            put("durationSeconds", 1)
                         }
                     }
                 }

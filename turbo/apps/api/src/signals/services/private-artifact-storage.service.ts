@@ -14,6 +14,7 @@ import {
   linkLayoutSegmentSchema,
 } from "@okouai/api-contracts/contracts/link-layout";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import type { FileOrigin } from "@okouai/db/schema/file";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { RunUploadedFileMetadata } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 
@@ -32,8 +33,28 @@ import {
   queueChangedArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
+import {
+  dualWriteFileRecord$,
+  dualWriteFileUpdate$,
+} from "./files-dual-write.service";
 
 const PRIVATE_STORAGE = "private-artifact-v1";
+export type PrivateArtifactPurpose =
+  "artifact" | "hosted-preview" | "browser-screenshot" | "marketing-handoff";
+
+function fileOriginForPrivateArtifact(
+  purpose: PrivateArtifactPurpose | undefined,
+  runId: string | undefined,
+): FileOrigin {
+  if (
+    purpose === "hosted-preview" ||
+    purpose === "browser-screenshot" ||
+    purpose === "marketing-handoff"
+  ) {
+    return "system";
+  }
+  return purpose === "artifact" || runId !== undefined ? "agent" : "user";
+}
 export type PrivateArtifactUploadProtocol =
   | { readonly kind: "fixed-size-put-v1"; readonly size: number }
   | { readonly kind: "multipart-v1" };
@@ -188,9 +209,9 @@ export const allocatePrivateArtifactLocation$ = command(
     args: {
       readonly id: string;
       readonly filename: string;
-      // Declared by the uploader. Only an artifact output belongs in the
-      // catalog; ordinary attachments and processing inputs omit it.
-      readonly purpose?: "artifact";
+      // Declared by the uploader. Only `purpose: "artifact"` belongs in the
+      // catalog; ordinary attachments and system-process files do not.
+      readonly purpose?: PrivateArtifactPurpose;
     },
     signal: AbortSignal,
   ) => {
@@ -255,7 +276,7 @@ export const allocatePrivateArtifact$ = command(
       readonly contentType: string;
       readonly size: number;
       readonly id?: string;
-      readonly purpose?: "artifact";
+      readonly purpose?: PrivateArtifactPurpose;
       readonly runId?: string;
       readonly uploadProtocol?: PrivateArtifactUploadProtocol;
     },
@@ -325,6 +346,20 @@ export const allocatePrivateArtifact$ = command(
         throw new Error("Private artifact identity belongs to another object");
       }
     }
+    await set(
+      dualWriteFileRecord$,
+      {
+        id,
+        orgId: args.orgId,
+        ownerUserId: args.userId,
+        storageKey: key,
+        filename: args.filename,
+        contentType: args.contentType,
+        sizeBytes: args.size,
+        origin: fileOriginForPrivateArtifact(args.purpose, args.runId),
+      },
+      signal,
+    );
     return location;
   },
 );
@@ -449,6 +484,15 @@ export const completePrivateArtifact$ = command(
     if (!outcome) {
       throw new Error("Private artifact completion returned no outcome");
     }
+    await set(
+      dualWriteFileUpdate$,
+      {
+        id: args.id,
+        contentType: args.contentType,
+        sizeBytes: args.size,
+      },
+      signal,
+    );
     if (outcome.changed) {
       await set(syncArtifactCatalogForFile$, args.id, signal);
     }

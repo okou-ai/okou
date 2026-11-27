@@ -12,7 +12,7 @@ import {
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
-import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
+import type { ChatThreadEventQueryResult } from "../../../signals/chat-database/types.ts";
 import {
   mockChatThreadSnapshotResponse,
   type TestContext,

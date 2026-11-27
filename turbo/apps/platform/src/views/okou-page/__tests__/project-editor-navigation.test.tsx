@@ -264,7 +264,6 @@ async function open(
     path: "/",
     auth: chatListAuth(848),
     ...page,
-    sharedWorkerTestTransport: "message-port",
     cachedChatThreadEvents: cachedChatListEvents(848, threads),
   });
 }

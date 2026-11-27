@@ -8,7 +8,7 @@ import type {
 } from "@okouai/api-contracts/contracts/integrations-wechat";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
-import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
 import { accept } from "../../lib/accept.ts";
 import { resetSignal, waitLoopUntil } from "../utils.ts";
 const reload$ = state(0);
@@ -33,7 +33,7 @@ export const wechatStatus$ = computed(async (get) => {
   if (!(await get(featureSwitches$))[FeatureSwitchKey.WechatIntegration]) {
     return null;
   }
-  await get(runtimeAuthenticatedIdentity$);
+  await get(authenticatedIdentity$);
   const client = get(apiClient$)(integrationsWechatContract, {
     apiBase: "api",
   });

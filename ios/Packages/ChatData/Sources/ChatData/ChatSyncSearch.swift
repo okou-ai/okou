@@ -65,7 +65,7 @@ public struct ChatSearchArtifact: Decodable, Equatable, Identifiable, Sendable {
   /// As many as the web's search shows.
   public static let searchLimit = 25
   public let id: String
-  /// `file`, `hosted-site`, `image`, `video`, `avatar` or `presentation`.
+  /// `file`, `hosted-site`, `image`, `avatar` or `presentation`.
   public let kind: String
   public let title: String
   public let thumbnail: Thumbnail?

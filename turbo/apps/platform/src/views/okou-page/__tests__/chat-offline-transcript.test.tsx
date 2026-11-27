@@ -10,7 +10,10 @@ import {
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
-import { installChatListStream } from "./chat-list-test-helpers.ts";
+import {
+  chatListEvent,
+  installChatListStream,
+} from "./chat-list-test-helpers.ts";
 import { findComposer } from "./chat-message-experience-test-helpers.ts";
 import {
   RUN_PATH,
@@ -31,6 +34,7 @@ test("chat-offline-cache-003 confirmed absence replaces the remembered chat and 
   installChatListStream(context, {
     caseId: 768,
     snapshot: [],
+    events: [chatListEvent(768, 2, "deleted", thread.id)],
     remoteGate: gate.promise,
   });
   const started = await startPage({
@@ -87,7 +91,6 @@ test("worker-runtime-002 Reopening a conversation reads only rows belonging to t
       context: open,
       path: RUN_PATH,
       auth: member(entry.org),
-      sharedWorkerTestTransport: "message-port",
     });
     await expect(screen.findByText(entry.text)).resolves.toBeVisible();
     cleanup();
@@ -110,7 +113,6 @@ test("worker-runtime-002 Reopening a conversation reads only rows belonging to t
       context: open,
       path: RUN_PATH,
       auth: member(entry.org),
-      sharedWorkerTestTransport: "message-port",
     });
     await page.content;
     await expect(screen.findByText(entry.text)).resolves.toBeVisible();

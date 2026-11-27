@@ -29,7 +29,7 @@ import {
   chatListQuery$,
   setChatListQuery$,
 } from "../../signals/okou-page/sidebar-state.ts";
-import { sidebarActiveThreadIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
+import { sidebarActiveThreadIds$ } from "../../signals/chat-page/chat-thread-indicators.ts";
 import { sidebarUnreadThreadIds$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
   MAX_VISIBLE_SEARCH_RESULTS,

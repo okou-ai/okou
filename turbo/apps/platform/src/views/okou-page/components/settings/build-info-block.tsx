@@ -1,12 +1,11 @@
 import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
-import { useGet, useLoadable } from "ccstate-react";
+import { useLoadable } from "ccstate-react";
 import { Monitor, GitCommit, Package } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@okouai/ui";
 import type { ReactNode } from "react";
 
 import { getBuildCommitSha } from "../../../../lib/build-info.ts";
-import { appVersion$ } from "../../../../signals/app-version.ts";
 import { backendBuildInfo$ } from "../../../../signals/okou-page/settings/build-info.ts";
 
 function formatBuildInfoValue(
@@ -63,7 +62,6 @@ function BuildInfoTarget({
 
 export function BuildInfoBlock() {
   const { t } = useTranslation();
-  const appVersion = useGet(appVersion$);
   const backendBuildInfoLoadable = useLoadable(backendBuildInfo$);
   const loading = backendBuildInfoLoadable.state === "loading";
   const backendBuildInfo =
@@ -80,7 +78,10 @@ export function BuildInfoBlock() {
     getBuildCommitSha(),
     unavailable,
   );
-  const frontendVersion = formatBuildInfoValue(appVersion, unavailable);
+  const frontendVersion = formatBuildInfoValue(
+    __OKOU_APP_VERSION__,
+    unavailable,
+  );
   const backendCommitSha = loading ? (
     <LoadingSkeleton variant="text" label={loadingLabel} />
   ) : (

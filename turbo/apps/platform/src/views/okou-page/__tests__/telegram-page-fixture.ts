@@ -54,7 +54,6 @@ export function openTelegram(context: TestContext, path: string) {
     context,
     host: "app.okou.ai",
     path,
-    sharedWorkerTestTransport: "message-port",
   });
 }
 export async function visitLink(

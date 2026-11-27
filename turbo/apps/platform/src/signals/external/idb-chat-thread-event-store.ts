@@ -1,6 +1,6 @@
 import type { IDBPDatabase } from "idb";
 import { chatThreadEventSchema } from "@okouai/api-contracts/validators/chat-threads";
-import { chatThreadEventQueryResultSchema } from "../../shared-database/data-key.ts";
+import { chatThreadEventQueryResultSchema } from "../chat-database/types.ts";
 import {
   CHAT_THREAD_EVENTS_ORDER_INDEX,
   CHAT_THREAD_EVENTS_STORE,

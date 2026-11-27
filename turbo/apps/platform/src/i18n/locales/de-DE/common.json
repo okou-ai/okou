@@ -499,8 +499,6 @@
         "presentationAria": "Präsentationsartefakte anzeigen",
         "sharedConversation": "Geteilte Unterhaltungen",
         "sharedConversationAria": "Artefakte mit geteilten Unterhaltungen anzeigen",
-        "video": "Videos",
-        "videoAria": "Videoartefakte anzeigen",
         "website": "Websites",
         "websiteAria": "Website-Artefakte anzeigen"
       },
@@ -6109,7 +6107,7 @@
         },
         "indexedDb": {
           "countExplanation": "Die Zählung verwendet schreibgeschützte Transaktionen und liest keine Datensatzinhalte.",
-          "description": "Datensatzanzahlen im lokalen Chat-Cache des Shared Workers prüfen.",
+          "description": "Datensatzanzahlen im lokalen IndexedDB-Chat-Cache prüfen.",
           "loading": "IndexedDB-Speicher wird geladen...",
           "measurementUnavailable": "Snapshot-Messung fehlgeschlagen.",
           "measureSnapshot": "Snapshot messen",
@@ -6448,10 +6446,6 @@
       "browse": "Workflows durchsuchen",
       "description": "Sie wurde möglicherweise verschoben oder der Link ist veraltet. Alles andere ist dort, wo Sie es verlassen haben.",
       "title": "Diese Seite ist nicht hier."
-    },
-    "workerFailure": {
-      "description": "Die Verbindung zu dieser App wurde unterbrochen.",
-      "title": "Verbindung unterbrochen"
     }
   },
   "sharedThread": {

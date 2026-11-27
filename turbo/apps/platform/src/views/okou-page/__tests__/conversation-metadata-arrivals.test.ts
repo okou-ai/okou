@@ -308,7 +308,6 @@ async function sideBySide(failPrimary = false) {
   );
   const page = await startPage({
     context,
-    sharedWorkerTestTransport: "message-port",
     auth: pageOptions.auth,
     cachedChatThreadEvents: { snapshot: null, events: [] },
     path: "/chats/" + left.id + "?sidebar=" + right.id,

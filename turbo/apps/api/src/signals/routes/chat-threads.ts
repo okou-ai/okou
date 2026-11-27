@@ -35,6 +35,7 @@ import {
   chatThreadDetail,
   chatThreadDraftIds,
 } from "../services/chat-thread.service";
+import { recordLegacyArtifactEndpointCall$ } from "../services/legacy-artifact-deprecation-telemetry";
 import { chatSearch } from "../services/chat-search.service";
 import {
   catchUpChatThreadEvents,
@@ -339,6 +340,11 @@ const listChatThreadDraftsInner$ = computed(async (get) => {
 const listChatThreadArtifactsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
+    set(recordLegacyArtifactEndpointCall$, {
+      endpoint: "GET /api/chat-threads/:threadId/artifacts",
+      orgId: auth.orgId,
+      userId: auth.userId,
+    });
     const params = get(pathParamsOf(chatThreadArtifactsContract.list));
     // Native iOS previews use the file inventory independently of Drive.
     const includeDriveStatus =

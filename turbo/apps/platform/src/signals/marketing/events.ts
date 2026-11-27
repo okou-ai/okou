@@ -10,8 +10,8 @@ import {
   startClientTelemetryMeasurement,
 } from "../../lib/client-telemetry.ts";
 import { resolveApiBaseForTarget } from "../api-base.ts";
-import { apiClientRuntime$ } from "../api-client-runtime.ts";
 import { clerk$ } from "../auth.ts";
+import { readClerkToken } from "../clerk-token.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { detach, Reason } from "../utils.ts";
 
@@ -27,7 +27,7 @@ const postEvent$ = command(
     if (!userId || !orgId) {
       throw new Error("Authenticated user and organization are required");
     }
-    const token = await get(apiClientRuntime$).getToken(signal);
+    const token = await readClerkToken(clerk, signal);
     signal.throwIfAborted();
     if (
       clerk.user?.id !== userId ||

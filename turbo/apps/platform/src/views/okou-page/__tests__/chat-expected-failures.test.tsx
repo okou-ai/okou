@@ -23,9 +23,9 @@ test("chat-expected-failures-001 a headerless client upgrade response during cha
       { status: 426 },
     );
   });
-  await expect(
-    setupPage({ context, path: RUN_PATH, sharedWorkerTestTransport: "direct" }),
-  ).rejects.toMatchObject({ status: 426 });
+  await expect(setupPage({ context, path: RUN_PATH })).rejects.toMatchObject({
+    status: 426,
+  });
   await expect(
     screen.findByRole("dialog", { name: "Update required" }),
   ).resolves.toBeInTheDocument();

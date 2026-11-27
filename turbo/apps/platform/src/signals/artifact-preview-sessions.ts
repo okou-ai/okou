@@ -24,6 +24,7 @@ function sameShareSource(
 ) {
   return (
     current?.url === source.url &&
+    current.artifactId === source.artifactId &&
     current.fileId === source.fileId &&
     current.artifactShareIdentity$ === source.artifactShareIdentity$
   );
@@ -58,7 +59,14 @@ export const selectArtifactPreviewSessions$ = command(
       siteSession?.sourceUrl !== source.url &&
       (siteSession || isHostedSiteUrl(source.url))
     ) {
-      set(site.select$, source.url, signal);
+      set(
+        site.select$,
+        {
+          url: source.url,
+          ...(source.artifactId ? { artifactId: source.artifactId } : {}),
+        },
+        signal,
+      );
     }
     const sharing = getArtifactShareScope(surface);
     const currentShare = get(sharing.session$)?.source;
@@ -71,6 +79,7 @@ export const selectArtifactPreviewSessions$ = command(
           sharing.select$,
           {
             url: source.url,
+            artifactId: source.artifactId,
             fileId: source.fileId,
             artifactShareIdentity$: source.artifactShareIdentity$,
           },

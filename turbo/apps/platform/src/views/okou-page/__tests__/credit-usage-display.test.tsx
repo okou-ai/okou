@@ -57,7 +57,6 @@ async function openAnswer(
   await setupPage({
     context,
     path: "/chats/" + threadId,
-    sharedWorkerTestTransport: "message-port",
   });
   await expect(screen.findByText(answer)).resolves.toBeVisible();
 }

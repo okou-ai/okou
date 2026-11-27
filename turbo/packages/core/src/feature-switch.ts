@@ -265,6 +265,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ArtifactUserSharing]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Share artifacts with workspace members through the unified artifact access API.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.HostedSiteCustomDomains]: {
     maintainer: "yuma@okou.ai",
     description:

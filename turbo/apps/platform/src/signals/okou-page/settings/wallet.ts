@@ -4,7 +4,7 @@ import { command, computed, state } from "ccstate";
 import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { runtimeAuthenticatedIdentity$ } from "../../auth-context.ts";
+import { authenticatedIdentity$ } from "../../auth.ts";
 import { setAblyPayloadLoop$ } from "../../realtime.ts";
 import { generateRouterPath } from "../../route.ts";
 import { ROUTES } from "../../route-paths.ts";
@@ -75,7 +75,7 @@ const onWalletChanged$ = command(
     if (!parsed.success) {
       return false;
     }
-    const identity = await get(runtimeAuthenticatedIdentity$);
+    const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
     if (parsed.data.orgId === identity.orgId) {
       set(refreshWalletConnection$);

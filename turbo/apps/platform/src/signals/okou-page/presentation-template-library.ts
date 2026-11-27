@@ -7,7 +7,6 @@ import type {
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import type { SharedDatabaseBridge } from "../../shared-database/bridge.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 
 const presentationTemplatesVersion$ = state(0);
@@ -32,7 +31,7 @@ interface ImportedPresentationTemplateCatalog {
 const importedPresentationTemplateCatalog$ = computed(
   async (get): Promise<ImportedPresentationTemplateCatalog> => {
     get(presentationTemplatesVersion$);
-    // Authentication and the shared bridge must be ready before the first read.
+    // Authentication and realtime setup must be ready before the first read.
     // Each subscription refreshes on attachment and after continuity gaps.
     if (!(await get(presentationTemplatesInitialized$))) {
       return { templates: [] };
@@ -59,12 +58,12 @@ const refreshPresentationTemplates$ = command(({ get, set }) => {
 const acquirePresentationTemplateSubscriptions$ = command(
   async (
     { set },
-    initialization: Promise<SharedDatabaseBridge | null>,
+    initialization: Promise<boolean>,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const bridge = await initialization;
+    const authenticated = await initialization;
     signal.throwIfAborted();
-    if (!bridge) {
+    if (!authenticated) {
       return false;
     }
     for (const scope of ["user", "org"] as const) {
@@ -84,11 +83,7 @@ const acquirePresentationTemplateSubscriptions$ = command(
 );
 
 export const subscribePresentationTemplatesChanged$ = command(
-  (
-    { set },
-    initialization: Promise<SharedDatabaseBridge | null>,
-    signal: AbortSignal,
-  ) => {
+  ({ set }, initialization: Promise<boolean>, signal: AbortSignal) => {
     const subscription = set(
       acquirePresentationTemplateSubscriptions$,
       initialization,

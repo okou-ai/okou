@@ -156,7 +156,6 @@ async function setupPublication(
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    sharedWorkerTestTransport: "message-port",
   });
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription(TOPIC)).toBeTruthy();

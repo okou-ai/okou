@@ -1,6 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
+import UIKit
 import XCTest
 
 @testable import Okou
@@ -194,20 +195,149 @@ final class ConversationProjectionTests: XCTestCase {
     XCTAssertEqual(conversation.streamedOutputs, stream)
   }
 
+  func testLocalSendQueuedAndRunningFooterKeepAvatarOwnershipUntilAssistantOutput() async throws {
+    let gate = HTTPResponseGate()
+    defer { gate.open() }
+    let sendStarted = expectation(description: "Send request reached HTTP")
+    let fixture = ConversationHistoryFixture(
+      rows: [
+        try row(1, type: "input.prompt", text: "First question"),
+        try row(2, text: "First answer"),
+        try row(3, type: "run.completed")
+      ],
+      send: { _ in
+        sendStarted.fulfill()
+        await gate.wait()
+        return ChatHTTPResponse(
+          status: 503, body: "{\"error\":{\"message\":\"Delivery unavailable\"}}")
+      })
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    await conversation.refresh()
+
+    func projectedRows() -> [ConversationCollectionRow] {
+      ConversationRowProjection(
+        conversation: conversation, transcript: conversation.currentTranscript,
+        window: conversation.currentWindow, isSending: conversation.isSending, models: nil
+      ).rows
+    }
+
+    let firstWork = try XCTUnwrap(conversation.history?.workSections.first?.id)
+    XCTAssertEqual(projectedRows().last?.content, .footer(.completed, showsAvatar: false))
+    XCTAssertEqual(projectedRows().filter(\.animatesAvatar).map(\.id), [firstWork])
+
+    conversation.draft = "Follow up"
+    let sendTask = Task { await conversation.send() }
+    addTeardownBlock {
+      gate.open()
+      sendTask.cancel()
+      await sendTask.value
+    }
+    await fulfillment(of: [sendStarted], timeout: 3)
+
+    let pending = try XCTUnwrap(conversation.pending.first)
+    XCTAssertFalse(pending.needsRetry)
+    let optimisticRows = projectedRows()
+    XCTAssertEqual(optimisticRows.last?.content, .footer(.running, showsAvatar: true))
+    XCTAssertEqual(optimisticRows.filter(\.animatesAvatar).map(\.id), ["conversation-bottom"])
+    XCTAssertFalse(
+      optimisticRows.contains {
+        if case .finished = $0.content { return true }
+        return false
+      })
+
+    gate.open()
+    await sendTask.value
+    XCTAssertEqual(conversation.pending.first?.needsRetry, true)
+    XCTAssertEqual(projectedRows().last?.content, .footer(.completed, showsAvatar: false))
+    XCTAssertTrue(projectedRows().filter(\.animatesAvatar).isEmpty)
+
+    // Server accepts the prompt into the queue before assigning a run.
+    fixture.append(
+      try row(4, type: "input.prompt", text: pending.text, eventID: pending.id, runID: nil))
+    await conversation.refresh()
+    XCTAssertEqual(conversation.history?.executionState, .queued)
+    XCTAssertEqual(conversation.messages.last?.isQueued, true)
+    let queuedRows = projectedRows()
+    XCTAssertEqual(queuedRows.last?.content, .footer(.queued, showsAvatar: true))
+    XCTAssertEqual(queuedRows.filter(\.animatesAvatar).map(\.id), ["conversation-bottom"])
+
+    let newer = "60000000-0000-4000-8000-000000000004"
+    fixture.append(
+      try row(
+        5, type: "input.prompt", text: pending.text, runID: newer, revokesEventID: pending.id))
+    await conversation.refresh()
+    XCTAssertEqual(conversation.history?.executionState, .running)
+    let runningRows = projectedRows()
+    XCTAssertEqual(runningRows.last?.content, .footer(.running, showsAvatar: true))
+    XCTAssertEqual(runningRows.filter(\.animatesAvatar).map(\.id), ["conversation-bottom"])
+
+    fixture.append(try row(6, text: "Second answer", runID: newer))
+    await conversation.refresh()
+    let answeredRows = projectedRows()
+    let secondWork = try XCTUnwrap(conversation.history?.workSections.last?.id)
+    XCTAssertEqual(answeredRows.last?.content, .footer(.running, showsAvatar: false))
+    XCTAssertEqual(answeredRows.filter(\.animatesAvatar).map(\.id), [secondWork])
+  }
+
+  func testActiveFooterKeepsStableMeasuredHeightAcrossQueuedRunningAndDynamicType() {
+    let standard = UITraitCollection(preferredContentSizeCategory: .large)
+    let accessible = UITraitCollection(preferredContentSizeCategory: .accessibilityLarge)
+    for traits in [standard, accessible] {
+      XCTAssertEqual(
+        ConversationFooterView.measuredHeight(for: .queued, showsAvatar: true, traits: traits),
+        ConversationFooterView.measuredHeight(for: .running, showsAvatar: true, traits: traits))
+      XCTAssertEqual(
+        ConversationFooterView.measuredHeight(for: .queued, showsAvatar: false, traits: traits),
+        ConversationFooterView.measuredHeight(for: .running, showsAvatar: false, traits: traits))
+    }
+    let standardWithAvatar = ConversationFooterView.measuredHeight(
+      for: .running, showsAvatar: true, traits: standard)
+    let standardWithoutAvatar = ConversationFooterView.measuredHeight(
+      for: .running, showsAvatar: false, traits: standard)
+    XCTAssertGreaterThan(standardWithAvatar, standardWithoutAvatar)
+    let accessibleWithAvatar = ConversationFooterView.measuredHeight(
+      for: .running, showsAvatar: true, traits: accessible)
+    XCTAssertGreaterThan(accessibleWithAvatar, standardWithAvatar)
+
+    let inactiveExpected =
+      ConversationFooterView.topPadding + ConversationFooterView.anchorHeight
+      + ConversationFooterView.bottomPadding
+    for state in [
+      ChatExecutionState.idle, .completed, .failed, .cancelled, .stopping, .recovering
+    ] {
+      XCTAssertEqual(
+        ConversationFooterView.measuredHeight(for: state, showsAvatar: true, traits: standard),
+        inactiveExpected)
+    }
+
+    let animatedFooter = ConversationCollectionRow(
+      content: .footer(.running, showsAvatar: true), animatesAvatar: true)
+    let stillFooter = ConversationCollectionRow(
+      content: .footer(.running, showsAvatar: true), animatesAvatar: false)
+    let queuedFooter = ConversationCollectionRow(
+      content: .footer(.queued, showsAvatar: true), animatesAvatar: true)
+    XCTAssertTrue(animatedFooter.hasSameMeasuredLayout(as: stillFooter))
+    XCTAssertFalse(animatedFooter.hasSameMeasuredLayout(as: queuedFooter))
+  }
+
   private func row(
     _ index: Int, type: String = "output.message", text: String = "",
-    eventID: String? = nil, runID: String = ConversationProjectionTests.runID
+    eventID: String? = nil, runID: String? = ConversationProjectionTests.runID,
+    revokesEventID: String? = nil
   ) throws -> String {
     let payload: [String: Any] =
       type == "input.prompt"
       ? ["userMessage": ["version": 1, "parts": [["type": "text", "text": text]]]]
       : ["content": text]
-    let row: [String: Any] = [
+    var row: [String: Any] = [
       "id": eventID ?? ConversationHistoryFixture.id(index),
       "chatThreadId": ConversationHistoryFixture.threadID, "seqId": index,
-      "eventType": type, "runId": runID, "createdAt": "2026-10-20T00:00:00Z",
+      "eventType": type, "createdAt": "2026-10-20T00:00:00Z",
       "payload": payload
     ]
+    if let runID { row["runId"] = runID }
+    if let revokesEventID { row["revokesEventId"] = revokesEventID }
     return try JSONSerialization.string(withJSONObject: row)
   }
 }

@@ -16,7 +16,7 @@ import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { hostedSiteArtifactDetail } from "../../okou-page/__tests__/chat-navigation-artifact-test-helpers.ts";
-import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { openSharing } from "./site-access-fixtures.ts";
 
 const context = testContext();
@@ -60,8 +60,16 @@ async function openSite(
       isActive: true,
     });
   });
-  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
-    return respond(200, { siteId, visibility: "public", revision: null });
+  context.mocks.api(artifactAccessContract.getVisibility, ({ respond }) => {
+    return respond(200, {
+      artifactId: siteId,
+      kind: "hosted-site",
+      visibility: "public",
+      ownerUrl: link(current),
+      shareUrl: link(current),
+      shortUrl: null,
+      organization: { id: "org_default", name: "Default Org" },
+    });
   });
   context.mocks.api(hostContract.siteBanner, async ({ respond }) => {
     await options.bannerGate;
@@ -253,38 +261,55 @@ async function expectPermission(name: string) {
 }
 
 test("owners search accounts in Share, grant access, and remove a named viewer", async () => {
-  const shareId = "00000000-0000-4000-8000-000000000009";
   const account = {
     userId: "user_viewer",
     name: "Taylor Viewer",
     email: "taylor@example.com",
   };
   let shared = false;
-  context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+  context.mocks.api(artifactAccessContract.listShares, ({ respond }) => {
     return respond(200, {
-      shares: shared ? [{ id: shareId, email: account.email }] : [],
+      shares: shared
+        ? [
+            {
+              userId: account.userId,
+              email: account.email,
+              name: account.name,
+            },
+          ]
+        : [],
     });
   });
-  context.mocks.api(artifactSharingContract.search, ({ query, respond }) => {
-    expect(query.query.toLowerCase()).toContain("ta");
-    return respond(200, { accounts: [account] });
-  });
   context.mocks.api(
-    artifactSharingContract.share,
+    artifactAccessContract.searchShareAccounts,
+    ({ query, respond }) => {
+      expect(query.query.toLowerCase()).toContain("ta");
+      return respond(200, { accounts: [account] });
+    },
+  );
+  context.mocks.api(
+    artifactAccessContract.addShare,
     ({ body, params, respond }) => {
-      expect(params).toMatchObject({ kind: "site", id: invitedSiteId });
-      expect(body.email).toBe(account.email);
+      expect(params).toMatchObject({ artifactId: invitedSiteId });
+      expect(body).toStrictEqual({ userId: account.userId });
       shared = true;
       return respond(200, {
-        share: { id: shareId, email: account.email },
+        share: {
+          userId: account.userId,
+          email: account.email,
+          name: account.name,
+        },
       });
     },
   );
-  context.mocks.api(artifactSharingContract.remove, ({ params, respond }) => {
-    expect(params.shareId).toBe(shareId);
-    shared = false;
-    return respond(200, { removed: shareId });
-  });
+  context.mocks.api(
+    artifactAccessContract.removeShare,
+    ({ params, respond }) => {
+      expect(params.userId).toBe(account.userId);
+      shared = false;
+      return respond(200, { removed: account.userId });
+    },
+  );
   await openSharing(context, {
     siteId: invitedSiteId,
     audience: "private",
@@ -321,23 +346,26 @@ test("owners search accounts in Share, grant access, and remove a named viewer",
   });
 });
 
-test("a complete email can be invited without a matching account and private access includes invitees", async () => {
-  const email = "new-person@example.com";
-  const shareId = "00000000-0000-4000-8000-000000000010";
+test("a complete email can be shared by email fallback and private access includes shared members", async () => {
+  const email = "member-person@example.com";
+  const resolvedUserId = "user_member_person";
   let invited = false;
-  context.mocks.api(artifactSharingContract.search, ({ respond }) => {
-    return respond(200, { accounts: [] });
-  });
-  context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+  context.mocks.api(
+    artifactAccessContract.searchShareAccounts,
+    ({ respond }) => {
+      return respond(200, { accounts: [] });
+    },
+  );
+  context.mocks.api(artifactAccessContract.listShares, ({ respond }) => {
     return respond(200, {
-      shares: invited ? [{ id: shareId, email }] : [],
+      shares: invited ? [{ userId: resolvedUserId, email }] : [],
     });
   });
-  context.mocks.api(artifactSharingContract.share, ({ body, respond }) => {
-    expect(body.email).toBe(email);
+  context.mocks.api(artifactAccessContract.addShare, ({ body, respond }) => {
+    expect(body).toStrictEqual({ email });
     invited = true;
     return respond(200, {
-      share: { id: shareId, email },
+      share: { userId: resolvedUserId, email },
     });
   });
   await openSharing(context, {
@@ -374,19 +402,22 @@ test("email sharing stays hidden until its feature switch is enabled", async () 
 });
 
 test("a limited member search shows a recoverable message while complete email sharing remains available", async () => {
-  context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+  context.mocks.api(artifactAccessContract.listShares, ({ respond }) => {
     return respond(200, { shares: [] });
   });
-  context.mocks.api(artifactSharingContract.search, ({ query, respond }) => {
-    return query.query === "Taylor"
-      ? respond(429, {
-          error: {
-            code: "RATE_LIMITED",
-            message: "Too many website sharing requests. Try again later.",
-          },
-        })
-      : respond(200, { accounts: [] });
-  });
+  context.mocks.api(
+    artifactAccessContract.searchShareAccounts,
+    ({ query, respond }) => {
+      return query.query === "Taylor"
+        ? respond(429, {
+            error: {
+              code: "RATE_LIMITED",
+              message: "Too many website sharing requests. Try again later.",
+            },
+          })
+        : respond(200, { accounts: [] });
+    },
+  );
   await openSharing(context, {
     siteId: invitedSiteId,
     audience: "private",
@@ -411,13 +442,16 @@ test("a limited member search shows a recoverable message while complete email s
 });
 
 test("a limited invitation keeps its email draft and shows no success confirmation", async () => {
-  context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+  context.mocks.api(artifactAccessContract.listShares, ({ respond }) => {
     return respond(200, { shares: [] });
   });
-  context.mocks.api(artifactSharingContract.search, ({ respond }) => {
-    return respond(200, { accounts: [] });
-  });
-  context.mocks.api(artifactSharingContract.share, ({ respond }) => {
+  context.mocks.api(
+    artifactAccessContract.searchShareAccounts,
+    ({ respond }) => {
+      return respond(200, { accounts: [] });
+    },
+  );
+  context.mocks.api(artifactAccessContract.addShare, ({ respond }) => {
     return respond(429, {
       error: {
         code: "RATE_LIMITED",
@@ -451,19 +485,30 @@ test("a limited invitation keeps its email draft and shows no success confirmati
 });
 
 test("people controls stay available in every audience and keep drafts and invitations", async () => {
-  const shareId = "00000000-0000-4000-8000-000000000011";
-  let shares = [{ id: shareId, email: "invited@example.com" }];
-  context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+  const sharedUserId = "user_invited";
+  let shares = [
+    {
+      userId: sharedUserId,
+      email: "invited@example.com",
+    },
+  ];
+  context.mocks.api(artifactAccessContract.listShares, ({ respond }) => {
     return respond(200, { shares });
   });
-  context.mocks.api(artifactSharingContract.search, ({ respond }) => {
-    return respond(200, { accounts: [] });
-  });
-  context.mocks.api(artifactSharingContract.remove, ({ params, respond }) => {
-    expect(params.shareId).toBe(shareId);
-    shares = [];
-    return respond(200, { removed: shareId });
-  });
+  context.mocks.api(
+    artifactAccessContract.searchShareAccounts,
+    ({ respond }) => {
+      return respond(200, { accounts: [] });
+    },
+  );
+  context.mocks.api(
+    artifactAccessContract.removeShare,
+    ({ params, respond }) => {
+      expect(params.userId).toBe(sharedUserId);
+      shares = [];
+      return respond(200, { removed: sharedUserId });
+    },
+  );
   await openSharing(context, {
     siteId: invitedSiteId,
     audience: "private",

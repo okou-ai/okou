@@ -20,8 +20,8 @@ import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale
 import { accept } from "../lib/accept.ts";
 import { ApiError } from "../lib/api-error.ts";
 import { apiClient$ } from "./api-client.ts";
-import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import {
+  authenticatedIdentity$,
   authenticatedSessionKey$,
   clerk$,
   currentOrgInfo$,
@@ -40,7 +40,7 @@ export const tailscaleIdentity$ = computed(async (get) => {
   const sessionKey = get(authenticatedSessionKey$);
   const [user, identity, clerk] = await Promise.all([
     get(user$),
-    get(runtimeAuthenticatedIdentity$),
+    get(authenticatedIdentity$),
     get(clerk$),
   ]);
   if (

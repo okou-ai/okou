@@ -39,7 +39,6 @@ async function visitGeneral(runtime: typeof context) {
         memberships: [{ id: workspace.id, role: "org:admin" }],
       },
     },
-    sharedWorkerTestTransport: "message-port",
   });
   return screen.findByPlaceholderText("Workspace name");
 }

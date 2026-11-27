@@ -17,10 +17,7 @@ import {
 } from "../utils.ts";
 import { monotonicNow } from "../../lib/time.ts";
 import { claimBrowserFailure, detachBrowser } from "./reporting.ts";
-import {
-  captureSentryLogError,
-  sentryLogContext,
-} from "../../lib/sentry-config.ts";
+import { captureSentryLogError, sentryLogContext } from "../../lib/sentry.ts";
 import type { BrowserConnection } from "./browser.ts";
 import { CdpFault } from "./cdp/errors.ts";
 import { diagnostic } from "./viewer/diagnostic.ts";

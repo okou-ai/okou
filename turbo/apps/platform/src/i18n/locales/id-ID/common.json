@@ -498,8 +498,6 @@
         "presentationAria": "Tampilkan artefak presentasi",
         "sharedConversation": "Percakapan yang dibagikan",
         "sharedConversationAria": "Tampilkan artefak percakapan yang dibagikan",
-        "video": "Video",
-        "videoAria": "Tampilkan artefak video",
         "website": "Situs web",
         "websiteAria": "Tampilkan artefak situs web"
       },
@@ -6085,7 +6083,7 @@
         },
         "indexedDb": {
           "countExplanation": "Penghitungan menggunakan transaksi hanya-baca dan tidak membaca isi rekaman.",
-          "description": "Periksa jumlah rekaman dalam cache chat lokal yang dikelola shared worker.",
+          "description": "Periksa jumlah rekaman dalam cache chat lokal IndexedDB.",
           "loading": "Memuat penyimpanan IndexedDB...",
           "measurementUnavailable": "Pengukuran snapshot gagal.",
           "measureSnapshot": "Ukur snapshot",
@@ -6424,10 +6422,6 @@
       "browse": "Jelajahi alur kerja",
       "description": "Mungkin sudah dipindahkan, atau tautannya sudah lama. Semua yang lain masih ada di tempatnya.",
       "title": "Halaman itu tidak ada di sini."
-    },
-    "workerFailure": {
-      "description": "Koneksi ke aplikasi ini terputus.",
-      "title": "Koneksi terputus"
     }
   },
   "sharedThread": {

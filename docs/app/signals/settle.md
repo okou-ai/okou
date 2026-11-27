@@ -69,10 +69,9 @@ it, its failure must stop the flow.
 ## Narrow infrastructure boundaries
 
 A few existing uses translate low-level protocol failures at a real boundary,
-such as the shared-database Worker serializing an error for another tab or an
-IndexedDB transaction being retried once on a fresh connection. They remain as
-waived inventory. A new boundary of that kind needs an explicit design review,
-not a copied waiver.
+such as an IndexedDB transaction being retried once on a fresh connection. They
+remain as waived inventory. A new boundary of that kind needs an explicit design
+review, not a copied waiver.
 
 ## ESLint: frozen legacy inventory, not an exception mechanism
 

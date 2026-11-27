@@ -27,7 +27,6 @@ test("platform-direct-bridge-001 The Debug panel measures the UTF-8 bytes of the
   await setupPage({
     context,
     path: "/?settings=debug",
-    sharedWorkerTestTransport: "message-port",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
   });
   await expect(screen.findByText(title)).resolves.toBeInTheDocument();
@@ -66,7 +65,6 @@ test("platform-direct-bridge-006 A second rename arrives on the live workspace l
   await setupPage({
     context,
     path: "/",
-    sharedWorkerTestTransport: "message-port",
   });
   const initial = await findFastControl("link", /Team field notes/u);
   expect(initial.getAttribute("href")).toContain(item.id);
@@ -128,7 +126,6 @@ test("A reopened workspace shows its downloaded conversation before a later rena
   const options = {
     path: "/",
     auth,
-    sharedWorkerTestTransport: "message-port" as const,
   };
   const first = createTestRuntime(context);
   const session = await startPage({ ...options, context: first });

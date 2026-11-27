@@ -525,7 +525,7 @@ export const prepareCreatedOrgOnboarding$ = command(
 );
 
 /**
- * Rebootstrap the page and its Worker when the active workspace member changes.
+ * Rebootstrap the page when the active workspace member changes.
  */
 export const watchOrgSwitch$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -544,7 +544,7 @@ export const watchOrgSwitch$ = command(
       const newOrgId = clerk.organization?.id;
       const userId = clerk.user?.id;
       // Clerk can clear these resources during a token refresh or setActive().
-      // Only a settled member change needs a fresh document and Worker.
+      // Only a settled member change needs a fresh document.
       if (
         !newOrgId ||
         !userId ||
@@ -564,7 +564,8 @@ export const watchOrgSwitch$ = command(
       setPostHogOrganization(newOrgId);
       if (!workspaceChanged && !needsOnboarding) {
         // Keep the current URL on sign-in and same-workspace account changes.
-        // A page that served a previous member needs a fresh Worker.
+        // Reload so the replacement member starts with a clean in-memory state
+        // and database connection.
         if (hadMember) {
           location.reload();
         }

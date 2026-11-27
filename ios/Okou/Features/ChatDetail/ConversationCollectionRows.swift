@@ -9,6 +9,11 @@ struct ConversationCollectionRow: Equatable, Identifiable {
   /// A share group keeps one selection target even when its user messages span midnight.
   var interiorDates: [String: String] = [:]
 
+  /// Avatar motion switches between `.animated` and `.still` inside the same fixed avatar frame.
+  func hasSameMeasuredLayout(as other: Self) -> Bool {
+    content == other.content && interiorDates == other.interiorDates
+  }
+
   enum Content: Equatable {
     case dateDivider(before: String, label: String)
     case earlier

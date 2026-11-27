@@ -9,7 +9,7 @@ const UI_ENTRY = fileURLToPath(new URL("../src/clerk-ui.ts", import.meta.url));
 const URL_MARKER = "__OKOU_CLERK_UI_SCRIPT_URL__";
 const UI_RAW_SIZE_LIMIT = 5_000_000;
 
-/** Build the optional SDK in its own graph, like the SharedWorker. Never let
+/** Build the optional SDK in its own graph, like the PDF worker. Never let
  * its dependency graph join the eagerly loaded application vendor bundle. */
 export function clerkUiAssetPlugin(): Plugin {
   let config: ResolvedConfig;

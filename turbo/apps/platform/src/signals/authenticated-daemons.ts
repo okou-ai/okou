@@ -1,7 +1,7 @@
 import { command } from "ccstate";
-import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
-import { setAuthenticatedIdentity$ } from "./auth-context.ts";
 import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
+import { setupChatDatabaseRealtime$ } from "./chat-database/realtime.ts";
+import { chatDatabaseReady$ } from "./chat-database/signals.ts";
 import { initializeChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { subscribeCloudflareAccessChanged$ } from "./cloudflare-access.ts";
 import { subscribeTailscaleChanged$ } from "./tailscale.ts";
@@ -14,23 +14,19 @@ import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
 import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
 import { hydrateProjectCache$ } from "./projects/projects.ts";
-import { setSharedWorkerRealtimeBridge$, setupRealtime$ } from "./realtime.ts";
-import {
-  bridgeConnected$,
-  installedSharedDatabaseBridge$,
-} from "./shared-database-bridge-state.ts";
+import { setupRealtime$ } from "./realtime.ts";
 import { subscribeVncObservations$ } from "./vnc.ts";
 import { detach, Reason } from "./utils.ts";
 
 const runAppRealtimeDaemons$ = command(
   async (
     { set },
-    initialization: Promise<SharedDatabaseBridge | null>,
+    initialization: Promise<boolean>,
     signal: AbortSignal,
   ): Promise<void> => {
-    const bridge = await initialization;
+    const authenticated = await initialization;
     signal.throwIfAborted();
-    if (!bridge) {
+    if (!authenticated) {
       return;
     }
     set(setupGetStartedRewards$, signal);
@@ -46,10 +42,7 @@ const runAppRealtimeDaemons$ = command(
 );
 
 const initializeAuthenticatedRealtime$ = command(
-  async (
-    { get, set },
-    signal: AbortSignal,
-  ): Promise<SharedDatabaseBridge | null> => {
+  async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
     const [, user] = await Promise.all([
       set(setupClerk$, signal),
       get(clerkUser$),
@@ -58,45 +51,38 @@ const initializeAuthenticatedRealtime$ = command(
     const clerk = await get(clerk$);
     signal.throwIfAborted();
     if (!user || !clerk.organization) {
-      return null;
+      return false;
     }
-    set(
-      setAuthenticatedIdentity$,
-      Promise.resolve({
-        userId: user.id,
-        orgId: clerk.organization.id,
-        email: user.primaryEmailAddress?.emailAddress,
-      }),
-    );
 
-    await get(bridgeConnected$);
+    await get(chatDatabaseReady$);
     signal.throwIfAborted();
-    const bridge = get(installedSharedDatabaseBridge$);
-    set(setSharedWorkerRealtimeBridge$, bridge);
     await set(setupRealtime$, signal);
     signal.throwIfAborted();
     set(subscribeForYouSources$, signal);
-    return bridge;
+    return true;
   },
 );
 
 /** Run user-scoped application realtime services for the root lifecycle. */
 export const setupAuthenticatedRealtime$ = command(
   ({ set }, signal: AbortSignal): void => {
+    const initialization = set(initializeAuthenticatedRealtime$, signal);
+    // Claim readiness before authentication or realtime setup settles, so
+    // startup failures remain visible to consumers.
+    const chatDatabaseRealtime = set(
+      setupChatDatabaseRealtime$,
+      initialization,
+      signal,
+    );
+    const templates = set(
+      subscribePresentationTemplatesChanged$,
+      initialization,
+      signal,
+    );
     detach(
       (async (ownerSignal: AbortSignal): Promise<void> => {
-        const initialization = set(
-          initializeAuthenticatedRealtime$,
-          ownerSignal,
-        );
-        // Claim the catalog's readiness before authentication or bridge setup can
-        // settle, so startup failures remain visible to its consumers.
-        const templates = set(
-          subscribePresentationTemplatesChanged$,
-          initialization,
-          ownerSignal,
-        );
         await Promise.all([
+          chatDatabaseRealtime,
           templates,
           set(runAppRealtimeDaemons$, initialization, ownerSignal),
         ]);
@@ -117,7 +103,7 @@ export const setupAuthenticatedBootstrapData$ = command(
     if (!user || !clerk.organization) {
       return;
     }
-    await get(bridgeConnected$);
+    await get(chatDatabaseReady$);
     signal.throwIfAborted();
     await Promise.all([
       set(initializeChatThreadEventSource$, signal),

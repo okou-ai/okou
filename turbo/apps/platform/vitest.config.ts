@@ -26,10 +26,6 @@ export default defineConfig({
         __dirname,
         "./src/test/mocks/clerk-resource.ts",
       ),
-      "@sentry/browser": path.resolve(
-        __dirname,
-        "./src/test/mocks/sentry-browser.ts",
-      ),
       "@sentry/react": path.resolve(
         __dirname,
         "./src/test/mocks/sentry-react.ts",
@@ -47,10 +43,6 @@ export default defineConfig({
         __dirname,
         "../../packages/mermaid-lite/dist/mermaid.esm.min.mjs",
       ),
-      "virtual:shared-database-worker": `${path.resolve(
-        __dirname,
-        "./src/shared-database-worker.ts",
-      )}?sharedworker&url`,
     },
   },
   define: {

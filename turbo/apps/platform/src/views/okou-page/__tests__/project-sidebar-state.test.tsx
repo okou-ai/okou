@@ -81,7 +81,6 @@ test("project-cache-002 a thread list notification discovers a chat after an emp
     path: "/",
     auth,
     cachedChatThreadEvents: { snapshot: null, events: [] },
-    sharedWorkerTestTransport: "message-port",
   });
   await title("Launch");
   expect(screen.queryByText("Planning conversation")).toBeNull();
@@ -113,7 +112,6 @@ test("project-cache-006 an expired persisted project cursor rebuilds the visible
     context: first,
     path: "/",
     auth,
-    sharedWorkerTestTransport: "message-port",
   });
   await title("Launch ready");
   cleanup();
@@ -136,7 +134,6 @@ test("project-cache-006 an expired persisted project cursor rebuilds the visible
     context: second,
     path: "/",
     auth,
-    sharedWorkerTestTransport: "message-port",
   });
   await waiting.promise;
   await title("Launch ready");
@@ -214,7 +211,6 @@ test.each(["projects", "chats"] as const)(
     );
     const options = {
       path: "/",
-      sharedWorkerTestTransport: "message-port",
     } as const;
     const page = await startPage({ ...options, context: first, auth });
     await page.content;
@@ -268,7 +264,6 @@ test.each([
       context: first,
       path: "/",
       auth: firstAuth,
-      sharedWorkerTestTransport: "message-port",
     });
     await title("Launch");
     cleanup();
@@ -297,7 +292,6 @@ test.each([
       context: second,
       path: "/",
       auth,
-      sharedWorkerTestTransport: "message-port",
     });
     await waiting.promise;
     await next.content;
@@ -386,7 +380,6 @@ async function start(at: "pin" | "project" | "home") {
     context,
     path,
     auth: chatListAuth(859),
-    sharedWorkerTestTransport: "message-port",
     cachedChatThreadEvents: cachedChatListEvents(859, threads),
   });
   await check(canon);
@@ -600,7 +593,6 @@ test("worker-runtime-012 A project refreshed after cursor expiration is cached a
       context: runtime,
       path: "/",
       auth,
-      sharedWorkerTestTransport: "message-port",
     });
   };
   const title = (name: string) => {

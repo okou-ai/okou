@@ -117,7 +117,6 @@ function settings(role: "member" | "admin", section = "usage", origin = "/") {
         memberships: [{ id: "org_lighthouse", role: "org:" + role }],
       },
     },
-    sharedWorkerTestTransport: "message-port",
   });
 }
 test("personal-usage-tab-001 Theo sees his own purchased and bonus additions with remaining balances", async () => {

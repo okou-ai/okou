@@ -1136,7 +1136,7 @@ export const chatSearchContract = c.router({
 /** Canonical ChatEvent read contract. */
 export const chatThreadEventsContract = c.router({
   /**
-   * Batch tail read for the SharedWorker cache. Every requested thread is
+   * Batch tail read for the local chat database cache. Every requested thread is
    * returned exactly once: either as a complete raw-row tail (including an
    * empty tail) or in `notFoundThreads` when the supplied cursor cannot be
    * continued and the client must rebuild from a Snapshot.

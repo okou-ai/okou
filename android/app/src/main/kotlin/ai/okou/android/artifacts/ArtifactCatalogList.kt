@@ -674,7 +674,6 @@ private fun ArtifactFilter.label(): Int =
         ArtifactFilter.Websites -> R.string.artifact_filter_sites
         ArtifactFilter.Images -> R.string.artifact_filter_images
         ArtifactFilter.Presentations -> R.string.artifact_filter_presentations
-        ArtifactFilter.Videos -> R.string.artifact_filter_videos
     }
 
 internal fun ArtifactKind.label(): Int =

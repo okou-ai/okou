@@ -46,7 +46,6 @@ const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
   "presentation",
   "hosted-site",
   "image",
-  "video",
   "avatar",
   "shared-thread",
   "file",
@@ -350,21 +349,17 @@ function ArtifactCatalogKindFilter({
                 ? t(($) => {
                     return $.artifacts.catalog.filters.image;
                   })
-                : kind === "video"
+                : kind === "avatar"
                   ? t(($) => {
-                      return $.artifacts.catalog.filters.video;
+                      return $.artifacts.catalog.filters.avatar;
                     })
-                  : kind === "avatar"
+                  : kind === "shared-thread"
                     ? t(($) => {
-                        return $.artifacts.catalog.filters.avatar;
+                        return $.artifacts.catalog.filters.sharedConversation;
                       })
-                    : kind === "shared-thread"
-                      ? t(($) => {
-                          return $.artifacts.catalog.filters.sharedConversation;
-                        })
-                      : t(($) => {
-                          return $.artifacts.catalog.filters.file;
-                        });
+                    : t(($) => {
+                        return $.artifacts.catalog.filters.file;
+                      });
         const ariaLabel =
           kind === "presentation"
             ? t(($) => {
@@ -378,22 +373,18 @@ function ArtifactCatalogKindFilter({
                 ? t(($) => {
                     return $.artifacts.catalog.filters.imageAria;
                   })
-                : kind === "video"
+                : kind === "avatar"
                   ? t(($) => {
-                      return $.artifacts.catalog.filters.videoAria;
+                      return $.artifacts.catalog.filters.avatarAria;
                     })
-                  : kind === "avatar"
+                  : kind === "shared-thread"
                     ? t(($) => {
-                        return $.artifacts.catalog.filters.avatarAria;
+                        return $.artifacts.catalog.filters
+                          .sharedConversationAria;
                       })
-                    : kind === "shared-thread"
-                      ? t(($) => {
-                          return $.artifacts.catalog.filters
-                            .sharedConversationAria;
-                        })
-                      : t(($) => {
-                          return $.artifacts.catalog.filters.fileAria;
-                        });
+                    : t(($) => {
+                        return $.artifacts.catalog.filters.fileAria;
+                      });
         return (
           <button
             key={kind}

@@ -103,7 +103,6 @@ function fixture(message?: string) {
     },
     pageOptions: {
       ...workspace.pageOptions,
-      sharedWorkerTestTransport: "message-port" as const,
     },
   };
 }
@@ -178,7 +177,7 @@ test("A realtime continuity gap refreshes thread detail without a notification",
   await expect(screen.findByText(RECOVERY_NOTICE)).resolves.toBeInTheDocument();
   workspace.setRecoveryPending(false);
   act(() => {
-    context.mocks.ably.triggerSharedWorkerChannelGap("user:chat-list-user-321");
+    context.mocks.ably.triggerChannelGap("user:chat-list-user-321");
   });
   await waitFor(() => {
     expect(screen.queryByText(RECOVERY_NOTICE)).not.toBeInTheDocument();
@@ -192,7 +191,6 @@ test("A private chat keeps its stored message while only its own detail event re
     context,
     ...workspace.pageOptions,
     path: "/chats/" + workspace.thread.id,
-    sharedWorkerTestTransport: "message-port",
   });
   await screen.findByText(content);
   const notice = await screen.findByText(RECOVERY_NOTICE);

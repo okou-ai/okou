@@ -20,7 +20,7 @@ import {
   type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
 import { mockSubscriptionRunModel } from "../../../mocks/handlers/api-run-models.ts";
-import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
+import type { ChatThreadEventQueryResult } from "../../../signals/chat-database/types.ts";
 import {
   mockChatThreadSnapshotResponse,
   type TestContext,

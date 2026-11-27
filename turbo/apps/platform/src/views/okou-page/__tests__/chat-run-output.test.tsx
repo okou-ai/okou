@@ -207,7 +207,6 @@ test.each([
       await setupPage({
         context,
         path: RUN_PATH,
-        sharedWorkerTestTransport: "message-port",
         auth: {
           user: { id: member, fullName: "Member" },
           organization: {

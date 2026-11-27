@@ -48,7 +48,7 @@ struct ConversationTimeline {
         }
       case .message(let message, let showsAvatar, _, _, _, let workHistory, _):
         if message.role == .user {
-          if !message.isQueued { setAvatar(nil, for: message.runID) }
+          setAvatar(nil, for: message.runID)
           record(message.createdAt, at: index)
         } else if !workHistory && showsAvatar {
           setAvatar(index, for: message.runID)

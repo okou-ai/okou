@@ -35,7 +35,6 @@ test("pwa-navigation-001 A desktop standalone chat list keeps its navigation rai
     context,
     path: "/",
     host: "app.okou.ai",
-    sharedWorkerTestTransport: "message-port",
   });
   await expect(
     screen.findByText("Coastal survey"),
@@ -60,7 +59,6 @@ function enterMobile(path = "/") {
     context,
     path,
     host: "app.okou.ai",
-    sharedWorkerTestTransport: "message-port",
   });
 }
 function tabBar() {

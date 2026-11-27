@@ -84,7 +84,6 @@ test("settings-dialog-008 measuring a three-thread local snapshot reports its si
     context,
     path: "/?settings=preference",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-    sharedWorkerTestTransport: "message-port",
   });
   const settings = await screen.findByRole("dialog");
   click(await findAction("button", "Debug", settings));

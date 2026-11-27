@@ -12,10 +12,6 @@ test("platform-entrypoint-002 Chrome 138 enters the application and shows the si
   );
   startPlatformEntrypoint();
   await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
-  expect(
-    sentry.initializations.map((init) => {
-      return init.runtime;
-    }),
-  ).toStrictEqual(["page"]);
+  expect(sentry.initializations).toHaveLength(1);
   expect(screen.queryByRole("heading", { name: /to continue/i })).toBeNull();
 });

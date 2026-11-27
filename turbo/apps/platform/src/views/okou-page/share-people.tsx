@@ -2,7 +2,7 @@ import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Loader2, UserRound, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { HostedSiteShareAccount } from "@okouai/api-contracts/contracts/hosted-site-sharing";
+import type { ArtifactShareAccount } from "@okouai/api-contracts/contracts/artifact-access";
 import {
   Button,
   Combobox,
@@ -28,7 +28,7 @@ interface PeopleProps {
   readonly busy: boolean;
   readonly failed: boolean;
   readonly onShare: (email: string) => void;
-  readonly onRemove: (id: string) => void;
+  readonly onRemove: (userId: string) => void;
 }
 
 function PersonMark({ className }: { readonly className?: string }) {
@@ -51,7 +51,7 @@ function AccountSuggestions({
   failed,
   busy,
 }: {
-  readonly accounts: readonly HostedSiteShareAccount[] | undefined;
+  readonly accounts: readonly ArtifactShareAccount[] | undefined;
   readonly loading: boolean;
   readonly failed: boolean;
   readonly busy: boolean;
@@ -251,12 +251,24 @@ function PeopleList({
       {current.map((share) => {
         return (
           <li
-            key={share.id}
+            key={share.userId}
             className="flex min-h-11 items-center gap-3 py-1.5"
           >
             <PersonMark />
-            <span className="min-w-0 flex-1 truncate text-sm">
-              {share.email}
+            <span className="min-w-0 flex-1">
+              {share.name && share.name !== share.email && (
+                <span className="block truncate text-sm">{share.name}</span>
+              )}
+              <span
+                className={cn(
+                  "block truncate",
+                  share.name && share.name !== share.email
+                    ? "text-xs text-muted-foreground"
+                    : "text-sm",
+                )}
+              >
+                {share.email}
+              </span>
             </span>
             <Button
               type="button"
@@ -270,7 +282,7 @@ function PeopleList({
                 { email: share.email },
               )}
               onClick={() => {
-                onRemove(share.id);
+                onRemove(share.userId);
               }}
             >
               <X size={14} />

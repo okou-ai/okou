@@ -515,10 +515,9 @@ export function publishRunQueueChangedForOrgSafely(
 }
 
 /**
- * Fire the per-user-org "thread list shape changed" signal. The SharedWorker
- * consumes this topic to invalidate its local thread-event view; the App then
- * reloads derived thread state. The payload is intentionally empty because the
- * server is authoritative.
+ * Fire the per-user-org "thread list shape changed" signal. The App consumes
+ * this topic to catch up its local thread-event view and reload derived thread
+ * state. The payload is intentionally empty because the server is authoritative.
  */
 export async function publishThreadListChanged(target: {
   readonly userId: string;
@@ -539,7 +538,7 @@ export async function publishThreadListChangedSafely(target: {
  * a Run became pending, a Run terminal marker committed, or a thread was muted,
  * unmuted, hidden or deleted. Read-cursor changes use
  * `chatThreadReadCursorUpdated`.
- * The SharedWorker refreshes indicators only on these two topics, so Run output
+ * The App refreshes indicators only on these two topics, so Run output
  * does not refetch them. Publish only after the change commits; the payload is
  * empty because the server is authoritative.
  */
@@ -557,8 +556,8 @@ interface ChatThreadReadCursorUpdatedPayload {
 
 /**
  * Notify every tab for one user-org that authoritative chat read state changed.
- * The SharedWorker forwards the payload so tabs can clear matching optimistic
- * read marks before reloading their indicator snapshots.
+ * Tabs consume the payload to refresh their indicator snapshots and clear
+ * matching optimistic read marks.
  */
 export async function publishChatThreadReadCursorUpdatedSafely(
   target: { readonly userId: string; readonly orgId: string },

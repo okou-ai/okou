@@ -465,7 +465,6 @@ function grantEvents(s: Session, initiallyGranted = true) {
             cloudBrowserEnabled: initiallyGranted,
           }),
         ]),
-        sharedWorkerTestTransport: "message-port",
       });
     },
   };

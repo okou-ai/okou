@@ -49,9 +49,7 @@ test.each([
     );
     startPlatformEntrypoint();
     await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
-    const handler = sentry.initializations.find(({ runtime }) => {
-      return runtime === "page";
-    })?.options;
+    const handler = sentry.initializations[0]?.options;
     const callback = new URL(path, location.origin);
     callback.search = new URLSearchParams({
       integration: "workspace",

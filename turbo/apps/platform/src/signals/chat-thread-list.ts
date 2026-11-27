@@ -1,6 +1,6 @@
 import { pathParams$ } from "./route.ts";
 import { activeRoute$ } from "./active-route.ts";
-import { chatThreadIndicatorsFromWorker$ } from "./shared-database.ts";
+import { chatThreadIndicators$ } from "./chat-page/chat-thread-indicators.ts";
 import { activeChatThreadFilter$ } from "./okou-page/chat-thread-filter.ts";
 import { eventDrivenChatThreads$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { projects$ } from "./projects/projects.ts";
@@ -261,7 +261,7 @@ export const unreadChatThreadListSignals$ = computed(
         return [project.id, project];
       }),
     );
-    const indicators = await get(chatThreadIndicatorsFromWorker$);
+    const indicators = await get(chatThreadIndicators$);
 
     const unread = get(eventDrivenChatThreads$).filter((thread) => {
       const project =

@@ -10,8 +10,8 @@ import {
 import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import type { ClientChatEvent as ApiChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { captureTaskCompletedSuccessfully } from "../../lib/posthog.ts";
-import type { ChatEventDataKey } from "../../shared-database/data-key.ts";
-import { queryChatEventSharedDatabase$ } from "../shared-database.ts";
+import type { ChatEventDataKey } from "../chat-database/types.ts";
+import { queryChatEventDatabase$ } from "../chat-database/signals.ts";
 import { reloadBillingStatus$ } from "../okou-page/billing.ts";
 import { notifyChatEventsChanged$ } from "./chat-event-change-registry.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
@@ -161,7 +161,7 @@ function createStoredChatEventsComputed({
   });
 }
 
-function createSharedDatabaseEventSignals({
+function createChatDatabaseEventSignals({
   threadId,
   persistentChatEvents$,
   chatEvents$,
@@ -175,42 +175,36 @@ function createSharedDatabaseEventSignals({
     [PersistedChatEvent[], AbortSignal]
   >;
 }) {
-  const dataKey$ = computed((): ChatEventDataKey => {
-    return { kind: "chat-event", threadId };
+  const dataKey: ChatEventDataKey = { kind: "chat-event", threadId };
+  const load$ = command(async ({ set }, signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted();
+    const rows = await set(
+      queryChatEventDatabase$,
+      { dataKey, afterSeqId: null, consistency: "cache-only" },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (rows.length === 0) {
+      return;
+    }
+    const events = rows.map((row) => {
+      return storedChatEvent(row);
+    });
+    set(persistentChatEvents$, (previous) => {
+      return mergePersistentEvents([previous, events]);
+    });
+    set(reconcileOptimisticChatEvents$, { threadId, events });
+    await set(notifyChatEventsChanged$, chatEvents$, signal);
   });
-  const load$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const dataKey = await get(dataKey$);
-      signal.throwIfAborted();
-      const rows = await set(
-        queryChatEventSharedDatabase$,
-        { dataKey, afterSeqId: null, consistency: "cache-only" },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (rows.length === 0) {
-        return;
-      }
-      const events = rows.map((row) => {
-        return storedChatEvent(row);
-      });
-      set(persistentChatEvents$, (previous) => {
-        return mergePersistentEvents([previous, events]);
-      });
-      set(reconcileOptimisticChatEvents$, { threadId, events });
-      await set(notifyChatEventsChanged$, chatEvents$, signal);
-    },
-  );
   const sync$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const dataKey = await get(dataKey$);
       signal.throwIfAborted();
       const afterSeqId = get(persistentChatEvents$).at(-1)?.seqId ?? null;
-      // An earlier refresh can populate the worker cache before this page
+      // An earlier refresh can populate the local cache before this page
       // receives its result. Cached rows alone do not cover a newer realtime
       // notification, so every sync must catch up to the server's event tail.
       const rows = await set(
-        queryChatEventSharedDatabase$,
+        queryChatEventDatabase$,
         { dataKey, afterSeqId, consistency: "catch-up" },
         signal,
       );
@@ -304,16 +298,16 @@ export function createChatEventStorageSignals({
       signal.throwIfAborted();
     },
   );
-  const sharedDatabase = createSharedDatabaseEventSignals({
+  const chatDatabase = createChatDatabaseEventSignals({
     threadId,
     persistentChatEvents$,
     chatEvents$,
     mergePersistentEvents$,
   });
-  const syncRemoteEvents$ = sharedDatabase.sync$;
+  const syncRemoteEvents$ = chatDatabase.sync$;
   const initializeIndexedDbEvents$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
-      await set(sharedDatabase.load$, signal);
+      await set(chatDatabase.load$, signal);
     },
   );
 

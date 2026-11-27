@@ -11,6 +11,7 @@ export type SharingQuotaRequest = {
 } & (
   | { readonly kind: "search" }
   | { readonly kind: "share"; readonly email: string }
+  | { readonly kind: "user-share"; readonly recipientKey: string }
   | { readonly kind: "channel-share" }
   | { readonly kind: "channel-recipient"; readonly email: string }
 );
@@ -43,6 +44,18 @@ function quotas(args: SharingQuotaRequest): readonly Quota[] {
   const operation = quota(["share", "user", args.userId], 10, 60_000);
   if (args.kind === "channel-share") {
     return [operation];
+  }
+  if (args.kind === "user-share") {
+    return [
+      operation,
+      quota(["share", "user-hour", args.userId], 60, 3_600_000),
+      quota(["share", "org", args.orgId], 60, 3_600_000),
+      quota(
+        ["share", "recipient", args.orgId, args.recipientKey],
+        3,
+        3_600_000,
+      ),
+    ];
   }
   return [
     ...(args.kind === "share" ? [operation] : []),

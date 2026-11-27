@@ -82,7 +82,6 @@ function people(role: OrgRole = "admin") {
         memberships: [{ id: org.id, role: "org:" + role }],
       },
     },
-    sharedWorkerTestTransport: "message-port",
   });
 }
 function directInvites() {
@@ -355,7 +354,6 @@ test("org-members-tab-027 Alice relinquishes her own admin role after reviewing 
       context: runtime,
       path: "/?settings=people",
       host: "app.okou.ai",
-      sharedWorkerTestTransport: "message-port",
       auth: {
         user: {
           id: actor.userId,

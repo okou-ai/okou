@@ -2804,6 +2804,13 @@ data class ArtifactCatalogArtifactsItemVariant1Thumbnail(
 )
 
 @Serializable
+enum class ArtifactCatalogArtifactsItemVariant1Visibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
+
+@Serializable
 enum class ArtifactCatalogArtifactsItemVariant1Category {
     @SerialName("document") DOCUMENT,
     @SerialName("presentation") PRESENTATION,
@@ -2831,6 +2838,7 @@ data class ArtifactCatalogArtifactsItemVariant1(
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String,
     val `videoSourceUrl`: String? = null,
+    val `visibility`: ArtifactCatalogArtifactsItemVariant1Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `category`: ArtifactCatalogArtifactsItemVariant1Category? = null,
@@ -2851,6 +2859,13 @@ enum class ArtifactCatalogArtifactsItemVariant2Kind {
 data class ArtifactCatalogArtifactsItemVariant2Thumbnail(
     val `url`: String,
 )
+
+@Serializable
+enum class ArtifactCatalogArtifactsItemVariant2Visibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
 
 @Serializable
 enum class ArtifactCatalogArtifactsItemVariant2Category {
@@ -2880,6 +2895,7 @@ data class ArtifactCatalogArtifactsItemVariant2(
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
     val `videoSourceUrl`: String? = null,
+    val `visibility`: ArtifactCatalogArtifactsItemVariant2Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `category`: ArtifactCatalogArtifactsItemVariant2Category? = null,
@@ -2962,6 +2978,13 @@ enum class ArtifactDetailVariant1Kind {
 data class ArtifactDetailVariant1Thumbnail(
     val `url`: String,
 )
+
+@Serializable
+enum class ArtifactDetailVariant1Visibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
 
 @Serializable(with = ArtifactDetailVariant1GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant1GoogleDriveSync
@@ -3240,6 +3263,7 @@ data class ArtifactDetailVariant1(
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
     val `videoSourceUrl`: String? = null,
+    val `visibility`: ArtifactDetailVariant1Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sourceChatThreadId`: String? = null,
@@ -3257,6 +3281,13 @@ enum class ArtifactDetailVariant2Kind {
 data class ArtifactDetailVariant2Thumbnail(
     val `url`: String,
 )
+
+@Serializable
+enum class ArtifactDetailVariant2Visibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
 
 @Serializable(with = ArtifactDetailVariant2GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant2GoogleDriveSync
@@ -3535,6 +3566,7 @@ data class ArtifactDetailVariant2(
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
     val `videoSourceUrl`: String? = null,
+    val `visibility`: ArtifactDetailVariant2Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sourceChatThreadId`: String? = null,
@@ -3554,6 +3586,13 @@ enum class ArtifactDetailVariant3Kind {
 data class ArtifactDetailVariant3Thumbnail(
     val `url`: String,
 )
+
+@Serializable
+enum class ArtifactDetailVariant3Visibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
 
 @Serializable(with = ArtifactDetailVariant3GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant3GoogleDriveSync
@@ -3832,6 +3871,7 @@ data class ArtifactDetailVariant3(
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
     val `videoSourceUrl`: String? = null,
+    val `visibility`: ArtifactDetailVariant3Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sourceChatThreadId`: String? = null,
@@ -3851,6 +3891,13 @@ enum class ArtifactDetailVariant4Kind {
 data class ArtifactDetailVariant4Thumbnail(
     val `url`: String,
 )
+
+@Serializable
+enum class ArtifactDetailVariant4Visibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
 
 @Serializable(with = ArtifactDetailVariant4GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant4GoogleDriveSync
@@ -4129,6 +4176,7 @@ data class ArtifactDetailVariant4(
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
     val `videoSourceUrl`: String? = null,
+    val `visibility`: ArtifactDetailVariant4Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sourceChatThreadId`: String? = null,
@@ -4148,6 +4196,13 @@ enum class ArtifactDetailVariant5Kind {
 data class ArtifactDetailVariant5Thumbnail(
     val `url`: String,
 )
+
+@Serializable
+enum class ArtifactDetailVariant5Visibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
 
 @Serializable(with = ArtifactDetailVariant5GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant5GoogleDriveSync
@@ -4427,6 +4482,7 @@ data class ArtifactDetailVariant5(
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
     val `videoSourceUrl`: String? = null,
+    val `visibility`: ArtifactDetailVariant5Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sourceChatThreadId`: String? = null,
@@ -4444,6 +4500,13 @@ enum class ArtifactDetailVariant6Kind {
 data class ArtifactDetailVariant6Thumbnail(
     val `url`: String,
 )
+
+@Serializable
+enum class ArtifactDetailVariant6Visibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
 
 @Serializable(with = ArtifactDetailVariant6GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant6GoogleDriveSync
@@ -4723,6 +4786,7 @@ data class ArtifactDetailVariant6(
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String? = null,
     val `videoSourceUrl`: String? = null,
+    val `visibility`: ArtifactDetailVariant6Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sourceChatThreadId`: String? = null,
@@ -4740,6 +4804,13 @@ enum class ArtifactDetailVariant7Kind {
 data class ArtifactDetailVariant7Thumbnail(
     val `url`: String,
 )
+
+@Serializable
+enum class ArtifactDetailVariant7Visibility {
+    @SerialName("private") PRIVATE,
+    @SerialName("organization") ORGANIZATION,
+    @SerialName("public") PUBLIC,
+}
 
 @Serializable(with = ArtifactDetailVariant7GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant7GoogleDriveSync
@@ -5013,6 +5084,7 @@ data class ArtifactDetailVariant7(
     val `aliasUrl`: String? = null,
     val `sharedThreadId`: String,
     val `videoSourceUrl`: String? = null,
+    val `visibility`: ArtifactDetailVariant7Visibility? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sourceChatThreadId`: String? = null,
@@ -5232,273 +5304,50 @@ data class ArtifactSitePreview(
 )
 
 @Serializable
-enum class ArtifactShareStatusAudience {
+enum class ArtifactVisibilityKind {
+    @SerialName("file") FILE,
+    @SerialName("hosted-site") HOSTED_SITE,
+    @SerialName("image") IMAGE,
+    @SerialName("avatar") AVATAR,
+    @SerialName("presentation") PRESENTATION,
+    @SerialName("shared-thread") SHARED_THREAD,
+}
+
+@Serializable
+enum class ArtifactVisibilityVisibility {
     @SerialName("private") PRIVATE,
     @SerialName("organization") ORGANIZATION,
     @SerialName("public") PUBLIC,
 }
 
 @Serializable
-data class ArtifactShareStatusOrganization(
+data class ArtifactVisibilityOrganization(
     val `id`: String,
     val `name`: String,
 )
 
-@Serializable(with = ArtifactShareStatusSelectedTargetSerializer::class)
-sealed interface ArtifactShareStatusSelectedTarget
-
 @Serializable
-enum class ArtifactShareStatusSelectedTargetVariant1Kind {
-    @SerialName("file") FILE,
-}
-
-@Serializable
-data class ArtifactShareStatusSelectedTargetVariant1(
-    val `kind`: ArtifactShareStatusSelectedTargetVariant1Kind,
-    val `id`: String,
-) : ArtifactShareStatusSelectedTarget
-
-@Serializable
-enum class ArtifactShareStatusSelectedTargetVariant2Kind {
-    @SerialName("html") HTML,
-}
-
-@Serializable
-data class ArtifactShareStatusSelectedTargetVariant2(
-    val `kind`: ArtifactShareStatusSelectedTargetVariant2Kind,
-    val `id`: String,
-) : ArtifactShareStatusSelectedTarget
-
-object ArtifactShareStatusSelectedTargetSerializer :
-    KSerializer<ArtifactShareStatusSelectedTarget> {
-    override val descriptor =
-        buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactShareStatusSelectedTarget",
-        )
-
-    override fun deserialize(decoder: Decoder): ArtifactShareStatusSelectedTarget {
-        val input =
-            decoder as? JsonDecoder
-                ?: throw SerializationException(
-                    "Expected JSON object for ArtifactShareStatusSelectedTarget",
-                )
-        val value =
-            input.decodeJsonElement() as? JsonObject
-                ?: throw SerializationException(
-                    "Expected object for ArtifactShareStatusSelectedTarget",
-                )
-        val matches =
-            listOf(
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("file")
-                } == true,
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("html")
-                } == true,
-            )
-        if (matches.count { it } != 1)
-            throw SerializationException(
-                "Unknown or ambiguous ArtifactShareStatusSelectedTarget variant",
-            )
-        return when (matches.indexOf(true)) {
-            0 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactShareStatusSelectedTargetVariant1.serializer(),
-                    value,
-                )
-            1 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactShareStatusSelectedTargetVariant2.serializer(),
-                    value,
-                )
-            else ->
-                throw SerializationException("Unknown ArtifactShareStatusSelectedTarget variant")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: ArtifactShareStatusSelectedTarget) {
-        when (value) {
-            is ArtifactShareStatusSelectedTargetVariant1 ->
-                encoder.encodeSerializableValue(
-                    ArtifactShareStatusSelectedTargetVariant1.serializer(),
-                    value,
-                )
-            is ArtifactShareStatusSelectedTargetVariant2 ->
-                encoder.encodeSerializableValue(
-                    ArtifactShareStatusSelectedTargetVariant2.serializer(),
-                    value,
-                )
-        }
-    }
-}
-
-@Serializable
-data class ArtifactShareStatus(
+data class ArtifactVisibility(
+    val `artifactId`: String,
+    val `kind`: ArtifactVisibilityKind,
+    val `visibility`: ArtifactVisibilityVisibility,
     val `ownerUrl`: String,
-    val `shareId`: String?,
-    val `audience`: ArtifactShareStatusAudience,
-    val `organization`: ArtifactShareStatusOrganization,
-    val `selectedTarget`: ArtifactShareStatusSelectedTarget?,
-    val `selectedVersion`: Double?,
-    val `candidateVersion`: Double?,
-    val `url`: String?,
+    val `shareUrl`: String?,
     val `shortUrl`: String?,
+    val `deploymentVersion`: Long? = null,
+    val `organization`: ArtifactVisibilityOrganization,
 )
 
-@Serializable(with = ArtifactShareTargetSerializer::class) sealed interface ArtifactShareTarget
-
 @Serializable
-enum class ArtifactShareTargetVariant1Kind {
-    @SerialName("file") FILE,
-}
-
-@Serializable
-data class ArtifactShareTargetVariant1(
-    val `kind`: ArtifactShareTargetVariant1Kind,
-    val `id`: String,
-) : ArtifactShareTarget
-
-@Serializable
-enum class ArtifactShareTargetVariant2Kind {
-    @SerialName("html") HTML,
-}
-
-@Serializable
-data class ArtifactShareTargetVariant2(
-    val `kind`: ArtifactShareTargetVariant2Kind,
-    val `id`: String,
-) : ArtifactShareTarget
-
-object ArtifactShareTargetSerializer : KSerializer<ArtifactShareTarget> {
-    override val descriptor =
-        buildClassSerialDescriptor("ai.okou.android.api.generated.ArtifactShareTarget")
-
-    override fun deserialize(decoder: Decoder): ArtifactShareTarget {
-        val input =
-            decoder as? JsonDecoder
-                ?: throw SerializationException("Expected JSON object for ArtifactShareTarget")
-        val value =
-            input.decodeJsonElement() as? JsonObject
-                ?: throw SerializationException("Expected object for ArtifactShareTarget")
-        val matches =
-            listOf(
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("file")
-                } == true,
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("html")
-                } == true,
-            )
-        if (matches.count { it } != 1)
-            throw SerializationException("Unknown or ambiguous ArtifactShareTarget variant")
-        return when (matches.indexOf(true)) {
-            0 -> input.json.decodeFromJsonElement(ArtifactShareTargetVariant1.serializer(), value)
-            1 -> input.json.decodeFromJsonElement(ArtifactShareTargetVariant2.serializer(), value)
-            else -> throw SerializationException("Unknown ArtifactShareTarget variant")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: ArtifactShareTarget) {
-        when (value) {
-            is ArtifactShareTargetVariant1 ->
-                encoder.encodeSerializableValue(ArtifactShareTargetVariant1.serializer(), value)
-            is ArtifactShareTargetVariant2 ->
-                encoder.encodeSerializableValue(ArtifactShareTargetVariant2.serializer(), value)
-        }
-    }
-}
-
-@Serializable(with = ArtifactShareUpdateTargetSerializer::class)
-sealed interface ArtifactShareUpdateTarget
-
-@Serializable
-enum class ArtifactShareUpdateTargetVariant1Kind {
-    @SerialName("file") FILE,
-}
-
-@Serializable
-data class ArtifactShareUpdateTargetVariant1(
-    val `kind`: ArtifactShareUpdateTargetVariant1Kind,
-    val `id`: String,
-) : ArtifactShareUpdateTarget
-
-@Serializable
-enum class ArtifactShareUpdateTargetVariant2Kind {
-    @SerialName("html") HTML,
-}
-
-@Serializable
-data class ArtifactShareUpdateTargetVariant2(
-    val `kind`: ArtifactShareUpdateTargetVariant2Kind,
-    val `id`: String,
-) : ArtifactShareUpdateTarget
-
-object ArtifactShareUpdateTargetSerializer : KSerializer<ArtifactShareUpdateTarget> {
-    override val descriptor =
-        buildClassSerialDescriptor("ai.okou.android.api.generated.ArtifactShareUpdateTarget")
-
-    override fun deserialize(decoder: Decoder): ArtifactShareUpdateTarget {
-        val input =
-            decoder as? JsonDecoder
-                ?: throw SerializationException(
-                    "Expected JSON object for ArtifactShareUpdateTarget",
-                )
-        val value =
-            input.decodeJsonElement() as? JsonObject
-                ?: throw SerializationException("Expected object for ArtifactShareUpdateTarget")
-        val matches =
-            listOf(
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("file")
-                } == true,
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("html")
-                } == true,
-            )
-        if (matches.count { it } != 1)
-            throw SerializationException("Unknown or ambiguous ArtifactShareUpdateTarget variant")
-        return when (matches.indexOf(true)) {
-            0 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactShareUpdateTargetVariant1.serializer(),
-                    value,
-                )
-            1 ->
-                input.json.decodeFromJsonElement(
-                    ArtifactShareUpdateTargetVariant2.serializer(),
-                    value,
-                )
-            else -> throw SerializationException("Unknown ArtifactShareUpdateTarget variant")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: ArtifactShareUpdateTarget) {
-        when (value) {
-            is ArtifactShareUpdateTargetVariant1 ->
-                encoder.encodeSerializableValue(
-                    ArtifactShareUpdateTargetVariant1.serializer(),
-                    value,
-                )
-            is ArtifactShareUpdateTargetVariant2 ->
-                encoder.encodeSerializableValue(
-                    ArtifactShareUpdateTargetVariant2.serializer(),
-                    value,
-                )
-        }
-    }
-}
-
-@Serializable
-enum class ArtifactShareUpdateAudience {
+enum class ArtifactVisibilityUpdateVisibility {
     @SerialName("private") PRIVATE,
     @SerialName("organization") ORGANIZATION,
     @SerialName("public") PUBLIC,
 }
 
 @Serializable
-data class ArtifactShareUpdate(
-    val `target`: ArtifactShareUpdateTarget,
-    val `audience`: ArtifactShareUpdateAudience,
+data class ArtifactVisibilityUpdate(
+    val `visibility`: ArtifactVisibilityUpdateVisibility,
 )
 
 @Serializable
@@ -5508,33 +5357,6 @@ data class ArtifactSiteUrl(
     val `url`: String,
     val `isActive`: Boolean,
     val `effectiveUrl`: String? = null,
-)
-
-@Serializable
-enum class ArtifactSiteVisibilityVisibility {
-    @SerialName("private") PRIVATE,
-    @SerialName("organization") ORGANIZATION,
-    @SerialName("public") PUBLIC,
-}
-
-@Serializable
-data class ArtifactSiteVisibility(
-    val `siteId`: String,
-    val `visibility`: ArtifactSiteVisibilityVisibility,
-    val `revision`: String?,
-)
-
-@Serializable
-enum class ArtifactSiteVisibilityUpdateVisibility {
-    @SerialName("private") PRIVATE,
-    @SerialName("organization") ORGANIZATION,
-    @SerialName("public") PUBLIC,
-}
-
-@Serializable
-data class ArtifactSiteVisibilityUpdate(
-    val `visibility`: ArtifactSiteVisibilityUpdateVisibility,
-    val `expectedRevision`: String?,
 )
 
 @Serializable

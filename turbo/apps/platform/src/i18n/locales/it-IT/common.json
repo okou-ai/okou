@@ -514,8 +514,6 @@
         "presentationAria": "Mostra gli artefatti della presentazione",
         "sharedConversation": "Conversazioni condivise",
         "sharedConversationAria": "Mostra gli artefatti delle conversazioni condivise",
-        "video": "Video",
-        "videoAria": "Mostra artefatti video",
         "website": "Siti web",
         "websiteAria": "Mostra gli artefatti del sito web"
       },
@@ -6180,7 +6178,7 @@
         },
         "indexedDb": {
           "countExplanation": "Il conteggio usa transazioni di sola lettura e non legge il contenuto dei record.",
-          "description": "Controlla il numero di record nella cache chat locale gestita dallo shared worker.",
+          "description": "Controlla il numero di record nella cache chat locale IndexedDB.",
           "loading": "Caricamento dello spazio IndexedDB...",
           "measurementUnavailable": "Misurazione dello snapshot non riuscita.",
           "measureSnapshot": "Misura snapshot",
@@ -6519,10 +6517,6 @@
       "browse": "Sfoglia i flussi di lavoro",
       "description": "Potrebbe essere stata spostata o il link potrebbe essere vecchio. Tutto il resto è dove l'hai lasciato.",
       "title": "Questa pagina non è qui."
-    },
-    "workerFailure": {
-      "description": "La connessione a questa app è stata interrotta.",
-      "title": "Connessione interrotta"
     }
   },
   "sharedThread": {

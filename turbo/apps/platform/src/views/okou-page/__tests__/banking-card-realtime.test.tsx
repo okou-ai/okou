@@ -70,8 +70,6 @@ test("Duplicate banking cards update together on events and recover after a cont
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    // Continuity recovery runs through the complete SharedWorker port host.
-    sharedWorkerTestTransport: "message-port",
   });
   await expectBothCards("Review this month's cash flow");
   await waitFor(() => {
