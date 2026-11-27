@@ -4012,6 +4012,13 @@
       "when": 1795748958015,
       "tag": "1651_drop_user_artifact_favorites",
       "breakpoints": true
+    },
+    {
+      "idx": 1652,
+      "version": "7",
+      "when": 1795761850211,
+      "tag": "1652_archive_proactive_workflow_history",
+      "breakpoints": true
     }
   ]
 }

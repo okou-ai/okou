@@ -1104,11 +1104,11 @@ function WorkflowDetailContent() {
           <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
             {workflowTitle(detail)}
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {i18n.t(($) => {
-              return $.feedEvents.automationDisabled.systemManaged;
-            })}
-          </p>
+          {detail.description && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {detail.description}
+            </p>
+          )}
         </DetailPageHeader>
       ) : (
         <DetailHeader
@@ -1120,7 +1120,7 @@ function WorkflowDetailContent() {
       <DetailPageMain>
         {detail ? (
           detail.official ? (
-            <AutomationsSection detail={detail} readOnly />
+            <WorkflowInstructionsTab detail={detail} />
           ) : (
             <WorkflowTabContent activeTab={activeTab} detail={detail} />
           )
@@ -4210,10 +4210,8 @@ function CreateChatRunFinishedAutomationDialog({
 
 function AutomationsSection({
   detail,
-  readOnly = false,
 }: {
   readonly detail: WorkflowDetailResponse;
-  readonly readOnly?: boolean;
 }) {
   const createDialog = useGet(workflowAutomationCreateDialog$);
   const setCreateDialog = useSet(setWorkflowAutomationCreateDialog$);
@@ -4234,12 +4232,8 @@ function AutomationsSection({
                 <AutomationRow
                   key={automation.id}
                   automation={automation}
-                  canOperate={
-                    !readOnly && automation.ownerUserId === currentUserId
-                  }
-                  canEditStructure={
-                    !readOnly && automation.ownerUserId === currentUserId
-                  }
+                  canOperate={automation.ownerUserId === currentUserId}
+                  canEditStructure={automation.ownerUserId === currentUserId}
                   displayTimezone={displayTimezone}
                   showDivider={index < automations.length - 1}
                 />
@@ -4273,14 +4267,12 @@ function AutomationsSection({
           </div>
         )}
       </div>
-      {!readOnly && (
-        <WorkflowAutomationCreateDialogs
-          workflowId={detail.id}
-          displayTimezone={displayTimezone}
-          createDialog={createDialog}
-          setCreateDialog={setCreateDialog}
-        />
-      )}
+      <WorkflowAutomationCreateDialogs
+        workflowId={detail.id}
+        displayTimezone={displayTimezone}
+        createDialog={createDialog}
+        setCreateDialog={setCreateDialog}
+      />
     </section>
   );
 }
