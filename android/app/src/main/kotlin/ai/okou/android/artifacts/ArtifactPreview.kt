@@ -357,7 +357,10 @@ private fun PreviewContent(preview: ArtifactPreviewState?) {
     val problem = preview?.problem
     val hosted = preview?.isHosted == true
     val imageStatus = preview?.isImage == true && content !is ArtifactContent.Image
-    val waiting = content == null && problem == null
+    val documentUrl = (content as? ArtifactContent.Website)?.url
+    var documentVisible by remember(documentUrl) { mutableStateOf(false) }
+    val waitingForDocument = documentUrl != null && !documentVisible
+    val waiting = problem == null && (content == null || waitingForDocument)
     val showLoading =
         key(preview?.id.takeIf { imageStatus }) {
             rememberContentReadFeedbackAfter(ContentReadFeedbackDelayMillis.takeIf { waiting })
@@ -372,14 +375,15 @@ private fun PreviewContent(preview: ArtifactPreviewState?) {
         shape = RoundedCornerShape(16.dp),
         color =
             when {
+                hosted -> colors.surfaceVariant
                 showLoading -> colors.surfaceContainerHigh
-                !hosted && documentSurface -> colors.surface
+                documentSurface -> colors.surface
                 else -> colors.surfaceVariant
             },
         border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
         if (hosted) {
-            HostedPreviewContent(content, problem, showLoading)
+            HostedPreviewContent(content, problem, showLoading) { documentVisible = true }
         } else {
             when (content) {
                 is ArtifactContent.Text ->
@@ -451,6 +455,7 @@ private fun HostedPreviewContent(
     content: ArtifactContent?,
     problem: ArtifactProblem?,
     showLoading: Boolean,
+    onDocumentVisible: () -> Unit,
 ) {
     var siteScroll by rememberArtifactWebScroll()
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -463,7 +468,9 @@ private fun HostedPreviewContent(
                         HostedArtifactPreview(
                             content,
                             siteScroll,
+                            showLoading,
                             onScroll = { siteScroll = it },
+                            onVisible = onDocumentVisible,
                         )
                     }
                 content == ArtifactContent.Unsupported ->
@@ -526,7 +533,9 @@ private fun ArtifactProblem.previewLabel(): Int =
 private fun HostedArtifactPreview(
     content: ArtifactContent.Website,
     scrollY: Int,
+    showLoading: Boolean,
     onScroll: (Int) -> Unit,
+    onVisible: () -> Unit,
 ) {
     var usedRetries by remember { mutableIntStateOf(0) }
     key(usedRetries) {
@@ -534,7 +543,7 @@ private fun HostedArtifactPreview(
         val failure = attempt.failure
         val remainingRetries = content.remainingRetries - usedRetries
         when {
-            failure == null ->
+            failure == null -> {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = {
@@ -543,9 +552,17 @@ private fun HostedArtifactPreview(
                             it,
                             content.url,
                             onFailure = attempt::recordFailure,
+                            onVisible = { view ->
+                                if (attempt.active) {
+                                    view.alpha = 1f
+                                    onVisible()
+                                }
+                            },
                             onLoaded = { view ->
-                                view.scrollTo(0, initialScroll)
-                                view.setOnScrollChangeListener { _, _, y, _, _ -> onScroll(y) }
+                                if (attempt.active) {
+                                    view.scrollTo(0, initialScroll)
+                                    view.setOnScrollChangeListener { _, _, y, _, _ -> onScroll(y) }
+                                }
                             },
                         )
                     },
@@ -555,6 +572,8 @@ private fun HostedArtifactPreview(
                     },
                     update = {},
                 )
+                if (showLoading) PreviewLoading()
+            }
             failure.problem == ArtifactProblem.Temporary && remainingRetries > 0 -> {
                 val lifecycle = LocalLifecycleOwner.current.lifecycle
                 LaunchedEffect(lifecycle) {
@@ -563,7 +582,7 @@ private fun HostedArtifactPreview(
                         usedRetries++
                     }
                 }
-                PreviewLoading()
+                if (showLoading) PreviewLoading()
             }
             else -> PreviewStatusText(failure.problem.previewLabel())
         }
@@ -581,8 +600,11 @@ private class HostedDocumentAttempt {
 
     private var released = false
 
+    val active: Boolean
+        get() = !released && failure == null
+
     fun recordFailure(failure: HostedDocumentFailure) {
-        if (!released && this.failure == null) this.failure = failure
+        if (active) this.failure = failure
     }
 
     fun release() {
@@ -597,9 +619,12 @@ private fun isolatedPreview(
     context: Context,
     url: HttpUrl,
     onFailure: (HostedDocumentFailure) -> Unit,
+    onVisible: (WebView) -> Unit,
     onLoaded: (WebView) -> Unit,
 ): WebView =
     WebView(context).apply {
+        // Leave the themed frame visible until WebView can draw its first document.
+        alpha = 0f
         settings.allowFileAccess = false
         settings.allowContentAccess = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -608,6 +633,7 @@ private fun isolatedPreview(
             object : WebViewClient() {
                 private val initialAddress = url.toString().substringBefore('#')
                 private var openingDocument = true
+                private var needsScrollRestore = true
 
                 override fun shouldOverrideUrlLoading(
                     view: WebView,
@@ -666,11 +692,15 @@ private fun isolatedPreview(
 
                 override fun onPageCommitVisible(view: WebView, address: String) {
                     openingDocument = false
+                    onVisible(view)
                 }
 
                 override fun onPageFinished(view: WebView, address: String) {
                     openingDocument = false
-                    onLoaded(view)
+                    if (needsScrollRestore) {
+                        needsScrollRestore = false
+                        onLoaded(view)
+                    }
                 }
 
                 private fun reportFailure(

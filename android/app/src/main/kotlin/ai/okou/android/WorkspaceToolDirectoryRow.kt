@@ -73,9 +73,12 @@ internal fun WorkspaceToolDirectoryRow(
 }
 
 @Composable
-internal fun WorkspaceToolDirectoryRowSkeleton(content: @Composable () -> Unit) {
+internal fun WorkspaceToolDirectoryRowSkeleton(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
     WorkspaceToolDirectoryRowLayout(
-        rowBounds,
+        modifier.then(rowBounds),
         leading = {},
         trailing = { Spacer(Modifier.size(trailingSize)) },
         content = content,
