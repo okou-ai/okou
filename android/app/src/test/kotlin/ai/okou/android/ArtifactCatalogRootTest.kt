@@ -1365,9 +1365,14 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         assertEquals(14.sp, labelStyle.fontSize)
         assertEquals(20.sp, labelStyle.lineHeight)
         assertEquals(
-            50.dp,
+            42.dp,
             sourceLabel.getUnclippedBoundsInRoot().left -
                 sourceAction.getUnclippedBoundsInRoot().left,
+        )
+        assertEquals(
+            24.dp,
+            sourceAction.getUnclippedBoundsInRoot().right -
+                sourceLabel.getUnclippedBoundsInRoot().right,
         )
         sourceAction.performClick()
         compose.onNodeWithTag("conversation").assertIsDisplayed()
