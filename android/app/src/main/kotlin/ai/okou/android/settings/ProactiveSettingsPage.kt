@@ -261,10 +261,10 @@ private fun SuggestionsRow(
 private fun ProactiveSettingState.detail(default: Int): Int =
     when {
         checking -> R.string.settings_save_checking
+        pending != null -> R.string.settings_saving
         confirmed?.needsTimezone == true -> R.string.settings_proactive_needs_timezone
         readFailed && confirmed == null -> R.string.settings_proactive_read_failed
         readFailed -> R.string.settings_proactive_refresh_failed
-        pending != null -> R.string.settings_saving
         else ->
             when (confirmed?.status) {
                 ProactiveStatus.Preparing -> R.string.settings_proactive_preparing
