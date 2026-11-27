@@ -44,6 +44,8 @@ import {
 } from "../services/remote-device-directory";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { publishRemoteRunnerInvalidation$ } from "../services/remote-runtime-wakeup.service";
+import { publishSshRuntimeInvalidation$ } from "../services/ssh-runtime-wakeup.service";
+import { publishVncNetworkReferenceChange } from "../services/vnc-connection.service";
 
 const missing = notFound("Remote device not found");
 const remoteDeviceFields = Object.freeze({
@@ -304,16 +306,17 @@ const deleteDevice$ = command(async ({ get, set }, signal: AbortSignal) => {
     result.desktop_changed &&
       publishUserSignal([owner.userId], "computerUseHostsChanged"),
     result.ios_changed && publishPhoneUseDevicesChanged(owner),
-    set(
-      publishRemoteRunnerInvalidation$,
-      { ...owner, connectionIds: result.ssh_ids },
-      "ssh",
-    ),
+    result.ssh_ids.length > 0 &&
+      set(publishSshRuntimeInvalidation$, {
+        ...owner,
+        connectionIds: result.ssh_ids,
+      }),
     set(
       publishRemoteRunnerInvalidation$,
       { ...owner, connectionIds: result.vnc_ids },
       "vnc",
     ),
+    result.vnc_ids.length > 0 && publishVncNetworkReferenceChange(owner),
   ]);
   signal.throwIfAborted();
   return { status: 204 as const, body: undefined };
