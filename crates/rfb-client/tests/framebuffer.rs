@@ -839,21 +839,20 @@ async fn decode_high_entropy_zrle(width: usize, height: usize, memory_limit: usi
 
     let mut tiles =
         Vec::with_capacity(width * height * 3 + width.div_ceil(64) * height.div_ceil(64));
+    // Fill each row before appending it instead of zeroing the full tile.
+    let mut row_pixels = [[0; 3]; 64];
     for tile_y in (0..height).step_by(64) {
         for tile_x in (0..width).step_by(64) {
             tiles.push(0); // Raw ZRLE tile, with three-byte RGB CPIXEL values.
             let tile_width = (width - tile_x).min(64);
             let tile_height = (height - tile_y).min(64);
-            let pixel_start = tiles.len();
-            tiles.resize(pixel_start + tile_width * tile_height * 3, 0);
-            for (y, row) in tiles[pixel_start..]
-                .chunks_exact_mut(tile_width * 3)
-                .enumerate()
-            {
+            let row = &mut row_pixels[..tile_width];
+            for y in 0..tile_height {
                 let row_start = (tile_y + y) * width + tile_x;
-                for (x, pixel) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+                for (x, pixel) in row.iter_mut().enumerate() {
                     *pixel = color(row_start + x);
                 }
+                tiles.extend_from_slice(row.as_flattened());
             }
         }
     }
