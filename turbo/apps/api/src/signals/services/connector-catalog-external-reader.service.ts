@@ -506,7 +506,7 @@ function effectiveConnectors<
   });
 }
 
-function iconForCatalog(
+export function iconForCatalog(
   connector: Pick<ConnectorCatalogArtifactConnector, "icon">,
 ): PublicConnectorCatalogIcon {
   const key = connector.icon.key;
