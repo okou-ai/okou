@@ -1,5 +1,5 @@
 import { screen } from "@testing-library/react";
-import { SharedDatabaseHttpError } from "../../../shared-database/http-error.ts";
+import { ChatDatabaseHttpError } from "../../../signals/chat-database/http-error.ts";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -67,7 +67,6 @@ test("shared-database-browser-005 The indicator service requires the member to u
   const opening = await startPage({
     context,
     path: "/workflows",
-    sharedWorkerTestTransport: "message-port",
   });
   await opening.content;
   click(await findButton("Open chat list menu"));
@@ -78,7 +77,7 @@ test("shared-database-browser-005 The indicator service requires the member to u
     screen.findByRole("dialog", updateDialog),
   ).resolves.toHaveTextContent("Refresh to get the latest version.");
 });
-test("worker-runtime-001 A worker catch-up failure propagates its HTTP status and offers an update", async () => {
+test("worker-runtime-001 A chat database catch-up failure propagates its HTTP status and offers an update", async () => {
   mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
   const body = context.mocks.deferred<void>();
   const received = context.mocks.deferred<void>();
@@ -93,7 +92,6 @@ test("worker-runtime-001 A worker catch-up failure propagates its HTTP status an
   const page = await startPage({
     context,
     path: RUN_PATH,
-    sharedWorkerTestTransport: "message-port",
   });
   await received.promise;
   body.resolve();
@@ -103,7 +101,7 @@ test("worker-runtime-001 A worker catch-up failure propagates its HTTP status an
   ).resolves.toBeVisible();
 });
 
-test("message-port-017 the workspace snapshot rejects startup with its shared database HTTP status", async () => {
+test("message-port-017 the workspace snapshot rejects startup with its chat database HTTP status", async () => {
   const arrived = context.mocks.deferred<void>();
   const deliver = context.mocks.deferred<void>();
   context.mocks.http.get("*" + chatThreadsContract.snapshot.path, async () => {
@@ -116,11 +114,10 @@ test("message-port-017 the workspace snapshot rejects startup with its shared da
   const page = await startPage({
     context,
     path: "/workflows",
-    sharedWorkerTestTransport: "message-port",
   });
   await arrived.promise;
   deliver.resolve();
-  await expect(page.ready).rejects.toBeInstanceOf(SharedDatabaseHttpError);
+  await expect(page.ready).rejects.toBeInstanceOf(ChatDatabaseHttpError);
   await expect(page.ready).rejects.toMatchObject({ status: 426 });
   await expect(
     screen.findByRole("dialog", updateDialog),

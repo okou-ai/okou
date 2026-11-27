@@ -4,7 +4,7 @@ import { command, computed, state, type Command } from "ccstate";
 
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
-import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyPayloadLoop$, waitAblyPayloadLoopUntil$ } from "../realtime.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
@@ -96,7 +96,7 @@ function createWalletConnectSignals(
       if (!parsed.success) {
         return false;
       }
-      const identity = await get(runtimeAuthenticatedIdentity$);
+      const identity = await get(authenticatedIdentity$);
       signal.throwIfAborted();
       if (parsed.data.orgId !== identity.orgId) {
         return false;
@@ -195,7 +195,7 @@ function createWalletApprovalSignals(
       if (!parsed.success) {
         return false;
       }
-      const identity = await get(runtimeAuthenticatedIdentity$);
+      const identity = await get(authenticatedIdentity$);
       signal.throwIfAborted();
       if (identity.orgId !== parsed.data.orgId) {
         return false;

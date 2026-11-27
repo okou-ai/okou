@@ -49,12 +49,12 @@ import { accept } from "../lib/accept.ts";
 import { sortByName, sortRemoteHosts } from "../lib/remote-resource-order.ts";
 import { locale$ } from "./locale.ts";
 import {
+  authenticatedIdentity$,
   authenticatedSessionKey$,
   clerk$,
   currentOrgInfo$,
   user$,
 } from "./auth.ts";
-import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import {
   invalidateRemoteAccess$,
@@ -69,7 +69,7 @@ import { onRef, resetSignal, settle, withCleanup } from "./utils.ts";
 export const vncIdentity$ = computed(async (get) => {
   const [user, identity] = await Promise.all([
     get(user$),
-    get(runtimeAuthenticatedIdentity$),
+    get(authenticatedIdentity$),
   ]);
   return user ? `${identity.orgId}:${user.id}` : null;
 });

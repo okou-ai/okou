@@ -22,7 +22,6 @@ import {
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
-import { observeOrganizationNotification } from "./organization-notification-fixture.ts";
 import { HttpResponse } from "msw";
 import {
   walletUserContract,
@@ -215,7 +214,6 @@ async function readConversation(
     NonNullable<Parameters<typeof mockChatLifecycle>[1]>,
     "sendGate" | "onSendRequest"
   > = {},
-  transport: "direct" | "message-port" = "direct",
 ) {
   context.mocks.http.get("https://login.link.com/auth", () => {
     return HttpResponse.text("Provider consent fixture");
@@ -239,7 +237,6 @@ async function readConversation(
     context,
     host: "app.okou.ai",
     path: "/chats/" + ATTACHMENT_THREAD_ID,
-    sharedWorkerTestTransport: transport,
   });
 }
 function change(orgId: string, claimed?: string) {
@@ -416,7 +413,7 @@ test("wallet-action-card-001 Authorization that finishes during subscription att
   );
   let attached = false;
   try {
-    await readConversation(authorization, {}, "message-port");
+    await readConversation(authorization);
     const authorize = await findFastControl("link", "Authorize Link wallet");
     safeAction(authorize, authorization);
     click(authorize);
@@ -443,18 +440,12 @@ test("wallet-action-card-001 Authorization that finishes during subscription att
 });
 
 test("wallet-action-card-019 A suspended purchase subscription reloads the continued purchase on reconnection", async () => {
-  const foreign = observeOrganizationNotification(
-    context,
-    "wallet:changed",
-    "other-organization",
-  );
   const provider = wallet({ status: "pending" }, "pending");
-  await readConversation(purchase, {}, "message-port");
+  await readConversation(purchase);
   await findFastControl("link", "Review purchase");
   await watching();
   provider.approval = "approved";
   change("other-organization");
-  await foreign;
   const editor = await screen.findByRole("textbox", { name: "Message" });
   await fill(editor, "Draft a note for the purchasing team");
   expect(editor).toHaveTextContent("Draft a note for the purchasing team");
@@ -463,9 +454,9 @@ test("wallet-action-card-019 A suspended purchase subscription reloads the conti
   change("org_default");
   await screen.findByText("Approved; waiting to continue");
   expect(queryFastControl("button", "Status recorded")).toBeDisabled();
-  context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
+  context.mocks.ably.triggerConnectionState("suspended");
   provider.approval = "continued";
-  context.mocks.ably.triggerSharedWorkerConnectionState("connected");
+  context.mocks.ably.triggerConnectionState("connected");
   await screen.findByText("Purchase request continued");
   expect(queryFastControl("button", "Status recorded")).toBeDisabled();
 });

@@ -16,7 +16,6 @@ function open(path: string) {
     context,
     host: "app.okou.ai",
     path,
-    sharedWorkerTestTransport: "message-port",
   });
 }
 async function workflowsLink() {

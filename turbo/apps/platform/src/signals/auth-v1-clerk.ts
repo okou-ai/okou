@@ -23,7 +23,7 @@ function isAuthV1Pathname(pathname: string): boolean {
  * Keeps Clerk's hosted auth steps in app history and reloads on auth exit.
  *
  * Authenticated startup is document-scoped: feature switches, the realtime
- * daemon, the shared database bridge and the onboarding guard all run once from
+ * daemon, the chat database and the onboarding guard all run once from
  * `bootstrap$` and return early while signed out. Leaving the hosted sign-in or
  * sign-up routes therefore needs a new document, while their internal factor
  * and task steps remain same-document navigations without a loading flash.

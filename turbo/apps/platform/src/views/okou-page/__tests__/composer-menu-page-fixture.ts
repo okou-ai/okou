@@ -48,7 +48,6 @@ export async function openChatMenu(context: TestContext) {
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
     host: "app.okou.ai",
-    sharedWorkerTestTransport: "message-port",
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);

@@ -18,7 +18,6 @@ async function focusConversation() {
     context,
     path: "/chats/" + thread,
     host: "app.okou.ai",
-    sharedWorkerTestTransport: "message-port",
   });
   const message = await screen.findByRole("textbox", { name: "Message" });
   await userEvent.click(message);

@@ -119,10 +119,6 @@ function getInternalAllowedLiterals() {
       "JSON null literal in user-visible diagnostic serialization",
     ],
     [
-      "src/shared-database/protocol.ts\u0000Run-output subscriptions require a run UUID",
-      "SharedWorker protocol validation error, not user-visible UI copy",
-    ],
-    [
       "src/signals/okou-page/tiptap-workflow-composer.ts\u0000paragraph+",
       "Tiptap document schema expression",
     ],

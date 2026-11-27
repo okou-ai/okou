@@ -1,6 +1,5 @@
 import "../polyfill.ts";
 import "./preview-bypass-cookie-bootstrap.ts";
-import "./accept-browser.ts";
 import { browserUpgradeRequired } from "./browser-support.ts";
 import { initSentry } from "./sentry.ts";
 import { captureFirstSkeletonPaint, initPostHog } from "./posthog.ts";
@@ -29,7 +28,6 @@ function startApplication(
   async function main() {
     await store.set(
       bootstrap$,
-      __OKOU_APP_VERSION__,
       (view) => {
         setupRouter(store, view, (el) => {
           const rootEl = document.getElementById("root");

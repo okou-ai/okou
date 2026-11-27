@@ -19,7 +19,7 @@ import {
   moveProjectSortOrder,
 } from "@okouai/core/project-sort-order";
 import type { infer as zInfer } from "zod";
-import { installedSharedDatabaseBridge$ } from "../shared-database-bridge-state.ts";
+import { queryProjectEventDatabase$ } from "../chat-database/signals.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { rootVersion$ } from "../root-signal.ts";
@@ -195,7 +195,8 @@ export const syncProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);
 
-    const result = await get(installedSharedDatabaseBridge$).query(
+    const result = await set(
+      queryProjectEventDatabase$,
       {
         dataKey: { kind: "project-event" },
         afterSeqId: null,
@@ -238,7 +239,8 @@ export const hydrateProjectCache$ = command(
     // Cache hydration belongs to the session, not each route. Keep the current
     // Projects mounted while navigation catches up with the canonical stream.
     if (get(owner.events$) === null) {
-      const cached = await get(installedSharedDatabaseBridge$).query(
+      const cached = await set(
+        queryProjectEventDatabase$,
         {
           dataKey: { kind: "project-event" },
           afterSeqId: null,

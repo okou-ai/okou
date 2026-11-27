@@ -3,7 +3,7 @@ import { command, computed } from "ccstate";
 import { chatThreadMarkAllReadContract } from "@okouai/api-contracts/client/chat-threads";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { chatThreadIndicatorsFromWorker$ } from "../shared-database.ts";
+import { chatThreadIndicators$ } from "./chat-thread-indicators.ts";
 import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
 import { optimisticReadMarks$ } from "./optimistic-chat-thread-read-marks.ts";
 
@@ -16,7 +16,7 @@ import { optimisticReadMarks$ } from "./optimistic-chat-thread-read-marks.ts";
  */
 export function serverUnreadAt$(threadId: string) {
   return computed(async (get): Promise<string | undefined> => {
-    const { unreadAt } = await get(chatThreadIndicatorsFromWorker$);
+    const { unreadAt } = await get(chatThreadIndicators$);
     const timestamp = unreadAt[threadId];
     if (timestamp === undefined) {
       return undefined;
@@ -30,7 +30,7 @@ export function serverUnreadAt$(threadId: string) {
 
 export const sidebarUnreadThreadIds$ = computed(
   async (get): Promise<ReadonlySet<string>> => {
-    const { unreadAt } = await get(chatThreadIndicatorsFromWorker$);
+    const { unreadAt } = await get(chatThreadIndicators$);
     const marks = get(optimisticReadMarks$);
     const projects = new Map(
       get(projects$).map((project) => {
@@ -60,6 +60,12 @@ export const sidebarUnreadThreadIds$ = computed(
       }
     }
     return ids;
+  },
+);
+
+export const workspaceHasUnreadChats$ = computed(
+  async (get): Promise<boolean> => {
+    return (await get(sidebarUnreadThreadIds$)).size > 0;
   },
 );
 

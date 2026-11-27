@@ -33,7 +33,6 @@ function visit(path: string, auth: SetupPageAuth = null, host = dev) {
     host,
     path,
     auth,
-    sharedWorkerTestTransport: "message-port",
   });
 }
 test.each([
@@ -106,7 +105,6 @@ test.each([
       host: dev,
       path: "/" + mode + "?" + returning(to),
       auth: { user },
-      sharedWorkerTestTransport: "message-port",
     });
     await waitFor(() => {
       expect(window.location.href).toBe(decorated);

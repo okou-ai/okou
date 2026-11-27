@@ -120,8 +120,10 @@ import {
   type ChatThreadFilter,
 } from "../../signals/okou-page/chat-thread-filter.ts";
 import { selectChatThreadFilter$ } from "../../signals/okou-page/chat-thread-filter-selection.ts";
-import { workspaceHasUnreadChats$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
-import { markWorkspaceThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
+import {
+  markWorkspaceThreadsRead$,
+  workspaceHasUnreadChats$,
+} from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
   closeRenameChatThreadDialog$,
   pendingDeleteThreadId$,

@@ -6083,7 +6083,7 @@
         },
         "indexedDb": {
           "countExplanation": "件数は読み取り専用トランザクションで取得し、レコード本体は読み取りません。",
-          "description": "Shared Worker が管理するローカルチャットキャッシュのレコード件数を確認します。",
+          "description": "ローカルの IndexedDB チャットキャッシュのレコード件数を確認します。",
           "loading": "IndexedDB ストレージを読み込んでいます...",
           "measurementUnavailable": "スナップショットの測定に失敗しました。",
           "measureSnapshot": "スナップショットを測定",
@@ -6422,10 +6422,6 @@
       "browse": "ワークフローを見る",
       "description": "移動されたか、リンクが古い可能性があります。それ以外はすべて元の場所にあります。",
       "title": "そのページはここにありません。"
-    },
-    "workerFailure": {
-      "description": "このアプリへの接続が中断されました。",
-      "title": "接続が中断されました"
     }
   },
   "sharedThread": {

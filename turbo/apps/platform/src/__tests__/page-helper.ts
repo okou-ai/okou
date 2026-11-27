@@ -1,3 +1,4 @@
+import { openDB } from "idb";
 import { fireEvent, isInaccessible, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -29,11 +30,14 @@ import { authContract } from "@okouai/api-contracts/contracts/auth";
 import { setMockFeatureSwitches } from "../mocks/handlers/api-feature-switches.helpers";
 import { setDebugLoggerLocalStorage$ } from "../signals/bootstrap/loggers";
 import { createDeferredPromise, detach, Reason } from "../signals/utils";
+import type { ChatThreadEventQueryResult } from "../signals/chat-database/types.ts";
 import {
-  setupSharedWorkerTestBootstrap$,
-  type SharedWorkerTestTransport,
-} from "../shared-database/test-bridge.ts";
-import type { ChatThreadEventQueryResult } from "../shared-database/data-key.ts";
+  CHAT_IDB_VERSION,
+  CHAT_THREAD_EVENTS_STORE,
+  CHAT_THREAD_SNAPSHOT_ID,
+  CHAT_THREAD_SNAPSHOT_STORE,
+  upgradeChatIdb,
+} from "../signals/external/chat-idb-schema.ts";
 import { resolvePlatformRuntimeConfig } from "../lib/platform-host.ts";
 import {
   DEFAULT_LOCALE,
@@ -44,8 +48,6 @@ import {
   initializeI18nWithResources,
   loadInitialLocaleResources,
 } from "../i18n/index.ts";
-
-const TEST_APP_VERSION = "0.540.0";
 
 function ensureTestLocalStorage(): void {
   const currentLocalStorage = globalThis.localStorage;
@@ -93,7 +95,6 @@ export type SetupPageAuth = null | {
 };
 
 interface SetupPageOptions {
-  readonly appVersion?: string;
   readonly context: TestContext;
   readonly path: string;
   readonly host?: string;
@@ -102,13 +103,45 @@ interface SetupPageOptions {
   readonly debugLoggers?: string[];
   readonly env?: PageEnvironment;
   readonly featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>;
-  readonly sharedWorkerAppVersion?: string;
   /**
-   * Supplies the shared worker's cache-only chat-thread projection to a
-   * page-level story without coupling its UI assertion to IndexedDB startup.
+   * Seeds the per-workspace chat IndexedDB cache before startup so page-level
+   * stories observe an existing local projection during hydration.
    */
   readonly cachedChatThreadEvents?: ChatThreadEventQueryResult;
-  readonly sharedWorkerTestTransport?: SharedWorkerTestTransport;
+}
+
+async function seedCachedChatThreadEvents(
+  userId: string,
+  orgId: string,
+  cached: ChatThreadEventQueryResult,
+): Promise<void> {
+  if (cached.snapshot === null && cached.events.length === 0) {
+    return;
+  }
+  const db = await openDB(`vm0-chat-${userId}-${orgId}`, CHAT_IDB_VERSION, {
+    upgrade(database, oldVersion) {
+      upgradeChatIdb(database, oldVersion);
+    },
+  });
+  try {
+    const tx = db.transaction(
+      [CHAT_THREAD_SNAPSHOT_STORE, CHAT_THREAD_EVENTS_STORE],
+      "readwrite",
+    );
+    if (cached.snapshot !== null) {
+      await tx.objectStore(CHAT_THREAD_SNAPSHOT_STORE).put({
+        ...cached.snapshot,
+        id: CHAT_THREAD_SNAPSHOT_ID,
+      });
+    }
+    const eventsStore = tx.objectStore(CHAT_THREAD_EVENTS_STORE);
+    for (const event of cached.events) {
+      await eventsStore.put(event);
+    }
+    await tx.done;
+  } finally {
+    db.close();
+  }
 }
 
 type EnvironmentValue = string | undefined;
@@ -245,7 +278,7 @@ async function setupPageAsync(
   // setupPage exercises the shared MSW fixture data even when a test does not
   // customize a handler. Start the lazy mock lifecycle so abort resets any
   // fixture mutations made by the application during this test.
-  const { mocks, store, workerStore } = options.context;
+  const { mocks, store } = options.context;
   if (options.locale) {
     mocks.data.userPreferences({
       locale: options.locale,
@@ -285,24 +318,16 @@ async function setupPageAsync(
       });
     });
   }
-  store.set(
-    setupSharedWorkerTestBootstrap$,
-    {
-      appVersion: options.sharedWorkerAppVersion ?? TEST_APP_VERSION,
-      workerStore,
-      cachedChatThreadEvents: options.cachedChatThreadEvents,
-      identity:
-        auth.user && activeOrgId
-          ? { userId: auth.user.id, orgId: activeOrgId }
-          : null,
-      transport: options.sharedWorkerTestTransport ?? "direct",
-    },
-    signal,
-  );
+  if (user && activeOrgId && options.cachedChatThreadEvents) {
+    await seedCachedChatThreadEvents(
+      user.id,
+      activeOrgId,
+      options.cachedChatThreadEvents,
+    );
+  }
   signal.throwIfAborted();
   const ready = store.set(
     bootstrap$,
-    options.appVersion ?? TEST_APP_VERSION,
     (view) => {
       setupRouter(store, view, (element) => {
         const container = createBootstrapRoot();

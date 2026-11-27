@@ -30,8 +30,12 @@ import {
   createSshConnectionRequestSchema,
   updateSshConnectionRequestSchema,
 } from "@okouai/api-contracts/validators/ssh-connections";
-import { authenticatedSessionKey$, clerk$, user$ } from "./auth.ts";
-import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
+import {
+  authenticatedIdentity$,
+  authenticatedSessionKey$,
+  clerk$,
+  user$,
+} from "./auth.ts";
 import { apiClient$ } from "./api-client.ts";
 import {
   cloudflareAccessConfigs$,
@@ -145,7 +149,7 @@ export const sshIdentity$ = computed(async (get) => {
   // Background token/profile updates must not reset credential forms.
   const [user, identity] = await Promise.all([
     get(user$),
-    get(runtimeAuthenticatedIdentity$),
+    get(authenticatedIdentity$),
   ]);
   return user ? `${identity.orgId}:${user.id}` : null;
 });

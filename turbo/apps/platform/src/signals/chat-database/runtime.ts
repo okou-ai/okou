@@ -1,11 +1,9 @@
-import { fetchResource } from "../lib/resource-fetch.ts";
 import { chatThreadEventsContract } from "@okouai/api-contracts/client/chat-threads";
 import {
   chatEventRowSchema,
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
-import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import type {
   ClientRouter,
   InitClientArgs,
@@ -13,20 +11,26 @@ import type {
 } from "@okouai/api-contracts/client/types";
 import type { IDBPDatabase } from "idb";
 
+import { fetchResource } from "../../lib/resource-fetch.ts";
+import { captureSentryLogError, sentryLogContext } from "../../lib/sentry.ts";
+import { now } from "../../lib/time.ts";
+import type { ApiClientFactory } from "../api-client.ts";
+import { createChatIdbOpener } from "../external/chat-idb-opener.ts";
 import {
-  captureSentryLogError,
-  sentryLogContext,
-} from "../lib/sentry-config.ts";
-import { now } from "../lib/time.ts";
-import { createChatIdbOpener } from "../signals/external/chat-idb-opener.ts";
-import { createIdbDiagnosticsStore } from "../signals/external/idb-diagnostics-store.ts";
-import { createIdbEventRowStores } from "../signals/external/idb-event-row-store.ts";
+  createIdbDiagnosticsStore,
+  type IndexedDbDiagnostics,
+  type IndexedDbSnapshotMeasurement,
+} from "../external/idb-diagnostics-store.ts";
+import { createIdbEventRowStores } from "../external/idb-event-row-store.ts";
 import {
   metadataEventCursor,
   type MetadataEvent,
   type MetadataSnapshot,
   type MetadataEventResult,
-} from "../signals/external/idb-metadata-event-store.ts";
+} from "../external/idb-metadata-event-store.ts";
+import { logger } from "../log.ts";
+import { isAbortError, settle } from "../utils.ts";
+import { ChatDatabaseHttpError } from "./http-error.ts";
 import {
   createChatThreadEventSource,
   createProjectEventSource,
@@ -34,31 +38,20 @@ import {
   type MetadataEventSource,
   type MetadataEventRemoteState,
 } from "./metadata-event-source.ts";
-import type { ApiClientFactory } from "../signals/api-client.ts";
-import { logger } from "../signals/log.ts";
-import { isAbortError, settle } from "../signals/utils.ts";
-import {
-  scopeSharedDatabaseDataKey,
-  type ChatEventDataKey,
-  type SharedDatabaseDataKey,
-  type SharedDatabaseIdentity,
-  type SharedDatabaseQuery,
-  type SharedDatabaseQueryResult,
-  type ScopedChatEventDataKey,
-  type ScopedSharedDatabaseDataKey,
-} from "./data-key.ts";
 import type {
-  IndexedDbDiagnostics,
-  IndexedDbSnapshotMeasurement,
-} from "./computed-key.ts";
-import type { SharedDatabaseWorkerMessage } from "./protocol.ts";
-import { SharedDatabaseHttpError } from "./http-error.ts";
-type SharedDatabaseContractClient<TContract extends ClientRouter> =
+  ChatDatabaseDataKey,
+  ChatDatabaseIdentity,
+  ChatDatabaseQuery,
+  ChatDatabaseQueryResult,
+  ChatEventDataKey,
+} from "./types.ts";
+
+type ChatDatabaseContractClient<TContract extends ClientRouter> =
   InitClientReturn<TContract, InitClientArgs>;
 
 const CHAT_EVENT_ROWS_PAGE_LIMIT = 50;
 const THREAD_START_SEQ_ID = 0;
-const L = logger("SharedDatabaseWorker");
+const L = logger("ChatDatabase");
 
 function chatEventRowsQuery(cursor: ChatEventCursor) {
   return cursor.lastEventId === null
@@ -73,12 +66,7 @@ function chatEventRowsQuery(cursor: ChatEventCursor) {
       };
 }
 
-type WorkerRuntimeEvent = Extract<
-  SharedDatabaseWorkerMessage,
-  { readonly type: "worker-unavailable" }
->;
-
-type ChatEventContractClient = SharedDatabaseContractClient<
+type ChatEventContractClient = ChatDatabaseContractClient<
   typeof chatThreadEventsContract
 >;
 
@@ -92,24 +80,24 @@ interface ChatEventRemoteState {
 
 interface ChatEventRemoteContext {
   readonly client: ChatEventContractClient;
-  readonly dataKey: ScopedChatEventDataKey;
+  readonly dataKey: ChatEventDataKey;
 }
 
-interface SharedDatabaseEntry {
+interface ChatDatabaseEntry {
   readonly promise: Promise<IDBPDatabase>;
   database: IDBPDatabase | null;
   invalidated: boolean;
 }
 
 interface ChatEventBatchWrite {
-  readonly dataKey: ScopedChatEventDataKey;
+  readonly dataKey: ChatEventDataKey;
   readonly rows: readonly ChatEventRow[];
   readonly cursor: ChatEventCursor;
 }
 
-interface SharedDatabaseWorkerRuntimeOptions {
-  readonly identity: SharedDatabaseIdentity;
-  readonly emit: (message: WorkerRuntimeEvent) => void;
+interface ChatDatabaseRuntimeOptions {
+  readonly identity: ChatDatabaseIdentity;
+  readonly onVersionChange: () => void;
   readonly createContractClient: ApiClientFactory;
 }
 
@@ -120,15 +108,18 @@ class ChatThreadNotFoundError extends Error {
   }
 }
 
-function dataKeyDiagnosticDetails(dataKey: ScopedSharedDatabaseDataKey): {
-  readonly dataset: ScopedSharedDatabaseDataKey["kind"];
+function dataKeyDiagnosticDetails(
+  dataKey: ChatDatabaseDataKey,
+  identity: ChatDatabaseIdentity,
+): {
+  readonly dataset: ChatDatabaseDataKey["kind"];
   readonly orgId: string;
   readonly userId: string;
 } {
   return {
     dataset: dataKey.kind,
-    orgId: dataKey.orgId,
-    userId: dataKey.userId,
+    orgId: identity.orgId,
+    userId: identity.userId,
   };
 }
 
@@ -149,42 +140,39 @@ function isIndexedDbUnavailable(error: unknown): boolean {
 }
 
 function logDataKeyError(
-  dataKey: ScopedSharedDatabaseDataKey,
+  dataKey: ChatDatabaseDataKey,
+  identity: ChatDatabaseIdentity,
   operation: string,
   error: unknown,
 ): void {
-  L.debug(operation, { ...dataKeyDiagnosticDetails(dataKey), error });
+  L.debug(operation, { ...dataKeyDiagnosticDetails(dataKey, identity), error });
 }
 
 function reportDataKeyError(
-  dataKey: ScopedSharedDatabaseDataKey,
+  dataKey: ChatDatabaseDataKey,
+  identity: ChatDatabaseIdentity,
   operation: string,
   error: unknown,
 ): void {
-  logDataKeyError(dataKey, operation, error);
+  logDataKeyError(dataKey, identity, operation, error);
   if (isAbortError(error)) {
     return;
   }
-  const details = dataKeyDiagnosticDetails(dataKey);
+  const details = dataKeyDiagnosticDetails(dataKey, identity);
   const context = sentryLogContext({
     contexts: {
-      shared_database: { org_id: dataKey.orgId },
-      ...(error instanceof SharedDatabaseHttpError
+      chat_database: { org_id: identity.orgId },
+      ...(error instanceof ChatDatabaseHttpError
         ? { response: { status_code: error.status } }
         : {}),
     },
     tags: {
-      "shared_database.dataset": dataKey.kind,
-      "shared_database.operation": operation,
+      "chat_database.dataset": dataKey.kind,
+      "chat_database.operation": operation,
     },
-    user: { id: dataKey.userId },
+    user: { id: identity.userId },
   });
-  captureSentryLogError("SharedDatabaseWorker", [
-    operation,
-    error,
-    details,
-    context,
-  ]);
+  captureSentryLogError("ChatDatabase", [operation, error, details, context]);
 }
 
 function mergeChatEventRows(
@@ -212,18 +200,18 @@ function requireChatEventCursor(
   return cursor;
 }
 
-export class SharedDatabaseWorkerRuntime {
-  private readonly identity: SharedDatabaseIdentity;
-  private databaseEntry: SharedDatabaseEntry | null = null;
-  private readonly emit: (message: WorkerRuntimeEvent) => void;
+export class ChatDatabaseRuntime {
+  private readonly identity: ChatDatabaseIdentity;
+  private databaseEntry: ChatDatabaseEntry | null = null;
+  private readonly onVersionChange: () => void;
   private readonly createContractClient: ApiClientFactory;
 
   constructor(
-    options: SharedDatabaseWorkerRuntimeOptions,
+    options: ChatDatabaseRuntimeOptions,
     private readonly rootSignal: AbortSignal,
   ) {
-    const { identity, emit, createContractClient } = options;
-    this.emit = emit;
+    const { identity, onVersionChange, createContractClient } = options;
+    this.onVersionChange = onVersionChange;
     this.createContractClient = createContractClient;
     this.identity = {
       userId: identity.userId,
@@ -243,47 +231,58 @@ export class SharedDatabaseWorkerRuntime {
     );
   }
 
-  async query<TKey extends SharedDatabaseDataKey>(
-    query: SharedDatabaseQuery<TKey>,
+  async query<TKey extends ChatDatabaseDataKey>(
+    query: ChatDatabaseQuery<TKey>,
     signal: AbortSignal,
-  ): Promise<SharedDatabaseQueryResult<TKey>> {
-    signal.throwIfAborted();
-    const dataKey = scopeSharedDatabaseDataKey(query.dataKey, this.identity);
+  ): Promise<ChatDatabaseQueryResult<TKey>> {
+    const effectiveSignal = AbortSignal.any([this.rootSignal, signal]);
+    effectiveSignal.throwIfAborted();
+    const { dataKey } = query;
     const startedAt = now();
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-    const result = await settle(this.queryData(query, dataKey, signal), signal);
+    const result = await settle(
+      this.queryData(query, effectiveSignal),
+      effectiveSignal,
+    );
     if (!result.ok) {
-      reportDataKeyError(dataKey, "query.error", result.error);
+      reportDataKeyError(dataKey, this.identity, "query.error", result.error);
       throw result.error;
     }
     L.debug("query.finish", {
-      ...dataKeyDiagnosticDetails(dataKey),
+      ...dataKeyDiagnosticDetails(dataKey, this.identity),
       durationMs: now() - startedAt,
     });
     return result.value;
   }
 
   async getIndexedDbDiagnostics(
-    signal: AbortSignal,
+    signal: AbortSignal = this.rootSignal,
   ): Promise<IndexedDbDiagnostics> {
+    const effectiveSignal =
+      signal === this.rootSignal
+        ? this.rootSignal
+        : AbortSignal.any([this.rootSignal, signal]);
+    effectiveSignal.throwIfAborted();
     return await this.runIndexedDbOperation(
       createIdbDiagnosticsStore,
       (store) => {
-        return store.read(signal);
+        return store.read(effectiveSignal);
       },
-      signal,
+      effectiveSignal,
     );
   }
 
   async measureIndexedDbSnapshot(
     signal: AbortSignal,
   ): Promise<IndexedDbSnapshotMeasurement | null> {
+    const effectiveSignal = AbortSignal.any([this.rootSignal, signal]);
+    effectiveSignal.throwIfAborted();
     return await this.runIndexedDbOperation(
       createIdbDiagnosticsStore,
       (store) => {
-        return store.measureSnapshot(signal);
+        return store.measureSnapshot(effectiveSignal);
       },
-      signal,
+      effectiveSignal,
     );
   }
 
@@ -291,35 +290,35 @@ export class SharedDatabaseWorkerRuntime {
     requestedThreadIds: readonly string[],
     signal: AbortSignal,
   ): Promise<readonly string[]> {
-    signal.throwIfAborted();
+    const effectiveSignal = AbortSignal.any([this.rootSignal, signal]);
+    effectiveSignal.throwIfAborted();
     const threadIds = [...new Set(requestedThreadIds)];
     if (threadIds.length === 0) {
       return [];
     }
-    const dataKeys = threadIds.map((threadId) => {
-      return scopeSharedDatabaseDataKey(
-        { kind: "chat-event", threadId },
-        this.identity,
-      );
-    });
-    const diagnosticDataKey = dataKeys[0];
-    if (!diagnosticDataKey) {
+    const firstThreadId = threadIds[0];
+    if (!firstThreadId) {
       throw new Error("ChatEvent catch-up requires a diagnostic data key");
     }
+    const diagnosticDataKey: ChatEventDataKey = {
+      kind: "chat-event",
+      threadId: firstThreadId,
+    };
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
     const cachedCursorsResult = await settle(
       this.runIndexedDbOperation(
         createIdbEventRowStores,
         (stores) => {
-          return stores.readStore.readCursors(threadIds, signal);
+          return stores.readStore.readCursors(threadIds, effectiveSignal);
         },
-        signal,
+        effectiveSignal,
       ),
-      signal,
+      effectiveSignal,
     );
     if (!cachedCursorsResult.ok) {
       logDataKeyError(
         diagnosticDataKey,
+        this.identity,
         "indexeddb.chat-event-cursors.read.error",
         cachedCursorsResult.error,
       );
@@ -342,17 +341,11 @@ export class SharedDatabaseWorkerRuntime {
       body: threadIds.map((threadId) => {
         return [threadId, requireChatEventCursor(cursors, threadId).lastSeqId];
       }),
-      fetchOptions: { signal },
+      fetchOptions: { signal: effectiveSignal },
     });
-    signal.throwIfAborted();
-    if (
-      response.status === 401 ||
-      response.status === CLIENT_FORCE_UPGRADE_STATUS
-    ) {
-      throw new SharedDatabaseHttpError(response.status);
-    }
+    effectiveSignal.throwIfAborted();
     if (response.status !== 200) {
-      throw new SharedDatabaseHttpError(response.status);
+      throw new ChatDatabaseHttpError(response.status);
     }
     this.assertChatEventCatchUpPartition(
       threadIds,
@@ -369,26 +362,23 @@ export class SharedDatabaseWorkerRuntime {
         ? []
         : [
             {
-              dataKey: scopeSharedDatabaseDataKey(
-                { kind: "chat-event", threadId },
-                this.identity,
-              ),
+              dataKey: { kind: "chat-event", threadId },
               rows,
               cursor: { lastEventId: last.id, lastSeqId: last.seqId },
             },
           ];
     });
-    const batchWritten = await this.persistChatEventBatch(writes, signal);
+    const batchWritten = await this.persistChatEventBatch(
+      writes,
+      effectiveSignal,
+    );
     const rebuiltThreadIds = await Promise.all(
       response.body.notFoundThreads.map(async (threadId) => {
-        const dataKey = scopeSharedDatabaseDataKey(
-          { kind: "chat-event", threadId },
-          this.identity,
-        );
+        const dataKey: ChatEventDataKey = { kind: "chat-event", threadId };
         const rebuilt = await this.replaceChatEventsFromSnapshot(
           client,
           dataKey,
-          signal,
+          effectiveSignal,
         );
         return rebuilt ? threadId : null;
       }),
@@ -474,6 +464,7 @@ export class SharedDatabaseWorkerRuntime {
       }
       logDataKeyError(
         firstWrite.dataKey,
+        this.identity,
         "indexeddb.chat-event-batch.write.error",
         written.error,
       );
@@ -484,7 +475,7 @@ export class SharedDatabaseWorkerRuntime {
 
   private async replaceChatEventsFromSnapshot(
     client: ChatEventContractClient,
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     signal: AbortSignal,
   ): Promise<boolean> {
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
@@ -515,7 +506,7 @@ export class SharedDatabaseWorkerRuntime {
     );
     if (!state.ok) {
       if (
-        state.error instanceof SharedDatabaseHttpError &&
+        state.error instanceof ChatDatabaseHttpError &&
         state.error.status === 404
       ) {
         return await this.clearChatEventCache(dataKey, signal);
@@ -526,7 +517,7 @@ export class SharedDatabaseWorkerRuntime {
   }
 
   private async clearChatEventCache(
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     signal: AbortSignal,
   ): Promise<boolean> {
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
@@ -543,6 +534,7 @@ export class SharedDatabaseWorkerRuntime {
     if (!cleared.ok) {
       logDataKeyError(
         dataKey,
+        this.identity,
         "indexeddb.chat-event.clear.error",
         cleared.error,
       );
@@ -551,19 +543,19 @@ export class SharedDatabaseWorkerRuntime {
     return true;
   }
 
-  private async queryData<TKey extends SharedDatabaseDataKey>(
-    query: SharedDatabaseQuery<TKey>,
-    dataKey: ScopedSharedDatabaseDataKey,
+  private async queryData<TKey extends ChatDatabaseDataKey>(
+    query: ChatDatabaseQuery<TKey>,
     signal: AbortSignal,
-  ): Promise<SharedDatabaseQueryResult<TKey>> {
-    if (query.dataKey.kind === "chat-event" && dataKey.kind === "chat-event") {
+  ): Promise<ChatDatabaseQueryResult<TKey>> {
+    const { dataKey } = query;
+    if (dataKey.kind === "chat-event") {
       const result = await this.queryChatEvents(
         dataKey,
         query.afterSeqId,
         query.consistency,
         signal,
       );
-      return result as SharedDatabaseQueryResult<TKey>;
+      return result as ChatDatabaseQueryResult<TKey>;
     }
     if (dataKey.kind === "project-event") {
       return (await this.queryMetadataEvents(
@@ -571,10 +563,7 @@ export class SharedDatabaseWorkerRuntime {
         query.consistency,
         createProjectEventSource(this.createContractClient),
         signal,
-      )) as SharedDatabaseQueryResult<TKey>;
-    }
-    if (dataKey.kind !== "chat-thread-event") {
-      throw new Error("Shared database query data key is invalid");
+      )) as ChatDatabaseQueryResult<TKey>;
     }
     const result = await this.queryMetadataEvents(
       dataKey,
@@ -582,13 +571,13 @@ export class SharedDatabaseWorkerRuntime {
       createChatThreadEventSource(this.createContractClient),
       signal,
     );
-    return result as SharedDatabaseQueryResult<TKey>;
+    return result as ChatDatabaseQueryResult<TKey>;
   }
 
   private async queryChatEvents(
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     afterSeqId: number | null,
-    consistency: SharedDatabaseQuery<ChatEventDataKey>["consistency"],
+    consistency: ChatDatabaseQuery<ChatEventDataKey>["consistency"],
     signal: AbortSignal,
   ): Promise<ChatEventRow[]> {
     if (consistency === "cache-only") {
@@ -604,7 +593,7 @@ export class SharedDatabaseWorkerRuntime {
   }
 
   private async syncChatEvents(
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     signal: AbortSignal,
   ): Promise<readonly ChatEventRow[]> {
     // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
@@ -624,6 +613,7 @@ export class SharedDatabaseWorkerRuntime {
     if (!cachedCursorResult.ok) {
       logDataKeyError(
         dataKey,
+        this.identity,
         "indexeddb.chat-event-cursor.read.error",
         cachedCursorResult.error,
       );
@@ -662,7 +652,7 @@ export class SharedDatabaseWorkerRuntime {
   }
 
   private async persistChatEventRows(
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     state: ChatEventRemoteState,
     signal: AbortSignal,
   ): Promise<boolean> {
@@ -695,6 +685,7 @@ export class SharedDatabaseWorkerRuntime {
     if (!written.ok) {
       logDataKeyError(
         dataKey,
+        this.identity,
         "indexeddb.chat-event.write.error",
         written.error,
       );
@@ -723,9 +714,6 @@ export class SharedDatabaseWorkerRuntime {
         fetchOptions: { signal },
       });
       signal.throwIfAborted();
-      if (page.status === 401 || page.status === CLIENT_FORCE_UPGRADE_STATUS) {
-        throw new SharedDatabaseHttpError(page.status);
-      }
       if (page.status === 410) {
         if (cursorFromServer) {
           throw new Error(
@@ -745,10 +733,8 @@ export class SharedDatabaseWorkerRuntime {
         continue;
       }
       if (page.status !== 200) {
-        throw new SharedDatabaseHttpError(page.status);
+        throw new ChatDatabaseHttpError(page.status);
       }
-      // The page receives Worker rows without decoding them again, so row pages
-      // are decoded here like cached and snapshot rows.
       const pageRows = page.body.rows.map((row) => {
         return chatEventRowSchema.parse(row);
       });
@@ -769,7 +755,7 @@ export class SharedDatabaseWorkerRuntime {
 
   private async fetchChatEventSnapshot(
     client: ChatEventContractClient,
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     signal: AbortSignal,
   ): Promise<{
     readonly rows: readonly ChatEventRow[];
@@ -780,12 +766,6 @@ export class SharedDatabaseWorkerRuntime {
       fetchOptions: { signal },
     });
     signal.throwIfAborted();
-    if (
-      snapshot.status === 401 ||
-      snapshot.status === CLIENT_FORCE_UPGRADE_STATUS
-    ) {
-      throw new SharedDatabaseHttpError(snapshot.status);
-    }
     if (snapshot.status === 404) {
       if (snapshot.body.error.code !== "CHAT_EVENT_SNAPSHOT_NOT_FOUND") {
         throw new ChatThreadNotFoundError();
@@ -796,11 +776,11 @@ export class SharedDatabaseWorkerRuntime {
       };
     }
     if (snapshot.status !== 200) {
-      throw new SharedDatabaseHttpError(snapshot.status);
+      throw new ChatDatabaseHttpError(snapshot.status);
     }
     const response = await fetchResource(snapshot.body.url, {}, signal);
     if (!response.ok) {
-      throw new SharedDatabaseHttpError(response.status);
+      throw new ChatDatabaseHttpError(response.status);
     }
     const text = await response.text();
     signal.throwIfAborted();
@@ -833,7 +813,7 @@ export class SharedDatabaseWorkerRuntime {
     TSnapshot extends MetadataSnapshot,
     TEvent extends MetadataEvent,
   >(
-    dataKey: ScopedSharedDatabaseDataKey,
+    dataKey: ChatDatabaseDataKey,
     consistency: "cache-only" | "catch-up",
     source: MetadataEventSource<TSnapshot, TEvent>,
     signal: AbortSignal,
@@ -897,6 +877,7 @@ export class SharedDatabaseWorkerRuntime {
       }
       logDataKeyError(
         dataKey,
+        this.identity,
         "indexeddb.metadata-event.write.error",
         written.error,
       );
@@ -912,7 +893,7 @@ export class SharedDatabaseWorkerRuntime {
     TSnapshot extends MetadataSnapshot,
     TEvent extends MetadataEvent,
   >(
-    dataKey: ScopedSharedDatabaseDataKey,
+    dataKey: ChatDatabaseDataKey,
     source: MetadataEventSource<TSnapshot, TEvent>,
     state: MetadataEventRemoteState<TSnapshot, TEvent>,
     signal: AbortSignal,
@@ -928,11 +909,11 @@ export class SharedDatabaseWorkerRuntime {
     const rebasedSnapshot = await settle(source.snapshot(signal), signal);
     if (!rebasedSnapshot.ok) {
       const error = rebasedSnapshot.error;
-      if (!(error instanceof SharedDatabaseHttpError) || error.status < 500) {
+      if (!(error instanceof ChatDatabaseHttpError) || error.status < 500) {
         throw error;
       }
       // Compaction is optional: the synchronized tail is still authoritative.
-      logDataKeyError(dataKey, "snapshot-rebase.skip", error);
+      logDataKeyError(dataKey, this.identity, "snapshot-rebase.skip", error);
       return state;
     }
     return await loadMetadataEventTail(
@@ -948,7 +929,7 @@ export class SharedDatabaseWorkerRuntime {
   }
 
   private async readChatEventCache(
-    dataKey: ScopedChatEventDataKey,
+    dataKey: ChatEventDataKey,
     afterSeqId: number | null,
     signal: AbortSignal,
   ): Promise<ChatEventRow[]> {
@@ -968,7 +949,12 @@ export class SharedDatabaseWorkerRuntime {
       signal,
     );
     if (!result.ok) {
-      logDataKeyError(dataKey, "indexeddb.chat-event.read.error", result.error);
+      logDataKeyError(
+        dataKey,
+        this.identity,
+        "indexeddb.chat-event.read.error",
+        result.error,
+      );
       return [];
     }
     return result.value;
@@ -978,7 +964,7 @@ export class SharedDatabaseWorkerRuntime {
     TSnapshot extends MetadataSnapshot,
     TEvent extends MetadataEvent,
   >(
-    dataKey: ScopedSharedDatabaseDataKey,
+    dataKey: ChatDatabaseDataKey,
     source: MetadataEventSource<TSnapshot, TEvent>,
     signal: AbortSignal,
   ): Promise<{
@@ -1004,6 +990,7 @@ export class SharedDatabaseWorkerRuntime {
       }
       logDataKeyError(
         dataKey,
+        this.identity,
         "indexeddb.metadata-event.read.error",
         result.error,
       );
@@ -1029,7 +1016,7 @@ export class SharedDatabaseWorkerRuntime {
   }
 
   private async getDatabaseConnection(signal: AbortSignal): Promise<{
-    readonly entry: SharedDatabaseEntry;
+    readonly entry: ChatDatabaseEntry;
     readonly database: IDBPDatabase;
   }> {
     let entry = this.databaseEntry;
@@ -1039,13 +1026,10 @@ export class SharedDatabaseWorkerRuntime {
           if (this.databaseEntry) {
             this.databaseEntry.invalidated = true;
           }
-          this.emit({
-            type: "worker-unavailable",
-            reason: "indexeddb-version-changed",
-          });
+          this.onVersionChange();
         },
       });
-      const nextEntry: SharedDatabaseEntry = {
+      const nextEntry: ChatDatabaseEntry = {
         promise: opener.openChatIdb(this.identity.userId, this.identity.orgId),
         database: null,
         invalidated: false,

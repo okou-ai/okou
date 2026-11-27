@@ -243,7 +243,6 @@ test.each(["notification", "reconnect"] as const)(
     await setupPage({
       context,
       path: `/chats/${ATTACHMENT_THREAD_ID}`,
-      sharedWorkerTestTransport: "message-port",
     });
     await openMarkdown();
     await selectPassage(PASSAGE);

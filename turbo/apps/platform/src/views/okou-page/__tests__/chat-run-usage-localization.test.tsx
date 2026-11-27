@@ -23,7 +23,6 @@ function visit() {
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    sharedWorkerTestTransport: "message-port",
   });
 }
 type Origin =

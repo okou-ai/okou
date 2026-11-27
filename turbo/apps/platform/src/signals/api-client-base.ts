@@ -11,7 +11,6 @@ import type {
 import { validateClientResponse } from "@okouai/api-contracts/client/response-validation";
 
 import { IN_VITEST } from "../env.ts";
-import type { AuthTokenProvider } from "../lib/auth-token-provider.ts";
 import {
   clientTelemetryOutcomeForError,
   type ClientTelemetryOperation,
@@ -22,13 +21,16 @@ import { addClientHeaders } from "./client-headers.ts";
 import { reportForceUpgradeResponse } from "./force-upgrade.ts";
 import { onRejection } from "./utils.ts";
 
+export type AuthTokenProvider = (
+  signal?: AbortSignal,
+) => Promise<string | null>;
+
 interface AuthedClientOptions {
   readonly baseUrl: string;
   readonly clientVersion: string;
   readonly getToken: AuthTokenProvider;
   readonly getTokenGuard?: () => () => void;
   readonly getVercelProtectionBypass: () => string | undefined;
-  readonly onForceUpgrade?: () => void;
   readonly validateResponse?: boolean;
   readonly resolvePath?: (
     path: string,
@@ -178,7 +180,7 @@ export function createAuthedContractClient<T extends ClientRouter>(
           return networkResponse;
         })());
 
-      if (reportForceUpgradeResponse(response, options.onForceUpgrade)) {
+      if (reportForceUpgradeResponse(response)) {
         return response;
       }
 

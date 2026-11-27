@@ -6178,7 +6178,7 @@
         },
         "indexedDb": {
           "countExplanation": "Le comptage utilise des transactions en lecture seule et ne lit pas le contenu des enregistrements.",
-          "description": "Consultez le nombre d’enregistrements du cache de discussion local géré par le worker partagé.",
+          "description": "Consultez le nombre d’enregistrements dans le cache de chat local IndexedDB.",
           "loading": "Chargement du stockage IndexedDB...",
           "measurementUnavailable": "La mesure du snapshot a échoué.",
           "measureSnapshot": "Mesurer le snapshot",
@@ -6517,10 +6517,6 @@
       "browse": "Parcourir les workflows",
       "description": "Elle a peut-être été déplacée, ou le lien est peut-être ancien. Tout le reste est là où vous l'avez laissé.",
       "title": "Cette page n'est pas ici."
-    },
-    "workerFailure": {
-      "description": "La connexion à cette application a été interrompue.",
-      "title": "Connexion interrompue"
     }
   },
   "sharedThread": {

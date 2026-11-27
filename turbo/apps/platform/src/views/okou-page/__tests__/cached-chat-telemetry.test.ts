@@ -99,7 +99,6 @@ async function readPrivateChat(host: string) {
       context,
       host,
       path: "/chats/" + thread.id,
-      sharedWorkerTestTransport: "message-port",
       env: { VITE_AXIOM_CLIENT_TELEMETRY_TOKEN: "private-chat-test" },
     });
 

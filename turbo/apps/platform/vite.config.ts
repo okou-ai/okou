@@ -1,5 +1,3 @@
-import { fileURLToPath } from "node:url";
-
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -11,12 +9,10 @@ import { applicationResourcePriorityHtmlPlugin } from "./scripts/app-resource-pr
 import { clientDescriptorsPlugin } from "./scripts/check-client-descriptors.ts";
 import { clerkCoreHtmlPlugin } from "./scripts/clerk-html.ts";
 import { clerkUiAssetPlugin } from "./scripts/clerk-ui.ts";
-import { MESSAGE_PDF_WORKER_FILE_PATTERN } from "./scripts/message-pdf-worker.ts";
 import {
-  SHARED_DATABASE_WORKER_FILE_PATTERN,
-  sharedDatabaseWorkerHtmlPlugin,
-  sharedDatabaseWorkerPath,
-} from "./scripts/shared-database-worker-html.ts";
+  MESSAGE_PDF_WORKER_FILE_PATTERN,
+  sameOriginAssetPath,
+} from "./scripts/message-pdf-worker.ts";
 import {
   APPLICATION_LAZY_CHUNK,
   applicationJavaScriptBundlePlugin,
@@ -65,24 +61,16 @@ export default defineConfig(({ command }) => ({
       if (
         hostType === "js" &&
         type === "asset" &&
-        (SHARED_DATABASE_WORKER_FILE_PATTERN.test(filename) ||
-          MESSAGE_PDF_WORKER_FILE_PATTERN.test(filename) ||
+        (MESSAGE_PDF_WORKER_FILE_PATTERN.test(filename) ||
           /^assets\/pandoc-[^/]+\.wasm$/u.test(filename))
       ) {
-        const workerPath = sharedDatabaseWorkerPath(filename, APP_ASSET_BASE);
-        return { runtime: `location.origin + ${JSON.stringify(workerPath)}` };
+        const assetPath = sameOriginAssetPath(filename, APP_ASSET_BASE);
+        return { runtime: `location.origin + ${JSON.stringify(assetPath)}` };
       }
       return undefined;
     },
   },
   envPrefix: ["VITE_", "PUBLIC_"],
-  resolve: {
-    alias: {
-      "virtual:shared-database-worker": `${fileURLToPath(
-        new URL("./src/shared-database-worker.ts", import.meta.url),
-      )}?sharedworker&url`,
-    },
-  },
   worker: {
     plugins: () => {
       return [
@@ -103,7 +91,6 @@ export default defineConfig(({ command }) => ({
     applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length),
     clientDescriptorsPlugin(),
     applicationResourcePriorityHtmlPlugin(),
-    sharedDatabaseWorkerHtmlPlugin(),
     // Tags bundles with the application key for the runtime third-party filter.
     // Uploads happen only in release-please.yml, so the build never uploads.
     sentryVitePlugin({

@@ -3,8 +3,6 @@ import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { startPlatformEntrypoint } from "../../lib/platform-entrypoint.ts";
-import { setupSharedWorkerTestBootstrap$ } from "../../shared-database/test-bridge.ts";
-import { SharedDatabaseMessagePortServer } from "../../shared-database/message-port-server.ts";
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
 import { prepareSignedOutDocument } from "./entrypoint-fixture.ts";
 const context = testContext();
@@ -35,41 +33,6 @@ test("startup-diagnostics-003 A signed-in missing conversation publishes anonymo
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
   });
-  const store = context.workerStore;
-  vi.stubGlobal(
-    "SharedWorker",
-    class extends EventTarget {
-      readonly port: MessagePort;
-      constructor(url: URL) {
-        super();
-        const params = new URL(url).searchParams;
-        context.store.set(
-          setupSharedWorkerTestBootstrap$,
-          {
-            appVersion: __OKOU_APP_VERSION__,
-            identity: {
-              userId: params.get("userId")!,
-              orgId: params.get("orgId")!,
-            },
-            transport: "browser",
-            workerStore: store,
-          },
-          context.signal,
-        );
-        const pipe = new MessageChannel();
-        this.port = pipe.port1;
-        new SharedDatabaseMessagePortServer(store, pipe.port2, context.signal);
-        context.signal.addEventListener(
-          "abort",
-          () => {
-            pipe.port1.close();
-            pipe.port2.close();
-          },
-          { once: true },
-        );
-      }
-    },
-  );
   const original = performance.getEntriesByType.bind(performance);
   vi.spyOn(performance, "getEntriesByType").mockImplementation((type) => {
     if (type === "navigation") {

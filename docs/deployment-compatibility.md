@@ -23,9 +23,7 @@ not reject a missing or unparseable version. Shared clients show a
 non-dismissible update dialog whose action reloads the page. An idle page does
 not discover the requirement until its next handled API request.
 
-The shared database Worker reports the same force-upgrade requirement to its
-connected tabs. Ordinary Worker transport failures propagate without reloading
-the page. Service-worker code is another browser-resident deployment surface;
+Service-worker code is another browser-resident deployment surface;
 `skipWaiting()` alone does not refresh already-controlled clients.
 
 Raise the client floor only after the replacement App is live. Production

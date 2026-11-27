@@ -23,7 +23,7 @@ import {
   findAction,
   queryAction,
 } from "./connector-integrations-test-helpers.ts";
-import { setupSentryLogger } from "../../../lib/sentry-config.ts";
+import { setupSentryLogger } from "../../../lib/sentry.ts";
 import { findEnabledButton } from "./chat-run-test-fixtures.ts";
 import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
 import {

@@ -1,35 +1,30 @@
-import type { BrowserOptions } from "@sentry/browser";
+import type { BrowserOptions } from "@sentry/react";
 import { createStore, state } from "ccstate";
 
 type CaptureExceptionContext = Parameters<
-  typeof import("@sentry/browser").captureException
+  typeof import("@sentry/react").captureException
 >[1];
 type CaptureMessageContext = Parameters<
-  typeof import("@sentry/browser").captureMessage
+  typeof import("@sentry/react").captureMessage
 >[1];
 type SentryUser = Parameters<typeof import("@sentry/react").setUser>[0];
 type SentryBreadcrumb = Parameters<
-  typeof import("@sentry/browser").addBreadcrumb
+  typeof import("@sentry/react").addBreadcrumb
 >[0];
-
-type SentryRuntime = "page" | "shared-worker";
 
 interface SentryInitialization {
   readonly options: BrowserOptions | undefined;
-  readonly runtime: SentryRuntime;
 }
 
 interface SentryExceptionReport {
   readonly context: CaptureExceptionContext;
   readonly error: unknown;
-  readonly runtime: SentryRuntime;
   readonly type: "exception";
 }
 
 interface SentryMessageReport {
   readonly context: CaptureMessageContext;
   readonly message: string;
-  readonly runtime: SentryRuntime;
   readonly type: "message";
 }
 
@@ -40,16 +35,11 @@ export interface SentryMock {
   readonly users: SentryUser[];
 }
 
-interface SentryBehavior extends SentryMock {
-  captureRuntime: SentryRuntime;
-}
-
-const activeBehavior$ = state<SentryBehavior | null>(null);
+const activeBehavior$ = state<SentryMock | null>(null);
 const behaviorStore = createStore();
 
 export function mockSentry(signal: AbortSignal): SentryMock {
-  const behavior: SentryBehavior = {
-    captureRuntime: "page",
+  const behavior: SentryMock = {
     breadcrumbs: [],
     initializations: [],
     reports: [],
@@ -78,20 +68,15 @@ export function recordSentryBreadcrumb(breadcrumb: SentryBreadcrumb): void {
   }
 }
 
-export function recordSentryInitialization(
-  runtime: SentryRuntime,
-  options?: BrowserOptions,
-): void {
+export function recordSentryInitialization(options?: BrowserOptions): void {
   const behavior = behaviorStore.get(activeBehavior$);
   if (!behavior) {
     return;
   }
-  behavior.captureRuntime = runtime;
-  behavior.initializations.push({ options, runtime });
+  behavior.initializations.push({ options });
 }
 
 export function recordSentryException(
-  runtime: SentryRuntime | null,
   error: unknown,
   context?: CaptureExceptionContext,
 ): string {
@@ -100,17 +85,13 @@ export function recordSentryException(
     behavior.reports.push({
       context,
       error,
-      runtime: runtime ?? behavior.captureRuntime,
       type: "exception",
     });
   }
-  return runtime === "shared-worker"
-    ? "test-worker-sentry-event"
-    : "test-page-sentry-event";
+  return "test-page-sentry-event";
 }
 
 export function recordSentryMessage(
-  runtime: SentryRuntime | null,
   message: string,
   context?: CaptureMessageContext,
 ): string {
@@ -119,13 +100,10 @@ export function recordSentryMessage(
     behavior.reports.push({
       context,
       message,
-      runtime: runtime ?? behavior.captureRuntime,
       type: "message",
     });
   }
-  return runtime === "shared-worker"
-    ? "test-worker-sentry-event"
-    : "test-page-sentry-event";
+  return "test-page-sentry-event";
 }
 
 export function recordSentryUser(user: SentryUser): void {

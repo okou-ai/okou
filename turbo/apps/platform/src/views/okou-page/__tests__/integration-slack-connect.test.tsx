@@ -47,7 +47,6 @@ function page(path: string) {
     context,
     host,
     path,
-    sharedWorkerTestTransport: "message-port" as const,
   };
 }
 async function followWeb(label: string, expected: string) {

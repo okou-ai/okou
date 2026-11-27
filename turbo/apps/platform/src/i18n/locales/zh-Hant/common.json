@@ -6083,7 +6083,7 @@
         },
         "indexedDb": {
           "countExplanation": "計數使用只讀事務，不會讀取記錄內容。",
-          "description": "檢視共享 Worker 持有的本地聊天快取中的記錄數。",
+          "description": "檢視本機 IndexedDB 聊天快取中的記錄數量。",
           "loading": "正在載入 IndexedDB 儲存…",
           "measurementUnavailable": "快照測量失敗。",
           "measureSnapshot": "測量快照",
@@ -6422,10 +6422,6 @@
       "browse": "瀏覽工作流",
       "description": "它可能已經換了位置，也可能是連結太舊了。其他內容都還在原處。",
       "title": "這個頁面不在這裡。"
-    },
-    "workerFailure": {
-      "description": "與此應用程式的連線已中斷。",
-      "title": "連線已中斷"
     }
   },
   "sharedThread": {

@@ -15,7 +15,6 @@ test.each([
     heading: "Update Chrome to continue",
     link: "Update Chrome",
     url: "https://www.google.com/chrome/",
-    workerAvailable: true,
   },
   {
     id: "platform-entrypoint-013",
@@ -24,7 +23,6 @@ test.each([
     heading: "Update Chromium to continue",
     link: "Update Chromium",
     url: "https://www.chromium.org/getting-involved/download-chromium/",
-    workerAvailable: true,
   },
   {
     id: "platform-entrypoint-014",
@@ -33,16 +31,14 @@ test.each([
     heading: "Update Edge to continue",
     link: "Update Edge",
     url: "https://www.microsoft.com/edge/download",
-    workerAvailable: true,
   },
   {
     id: "platform-entrypoint-015",
     browser: "mobile Edge",
-    ua: "Mozilla/5.0 (Linux; Android 14) Chrome/147.0 Mobile EdgA/147.0",
+    ua: "Mozilla/5.0 (Linux; Android 14) Chrome/137.0 Mobile EdgA/137.0",
     heading: "Update Edge to continue",
     link: "Update Edge",
     url: "https://www.microsoft.com/edge/download",
-    workerAvailable: true,
   },
   {
     id: "platform-entrypoint-016",
@@ -51,7 +47,6 @@ test.each([
     heading: "Use a supported browser to continue",
     link: "Get the latest Chrome",
     url: "https://www.google.com/chrome/",
-    workerAvailable: true,
   },
   {
     id: "platform-entrypoint-020",
@@ -60,7 +55,6 @@ test.each([
     heading: "Update Firefox to continue",
     link: "Update Firefox",
     url: "https://www.mozilla.org/firefox/new/",
-    workerAvailable: true,
   },
   {
     id: "platform-entrypoint-021",
@@ -69,7 +63,6 @@ test.each([
     heading: "Update Safari to continue",
     link: "Update Safari",
     url: "https://support.apple.com/safari",
-    workerAvailable: true,
   },
   {
     id: "platform-entrypoint-022",
@@ -78,23 +71,12 @@ test.each([
     heading: "Update iOS to continue",
     link: "Update iOS",
     url: "https://support.apple.com/HT204204",
-    workerAvailable: true,
-  },
-  {
-    id: "platform-entrypoint-024",
-    browser: "Android Chrome without SharedWorker",
-    ua: "Mozilla/5.0 (Linux; Android 14) Chrome/148.0 Mobile",
-    heading: "Use a supported browser to continue",
-    link: "Get the latest Chrome",
-    url: "https://www.google.com/chrome/",
-    workerAvailable: false,
   },
 ])(
   "$id directs a visitor using $browser to its download page",
-  async ({ ua, heading, link, url, workerAvailable }) => {
+  async ({ ua, heading, link, url }) => {
     const telemetry = context.mocks.sentry();
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue(ua);
-    vi.stubGlobal("SharedWorker", workerAvailable ? class {} : undefined);
     const root = createBootstrapRoot();
     document.body.append(root);
     try {

@@ -3,7 +3,6 @@ import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event
 import { createStore, type Store } from "ccstate";
 import { afterEach, beforeAll, beforeEach } from "vitest";
 import { installPlatformLifecycle } from "../../test/platform-lifecycle.ts";
-import { installSharedDatabaseWorkerBootstrap } from "../../test/shared-database-worker-bootstrap.ts";
 import { logger, resetLoggerForTest } from "../log";
 import { resetLocalStorageForTest$ } from "../external/local-storage";
 import { resetSessionStorageForTest$ } from "../external/session-storage";
@@ -100,7 +99,6 @@ export interface TestContext {
   readonly resourceId: string;
   readonly signal: AbortSignal;
   readonly store: Store;
-  readonly workerStore: Store;
 }
 
 export interface TestRuntime extends TestContext {
@@ -108,7 +106,7 @@ export interface TestRuntime extends TestContext {
 }
 
 /**
- * An explicit additional app/worker domain under one case owner. Creating the
+ * An explicit additional app runtime under one case owner. Creating the
  * handle registers no hooks and installs no document lifecycle or mocks.
  * Its lazy state rotates only when the parent's case lifetime changes.
  */
@@ -118,7 +116,6 @@ export function createTestRuntime(parent: TestContext): TestRuntime {
     readonly controller: AbortController;
     readonly resourceId: string;
     store: Store | null;
-    workerStore: Store | null;
   } | null = null;
 
   function currentRuntime() {
@@ -130,7 +127,6 @@ export function createTestRuntime(parent: TestContext): TestRuntime {
         controller,
         resourceId: crypto.randomUUID(),
         store: null as Store | null,
-        workerStore: null as Store | null,
       };
       controller.signal.addEventListener(
         "abort",
@@ -138,7 +134,6 @@ export function createTestRuntime(parent: TestContext): TestRuntime {
           current.store?.set(resetLocalStorageForTest$);
           current.store?.set(resetSessionStorageForTest$);
           current.store = null;
-          current.workerStore = null;
         },
         { once: true },
       );
@@ -174,12 +169,6 @@ export function createTestRuntime(parent: TestContext): TestRuntime {
       current.store ??= createStore();
       return current.store;
     },
-    get workerStore() {
-      const current = currentRuntime();
-      current.controller.signal.throwIfAborted();
-      current.workerStore ??= createStore();
-      return current.workerStore;
-    },
     dispose(reason?: unknown) {
       currentRuntime().controller.abort(reason);
     },
@@ -188,7 +177,6 @@ export function createTestRuntime(parent: TestContext): TestRuntime {
 
 export function testContext(): TestContext {
   let store: Store | null = null;
-  let workerStore: Store | null = null;
   let mocks: TestMocks | null = null;
   let resourceId: string | null = null;
   let controller = new AbortController();
@@ -228,25 +216,10 @@ export function testContext(): TestContext {
       }
       return store;
     },
-    get workerStore(): Store {
-      if (!workerStore) {
-        L.debug("create worker store");
-        workerStore = createStore();
-        context.signal.addEventListener(
-          "abort",
-          () => {
-            workerStore = null;
-          },
-          { once: true },
-        );
-      }
-      return workerStore;
-    },
   };
 
   beforeEach(() => {
     installPlatformLifecycle(context.signal);
-    installSharedDatabaseWorkerBootstrap(context.signal);
   });
 
   afterEach(() => {

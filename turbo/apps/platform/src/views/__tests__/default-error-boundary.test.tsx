@@ -1,11 +1,10 @@
 import { screen, waitFor } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   click,
   queryAllByRoleFast,
   setupPage,
-  startPage,
 } from "../../__tests__/page-helper.ts";
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
 
@@ -23,41 +22,6 @@ function control(role: "button" | "link", name: string): HTMLElement {
   }
   return found;
 }
-
-test("The error page does not wait for the workspace worker", async () => {
-  // The browser starts the workspace SharedWorker, which never answers.
-  const asked = context.mocks.deferred<void>();
-  class SilentSharedWorker extends EventTarget {
-    readonly port: MessagePort;
-    constructor() {
-      super();
-      const channel = new MessageChannel();
-      channel.port2.addEventListener(
-        "message",
-        () => {
-          asked.resolve();
-        },
-        { once: true },
-      );
-      channel.port2.start();
-      this.port = channel.port1;
-    }
-  }
-  vi.stubGlobal("SharedWorker", SilentSharedWorker);
-
-  const page = await startPage({
-    context,
-    path: "/_/error",
-    sharedWorkerTestTransport: "browser",
-  });
-
-  await page.content;
-  await asked.promise;
-  const alert = await screen.findByRole("alert");
-  expect(alert).toHaveTextContent("Oops! Something went sideways");
-  expect(alert).toHaveTextContent("We're here to help");
-  expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
-});
 
 test("The error page retains support and theme controls (dark: false)", async () => {
   await setupPage({ context, path: "/_/error", auth: null });

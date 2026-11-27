@@ -13,7 +13,6 @@ function openForm(path: string) {
     host: "app.okou.ai",
     auth: null,
     path,
-    sharedWorkerTestTransport: "message-port",
   });
 }
 

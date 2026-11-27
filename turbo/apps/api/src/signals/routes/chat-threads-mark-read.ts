@@ -50,8 +50,8 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     (advanced ? watermark : prepared.lastReadAt)?.toISOString() ?? null;
 
   if (advanced) {
-    // Read-state invalidation only. Thread-list shape is unchanged, and the
-    // SharedWorker fans the user-org signal out to every matching tab.
+    // Read-state invalidation only. Thread-list shape is unchanged, and every
+    // matching tab receives the user-org signal directly.
     waitUntil(
       set(synchronizeUserPushBadge$, userId, new AbortController().signal),
     );

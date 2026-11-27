@@ -6,18 +6,19 @@ import {
 } from "@okouai/api-contracts/validators/projects";
 import { chatThreadSnapshotArchiveSchema } from "@okouai/api-contracts/validators/chat-threads";
 import type { IDBPDatabase } from "idb";
-import { fetchResource } from "../lib/resource-fetch.ts";
-import type { ApiClientFactory } from "../signals/api-client.ts";
-import { createStrictIdbChatThreadEventStores } from "../signals/external/idb-chat-thread-event-store.ts";
-import { createIdbProjectEventStores } from "../signals/external/idb-project-event-store.ts";
+
+import { fetchResource } from "../../lib/resource-fetch.ts";
+import type { ApiClientFactory } from "../api-client.ts";
+import { createStrictIdbChatThreadEventStores } from "../external/idb-chat-thread-event-store.ts";
+import { createIdbProjectEventStores } from "../external/idb-project-event-store.ts";
 import {
   metadataEventCursor,
   type MetadataEvent,
   type MetadataSnapshot,
   type MetadataEventResult,
   type MetadataEventStores,
-} from "../signals/external/idb-metadata-event-store.ts";
-import { SharedDatabaseHttpError } from "./http-error.ts";
+} from "../external/idb-metadata-event-store.ts";
+import { ChatDatabaseHttpError } from "./http-error.ts";
 import { CHAT_THREAD_EVENT_LOG_SNAPSHOT_REBASE_THRESHOLD } from "./event-log-policy.ts";
 
 export interface MetadataEventSource<
@@ -65,14 +66,14 @@ export function createProjectEventSource(createClient: ApiClientFactory) {
       const response = await client.snapshot({ fetchOptions: { signal } });
       signal.throwIfAborted();
       if (response.status !== 200) {
-        throw new SharedDatabaseHttpError(response.status);
+        throw new ChatDatabaseHttpError(response.status);
       }
       if (!("url" in response.body)) {
         return response.body;
       }
       const archive = await fetchResource(response.body.url, {}, signal);
       if (!archive.ok) {
-        throw new SharedDatabaseHttpError(archive.status);
+        throw new ChatDatabaseHttpError(archive.status);
       }
       const snapshot = projectSnapshotArchiveSchema.parse(await archive.json());
       signal.throwIfAborted();
@@ -87,7 +88,7 @@ export function createProjectEventSource(createClient: ApiClientFactory) {
         return { expired: true as const };
       }
       if (response.status !== 200) {
-        throw new SharedDatabaseHttpError(response.status);
+        throw new ChatDatabaseHttpError(response.status);
       }
       return {
         expired: false as const,
@@ -108,14 +109,14 @@ export function createChatThreadEventSource(createClient: ApiClientFactory) {
       const response = await client.snapshot({ fetchOptions: { signal } });
       signal.throwIfAborted();
       if (response.status !== 200) {
-        throw new SharedDatabaseHttpError(response.status);
+        throw new ChatDatabaseHttpError(response.status);
       }
       if ("chatThreads" in response.body) {
         return response.body;
       }
       const archive = await fetchResource(response.body.url, {}, signal);
       if (!archive.ok) {
-        throw new SharedDatabaseHttpError(archive.status);
+        throw new ChatDatabaseHttpError(archive.status);
       }
       const snapshot = chatThreadSnapshotArchiveSchema.parse(
         await archive.json(),
@@ -136,7 +137,7 @@ export function createChatThreadEventSource(createClient: ApiClientFactory) {
         return { expired: true as const };
       }
       if (response.status !== 200) {
-        throw new SharedDatabaseHttpError(response.status);
+        throw new ChatDatabaseHttpError(response.status);
       }
       return { expired: false as const, ...response.body };
     },

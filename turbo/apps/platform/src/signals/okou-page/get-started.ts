@@ -9,7 +9,7 @@ import type {
   GetStartedClaim,
 } from "@okouai/api-contracts/contracts/get-started";
 import { apiClient$ } from "../api-client.ts";
-import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
 import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
 import { pageSignal$, pageVersion$ } from "../page-signal.ts";
 import { accept } from "../../lib/accept.ts";
@@ -42,7 +42,7 @@ const reloadVersion$ = state(0);
 const getStartedStatus$ = computed(
   async (get): Promise<GetStartedStatus | null> => {
     get(reloadVersion$);
-    await get(runtimeAuthenticatedIdentity$);
+    await get(authenticatedIdentity$);
     const response = await accept(
       get(apiClient$)(getStartedContract).status(),
       [200, 403, 404],

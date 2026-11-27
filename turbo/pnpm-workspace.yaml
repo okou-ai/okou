@@ -21,7 +21,7 @@ peerDependencyRules:
 
 # The optional installed UI bundles its wallet adapters. With automatic peer
 # installation disabled, provide their required peers only in that UI graph;
-# the core-only App and SharedWorker do not acquire wallet code.
+# the core-only App does not acquire wallet code.
 packageExtensions:
   "@clerk/ui@1.26.0":
     dependencies:

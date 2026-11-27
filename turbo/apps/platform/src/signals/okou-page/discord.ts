@@ -4,7 +4,7 @@ import { discordOauthContract } from "@okouai/api-contracts/client/discord-oauth
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { resetSignal, settle, waitLoopUntil, withCleanup } from "../utils.ts";
 import { createDiscordOauthResultNotifier } from "./discord-oauth-message.ts";
@@ -15,7 +15,7 @@ export const discordOrgData$ = computed(async (get) => {
   // Retain the authenticated owner's status across navigation, like Slack.
   // The route-owned subscription refreshes it on re-entry and live changes.
   get(reloadVersion$);
-  await get(runtimeAuthenticatedIdentity$);
+  await get(authenticatedIdentity$);
   const client = get(apiClient$)(integrationsDiscordContract);
   const result = await accept(client.getStatus(), [200]);
   return result.body;

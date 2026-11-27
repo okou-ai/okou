@@ -25,7 +25,6 @@ const settings = {
   context,
   auth: chatListAuth(789),
   host: "app.okou.ai",
-  sharedWorkerTestTransport: "message-port",
   env: { VITE_AXIOM_CLIENT_TELEMETRY_TOKEN: "local-observability" },
 } as const;
 function reports(name: string) {
@@ -172,11 +171,13 @@ test("chat-idb-002 A returning workspace keeps the previous generation's records
   const successor = await openDB(name, version + 1);
   successor.close();
   await waitFor(() => {
-    expect(reports("shared_database.worker_unavailable")).toStrictEqual([
+    expect(reports("chat.version_changed")).toStrictEqual([
       expect.objectContaining({
+        "scope.name": "okou-app/indexeddb",
         "attributes.custom": expect.objectContaining({
-          "okou.shared_database.unavailable.reason":
-            "indexeddb-version-changed",
+          "db.namespace": "chat",
+          "db.system": "indexeddb",
+          "okou.client.outcome": "error",
         }),
       }),
     ]);

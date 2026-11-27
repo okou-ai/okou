@@ -32,7 +32,6 @@ async function redirect(url: URL) {
     auth: null,
     host,
     path: url.pathname + url.search + url.hash,
-    sharedWorkerTestTransport: "message-port",
   });
   await waitFor(() => {
     expect(location.pathname).toBe("/sign-in");
@@ -122,7 +121,6 @@ test.each(analyticsRoutes)(
       auth: null,
       host: signin.host,
       path: signin.pathname + signin.search + signin.hash,
-      sharedWorkerTestTransport: "message-port",
     });
     await screen.findByTestId("clerk-sign-in");
     // Page setup starts the Router. The deployed document initializes the SDK separately.

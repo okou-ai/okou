@@ -43,7 +43,6 @@ async function open(
   await setupPage({
     context,
     path: "/?queue=1",
-    sharedWorkerTestTransport: "message-port",
   });
   const drawer = await screen.findByRole("dialog", {
     name: "Your request is queued",

@@ -2,7 +2,7 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import { pathParams$, searchParams$ } from "../route.ts";
 import { setPendingDeleteThreadId$ } from "../okou-page/sidebar-state.ts";
 import { threadMeta } from "./chat-thread-event-sourcing.ts";
-import { sidebarActiveThreadIds$ } from "./chat-thread-indicators-from-worker.ts";
+import { sidebarActiveThreadIds$ } from "./chat-thread-indicators.ts";
 import { pinChatThread$, unpinChatThread$ } from "./chat-event.ts";
 import {
   currentLeftThread$,

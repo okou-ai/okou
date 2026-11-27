@@ -283,7 +283,7 @@ test("A tall transcript fills its visible history and remains pinned when a new 
   expect(transcript.queryByText("Locator answer 13")).toBeNull();
   await expectTail(pane);
   await waitFor(() => {
-    expect(context.mocks.ably.hasSharedDatabaseSubscription()).toBeTruthy();
+    expect(context.mocks.ably.hasChannelSubscription()).toBeTruthy();
   });
   const frames = controlRevealFrames();
   height = 7200;
@@ -404,7 +404,7 @@ test.each(["layout change", "tap"])(
     await messages.findByText("Locator answer 10");
     await expectTail(pane);
     await waitFor(() => {
-      expect(context.mocks.ably.hasSharedDatabaseSubscription()).toBeTruthy();
+      expect(context.mocks.ably.hasChannelSubscription()).toBeTruthy();
     });
     if (cause === "tap") {
       fireEvent.pointerDown(pane);

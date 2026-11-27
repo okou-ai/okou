@@ -7,11 +7,11 @@ import { ChevronDown, ChevronUp, Database } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { formatLocalizedNumber } from "../../../../i18n/format.ts";
-import type { IndexedDbDiagnostics } from "../../../../shared-database/computed-key.ts";
 import {
-  indexedDbDiagnosticsFromWorker$,
-  measureIndexedDbSnapshotFromWorker$,
-} from "../../../../signals/shared-database.ts";
+  indexedDbDiagnostics$,
+  measureIndexedDbSnapshot$,
+} from "../../../../signals/chat-database/signals.ts";
+import type { IndexedDbDiagnostics } from "../../../../signals/external/idb-diagnostics-store.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { formatSize } from "../network-badge.tsx";
@@ -78,9 +78,7 @@ function IndexedDbDiagnosticsSummary({
 function SnapshotMeasurement() {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const [measurement, measure] = useLoadableSet(
-    measureIndexedDbSnapshotFromWorker$,
-  );
+  const [measurement, measure] = useLoadableSet(measureIndexedDbSnapshot$);
   const loading = measurement.state === "loading";
   const result = measurement.state === "hasData" ? measurement.data : undefined;
 
@@ -231,8 +229,8 @@ function IndexedDbDiagnosticsContent({
 
 export function IndexedDbDiagnosticsBlock() {
   const { t } = useTranslation();
-  const diagnostics = useLastResolved(indexedDbDiagnosticsFromWorker$);
-  const loadableState = useLoadableState(indexedDbDiagnosticsFromWorker$);
+  const diagnostics = useLastResolved(indexedDbDiagnostics$);
+  const loadableState = useLoadableState(indexedDbDiagnostics$);
   const loading = loadableState === "loading";
 
   return (

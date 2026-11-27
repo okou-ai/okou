@@ -58,7 +58,6 @@ export function directory(
   return setupPage({
     context,
     path: "/",
-    sharedWorkerTestTransport: "message-port",
     auth: {
       user: {
         id: "taylor",
