@@ -1077,7 +1077,7 @@ describe("Chat events connectors", () => {
 
       const httpApi = httpInline.firewall.apis[0];
       const mcpApi = mcpInline.firewall.apis[0];
-      if (!httpApi || !mcpApi) {
+      if (!httpApi?.id || !mcpApi?.id) {
         throw new Error("Expected custom HTTP and MCP inline firewall APIs");
       }
 

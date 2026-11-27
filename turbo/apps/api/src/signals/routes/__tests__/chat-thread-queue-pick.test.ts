@@ -1045,7 +1045,7 @@ describe("chat-thread-queue-pick", () => {
               headers: authHeaders(actor),
               params: { id: automation.id },
             }),
-            [200, 204],
+            [204],
           ),
         ]);
       });

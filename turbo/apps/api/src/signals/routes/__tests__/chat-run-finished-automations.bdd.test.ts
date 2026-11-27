@@ -554,7 +554,28 @@ describe("chat-run-finished workflow automations", () => {
     const runnerReady = runs.configureRunnerGroup({ maxConcurrent: 4 });
     const owner = publicRunOwner(context, actor);
     const authHeaders = signIn(actor);
-    const [, , , watchedThread, ...createdWorkflows] = await Promise.all([
+    const [watchedThread, createdWorkflows] = await Promise.all([
+      accept(
+        threadsApi.create({
+          headers: authHeaders,
+          body: { title: args.watchedTitle },
+        }),
+        [201],
+      ),
+      Promise.all(
+        args.automations.map((spec) => {
+          return accept(
+            workflowsApi.create({
+              headers: authHeaders,
+              body: {
+                name: `${spec.label}-${randomUUID().slice(0, 8)}`,
+                visibility: "private",
+              },
+            }),
+            [201],
+          );
+        }),
+      ),
       runnerReady,
       owner.run(() => {
         return runs.grantProEntitlement(actor);
@@ -564,25 +585,6 @@ describe("chat-run-finished workflow automations", () => {
             return runs.ensurePersonalSubscriptionModel(actor);
           })
         : Promise.resolve(),
-      accept(
-        threadsApi.create({
-          headers: authHeaders,
-          body: { title: args.watchedTitle },
-        }),
-        [201],
-      ),
-      ...args.automations.map((spec) => {
-        return accept(
-          workflowsApi.create({
-            headers: authHeaders,
-            body: {
-              name: `${spec.label}-${randomUUID().slice(0, 8)}`,
-              visibility: "private",
-            },
-          }),
-          [201],
-        );
-      }),
     ]);
 
     const watchedThreadId = watchedThread.body.id;

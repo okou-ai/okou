@@ -1099,7 +1099,7 @@ describe("Native Computer Use session authentication", () => {
     expect(renamed.body.id).toBe(ownedDevice.id);
     expect(renamed.body.displayName).toBe("Studio Mac");
 
-    setAuthToken(peer);
+    setAuthToken(peer, undefined);
     await accept(
       remoteDevices.rename({
         headers: sessionHeaders,

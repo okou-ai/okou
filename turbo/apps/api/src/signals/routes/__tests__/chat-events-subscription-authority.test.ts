@@ -598,11 +598,15 @@ describe("chat-events-subscription-authority", () => {
         },
         [201],
       );
+      if (queued.status !== 201) {
+        throw new Error("Expected queued personal Luna prompt to return 201");
+      }
+      const queuedThreadId = queued.body.threadId;
       await flushWaitUntilForTest();
 
       const waitingEvents = await fixture.chat.listThreadEvents(
         actor,
-        queued.body.threadId,
+        queuedThreadId,
       );
       const originalInput = waitingEvents.events.find((event) => {
         return event.id === queuedClientEventId;
@@ -623,7 +627,7 @@ describe("chat-events-subscription-authority", () => {
 
       const afterEvents = await fixture.chat.listThreadEvents(
         actor,
-        queued.body.threadId,
+        queuedThreadId,
       );
       expect(
         afterEvents.events.some((event) => {
@@ -707,6 +711,9 @@ describe("chat-events-subscription-authority", () => {
       );
 
       expect(resolved.status).toBe(502);
+      if (!("error" in resolved.body)) {
+        throw new Error("Expected 502 error body from firewall auth");
+      }
       expect(resolved.body.error).toMatchObject({
         code: "TOKEN_REFRESH_FAILED",
         failureReason: "reconnect_required",
@@ -810,12 +817,13 @@ describe("chat-events-subscription-authority", () => {
         [201],
       );
       expect(sent.status).toBe(201);
+      if (sent.status !== 201) {
+        throw new Error("Expected immediate Web Fast Luna send to return 201");
+      }
+      const sentThreadId = sent.body.threadId;
       await flushWaitUntilForTest();
 
-      const events = await fixture.chat.listThreadEvents(
-        actor,
-        sent.body.threadId,
-      );
+      const events = await fixture.chat.listThreadEvents(actor, sentThreadId);
       const replacement = userMessages(events.events).find((event) => {
         return (
           event.eventType === "input.prompt" &&
@@ -840,11 +848,11 @@ describe("chat-events-subscription-authority", () => {
 
       await completePiRun({
         runId: replacement.runId,
-        threadId: sent.body.threadId,
+        threadId: sentThreadId,
         sandboxToken: lunaExecution.sandboxToken,
         tracker,
       });
-      await expectThreadModelCredits(context, actor, sent.body.threadId, 0);
+      await expectThreadModelCredits(context, actor, sentThreadId, 0);
     },
   );
 
@@ -876,12 +884,15 @@ describe("chat-events-subscription-authority", () => {
         [201],
       );
       expect(sent.status).toBe(201);
+      if (sent.status !== 201) {
+        throw new Error(
+          "Expected immediate agent-bearer Fast Luna send to return 201",
+        );
+      }
+      const sentThreadId = sent.body.threadId;
       await flushWaitUntilForTest();
 
-      const events = await fixture.chat.listThreadEvents(
-        actor,
-        sent.body.threadId,
-      );
+      const events = await fixture.chat.listThreadEvents(actor, sentThreadId);
       const replacement = userMessages(events.events).find((event) => {
         return (
           event.eventType === "input.prompt" &&
@@ -909,7 +920,7 @@ describe("chat-events-subscription-authority", () => {
       await Promise.all([
         completePiRun({
           runId: replacement.runId,
-          threadId: sent.body.threadId,
+          threadId: sentThreadId,
           sandboxToken: lunaExecution.sandboxToken,
           tracker,
         }),
@@ -919,7 +930,7 @@ describe("chat-events-subscription-authority", () => {
           tracker,
         }),
       ]);
-      await expectThreadModelCredits(context, actor, sent.body.threadId, 0);
+      await expectThreadModelCredits(context, actor, sentThreadId, 0);
     },
   );
 });
