@@ -15,6 +15,7 @@ import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.settingsPanelContentPadding
 import ai.okou.android.updates.updateFocusOutline
+import ai.okou.android.workspaceFeedbackMessageHeight
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -53,6 +54,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -78,6 +80,8 @@ private enum class ConnectorPanel {
     Authorize,
     Permissions,
 }
+
+private val connectorFeedbackBottomInset = 8.dp
 
 @Composable
 internal fun ConnectorDetails(
@@ -580,13 +584,14 @@ internal fun ConnectorSheet(
     back: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
     feedback: SnackbarHostState? = null,
-    feedbackInContent: Boolean = false,
+    inContentFeedbackMessage: String? = null,
+    centerCompactContent: Boolean = false,
     retainedScroll: androidx.compose.foundation.ScrollState? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val shortWindow = isShortSettingsPanelWindow()
     val fullScreen = expandInShortWindow && shortWindow
-    val overlayFeedback = feedback.takeIf { fullScreen || feedbackInContent }
+    val overlayFeedback = feedback.takeIf { fullScreen || inContentFeedbackMessage != null }
     val scroll = retainedScroll ?: key(title) { rememberScrollState() }
     val titleStyle =
         if (fullScreen)
@@ -618,15 +623,13 @@ internal fun ConnectorSheet(
                         maxOf(48.dp, 20.sp.toDp() + 16.dp) * 2 +
                         16.dp
                 }
-            val scrollAll = actions != null && maxHeight < minimumControlsHeight
+            // Reserve the same space before and after a Snackbar appears over a short result.
             val minimumBodyHeight =
-                if (feedbackInContent && overlayFeedback != null) {
-                    with(LocalDensity.current) {
-                        val line = MaterialTheme.typography.bodyMedium.lineHeight.toDp()
-                        // Leave room for a wrapped Snackbar even when the result is empty.
-                        maxOf(48.dp, line * 2 + 28.dp) + 8.dp
-                    }
+                if (inContentFeedbackMessage != null) {
+                    workspaceFeedbackMessageHeight(inContentFeedbackMessage, maxWidth) +
+                        connectorFeedbackBottomInset
                 } else 0.dp
+            val scrollAll = actions != null && maxHeight < minimumControlsHeight + minimumBodyHeight
             Column(
                 when {
                     scrollAll -> Modifier.fillMaxWidth().verticalScroll(scroll)
@@ -659,12 +662,16 @@ internal fun ConnectorSheet(
                 ) {
                     Column(
                         if (scrollAll) Modifier else Modifier.verticalScroll(scroll),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement =
+                            if (fullScreen && centerCompactContent && !scrollAll)
+                                Arrangement.spacedBy(8.dp, BiasAlignment.Vertical(-0.2f))
+                            else Arrangement.spacedBy(8.dp),
                         content = content,
                     )
                     if (overlayFeedback != null) {
                         Box(
-                            Modifier.matchParentSize().padding(bottom = 8.dp),
+                            Modifier.matchParentSize()
+                                .padding(bottom = connectorFeedbackBottomInset),
                             contentAlignment = Alignment.BottomCenter,
                         ) {
                             WorkspaceFeedbackHost(overlayFeedback, Modifier)

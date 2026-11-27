@@ -32,6 +32,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
@@ -49,8 +50,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 class ChatConnectorRootApplication : TestOkouApplication() {
     internal lateinit var connectors: ConnectorApiFixture
@@ -432,30 +435,48 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w240dp-h680dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun confirmedEmptyOverviewKeepsItsBoundsWhenRefreshFeedbackAppears() {
-        openNewChat()
-        app.connectors.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
-        app.connectors.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
-        app.connectors.removeAccount(CONNECTOR_SLACK_ACCOUNT)
-        openOverview(waitForRows = false)
-        val empty = "There are no connected accounts in this workspace."
-        waitText(empty)
-        val footer = compose.onNodeWithTag("chat-connector-manage")
-        val before = footer.getUnclippedBoundsInRoot()
+        val fontScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            openNewChat()
+            app.connectors.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+            app.connectors.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+            app.connectors.removeAccount(CONNECTOR_SLACK_ACCOUNT)
+            openOverview(waitForRows = false)
+            val empty = "There are no connected accounts in this workspace."
+            waitText(empty)
+            val footer = compose.onNodeWithTag("chat-connector-manage")
+            val before = footer.getUnclippedBoundsInRoot()
 
-        app.connectors.failChatOverview = true
-        compose.runOnIdle {
-            val workspace =
-                ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready
-            checkNotNull(workspace?.connectors).chatOptions.invalidate("slack")
+            app.connectors.failChatOverview = true
+            compose.runOnIdle {
+                val workspace =
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                checkNotNull(workspace?.connectors).chatOptions.invalidate("slack")
+            }
+            val message = "Could not refresh connectors."
+            waitText(message)
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText(message).assertIsDisplayed().performSemanticsAction(
+                SemanticsActions.GetTextLayoutResult,
+            ) {
+                it(layouts)
+            }
+            val layout = layouts.single()
+            assertTrue(layout.lineCount > 2)
+            assertTrue(!layout.hasVisualOverflow)
+            compose.onNodeWithText(empty).assertIsDisplayed()
+            assertEquals(before, footer.getUnclippedBoundsInRoot())
+        } finally {
+            RuntimeEnvironment.setFontScale(fontScale)
         }
-        val message = "Could not refresh connectors."
-        waitText(message)
-        val feedback =
-            compose.onNodeWithText(message).assertIsDisplayed().getUnclippedBoundsInRoot()
-        assertTrue(feedback.bottom - feedback.top >= 20.dp)
-        compose.onNodeWithText(empty).assertIsDisplayed()
-        assertEquals(before, footer.getUnclippedBoundsInRoot())
     }
 
     @Test

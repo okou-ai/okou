@@ -201,6 +201,13 @@ internal fun ChatConnectorOptionsButton(
     val detail = state?.details?.get(slug)
     val reading = detail?.accounts
     val rows = reading?.data?.accounts
+    val coldFailure =
+        when {
+            showingOverview && overviewData == null -> overview?.failure
+            showingAccounts && (rows == null || summary == null) ->
+                reading?.failure ?: overview?.failure.takeUnless { overviewConfirmed }
+            else -> null
+        }
     val readNotice =
         when {
             showingOverview && overviewData != null -> overview.notice()
@@ -422,7 +429,12 @@ internal fun ChatConnectorOptionsButton(
             back = if (showingConnectors || currentWindowSizeDp().height < 480) ::back else null,
             actions = footer,
             feedback = readFeedback.takeIf { showingConnectors },
-            feedbackInContent = true,
+            inContentFeedbackMessage =
+                if (showingConnectors) stringResource(R.string.connector_refresh_failed) else null,
+            centerCompactContent =
+                inlineSave == null &&
+                    (coldFailure == ConnectorReadFailure.Network ||
+                        coldFailure == ConnectorReadFailure.Sustained),
             retainedScroll = overviewScroll.takeIf { showingOverview },
         ) {
             if (!showingConnectors) {
@@ -509,7 +521,7 @@ internal fun ChatConnectorOptionsButton(
                 when {
                     overviewData == null ->
                         ChatConnectorReadPlaceholder(
-                            overview?.failure,
+                            coldFailure,
                             R.string.connector_loading,
                             R.string.connector_load_failed,
                         )
@@ -544,7 +556,7 @@ internal fun ChatConnectorOptionsButton(
             } else if (rows == null || summary == null) {
                 if (inlineSave != null) ChatConnectorSaveFeedback(inlineSave.phase)
                 ChatConnectorReadPlaceholder(
-                    reading?.failure ?: overview?.failure.takeUnless { overviewConfirmed },
+                    coldFailure,
                     R.string.connector_loading_accounts,
                     R.string.connector_accounts_failed,
                 )
