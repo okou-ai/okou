@@ -98,7 +98,7 @@
     <string name="workflow_webhook">웹훅 수신</string>
     <string name="workflow_weekday_schedule">평일 %1$s</string>
     <string name="workflow_weekdays">평일</string>
-    <string name="workflow_write_failed">변경사항을 저장할 수 없습니다.</string>
+    <string name="workflow_write_failed">저장하지 못했습니다. 변경 사항은 유지됩니다.</string>
     <plurals name="workflow_enabled_count">
         <item quantity="other">자동화 %d개 활성</item>
     </plurals>

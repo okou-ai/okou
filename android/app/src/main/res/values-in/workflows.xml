@@ -98,7 +98,7 @@
     <string name="workflow_webhook">Webhook diterima</string>
     <string name="workflow_weekday_schedule">Hari kerja pukul %1$s</string>
     <string name="workflow_weekdays">Hari kerja</string>
-    <string name="workflow_write_failed">Perubahan Anda tidak dapat disimpan.</string>
+    <string name="workflow_write_failed">Tidak dapat menyimpan. Perubahan Anda masih tersimpan di formulir.</string>
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d otomatisasi aktif</item>
     </plurals>

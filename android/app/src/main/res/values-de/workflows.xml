@@ -98,7 +98,7 @@
     <string name="workflow_webhook">Webhook empfangen</string>
     <string name="workflow_weekday_schedule">Werktags um %1$s</string>
     <string name="workflow_weekdays">Werktags</string>
-    <string name="workflow_write_failed">Deine Änderungen konnten nicht gespeichert werden.</string>
+    <string name="workflow_write_failed">Speichern fehlgeschlagen. Deine Änderungen sind noch da.</string>
     <plurals name="workflow_enabled_count">
         <item quantity="one">%d Automatisierung aktiv</item>
         <item quantity="other">%d Automatisierungen aktiv</item>
