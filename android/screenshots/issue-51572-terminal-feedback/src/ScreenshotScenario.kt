@@ -1,0 +1,149 @@
+package ai.okou.android.screenshots
+
+import ai.okou.android.CHAT_PERSONAL
+import ai.okou.android.ChatCacheSnapshot
+import ai.okou.android.ChatListApiFixture
+import ai.okou.android.MainActivity
+import ai.okou.android.R
+import ai.okou.android.RecoveryApiFixture
+import ai.okou.android.ScreenshotCapture
+import ai.okou.android.TestAuthentication
+import ai.okou.android.TestOkouApplication
+import ai.okou.android.chatEventWire
+import ai.okou.android.historyEventWire
+import ai.okou.android.jsonResponse
+import ai.okou.android.testAuthenticationState
+import androidx.test.core.app.ActivityScenario
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class ScreenshotScenario {
+    @Test
+    fun failureWithoutReply() =
+        capture(
+            R.string.run_failure_provider_image_too_large_title,
+            "failure-before-reply.png",
+            historyEventWire(
+                id = "65bb4399-e841-4de2-80c5-a7272c46478d",
+                seq = 2,
+                type = "output.error",
+                payload = """{"error":"Older image error"}""",
+            ),
+            RecoveryApiFixture.failure("provider_image_too_large", seq = 3),
+        )
+
+    @Test
+    fun stoppedWithoutReply() =
+        capture(
+            R.string.history_cancelled,
+            "stopped-before-reply.png",
+            historyEventWire(
+                id = "83d804c6-33a8-49b2-b326-f3f340d5120e",
+                seq = 2,
+                type = "control.interrupt",
+                payload = "null",
+            ),
+            historyEventWire(
+                id = "c38e2498-bc59-4183-b295-e6d3a872ab3e",
+                seq = 3,
+                type = "run.cancelled",
+                payload = "null",
+            ),
+        )
+
+    @Test
+    fun usageFailureShowsRecoveryAccountDetails() =
+        capture(
+            R.string.run_failure_usage_limit_title,
+            "recovery-account-details.png",
+            RecoveryApiFixture.failure("usage_limit"),
+        )
+
+    private fun capture(label: Int, filename: String, vararg feedback: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as TestOkouApplication
+        val device = UiDevice.getInstance(instrumentation)
+        val auth = app.authentication as TestAuthentication
+        val previousAuth = auth.state.value
+        val previousChats = app.chatService
+        val cache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
+        val preferences = app.snapshotApiPreferences()
+        fun displayOverride(setting: String): String =
+            Regex("Override \\w+: (\\S+)").find(device.executeShellCommand("wm $setting"))
+                ?.groupValues?.get(1) ?: "reset"
+        val size = displayOverride("size")
+        val density = displayOverride("density")
+        fun text(value: String) = By.pkg(app.packageName).text(value)
+        fun await(value: String) =
+            checkNotNull(device.wait(Until.findObject(text(value)), 12_000)) { "Missing $value" }
+        ChatListApiFixture().use { fixture ->
+            val usageFailure = label == R.string.run_failure_usage_limit_title
+            val rows =
+                listOf(
+                    historyEventWire(
+                        id = "915697dd-1b9b-4f5b-87a3-4840f224624b",
+                        seq = 1,
+                        type = "input.prompt",
+                        payload = """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Review the launch image."}]}}""",
+                    ),
+                    *feedback,
+                )
+            if (usageFailure) {
+                RecoveryApiFixture(fixture).set(*rows.toTypedArray())
+                fixture.events = { request ->
+                    if (request.requestUrl?.queryParameter("sinceSeqId") != null)
+                        jsonResponse("""{"events":[],"hasMore":false}""")
+                    else {
+                        val chat = chatEventWire().replace(
+                            "\"selectedModel\":null", "\"selectedModel\":\"gpt-recovery\"",
+                        )
+                        jsonResponse("""{"events":[$chat],"hasMore":false}""")
+                    }
+                }
+            } else fixture.setHistoryEvents(CHAT_PERSONAL, rows)
+            try {
+                device.executeShellCommand("wm size 412x892")
+                device.executeShellCommand("wm density 160")
+                app.chatService = fixture.service
+                auth.state.value = testAuthenticationState()
+                ActivityScenario.launch(MainActivity::class.java).use {
+                    await("Personal chat").click()
+                    val labelText = app.getString(label)
+                    val status = await(labelText)
+                    val okou = app.getString(R.string.app_name)
+                    val header = await(okou)
+                    check(device.findObjects(text(okou)).size == 1)
+                    check(device.findObjects(text(labelText)).size == 1)
+                    check(header.visibleBounds.bottom < status.visibleBounds.top)
+                    if (label == R.string.run_failure_provider_image_too_large_title) {
+                        await(app.getString(R.string.run_failure_provider_image_too_large_description))
+                        check(!device.hasObject(text("Older image error")))
+                    }
+                    if (usageFailure) {
+                        val account = await(app.getString(R.string.recovery_account))
+                        val email = await("fixture@example.test")
+                        check(email.visibleBounds.left - account.visibleBounds.right == 8)
+                        check(email.visibleBounds.top == account.visibleBounds.top)
+                        await(app.getString(R.string.recovery_reset_time))
+                        await(app.getString(R.string.recovery_credits))
+                        await(app.getString(R.string.recovery_reset))
+                    }
+                    ScreenshotCapture.capture(filename)
+                }
+            } finally {
+                device.executeShellCommand("wm size $size")
+                device.executeShellCommand("wm density $density")
+                auth.state.value = previousAuth
+                app.chatService = previousChats
+                app.restoreApiPreferences(preferences)
+                cache.restore()
+            }
+        }
+    }
+}
