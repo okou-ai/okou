@@ -201,6 +201,9 @@ internal fun ChatConnectorOptionsButton(
     val detail = state?.details?.get(slug)
     val reading = detail?.accounts
     val rows = reading?.data?.accounts
+    val hasReadContent =
+        showingOverview && overviewData != null ||
+            showingAccounts && summary != null && rows != null
     val coldFailure =
         when {
             showingOverview && overviewData == null -> overview?.failure
@@ -428,9 +431,9 @@ internal fun ChatConnectorOptionsButton(
             expandInShortWindow = true,
             back = if (showingConnectors || currentWindowSizeDp().height < 480) ::back else null,
             actions = footer,
-            feedback = readFeedback.takeIf { showingConnectors },
+            feedback = readFeedback.takeIf { hasReadContent },
             inContentFeedbackMessage =
-                if (showingConnectors) stringResource(R.string.connector_refresh_failed) else null,
+                if (hasReadContent) stringResource(R.string.connector_refresh_failed) else null,
             centerCompactContent =
                 inlineSave == null &&
                     (coldFailure == ConnectorReadFailure.Network ||

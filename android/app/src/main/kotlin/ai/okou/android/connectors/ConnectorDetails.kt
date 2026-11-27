@@ -623,13 +623,13 @@ internal fun ConnectorSheet(
                         maxOf(48.dp, 20.sp.toDp() + 16.dp) * 2 +
                         16.dp
                 }
-            // Reserve the same space before and after a Snackbar appears over a short result.
-            val minimumBodyHeight =
+            // Keep the Snackbar clear of the scroll viewport and leave the footer in place.
+            val feedbackSpace =
                 if (inContentFeedbackMessage != null) {
                     workspaceFeedbackMessageHeight(inContentFeedbackMessage, maxWidth) +
                         connectorFeedbackBottomInset
                 } else 0.dp
-            val scrollAll = actions != null && maxHeight < minimumControlsHeight + minimumBodyHeight
+            val scrollAll = actions != null && maxHeight < minimumControlsHeight + feedbackSpace
             Column(
                 when {
                     scrollAll -> Modifier.fillMaxWidth().verticalScroll(scroll)
@@ -655,13 +655,13 @@ internal fun ConnectorSheet(
                     )
                 }
                 Box(
-                    (if (scrollAll) Modifier else Modifier.weight(1f, fill = fullScreen))
-                        .fillMaxWidth()
-                        .heightIn(min = minimumBodyHeight),
+                    if (scrollAll) Modifier.fillMaxWidth()
+                    else Modifier.weight(1f, fill = fullScreen).fillMaxWidth(),
                     propagateMinConstraints = true,
                 ) {
                     Column(
-                        if (scrollAll) Modifier else Modifier.verticalScroll(scroll),
+                        Modifier.padding(bottom = feedbackSpace)
+                            .then(if (scrollAll) Modifier else Modifier.verticalScroll(scroll)),
                         verticalArrangement =
                             if (fullScreen && centerCompactContent && !scrollAll)
                                 Arrangement.spacedBy(8.dp, BiasAlignment.Vertical(-0.2f))

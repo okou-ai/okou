@@ -405,6 +405,10 @@ class ChatConnectorOptionsTest {
     fun warmOverviewRefreshFailureKeepsRowsAndClearsItsSnackbarOnRecovery() {
         openNewChat()
         openOverview()
+        val lastService = compose.onNodeWithTag("chat-connector-service-slack")
+        val footer = compose.onNodeWithTag("chat-connector-manage")
+        val serviceBounds = lastService.getUnclippedBoundsInRoot()
+        val footerBounds = footer.getUnclippedBoundsInRoot()
         app.connectors.failChatOverview = true
         val options = compose.runOnIdle {
             checkNotNull(
@@ -419,9 +423,13 @@ class ChatConnectorOptionsTest {
         compose.runOnIdle { options.invalidate("slack") }
         val message = "Could not refresh connectors."
         waitText(message)
-        compose.onNodeWithText(message).assertIsDisplayed()
+        val snackbar = compose.onNodeWithText(message).assertIsDisplayed()
         compose.onNodeWithTag(calendarTag).assertIsDisplayed()
-        compose.onNodeWithTag("chat-connector-manage").assertIsDisplayed()
+        lastService.assertIsDisplayed()
+        footer.assertIsDisplayed()
+        assertEquals(serviceBounds, lastService.getUnclippedBoundsInRoot())
+        assertEquals(footerBounds, footer.getUnclippedBoundsInRoot())
+        assertTrue(serviceBounds.bottom <= snackbar.getUnclippedBoundsInRoot().top)
         val overviewRead = "/api/chat-connector-overview" to null
         assertEquals(4, app.connectors.chatConnectorReads.count { it == overviewRead })
 
