@@ -23,12 +23,22 @@ internal suspend fun shareArtifactOriginal(
     model: ArtifactCatalogModel,
     id: String,
     original: ArtifactSave,
+): ArtifactSaveResult =
+    shareOriginalFile(context, original.filename, original.contentType) { copy ->
+        model.prepareOriginalShare(id, original) { copy.outputStream() }
+    }
+
+internal suspend fun shareOriginalFile(
+    context: Context,
+    filename: String,
+    contentType: String,
+    prepare: suspend (File) -> ArtifactSaveResult,
 ): ArtifactSaveResult {
     var directory: File? = null
     var handedOff = false
     try {
         val name =
-            original.filename.substringAfterLast('/').substringAfterLast('\\').takeUnless {
+            filename.substringAfterLast('/').substringAfterLast('\\').takeUnless {
                 it.isBlank() || it == "." || it == ".."
             } ?: "artifact"
         val extension =
@@ -51,7 +61,7 @@ internal suspend fun shareArtifactOriginal(
                     File(it, if (extension == null) "original" else "original.$extension")
                 }
             }
-        val result = model.prepareOriginalShare(id, original) { copy.outputStream() }
+        val result = prepare(copy)
         if (result != ArtifactSaveResult.Saved) return result
         currentCoroutineContext().ensureActive()
         val uri =
@@ -62,7 +72,7 @@ internal suspend fun shareArtifactOriginal(
                 name,
             )
         val mime =
-            original.contentType.substringBefore(';').trim().takeIf { '/' in it }
+            contentType.substringBefore(';').trim().takeIf { '/' in it }
                 ?: "application/octet-stream"
         val send =
             Intent(Intent.ACTION_SEND).apply {
