@@ -11,27 +11,13 @@ import {
   Plug,
   Search,
 } from "lucide-react";
-import {
-  Button,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  usePopoverActionsRef,
-  ShortcutTooltipGroup,
-  cn,
-} from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
+import { Button, ShortcutTooltipGroup, cn } from "@okouai/ui";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import {
   sidebarOff$,
+  toggleSidebarOff$,
   handleAccountAction$,
 } from "../../signals/okou-page/nav.ts";
-import {
-  chatListColumnMounted$,
-  chatListColumnRef$,
-  toggleChatListFromButton$,
-} from "../../signals/okou-page/chat-list-preview.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
 import { ROUTES, type RouteKey } from "../../signals/route-paths.ts";
 import { assistantName$ } from "../../signals/branding.ts";
@@ -286,23 +272,18 @@ function LabeledRailLink({
 function ThreeColumnChatListToggle({
   hidden,
   size = "icon-sm",
-  onClick,
   ...props
 }: ComponentProps<typeof Button> & {
   hidden: boolean;
 }) {
-  const onToggle = useSet(toggleChatListFromButton$);
+  const onToggle = useSet(toggleSidebarOff$);
 
   return (
     <Button
       {...props}
       type="button"
-      data-chat-list-toggle=""
-      onClick={(event) => {
-        onClick?.(event);
-        if (!event.defaultPrevented) {
-          onToggle(event.currentTarget);
-        }
+      onClick={() => {
+        onToggle();
       }}
       aria-keyshortcuts={
         GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.ariaKeyShortcuts
@@ -319,66 +300,6 @@ function ThreeColumnChatListToggle({
         )}
       />
     </Button>
-  );
-}
-
-function CollapsedChatListToggle() {
-  const actionsRef = usePopoverActionsRef();
-  const features = useLastResolved(featureSwitches$);
-  const listMounted = useGet(chatListColumnMounted$);
-  const width = useGet(chatListWidth$);
-  const { t } = useTranslation();
-  const label = t(($) => {
-    return $.appShell.sidebar.showChatList;
-  });
-  const trigger = (
-    <ThreeColumnChatListToggle hidden size="icon" aria-label={label} />
-  );
-
-  if (!features?.[FeatureSwitchKey.ChatListHoverPreview] || listMounted) {
-    return (
-      <ShortcutTooltipGroup
-        side="right"
-        items={[
-          {
-            shortcut: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding,
-            trigger,
-          },
-        ]}
-      />
-    );
-  }
-
-  return (
-    <Popover modal={false} actionsRef={actionsRef}>
-      <PopoverTrigger
-        openOnHover
-        aria-haspopup={undefined}
-        delay={200}
-        closeDelay={300}
-        render={trigger}
-      />
-      <PopoverContent
-        role="region"
-        aria-label={label}
-        side="right"
-        align="start"
-        sideOffset={18}
-        className="hidden h-120 max-h-[var(--available-height)] max-w-[var(--available-width)] flex-col overflow-hidden p-0 md:flex"
-        style={{ width }}
-        onMouseLeave={(event) => {
-          if (
-            !event.currentTarget.querySelector(
-              '[aria-haspopup="menu"][aria-expanded="true"]',
-            )
-          ) {
-            actionsRef.current?.close();
-          }
-        }}
-      >
-        <ChatListContents preview />
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -475,7 +396,24 @@ function LabeledNavRailFrame({
       <div className="mb-3 shrink-0">{workspaceSwitcher}</div>
       {chatListHidden && (
         <div className="mb-3 shrink-0">
-          <CollapsedChatListToggle />
+          <ShortcutTooltipGroup
+            side="right"
+            items={[
+              {
+                shortcut: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding,
+                // Match the rail's 36px nav chips, not the header's 32px.
+                trigger: (
+                  <ThreeColumnChatListToggle
+                    hidden
+                    size="icon"
+                    aria-label={t(($) => {
+                      return $.appShell.sidebar.showChatList;
+                    })}
+                  />
+                ),
+              },
+            ]}
+          />
         </div>
       )}
       {/* Keep focus-ring clearance inside the scrollport. The top margin
@@ -521,7 +459,7 @@ export function ThreeColumnSearchDialogContainer() {
 
 const CHAT_LIST_INSET = "px-3";
 
-function ChatListHeader({ preview }: { readonly preview: boolean }) {
+function ChatListHeader() {
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
   // My Okou has a single chat list, so the header carries the list's actions
@@ -556,11 +494,9 @@ function ChatListHeader({ preview }: { readonly preview: boolean }) {
     shortcut: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding,
     trigger: (
       <ThreeColumnChatListToggle
-        hidden={preview}
+        hidden={false}
         aria-label={t(($) => {
-          return preview
-            ? $.appShell.sidebar.showChatList
-            : $.appShell.sidebar.hideChatList;
+          return $.appShell.sidebar.hideChatList;
         })}
       />
     ),
@@ -616,10 +552,8 @@ function ChatListResizeSeam() {
 
 function ChatListColumn() {
   const width = useGet(chatListWidth$);
-  const ref = useSet(chatListColumnRef$);
   return (
     <aside
-      ref={ref}
       data-testid="chat-list-column"
       className={cn(
         "hidden md:flex shrink-0 flex-col",
@@ -630,15 +564,7 @@ function ChatListColumn() {
       )}
       style={{ width }}
     >
-      <ChatListContents />
-    </aside>
-  );
-}
-
-function ChatListContents({ preview = false }: { readonly preview?: boolean }) {
-  return (
-    <>
-      <ChatListHeader preview={preview} />
+      <ChatListHeader />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
         <ChatThreadsSection
           scrollSignals={threeColumnSidebarChatThreadScrollSignals}
@@ -653,7 +579,7 @@ function ChatListContents({ preview = false }: { readonly preview?: boolean }) {
       <div className={cn("pb-3 empty:hidden", CHAT_LIST_INSET)}>
         <SidebarUpgradeCard />
       </div>
-    </>
+    </aside>
   );
 }
 
