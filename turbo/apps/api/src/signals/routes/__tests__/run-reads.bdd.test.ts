@@ -2254,7 +2254,11 @@ describe("RUN-04: agent run telemetry families", () => {
       throw new Error("Expected the run context read to succeed");
     }
     expect(contextRead.body.templateGuidanceBundles).toStrictEqual(
-      templateGuidanceBundles,
+      templateGuidanceBundles.map(
+        ({ beforeMountPaths: _anchors, ...bundle }) => {
+          return bundle;
+        },
+      ),
     );
     expect(contextRead.body).toMatchObject({
       runId,

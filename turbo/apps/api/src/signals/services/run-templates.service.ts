@@ -241,13 +241,11 @@ function buildRunTemplateGuidance(args: {
   if (guidance.status === "invalid") {
     return { error: { code: "BAD_REQUEST", message: guidance.message } };
   }
-  // Older Runner startup readers require an anchor list until #51330.
   const templateGuidanceBundles: StoredTemplateGuidanceBundle[] = [
     ...presentations.map((row) => {
       return {
         ownerKind: "presentation-template" as const,
         templateId: row.templateId,
-        beforeMountPaths: [],
         ...row.guidanceBundle,
       };
     }),
@@ -255,7 +253,6 @@ function buildRunTemplateGuidance(args: {
       return {
         ownerKind: "user-template" as const,
         templateId: row.templateId,
-        beforeMountPaths: [],
         ...row.guidanceBundle,
       };
     }),
