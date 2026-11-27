@@ -92,6 +92,8 @@
     <string name="updates_download_failed">Download failed</string>
     <string name="updates_check_compatible">Check versions</string>
     <string name="updates_required_incompatible">This device can’t update Okou</string>
+    <string name="updates_newer_android_required">This update requires a newer version of Android.</string>
+    <string name="updates_required_incompatible_description">This version of Okou is no longer supported. Update Android, then check for an available version.</string>
     <string name="updates_required_incompatible_short">Device can’t update</string>
     <string name="updates_required_short">Update required</string>
     <string name="updates_ready">Continue installation</string>

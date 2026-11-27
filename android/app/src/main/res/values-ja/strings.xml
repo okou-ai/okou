@@ -91,6 +91,8 @@
     <string name="updates_download_failed">ダウンロードに失敗</string>
     <string name="updates_check_compatible">バージョンを確認</string>
     <string name="updates_required_incompatible">この端末では Okou を更新できません</string>
+    <string name="updates_newer_android_required">このアップデートには新しいバージョンの Android が必要です。</string>
+    <string name="updates_required_incompatible_description">このバージョンの Okou はサポートされていません。Android を更新してから、利用可能なバージョンを確認してください。</string>
     <string name="updates_required_incompatible_short">更新できません</string>
     <string name="updates_required_short">アップデートが必要</string>
     <string name="updates_ready">インストールを続ける</string>

@@ -591,22 +591,55 @@ class NativeUpdateTest {
 
             val activeLocale = app.resources.configuration.locales.toLanguageTags()
             download.set(CompletableDeferred())
-            candidate.set(release.copy(version = "99.1.0", minimumSdk = 36))
+            val belowMinimum = release.copy(minimumSdk = 36)
+            candidate.set(belowMinimum)
             owner.requireUpdate(RequiredUpdate("99.1.0"))
+            val checkVersions =
+                By.pkg(app.packageName).text(app.getString(R.string.updates_check_compatible))
+            assertTrue(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice): Boolean =
+                            owner.state.value.let {
+                                it.required &&
+                                    it.check == UpdateCheck.Checked &&
+                                    it.candidate == belowMinimum
+                            }
+                    },
+                    10_000,
+                ) == true,
+            )
+            exists(R.string.updates_unavailable)
+            assertFalse(device.hasObject(By.pkg(app.packageName).text(updateTarget)))
+            assertFalse(
+                device.hasObject(
+                    By.pkg(app.packageName)
+                        .text(app.getString(R.string.updates_required_incompatible)),
+                ),
+            )
+            val checkVersionsBounds = button(checkVersions).visibleBounds
+            captureState("required-no-eligible-version")
+            candidate.set(release.copy(version = "99.1.0", minimumSdk = 36))
+            button(checkVersions).click()
             exists(R.string.updates_required_incompatible)
-            exists(R.string.updates_android_unsupported)
+            exists(R.string.updates_newer_android_required)
+            exists(R.string.updates_required_incompatible_description)
+            assertNotNull(text(app.getString(R.string.updates_version, "99.1.0")))
+            assertEquals(checkVersionsBounds, button(checkVersions).visibleBounds)
             captureState("required-incompatible")
             withShortWindowAndLargeText(width = 1000) {
                 exists(R.string.updates_required_incompatible_short)
-                val checkVersions =
-                    button(
-                        By.pkg(app.packageName)
-                            .text(app.getString(R.string.updates_check_compatible)),
-                    )
-                assertTrue(checkVersions.visibleBounds.height() >= (48 * density).roundToInt() - 1)
+                val action = button(checkVersions)
+                assertTrue(action.visibleBounds.height() >= (48 * density).roundToInt() - 1)
+                val reader = By.pkg(app.packageName).scrollable(true).focused(true)
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
+                if (!device.wait(Until.hasObject(reader), 1_000)) {
+                    assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
+                }
+                assertNotNull(find(reader))
                 captureState("required-incompatible-short")
                 candidate.set(release.copy(version = "99.1.0"))
-                checkVersions.click()
+                action.click()
                 exists(R.string.updates_download)
             }
             exists(R.string.updates_required)
