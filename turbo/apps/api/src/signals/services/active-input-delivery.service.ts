@@ -52,6 +52,7 @@ interface ActiveInputDeliveryScope {
   readonly userId: string;
   readonly orgId: string;
   readonly status: RunStatus;
+  readonly framework: string | null;
 }
 
 interface ActiveInputRunThread {
@@ -114,6 +115,8 @@ const loadActiveInputDeliveryScope$ = command(
         userId: agentRuns.userId,
         orgId: agentRuns.orgId,
         status: agentRuns.status,
+        framework: agentRuns.framework,
+        launchSnapshot: agentRuns.launchSnapshot,
       })
       .from(agentRuns)
       .where(
@@ -130,9 +133,12 @@ const loadActiveInputDeliveryScope$ = command(
       return null;
     }
     return {
-      ...row,
+      runId: row.runId,
       chatThreadId: row.chatThreadId,
+      userId: row.userId,
+      orgId: row.orgId,
       status: runStatusSchema.parse(row.status),
+      framework: row.launchSnapshot?.framework ?? row.framework ?? null,
     };
   },
 );

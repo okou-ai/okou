@@ -1,5 +1,8 @@
 import { buildCurrentThreadContext } from "./chat-thread-prompt";
-import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
+import {
+  buildConversationGuidance,
+  type ConversationVoiceMode,
+} from "../../lib/conversation-guidance";
 import type {
   ChatRunSourceAnnotation,
   UserMessageReferences,
@@ -13,11 +16,15 @@ export interface WebChatSessionPromptContext {
   readonly chatRunSource: ChatRunSourceAnnotation | null;
   readonly references: UserMessageReferences;
   readonly integrationNote: string;
+  readonly voiceMode?: ConversationVoiceMode;
 }
 
-function buildWebChatPrompt(integrationNote: string): string {
+function buildWebChatPrompt(
+  integrationNote: string,
+  voiceMode?: ConversationVoiceMode,
+): string {
   return [
-    CONVERSATION_GUIDANCE,
+    buildConversationGuidance({ voiceMode }),
     "# Current Integration\nYou are currently running inside: Web",
     "You are communicating with the user through the web chat UI.",
     integrationNote,
@@ -106,7 +113,7 @@ export function buildWebChatAppendSystemPrompt(args: {
   readonly context: WebChatSessionPromptContext;
 }): string {
   return [
-    buildWebChatPrompt(args.context.integrationNote),
+    buildWebChatPrompt(args.context.integrationNote, args.context.voiceMode),
     buildCurrentThreadContext(args.threadId),
     args.context.projectContext,
     buildReferencesContext(args.context.references),

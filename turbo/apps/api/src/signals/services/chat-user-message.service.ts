@@ -339,13 +339,31 @@ export function userMessagePhysicalFiles(
   });
 }
 
+export type UserMessageVoiceMode = "transcribe" | "native-audio";
+
+export interface ProjectUserMessageOptions {
+  readonly voiceMode?: UserMessageVoiceMode;
+}
+
 function projectAttachment(
   part: Extract<UserMessagePart, { type: "voice" | "file" }>,
+  voiceMode: UserMessageVoiceMode = "transcribe",
 ) {
   if (part.type === "file") {
     return {
       prompt: userMessageFilePrompt(part),
       label: `[File: ${part.filenameSnapshot}]`,
+    };
+  }
+  if (voiceMode === "native-audio") {
+    const commands = part.clips
+      .map(({ fileId }, index) => {
+        return `Clip ${index + 1}: okou web download-file ${fileId}`;
+      })
+      .join("\n");
+    return {
+      prompt: `[Voice message] The user spoke this part of their message to you. Download each clip in recording order using the command(s) below, then read each returned local file path with \`read_file\` to listen directly to the audio. Do not use \`okou transcribe\`.\n${commands}`,
+      label: `[Voice message: ${part.clips.length} clips]`,
     };
   }
   const flags = part.clips
@@ -543,6 +561,7 @@ function suggestionPromptContext(document: UserMessageDocument) {
  */
 export function projectUserMessage(
   document: UserMessageDocument,
+  options?: ProjectUserMessageOptions,
 ): UserMessageProjection {
   const { suggestionContexts, additionalInfo } =
     suggestionPromptContext(document);
@@ -636,7 +655,7 @@ export function projectUserMessage(
     }
     if (part.type === "file" || part.type === "voice") {
       flushInlinePrompt();
-      const attachment = projectAttachment(part);
+      const attachment = projectAttachment(part, options?.voiceMode);
       promptBlocks.push(attachment.prompt);
       displayBlocks.push(attachment.label);
       hasTextContent ||= part.type === "voice";
