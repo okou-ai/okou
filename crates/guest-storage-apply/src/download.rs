@@ -24,6 +24,8 @@ const LARGE_LOCAL_ARTIFACT_BYTES: u64 = 256 * 1024;
 #[cfg(target_os = "linux")]
 const MIN_INLINE_ARTIFACT_BATCH_TASKS: usize = 17;
 #[cfg(target_os = "linux")]
+const MAX_INLINE_COMPANION_EXPANDED_BYTES: u32 = 32 * 1024 * 1024;
+#[cfg(target_os = "linux")]
 const WIDE_LOCAL_INFLATE_TASKS: usize = 32;
 const BASE_REMOTE_CONCURRENT: usize = 16;
 const MEDIUM_REMOTE_MAX_CONCURRENT: usize = 20;
@@ -532,19 +534,28 @@ fn single_inline_artifact<'input>(tasks: &[PreparedDownloadTask<'input>]) -> Opt
 }
 
 #[cfg(target_os = "linux")]
+fn inline_companions_fit_budget(tasks: &[PreparedDownloadTask<'_>]) -> bool {
+    // Several individually small archives can still compete for write time.
+    tasks
+        .iter()
+        .map(|prepared| &prepared.task)
+        .filter(|task| !task.telemetry.is_artifact())
+        .try_fold(0, |total, task| {
+            let expanded = archive::inflate::small_companion_expanded_bytes(task.inline_archive?)?;
+            let total = total + expanded;
+            (total <= MAX_INLINE_COMPANION_EXPANDED_BYTES).then_some(total)
+        })
+        .is_some()
+}
+
+#[cfg(target_os = "linux")]
 fn inline_batch_prefers_two_workers(tasks: &[PreparedDownloadTask<'_>]) -> bool {
     let Some(artifact) = single_inline_artifact(tasks) else {
         return false;
     };
     archive::inflate::inline_artifact_size_is_eligible(artifact)
         && rustix::thread::sched_getaffinity(None).is_ok_and(|cpus| cpus.count() == 2)
-        && tasks.iter().all(|prepared| {
-            let task = &prepared.task;
-            task.telemetry.is_artifact()
-                || task
-                    .inline_archive
-                    .is_some_and(archive::inflate::inline_companion_is_small)
-        })
+        && inline_companions_fit_budget(tasks)
         && archive::inflate::has_small_inline_file_prefix(artifact)
 }
 

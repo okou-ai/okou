@@ -74,6 +74,27 @@ fn inline_worker_selection_requires_one_artifact_and_all_sources_inline() {
     assert!(single_inline_artifact(&tasks).is_none());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn inline_worker_budget_limits_total_companion_expansion() {
+    const MIB: u32 = 1024 * 1024;
+    const COMPANION: [u8; 4] = (7 * MIB).to_le_bytes();
+    const AT_LIMIT: [u8; 4] = (4 * MIB).to_le_bytes();
+    const ABOVE_LIMIT: [u8; 4] = (4 * MIB + 1).to_le_bytes();
+    let mut companions: Vec<_> = (0..5)
+        .map(|index| {
+            let mut prepared = prepared_task_at(&format!("/storage-{index}"));
+            prepared.task.set_inline_archive(&COMPANION);
+            prepared
+        })
+        .collect();
+    assert!(!inline_companions_fit_budget(&companions));
+    companions[4].task.set_inline_archive(&AT_LIMIT);
+    assert!(inline_companions_fit_budget(&companions));
+    companions[4].task.set_inline_archive(&ABOVE_LIMIT);
+    assert!(!inline_companions_fit_budget(&companions));
+}
+
 fn pending_at(id: usize, path: &str) -> PendingDownload<'static> {
     PendingDownload::new(id, prepared_task_at(path))
 }

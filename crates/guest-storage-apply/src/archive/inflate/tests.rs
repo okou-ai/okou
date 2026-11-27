@@ -49,9 +49,12 @@ fn inline_worker_size_hint_stays_within_the_measured_bands() {
 #[test]
 fn inline_companion_size_hint_must_be_below_the_artifact_range() {
     let limit = 8 * 1024 * 1024u32;
-    assert!(inline_companion_is_small(&(limit - 1).to_le_bytes()));
-    assert!(!inline_companion_is_small(&limit.to_le_bytes()));
-    assert!(!inline_companion_is_small(&[0; 3]));
+    assert_eq!(
+        small_companion_expanded_bytes(&(limit - 1).to_le_bytes()),
+        Some(limit - 1)
+    );
+    assert_eq!(small_companion_expanded_bytes(&limit.to_le_bytes()), None);
+    assert_eq!(small_companion_expanded_bytes(&[0; 3]), None);
 }
 
 #[test]

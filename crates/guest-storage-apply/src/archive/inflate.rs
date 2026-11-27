@@ -175,8 +175,8 @@ pub(crate) fn inline_artifact_size_is_eligible(archive: &[u8]) -> bool {
         })
 }
 
-pub(crate) fn inline_companion_is_small(archive: &[u8]) -> bool {
-    inline_expanded_bytes(archive).is_some_and(|size| size < MIN_TWO_WORKER_ARTIFACT_EXPANDED_BYTES)
+pub(crate) fn small_companion_expanded_bytes(archive: &[u8]) -> Option<u32> {
+    inline_expanded_bytes(archive).filter(|&size| size < MIN_TWO_WORKER_ARTIFACT_EXPANDED_BYTES)
 }
 
 fn inline_expanded_bytes(archive: &[u8]) -> Option<u32> {
