@@ -17,6 +17,8 @@ import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.preferences.memberPreferenceSaveError
 import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.DefaultModelSettings
+import ai.okou.android.settings.settingsRefreshError
+import ai.okou.android.state.SettingsDestination
 import ai.okou.android.updates.UpdateTransfer
 import ai.okou.android.updates.UpdateUiState
 import ai.okou.android.updates.updateRelease
@@ -264,9 +266,26 @@ class OkouAppTest {
                                 defaultModel = defaultModel,
                                 snackbar = snackbar,
                                 feedbackInOverlay = feedbackInOverlay,
-                                settingsContent = { _, _, _ ->
+                                settingsContent = { destination, _, _ ->
+                                    val catalogError =
+                                        defaultModel
+                                            ?.takeIf { destination == SettingsDestination.Overview }
+                                            ?.let { model ->
+                                                settingsRefreshError(
+                                                    snackbar,
+                                                    model.state
+                                                        .collectAsStateWithLifecycle()
+                                                        .value
+                                                        .settingsCatalogRefreshFailure,
+                                                    R.string.settings_model_catalog_refresh_failed,
+                                                    model::dismissCatalogFailure,
+                                                )
+                                            }
                                     PaneFeedback(
-                                        listOf(memberPreferenceSaveError(models.second, snackbar)),
+                                        listOf(
+                                            catalogError,
+                                            memberPreferenceSaveError(models.second, snackbar),
+                                        ),
                                     )
                                     SettingsScreen(
                                         models = {

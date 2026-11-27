@@ -55,10 +55,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -350,11 +350,11 @@ private fun FullCodePage(
 ) {
     val colors = MaterialTheme.colorScheme
     val feedback = remember { SnackbarHostState() }
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val copy =
         copyConversationCode(source?.text.orEmpty()) { message ->
-            scope.launch { feedback.showSnackbar(context.getString(message)) }
+            scope.launch { feedback.showSnackbar(resources.getString(message)) }
         }
     val backFocus = remember { FocusRequester() }
     val input = LocalInputModeManager.current
