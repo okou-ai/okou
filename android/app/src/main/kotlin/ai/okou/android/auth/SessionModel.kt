@@ -806,13 +806,14 @@ class SessionModel(
         val resolvedOrganization = checkNotNull(organization)
         val preferences = store.workspaceModel {
             MemberPreferencesModel(
-                initial,
-                owner,
-                authorized = { current(ticket, snapshot) },
-                onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
-                initialPending =
-                    pendingPreferences[opened.identity.userId to opened.identity.workspaceId],
-            )
+                    initial,
+                    owner,
+                    authorized = { current(ticket, snapshot) },
+                    onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
+                    initialPending =
+                        pendingPreferences[opened.identity.userId to opened.identity.workspaceId],
+                )
+                .also { it.foreground(foreground.value) }
         }
         val instructions = store.workspaceModel {
             PersonalInstructionsModel(
@@ -952,6 +953,7 @@ class SessionModel(
             workspaceSetupReturn?.let(::retry)
         }
         val state = mutable.value
+        state.ready?.preferences?.foreground(active)
         val openingChats =
             when (val opening = state.opening) {
                 is OpeningWorkspace.Authorized -> opening.chats
@@ -960,7 +962,6 @@ class SessionModel(
             }
         (state.ready?.chats ?: openingChats)?.activityForegroundChanged(active)
         if (!active) return
-        state.ready?.preferences?.refreshFromForeground()
         if (state.ready != null) observed?.let { loadRemainingMemberships(state.generation, it) }
     }
 

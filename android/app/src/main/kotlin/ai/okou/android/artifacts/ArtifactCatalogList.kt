@@ -6,7 +6,9 @@ import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
+import ai.okou.android.WorkspaceToolDirectoryRowSkeleton
 import ai.okou.android.chat.ChatListTextAction
+import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.hasPendingSearchText
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.restoreDirectoryFocus
@@ -23,14 +25,12 @@ import android.icu.util.TimeZone as IcuTimeZone
 import android.text.format.DateFormat
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -207,7 +207,12 @@ internal fun ArtifactCatalogList(
             )
             return@Column
         }
-        val showSkeleton = rememberContentReadSkeleton(hasContent = page != null)
+        val showSkeleton =
+            rememberContentReadSkeleton(
+                hasContent = page != null,
+                awaitingRead = current?.initialReadRound != null,
+                readScope = current?.initialReadRound,
+            )
         Box(Modifier.fillMaxWidth().weight(1f)) {
             LazyColumn(
                 modifier =
@@ -219,7 +224,7 @@ internal fun ArtifactCatalogList(
                 state = position,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
             ) {
-                if (showSkeleton) items(4) { ArtifactRowSkeleton() }
+                if (showSkeleton) items(4) { ArtifactRowPlaceholder() }
                 if (page?.items?.isEmpty() == true) {
                     item {
                         ArtifactEmpty(
@@ -265,10 +270,7 @@ internal fun ArtifactCatalogList(
                 }
                 if (failure == ArtifactCatalogFailure.More || reading == ArtifactCatalogRead.More) {
                     item(key = "catalog-page-feedback") {
-                        ArtifactPageFeedback(
-                            failed = failure == ArtifactCatalogFailure.More,
-                            noticeHorizontalPadding = 16.dp,
-                        )
+                        ArtifactRowPlaceholder(pageFailed = failure == ArtifactCatalogFailure.More)
                     }
                 }
             }
@@ -358,20 +360,55 @@ private fun ArtifactThumbnail(
 }
 
 @Composable
-internal fun ArtifactRowSkeleton(height: Dp = 80.dp, horizontalPadding: Dp = 12.dp) {
-    val fill = MaterialTheme.colorScheme.surfaceVariant
-    Row(
-        Modifier.fillMaxWidth()
-            .height(height)
-            .padding(horizontal = horizontalPadding, vertical = 8.dp)
-            .testTag("artifact_row_skeleton"),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Spacer(Modifier.size(40.dp).background(fill, RoundedCornerShape(12.dp)))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Spacer(Modifier.width(144.dp).height(16.dp).background(fill, RoundedCornerShape(4.dp)))
-            Spacer(Modifier.width(80.dp).height(12.dp).background(fill, RoundedCornerShape(4.dp)))
+internal fun ArtifactRowPlaceholder(
+    chatResources: Boolean = false,
+    hasSubtitle: Boolean = true,
+    pageFailed: Boolean = false,
+) {
+    val minimumHeight =
+        when {
+            !chatResources -> 80.dp
+            hasSubtitle -> 72.dp
+            else -> 56.dp
         }
+    val (titleSlot, subtitleSlot) =
+        with(LocalDensity.current) { maxOf(14.dp, 24.sp.toDp()) to maxOf(14.dp, 20.sp.toDp()) }
+    val textGap = if (chatResources) 0.dp else 4.dp
+    val textHeight = titleSlot + if (hasSubtitle) textGap + subtitleSlot else 0.dp
+    val bounds = Modifier.fillMaxWidth().heightIn(min = maxOf(minimumHeight, 16.dp + textHeight))
+    if (pageFailed) {
+        // Reserve the same space after a failed page so the lower scroll bound stays stable.
+        Box(bounds) {
+            ArtifactReadNotice(
+                ArtifactCatalogFailure.More.label(),
+                Modifier.padding(horizontal = if (chatResources) 0.dp else 16.dp)
+                    .padding(top = 12.dp),
+            )
+        }
+        return
+    }
+    val text: @Composable () -> Unit = {
+        Box(Modifier.height(titleSlot), contentAlignment = Alignment.CenterStart) {
+            ChatSkeletonBlock(Modifier.width(144.dp).height(14.dp))
+        }
+        if (hasSubtitle) {
+            Box(Modifier.height(subtitleSlot), contentAlignment = Alignment.CenterStart) {
+                ChatSkeletonBlock(Modifier.width(80.dp).height(14.dp))
+            }
+        }
+    }
+    val skeleton = Modifier.testTag("artifact_row_skeleton")
+    if (chatResources) {
+        Row(
+            skeleton.then(bounds).padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ChatSkeletonBlock(Modifier.size(40.dp), cornerRadius = 12.dp)
+            Column(content = { text() })
+        }
+    } else {
+        WorkspaceToolDirectoryRowSkeleton(skeleton, content = text)
     }
 }
 
@@ -454,30 +491,6 @@ internal fun ArtifactCatalogFailure.label(chatResources: Boolean = false): Int =
         ArtifactCatalogFailure.Missing -> R.string.artifact_catalog_missing
         ArtifactCatalogFailure.ChatUnavailable -> R.string.history_missing
     }
-
-@Composable
-internal fun ArtifactPageFeedback(
-    failed: Boolean,
-    skeletonHeight: Dp = 80.dp,
-    skeletonHorizontalPadding: Dp = 12.dp,
-    noticeHorizontalPadding: Dp = 0.dp,
-) {
-    if (failed) {
-        // Keep the loading item's height so the list doesn't scroll back at its lower bound.
-        Box(Modifier.heightIn(min = skeletonHeight)) {
-            ArtifactReadNotice(
-                ArtifactCatalogFailure.More.label(),
-                Modifier.padding(
-                    start = noticeHorizontalPadding,
-                    end = noticeHorizontalPadding,
-                    top = 12.dp,
-                ),
-            )
-        }
-    } else {
-        ArtifactRowSkeleton(skeletonHeight, skeletonHorizontalPadding)
-    }
-}
 
 @Composable
 internal fun ArtifactReadNotice(@StringRes label: Int, modifier: Modifier = Modifier) {

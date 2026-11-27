@@ -33,19 +33,16 @@ import {
 } from "../../lib/markdown/pipeline.ts";
 import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
-import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { openThreadMailDraft$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import type {
-  ArtifactDescriptor,
-  ArtifactSignals,
-} from "../../signals/chat-page/artifact-card-signals.ts";
+import type { ArtifactDescriptor } from "../../signals/chat-page/artifact-card-signals.ts";
+import type { MarkdownCardRef } from "../../signals/chat-page/markdown-card-ref.ts";
 import type { HostedSiteCard } from "../../signals/hosted-site-card.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
-import { isImageUrl, isSafeMediaUrl } from "../../lib/media-url.ts";
+import { isSafeMediaUrl } from "../../lib/media-url.ts";
 import { resolveArtifactImageTransformOrigin } from "../../lib/platform-host.ts";
 import {
   CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS,
@@ -120,9 +117,6 @@ interface MediaImageProps {
   url: string;
   alt: string;
   load: ImageLoadSignals;
-  filename?: string;
-  resolvedPreview?: AttachmentPreviewSignals;
-  asLink?: boolean;
   insideLink?: boolean;
   /** Present when the surface can present this image without leaving it. */
   onActivate?: () => void;
@@ -134,14 +128,10 @@ function MediaImage({
   url,
   alt,
   load,
-  filename,
-  resolvedPreview,
-  asLink = false,
   insideLink = false,
   onActivate,
   resolutionFailed = false,
 }: MediaImageProps) {
-  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const loadStatus = useGet(load.status$);
   const imageStatus = resolutionFailed ? "error" : loadStatus;
@@ -155,13 +145,6 @@ function MediaImage({
         );
   const markLoaded = useSet(load.loaded$);
   const markFailed = useSet(load.failed$);
-  // Self-sourced lightbox handler so MediaImage doesn't need a callback
-  // prop chained from the Markdown caller. Removing the `onImageClick`
-  // prop chain is what lets the `components` map and the renderer
-  // functions live at module scope with stable identity — which in turn
-  // prevents React from tearing down the <video>/<img> subtree on every
-  // re-render of the parent and refetching media metadata unnecessarily.
-  const openImageLightbox = useSet(openImageLightbox$);
   const showPlaceholder = imageStatus !== "loaded";
 
   const className =
@@ -204,64 +187,35 @@ function MediaImage({
     </>
   );
 
-  if (asLink) {
-    // A linked Markdown thumbnail already has its own destination.
-    if (insideLink) {
-      return (
-        <span data-markdown-ui className={className}>
-          {preview}
-        </span>
-      );
-    }
+  // A linked Markdown thumbnail already has its own destination.
+  if (insideLink) {
     return (
-      <a
-        data-markdown-ui
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={className}
-        onClick={
-          onActivate === undefined
-            ? undefined
-            : (event) => {
-                if (shouldUseNativeAnchorNavigation(event)) {
-                  return;
-                }
-                event.preventDefault();
-                onActivate();
-              }
-        }
-      >
+      <span data-markdown-ui className={className}>
         {preview}
-      </a>
+      </span>
     );
   }
-
   return (
-    <button
+    <a
       data-markdown-ui
-      type="button"
-      onClick={(event) => {
-        const threadId = event.currentTarget.closest<HTMLElement>(
-          "[data-chat-thread-container-id]",
-        )?.dataset.chatThreadContainerId;
-        openImageLightbox(
-          {
-            threadId,
-            groupId: event.currentTarget.closest<HTMLElement>(
-              "[data-chat-group-id]",
-            )?.dataset.chatGroupId,
-            url,
-            filename,
-            preview: resolvedPreview,
-          },
-          pageSignal,
-        );
-      }}
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
       className={className}
+      onClick={
+        onActivate === undefined
+          ? undefined
+          : (event) => {
+              if (shouldUseNativeAnchorNavigation(event)) {
+                return;
+              }
+              event.preventDefault();
+              onActivate();
+            }
+      }
     >
       {preview}
-    </button>
+    </a>
   );
 }
 
@@ -323,7 +277,6 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
   const pageSignal = useGet(pageSignal$);
   const openArtifact = useSet(openMarkdownArtifact$);
   const openMailDraft = useSet(openThreadMailDraft$);
-  const openImageLightbox = useSet(openImageLightbox$);
   const card = rest.node?.data?.card;
   return (
     <PlainLink
@@ -344,21 +297,6 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
         } else if (card?.kind === "artifact") {
           event.preventDefault();
           detach(openArtifact(card, pageSignal), Reason.DomCallback);
-        } else if (href && isSafeMediaUrl(href) && isImageUrl(href)) {
-          event.preventDefault();
-          const threadId = event.currentTarget.closest<HTMLElement>(
-            "[data-chat-thread-container-id]",
-          )?.dataset.chatThreadContainerId;
-          openImageLightbox(
-            {
-              threadId,
-              url: href,
-              groupId: event.currentTarget.closest<HTMLElement>(
-                "[data-chat-group-id]",
-              )?.dataset.chatGroupId,
-            },
-            pageSignal,
-          );
         }
       }}
     >
@@ -368,21 +306,27 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
 }
 
 function ArtifactImage({
-  signals,
+  card,
   alt,
+  insideLink,
 }: {
-  signals: ArtifactSignals;
+  card: Extract<MarkdownCardRef, { kind: "artifact" }>;
   alt: string;
+  insideLink?: boolean;
 }) {
-  const src = useLastResolved(signals.thumbnailUrl$);
+  const src = useLastResolved(card.signals.thumbnailUrl$);
+  const pageSignal = useGet(pageSignal$);
+  const openArtifact = useSet(openMarkdownArtifact$);
   return (
     <MediaImage
       src={src}
-      url={signals.url}
+      url={card.signals.url}
       alt={alt}
-      load={signals.previewImageLoad}
-      filename={signals.filename}
-      resolvedPreview={signals}
+      load={card.signals.previewImageLoad}
+      insideLink={insideLink}
+      onActivate={() => {
+        detach(openArtifact(card, pageSignal), Reason.DomCallback);
+      }}
     />
   );
 }
@@ -477,14 +421,26 @@ function MediaImageRenderer(props: MarkdownImageProps) {
   const card = props.node?.data?.card;
   if (card?.kind === "artifact") {
     return card.signals.kind === "image" ? (
-      <ArtifactImage signals={card.signals} alt={alt ?? ""} />
+      <ArtifactImage
+        card={card}
+        alt={alt ?? ""}
+        insideLink={props.node?.data?.imageInsideLink}
+      />
     ) : (
       <MarkdownCardView card={card} label={alt} />
     );
   }
   const load = props.node?.data?.imageLoadSignals;
   if (typeof src === "string" && isSafeMediaUrl(src) && load) {
-    return <MediaImage src={src} url={src} alt={alt ?? ""} load={load} />;
+    return (
+      <MediaImage
+        src={src}
+        url={src}
+        alt={alt ?? ""}
+        load={load}
+        insideLink={props.node?.data?.imageInsideLink}
+      />
+    );
   }
   return null;
 }
@@ -528,7 +484,6 @@ function LinkedArtifactImage({
       url={signals.url}
       alt={alt}
       load={signals.previewImageLoad}
-      asLink
       insideLink={insideLink}
       onActivate={() => {
         openPreview(alt, pageSignal);
@@ -736,7 +691,6 @@ function LinkedMediaImageRenderer(props: MarkdownImageProps) {
         url={src}
         alt={alt ?? ""}
         load={load}
-        asLink
         insideLink={props.node?.data?.imageInsideLink}
       />
     );

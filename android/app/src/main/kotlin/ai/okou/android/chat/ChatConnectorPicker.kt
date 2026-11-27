@@ -195,7 +195,7 @@ internal fun ChatConnectorOptionsButton(
         options?.state?.collectAsStateWithLifecycle()?.value?.takeIf { it.target == target.key }
     val overview = state?.overview
     val overviewData = overview?.data
-    val overviewConfirmed = overview?.expiresAt != null
+    val overviewConfirmed = overview?.confirmedAt != null
     val slug = presentation.connectorSlug
     val summary = overviewData?.find { it.entry.slug == slug }
     val detail = state?.details?.get(slug)

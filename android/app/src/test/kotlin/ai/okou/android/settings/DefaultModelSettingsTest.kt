@@ -1096,3 +1096,72 @@ class DefaultModelSettingsTest {
         }
     }
 }
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class DefaultModelQueuedSaveTest {
+    @get:Rule val temporary = TemporaryFolder()
+
+    @Test
+    fun queuedSaveClearsFastWhenTheSubscriptionRouteLosesIt() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = DefaultModelApiFixture(api)
+            val effortSaveStarted = CompletableDeferred<Unit>()
+            val releaseEffortSave = CompletableDeferred<Unit>()
+            val service =
+                object : WorkspaceSession by api.service {
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference,
+                    ): DefaultModelPreference {
+                        if (update.modelSettingsPatch?.effort == ModelEffort.HIGH) {
+                            effortSaveStarted.complete(Unit)
+                            releaseEffortSave.await()
+                        }
+                        return api.service.updateDefaultModelPreference(update)
+                    }
+                }
+            val file = temporary.newFolder().resolve("default-model.preferences_pb")
+            val store =
+                DefaultModelStore(
+                    PreferenceDataStoreFactory.create(scope = backgroundScope) { file },
+                    backgroundScope,
+                )
+            val model =
+                DefaultModelSettings(
+                    backgroundScope,
+                    service,
+                    api.identity,
+                    store,
+                    { true },
+                    nowMillis = { currentTime },
+                    monotonicMillis = { currentTime },
+                    onFailure = { throw it },
+                )
+            model.showSettings(null)
+            model.foreground(true)
+            model.state.first { it.record?.lastRefreshMillis != null }
+            model.showSettings(SettingsDestination.Overview)
+            val loaded = model.state.first { it.options != null }
+            assertEquals(2.5, loaded.selected?.fastMultiplier)
+            model.fast(true)
+            assertTrue(model.state.first { it.pending == null }.fast)
+            model.effort(ModelEffort.HIGH)
+            effortSaveStarted.await()
+            model.effort(ModelEffort.MEDIUM)
+            assertTrue(model.state.value.fast)
+
+            fixture.gptFastAvailable = false
+            model.foreground(false)
+            model.foreground(true)
+            assertFalse(model.state.first { it.selected?.fastMultiplier == null }.fast)
+            releaseEffortSave.complete(Unit)
+
+            val confirmed = model.state.first { it.pending == null }
+            assertEquals(ModelEffort.MEDIUM, confirmed.effort)
+            assertNull(confirmed.record?.confirmed?.serviceTier)
+            assertEquals(
+                listOf(JsonPrimitive("priority"), JsonPrimitive("priority"), JsonNull),
+                fixture.writes.map { it["serviceTier"] },
+            )
+        }
+    }
+}

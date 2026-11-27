@@ -23,6 +23,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasText
@@ -42,6 +44,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -56,6 +59,132 @@ import org.robolectric.annotation.Config
 class DefaultModelSettingTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     @get:Rule val temporary = TemporaryFolder()
+
+    @Test
+    fun fastUsesCatalogMultiplierAndResetsWhenSelectingAnotherModelOrAuto() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        instrumentation.setInTouchMode(false)
+        try {
+            ChatListApiFixture().use { api ->
+                val fixture =
+                    DefaultModelApiFixture(
+                            api,
+                            gptModel = "gpt-6.2-sol",
+                            gptLabel = "GPT 6.2 Sol",
+                        )
+                        .apply { gptFastMultiplier = null }
+                val file = temporary.newFolder().resolve("default-model.preferences_pb")
+                val store = DefaultModelStore(PreferenceDataStoreFactory.create { file }, scope)
+                store.save(
+                    api.identity,
+                    DefaultModelRecord(
+                        confirmed = DefaultModelPreference("gpt-6.2-sol", null, emptyMap()),
+                    ),
+                )
+                val model =
+                    DefaultModelSettings(scope, api.service, api.identity, store, { true }) {
+                        throw it
+                    }
+                compose.runOnIdle {
+                    model.foreground(true)
+                    model.showSettings(SettingsDestination.Overview)
+                }
+                val snackbar = SnackbarHostState()
+                compose.setContent {
+                    OkouTheme(dark = false) {
+                        DefaultModelSetting(model, snackbar, onFeedbackInOverlay = {})
+                    }
+                }
+                compose.waitUntil("Saved model and catalog are loaded", 10_000) {
+                    compose.runOnIdle {
+                        model.state.value.options != null && model.state.value.record != null
+                    }
+                }
+                compose.onNodeWithText("Default model").performClick()
+                val gpt = compose.onNode(hasText("GPT 6.2 Sol") and isSelectable())
+                val claude = compose.onNode(hasText("Claude Sonnet 5") and isSelectable())
+                val auto = compose.onNode(hasText("Auto") and isSelectable())
+                val fast = compose.onNodeWithText("Fast mode")
+                gpt.assertIsSelected()
+                fast.assertDoesNotExist()
+
+                fun setMultiplier(value: Double) {
+                    compose.runOnIdle {
+                        model.foreground(false)
+                        fixture.gptFastMultiplier = value
+                        model.foreground(true)
+                    }
+                }
+
+                fun awaitSave(count: Int) {
+                    compose.waitUntil("Model preference is confirmed", 10_000) {
+                        compose.runOnIdle {
+                            fixture.writes.size == count && model.state.value.pending == null
+                        }
+                    }
+                }
+
+                setMultiplier(3.12567)
+                compose.waitUntil("Fast multiplier from the updated catalog is available", 10_000) {
+                    compose.runOnIdle { model.state.value.selected?.fastMultiplier == 3.12567 }
+                }
+                compose
+                    .onNodeWithText(
+                        "When on, uses 3.12567× as much of your ChatGPT subscription as standard mode",
+                    )
+                    .assertIsDisplayed()
+                fast.assertIsOff().performClick().assertIsOn()
+                awaitSave(1)
+                assertEquals(JsonPrimitive("priority"), fixture.writes.last()["serviceTier"])
+
+                claude.performClick().assertIsSelected()
+                awaitSave(2)
+                fast.assertDoesNotExist()
+                assertEquals(JsonNull, fixture.writes.last()["serviceTier"])
+
+                gpt.performClick().assertIsSelected()
+                awaitSave(3)
+                fast.assertIsOff()
+                auto.performClick().assertIsSelected()
+                awaitSave(4)
+                fast.assertDoesNotExist()
+                assertEquals(JsonNull, fixture.writes.last()["selectedModel"])
+                assertEquals(JsonNull, fixture.writes.last()["serviceTier"])
+
+                gpt.performClick().assertIsSelected()
+                awaitSave(5)
+                fast.assertIsOff()
+                fast.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+                setMultiplier(0.0)
+                compose.waitUntil("Invalid Fast multiplier is ignored", 10_000) {
+                    compose.runOnIdle { model.state.value.selected?.fastMultiplier == null }
+                }
+                fast.assertDoesNotExist()
+                gpt.assertIsFocused()
+
+                setMultiplier(2.0)
+                compose.waitUntil("Fast returns with a valid multiplier", 10_000) {
+                    compose.runOnIdle { model.state.value.selected?.fastMultiplier == 2.0 }
+                }
+                fast.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+                compose.runOnIdle {
+                    model.foreground(false)
+                    fixture.planRestricted = true
+                    model.foreground(true)
+                }
+                compose.waitUntil("Selected model becomes unavailable", 10_000) {
+                    compose.runOnIdle { model.state.value.selected?.canSelect == false }
+                }
+                fast.assertDoesNotExist()
+                compose.onNodeWithContentDescription("Back").assertIsFocused()
+                assertEquals(5, fixture.writes.size)
+            }
+        } finally {
+            scope.cancel()
+            instrumentation.resetInTouchMode()
+        }
+    }
 
     @Test
     fun anUnavailableSavedModelCanBeResetToAutoWithoutClosingThePicker() {

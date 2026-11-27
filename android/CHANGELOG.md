@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.65.5](https://github.com/okou-ai/okou/compare/android-v0.65.4...android-v0.65.5) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** align artifact catalog and hosted preview loading ([#51363](https://github.com/okou-ai/okou/issues/51363)) ([cd92668](https://github.com/okou-ai/okou/commit/cd92668bd984b35536ea8c2464f1afecebf30503))
+* **android:** align settings sync and fast mode ([#51323](https://github.com/okou-ai/okou/issues/51323)) ([c544757](https://github.com/okou-ai/okou/commit/c5447578549200f84162117bdfeac281447274ea))
+* **android:** keep update actions reachable in short windows ([#51361](https://github.com/okou-ai/okou/issues/51361)) ([332ed02](https://github.com/okou-ai/okou/commit/332ed027ec517f427aa4cb0edfd06c7fe684b105))
+
+## [0.65.4](https://github.com/okou-ai/okou/compare/android-v0.65.3...android-v0.65.4) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** retain selected workflow through search refreshes ([#51357](https://github.com/okou-ai/okou/issues/51357)) ([956b75e](https://github.com/okou-ai/okou/commit/956b75e133cb232d1534bf223998deec90b25542))
+* **android:** stabilize chat image, model, and connector states ([#51350](https://github.com/okou-ai/okou/issues/51350)) ([3698deb](https://github.com/okou-ai/okou/commit/3698deb182c634aece5e3d1df41181f139170a43))
+
 ## [0.65.3](https://github.com/okou-ai/okou/compare/android-v0.65.2...android-v0.65.3) (2026-11-27)
 
 

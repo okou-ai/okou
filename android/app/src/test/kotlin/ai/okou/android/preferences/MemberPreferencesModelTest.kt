@@ -37,7 +37,7 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MemberPreferencesModelTest {
-    private class Service :
+    internal class Service :
         WorkspaceSession,
         ai.okou.android.chat.AssistantRecoveryService by ai.okou.android
             .TestAssistantRecoveryService(),
@@ -122,30 +122,6 @@ class MemberPreferencesModelTest {
         }
 
         override fun close() = Unit
-    }
-
-    private fun check(
-        service: Service = Service(),
-        block: suspend TestScope.(MemberPreferencesModel, Service, ViewModelStore) -> Unit,
-    ) = runTest {
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val store = ViewModelStore()
-        try {
-            val model =
-                ViewModelProvider(
-                    store,
-                    viewModelFactory {
-                        initializer {
-                            MemberPreferencesModel(service.stored, service, { true }, {})
-                        }
-                    },
-                )[MemberPreferencesModel::class.java]
-            block(model, service, store)
-        } finally {
-            store.clear()
-            runCurrent()
-            Dispatchers.resetMain()
-        }
     }
 
     @Test
@@ -359,7 +335,7 @@ class MemberPreferencesModelTest {
                 UserPreferencesColorTheme.DEFAULT,
                 model.uiState.value.confirmed.colorTheme,
             )
-            model.refreshFromForeground()
+            model.foreground(true)
             runCurrent()
             assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
             assertEquals(UserPreferencesColorTheme.BERRY_BLUSH, model.uiState.value.colorTheme)
@@ -744,7 +720,7 @@ class MemberPreferencesModelTest {
             assertTrue(model.notices.value is PreferenceSaveNotice.Unconfirmed)
 
             api.load = { api.stored }
-            model.refreshFromForeground()
+            model.foreground(true)
             runCurrent()
             assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
             assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
@@ -760,7 +736,7 @@ class MemberPreferencesModelTest {
             assertTrue(api.requests.isEmpty())
 
             api.stored = api.stored.copy(theme = UserPreferencesTheme.DARK)
-            model.refreshFromForeground()
+            model.refresh()
             runCurrent()
             assertEquals(UserPreferencesTheme.DARK, model.uiState.value.confirmed.theme)
 
@@ -785,7 +761,7 @@ class MemberPreferencesModelTest {
             runCurrent()
             assertNull(api.requests.last().theme)
             assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.theme)
-            model.refreshFromForeground()
+            model.refresh()
             runCurrent()
             assertEquals(UserPreferencesTheme.DARK, model.uiState.value.theme)
         }
@@ -813,5 +789,318 @@ class MemberPreferencesModelTest {
             runCurrent()
             assertTrue(api.requests.isEmpty())
         }
+    }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+class MemberPreferencesRefreshTest {
+    @Test
+    fun overdueRefreshRunsOnResumeAndWaitsUntilTheSettingsVisitEnds() = check { model, service, _ ->
+        val attempts = mutableListOf<Long>()
+        service.load = {
+            attempts += currentTime
+            service.stored
+        }
+        model.foreground(true)
+        advanceTimeBy(599_999)
+        runCurrent()
+        assertTrue(attempts.isEmpty())
+
+        model.foreground(false)
+        advanceTimeBy(10_001)
+        assertTrue(attempts.isEmpty())
+        model.foreground(true)
+        runCurrent()
+        assertEquals(listOf(610_000L), attempts)
+
+        model.showSettings(true)
+        advanceTimeBy(600_000)
+        model.showSettings(true)
+        model.foreground(false)
+        model.foreground(true)
+        runCurrent()
+        assertEquals(listOf(610_000L), attempts)
+        model.showSettings(false)
+        runCurrent()
+        assertEquals(listOf(610_000L, 1_210_000L), attempts)
+
+        advanceTimeBy(600_000)
+        runCurrent()
+        assertEquals(listOf(610_000L, 1_210_000L, 1_810_000L), attempts)
+    }
+
+    @Test
+    fun lateReadCannotPublishAndDueRefreshWaitsForThePendingWrite() = check { model, service, _ ->
+        val readGate = CompletableDeferred<Unit>()
+        val writeGate = CompletableDeferred<Unit>()
+        var reads = 0
+        service.load = {
+            if (++reads == 1) {
+                withContext(NonCancellable) { readGate.await() }
+                service.stored.copy(locale = UserPreferencesLocale.JA_JP)
+            } else service.stored
+        }
+        val persist = service.write
+        service.write = { update ->
+            writeGate.await()
+            persist(update)
+        }
+        model.foreground(true)
+        advanceTimeBy(600_000)
+        runCurrent()
+        assertEquals(1, reads)
+
+        model.showSettings(true)
+        model.setCloudBrowser(true)
+        model.showSettings(false)
+        runCurrent()
+        assertTrue(model.uiState.value.cloudBrowser)
+        assertTrue(service.requests.isEmpty())
+        readGate.complete(Unit)
+        runCurrent()
+        assertEquals(UserPreferencesLocale.EN_US, model.uiState.value.locale)
+        assertEquals(1, service.requests.size)
+        assertEquals(1, reads)
+        writeGate.complete(Unit)
+        runCurrent()
+        assertEquals(2, reads)
+        assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
+    }
+
+    @Test
+    fun settingsEntryCancelsTheRetryWaitAndRetirementStopsTheNextRead() =
+        check { model, service, store ->
+            var reads = 0
+            service.load = {
+                reads++
+                throw ApiFailure.Http(503, null, null, retryAfterSeconds = 1)
+            }
+            model.foreground(true)
+            advanceTimeBy(600_000)
+            runCurrent()
+            assertEquals(1, reads)
+            model.showSettings(true)
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertEquals(1, reads)
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+
+            service.load = { service.stored.also { reads++ } }
+            model.showSettings(false)
+            runCurrent()
+            assertEquals(2, reads)
+            store.clear()
+            advanceTimeBy(600_000)
+            runCurrent()
+            assertEquals(2, reads)
+        }
+
+    @Test
+    fun automaticRefreshKeepsItsRetryTimingAndBudgetAcrossPauses() = check { model, service, _ ->
+        val attempts = mutableListOf<Long>()
+        service.load = {
+            attempts += currentTime
+            when (attempts.size) {
+                1 -> throw ApiFailure.Http(429, null, null, retryAfterSeconds = 30)
+                2,
+                3 -> throw IOException("offline")
+                else -> service.stored
+            }
+        }
+        model.foreground(true)
+        advanceTimeBy(600_000)
+        runCurrent()
+        assertEquals(listOf(600_000L), attempts)
+
+        model.showSettings(true)
+        model.setCloudBrowser(true)
+        runCurrent()
+        assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
+        advanceTimeBy(1_000)
+        model.showSettings(false)
+        runCurrent()
+        advanceTimeBy(28_999)
+        runCurrent()
+        assertEquals(listOf(600_000L), attempts)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(listOf(600_000L, 630_000L), attempts)
+
+        model.foreground(false)
+        advanceTimeBy(1_000)
+        model.foreground(true)
+        runCurrent()
+        advanceTimeBy(1_999)
+        runCurrent()
+        assertEquals(listOf(600_000L, 630_000L), attempts)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(PreferenceStatus.RefreshFailed, model.uiState.value.status)
+
+        advanceTimeBy(599_999)
+        runCurrent()
+        assertEquals(listOf(600_000L, 630_000L, 633_000L), attempts)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(listOf(600_000L, 630_000L, 633_000L, 1_233_000L), attempts)
+        assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+    }
+
+    @Test
+    fun dueForegroundRefreshVerifiesAnUnconfirmedWriteWithoutResubmittingIt() =
+        check { model, service, _ ->
+            val save = service.write
+            service.write = {
+                save(it)
+                throw IOException("response lost")
+            }
+            var reads = 0
+            service.load = {
+                reads++
+                throw IOException("cannot confirm")
+            }
+            model.foreground(true)
+            model.showSettings(true)
+            model.setCloudBrowser(true)
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveUnconfirmed, model.uiState.value.status)
+            val readsBeforeExit = reads
+
+            model.showSettings(false)
+            advanceTimeBy(599_999)
+            runCurrent()
+            assertEquals(readsBeforeExit, reads)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(readsBeforeExit + 1, reads)
+            assertEquals(PreferenceStatus.SaveUnconfirmed, model.uiState.value.status)
+
+            service.load = { service.stored.also { reads++ } }
+            advanceTimeBy(600_000)
+            runCurrent()
+            assertEquals(readsBeforeExit + 2, reads)
+            assertEquals(1, service.requests.size)
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
+            assertNull(model.uiState.value.pending)
+        }
+
+    @Test
+    fun foregroundRefreshContinuesWhileTimezoneScheduleRepairWaitsForRetry() =
+        check { model, service, _ ->
+            val save = service.write
+            service.write = { update ->
+                save(update)
+                throw ApiFailure.Http(409, "CONFLICT", null, null)
+            }
+            model.foreground(true)
+            model.showSettings(true)
+            model.selectTimezone("Asia/Tokyo")
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            model.showSettings(false)
+
+            service.load = { throw IOException("offline") }
+            advanceTimeBy(606_000)
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            assertTrue(model.uiState.value.timezoneScheduleUpdatePending)
+            assertEquals(1, service.requests.size)
+
+            service.load = { service.stored }
+            service.stored = service.stored.copy(cloudBrowserEnabledByDefault = true)
+            advanceTimeBy(600_000)
+            runCurrent()
+            assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
+            assertTrue(model.uiState.value.timezoneScheduleUpdatePending)
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            assertEquals(1, service.requests.size)
+
+            service.stored = service.stored.copy(timezone = "Asia/Shanghai")
+            advanceTimeBy(600_000)
+            runCurrent()
+            assertEquals("Asia/Shanghai", model.uiState.value.timezone)
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertNull(model.uiState.value.pending)
+            assertEquals(1, service.requests.size)
+        }
+
+    @Test
+    fun cancelledRefreshKeepsTimezoneScheduleRepairAvailableToRetry() = check { model, service, _ ->
+        val save = service.write
+        service.write = { update ->
+            save(update)
+            throw ApiFailure.Http(409, "CONFLICT", null, null)
+        }
+        model.foreground(true)
+        model.showSettings(true)
+        model.selectTimezone("Asia/Tokyo")
+        runCurrent()
+        model.showSettings(false)
+
+        val lateRead = CompletableDeferred<Unit>()
+        var reads = 0
+        service.load = {
+            if (++reads == 1) {
+                withContext(NonCancellable) { lateRead.await() }
+                service.stored.copy(timezone = "Asia/Shanghai")
+            } else service.stored
+        }
+        advanceTimeBy(600_000)
+        runCurrent()
+        assertEquals(1, reads)
+
+        model.showSettings(true)
+        assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+        assertTrue(model.uiState.value.timezoneScheduleUpdatePending)
+        service.write = save
+        model.retry()
+        assertEquals(1, service.requests.size)
+        lateRead.complete(Unit)
+        runCurrent()
+
+        assertEquals(2, reads)
+        assertEquals(listOf("Asia/Tokyo", "Asia/Tokyo"), service.requests.map { it.timezone })
+        assertEquals("Asia/Tokyo", model.uiState.value.timezone)
+        assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+        assertNull(model.uiState.value.pending)
+    }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+private fun check(
+    service: MemberPreferencesModelTest.Service = MemberPreferencesModelTest.Service(),
+    block:
+        suspend TestScope.(
+            MemberPreferencesModel,
+            MemberPreferencesModelTest.Service,
+            ViewModelStore,
+        ) -> Unit,
+) = runTest {
+    Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+    val store = ViewModelStore()
+    try {
+        val model =
+            ViewModelProvider(
+                store,
+                viewModelFactory {
+                    initializer {
+                        MemberPreferencesModel(
+                            service.stored,
+                            service,
+                            { true },
+                            {},
+                            monotonicMillis = { testScheduler.currentTime },
+                        )
+                    }
+                },
+            )[MemberPreferencesModel::class.java]
+        block(model, service, store)
+    } finally {
+        store.clear()
+        runCurrent()
+        Dispatchers.resetMain()
     }
 }

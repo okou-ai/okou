@@ -29,7 +29,6 @@ internal const val CONNECTOR_ACCOUNT_NAME_LIMIT = 255
 internal const val CONNECTOR_EXTERNAL_CODE_LIMIT = 4096
 private const val RECENT_READ_LIMIT = 8
 private const val ACCOUNT_READBACK_LIMIT = 3
-private val CONNECTOR_READ_LIFETIME = 10.minutes
 
 internal data class ConnectorBrowseFilter(val keyword: String?, val category: String?) {
     companion object {
@@ -182,7 +181,10 @@ class ConnectorModel(
                     matches = state.matches?.let { it.copy(entries = it.entries.forEntry()) },
                     detail = state.detail.forEntry(),
                     accounts =
-                        ConnectorRead(failure = accounts.failure, expiresAt = accounts.expiresAt),
+                        ConnectorRead(
+                            failure = accounts.failure,
+                            confirmedAt = accounts.confirmedAt,
+                        ),
                     cachedAccounts = accounts.takeIf { it.data != null },
                     permissions = state.permissions.forEntry(),
                 )
@@ -311,7 +313,7 @@ class ConnectorModel(
             mutableState.update {
                 it.copy(matches = ConnectorMatches(next, cached ?: ConnectorRead()))
             }
-            if (cached?.data == null) refreshMatches()
+            if (open && foreground) refreshMatches()
         }
     }
 
@@ -380,7 +382,7 @@ class ConnectorModel(
                     preview.takeUnless { detail.failure == ConnectorReadFailure.Unavailable },
                 detail = detail,
                 accounts =
-                    ConnectorRead(failure = accounts?.failure, expiresAt = accounts?.expiresAt),
+                    ConnectorRead(failure = accounts?.failure, confirmedAt = accounts?.confirmedAt),
                 cachedAccounts = accounts?.takeIf { it.data != null },
                 permissions = cached?.permissions?.forEntry() ?: ConnectorRead(),
                 impact = null,
@@ -410,7 +412,7 @@ class ConnectorModel(
                                 if (unavailable)
                                     ConnectorRead(
                                         failure = read.failure,
-                                        expiresAt = read.expiresAt,
+                                        confirmedAt = read.confirmedAt,
                                     )
                                 else state.permissions,
                         )
@@ -1042,8 +1044,7 @@ class ConnectorModel(
     }
 
     private fun publishAccounts(slug: String, accounts: List<ConnectorSavedAccount>) {
-        val confirmed =
-            ConnectorRead(accounts, expiresAt = clock.markNow() + CONNECTOR_READ_LIFETIME)
+        val confirmed = ConnectorRead(accounts, confirmedAt = clock.markNow())
         val cached = recentServices[slug]
         if (cached != null) recentServices[slug] = cached.copy(accounts = confirmed)
         mutableState.update { state ->
@@ -1217,8 +1218,7 @@ class ConnectorModel(
             onError = ::reportSessionFailure,
             publish = {
                 publish(
-                    if (it.isConfirmed)
-                        it.copy(expiresAt = clock.markNow() + CONNECTOR_READ_LIFETIME)
+                    if (it.isConfirmed) it.copy(confirmedAt = clock.markNow())
                     else it.copy(failureRound = ++readFailureRound),
                 )
             },
