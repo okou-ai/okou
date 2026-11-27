@@ -22,6 +22,33 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("limits chat list hover previews and opt-in overrides to Bingjie", () => {
+    const key = FeatureSwitchKey.ChatListHoverPreview;
+    for (const identity of [
+      { userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV" },
+      { email: "BINGJIE@OKOU.AI" },
+    ]) {
+      const context = { ...identity, orgId: "external-org" };
+      expect(isFeatureSwitchAvailable(key, context)).toBe(true);
+      expect(isFeatureEnabled(key, context)).toBe(true);
+      expect(getAllFeatureStates(context)[key]).toBe(true);
+      expect(
+        isFeatureEnabled(key, { ...context, overrides: { [key]: false } }),
+      ).toBe(false);
+    }
+    for (const identity of [
+      {},
+      { userId: "external-user", orgId: "external-org" },
+      { userId: "staff-colleague", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
+      expect(isFeatureEnabled(key, identity)).toBe(false);
+      const context = { ...identity, overrides: { [key]: true } };
+      expect(isFeatureEnabled(key, context)).toBe(false);
+      expect(getAllFeatureStates(context)[key]).toBe(false);
+    }
+  });
+
   it("limits the All chat filter rollout and its Lab overrides to staff workspaces", () => {
     const key = FeatureSwitchKey.ChatListAllFilter;
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
