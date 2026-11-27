@@ -287,18 +287,22 @@ class UpdateRootTest {
     }
 
     @Test
-    @Config(qualifiers = "en-rUS-w360dp-h160dp")
+    @Config(qualifiers = "en-rUS-w360dp-h640dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun extremelyShortUpdateDetailsScrollTheHeadingWithoutMovingEitherAction() {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
         val originalFontScale = RuntimeEnvironment.getFontScale()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.setInTouchMode(false)
         try {
-            RuntimeEnvironment.setFontScale(2f)
             compose.activityRule.scenario.recreate()
             allowInstallAndDiscoverUpdate()
             openUpdateSettings()
             updateSettingsRow().performScrollTo().performClick()
+            updateDetailsHeading().assertIsDisplayed()
+            RuntimeEnvironment.setQualifiers("en-rUS-w360dp-h160dp")
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
 
             val close = updateDetailText(app.getString(R.string.updates_close))
             val download = updateDetailText(app.getString(R.string.updates_download))
@@ -320,6 +324,7 @@ class UpdateRootTest {
             close.performClick()
             title.assertDoesNotExist()
         } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
             RuntimeEnvironment.setFontScale(originalFontScale)
             instrumentation.resetInTouchMode()
         }
