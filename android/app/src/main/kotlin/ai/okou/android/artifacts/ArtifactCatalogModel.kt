@@ -290,10 +290,11 @@ internal constructor(
     internal fun retainedExternalImageId(): String? =
         mutable.value.preview?.id?.takeIf { it.startsWith(ExternalImagePreviewPrefix) }
 
-    internal suspend fun thumbnail(url: String): Bitmap? {
+    internal suspend fun thumbnail(url: String, cacheOnly: Boolean = false): Bitmap? {
         thumbnails.get(url)?.let {
             return it
         }
+        if (cacheOnly) return null
         return try {
             retryArtifactOperation { service.thumbnail(url) }?.also { thumbnails.put(url, it) }
         } catch (cancelled: CancellationException) {
@@ -881,7 +882,7 @@ internal constructor(
                 val failedPreview = mutable.value.preview
                 if (
                     useImageViewer &&
-                        fileAccessAuthorized &&
+                        detailAuthorized &&
                         errorType == ArtifactProblem.Missing &&
                         failedPreview != null &&
                         failedPreview.id == id &&
@@ -939,9 +940,8 @@ internal constructor(
         try {
             // A failed original URL can also mean access was revoked. Recheck the thumbnail path.
             val info = service.info(id)
-            val thumbnail = info.thumbnailUrl
-            if (info.item.kind == ArtifactKind.Image && thumbnail != originalUrl)
-                service.thumbnail(thumbnail)
+            if (info.item.kind == ArtifactKind.Image)
+                service.thumbnail(info.independentThumbnailUrl(originalUrl))
             else null
         } catch (cancelled: CancellationException) {
             throw cancelled

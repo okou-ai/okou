@@ -89,6 +89,13 @@ internal data class ArtifactInfo(
 ) {
     val thumbnailUrl: String?
         get() = item.thumbnail ?: (resource as? ArtifactResource.File)?.cover
+
+    fun independentThumbnailUrl(originalUrl: String?): String? {
+        val file = resource as? ArtifactResource.File ?: return null
+        return listOfNotNull(item.thumbnail, file.cover).firstOrNull {
+            it != file.url && it != originalUrl
+        }
+    }
 }
 
 internal sealed interface ArtifactResource {
