@@ -507,7 +507,7 @@ internal fun WorkspaceToolbarActions(
             }
         }
     } else {
-        UpdateToolbarButton(update)
+        UpdateToolbarButton(update, height = workspaceSearchControlHeight())
     }
     if (showFilter || hasUpdate) {
         Box {

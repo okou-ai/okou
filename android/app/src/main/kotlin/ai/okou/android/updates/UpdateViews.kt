@@ -187,7 +187,7 @@ internal fun updateToolbarAction(
 }
 
 @Composable
-internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
+internal fun UpdateToolbarButton(action: UpdateToolbarAction, height: Dp) {
     val shape = RoundedCornerShape(12.dp)
     val colors = MaterialTheme.colorScheme
     val focus = rememberUpdateControlFocus(away = action.activate == null || action.detailsOpen)
@@ -205,7 +205,8 @@ internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
         },
         enabled = action.activate != null,
         modifier =
-            focus.modifier
+            Modifier.size(width = 48.dp, height = height)
+                .then(focus.modifier)
                 .updateFocusOutline(shape, colors.onBackground, keyboardOnly = true)
                 .semantics {
                     contentDescription = action.label
