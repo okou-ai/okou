@@ -1,5 +1,6 @@
 package ai.okou.android.api
 
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -26,18 +27,26 @@ internal suspend fun <E : Throwable> retryBoundedRead(
     }
 }
 
-/** Timing for a read or a write that the caller has established can safely be repeated. */
-internal fun Throwable.boundedApiRetryDelayMillis(retries: Int): Long? {
+/** Timing after the operation owner has decided that another attempt is eligible. */
+internal fun boundedRetryDelayMillis(retries: Int, failure: Throwable? = null): Long? {
     val defaultDelay = finiteReadRetryDelays.getOrNull(retries) ?: return null
-    return when (this) {
-        is ApiFailure.Network -> defaultDelay
+    val seconds =
+        when (failure) {
+            is ApiFailure.Http -> failure.retryAfterSeconds
+            is IOException -> retryAfter(failure.httpRejection()?.retryAfter)
+            else -> null
+        }
+    return seconds?.takeIf { it >= 0L }?.coerceAtMost(Long.MAX_VALUE / 1_000)?.times(1_000)
+        ?: defaultDelay
+}
+
+/** Timing for transient API failures on reads and writes that are safe to repeat. */
+internal fun Throwable.boundedApiRetryDelayMillis(retries: Int): Long? =
+    when (this) {
+        is ApiFailure.Network -> boundedRetryDelayMillis(retries, this)
         is ApiFailure.Http ->
-            if (status == 408 || status == 429 || status in 500..599) {
-                retryAfterSeconds
-                    ?.takeIf { it >= 0L }
-                    ?.coerceAtMost(Long.MAX_VALUE / 1_000)
-                    ?.times(1_000) ?: defaultDelay
-            } else null
+            if (status == 408 || status == 429 || status in 500..599)
+                boundedRetryDelayMillis(retries, this)
+            else null
         else -> null
     }
-}

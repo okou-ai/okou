@@ -1,6 +1,7 @@
 package ai.okou.android.settings
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.boundedRetryDelayMillis
 import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.api.generated.DefaultModelPreference
 import ai.okou.android.api.generated.RecoveryCatalog
@@ -14,6 +15,7 @@ import ai.okou.android.api.generated.UpdateDefaultModelPreferenceServiceTier
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
+import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -33,7 +35,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-private val preferenceSaveRetryDelays = listOf(3_000L, 3_000L)
 private const val preferenceRefreshMillis = 10 * 60_000L
 
 internal typealias ModelEffort = UpdateDefaultModelPreferenceModelSettingsPatchEffort
@@ -124,10 +125,11 @@ internal enum class DefaultModelNotice {
 internal data class DefaultModelSave(
     val request: UpdateDefaultModelPreference,
     val failedAttempts: Int = 0,
-    val lastFailureMillis: Long? = null,
+    val lastFailureElapsedMillis: Long? = null,
+    val retryDelayMillis: Long? = null,
 ) {
     val canRetry: Boolean
-        get() = failedAttempts < preferenceSaveRetryDelays.size
+        get() = failedAttempts < finiteReadRetryDelays.size
 }
 
 internal data class DefaultModelState(
@@ -173,6 +175,7 @@ internal class DefaultModelSettings(
     private val store: DefaultModelStore,
     private val authorized: () -> Boolean,
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val monotonicMillis: () -> Long = SystemClock::elapsedRealtime,
     private val onFailure: (Exception) -> Unit,
 ) {
     private val mutable = MutableStateFlow(DefaultModelState())
@@ -275,8 +278,16 @@ internal class DefaultModelSettings(
                 patch,
             )
         clearSaveFailure()
-        mutable.value = current.copy(save = DefaultModelSave(request))
-        saveWait?.cancel()
+        val verifying = current.save?.takeIf { unconfirmedWrite != null }
+        mutable.value =
+            current.copy(
+                save =
+                    verifying?.copy(
+                        request = request,
+                        failedAttempts = if (readbackBlocked) 0 else verifying.failedAttempts,
+                    ) ?: DefaultModelSave(request),
+            )
+        if (verifying == null) saveWait?.cancel()
         resumeReadback()
     }
 
@@ -327,16 +338,30 @@ internal class DefaultModelSettings(
             }
             state.first { it.canApplyScheduledRead }
             try {
-                preferenceRequests.withLock {
+                val verification: Job? = preferenceRequests.withLock {
                     val before = mutable.value
-                    if (!before.canApplyScheduledRead) return@withLock
-                    val remote = service.defaultModelPreference()
+                    if (!before.canApplyScheduledRead) return@withLock null
+                    val attempted = unconfirmedWrite
+                    if (attempted != null && !readbackBlocked) {
+                        // The active verifier owns retries of the same preference read.
+                        saving?.let {
+                            return@withLock it
+                        }
+                    }
+                    val remote =
+                        try {
+                            service.defaultModelPreference()
+                        } catch (error: ApiFailure.Http) {
+                            currentCoroutineContext().ensureActive()
+                            if (attempted != null && authorized())
+                                retainScheduledReadbackWait(error, failures)
+                            throw error
+                        }
                     currentCoroutineContext().ensureActive()
                     if (!authorized()) return
-                    if (before.save !== mutable.value.save) return@withLock
+                    if (before.save !== mutable.value.save) return@withLock null
                     val snapshot =
                         DefaultModelRecord(confirmed = remote, lastRefreshMillis = nowMillis())
-                    val attempted = unconfirmedWrite
                     if (attempted == null) {
                         clearSaveFailure()
                         publishConfirmed(snapshot, save = null)
@@ -345,11 +370,16 @@ internal class DefaultModelSettings(
                         saveWait?.cancel()
                         synchronizeSaves()
                     } else {
-                        // Refresh the confirmed cache without resolving a write we cannot verify.
+                        // Update the cache without resolving a write we cannot verify.
                         publishConfirmed(snapshot)
                     }
+                    null
                 }
                 failures = 0
+                if (verification != null) {
+                    verification.join()
+                    delay(preferenceRefreshMillis)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -357,15 +387,32 @@ internal class DefaultModelSettings(
                 onFailure(error)
                 if (!authorized()) return
                 val wait =
-                    if (error.retryable()) finiteReadRetryDelays.getOrNull(failures++) else null
+                    if (error.retryable()) boundedRetryDelayMillis(failures++, error) else null
                 if (wait != null) {
                     delay(wait)
+                    currentCoroutineContext().ensureActive()
                 } else {
                     failures = 0
                     delay(preferenceRefreshMillis)
                 }
             }
         }
+    }
+
+    private fun retainScheduledReadbackWait(error: ApiFailure.Http, retries: Int) {
+        if ((error.retryAfterSeconds ?: 0L) <= 0L || !error.retryable()) return
+        val wait = boundedRetryDelayMillis(retries, error) ?: return
+        val current = mutable.value
+        val save = current.save ?: return
+        // Reopening Settings can cancel the refresh while the same write still needs readback.
+        mutable.value =
+            current.copy(
+                save =
+                    save.copy(
+                        lastFailureElapsedMillis = monotonicMillis(),
+                        retryDelayMillis = wait,
+                    ),
+            )
     }
 
     private suspend fun refreshCatalog() {
@@ -390,7 +437,7 @@ internal class DefaultModelSettings(
                 onFailure(error)
                 if (!authorized()) return
                 val wait =
-                    if (error.retryable()) finiteReadRetryDelays.getOrNull(failures++) else null
+                    if (error.retryable()) boundedRetryDelayMillis(failures++, error) else null
                 if (wait == null) {
                     val latest = mutable.value
                     mutable.value =
@@ -407,6 +454,7 @@ internal class DefaultModelSettings(
                     return
                 }
                 delay(wait)
+                currentCoroutineContext().ensureActive()
             }
         }
     }
@@ -434,8 +482,8 @@ internal class DefaultModelSettings(
             val retryMillis = preferenceRequests.withLock {
                 if (!canSave()) return
                 val save = checkNotNull(mutable.value.save)
-                val elapsed = save.lastFailureMillis?.let { nowMillis() - it }
-                val delay = preferenceSaveRetryDelays.getOrNull(save.failedAttempts - 1)
+                val elapsed = save.lastFailureElapsedMillis?.let { monotonicMillis() - it }
+                val delay = save.retryDelayMillis
                 if (elapsed != null && delay != null && elapsed in 0 until delay) {
                     return@withLock delay - elapsed
                 }
@@ -454,7 +502,8 @@ internal class DefaultModelSettings(
                         unconfirmedWrite = null
                         applySaveResponse(request, remote)
                     } else if (!reconcileReadback(unresolved, remote)) {
-                        deferReadback(checkNotNull(mutable.value.save), retryable = true)
+                        val latest = checkNotNull(mutable.value.save)
+                        deferReadback(latest, boundedRetryDelayMillis(latest.failedAttempts))
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -463,6 +512,7 @@ internal class DefaultModelSettings(
                     onFailure(error)
                     if (!authorized()) return
                     handleSaveFailure(save, readback = unresolved != null, error = error)
+                    currentCoroutineContext().ensureActive()
                 }
                 0L
             }
@@ -480,7 +530,7 @@ internal class DefaultModelSettings(
         if (fulfilled) clearSaveFailure()
         publishConfirmed(
             checkNotNull(current.record).confirm(request, response),
-            save = latest.takeUnless { fulfilled },
+            save = if (fulfilled) null else DefaultModelSave(latest.request),
         )
     }
 
@@ -519,40 +569,54 @@ internal class DefaultModelSettings(
         val undelivered = !readback && error is ApiFailure.Network && error.connectionFailed
         if (rejected || undelivered) unconfirmedWrite = null
         val current = mutable.value
-        if (current.save !== save) return
+        val latest = current.save ?: return
+        if ((rejected || undelivered) && latest !== save) {
+            mutable.value = current.copy(save = DefaultModelSave(latest.request))
+            return
+        }
         when {
-            rejected || (undelivered && !save.canRetry) -> {
+            rejected || (undelivered && !latest.canRetry) -> {
                 mutable.value = current.copy(save = null)
                 reportSaveFailure(DefaultModelNotice.SaveRolledBack)
             }
-            readback ->
-                deferReadback(save, error.retryable() || error is ApiFailure.IncompatibleResponse)
+            readback -> {
+                val wait =
+                    if (error.retryable() || error is ApiFailure.IncompatibleResponse)
+                        boundedRetryDelayMillis(latest.failedAttempts, error)
+                    else null
+                deferReadback(latest, wait)
+            }
             // An ambiguous PUT turns the remaining attempts into reads. Even if the last
             // safe attempt loses its response, check once before reporting an unknown outcome.
-            else -> deferSave(save)
+            else -> deferSave(latest, boundedRetryDelayMillis(latest.failedAttempts, error))
         }
     }
 
-    private fun deferReadback(save: DefaultModelSave, retryable: Boolean) {
-        if (retryable && save.canRetry) {
-            deferSave(save)
+    private fun deferReadback(save: DefaultModelSave, wait: Long?) {
+        if (wait != null) {
+            deferSave(save, wait)
         } else {
             readbackBlocked = true
             mutable.value =
                 mutable.value.copy(
-                    save = save.copy(failedAttempts = preferenceSaveRetryDelays.size + 1),
+                    save =
+                        save.copy(
+                            failedAttempts = finiteReadRetryDelays.size + 1,
+                            retryDelayMillis = null,
+                        ),
                 )
             reportSaveFailure(DefaultModelNotice.SaveUnconfirmed)
         }
     }
 
-    private fun deferSave(save: DefaultModelSave) {
+    private fun deferSave(save: DefaultModelSave, wait: Long?) {
         mutable.value =
             mutable.value.copy(
                 save =
                     save.copy(
                         failedAttempts = save.failedAttempts + 1,
-                        lastFailureMillis = nowMillis(),
+                        lastFailureElapsedMillis = monotonicMillis(),
+                        retryDelayMillis = wait,
                     ),
             )
     }

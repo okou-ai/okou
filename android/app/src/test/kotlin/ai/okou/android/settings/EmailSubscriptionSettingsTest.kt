@@ -74,6 +74,38 @@ class EmailSubscriptionSettingsTest {
     }
 
     @Test
+    fun throttledToggleUsesTheServerDelayBeforeResending() = runTest {
+        ChatListApiFixture().use { api ->
+            val attempts = mutableListOf<Long>()
+            val service =
+                object : WorkspaceSession by api.service {
+                    override suspend fun emailSubscription() = initial
+
+                    override suspend fun updateEmailSubscription(
+                        subscribed: Boolean,
+                    ): EmailSubscriptionUpdate {
+                        attempts += testScheduler.currentTime
+                        if (attempts.size == 1) throw ApiFailure.Http(429, null, null, 1L)
+                        return EmailSubscriptionUpdate(subscribed)
+                    }
+                }
+            val model = model(api, service)
+            model.visible(true)
+            runCurrent()
+            model.subscribe(true)
+            runCurrent()
+            advanceTimeBy(999L)
+            runCurrent()
+            assertEquals(listOf(0L), attempts)
+            assertEquals(initial, model.state.value.read.value)
+            advanceTimeBy(1L)
+            runCurrent()
+            assertEquals(listOf(0L, 1_000L), attempts)
+            assertEquals(initial.copy(subscribed = true), model.state.value.read.value)
+        }
+    }
+
+    @Test
     fun pendingToggleDisablesFurtherWritesAndCanFinishAfterThePanelCloses() = runTest {
         ChatListApiFixture().use { api ->
             val writes = mutableListOf<Boolean>()
