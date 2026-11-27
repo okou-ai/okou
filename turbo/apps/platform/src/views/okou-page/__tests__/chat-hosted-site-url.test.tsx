@@ -1113,6 +1113,121 @@ test("reopening catches up without a verification POST, and an expired attempt c
   });
 });
 
+test.each(["list", "timeline"] as const)(
+  "the %s catches up while the entry read is stalled and reconciles a missed final push once at expiry",
+  async (view) => {
+    const hostname = "catch-up.customer-example.net";
+    const id = "00000000-0000-4000-8000-000000000111";
+    const checkedAt = new Date(now()).toISOString();
+    const passed = { status: "passed" as const, message: "Verified" };
+    const pending = { status: "pending" as const, message: "Pending" };
+    function snapshot(
+      ready: boolean,
+      expiresAt?: string,
+    ): zInfer<typeof hostedDomainSettingsSchema> {
+      return {
+        siteId,
+        allowed: true,
+        revision: id,
+        selectedDomainId: null,
+        defaultUrl: address(original),
+        effectiveUrl: address(original),
+        domains: [
+          {
+            id,
+            revision: id,
+            hostname,
+            ready,
+            removing: false,
+            records: [],
+            verification: {
+              status: ready ? "ready" : "incomplete",
+              automatic: expiresAt
+                ? { id, status: "checking", expiresAt }
+                : undefined,
+              eligibleForSelection: ready,
+              checkedAt,
+              recordChecks: [],
+              validationRecords: [],
+              checks: {
+                ownership: passed,
+                dns: passed,
+                provider: passed,
+                certificate: ready ? passed : pending,
+                route: ready ? passed : pending,
+              },
+            },
+          },
+        ],
+      };
+    }
+    const before = snapshot(false);
+    const checkingDomain = snapshot(false, checking(id).expiresAt);
+    const expired = snapshot(false, checkedAt);
+    const ready = snapshot(true);
+    const releaseEntry = context.mocks.deferred<void>();
+    const releaseFinal = context.mocks.deferred<void>();
+    let read = () => {
+      return Promise.resolve(before);
+    };
+    let finalReads = 0;
+    context.mocks.api(hostContract.siteDomains, async ({ respond }) => {
+      return respond(200, await read());
+    });
+    const preview = await publishedReport(true);
+    const menu = await openHostedSiteShare(preview);
+    click(getNamedButton("Customize URL", menu));
+    const tab = await waitFor(() => {
+      return tabNamed("Custom domain", menu);
+    });
+    read = async () => {
+      read = () => {
+        return Promise.resolve(checkingDomain);
+      };
+      await releaseEntry.promise;
+      return before;
+    };
+    click(tab);
+    await within(menu).findByText("Connecting domain");
+    if (view === "timeline") {
+      click(getNamedButton(`Manage ${hostname}`, menu));
+      await findNamedButton("Connecting domain", menu);
+    }
+    read = () => {
+      read = async () => {
+        finalReads++;
+        await releaseFinal.promise;
+        return ready;
+      };
+      return Promise.resolve(expired);
+    };
+    await act(() => {
+      return context.mocks.ably.trigger(`hostedSiteDomainsChanged:${siteId}`);
+    });
+    const timeoutLabel =
+      view === "timeline"
+        ? await findNamedButton("Verification timed out", menu)
+        : await within(menu).findByText("Verification timed out");
+    expect(timeoutLabel).toBeVisible();
+    expect(within(menu).queryByRole("img", { name: "Checking…" })).toBeNull();
+    await waitFor(() => {
+      expect(finalReads).toBe(1);
+    });
+    releaseFinal.resolve();
+    const readyControl =
+      view === "timeline"
+        ? await findNamedButton("Save", menu)
+        : await within(menu).findByText("HTTPS ready");
+    await act(() => {
+      releaseEntry.resolve();
+      return releaseEntry.promise;
+    });
+    expect(finalReads).toBe(1);
+    expect(within(menu).queryByText("Verification timed out")).toBeNull();
+    expect(readyControl).toBeVisible();
+  },
+);
+
 test.each(["Cloudflare", "Vercel"] as const)(
   "%s DNS setup opens signed provider consent before verification",
   async (provider) => {

@@ -39,6 +39,10 @@ import { Switch } from "@okouai/ui/components/ui/switch";
 import { SharePeople } from "./share-people.tsx";
 import { ShareAudienceChoices } from "./share-audience-choices.tsx";
 import { ProBadge } from "./components/model-provider-picker.tsx";
+import {
+  domainVerificationDeadline,
+  domainVerificationTimedOut,
+} from "../../lib/hosted-site-domains.ts";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
@@ -325,25 +329,36 @@ function WebsiteUrlStatus({
 }
 
 function DomainChoiceStatus({
+  session,
   domain,
 }: {
+  readonly session: HostedSiteShareSession;
   readonly domain: zInfer<typeof hostedDomainSettingsSchema>["domains"][number];
 }) {
   const { t } = useTranslation();
+  const mountDeadline = useSet(session.domains.mountDeadline$);
+  const expiredThrough = useGet(session.domains.expiredThrough$);
+  const deadline = domainVerificationDeadline(domain);
+  const timedOut = domainVerificationTimedOut(domain, expiredThrough);
   return (
-    <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+    <span
+      key={deadline}
+      ref={mountDeadline}
+      data-verification-expires-at={deadline}
+      className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
+    >
       {domain.ready ? (
         t(($) => {
           return $.artifacts.customDomain.httpsReady;
         })
-      ) : domain.verification?.automatic?.status === "checking" ? (
+      ) : deadline && !timedOut ? (
         <>
           <Loader2 size={12} aria-hidden className="motion-safe:animate-spin" />
           {t(($) => {
             return $.artifacts.customDomain.connecting;
           })}
         </>
-      ) : domain.verification?.automatic?.status === "timed_out" ? (
+      ) : timedOut ? (
         t(($) => {
           return $.artifacts.customDomain.timedOut;
         })
@@ -420,7 +435,7 @@ function WebsiteDomainChoices({
                     <span className="block break-all text-sm font-medium">
                       {domain.hostname}
                     </span>
-                    <DomainChoiceStatus domain={domain} />
+                    <DomainChoiceStatus session={session} domain={domain} />
                   </span>
                   <ChevronRight size={14} aria-hidden />
                 </Button>

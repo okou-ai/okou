@@ -25,7 +25,11 @@ import {
 import { useTranslation } from "react-i18next";
 import type { HostedSiteShareSession } from "../../signals/hosted-site-sharing.ts";
 import { DomainRecords } from "./hosted-site-domain-records.tsx";
-import { hostedDomainProgress } from "../../lib/hosted-site-domains.ts";
+import {
+  domainVerificationDeadline,
+  domainVerificationTimedOut,
+  hostedDomainProgress,
+} from "../../lib/hosted-site-domains.ts";
 
 import type { infer as zInfer } from "zod";
 import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
@@ -507,13 +511,11 @@ function connectionProgress(
   domain: Domain,
   dnsConfigured: boolean,
   verifying: boolean,
-  expiredId: string | null,
+  expiredThrough: number,
 ) {
   const checks = domain.verification?.checks;
   const automatic = domain.verification?.automatic;
-  const timedOut =
-    automatic?.status === "timed_out" ||
-    (automatic !== undefined && automatic.id === expiredId);
+  const timedOut = domainVerificationTimedOut(domain, expiredThrough);
   const background =
     automatic?.status === "checking" && !timedOut && !domain.removing;
   const problem = (
@@ -534,7 +536,7 @@ function connectionProgress(
       : dnsConfigured && (timedOut || problem)
         ? "attention"
         : "waiting";
-  return { connectionState, timedOut, background, problem, automatic };
+  return { connectionState, timedOut, background, problem };
 }
 function DomainTimeline({
   session,
@@ -544,11 +546,16 @@ function DomainTimeline({
 }: TimelineProps) {
   const { t } = useTranslation();
   const { dnsConfigured, certificateOnly } = hostedDomainProgress(domain);
-  const expiredId = useGet(session.domains.expiredAttempt$);
+  const expiredThrough = useGet(session.domains.expiredThrough$);
+  const deadline = domainVerificationDeadline(domain);
   const mountDeadline = useSet(session.domains.mountDeadline$);
   const notice = useGet(session.domains.notice$);
-  const { connectionState, timedOut, background, problem, automatic } =
-    connectionProgress(domain, dnsConfigured, operations.verifying, expiredId);
+  const { connectionState, timedOut, background, problem } = connectionProgress(
+    domain,
+    dnsConfigured,
+    operations.verifying,
+    expiredThrough,
+  );
   const connectionLabel = timedOut
     ? t(($) => {
         return $.artifacts.customDomain.timedOut;
@@ -603,11 +610,7 @@ function DomainTimeline({
             <h4 className="text-muted-foreground">{connectionLabel}</h4>
           )}
           {background && (
-            <p
-              key={automatic?.id}
-              ref={mountDeadline}
-              className="mt-2 text-xs leading-5 text-muted-foreground"
-            >
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
               {t(($) => {
                 return $.artifacts.customDomain.backgroundHint;
               })}
@@ -617,6 +620,9 @@ function DomainTimeline({
         <ReadyStep session={session} domain={domain} />
       </ol>
       <div
+        key={deadline}
+        ref={mountDeadline}
+        data-verification-expires-at={deadline}
         role="status"
         aria-live="polite"
         className="text-xs text-muted-foreground"

@@ -3,6 +3,22 @@ import type { infer as zInfer } from "zod";
 
 export type HostedSiteDomain = zInfer<typeof hostedDomainSchema>;
 
+export function domainVerificationDeadline(domain: HostedSiteDomain) {
+  const automatic = domain.verification?.automatic;
+  return automatic?.status === "checking" ? automatic.expiresAt : undefined;
+}
+
+export function domainVerificationTimedOut(
+  domain: HostedSiteDomain,
+  expiredThrough: number,
+) {
+  const deadline = domainVerificationDeadline(domain);
+  return (
+    domain.verification?.automatic?.status === "timed_out" ||
+    (deadline !== undefined && Date.parse(deadline) <= expiredThrough)
+  );
+}
+
 export function domainRecordCheck(
   domain: HostedSiteDomain,
   record: HostedSiteDomain["records"][number],

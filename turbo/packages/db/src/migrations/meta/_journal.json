@@ -4005,13 +4005,6 @@
       "when": 1795745984587,
       "tag": "1650_invalidate_domain_verification_without_record_checks",
       "breakpoints": true
-    },
-    {
-      "idx": 1651,
-      "version": "7",
-      "when": 1795748379231,
-      "tag": "1651_adopt_pending_domain_checks",
-      "breakpoints": true
     }
   ]
 }

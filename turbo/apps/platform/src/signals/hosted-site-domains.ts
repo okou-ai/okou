@@ -121,25 +121,13 @@ function createDomainState(site$: SiteSignal) {
 }
 type DomainState = ReturnType<typeof createDomainState>;
 function createDomainUpdates(scope: DomainState, site$: SiteSignal) {
-  const { request$, saved$, managedDomainId$, settings$ } = scope;
-  const expiredAttempt$ = state<string | null>(null);
-  const mountDeadline$ = onRef(
-    command(async ({ get, set }, _el: HTMLElement, signal: AbortSignal) => {
-      const settings = await get(settings$);
-      signal.throwIfAborted();
-      const automatic = settings?.domains.find((domain) => {
-        return domain.id === get(managedDomainId$);
-      })?.verification?.automatic;
-      if (automatic?.status === "checking") {
-        await delay(Math.max(0, Date.parse(automatic.expiresAt) - now()), {
-          signal,
-        });
-        signal.throwIfAborted();
-        set(expiredAttempt$, automatic.id);
-      }
-    }),
-  );
+  const { request$, saved$ } = scope;
+  const expiredThrough$ = state(0);
+  const reconciledThrough$ = state(0);
+  const latestRead$ = state(0);
   const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const read = get(latestRead$) + 1;
+    set(latestRead$, read);
     const previous = get(saved$);
     const request = get(request$);
     const site = await get(site$);
@@ -147,13 +135,32 @@ function createDomainUpdates(scope: DomainState, site$: SiteSignal) {
     if (request && site?.isActive) {
       const fresh = await request(get(apiClient$), site.siteId, signal);
       signal.throwIfAborted();
-      // An in-flight baseline must not overwrite a newer mutation response.
-      if (previous === get(saved$)) {
+      // An older read must not overwrite a later read or mutation.
+      if (get(latestRead$) === read && previous === get(saved$)) {
         set(saved$, fresh);
       }
     }
     return false;
   });
+  const mountDeadline$ = onRef(
+    command(async ({ get, set }, el: HTMLElement, signal: AbortSignal) => {
+      const expiresAt = el.dataset.verificationExpiresAt;
+      if (!expiresAt) {
+        return;
+      }
+      const deadline = Date.parse(expiresAt);
+      await delay(Math.max(0, deadline - now()), { signal });
+      signal.throwIfAborted();
+      set(expiredThrough$, Math.max(deadline, get(expiredThrough$)));
+      if (deadline > get(reconciledThrough$)) {
+        // A missed final push may have left a ready domain showing as pending.
+        // If navigation cancels this read, the new view can finish it.
+        await set(refresh$, signal);
+        signal.throwIfAborted();
+        set(reconciledThrough$, Math.max(deadline, get(reconciledThrough$)));
+      }
+    }),
+  );
   const mountCustomTab$ = onRef(
     command(async ({ get, set }, _el: HTMLElement, signal: AbortSignal) => {
       const site = await get(site$);
@@ -161,10 +168,7 @@ function createDomainUpdates(scope: DomainState, site$: SiteSignal) {
       if (!site?.isActive) {
         return;
       }
-      // Read on entry even when realtime is offline. Subscribe with catch-up to
-      // cover the interval between the baseline and attachment, and reconnects.
-      await set(refresh$, signal);
-      signal.throwIfAborted();
+      // The subscription and offline entry read must be able to recover independently.
       set(
         setAblyLoop$,
         {
@@ -174,9 +178,10 @@ function createDomainUpdates(scope: DomainState, site$: SiteSignal) {
         },
         signal,
       );
+      await set(refresh$, signal);
     }),
   );
-  return { mountCustomTab$, mountDeadline$, expiredAttempt$ };
+  return { mountCustomTab$, mountDeadline$, expiredThrough$ };
 }
 type DomainAction = "create" | "verify" | "remove";
 function createDomainNavigation(scope: DomainState) {
