@@ -1022,6 +1022,12 @@ describe("POST /api/chat-threads", () => {
             : [200],
         ),
       ]);
+      if (selectionResult.status === 400) {
+        expect(selectionResult.body.error).toStrictEqual({
+          code: "BAD_REQUEST",
+          message: "Account is unavailable or not allowed in this Chat",
+        });
+      }
       const selections = await accept(
         connectorSelectionsClient().get({
           headers: { authorization: `Bearer ${token}` },
