@@ -285,6 +285,8 @@ describe("content bundle presigned URL cache", () => {
     expect(updated.skills[0]?.bundle.downloadUrl).not.toBe(
       cached.skills[0]?.bundle.downloadUrl,
     );
+    expect(updated.instructions).toStrictEqual(cached.instructions);
+    expect(updated.skills.slice(1)).toStrictEqual(cached.skills.slice(1));
     await expect(readWorkflowExecution()).resolves.toStrictEqual(updated);
   });
 
