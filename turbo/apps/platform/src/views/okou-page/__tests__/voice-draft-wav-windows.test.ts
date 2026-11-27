@@ -20,14 +20,19 @@ function speech(count: number) {
 async function record(
   live: number,
   tail: number,
-  vadProbability: number | ((frame: Float32Array) => number) = 0.95,
+  {
+    vadProbability = 0.95,
+    onWindowReceived,
+  }: {
+    vadProbability?: number | ((frame: Float32Array) => number);
+    onWindowReceived?: (count: number) => void;
+  } = {},
 ) {
   const microphone = context.mocks.deferred<(samples: Float32Array) => void>();
   const files: {
     start: number;
     length: number;
     type: string;
-    pcm: Int16Array;
     overlap: number;
   }[] = [];
   context.mocks.browser.voiceInput({
@@ -49,19 +54,21 @@ async function record(
       if (!(file instanceof File)) {
         throw new Error("Expected microphone audio");
       }
-      const pcm = new Int16Array(await file.arrayBuffer(), 44);
+      const pcmBytes = file.size - 44;
+      expect(pcmBytes).toBeGreaterThanOrEqual(0);
+      expect(pcmBytes % Int16Array.BYTES_PER_ELEMENT).toBe(0);
       const metadata = JSON.parse(String(fields.get("options"))) as {
         overlapDurationSeconds: number;
       };
-      files.push({
+      const count = files.push({
         start: Number(file.name.match(/(\d+)\.wav$/)?.[1]),
-        length: pcm.length,
+        length: pcmBytes / Int16Array.BYTES_PER_ELEMENT,
         type: file.type,
-        pcm,
         overlap: metadata.overlapDurationSeconds,
       });
+      onWindowReceived?.(count);
       return HttpResponse.json({
-        transcript: "Window " + String(files.length),
+        transcript: "Window " + String(count),
         language: "en",
       });
     },
@@ -162,22 +169,27 @@ test.each([
 );
 
 test("Continuing a live one-minute recording sends the next full WAV before Use recording", async () => {
-  const capture = await record(60 * rate, 0);
-  await waitFor(() => {
-    expect(
-      capture.files.map((f) => {
-        return f.start / rate;
-      }),
-    ).toStrictEqual([0, 13, 26, 39]);
+  const firstMinute = context.mocks.deferred<void>();
+  const nextWindow = context.mocks.deferred<void>();
+  const capture = await record(60 * rate, 0, {
+    onWindowReceived(count) {
+      if (count === 4) {
+        firstMinute.resolve();
+      } else if (count === 5) {
+        nextWindow.resolve();
+      }
+    },
   });
+  await firstMinute.promise;
+  expect(
+    capture.files.map((file) => {
+      return file.start / rate;
+    }),
+  ).toStrictEqual([0, 13, 26, 39]);
   capture.microphone(speech(13 * rate));
-  await waitFor(() => {
-    const window = capture.files.at(-1);
-    expect([window?.start, window?.length]).toStrictEqual([
-      52 * rate,
-      15 * rate,
-    ]);
-  });
+  await nextWindow.promise;
+  const window = capture.files.at(-1);
+  expect([window?.start, window?.length]).toStrictEqual([52 * rate, 15 * rate]);
   expect(capture.stop).toBeEnabled();
   click(capture.stop);
   await waitFor(() => {
@@ -188,9 +200,11 @@ test("Continuing a live one-minute recording sends the next full WAV before Use 
 
 test("The speech detector receives full-scale microphone samples before the transcript is requested as WAV", async () => {
   const observed = context.mocks.deferred<number[]>();
-  const { stop, files, editor } = await record(512, 0, (frame) => {
-    observed.resolve(Array.from(frame.subarray(0, 5)));
-    return 0.95;
+  const { stop, files, editor } = await record(512, 0, {
+    vadProbability(frame) {
+      observed.resolve(Array.from(frame.subarray(0, 5)));
+      return 0.95;
+    },
   });
   click(stop);
   await waitFor(() => {
