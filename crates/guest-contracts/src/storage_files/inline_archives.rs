@@ -19,10 +19,28 @@ pub fn is_archive_payload(payload: &[u8]) -> bool {
 /// Attach unique staging paths and their original gzip bytes to a manifest.
 /// Returns `None` when the sources do not fit a single bounded request.
 pub fn encode_input(manifest: &[u8], sources: &[(&str, &[u8])]) -> Option<Vec<u8>> {
-    if manifest.len() > MAX_MANIFEST_BYTES
-        || sources.is_empty()
-        || sources.len() > MAX_STAGED_ARCHIVES
-    {
+    if manifest.len() > MAX_MANIFEST_BYTES {
+        return None;
+    }
+    let size = encoded_payload_len(sources.iter().copied())?;
+    let mut output = Vec::with_capacity(16 + manifest.len() + size);
+    output.extend_from_slice(INPUT_MAGIC);
+    put_bytes(&mut output, manifest);
+    output.extend_from_slice(&(size as u32).to_be_bytes());
+    output.extend_from_slice(&ARCHIVE_TAG);
+    output.extend_from_slice(&(sources.len() as u32).to_be_bytes());
+    for (path, content) in sources {
+        put_bytes(&mut output, path.as_bytes());
+        put_bytes(&mut output, content);
+    }
+    Some(output)
+}
+
+/// Check the inline archive frame bounds without copying any archive bytes.
+pub fn encoded_payload_len<'a>(
+    sources: impl ExactSizeIterator<Item = (&'a str, &'a [u8])>,
+) -> Option<usize> {
+    if !(1..=MAX_STAGED_ARCHIVES).contains(&sources.len()) {
         return None;
     }
     let mut size = ARCHIVE_TAG.len() + size_of::<u32>();
@@ -36,17 +54,7 @@ pub fn encode_input(manifest: &[u8], sources: &[(&str, &[u8])]) -> Option<Vec<u8
             return None;
         }
     }
-    let mut output = Vec::with_capacity(16 + manifest.len() + size);
-    output.extend_from_slice(INPUT_MAGIC);
-    put_bytes(&mut output, manifest);
-    output.extend_from_slice(&(size as u32).to_be_bytes());
-    output.extend_from_slice(&ARCHIVE_TAG);
-    output.extend_from_slice(&(sources.len() as u32).to_be_bytes());
-    for (path, content) in sources {
-        put_bytes(&mut output, path.as_bytes());
-        put_bytes(&mut output, content);
-    }
-    Some(output)
+    Some(size)
 }
 
 /// Decode the bounded source table with content borrowed from the input.

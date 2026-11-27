@@ -209,13 +209,18 @@ impl GuestApplication {
         })
     }
 
+    pub(super) fn can_retain_warm_archives(&self) -> bool {
+        self.blank_startup
+    }
+
     pub(super) async fn start_if_useful(
         &mut self,
-        sandbox: &dyn Sandbox,
+        stage: &mut GuestStageRecorder<'_>,
         plan: &StoragePlan,
         pending: &[CacheTargetGroup],
         decoded: &[(CacheTargetGroup, TargetOutcome)],
         ordinary: &[(CacheTargetGroup, TargetOutcome)],
+        warm_archives: &mut PendingGuestArchives,
     ) -> RunnerResult<bool> {
         let archive_ready = ordinary
             .iter()
@@ -264,10 +269,21 @@ impl GuestApplication {
             wait_timeout_ms: Some(self.wait_timeout_ms),
             check_only: true,
         };
+        let inline_layout = !warm_archives.is_empty()
+            && PendingGuestArchives::mounts_allow_inline(&input.initial.manifest);
         let Some((mut input, query)) = input.prepare_early(&readiness)? else {
             return Ok(false);
         };
-        let checked = sandbox
+        // The application manifest omits checkOnly and is no larger than
+        // the probe. Only a first phase without decoded files can inline.
+        let inline_warm = inline_layout
+            && input.initial.files.is_empty()
+            && warm_archives.fits_inline_input(query.len());
+        if !inline_warm && !warm_archives.is_empty() {
+            flush_guest_stage_batch(&mut warm_archives.batch, stage).await?;
+        }
+        let checked = stage
+            .sandbox
             .apply_storage_manifest(&sandbox::StorageManifestRequest {
                 manifest_json: &query,
                 run_id: &self.run_id,
@@ -299,6 +315,9 @@ impl GuestApplication {
         let mut readiness = readiness;
         readiness.check_only = false;
         input.initial.manifest.archive_readiness = Some(readiness.clone());
+        if inline_warm {
+            self.pending_archives = std::mem::take(warm_archives);
+        }
         self.pending = Some(readiness);
         self.send(input).map(|()| true)
     }

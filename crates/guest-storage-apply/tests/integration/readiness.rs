@@ -60,6 +60,57 @@ fn spawn(manifest: &Manifest, runtime: &Path) -> std::io::Result<CommandExecutio
     CommandExecution::spawn(&mut command, Some(&bytes))
 }
 
+#[test]
+fn inline_source_can_apply_while_a_staged_source_waits() {
+    for outcome in ["ready", "failed", "overlap", "check-only"] {
+        use guest_contracts::storage_files::{STAGED_ARCHIVE_DIR, STDIN_ARGUMENT, inline_archives};
+
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = dir.path().join("runtime");
+        let (mut manifest, mut descriptor) = manifest(dir.path()).unwrap();
+        let source = format!("{STAGED_ARCHIVE_DIR}/inline-ready.tar.gz");
+        let url = format!("file://{source}");
+        manifest.storages[0].archive_url = Some(url.clone());
+        if outcome == "overlap" {
+            descriptor.sources[0] = url;
+        }
+        descriptor.check_only = outcome == "check-only";
+        manifest.archive_readiness = Some(descriptor.clone());
+        let input = inline_archives::encode_input(
+            &serde_json::to_vec(&manifest).unwrap(),
+            &[(&source, &fs::read(dir.path().join("ready.tar.gz")).unwrap())],
+        )
+        .unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_guest-storage-apply"));
+        command
+            .arg(STDIN_ARGUMENT)
+            .env("OKOU_RUN_ID", "inline-readiness-test")
+            .env(runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV, &runtime);
+        let child = CommandExecution::spawn(&mut command, Some(&input)).unwrap();
+        if matches!(outcome, "overlap" | "check-only") {
+            assert!(!child.wait().unwrap().status.success());
+            assert!(!dir.path().join("ready").exists());
+            assert!(!descriptor.directory(&runtime).exists());
+            continue;
+        }
+
+        wait_for(&dir.path().join("ready/.applied"));
+        assert_eq!(fs::read(dir.path().join("ready/value")).unwrap(), b"ready");
+        assert!(!dir.path().join("pending/value").exists());
+        let marker = if outcome == "ready" {
+            descriptor.ready_path(&runtime, 0)
+        } else {
+            descriptor.failed_path(&runtime)
+        };
+        runtime_paths::write_private_new(marker, []).unwrap();
+        assert_eq!(child.wait().unwrap().status.success(), outcome == "ready");
+        assert_eq!(
+            dir.path().join("pending/value").exists(),
+            outcome == "ready"
+        );
+    }
+}
+
 fn unprivileged_command(dir: &Path, runtime: &Path) -> std::io::Result<Command> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::os::unix::process::CommandExt;

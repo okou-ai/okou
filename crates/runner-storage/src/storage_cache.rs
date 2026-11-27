@@ -1057,6 +1057,27 @@ pub struct PendingGuestArchives {
 }
 
 impl PendingGuestArchives {
+    /// Inline delivery must not change the visibility of the staging directory
+    /// to any mount or cleanup in the application.
+    pub fn mounts_allow_inline(manifest: &guest_contracts::storage_manifest::Manifest) -> bool {
+        use std::path::Component;
+
+        manifest.cleanup_paths.is_empty()
+            && manifest.instruction_cleanups.is_empty()
+            && manifest
+                .storages
+                .iter()
+                .map(|entry| &entry.mount_path)
+                .chain(manifest.artifacts.iter().map(|entry| &entry.mount_path))
+                .all(|mount| {
+                    let path = Path::new(mount);
+                    path.starts_with("/home/user")
+                        && !path
+                            .components()
+                            .any(|component| component == Component::ParentDir)
+                })
+    }
+
     /// Whether the caller has any archive delivery work to settle.
     pub fn is_empty(&self) -> bool {
         self.batch.writes.is_empty()
@@ -1069,13 +1090,22 @@ impl PendingGuestArchives {
 
     /// Try attaching the held sources within the existing binary input limit.
     pub fn inline_input(&self, manifest: &[u8]) -> Option<Vec<u8>> {
-        let sources = self
-            .batch
+        let sources = self.inline_sources().collect::<Vec<_>>();
+        guest_contracts::storage_files::inline_archives::encode_input(manifest, &sources)
+    }
+
+    fn inline_sources(&self) -> impl ExactSizeIterator<Item = (&str, &[u8])> {
+        self.batch
             .writes
             .iter()
             .map(|write| (write.guest_path.as_str(), write.bytes.as_ref()))
-            .collect::<Vec<_>>();
-        guest_contracts::storage_files::inline_archives::encode_input(manifest, &sources)
+    }
+
+    fn fits_inline_input(&self, manifest_bytes: usize) -> bool {
+        use guest_contracts::storage_files::{MAX_MANIFEST_BYTES, inline_archives};
+
+        manifest_bytes <= MAX_MANIFEST_BYTES
+            && inline_archives::encoded_payload_len(self.inline_sources()).is_some()
     }
 
     /// Release the pending archive and report any staging writes already completed.
