@@ -1505,8 +1505,8 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             assertTrue(illustrationBounds.top > heading.bottom)
             assertEquals(16.dp, statusBounds.top - illustrationBounds.bottom)
             val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
-            val listCenter = listBounds.left + listBounds.width / 2
-            val statusCenter = statusBounds.left + statusBounds.width / 2
+            val listCenter = (listBounds.left + listBounds.right) / 2
+            val statusCenter = (statusBounds.left + statusBounds.right) / 2
             assertTrue(kotlin.math.abs((listCenter - statusCenter).value) <= 1f)
             assertEquals(
                 LiveRegionMode.Polite,
