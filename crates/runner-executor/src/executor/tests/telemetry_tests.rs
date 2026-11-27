@@ -9,8 +9,8 @@ use sandbox::{
     SandboxCreateObserver, SandboxCreateStage, SandboxError, SandboxFactory,
     SandboxGuestConnectionPhase, SandboxId, SandboxInitializationPhase, SandboxNbdCowCreateOutcome,
     SandboxNbdCowCreateStage, SandboxNbdNetlinkConnectStage, SandboxOperation,
-    SandboxOperationReason, SandboxOperationTimeoutStage, SandboxStartObserver, SandboxStartStage,
-    StartProcessRequest, WriteFileEntry,
+    SandboxOperationReason, SandboxOperationTimeoutStage, SandboxStartObserver,
+    SandboxStartOutcome, SandboxStartStage, StartProcessRequest, WriteFileEntry,
 };
 use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 
@@ -354,7 +354,7 @@ impl Sandbox for ObservedStartSandbox {
     async fn start_with_observer(
         &mut self,
         observer: &mut dyn SandboxStartObserver,
-    ) -> sandbox::Result<()> {
+    ) -> sandbox::Result<SandboxStartOutcome> {
         for (index, stage) in SandboxStartStage::ALL.iter().copied().enumerate() {
             if self.omit_optional_stages
                 && matches!(
@@ -411,7 +411,12 @@ impl Sandbox for ObservedStartSandbox {
                 });
             }
         }
-        self.inner.start().await
+        self.inner.start().await?;
+        Ok(if self.omit_optional_stages {
+            SandboxStartOutcome::HomeUnverified
+        } else {
+            SandboxStartOutcome::HomeMounted
+        })
     }
 
     async fn stop(&mut self) -> sandbox::Result<()> {
@@ -889,12 +894,16 @@ async fn execute_job_fresh_path_preserves_preparation_telemetry() {
 async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
-    let factory = ObservedMockSandboxFactory::new();
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let factory = ObservedMockSandboxFactory {
+        inner: MockSandboxFactory::with_overrides(Arc::clone(&overrides)),
+        ..ObservedMockSandboxFactory::new()
+    };
     let mut context = minimal_context();
     context.api_start_time = Some(chrono::Utc::now().timestamp_millis().max(0) as u64);
 
     let cancel = tokio_util::sync::CancellationToken::new();
-    let (_outcome, telemetry) = execute_job_with_prepared_notifier(
+    let (outcome, telemetry) = execute_job_with_prepared_notifier(
         &factory,
         context,
         NewSandboxDispatch {
@@ -912,6 +921,9 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         },
     )
     .await;
+
+    assert_eq!(outcome.exit_code(), 0);
+    assert_eq!(overrides.home_drive_mount_calls(), 0);
 
     for action in [
         "runner_accepted_to_executor_start",
@@ -936,15 +948,10 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         "runner_agent_bootstrap_ready_wait",
         "api_to_sandbox_start",
         "sandbox_create",
-        "home_drive_mount",
-        "home_drive_mount_guest_exec",
         "agent_execute",
     ] {
         assert_has_action(&telemetry, action);
     }
-
-    assert_action_duration(&telemetry, "home_drive_mount_guest_exec", 23);
-    assert_lacks_action(&telemetry, "home_drive_mount_guest_exec_unavailable");
 
     for action in FRESH_SANDBOX_FACTORY_STAGE_ACTIONS {
         assert_action_success(&telemetry, action, true);
@@ -1239,6 +1246,8 @@ async fn execute_job_omits_inapplicable_sandbox_start_stages() {
         "runner_fresh_sandbox_start_guest_dns_readiness_attempt",
     );
     assert_action_success(&telemetry, "runner_fresh_sandbox_start", true);
+    assert_action_success(&telemetry, "home_drive_mount", true);
+    assert_action_duration(&telemetry, "home_drive_mount_guest_exec", 23);
     for phase in GUEST_CONNECTION_PHASE_NAMES {
         for kind in ["full", "remaining"] {
             assert_lacks_action(
@@ -1312,6 +1321,8 @@ async fn execute_job_records_failed_sandbox_start_stage_timing() {
     }
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_start_guest_dns_readiness");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_start_runtime_finalize");
+    assert_lacks_action(&telemetry, "home_drive_mount");
+    assert_lacks_action(&telemetry, "runner_agent_start_process");
     assert_action_outcome(
         &telemetry,
         "runner_fresh_sandbox_start",

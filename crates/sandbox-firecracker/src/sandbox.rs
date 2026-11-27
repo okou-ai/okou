@@ -28,9 +28,9 @@ use sandbox::{
     SandboxFinalExecParkStage, SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
     SandboxFinalExecParkTransitionOutcome, SandboxIdleAdmission, SandboxIdleTransition,
     SandboxInvalidStateContext, SandboxOperation, SandboxOperationReason,
-    SandboxParkNonReusableReason, SandboxParkOutcome, SandboxStartObserver, SandboxStartStage,
-    StartAgentProcessRequest, StartProcessRequest, StorageManifestRequest, WriteFileEntry,
-    validate_exec_env_keys,
+    SandboxParkNonReusableReason, SandboxParkOutcome, SandboxStartObserver, SandboxStartOutcome,
+    SandboxStartStage, StartAgentProcessRequest, StartProcessRequest, StorageManifestRequest,
+    WriteFileEntry, validate_exec_env_keys,
 };
 use tokio::io::AsyncRead;
 use tokio::sync::{mpsc, watch};
@@ -1543,7 +1543,7 @@ impl FirecrackerSandbox {
     async fn start_with_optional_observer(
         &mut self,
         observer: Option<&mut dyn SandboxStartObserver>,
-    ) -> sandbox::Result<()> {
+    ) -> sandbox::Result<SandboxStartOutcome> {
         if self.current_state() != SandboxState::Created {
             return Err(SandboxError::InvalidState {
                 context: SandboxInvalidStateContext::Sandbox,
@@ -1727,9 +1727,10 @@ impl FirecrackerSandbox {
         // Fresh boot, blank creation, and restored snapshots all observe the
         // actual attached home before user operations become available. The
         // executor repeats this fixed operation for exact reuse and handoff.
+        let has_home_drive = self.config.home_drive.is_some();
         match wait_for_guest_readiness(
             &guest_control_client,
-            self.config.home_drive.is_some(),
+            has_home_drive,
             self.factory_config.dns_port,
             &mut timing,
         )
@@ -1850,7 +1851,11 @@ impl FirecrackerSandbox {
 
         info!(id = %self.id, "sandbox started");
         timing.record(SandboxStartStage::RuntimeFinalize, finalize_started, true);
-        Ok(())
+        Ok(if has_home_drive {
+            SandboxStartOutcome::HomeMounted
+        } else {
+            SandboxStartOutcome::HomeUnverified
+        })
     }
 
     fn guest_endpoint_context(&self) -> crate::guest_endpoint_operations::GuestEndpointContext {
@@ -2875,7 +2880,7 @@ impl Sandbox for FirecrackerSandbox {
     // -- lifecycle --
 
     async fn start(&mut self) -> sandbox::Result<()> {
-        let result = self.start_with_optional_observer(None).await;
+        let result = self.start_with_optional_observer(None).await.map(|_| ());
         #[cfg(feature = "test-support")]
         if result.is_ok() {
             self.run_preparation_checkpoint(crate::GuestPreparationStage::Start)
@@ -2887,7 +2892,7 @@ impl Sandbox for FirecrackerSandbox {
     async fn start_with_observer(
         &mut self,
         observer: &mut dyn SandboxStartObserver,
-    ) -> sandbox::Result<()> {
+    ) -> sandbox::Result<SandboxStartOutcome> {
         self.start_with_optional_observer(Some(observer)).await
     }
 
