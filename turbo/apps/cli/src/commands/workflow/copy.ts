@@ -29,11 +29,7 @@ Examples:
       const existingCopy = async () => {
         const source = await getWorkflow(workflowId);
         return (await listWorkflows()).find((item) => {
-          return (
-            item.visibility === "private" &&
-            !item.official &&
-            item.name === source.name
-          );
+          return item.visibility === "private" && item.name === source.name;
         });
       };
       const existing = await existingCopy();

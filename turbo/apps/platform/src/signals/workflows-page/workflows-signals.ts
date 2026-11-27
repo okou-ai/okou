@@ -806,13 +806,6 @@ export const reloadWorkflows$ = command(({ set }) => {
   set(reloadWorkflowData$);
 });
 
-/** Older API deployments may still return system installations in collections. */
-function isOfficialWorkflow(
-  workflow: Pick<WorkflowSummary, "official">,
-): boolean {
-  return workflow.official !== null;
-}
-
 export const allVisibleWorkflows$ = computed(
   async (get): Promise<readonly WorkflowSummary[]> => {
     get(workflowReloadVersion$);
@@ -820,18 +813,14 @@ export const allVisibleWorkflows$ = computed(
     const client = get(apiClient$)(workflowsCollectionContract);
 
     const result = await accept(client.list({ query: {} }), [200]);
-    return result.body
-      .filter((workflow) => {
-        return !isOfficialWorkflow(workflow);
-      })
-      .sort((a, b) => {
-        if (a.visibility !== b.visibility) {
-          return a.visibility === "public" ? -1 : 1;
-        }
-        const aTitle = a.displayName ?? a.name;
-        const bTitle = b.displayName ?? b.name;
-        return aTitle.localeCompare(bTitle, locale);
-      });
+    return [...result.body].sort((a, b) => {
+      if (a.visibility !== b.visibility) {
+        return a.visibility === "public" ? -1 : 1;
+      }
+      const aTitle = a.displayName ?? a.name;
+      const bTitle = b.displayName ?? b.name;
+      return aTitle.localeCompare(bTitle, locale);
+    });
   },
 );
 
@@ -845,26 +834,22 @@ export const allWorkflowAutomationEntries$ = computed(
       automationClient.listWorkspace(),
       [200],
     );
-    return automationResult.body
-      .filter((entry) => {
-        return !isOfficialWorkflow(entry.workflow);
-      })
-      .sort((a, b) => {
-        if (a.automation.enabled !== b.automation.enabled) {
-          return a.automation.enabled ? -1 : 1;
-        }
-        const aNext = a.automation.nextRunAt ?? "";
-        const bNext = b.automation.nextRunAt ?? "";
-        if (aNext && bNext && aNext !== bNext) {
-          return aNext.localeCompare(bNext);
-        }
-        if (aNext !== bNext) {
-          return aNext ? -1 : 1;
-        }
-        const aTitle = a.workflow.displayName ?? a.workflow.name;
-        const bTitle = b.workflow.displayName ?? b.workflow.name;
-        return aTitle.localeCompare(bTitle, locale);
-      });
+    return [...automationResult.body].sort((a, b) => {
+      if (a.automation.enabled !== b.automation.enabled) {
+        return a.automation.enabled ? -1 : 1;
+      }
+      const aNext = a.automation.nextRunAt ?? "";
+      const bNext = b.automation.nextRunAt ?? "";
+      if (aNext && bNext && aNext !== bNext) {
+        return aNext.localeCompare(bNext);
+      }
+      if (aNext !== bNext) {
+        return aNext ? -1 : 1;
+      }
+      const aTitle = a.workflow.displayName ?? a.workflow.name;
+      const bTitle = b.workflow.displayName ?? b.workflow.name;
+      return aTitle.localeCompare(bTitle, locale);
+    });
   },
 );
 
@@ -1695,11 +1680,7 @@ export const makePrivateWorkflowCopy$ = command(
         [200],
       );
       return result.body.find((item) => {
-        return (
-          !item.official &&
-          item.name === workflow.name &&
-          item.visibility === "private"
-        );
+        return item.name === workflow.name && item.visibility === "private";
       });
     };
     let copy = await findCopy();
