@@ -191,9 +191,10 @@ internal fun ChatConnectorOptionsButton(
     val rows = reading?.data?.accounts
     val save = state?.save
     val saving = save?.saving == true
+    val canCheck = options != null && save?.phase == ChatConnectorSavePhase.Unconfirmed
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(options, target, showingConnectors, state?.revision, lifecycle) {
-        if (showingConnectors && options != null && state != null)
+    LaunchedEffect(options, target, showingConnectors, saving, state?.revision, lifecycle) {
+        if (showingConnectors && !saving && options != null && state != null)
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 options.showOverview(target)
             }
@@ -202,26 +203,29 @@ internal fun ChatConnectorOptionsButton(
         options,
         target,
         showingAccounts,
+        saving,
         summary,
         overviewConfirmed,
         state?.revision,
         lifecycle,
     ) {
-        if (showingAccounts && options != null && summary != null && overviewConfirmed)
+        if (showingAccounts && !saving && options != null && summary != null && overviewConfirmed)
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 options.showAccounts(target, summary.entry.slug)
             }
+    }
+
+    fun returnToConnectorOverview() {
+        restoreEntry = ComposerOptionsPage.ConnectorAccounts
+        presentation =
+            presentation.copy(page = ComposerOptionsPage.Connectors, returnAccount = null)
     }
 
     fun back() {
         if (saving) return
         options?.dismissFailure(target)
         when (page) {
-            ComposerOptionsPage.ConnectorAccounts -> {
-                restoreEntry = page
-                presentation =
-                    presentation.copy(page = ComposerOptionsPage.Connectors, returnAccount = null)
-            }
+            ComposerOptionsPage.ConnectorAccounts -> returnToConnectorOverview()
             ComposerOptionsPage.Connectors,
             ComposerOptionsPage.Model -> {
                 restoreEntry = page
@@ -335,8 +339,9 @@ internal fun ChatConnectorOptionsButton(
             presentation = presentation.copy(returnAccount = null)
         }
     }
-    LaunchedEffect(showingAccounts, overviewData, slug) {
-        if (showingAccounts && overviewData != null && summary == null) back()
+    LaunchedEffect(showingAccounts, overviewData, slug, saving) {
+        if (showingAccounts && !saving && overviewData != null && summary == null)
+            returnToConnectorOverview()
     }
     LaunchedEffect(showingOverview, overviewData, restoreEntry, returnAccount) {
         val returning =
@@ -359,16 +364,25 @@ internal fun ChatConnectorOptionsButton(
             else -> stringResource(R.string.chat_options_title)
         }
     val footer: (@Composable () -> Unit)? =
-        if (showingOverview) {
+        if (showingOverview || showingAccounts && canCheck) {
             {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    ConnectorButton(
-                        stringResource(R.string.chat_connector_manage),
-                        onClick = { openDirectory(null) },
-                        modifier =
-                            Modifier.focusRequester(accountFocus).testTag("chat-connector-manage"),
-                        treatment = ConnectorButtonTreatment.Text,
-                    )
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+                    if (canCheck) {
+                        TextButton(onClick = { options.checkSave(target) }) {
+                            Text(stringResource(R.string.chat_connector_check_result))
+                        }
+                    }
+                    if (showingOverview) {
+                        ConnectorButton(
+                            stringResource(R.string.chat_connector_manage),
+                            onClick = { openDirectory(null) },
+                            enabled = !saving,
+                            modifier =
+                                Modifier.focusRequester(accountFocus)
+                                    .testTag("chat-connector-manage"),
+                            treatment = ConnectorButtonTreatment.Text,
+                        )
+                    }
                 }
             }
         } else null
@@ -466,6 +480,7 @@ internal fun ChatConnectorOptionsButton(
                         )
                 }
             } else if (showingOverview) {
+                if (save != null) ConnectorOptionFeedback(save.phase.message())
                 when {
                     overviewData == null && overview?.failure != null ->
                         ConnectorReadError(R.string.connector_load_failed)
@@ -500,6 +515,7 @@ internal fun ChatConnectorOptionsButton(
                 if (overviewData != null && overview.failure != null)
                     ConnectorOptionFeedback(R.string.connector_refresh_failed)
             } else if (rows == null || summary == null) {
+                if (save != null) ConnectorOptionFeedback(save.phase.message())
                 if (reading?.failure != null || (!overviewConfirmed && overview?.failure != null))
                     ConnectorReadError(R.string.connector_accounts_failed)
                 else
@@ -585,11 +601,6 @@ internal fun ChatConnectorOptionsButton(
                     )
                 }
             }
-            if (showingAccounts && save?.phase == ChatConnectorSavePhase.Unconfirmed) {
-                TextButton(onClick = { options.checkSave(target) }) {
-                    Text(stringResource(R.string.chat_connector_check_result))
-                }
-            }
         }
     }
 }
@@ -600,6 +611,7 @@ internal fun ChatConnectorSavePhase.message(): Int =
         ChatConnectorSavePhase.Checking -> R.string.connector_working
         ChatConnectorSavePhase.Unconfirmed -> R.string.connector_verify_pending
         ChatConnectorSavePhase.Failed -> R.string.chat_connector_save_failed
+        ChatConnectorSavePhase.AccountUnavailable -> R.string.connector_account_unavailable
     }
 
 @Composable
