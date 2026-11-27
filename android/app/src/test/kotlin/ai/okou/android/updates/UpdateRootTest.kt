@@ -571,6 +571,7 @@ class UpdateRootTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun manualInstallationSurvivesActivityRecreationDuringVerification() {
         val packageManager = shadowOf(app.packageManager)
         packageManager.setCanRequestPackageInstalls(false)
@@ -592,6 +593,11 @@ class UpdateRootTest {
             val waiting = compose.onNodeWithText("Waiting to install")
             waiting.assertIsDisplayed().assertIsNotEnabled().assertHasNoClickAction()
             assertEquals(actionBounds, waiting.getUnclippedBoundsInRoot())
+            fun actionFill(label: String) =
+                compose.onNodeWithText(label).captureToImage().toPixelMap().let { pixels ->
+                    pixels[pixels.width / 8, pixels.height / 2]
+                }
+            val waitingFill = actionFill("Waiting to install")
             assertNoPlatformLaunch()
             compose.activityRule.scenario.recreate()
             waiting.assertIsDisplayed().assertIsNotEnabled()
@@ -603,6 +609,7 @@ class UpdateRootTest {
             compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
             val launched = nextLaunch()
             assertEquals(Intent.ACTION_VIEW, launched.intent.action)
+            assertEquals(waitingFill, actionFill("Installing…"))
             returnFrom(launched.requestCode)
             install.assertIsDisplayed().assertIsEnabled()
             assertNoPlatformLaunch()

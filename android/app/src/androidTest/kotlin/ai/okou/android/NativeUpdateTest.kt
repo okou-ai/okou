@@ -5,6 +5,7 @@ import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.updates.AppUpdates
+import ai.okou.android.updates.UpdateCheck
 import ai.okou.android.updates.UpdateRecord
 import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
@@ -165,7 +166,7 @@ class NativeUpdateTest {
         val firstProgress = CompletableDeferred<Unit>()
         val download = AtomicReference(CompletableDeferred<File>())
         val release = nativeUpdateRelease()
-        val failFirstCheck = AtomicBoolean(true)
+        val failNextCheck = AtomicBoolean(true)
         val candidate = AtomicReference(release.copy(version = BuildConfig.VERSION_NAME))
         val file = File(app.filesDir, "updates/native-update-fixture.apk")
         val owner =
@@ -176,7 +177,7 @@ class NativeUpdateTest {
                     override suspend fun check(): AndroidUpdates {
                         gate.await()
                         reopenedCheck.get()?.await()
-                        if (failFirstCheck.getAndSet(false))
+                        if (failNextCheck.getAndSet(false))
                             throw IOException("fixture check failed")
                         return AndroidUpdates(null, candidate.get())
                     }
@@ -356,6 +357,22 @@ class NativeUpdateTest {
             assertNotNull(text(updateTarget))
             device.waitForIdle()
             assertEquals(initialDetailsBounds, detailsBounds())
+
+            val downloadLabel =
+                By.pkg(app.packageName).text(app.getString(R.string.updates_download))
+            val downloadBounds = button(downloadLabel).visibleBounds
+            val checkError =
+                By.pkg(app.packageName).text(app.getString(R.string.updates_error_check))
+            failNextCheck.set(true)
+            instrumentation.runOnMainSync { owner.check() }
+            val latestError = checkNotNull(device.wait(Until.findObject(checkError), 10_000))
+            val availableVersion = checkNotNull(text(updateTarget))
+            assertTrue(latestError.visibleBounds.top >= availableVersion.visibleBounds.bottom)
+            assertEquals(downloadBounds, button(downloadLabel).visibleBounds)
+            assertEquals(initialDetailsBounds, detailsBounds())
+            captureState("details-compatible-check-failed")
+            instrumentation.runOnMainSync { owner.check() }
+            assertTrue(device.wait(Until.gone(checkError), 10_000))
             click(R.string.updates_close)
             assertTrue(device.wait(Until.gone(close), 10_000))
 
@@ -483,6 +500,13 @@ class NativeUpdateTest {
                 checkNotNull(text(app.getString(R.string.updates_error_download))).visibleBounds
             assertTrue(errorBounds.top >= targetBounds.bottom)
             captureState("details-download-failed")
+            failNextCheck.set(true)
+            instrumentation.runOnMainSync {
+                owner.check()
+                assertEquals(UpdateCheck.Failed, owner.state.value.check)
+            }
+            exists(R.string.updates_error_download)
+            assertFalse(device.hasObject(checkError))
             assertEquals(initialDetailsBounds, detailsBounds())
             candidate.set(release.copy(version = "99.1.0", minimumSdk = 36))
             instrumentation.runOnMainSync { owner.check() }
