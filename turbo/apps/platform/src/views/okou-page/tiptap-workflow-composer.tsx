@@ -200,9 +200,11 @@ function WorkflowComposerPlaceholder({
  * `rounded-md` radius on the `xs` neutral button's 28px height. On keyboard
  * devices the label is followed by the shared `Kbd`, inset evenly by `pr-1`.
  * The Kbd sits inside a control that takes hover and pressed overlays, so its
- * fill is `bg-nested-fill` rather than `bg-muted`, which does not read on the
- * gray-50 control surface. The border takes the template pill's translucent
- * `border-state-pressed` hairline instead of the control's gray-400. Touch
+ * fill must stay translucent rather than `bg-muted`, which does not read on the
+ * gray-50 control surface. It takes the `state-pressed` layer: the 6%
+ * `nested-fill` was too faint to read as a keycap there. The border takes the
+ * template pill's translucent `border-state-pressed` hairline instead of the
+ * control's gray-400. Touch
  * devices have no Tab key, so they keep the plain label.
  */
 function FollowupAcceptButton({
@@ -235,7 +237,7 @@ function FollowupAcceptButton({
           {t(($) => {
             return $.chat.composer.followupAcceptLabel;
           })}
-          <Kbd aria-hidden="true" className="bg-nested-fill">
+          <Kbd aria-hidden="true" className="bg-state-pressed">
             {t(($) => {
               return $.chat.composer.followupTabLabel;
             })}
