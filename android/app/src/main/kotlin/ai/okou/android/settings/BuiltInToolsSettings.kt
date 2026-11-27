@@ -36,24 +36,24 @@ private sealed interface SettingWrite<out T> {
 
 internal data class PendingToolChoice(val enabled: Boolean, val visit: Long)
 
+internal data class PendingImageChoice(val id: String, val visit: Long)
+
 internal data class BuiltInToolsState(
     val catalog: SettingsRead<List<DataToolFamily>> = SettingsRead(),
     val disabled: Set<String>? = null,
     val preferencesUnavailable: Boolean = false,
     val confirmedImage: String? = null,
     val imageUnavailable: Boolean = false,
-    val draftImage: String? = null,
-    val savingImage: Boolean = false,
-    val imageFailed: Boolean = false,
+    val pendingImage: PendingImageChoice? = null,
     val savingTools: Map<String, PendingToolChoice> = emptyMap(),
 ) {
     val displayedImage: String?
-        get() = draftImage ?: confirmedImage
+        get() = pendingImage?.id ?: confirmedImage
 
     fun enabled(id: String): Boolean? = savingTools[id]?.enabled ?: disabled?.let { id !in it }
 }
 
-/** One authorized workspace, with an image draft that lasts for one Settings visit. */
+/** Owns tool and image model preferences for one authorized workspace. */
 internal class BuiltInToolsSettings(
     private val scope: CoroutineScope,
     private val service: BuiltInToolsService,
@@ -87,7 +87,6 @@ internal class BuiltInToolsSettings(
     fun leaveSettings() {
         hidePage()
         visit++
-        mutable.update { it.copy(draftImage = null, imageFailed = false) }
     }
 
     fun refresh() {
@@ -168,17 +167,14 @@ internal class BuiltInToolsSettings(
             }
         }
         val model =
-            readPreferenceAfterWrites({ it.savingImage }, { imageRevision }) {
+            readPreferenceAfterWrites({ it.pendingImage != null }, { imageRevision }) {
                 service.imageModel() ?: defaultImageToolModel
             }
         if (!authorized()) return
         mutable.update {
-            val draft = it.draftImage.takeUnless { draft -> draft == model }
             it.copy(
                 confirmedImage = model ?: it.confirmedImage,
                 imageUnavailable = model == null && it.confirmedImage == null,
-                draftImage = draft,
-                imageFailed = it.imageFailed && draft != null,
             )
         }
         if (model != null) cacheImage(model)
@@ -235,13 +231,6 @@ internal class BuiltInToolsSettings(
                             }
                         },
                     savingTools = if (followUp) value.savingTools else value.savingTools - id,
-                    draftImage =
-                        value.draftImage.takeUnless {
-                            id == imageGenerationTool && confirmed == false && !followUp
-                        },
-                    imageFailed =
-                        value.imageFailed &&
-                            !(id == imageGenerationTool && confirmed == false && !followUp),
                 )
             }
             if (confirmed != null) state.value.disabled?.let(::cacheDisabled)
@@ -275,37 +264,59 @@ internal class BuiltInToolsSettings(
                 !authorized() ||
                 current.enabled(imageGenerationTool) != true ||
                 imageGenerationTool in current.savingTools ||
-                current.savingImage ||
-                current.confirmedImage == null
+                current.confirmedImage == null ||
+                current.displayedImage == id
         )
             return
-        if (current.confirmedImage == id && current.draftImage == null) return
+        val choice = PendingImageChoice(id, visit)
         imageRevision++
-        mutable.update { it.copy(draftImage = id, savingImage = true, imageFailed = false) }
-        scope.launch {
+        mutable.update { it.copy(pendingImage = choice) }
+        if (current.pendingImage == null) scope.launch { saveImage(id) }
+    }
+
+    private suspend fun saveImage(first: String) {
+        var attempted = first
+        while (authorized()) {
             val write =
-                writeWithRetry { service.selectImageModel(id) ?: defaultImageToolModel }
-                    ?: return@launch
-            val model =
+                writeWithRetry { service.selectImageModel(attempted) ?: defaultImageToolModel }
+                    ?: return
+            val confirmed =
                 when (write) {
                     is SettingWrite.Acknowledged -> write.value
-                    SettingWrite.Rejected,
+                    SettingWrite.Rejected -> null
                     SettingWrite.NeedsReadback ->
-                        readResource { service.imageModel() ?: defaultImageToolModel }
+                        readResource {
+                            // An older value may have been read before the first write landed.
+                            (service.imageModel() ?: defaultImageToolModel).takeIf {
+                                it == attempted
+                            }
+                        }
                 }
             currentCoroutineContext().ensureActive()
-            if (!authorized()) return@launch
+            if (!authorized()) return
+            val current = state.value
+            val latest = checkNotNull(current.pendingImage)
+            val saved = confirmed ?: current.confirmedImage
+            val followUp =
+                latest.id != attempted &&
+                    latest.id != saved &&
+                    (confirmed != null || write == SettingWrite.Rejected)
             imageRevision++
             mutable.update {
-                val failed = model != id && it.draftImage == id
                 it.copy(
-                    confirmedImage = model ?: it.confirmedImage,
-                    draftImage = id.takeIf { failed },
-                    savingImage = false,
-                    imageFailed = failed,
+                    confirmedImage = saved,
+                    pendingImage = latest.takeIf { followUp },
                 )
             }
-            if (model != null) state.value.confirmedImage?.let(::cacheImage)
+            if (confirmed != null) cacheImage(confirmed)
+            if (!followUp) {
+                val unresolved = confirmed == null && write == SettingWrite.NeedsReadback
+                if (latest.visit == visit && (unresolved || latest.id != saved)) {
+                    notice(SettingsNotice.ImageModelSaveFailed)
+                }
+                return
+            }
+            attempted = latest.id
         }
     }
 

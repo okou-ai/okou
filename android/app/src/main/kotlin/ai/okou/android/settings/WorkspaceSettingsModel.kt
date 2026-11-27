@@ -89,6 +89,7 @@ internal data class AccountSwitch(val accountId: String, val phase: AccountSwitc
 internal enum class SettingsNotice {
     ModelAccountSwitchFailed,
     EmailSubscriptionFailed,
+    ImageModelSaveFailed,
     ToolSaveFailed,
     ToolSaveUnconfirmed,
 }

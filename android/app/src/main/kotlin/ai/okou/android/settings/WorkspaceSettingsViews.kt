@@ -208,6 +208,7 @@ private val SettingsNotice.message: Int
         when (this) {
             SettingsNotice.ModelAccountSwitchFailed -> R.string.settings_account_switch_failed
             SettingsNotice.EmailSubscriptionFailed -> R.string.settings_email_save_failed
+            SettingsNotice.ImageModelSaveFailed -> R.string.settings_tool_image_save_failed
             SettingsNotice.ToolSaveFailed -> R.string.settings_preferences_save_rolled_back
             SettingsNotice.ToolSaveUnconfirmed -> R.string.settings_tool_save_failed
         }

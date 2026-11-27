@@ -125,39 +125,37 @@ class BuiltInToolsSettingsTest {
     }
 
     @Test
-    fun unconfirmedImageDraftCanBeRetriedAndIsDiscardedOnExit() = runTest {
+    fun rejectedImageChoiceRollsBackAndCanBeRetried() = runTest {
         val service = ToolFixture().apply { failImage = true }
-        val settings = model(service)
+        val notices = mutableListOf<SettingsNotice>()
+        val settings = model(service, notice = { notices += it })
         settings.show()
         runCurrent()
 
         settings.chooseImage(otherImage)
-        runCurrent()
-        assertTrue(settings.state.value.imageFailed)
         assertEquals(otherImage, settings.state.value.displayedImage)
         assertEquals(initialImage, settings.state.value.confirmedImage)
+        runCurrent()
+        assertEquals(initialImage, settings.state.value.displayedImage)
+        assertNull(settings.state.value.pendingImage)
+        assertEquals(listOf(SettingsNotice.ImageModelSaveFailed), notices)
 
         service.failImage = false
         settings.chooseImage(otherImage)
         runCurrent()
-        assertFalse(settings.state.value.imageFailed)
         assertEquals(listOf(otherImage, otherImage), service.imageWrites)
         assertEquals(otherImage, settings.state.value.confirmedImage)
+        assertNull(settings.state.value.pendingImage)
+        assertEquals(listOf(SettingsNotice.ImageModelSaveFailed), notices)
 
         service.failImage = true
         settings.chooseImage(initialImage)
-        runCurrent()
-        settings.hidePage()
-        settings.show()
-        runCurrent()
-        assertTrue(settings.state.value.imageFailed)
-        assertEquals(initialImage, settings.state.value.displayedImage)
-
         settings.leaveSettings()
         settings.show()
         runCurrent()
-        assertFalse(settings.state.value.imageFailed)
         assertEquals(otherImage, settings.state.value.displayedImage)
+        assertNull(settings.state.value.pendingImage)
+        assertEquals(listOf(SettingsNotice.ImageModelSaveFailed), notices)
     }
 
     @Test
@@ -171,8 +169,7 @@ class BuiltInToolsSettingsTest {
         runCurrent()
         assertEquals(listOf(otherImage), service.imageWrites)
         assertEquals(otherImage, settings.state.value.confirmedImage)
-        assertNull(settings.state.value.draftImage)
-        assertFalse(settings.state.value.imageFailed)
+        assertNull(settings.state.value.pendingImage)
     }
 
     @Test
@@ -239,7 +236,7 @@ class BuiltInToolsSettingsTest {
     }
 
     @Test
-    fun failedImageChoiceSurvivesARejectedDisableWhileItIsSaving() = runTest {
+    fun overlappingRejectedImageChoiceAndDisableRestoreIndependentValues() = runTest {
         val fixture = ToolFixture()
         val modelSave = CompletableDeferred<Unit>()
         val toolSave = CompletableDeferred<Unit>()
@@ -269,13 +266,14 @@ class BuiltInToolsSettingsTest {
         runCurrent()
         assertEquals(true, settings.state.value.enabled(imageGenerationTool))
         assertEquals(initialImage, settings.state.value.confirmedImage)
-        assertEquals(otherImage, settings.state.value.displayedImage)
-        assertTrue(settings.state.value.imageFailed)
+        assertEquals(initialImage, settings.state.value.displayedImage)
+        assertNull(settings.state.value.pendingImage)
     }
 
     @Test
-    fun refreshClearsAFailedImageDraftOnceTheServerConfirmsIt() = runTest {
+    fun refreshAppliesTheServerModelAfterUnconfirmedImageWriteRollsBack() = runTest {
         val fixture = ToolFixture()
+        val notices = mutableListOf<SettingsNotice>()
         var readUnavailable = false
         val settings =
             model(
@@ -291,6 +289,7 @@ class BuiltInToolsSettingsTest {
                         return fixture.imageModel()
                     }
                 },
+                notice = { notices += it },
             )
         settings.show()
         runCurrent()
@@ -298,16 +297,77 @@ class BuiltInToolsSettingsTest {
         runCurrent()
         advanceTimeBy(6_000)
         runCurrent()
-        assertEquals(otherImage, settings.state.value.displayedImage)
-        assertTrue(settings.state.value.imageFailed)
+        assertEquals(initialImage, settings.state.value.displayedImage)
+        assertNull(settings.state.value.pendingImage)
+        assertEquals(listOf(SettingsNotice.ImageModelSaveFailed), notices)
 
         readUnavailable = false
         settings.refresh()
         runCurrent()
         assertEquals(otherImage, settings.state.value.confirmedImage)
-        assertNull(settings.state.value.draftImage)
-        assertFalse(settings.state.value.imageFailed)
+        assertEquals(otherImage, settings.state.value.displayedImage)
+        assertNull(settings.state.value.pendingImage)
         assertEquals(listOf(otherImage), fixture.imageWrites)
+    }
+
+    @Test
+    fun pendingImageWriteSendsOnlyTheLatestChoiceAfterConfirmation() = runTest {
+        val fixture = ToolFixture()
+        val pending = CompletableDeferred<Unit>()
+        val writes = mutableListOf<String>()
+        val settings =
+            model(
+                object : BuiltInToolsService by fixture {
+                    override suspend fun selectImageModel(id: String): String {
+                        writes += id
+                        if (id == otherImage) pending.await()
+                        return fixture.selectImageModel(id)
+                    }
+                },
+            )
+        settings.show()
+        runCurrent()
+        settings.chooseImage(otherImage)
+        runCurrent()
+        settings.chooseImage("gpt-image-1")
+        settings.chooseImage(initialImage)
+        assertEquals(listOf(otherImage), writes)
+        assertEquals(initialImage, settings.state.value.displayedImage)
+
+        pending.complete(Unit)
+        runCurrent()
+        assertEquals(listOf(otherImage, initialImage), writes)
+        assertEquals(initialImage, settings.state.value.confirmedImage)
+        assertNull(settings.state.value.pendingImage)
+    }
+
+    @Test
+    fun staleReadbackDoesNotReleaseAnotherImageWriteAfterAnUnclearResult() = runTest {
+        val fixture = ToolFixture()
+        val writes = mutableListOf<String>()
+        val notices = mutableListOf<SettingsNotice>()
+        val settings =
+            model(
+                object : BuiltInToolsService by fixture {
+                    override suspend fun selectImageModel(id: String): String {
+                        writes += id
+                        throw ApiFailure.Http(503, null, null, null)
+                    }
+                },
+                notice = { notices += it },
+            )
+        settings.show()
+        runCurrent()
+        settings.chooseImage(otherImage)
+        runCurrent()
+        settings.chooseImage("gpt-image-1")
+        advanceTimeBy(6_000)
+        runCurrent()
+
+        assertEquals(listOf(otherImage), writes)
+        assertEquals(initialImage, settings.state.value.displayedImage)
+        assertNull(settings.state.value.pendingImage)
+        assertEquals(listOf(SettingsNotice.ImageModelSaveFailed), notices)
     }
 
     @Test

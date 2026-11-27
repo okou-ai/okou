@@ -21,11 +21,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -135,62 +137,56 @@ private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettin
     val selectedModel = state.displayedImage
     val selected = imageToolOptions.firstOrNull { it.id == selectedModel }
     val imageEnabled = state.enabled(imageGenerationTool) == true
-    val enabled =
-        selectedModel != null &&
-            imageEnabled &&
-            imageGenerationTool !in state.savingTools &&
-            !state.savingImage
-    // Turning off the tool ends the picker. The next enable starts from the row.
-    key(imageEnabled) {
-        SettingsPickerRow(
-            title,
-            value = selected?.title ?: selectedModel,
-            leading = { SettingsIcon(R.drawable.ic_memory) },
-            enabled = enabled,
-            modifier = if (enabled) Modifier else Modifier.alpha(0.38f),
-        ) { dismiss ->
-            val options =
-                if (selected != null && selected !in publicImageToolOptions)
-                    publicImageToolOptions + selected
-                else publicImageToolOptions
-            SettingsChoiceSheet(title, dismiss, options, options.indexOf(selected), { it.id }) {
-                option,
-                position ->
-                SettingsChoiceRow(
-                    option.title,
-                    selected = option.id == selected?.id,
-                    enabled = true,
-                    onClick = {
-                        dismiss()
-                        model.chooseImage(option.id)
-                    },
-                    modifier = position,
-                    trailing = { foreground ->
-                        Text(
-                            option.price,
-                            color = foreground,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    },
-                )
+    val enabled = selectedModel != null && imageEnabled && imageGenerationTool !in state.savingTools
+    Box {
+        // Turning off the tool ends the picker. The next enable starts from the row.
+        key(imageEnabled) {
+            SettingsPickerRow(
+                title,
+                value = selected?.title ?: selectedModel,
+                leading = { SettingsIcon(R.drawable.ic_memory) },
+                enabled = enabled,
+                modifier = if (enabled) Modifier else Modifier.alpha(0.38f),
+            ) { dismiss ->
+                val options =
+                    if (selected != null && selected !in publicImageToolOptions)
+                        publicImageToolOptions + selected
+                    else publicImageToolOptions
+                SettingsChoiceSheet(
+                    title,
+                    dismiss,
+                    options,
+                    options.indexOf(selected),
+                    { it.id },
+                ) { option, position ->
+                    SettingsChoiceRow(
+                        option.title,
+                        selected = option.id == selected?.id,
+                        enabled = true,
+                        onClick = {
+                            dismiss()
+                            model.chooseImage(option.id)
+                        },
+                        modifier = position,
+                        trailing = { foreground ->
+                            Text(
+                                option.price,
+                                color = foreground,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        },
+                    )
+                }
             }
         }
-    }
-    val status =
-        when {
-            state.savingImage -> R.string.settings_saving
-            state.imageFailed -> R.string.settings_tool_image_save_failed
-            else -> null
+        if (state.pendingImage != null) {
+            val saving = stringResource(R.string.settings_saving)
+            LinearProgressIndicator(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().semantics {
+                    contentDescription = saving
+                },
+            )
         }
-    if (status != null) {
-        Text(
-            stringResource(status),
-            Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp).semantics {
-                liveRegion = LiveRegionMode.Polite
-            },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
-        )
     }
     if (state.imageUnavailable && imageEnabled)
         ToolStatus(stringResource(R.string.settings_tools_unavailable))
