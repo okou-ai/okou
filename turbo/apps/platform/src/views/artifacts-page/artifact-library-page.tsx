@@ -1,28 +1,26 @@
 import type { KeyboardEvent, UIEvent } from "react";
-import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import type { ArtifactCatalogCategory } from "@okouai/api-contracts/contracts/artifact-catalog";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import {
   ArrowDown,
   ArrowUp,
   File,
-  Globe,
-  Image,
+  LayoutGrid,
+  List,
   Loader2,
   MessagesSquare,
-  Presentation,
   Search,
-  User,
-  Video,
   X,
 } from "lucide-react";
 import {
   Button,
   Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Skeleton,
   Table,
   TableBody,
@@ -30,6 +28,12 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Toggle,
+  ToggleGroup,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -38,10 +42,8 @@ import {
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
-import {
-  formatRelativeTimestamp,
-  resolvedAppLocale,
-} from "../../i18n/format.ts";
+import { resolvedAppLocale } from "../../i18n/format.ts";
+import { now } from "../../lib/time.ts";
 import { artifactCatalogViewportRef$ } from "../../signals/artifact-deletion.ts";
 import { artifactCatalogSidebar } from "../../signals/artifacts-page/artifact-catalog-instance.ts";
 import {
@@ -54,188 +56,278 @@ import {
   reloadArtifactCatalog$,
   rememberArtifactCatalogTrigger$,
   scrollArtifactCardIntoViewRef$,
+  selectedArtifactCatalogCategory$,
   selectedArtifactCatalogKind$,
-  setArtifactCatalogKind$,
+  setArtifactCatalogCategory$,
   setArtifactCatalogSearch$,
   setArtifactCatalogDirection$,
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
+import {
+  artifactLibraryView$,
+  setArtifactLibraryView$,
+  type ArtifactLibraryView as LibraryView,
+} from "../../signals/artifacts-page/artifact-library-view.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
+import { userPreferences$ } from "../../signals/okou-page/settings/user-preferences.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatThreadSidebarShell } from "../okou-page/chat-thread-sidebar-shell.tsx";
-import { FilePreviewIcon } from "../okou-page/file-preview-icon.tsx";
+import {
+  ArtifactCatalogCover,
+  artifactGalleryKind,
+  artifactKindIcon,
+  useArtifactKindLabel,
+} from "./artifact-catalog-cover.tsx";
 import {
   ArtifactCatalogRowActions,
   ArtifactCatalogRowDeleteDialog,
 } from "./artifact-catalog-row-actions.tsx";
 import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
 
-const KIND_ICONS = Object.freeze({
-  file: File,
-  presentation: Presentation,
-  "hosted-site": Globe,
-  image: Image,
-  video: Video,
-  avatar: User,
-  "shared-thread": MessagesSquare,
-});
+const LIBRARY_GRID_CLASS_NAME =
+  "grid grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-x-5 gap-y-6";
 
-function useKindOptions() {
+function useCategoryOptions() {
   const { t } = useTranslation();
   return [
     {
-      value: "presentation",
+      value: "all",
       label: t(($) => {
-        return $.artifacts.kinds.presentation;
+        return $.artifacts.library.categories.all;
       }),
     },
     {
-      value: "hosted-site",
+      value: "document",
       label: t(($) => {
-        return $.artifacts.kinds.hostedSite;
+        return $.artifacts.library.categories.document;
+      }),
+    },
+    {
+      value: "presentation",
+      label: t(($) => {
+        return $.artifacts.library.categories.presentation;
+      }),
+    },
+    {
+      value: "website",
+      label: t(($) => {
+        return $.artifacts.library.categories.website;
+      }),
+    },
+    {
+      value: "spreadsheet",
+      label: t(($) => {
+        return $.artifacts.library.categories.spreadsheet;
       }),
     },
     {
       value: "image",
       label: t(($) => {
-        return $.artifacts.kinds.image;
+        return $.artifacts.library.categories.image;
       }),
     },
     {
       value: "video",
       label: t(($) => {
-        return $.artifacts.kinds.video;
+        return $.artifacts.library.categories.video;
       }),
     },
     {
-      value: "avatar",
+      value: "audio",
       label: t(($) => {
-        return $.artifacts.kinds.avatar;
+        return $.artifacts.library.categories.audio;
       }),
     },
     {
-      value: "shared-thread",
+      value: "other",
       label: t(($) => {
-        return $.artifacts.kinds.sharedConversation;
+        return $.artifacts.library.categories.other;
       }),
     },
-    {
-      value: "file",
-      label: t(($) => {
-        return $.artifacts.kinds.file;
-      }),
-    },
-  ] satisfies { value: ArtifactCatalogKind; label: string }[];
+  ] satisfies { value: ArtifactCatalogCategory | "all"; label: string }[];
 }
 
-function ArtifactTimestamp({ value }: { readonly value?: string | null }) {
-  if (!value) {
-    return <span className="text-muted-foreground">—</span>;
-  }
-  const exact = new Date(value).toLocaleString(resolvedAppLocale(), {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZoneName: "short",
-  });
+function ArtifactTimestamp({
+  value,
+  timezone,
+}: {
+  readonly value: string;
+  readonly timezone: string;
+}) {
+  const date = new Date(value);
+  const locale = resolvedAppLocale();
+  const exact = new Intl.DateTimeFormat(locale, {
+    timeZone: timezone,
+    dateStyle: "medium",
+    timeStyle: "long",
+  }).format(date);
   return (
     <Tooltip>
       <TooltipTrigger render={<time dateTime={value} title={exact} />}>
-        {formatRelativeTimestamp(value)}
+        {new Intl.DateTimeFormat(locale, {
+          timeZone: timezone,
+          dateStyle: "medium",
+        }).format(date)}
       </TooltipTrigger>
       <TooltipContent>{exact}</TooltipContent>
     </Tooltip>
   );
 }
 
-function CreatedSortHeading() {
-  const { t } = useTranslation();
-  const direction = useGet(artifactCatalogDirection$);
-  const setDirection = useSet(setArtifactCatalogDirection$);
-  const Icon = direction === "asc" ? ArrowUp : ArrowDown;
-  return (
-    <TableHead
-      aria-sort={direction === "asc" ? "ascending" : "descending"}
-      className="hidden px-4 text-xs text-muted-foreground @3xl:table-cell"
-    >
-      <button
-        type="button"
-        className="inline-flex min-h-10 items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => {
-          setDirection(direction === "asc" ? "desc" : "asc");
-        }}
-      >
-        {t(($) => {
-          return $.artifacts.library.created;
-        })}
-        <Icon className="size-3.5" aria-hidden="true" />
-      </button>
-    </TableHead>
-  );
-}
-
-function moveRowFocus(event: KeyboardEvent<HTMLElement>) {
+function moveArtifactFocus(event: KeyboardEvent<HTMLElement>) {
   if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
     return;
   }
   const targets = event.currentTarget
-    .closest("table")
+    .closest("[data-artifact-library-results]")
     ?.querySelectorAll<HTMLElement>("[data-artifact-open]");
   if (!targets) {
     return;
   }
-  const rows = Array.from(targets);
+  const controls = Array.from(targets);
   const next =
-    rows[
-      rows.indexOf(event.currentTarget) + (event.key === "ArrowDown" ? 1 : -1)
+    controls[
+      controls.indexOf(event.currentTarget) +
+        (event.key === "ArrowDown" ? 1 : -1)
     ];
   if (next) {
-    // Row navigation owns these arrows; Enter and Space remain native controls.
+    // Preserve catalog preview navigation across date groups and both views.
     event.preventDefault();
     next.focus();
   }
 }
 
-function ArtifactLibraryName({
+function ArtifactSourceChat({
   artifact,
-  kindLabel,
+  className,
 }: {
   readonly artifact: CatalogArtifact;
-  readonly kindLabel: string;
+  readonly className?: string;
 }) {
   const { t } = useTranslation();
-  const Icon = KIND_ICONS[artifact.kind];
+  const source = artifact.sourceChatThread;
+  if (!source) {
+    return null;
+  }
   return (
+    <a
+      href={`/chats/${encodeURIComponent(source.id)}`}
+      aria-label={t(
+        ($) => {
+          return $.artifacts.library.openSourceChat;
+        },
+        { title: source.title },
+      )}
+      className={cn(
+        "flex min-w-0 items-center gap-1.5 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring",
+        className,
+      )}
+    >
+      <MessagesSquare className="size-3.5 shrink-0" aria-hidden="true" />
+      <span className="truncate">{source.title}</span>
+    </a>
+  );
+}
+
+function useArtifactPreview(artifact: CatalogArtifact) {
+  const { t } = useTranslation();
+  const openArtifact = useSet(openArtifact$);
+  const signal = useGet(pageSignal$);
+  const rememberTrigger = useSet(rememberArtifactCatalogTrigger$);
+  return {
+    label: t(
+      ($) => {
+        return $.artifacts.catalog.cardPreview;
+      },
+      { title: artifact.title },
+    ),
+    open: (trigger: HTMLElement) => {
+      rememberTrigger(trigger);
+      detach(
+        openArtifact(artifact.id, signal),
+        Reason.DomCallback,
+        "open library artifact",
+      );
+    },
+  };
+}
+
+function ArtifactLibraryCard({
+  artifact,
+  selected,
+  scrollIntoView,
+  timezone,
+}: {
+  readonly artifact: CatalogArtifact;
+  readonly selected: boolean;
+  readonly scrollIntoView: boolean;
+  readonly timezone: string;
+}) {
+  const preview = useArtifactPreview(artifact);
+  const scrollTargetRef = useSet(scrollArtifactCardIntoViewRef$);
+  const displayKind = artifactGalleryKind(artifact);
+  const kindLabel = useArtifactKindLabel(displayKind);
+  const controlClassName =
+    "group block w-full min-w-0 rounded-surface text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+  const content = (
     <>
-      <span
-        aria-hidden="true"
-        className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/50 text-muted-foreground"
-      >
-        {artifact.kind === "file" ? (
-          <FilePreviewIcon filename={artifact.title} size="sm" />
-        ) : (
-          <Icon size={18} />
-        )}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-foreground">
-          {artifact.title}
-        </span>
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground @3xl:hidden">
-          <span>{kindLabel}</span>
-          <span>
-            {t(($) => {
-              return $.artifacts.library.created;
-            })}
-            {": "}
-            <ArtifactTimestamp value={artifact.createdAt} />
-          </span>
-        </span>
+      <ArtifactCatalogCover artifact={artifact} videoFallback={false} />
+      <span className="mt-3 block truncate px-1 text-sm font-medium text-foreground">
+        {artifact.title}
       </span>
     </>
+  );
+  return (
+    <article
+      ref={scrollIntoView ? scrollTargetRef : undefined}
+      data-artifact-id={artifact.id}
+      aria-label={artifact.title}
+      data-state={selected ? "selected" : undefined}
+      className="min-w-0 rounded-surface p-1 data-[state=selected]:bg-state-selected"
+    >
+      {artifact.kind === "shared-thread" ? (
+        <a
+          href={`/share/threads/${encodeURIComponent(artifact.sharedThreadId)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={preview.label}
+          data-artifact-open
+          className={controlClassName}
+          onKeyDown={moveArtifactFocus}
+        >
+          {content}
+        </a>
+      ) : (
+        <button
+          type="button"
+          aria-label={preview.label}
+          aria-current={selected ? "true" : undefined}
+          data-artifact-open
+          className={controlClassName}
+          onKeyDown={moveArtifactFocus}
+          onClick={(event) => {
+            preview.open(event.currentTarget);
+          }}
+        >
+          {content}
+        </button>
+      )}
+      <ArtifactSourceChat artifact={artifact} className="mx-1 mt-1.5" />
+      <div className="mt-1 flex min-w-0 items-center gap-2 pl-1">
+        <div className="min-w-0 flex-1 text-xs text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span aria-hidden="true" className="shrink-0">
+              {artifactKindIcon(displayKind, 13)}
+            </span>
+            <span className="truncate">{kindLabel}</span>
+          </span>
+          <span className="mt-1 block truncate">
+            <ArtifactTimestamp value={artifact.createdAt} timezone={timezone} />
+          </span>
+        </div>
+        <ArtifactCatalogRowActions artifact={artifact} />
+      </div>
+    </article>
   );
 }
 
@@ -243,38 +335,40 @@ function ArtifactLibraryRow({
   artifact,
   selected,
   scrollIntoView,
+  timezone,
 }: {
   readonly artifact: CatalogArtifact;
   readonly selected: boolean;
   readonly scrollIntoView: boolean;
+  readonly timezone: string;
 }) {
-  const { t } = useTranslation();
-  const openArtifact = useSet(openArtifact$);
-  const signal = useGet(pageSignal$);
-  const openPreview = () => {
-    detach(
-      openArtifact(artifact.id, signal),
-      Reason.DomCallback,
-      "open library artifact",
-    );
-  };
-  const rememberTrigger = useSet(rememberArtifactCatalogTrigger$);
+  const preview = useArtifactPreview(artifact);
   const scrollTargetRef = useSet(scrollArtifactCardIntoViewRef$);
-  const options = useKindOptions();
-  const kindLabel = options.find((option) => {
-    return option.value === artifact.kind;
-  })!.label;
-  const label = t(
-    ($) => {
-      return $.artifacts.catalog.cardPreview;
-    },
-    { title: artifact.title },
-  );
+  const displayKind = artifactGalleryKind(artifact);
+  const kindLabel = useArtifactKindLabel(displayKind);
   const content = (
-    <ArtifactLibraryName artifact={artifact} kindLabel={kindLabel} />
+    <>
+      <span
+        aria-hidden="true"
+        className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-muted-foreground"
+      >
+        {artifactKindIcon(displayKind, 18)}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-foreground">
+          {artifact.title}
+        </span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground @4xl:hidden">
+          <span>{kindLabel}</span>
+          <span className="@3xl:hidden">
+            <ArtifactTimestamp value={artifact.createdAt} timezone={timezone} />
+          </span>
+        </span>
+      </span>
+    </>
   );
   const controlClassName =
-    "flex min-w-0 w-full items-center gap-3 rounded-sm py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring";
+    "flex min-w-0 w-full items-center gap-3 rounded-sm py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring";
   return (
     <TableRow
       ref={scrollIntoView ? scrollTargetRef : undefined}
@@ -291,50 +385,43 @@ function ArtifactLibraryRow({
         const trigger = event.currentTarget.querySelector<HTMLElement>(
           "[data-artifact-open]",
         );
-        if (artifact.kind === "shared-thread") {
-          trigger?.click();
-          return;
-        }
-        if (trigger) {
-          rememberTrigger(trigger);
-        }
-        openPreview();
+        trigger?.click();
       }}
     >
-      <TableCell className="px-4 py-0">
+      <TableCell className="px-3 py-1">
         {artifact.kind === "shared-thread" ? (
           <a
             href={`/share/threads/${encodeURIComponent(artifact.sharedThreadId)}`}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={label}
+            aria-label={preview.label}
             data-artifact-open
             className={controlClassName}
-            onKeyDown={moveRowFocus}
+            onKeyDown={moveArtifactFocus}
           >
             {content}
           </a>
         ) : (
           <button
             type="button"
-            aria-label={label}
+            aria-label={preview.label}
             aria-current={selected ? "true" : undefined}
             data-artifact-open
             className={controlClassName}
-            onKeyDown={moveRowFocus}
+            onKeyDown={moveArtifactFocus}
             onClick={(event) => {
-              rememberTrigger(event.currentTarget);
-              openPreview();
+              preview.open(event.currentTarget);
             }}
           >
             {content}
           </button>
         )}
+        <ArtifactSourceChat artifact={artifact} className="mb-2 ml-12" />
       </TableCell>
-      <TableCell className="hidden px-4 py-3 text-xs text-muted-foreground @3xl:table-cell">
-        <ArtifactTimestamp value={artifact.createdAt} />
+      <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground @3xl:table-cell">
+        <ArtifactTimestamp value={artifact.createdAt} timezone={timezone} />
       </TableCell>
-      <TableCell className="hidden truncate px-4 py-3 text-xs text-muted-foreground @4xl:table-cell">
+      <TableCell className="hidden truncate px-3 py-3 text-xs text-muted-foreground @4xl:table-cell">
         {kindLabel}
       </TableCell>
       <TableCell
@@ -364,7 +451,7 @@ function ArtifactLibrarySearch({ loading }: { readonly loading: boolean }) {
     );
   };
   return (
-    <div className="relative min-w-40 flex-1 @3xl:max-w-80">
+    <div className="relative min-w-40 flex-1 @3xl:max-w-72">
       <SearchIcon
         aria-hidden="true"
         className={cn(
@@ -406,66 +493,13 @@ function ArtifactLibrarySearch({ loading }: { readonly loading: boolean }) {
   );
 }
 
-function ArtifactLibraryTypeFilter() {
-  const { t } = useTranslation();
-  const kind = useGet(selectedArtifactCatalogKind$);
-  const setKind = useSet(setArtifactCatalogKind$);
-  const kindOptions = useKindOptions();
-  const items = [
-    {
-      value: "all" as const,
-      label: t(($) => {
-        return $.artifacts.library.allTypes;
-      }),
-    },
-    ...kindOptions,
-  ];
-  return (
-    <Select<ArtifactCatalogKind | "all">
-      items={items}
-      value={kind ?? "all"}
-      onValueChange={(value) => {
-        if (value) {
-          setKind(value === "all" ? null : value);
-        }
-      }}
-    >
-      <SelectTrigger
-        variant="neutral"
-        aria-label={t(($) => {
-          return $.artifacts.library.type;
-        })}
-        className="h-9 w-auto min-w-32 max-w-44"
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {items.map((item) => {
-          return (
-            <SelectItem key={item.value} value={item.value}>
-              {item.label}
-            </SelectItem>
-          );
-        })}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function ArtifactLibraryCompactSort() {
+function ArtifactLibrarySort() {
   const { t } = useTranslation();
   const direction = useGet(artifactCatalogDirection$);
   const setDirection = useSet(setArtifactCatalogDirection$);
   const Icon = direction === "asc" ? ArrowUp : ArrowDown;
-  return (
-    <Button
-      type="button"
-      variant="neutral"
-      className="h-9 @3xl:hidden"
-      onClick={() => {
-        setDirection(direction === "asc" ? "desc" : "asc");
-      }}
-    >
+  const content = (
+    <>
       {t(($) => {
         return $.artifacts.library.created;
       })}
@@ -479,92 +513,199 @@ function ArtifactLibraryCompactSort() {
               return $.artifacts.library.sortAscending;
             })}
       </span>
-      <Icon size={16} aria-hidden="true" />
+      <Icon className="size-3.5" aria-hidden="true" />
+    </>
+  );
+  const toggle = () => {
+    setDirection(direction === "asc" ? "desc" : "asc");
+  };
+  return (
+    <Button
+      type="button"
+      variant="neutral"
+      className="shrink-0"
+      onClick={toggle}
+    >
+      {content}
     </Button>
   );
 }
 
-function ArtifactLibraryToolbar({ loading }: { readonly loading: boolean }) {
-  const previewOpen = useGet(artifactCatalogSidebar.open$);
+function ArtifactLibraryViewToggle({ view }: { readonly view: LibraryView }) {
+  const { t } = useTranslation();
+  const setView = useSet(setArtifactLibraryView$);
+  const signal = useGet(pageSignal$);
   return (
-    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 bg-background pb-4 pt-1">
-      <ArtifactLibrarySearch loading={loading} />
-      <ArtifactLibraryTypeFilter />
-      {!previewOpen && <ArtifactLibraryCompactSort />}
+    <ToggleGroup<LibraryView>
+      value={[view]}
+      aria-label={t(($) => {
+        return $.artifacts.library.view;
+      })}
+      className="h-9 shrink-0 gap-1"
+      onValueChange={(values) => {
+        const next = values[0];
+        if (next) {
+          detach(
+            setView(next, signal),
+            Reason.DomCallback,
+            "change artifact library view",
+          );
+        }
+      }}
+    >
+      <Toggle
+        value="grid"
+        variant="filter"
+        className="size-9 p-0"
+        aria-label={t(($) => {
+          return $.artifacts.library.gridView;
+        })}
+      >
+        <LayoutGrid className="size-4" aria-hidden="true" />
+      </Toggle>
+      <Toggle
+        value="list"
+        variant="filter"
+        className="size-9 p-0"
+        aria-label={t(($) => {
+          return $.artifacts.library.listView;
+        })}
+      >
+        <List className="size-4" aria-hidden="true" />
+      </Toggle>
+    </ToggleGroup>
+  );
+}
+
+function ArtifactLibraryToolbar({
+  loading,
+  view,
+}: {
+  readonly loading: boolean;
+  readonly view: LibraryView;
+}) {
+  const { t } = useTranslation();
+  const options = useCategoryOptions();
+  const legacyKind = useGet(selectedArtifactCatalogKind$);
+  const setCategory = useSet(setArtifactCatalogCategory$);
+  return (
+    <div className="sticky top-0 z-10 space-y-5 bg-background pb-4 pt-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="basis-full pb-1 text-xl font-semibold tracking-tight @3xl:basis-auto @3xl:flex-1 @3xl:pb-0">
+          {t(($) => {
+            return $.artifacts.title;
+          })}
+        </h1>
+        <ArtifactLibrarySearch loading={loading} />
+        <ArtifactLibraryViewToggle view={view} />
+        <ArtifactLibrarySort />
+      </div>
+      <div className="min-w-0 overflow-x-auto pb-1">
+        <TabsList
+          aria-label={t(($) => {
+            return $.artifacts.library.type;
+          })}
+          className="h-10 w-max min-w-full justify-start gap-5 rounded-none border-b border-divider bg-transparent p-0"
+        >
+          {options.map((option) => {
+            return (
+              <TabsTrigger
+                key={option.value}
+                value={option.value}
+                className="rounded-none border-b border-transparent px-0 data-active:border-foreground data-active:bg-transparent data-active:shadow-none not-data-active:hover:bg-transparent focus-visible:ring-inset"
+                onClick={() => {
+                  // All also clears a kind filter retained by an older link.
+                  if (option.value === "all" && legacyKind) {
+                    setCategory(null);
+                  }
+                }}
+              >
+                {option.label}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </div>
     </div>
   );
 }
 
 function ArtifactLibraryTable({
   artifacts,
+  selectedId,
   scrollTargetId,
+  timezone,
 }: {
   readonly artifacts: readonly CatalogArtifact[];
+  readonly selectedId: string | null;
   readonly scrollTargetId?: string | null;
+  readonly timezone: string;
 }) {
   const { t } = useTranslation();
-  const open = useGet(artifactCatalogSidebar.open$);
-  const detail = useLastLoadable(artifactCatalogSidebar.detail$);
+  const direction = useGet(artifactCatalogDirection$);
   return (
-    <TooltipProvider delay={300}>
-      <Table className="min-w-0">
-        <colgroup>
-          <col />
-          <col className="hidden w-36 @3xl:table-column" />
-          <col className="hidden w-28 @4xl:table-column" />
-          <col className="w-12" />
-        </colgroup>
-        <TableHeader className="bg-background">
-          <TableRow>
-            <TableHead className="px-4 text-xs text-muted-foreground">
+    <Table className="min-w-0">
+      <colgroup>
+        <col />
+        <col className="hidden w-36 @3xl:table-column" />
+        <col className="hidden w-28 @4xl:table-column" />
+        <col className="w-12" />
+      </colgroup>
+      <TableHeader className="sr-only">
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="px-3 text-xs font-normal text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.library.name;
+            })}
+          </TableHead>
+          <TableHead
+            aria-sort={direction === "asc" ? "ascending" : "descending"}
+            className="hidden px-3 text-xs font-normal text-muted-foreground @3xl:table-cell"
+          >
+            {t(($) => {
+              return $.artifacts.library.created;
+            })}
+          </TableHead>
+          <TableHead className="hidden px-3 text-xs font-normal text-muted-foreground @4xl:table-cell">
+            {t(($) => {
+              return $.artifacts.library.type;
+            })}
+          </TableHead>
+          <TableHead>
+            <span className="sr-only">
               {t(($) => {
-                return $.artifacts.library.name;
+                return $.artifacts.actions.more;
               })}
-            </TableHead>
-            <CreatedSortHeading />
-            <TableHead className="hidden px-4 text-xs text-muted-foreground @4xl:table-cell">
-              {t(($) => {
-                return $.artifacts.library.type;
-              })}
-            </TableHead>
-            <TableHead>
-              <span className="sr-only">
-                {t(($) => {
-                  return $.artifacts.actions.more;
-                })}
-              </span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {artifacts.map((artifact) => {
-            return (
-              <ArtifactLibraryRow
-                key={artifact.id}
-                artifact={artifact}
-                selected={
-                  open &&
-                  detail.state === "hasData" &&
-                  detail.data?.id === artifact.id
-                }
-                scrollIntoView={scrollTargetId === artifact.id}
-              />
-            );
-          })}
-        </TableBody>
-      </Table>
-    </TooltipProvider>
+            </span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {artifacts.map((artifact) => {
+          return (
+            <ArtifactLibraryRow
+              key={artifact.id}
+              artifact={artifact}
+              selected={selectedId === artifact.id}
+              scrollIntoView={scrollTargetId === artifact.id}
+              timezone={timezone}
+            />
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }
 
 function ArtifactLibraryEmpty() {
   const { t } = useTranslation();
+  const category = useGet(selectedArtifactCatalogCategory$);
   const kind = useGet(selectedArtifactCatalogKind$);
   const search = useGet(artifactCatalogSearch$);
-  const setKind = useSet(setArtifactCatalogKind$);
+  const setCategory = useSet(setArtifactCatalogCategory$);
   const setSearch = useSet(setArtifactCatalogSearch$);
   const signal = useGet(pageSignal$);
-  const filtered = Boolean(kind || search);
+  const filtered = Boolean(category || kind || search);
   return (
     <div
       role="status"
@@ -575,11 +716,11 @@ function ArtifactLibraryEmpty() {
         className="mb-2 text-muted-foreground"
         aria-hidden="true"
       />
-      <h3 className="text-sm font-medium">
+      <h2 className="text-sm font-medium">
         {t(($) => {
           return $.artifacts.library.emptyTitle;
         })}
-      </h3>
+      </h2>
       <p className="text-sm text-muted-foreground">
         {filtered
           ? t(($) => {
@@ -594,7 +735,7 @@ function ArtifactLibraryEmpty() {
           variant="neutral"
           className="mt-2"
           onClick={() => {
-            setKind(null);
+            setCategory(null);
             detach(
               setSearch("", signal),
               Reason.DomCallback,
@@ -611,28 +752,86 @@ function ArtifactLibraryEmpty() {
   );
 }
 
+interface ArtifactDateGroup {
+  readonly day: number;
+  readonly date: Date;
+  readonly artifacts: CatalogArtifact[];
+}
+
+function calendarDay(date: Date, formatter: Intl.DateTimeFormat): number {
+  const parts = formatter.formatToParts(date);
+  const component = (type: "year" | "month" | "day") => {
+    return Number(
+      parts.find((part) => {
+        return part.type === type;
+      })!.value,
+    );
+  };
+  // Compare calendar components, not elapsed 24-hour periods across DST.
+  return Date.UTC(component("year"), component("month") - 1, component("day"));
+}
+
+function groupArtifactsByDate(
+  artifacts: readonly CatalogArtifact[],
+  formatter: Intl.DateTimeFormat,
+): ArtifactDateGroup[] {
+  const groups = new Map<number, ArtifactDateGroup>();
+  for (const artifact of artifacts) {
+    const date = new Date(artifact.createdAt);
+    const day = calendarDay(date, formatter);
+    const group = groups.get(day);
+    if (group) {
+      group.artifacts.push(artifact);
+    } else {
+      groups.set(day, { day, date, artifacts: [artifact] });
+    }
+  }
+  return Array.from(groups.values());
+}
+
+function ArtifactLibraryLoading({ view }: { readonly view: LibraryView }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="status"
+      aria-label={t(($) => {
+        return $.artifacts.catalog.loading;
+      })}
+      className={view === "grid" ? LIBRARY_GRID_CLASS_NAME : "space-y-2"}
+    >
+      {Array.from({ length: 6 }, (_, index) => {
+        return view === "grid" ? (
+          <div key={index} className="space-y-3">
+            <Skeleton className="aspect-[16/10] w-full rounded-surface" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        ) : (
+          <Skeleton key={index} className="h-16 w-full" />
+        );
+      })}
+    </div>
+  );
+}
+
 function ArtifactLibraryResults({
   scrollTargetId,
+  view,
 }: {
   readonly scrollTargetId?: string | null;
+  readonly view: LibraryView;
 }) {
   const { t } = useTranslation();
   const catalog = useLastLoadable(artifactCatalog$);
   const reload = useSet(reloadArtifactCatalog$);
+  const open = useGet(artifactCatalogSidebar.open$);
+  const detail = useLastLoadable(artifactCatalogSidebar.detail$);
+  const preferences = useLastResolved(userPreferences$);
+  const timezone =
+    preferences?.timezone ??
+    new Intl.DateTimeFormat().resolvedOptions().timeZone;
   if (catalog.state === "loading") {
-    return (
-      <div
-        role="status"
-        aria-label={t(($) => {
-          return $.artifacts.catalog.loading;
-        })}
-        className="space-y-2"
-      >
-        {Array.from({ length: 6 }, (_, index) => {
-          return <Skeleton key={index} className="h-16 w-full" />;
-        })}
-      </div>
-    );
+    return <ArtifactLibraryLoading view={view} />;
   }
   if (catalog.state === "hasError") {
     return (
@@ -658,13 +857,72 @@ function ArtifactLibraryResults({
       </div>
     );
   }
-  return catalog.data.artifacts.length === 0 ? (
-    <ArtifactLibraryEmpty />
-  ) : (
-    <ArtifactLibraryTable
-      artifacts={catalog.data.artifacts}
-      scrollTargetId={scrollTargetId}
-    />
+  if (catalog.data.artifacts.length === 0) {
+    return <ArtifactLibraryEmpty />;
+  }
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    calendar: "gregory",
+    numberingSystem: "latn",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  });
+  const today = calendarDay(new Date(now()), formatter);
+  const dateLabel = new Intl.DateTimeFormat(resolvedAppLocale(), {
+    timeZone: timezone,
+    dateStyle: "long",
+  });
+  // The catalog already accumulates pages in server order for this query.
+  const groups = groupArtifactsByDate(catalog.data.artifacts, formatter);
+  const selectedId =
+    open && detail.state === "hasData" ? (detail.data?.id ?? null) : null;
+  return (
+    <TooltipProvider delay={300}>
+      <div data-artifact-library-results className="space-y-7">
+        {groups.map((group) => {
+          const label =
+            group.day === today
+              ? t(($) => {
+                  return $.artifacts.library.today;
+                })
+              : group.day === today - 86_400_000
+                ? t(($) => {
+                    return $.artifacts.library.yesterday;
+                  })
+                : dateLabel.format(group.date);
+          return (
+            <section key={group.day} aria-label={label}>
+              <h2 className="mb-3 px-1 text-sm font-medium text-muted-foreground">
+                {label}
+              </h2>
+              {view === "grid" ? (
+                <div className={LIBRARY_GRID_CLASS_NAME}>
+                  {group.artifacts.map((artifact) => {
+                    return (
+                      <ArtifactLibraryCard
+                        key={artifact.id}
+                        artifact={artifact}
+                        selected={selectedId === artifact.id}
+                        scrollIntoView={scrollTargetId === artifact.id}
+                        timezone={timezone}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <ArtifactLibraryTable
+                  artifacts={group.artifacts}
+                  selectedId={selectedId}
+                  scrollTargetId={scrollTargetId}
+                  timezone={timezone}
+                />
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </TooltipProvider>
   );
 }
 
@@ -678,7 +936,7 @@ function ArtifactLibraryPaging() {
     return null;
   }
   return (
-    <div className="flex justify-center pt-4">
+    <div className="flex justify-center pt-6">
       <Button
         variant="neutral"
         disabled={pagingState === "loading"}
@@ -710,7 +968,6 @@ export function ArtifactLibraryPage({
   readonly animateEntry?: boolean;
   readonly scrollTargetId?: string | null;
 }) {
-  const { t } = useTranslation();
   const open = useGet(artifactCatalogSidebar.open$);
   const catalogRequest = useLoadable(artifactCatalog$);
   const catalog = useLastLoadable(artifactCatalog$);
@@ -718,6 +975,10 @@ export function ArtifactLibraryPage({
   const signal = useGet(pageSignal$);
   const pagingState = useGet(artifactCatalogPagingState$);
   const loadMore = useSet(loadMoreArtifactCatalog$);
+  const category = useGet(selectedArtifactCatalogCategory$);
+  const setCategory = useSet(setArtifactCatalogCategory$);
+  const categoryOptions = useCategoryOptions();
+  const view = useLastResolved(artifactLibraryView$) ?? "grid";
   const onScroll = (event: UIEvent<HTMLElement>) => {
     const viewport = event.currentTarget;
     if (
@@ -748,30 +1009,30 @@ export function ArtifactLibraryPage({
         aria-busy={catalogRequest.state === "loading"}
         className="@container min-h-0 flex-1 overflow-y-auto bg-background outline-none"
       >
-        <div className="px-4 pb-8 pt-6 md:px-8 md:pt-8">
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {t(($) => {
-                return $.artifacts.title;
-              })}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t(($) => {
-                return $.artifacts.catalog.description;
-              })}
-            </p>
-          </div>
-          <h2 className="mb-4 inline-block border-b-2 border-foreground pb-2 text-sm font-medium">
-            {t(($) => {
-              return $.artifacts.library.allArtifacts;
-            })}
-          </h2>
+        <Tabs
+          value={category ?? "all"}
+          onValueChange={(value) => {
+            const option = categoryOptions.find((item) => {
+              return item.value === value;
+            });
+            if (option) {
+              setCategory(option.value === "all" ? null : option.value);
+            }
+          }}
+          className="px-4 pb-8 pt-5 md:px-8 md:pt-7"
+        >
           <ArtifactLibraryToolbar
             loading={catalogRequest.state === "loading"}
+            view={view}
           />
-          <ArtifactLibraryResults scrollTargetId={scrollTargetId} />
-          <ArtifactLibraryPaging />
-        </div>
+          <TabsContent value={category ?? "all"}>
+            <ArtifactLibraryResults
+              scrollTargetId={scrollTargetId}
+              view={view}
+            />
+            <ArtifactLibraryPaging />
+          </TabsContent>
+        </Tabs>
         <ArtifactCatalogRowDeleteDialog />
       </main>
     </ChatThreadSidebarShell>

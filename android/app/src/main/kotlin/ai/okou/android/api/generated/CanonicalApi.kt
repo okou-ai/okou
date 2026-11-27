@@ -1091,7 +1091,16 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
     require(
         listOf(
                 (value.keys.all {
-                    it in setOf("limit", "cursor", "kind", "chatThreadId", "keyword", "direction")
+                    it in
+                        setOf(
+                            "limit",
+                            "cursor",
+                            "kind",
+                            "category",
+                            "chatThreadId",
+                            "keyword",
+                            "direction",
+                        )
                 } &&
                     (!value.containsKey("limit") ||
                         value["limit"].let { field ->
@@ -1118,6 +1127,22 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                                         "avatar",
                                         "presentation",
                                         "shared-thread",
+                                    ))
+                        }) &&
+                    (!value.containsKey("category") ||
+                        value["category"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                field.content in
+                                    setOf(
+                                        "document",
+                                        "presentation",
+                                        "website",
+                                        "spreadsheet",
+                                        "image",
+                                        "video",
+                                        "audio",
+                                        "other",
                                     ))
                         }) &&
                     (!value.containsKey("chatThreadId") ||

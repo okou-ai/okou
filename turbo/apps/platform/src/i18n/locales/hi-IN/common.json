@@ -643,20 +643,35 @@
       "video": "वीडियो"
     },
     "library": {
-      "allArtifacts": "सभी आर्टिफ़ैक्ट",
-      "allTypes": "सभी प्रकार",
+      "categories": {
+        "all": "सभी",
+        "audio": "ऑडियो",
+        "document": "दस्तावेज़ और PDF",
+        "image": "चित्र",
+        "other": "अन्य",
+        "presentation": "प्रस्तुतियाँ",
+        "spreadsheet": "स्प्रेडशीट",
+        "video": "वीडियो",
+        "website": "वेबसाइट"
+      },
       "clearFilters": "फ़िल्टर हटाएँ",
       "clearSearch": "खोज साफ़ करें",
       "created": "बनाया गया",
       "emptyDescription": "कोई दूसरा नाम या प्रकार आज़माएँ।",
       "emptyTitle": "कोई आर्टिफ़ैक्ट नहीं मिला",
+      "gridView": "ग्रिड व्यू",
+      "listView": "सूची व्यू",
       "loadMore": "और लोड करें",
       "name": "नाम",
+      "openSourceChat": "मूल चैट खोलें: {{title}}",
       "retry": "फिर से कोशिश करें",
       "search": "आर्टिफ़ैक्ट खोजें",
       "sortAscending": "आरोही क्रम में लगाएँ",
       "sortDescending": "अवरोही क्रम में लगाएँ",
-      "type": "प्रकार"
+      "today": "आज",
+      "type": "प्रकार",
+      "view": "दृश्य",
+      "yesterday": "कल"
     },
     "metadata": {
       "generated": "{{date}} उत्पन्न किया गया",

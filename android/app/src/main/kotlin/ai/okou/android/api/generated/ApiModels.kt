@@ -2804,6 +2804,24 @@ data class ArtifactCatalogArtifactsItemVariant1Thumbnail(
 )
 
 @Serializable
+enum class ArtifactCatalogArtifactsItemVariant1Category {
+    @SerialName("document") DOCUMENT,
+    @SerialName("presentation") PRESENTATION,
+    @SerialName("website") WEBSITE,
+    @SerialName("spreadsheet") SPREADSHEET,
+    @SerialName("image") IMAGE,
+    @SerialName("video") VIDEO,
+    @SerialName("audio") AUDIO,
+    @SerialName("other") OTHER,
+}
+
+@Serializable
+data class ArtifactCatalogArtifactsItemVariant1SourceChatThread(
+    val `id`: String,
+    val `title`: String,
+)
+
+@Serializable
 data class ArtifactCatalogArtifactsItemVariant1(
     val `id`: String,
     val `kind`: ArtifactCatalogArtifactsItemVariant1Kind,
@@ -2815,6 +2833,8 @@ data class ArtifactCatalogArtifactsItemVariant1(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
+    val `category`: ArtifactCatalogArtifactsItemVariant1Category? = null,
+    val `sourceChatThread`: ArtifactCatalogArtifactsItemVariant1SourceChatThread? = null,
 ) : ArtifactCatalogArtifactsItem
 
 @Serializable
@@ -2833,6 +2853,24 @@ data class ArtifactCatalogArtifactsItemVariant2Thumbnail(
 )
 
 @Serializable
+enum class ArtifactCatalogArtifactsItemVariant2Category {
+    @SerialName("document") DOCUMENT,
+    @SerialName("presentation") PRESENTATION,
+    @SerialName("website") WEBSITE,
+    @SerialName("spreadsheet") SPREADSHEET,
+    @SerialName("image") IMAGE,
+    @SerialName("video") VIDEO,
+    @SerialName("audio") AUDIO,
+    @SerialName("other") OTHER,
+}
+
+@Serializable
+data class ArtifactCatalogArtifactsItemVariant2SourceChatThread(
+    val `id`: String,
+    val `title`: String,
+)
+
+@Serializable
 data class ArtifactCatalogArtifactsItemVariant2(
     val `id`: String,
     val `kind`: ArtifactCatalogArtifactsItemVariant2Kind,
@@ -2844,6 +2882,8 @@ data class ArtifactCatalogArtifactsItemVariant2(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
+    val `category`: ArtifactCatalogArtifactsItemVariant2Category? = null,
+    val `sourceChatThread`: ArtifactCatalogArtifactsItemVariant2SourceChatThread? = null,
 ) : ArtifactCatalogArtifactsItem
 
 object ArtifactCatalogArtifactsItemSerializer : KSerializer<ArtifactCatalogArtifactsItem> {
@@ -17816,6 +17856,18 @@ enum class ArtifactCatalogQueryKind {
 }
 
 @Serializable
+enum class ArtifactCatalogQueryCategory {
+    @SerialName("document") DOCUMENT,
+    @SerialName("presentation") PRESENTATION,
+    @SerialName("website") WEBSITE,
+    @SerialName("spreadsheet") SPREADSHEET,
+    @SerialName("image") IMAGE,
+    @SerialName("video") VIDEO,
+    @SerialName("audio") AUDIO,
+    @SerialName("other") OTHER,
+}
+
+@Serializable
 enum class ArtifactCatalogQueryDirection {
     @SerialName("asc") ASC,
     @SerialName("desc") DESC,
@@ -17826,6 +17878,7 @@ data class ArtifactCatalogQuery(
     val `limit`: Long? = null,
     val `cursor`: String? = null,
     val `kind`: ArtifactCatalogQueryKind? = null,
+    val `category`: ArtifactCatalogQueryCategory? = null,
     val `chatThreadId`: String? = null,
     val `keyword`: String? = null,
     val `direction`: ArtifactCatalogQueryDirection? = null,

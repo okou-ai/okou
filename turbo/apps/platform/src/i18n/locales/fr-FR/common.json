@@ -659,20 +659,35 @@
       "video": "Vidéo"
     },
     "library": {
-      "allArtifacts": "Tous les artéfacts",
-      "allTypes": "Tous les types",
+      "categories": {
+        "all": "Tous",
+        "audio": "Audio",
+        "document": "Documents et PDF",
+        "image": "Images",
+        "other": "Autres",
+        "presentation": "Présentations",
+        "spreadsheet": "Feuilles de calcul",
+        "video": "Vidéos",
+        "website": "Sites web"
+      },
       "clearFilters": "Effacer les filtres",
       "clearSearch": "Effacer la recherche",
       "created": "Créé",
       "emptyDescription": "Essayez un autre nom ou type.",
       "emptyTitle": "Aucun artéfact trouvé",
+      "gridView": "Vue en grille",
+      "listView": "Vue en liste",
       "loadMore": "Charger plus",
       "name": "Nom",
+      "openSourceChat": "Ouvrir la conversation d’origine : {{title}}",
       "retry": "Réessayer",
       "search": "Rechercher des artéfacts",
       "sortAscending": "Trier par ordre croissant",
       "sortDescending": "Trier par ordre décroissant",
-      "type": "Type"
+      "today": "Aujourd’hui",
+      "type": "Type",
+      "view": "Affichage",
+      "yesterday": "Hier"
     },
     "metadata": {
       "generated": "Généré le {{date}}",
