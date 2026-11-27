@@ -1,12 +1,34 @@
 import { randomUUID } from "node:crypto";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import { logsListContract } from "@okouai/api-contracts/contracts/logs";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runners";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { testContext, type TestContext } from "../../../__tests__/test-context";
-import { TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE } from "../../../__tests__/test-timeouts";
-import { mockOptionalEnv } from "../../../lib/env";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
+import { setupAppWithRoutes } from "../../../__tests__/test-app";
+import {
+  accept,
+  testContext,
+  type TestContext,
+} from "../../../__tests__/test-context";
+import {
+  TEST_WITH_FOUR_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+  TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
+} from "../../../__tests__/test-timeouts";
+import { env, mockOptionalEnv } from "../../../lib/env";
 import { createDeferredPromise } from "../../utils";
+import { chatEventsRoutes } from "../chat-events";
+import { instructionsRoutes } from "../instructions";
+import { logsRoutes } from "../logs";
+import { onboardingCompleteRoutes } from "../onboarding-complete";
+import { runnersRoutes } from "../runners";
+import { uploadsCompleteRoutes } from "../uploads-complete";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { publicRunOwner } from "./helpers/public-run-owner";
@@ -49,6 +71,116 @@ function capturePublishedBundles(context: TestContext): Map<string, Buffer> {
 
 describe("Published member instructions in direct Runs", () => {
   const context = testContext();
+
+  const chatEventsApi = setupAppWithRoutes({
+    context,
+    routes: chatEventsRoutes,
+  })(chatEventsContract);
+  const instructionsApi = setupAppWithRoutes({
+    context,
+    routes: instructionsRoutes,
+  })(instructionsContract);
+  const uploadsApi = setupAppWithRoutes({
+    context,
+    routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+  })(uploadsContract);
+  const onboardingCompleteApi = setupAppWithRoutes({
+    context,
+    routes: onboardingCompleteRoutes,
+  })(onboardingCompleteContract);
+  const logsApi = setupAppWithRoutes({
+    context,
+    routes: logsRoutes,
+  })(logsListContract);
+  const runnersHeartbeatApi = setupAppWithRoutes({
+    context,
+    routes: runnersRoutes,
+  })(runnersHeartbeatContract);
+
+  beforeAll(async () => {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    await Promise.all([
+      accept(
+        chatEventsApi.send({
+          headers: {},
+          body: {
+            prompt: "warmup",
+            hasTextContent: true,
+            clientEventId: randomUUID(),
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: "warmup" }],
+            },
+          },
+        }),
+        [401],
+      ),
+      accept(
+        instructionsApi.update({
+          headers: {},
+          body: { content: "warmup" },
+        }),
+        [401],
+      ),
+      accept(
+        uploadsApi.prepare({
+          headers: {},
+          body: {
+            filename: "warmup.txt",
+            contentType: "text/plain",
+            size: 16,
+          },
+        }),
+        [401],
+      ),
+      accept(
+        uploadsApi.complete({
+          headers: {},
+          body: { id: randomUUID() },
+        }),
+        [401],
+      ),
+      accept(
+        onboardingCompleteApi.complete({
+          headers: {},
+          body: {},
+        }),
+        [401],
+      ),
+      accept(
+        logsApi.list({
+          headers: {},
+          query: {},
+        }),
+        [401],
+      ),
+      accept(
+        runnersHeartbeatApi.heartbeat({
+          headers: {},
+          body: {
+            runnerId: randomUUID(),
+            group: "vm0/warmup",
+            snapshotGeneration: 1,
+            snapshotSequence: 1,
+            totalVcpu: 1,
+            totalMemoryMb: 1024,
+            maxConcurrent: 1,
+            allocatedVcpu: 0,
+            allocatedMemoryMb: 0,
+            runningCount: 0,
+            admittableProfiles: ["vm0/default"],
+            heldSandboxStates: [],
+            heldHomeStates: [],
+            activeReuseProducers: [],
+            mode: "running",
+          },
+        }),
+        [401],
+      ),
+    ]);
+  });
 
   it(
     "runners-member-instructions-001 keeps each Run's published instruction bytes across later edits",
@@ -180,6 +312,141 @@ describe("Published member instructions in direct Runs", () => {
       ).resolves.toMatchObject({
         status: "running",
       });
+    },
+  );
+
+  it(
+    "runners-member-instructions-003 reuses the sending member's instructions captured before attachment verification",
+    { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+    async () => {
+      const fixture = createChatEventsFixture(context);
+      const bdd = createBddApi(context);
+      const actor = bdd.user();
+
+      const verificationEntered = createDeferredPromise<void>(context.signal);
+      const releaseVerificationDeferred = createDeferredPromise<void>(
+        context.signal,
+      );
+      const releaseVerification = () => {
+        if (!releaseVerificationDeferred.settled()) {
+          releaseVerificationDeferred.resolve();
+        }
+      };
+      onTestFinished(releaseVerification);
+
+      const chatStorage = fixture.chatCallbacks.acceptChatObjectStorage();
+      fixture.api.acceptStorageDownloads();
+      fixture.api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      fixture.chatCallbacks.disableVapid();
+      const objects = capturePublishedBundles(context);
+
+      const runnerGroupPromise = fixture.api.configureRunnerGroup();
+      const owner = publicRunOwner(context, actor);
+
+      const [runnerGroup] = await Promise.all([
+        runnerGroupPromise,
+        owner.run(() => {
+          return bdd.bootstrapLimitedFreeOnboarding(actor);
+        }),
+      ]);
+
+      const instructionsBefore =
+        "Captured member instructions before attachment verification.";
+      const instructionsAfter =
+        "Updated member instructions during attachment verification.";
+
+      const filename = "notes.txt";
+      const [, prepared] = await owner.run(() => {
+        return Promise.all([
+          bdd.updatePersonalInstructions(actor, instructionsBefore),
+          fixture.chat.prepareUpload(actor, {
+            filename,
+            contentType: "text/plain",
+            size: 16,
+          }),
+        ]);
+      });
+
+      const attachmentKey = `private-artifacts/${prepared.id}/${filename}`;
+      // Completing with an object size different from the fixed-size PUT
+      // declaration forces POST /api/chat/events to verify the stored object
+      // via HeadObjectCommand instead of skipping object verification.
+      const completedSize = 24;
+      const privateBucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
+      if (!privateBucket) {
+        throw new Error("Expected R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
+      }
+      chatStorage.addObject({
+        bucket: privateBucket,
+        key: attachmentKey,
+        size: completedSize,
+        contentType: "text/plain",
+      });
+
+      const completed = await owner.run(() => {
+        return fixture.chat.completeUpload(actor, { id: prepared.id });
+      });
+      expect(completed.size).toBe(completedSize);
+
+      const previousSend = context.mocks.s3.send.getMockImplementation();
+      context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+        if (
+          command instanceof HeadObjectCommand &&
+          command.input.Key === attachmentKey &&
+          !verificationEntered.settled()
+        ) {
+          verificationEntered.resolve();
+          await releaseVerificationDeferred.promise;
+        }
+        return previousSend ? await previousSend(command) : {};
+      });
+
+      const sendPromise = owner.run(() => {
+        return fixture.chat.requestSendEvent(
+          actor,
+          {
+            prompt: "Summarize the attached note",
+            clientEventId: randomUUID(),
+            model: null,
+            userMessage: {
+              version: 1,
+              parts: [
+                { type: "text", text: "Summarize the attached note" },
+                {
+                  type: "file",
+                  fileId: completed.id,
+                  filenameSnapshot: completed.filename,
+                  contentType: completed.contentType,
+                },
+              ],
+            },
+          },
+          [201],
+        );
+      });
+
+      await verificationEntered.promise;
+      await owner.run(() => {
+        return bdd.updatePersonalInstructions(actor, instructionsAfter);
+      });
+      releaseVerification();
+
+      const sent = await sendPromise;
+      expect(sent.status).toBe(201);
+
+      const execution =
+        await createRunsApi(context).nextReceivedExecution(runnerGroup);
+      owner.rememberExecution(execution.runId, execution.sandboxToken);
+      const bundleRef = execution.startupInputs.contentBundles.instructions;
+      if (!bundleRef) {
+        throw new Error("Expected Run instructions bundle");
+      }
+
+      const files = readExecutionContentBundle(objects, bundleRef);
+      expect(files.get("instructions.md")?.toString("utf8")).toBe(
+        instructionsBefore,
+      );
     },
   );
 });
