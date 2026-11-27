@@ -3,7 +3,6 @@ package ai.okou.android.chat
 import ai.okou.android.R
 import ai.okou.android.artifacts.InlineArtifactImages
 import ai.okou.android.connectors.ChatConnectorOptions
-import ai.okou.android.connectors.ChatConnectorSavePhase
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.currentWindowSizeDp
@@ -133,12 +132,7 @@ internal fun ChatComposerField(
     val cardShape = RoundedCornerShape(20.dp)
     val label = stringResource(R.string.composer_message)
     val sendLabel = stringResource(R.string.composer_send)
-    val connectorStatus = connectorSave?.let {
-        stringResource(
-            if (it == ChatConnectorSavePhase.Unconfirmed) R.string.chat_connector_check_before_send
-            else it.message(),
-        )
-    }
+    val connectorStatus = connectorSave?.let { stringResource(it.message()) }
     val textStyle =
         MaterialTheme.typography.bodyLarge.copy(
             color = colors.onSurface,
@@ -199,16 +193,6 @@ internal fun ChatComposerField(
             minOf(maximumTextHeight, textSpace).coerceAtLeast(minimumTextHeight)
         ComposerScroll(keepEditorAnchored = { inputFocused && textSpace >= minimumTextHeight }) {
             ComposerFeedback(model, target, state, entry)
-            if (connectorSave == ChatConnectorSavePhase.Unconfirmed) {
-                Text(
-                    stringResource(R.string.chat_connector_check_before_send),
-                    Modifier.fillMaxWidth().padding(bottom = 4.dp).semantics {
-                        liveRegion = LiveRegionMode.Polite
-                    },
-                    color = colors.onSurfaceVariant,
-                    style = connectorFeedbackType(),
-                )
-            }
             Column(
                 Modifier.fillMaxWidth()
                     .testTag("chat_input_card")

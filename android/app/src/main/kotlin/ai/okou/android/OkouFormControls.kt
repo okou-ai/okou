@@ -137,9 +137,17 @@ internal fun OkouActionButton(
     treatment: OkouActionTreatment = OkouActionTreatment.Primary,
     layoutLabels: List<String> = emptyList(),
     retainDisabledFocus: Boolean = false,
+    useMaterialButtonDefaults: Boolean = false,
 ) {
-    val size = modifier.minimumInteractiveComponentSize().heightIn(min = 48.dp)
-    val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    val size =
+        if (useMaterialButtonDefaults) modifier
+        else modifier.minimumInteractiveComponentSize().heightIn(min = 48.dp)
+    val padding =
+        when {
+            !useMaterialButtonDefaults -> PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+            treatment == OkouActionTreatment.Text -> ButtonDefaults.TextButtonContentPadding
+            else -> ButtonDefaults.ContentPadding
+        }
     val style = MaterialTheme.typography.labelLarge
     val text: @Composable () -> Unit = {
         if (layoutLabels.isEmpty()) Text(label, style = style, textAlign = TextAlign.Center)
@@ -211,6 +219,7 @@ internal fun OkouFormActions(
     confirmLayoutLabels: List<String> = emptyList(),
     confirmMinWidth: Dp = 0.dp,
     keepConfirmFocusWhilePending: Boolean = false,
+    useMaterialButtonDefaults: Boolean = false,
 ) {
     FlowRow(
         Modifier.fillMaxWidth().then(modifier),
@@ -222,6 +231,7 @@ internal fun OkouFormActions(
             cancel,
             enabled = cancelEnabled,
             treatment = OkouActionTreatment.Text,
+            useMaterialButtonDefaults = useMaterialButtonDefaults,
         )
         if (confirmLabel != null) {
             OkouActionButton(
@@ -231,6 +241,7 @@ internal fun OkouFormActions(
                 enabled = confirmEnabled,
                 layoutLabels = confirmLayoutLabels,
                 retainDisabledFocus = keepConfirmFocusWhilePending,
+                useMaterialButtonDefaults = useMaterialButtonDefaults,
             )
         }
     }

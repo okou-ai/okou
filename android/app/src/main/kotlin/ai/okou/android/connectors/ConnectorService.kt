@@ -4,8 +4,6 @@ import ai.okou.android.api.ApiClient
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatConnectorAccess
 import ai.okou.android.api.generated.ChatConnectorAccessAccountsItem
-import ai.okou.android.api.generated.ChatConnectorAccessQueryVariant1
-import ai.okou.android.api.generated.ChatConnectorAccessQueryVariant1Kind
 import ai.okou.android.api.generated.ChatConnectorAccessTargetVariant1
 import ai.okou.android.api.generated.ChatConnectorOverrideRequest
 import ai.okou.android.api.generated.ChatConnectorOverrideRequestTargetVariant1
@@ -96,7 +94,6 @@ import ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccountVariant2
 import ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccountVariant2Intent
 import ai.okou.android.api.generated.ConnectorOverviewItem
 import ai.okou.android.api.generated.ConnectorOverviewItemTargetVariant1
-import ai.okou.android.api.generated.chatConnectorAccess
 import ai.okou.android.api.generated.connectorAccount
 import ai.okou.android.api.generated.connectorAccountDefaults
 import ai.okou.android.api.generated.connectorAccountImpact
@@ -268,62 +265,26 @@ class ConnectorService(private val api: ApiClient) {
         )
     }
 
-    internal suspend fun chatAccess(
-        threadId: String,
-        slug: String,
-    ): List<ChatConnectorAccessAccountsItem> =
-        api.read {
-                chatConnectorAccess(
-                    it,
-                    threadId,
-                    ChatConnectorAccessQueryVariant1(
-                        ChatConnectorAccessQueryVariant1Kind.BUILTIN,
-                        slug,
-                    ),
-                )
-            }
-            .accountsFor(slug)
-
     internal suspend fun setChatOverride(
         threadId: String,
         choice: ChatConnectorOverride,
-        canReadBack: () -> Boolean,
-        onChecking: () -> Unit = {},
     ): List<ChatConnectorAccessAccountsItem> =
-        try {
-            api.write {
-                    chatConnectorOverride(
-                        it,
-                        threadId,
-                        choice.connectionId,
-                        ChatConnectorOverrideRequest(
-                            ChatConnectorOverrideRequestTargetVariant1(
-                                ChatConnectorOverrideRequestTargetVariant1Kind.BUILTIN,
-                                choice.slug,
-                            ),
-                            choice.enabled,
+        api.write {
+                chatConnectorOverride(
+                    it,
+                    threadId,
+                    choice.connectionId,
+                    ChatConnectorOverrideRequest(
+                        ChatConnectorOverrideRequestTargetVariant1(
+                            ChatConnectorOverrideRequestTargetVariant1Kind.BUILTIN,
+                            choice.slug,
                         ),
-                    )
-                }
-                .accountsFor(choice.slug)
-                .also { if (!it.confirms(choice)) throw ApiFailure.IncompatibleResponse() }
-        } catch (error: ApiFailure) {
-            val missingReset =
-                choice.enabled == null && error is ApiFailure.Http && error.status == 404
-            if (!missingReset && (error.connectionFailed() || !error.hasUncertainResponse()))
-                throw error
-            if (!canReadBack()) throw error
-
-            if (!missingReset) onChecking()
-            chatAccess(threadId, choice.slug).also { accounts ->
-                // A reset of a removed account is complete when the account is absent from the
-                // chat.
-                val confirmed =
-                    if (missingReset) accounts.none { it.connectionId == choice.connectionId }
-                    else accounts.confirms(choice)
-                if (!confirmed) throw error
+                        choice.enabled,
+                    ),
+                )
             }
-        }
+            .accountsFor(choice.slug)
+            .also { if (!it.confirms(choice)) throw ApiFailure.IncompatibleResponse() }
 
     internal suspend fun inspect(
         connected: Map<String, ConnectedService>,
