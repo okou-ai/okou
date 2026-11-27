@@ -203,7 +203,8 @@ class ScreenshotScenario {
                             check(
                                 actionNode(undo).performAction(AccessibilityNodeInfo.ACTION_FOCUS),
                             )
-                            device.awaitKeyboardFocus(undo)
+                            // UiAutomator limits the selector's depth when matching it as a child.
+                            device.awaitKeyboardFocus(By.copy(undo))
                             ScreenshotCapture.capture("$name-undo.png")
                             check(device.pressKeyCode(KeyEvent.KEYCODE_ENTER))
                             check(inverseStarted.await(10, TimeUnit.SECONDS))
