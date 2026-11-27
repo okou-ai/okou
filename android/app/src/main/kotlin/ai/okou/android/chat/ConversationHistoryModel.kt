@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.continuousRetryDelays
 import ai.okou.android.api.generated.ThreadDetail
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -307,7 +308,7 @@ class ConversationHistoryModel(
                                 // retries. Keep the same initial feedback across that handoff.
                                 initialReadFailed =
                                     state.transcript == null &&
-                                        chatReadRetryAfterMillis(error) == null,
+                                        chatReadRetryDelayMillis(error, 0) == null,
                                 syncProgressDelayMillis = null,
                                 consecutiveReadFailures = 0,
                             ),
@@ -334,11 +335,11 @@ class ConversationHistoryModel(
                 throw cancelled
             } catch (error: Exception) {
                 requireCurrent(ticket)
-                val retryAfter = chatReadRetryAfterMillis(error)
-                if (visit == null || retryAfter == null) throw error
-                failures = (failures + 1).coerceAtMost(chatReadRetryDelays.size)
+                val retryDelay = chatReadRetryDelayMillis(error, failures)
+                if (visit == null || retryDelay == null) throw error
+                failures = (failures + 1).coerceAtMost(continuousRetryDelays.size)
                 publish(mutable.value.copy(consecutiveReadFailures = failures))
-                delay(maxOf(chatReadRetryDelays[failures - 1], retryAfter))
+                delay(retryDelay)
                 requireCurrent(ticket)
                 if (visit == null) throw CancellationException("Conversation visit ended")
             }

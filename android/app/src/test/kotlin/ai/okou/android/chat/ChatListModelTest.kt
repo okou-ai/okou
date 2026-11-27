@@ -5223,14 +5223,22 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
         val service =
             Service().apply {
                 listRead = {
-                    if (++attempts <= 3) throw ApiFailure.Http(503, null, null, null)
+                    when (++attempts) {
+                        1 -> throw ApiFailure.Http(503, null, null, 0)
+                        2 -> throw ApiFailure.Http(503, null, null, 1)
+                        3 -> throw ApiFailure.Http(503, null, null, null)
+                    }
                     page()
                 }
             }
         withCatchUpModel(service) { model ->
             model.refresh()
             runCurrent()
-            advanceTimeBy(6_000)
+            assertEquals(2, attempts)
+            advanceTimeBy(999)
+            runCurrent()
+            assertEquals(2, attempts)
+            advanceTimeBy(1)
             runCurrent()
             assertEquals(3, attempts)
             assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
@@ -5384,7 +5392,8 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
                 statusRead = {
                     if (failing) {
                         attempts.add(testScheduler.currentTime)
-                        if (attempts.size <= 3) throw ApiFailure.Http(503, null, null, null)
+                        if (attempts.size <= 3)
+                            throw ApiFailure.Http(503, null, null, 1L.takeIf { attempts.size == 1 })
                     }
                     refreshedUnread
                 }
@@ -5397,13 +5406,13 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             failing = true
             model.refreshIndicators()
             runCurrent()
-            advanceTimeBy(1_000)
+            advanceTimeBy(500)
             model.selectFilter(ChatListFilter.Archived)
-            advanceTimeBy(3_000)
+            advanceTimeBy(1_500)
             model.selectFilter(ChatListFilter.Unread)
             advanceTimeBy(1_999)
             runCurrent()
-            assertEquals(listOf(start, start + 3_000), attempts)
+            assertEquals(listOf(start, start + 1_000), attempts)
             assertFalse(model.uiState.value.indicatorsRetryProgressVisible)
             advanceTimeBy(1)
             runCurrent()
@@ -5417,7 +5426,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             assertTrue(model.uiState.value.indicatorsRetryProgressVisible)
             advanceTimeBy(1)
             runCurrent()
-            assertEquals(listOf(start, start + 3_000, start + 6_000, start + 12_000), attempts)
+            assertEquals(listOf(start, start + 1_000, start + 4_000, start + 10_000), attempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
             assertFalse(model.uiState.value.indicatorsRetryProgressVisible)
         }

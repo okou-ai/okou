@@ -3,6 +3,7 @@ package ai.okou.android.artifacts
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.ResponseLimitExceeded
 import ai.okou.android.api.finiteReadRetryDelays
+import ai.okou.android.api.retryAfterDelayMillis
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatChanges
 import ai.okou.android.contentReadStaleDelayMillis
@@ -1034,7 +1035,7 @@ internal suspend fun <T> retryArtifactOperation(
 }
 
 internal fun artifactRetryDelayMillis(remainingRetries: Int, retryAfterSeconds: Long?): Long =
-    retryAfterSeconds?.coerceAtMost(Long.MAX_VALUE / 1_000)?.times(1_000)
+    retryAfterDelayMillis(retryAfterSeconds)
         ?: finiteReadRetryDelays[finiteReadRetryDelays.size - remainingRetries]
 
 private fun ArtifactPreviewState.withoutSave(): ArtifactPreviewState =
