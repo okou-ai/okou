@@ -333,7 +333,7 @@ test("connectors-category-filter-001 the open filter orders the whole catalog's 
   const menu = await screen.findByRole("menu");
   discovery.resolve();
   await waitFor(() => {
-    const options = queryAllByRoleFast("menuitem", menu);
+    const options = queryAllByRoleFast("menuitemradio", menu);
     expect(
       options.map((option) => {
         return option.textContent?.trim();

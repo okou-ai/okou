@@ -75,7 +75,7 @@ test("chat-capability-automations-001 the active release schedule identifies bot
   click(await findButton("More actions"));
   click(
     await waitFor(() => {
-      const item = queryAllByRoleFast("menuitem").find((el) => {
+      const item = queryAllByRoleFast("menuitemradio").find((el) => {
         return el.textContent?.trim() === "Automations";
       });
       expect(item).toBeDefined();
@@ -115,7 +115,7 @@ async function openAutomations() {
   click(await findButton("More actions"));
   const menu = await screen.findByRole("menu");
   click(
-    queryAllByRoleFast("menuitem", menu).find((el) => {
+    queryAllByRoleFast("menuitemradio", menu).find((el) => {
       return el.textContent?.trim() === "Automations";
     })!,
   );
@@ -309,7 +309,7 @@ test("chat-capability-workflows-001 editing the audit schedule replaces the five
   click(await findButton("More actions"));
   click(
     await waitFor(() => {
-      const item = queryAllByRoleFast("menuitem").find((el) => {
+      const item = queryAllByRoleFast("menuitemradio").find((el) => {
         return el.textContent?.trim() === "Automations";
       });
       expect(item).toBeDefined();

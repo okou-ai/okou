@@ -72,7 +72,7 @@ async function workspace(width: number) {
   const user = userEvent.setup({ delay: null });
   await user.click(await findFastControl("button", "More actions"));
   const entry = await waitFor(() => {
-    const el = queryAllByRoleFast("menuitem").find((candidate) => {
+    const el = queryAllByRoleFast("menuitemradio").find((candidate) => {
       return candidate.textContent?.includes("Open browser");
     });
     expect(el).toBeDefined();

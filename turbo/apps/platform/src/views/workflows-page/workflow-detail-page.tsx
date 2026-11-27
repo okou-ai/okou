@@ -76,6 +76,7 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuTrigger,
   Input,
   Select,
@@ -2084,23 +2085,15 @@ function WorkflowFileNavigationItems({
       value={selectedFilePath}
       onValueChange={onSelectFile}
     >
-      <DropdownMenuRadioItem
-        value={null}
-        closeOnClick
-        className="data-checked:bg-muted"
-      >
+      <DropdownMenuRadioItem value={null} closeOnClick>
         {i18n.t(($) => {
           return $.workflows.detail.files.instructions;
         })}
+        <DropdownMenuRadioItemIndicator />
       </DropdownMenuRadioItem>
       {files.map((file) => {
         return (
-          <DropdownMenuRadioItem
-            key={file.path}
-            value={file.path}
-            closeOnClick
-            className="data-checked:bg-muted"
-          >
+          <DropdownMenuRadioItem key={file.path} value={file.path} closeOnClick>
             <span className="min-w-0 truncate">{file.path}</span>
             <span className="ml-auto shrink-0 text-xs text-muted-foreground">
               {i18n.t(
@@ -2110,6 +2103,7 @@ function WorkflowFileNavigationItems({
                 { size: file.size },
               )}
             </span>
+            <DropdownMenuRadioItemIndicator className="ml-0" />
           </DropdownMenuRadioItem>
         );
       })}
