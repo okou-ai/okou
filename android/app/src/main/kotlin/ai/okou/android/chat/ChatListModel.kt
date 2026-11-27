@@ -193,6 +193,7 @@ data class ChatListUiState(
     val listPhase: ChatReadPhase = ChatReadPhase.Idle,
     val listReadFailure: ChatListReadFailure? = null,
     val listRetryProgressVisible: Boolean = false,
+    internal val listRefreshFailureOrder: Long? = null,
     val confirmedAt: Long? = null,
     val source: ChatListSource? = null,
     val cacheUnavailable: Boolean = false,
@@ -299,6 +300,9 @@ internal val ChatListUiState.waitingForUnreadIndicators: Boolean
             displayUnreadAt == null &&
             (readIntents.isEmpty() ||
                 threads.none { it.hidden != true && it.muted != true && isUnread(it.id) })
+
+internal val ChatListUiState.hasUsableList: Boolean
+    get() = confirmedAt != null && !waitingForUnreadIndicators
 
 internal fun ChatListUiState.isUnread(threadId: String): Boolean {
     val serverUnreadAt = displayUnreadAt?.get(threadId)
@@ -649,7 +653,7 @@ class ChatListModel(
     fun selectFilter(value: ChatListFilter) {
         val state = mutable.value
         if (!current() || state.filter == value) return
-        mutable.value = state.copy(filter = value)
+        mutable.value = state.copy(filter = value, listRefreshFailureOrder = null)
         if (
             value == ChatListFilter.Unread &&
                 (state.indicators == null ||
@@ -659,6 +663,13 @@ class ChatListModel(
                     } == true)
         ) {
             refreshIndicators()
+        }
+    }
+
+    internal fun dismissListRefreshFailure(order: Long) {
+        val state = mutable.value
+        if (current() && state.listRefreshFailureOrder == order) {
+            mutable.value = state.copy(listRefreshFailureOrder = null)
         }
     }
 
@@ -1778,6 +1789,7 @@ class ChatListModel(
                         else settledListPhase(state),
                     listReadFailure = null,
                     listRetryProgressVisible = false,
+                    listRefreshFailureOrder = null,
                     indicatorsPhase =
                         if (indicatorRefresh == null) state.indicatorsPhase
                         else if (state.indicators != null) ChatReadPhase.Ready
@@ -2019,6 +2031,15 @@ class ChatListModel(
                     failed.copy(
                         listReadFailure = ChatListReadFailure.NeedsRetry,
                         listRetryProgressVisible = false,
+                        listRefreshFailureOrder =
+                            if (
+                                batch.refresh &&
+                                    needsListRead &&
+                                    retryScope === listReadScope &&
+                                    state.hasUsableList
+                            )
+                                nextChatFeedbackOrder()
+                            else state.listRefreshFailureOrder,
                     )
                 } else if (needsListRead && retryScope === listReadScope) {
                     recordListReadFailure(retryAfter)
@@ -2129,6 +2150,7 @@ class ChatListModel(
                 listPhase = ChatReadPhase.Ready,
                 listReadFailure = null,
                 listRetryProgressVisible = false,
+                listRefreshFailureOrder = null,
                 rowUndo = previousState.rowUndo.retainIfUnsettled(),
                 conversationUndo = previousState.conversationUndo.retainIfUnsettled(),
             )

@@ -270,12 +270,14 @@ internal fun WorkspaceChatFeedback(
         !it.rejected && it.projectId != deleteProject?.id
     }
     val batchError = if (showChatList) batchResults.firstOrNull { it.rejected > 0 } else null
+    val refreshError = list.listRefreshFailureOrder.takeIf { showChatList }
     val listUndo = list.rowUndo?.takeIf { showChatList }
     val firstError =
         listOfNotNull(
                 rowError?.feedbackOrder,
                 projectError?.feedbackOrder,
                 batchError?.feedbackOrder,
+                refreshError,
             )
             .minOrNull()
     val rowNotice = listFailures.firstOrNull()
@@ -288,6 +290,16 @@ internal fun WorkspaceChatFeedback(
             ProjectDeleteSnackbar(chats, projectError, list.canDeleteProject, listSnackbar)
         batchError != null && batchError.feedbackOrder == firstError ->
             MarkAllReadSnackbar(chats, batchError, listSnackbar)
+        refreshError != null && refreshError == firstError -> {
+            val message = stringResource(R.string.chat_list_sync_failed)
+            LaunchedEffect(chats, listSnackbar, refreshError, message) {
+                try {
+                    listSnackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                } finally {
+                    chats.dismissListRefreshFailure(refreshError)
+                }
+            }
+        }
         listUndo != null ->
             ChatUndoFeedback(
                 chats,
