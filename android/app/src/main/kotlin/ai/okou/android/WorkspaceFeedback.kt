@@ -87,7 +87,7 @@ private data class ChatFeedbackContent(
 
 private class ChatFeedbackSnackbar(
     val content: State<ChatFeedbackContent>,
-    val onAction: (() -> Unit)? = null,
+    val onAction: ((keyboardFocused: Boolean) -> Unit)? = null,
 ) : SnackbarVisuals {
     override val duration = SnackbarDuration.Indefinite
 
@@ -107,9 +107,11 @@ private fun ChatUndoFeedback(
     undo: ChatRowUndo,
     actionPending: Boolean,
     snackbar: SnackbarHostState,
+    onFocusedUndo: (String) -> Unit,
 ) {
     val message =
         when (undo.phase) {
+            ChatUndoPhase.Applying -> return
             ChatUndoPhase.Offered ->
                 stringResource(
                     when (undo.action) {
@@ -122,12 +124,12 @@ private fun ChatUndoFeedback(
             ChatUndoPhase.Unconfirmed -> stringResource(R.string.chat_undo_unconfirmed)
         }
     val action =
-        when {
-            undo.phase == ChatUndoPhase.Unconfirmed -> stringResource(R.string.chat_refresh)
-            else -> stringResource(R.string.chat_undo)
-        }
+        stringResource(
+            if (undo.phase == ChatUndoPhase.Offered) R.string.chat_undo else R.string.chat_refresh,
+        )
     key(chats, undo.sequence) {
         val currentUndo = rememberUpdatedState(undo)
+        val returnFocus = rememberUpdatedState(onFocusedUndo)
         val content =
             rememberUpdatedState(
                 ChatFeedbackContent(
@@ -140,10 +142,11 @@ private fun ChatUndoFeedback(
         LaunchedEffect(snackbar) {
             snackbar.currentSnackbarData?.dismiss()
             snackbar.showSnackbar(
-                ChatFeedbackSnackbar(content) {
+                ChatFeedbackSnackbar(content) { keyboardFocused ->
                     val current = currentUndo.value
                     if (current.phase == ChatUndoPhase.Unconfirmed) chats.checkRowUndo(current)
-                    else chats.undoRowAction(current)
+                    else if (chats.undoRowAction(current) && keyboardFocused)
+                        returnFocus.value(current.threadId)
                 },
             )
             chats.dismissRowUndo(undo)
@@ -162,6 +165,8 @@ internal fun WorkspaceChatFeedback(
     listSnackbar: SnackbarHostState,
     conversationSnackbar: SnackbarHostState,
     showChatList: Boolean,
+    onFocusedListUndo: (String) -> Unit,
+    onFocusedConversationUndo: () -> Unit,
     provisionalChats: List<ProvisionalChat>,
     visibleConversationId: String?,
     navigationError: ConversationNavigationError?,
@@ -246,12 +251,13 @@ internal fun WorkspaceChatFeedback(
                 )
                 dismissNavigationError(navigationError)
             }
-        conversationUndo != null ->
+        conversationUndo != null && conversationUndo.phase != ChatUndoPhase.Applying ->
             ChatUndoFeedback(
                 chats,
                 conversationUndo,
                 conversationUndo.threadId in list.pendingRowActions,
                 conversationSnackbar,
+                onFocusedUndo = { onFocusedConversationUndo() },
             )
         conversationNotice != null ->
             ChatRowFailureFeedback(chats, list, conversationNotice, conversationSnackbar)
@@ -291,7 +297,7 @@ internal fun WorkspaceChatFeedback(
                 )
                 .minByOrNull { it.first }
         } else null
-    val listUndo = list.rowUndo?.takeIf { showChatList }
+    val listUndo = list.rowUndo?.takeIf { showChatList && it.phase != ChatUndoPhase.Applying }
     val firstError =
         listOfNotNull(
                 rowError?.feedbackOrder,
@@ -327,6 +333,7 @@ internal fun WorkspaceChatFeedback(
                 listUndo,
                 listUndo.threadId in list.pendingRowActions,
                 listSnackbar,
+                onFocusedUndo = onFocusedListUndo,
             )
         rowNotice != null -> ChatRowFailureFeedback(chats, list, rowNotice, listSnackbar)
         projectNotice != null ->
@@ -580,7 +587,7 @@ private fun ChatRowFailureFeedback(
                 snackbar.showSnackbar(
                     ChatFeedbackSnackbar(
                         content,
-                        onAction = check.takeIf { retainOnRefresh },
+                        onAction = if (retainOnRefresh) ({ check() }) else null,
                     ),
                 )
             if (result == SnackbarResult.ActionPerformed) check()
@@ -665,7 +672,9 @@ internal fun WorkspaceFeedbackHost(
                             if (it.hasFocus) focused.value = data
                             else if (focused.value === data) focused.value = null
                         },
-                    )
+                    ) {
+                        focused.value === data && input.inputMode == InputMode.Keyboard
+                    }
                 },
             )
         }
@@ -673,7 +682,11 @@ internal fun WorkspaceFeedbackHost(
 }
 
 @Composable
-private fun FeedbackActions(data: SnackbarData, modifier: Modifier) {
+private fun FeedbackActions(
+    data: SnackbarData,
+    modifier: Modifier,
+    keyboardFocused: () -> Boolean,
+) {
     val visuals = data.visuals
     val action = visuals as? ChatFeedbackSnackbar
     val label = visuals.actionLabel
@@ -687,7 +700,7 @@ private fun FeedbackActions(data: SnackbarData, modifier: Modifier) {
     ) {
         if (label != null) {
             TextButton(
-                onClick = { action?.onAction?.invoke() ?: data.performAction() },
+                onClick = { action?.onAction?.invoke(keyboardFocused()) ?: data.performAction() },
                 modifier =
                     Modifier.weight(1f, fill = false)
                         .sizeIn(minWidth = feedbackTouchTarget, minHeight = feedbackTouchTarget)
