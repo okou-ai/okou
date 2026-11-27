@@ -402,7 +402,10 @@ async fn run(runtime: GuestRuntime) -> i32 {
 fn framework_supports_active_input(framework: env::Framework) -> bool {
     matches!(
         framework,
-        env::Framework::ClaudeCode | env::Framework::Codex | env::Framework::Pi
+        env::Framework::ClaudeCode
+            | env::Framework::Codex
+            | env::Framework::Pi
+            | env::Framework::Antigravity
     )
 }
 

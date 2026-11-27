@@ -1,8 +1,11 @@
-//! Launch the official Antigravity CLI in its signed-in Google account mode.
+//! Launch the official Antigravity CLI in ACP (`agy acp`) mode.
 
+mod acp;
 mod auth;
-mod stream;
-pub(super) use stream::Projection;
+mod backend;
+mod events;
+
+pub(super) use backend::execute_antigravity_acp_for_runtime;
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -10,18 +13,23 @@ use std::path::Path;
 
 use serde_json::json;
 use tempfile::TempDir;
-use tokio::io::AsyncWriteExt;
 
 use super::CliRuntimeConfig;
 use crate::error::AgentError;
 
-const RULE_FILE_BYTES: usize = 24_000;
 const MODEL_ENV: &str = "OKOU_ANTIGRAVITY_MODEL";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ModelSpec {
+    pub(super) family: String,
+    pub(super) effort: String,
+    pub(super) slug: String,
+}
 
 pub(super) struct Launch {
     pub(super) argv: Vec<String>,
-    pub(super) model: String,
-    // Keep the rules and hook alive until the child has exited.
+    pub(super) model: ModelSpec,
+    // Keep the tool-policy hooks directory alive until the child has exited.
     _rules: TempDir,
 }
 
@@ -32,7 +40,7 @@ impl Launch {
             .user_env
             .get("OKOU_REASONING_EFFORT")
             .map(String::as_str);
-        let model = model_slug(family, effort)?;
+        let model = model_spec(family, effort)?;
         if !runtime.resume_session_id.is_empty() {
             return Err(AgentError::Execution(
                 "Antigravity requires an independently verified account and conversation to resume"
@@ -45,54 +53,13 @@ impl Launch {
         let binary = "/usr/local/bin/agy";
         #[cfg(feature = "test-support")]
         let binary = runtime.test_antigravity_cli_path.unwrap_or(binary);
-        let mut argv = vec![
-            binary.to_owned(),
-            "--input-format".into(),
-            "stream-json".into(),
-            "--output-format".into(),
-            "stream-json".into(),
-            "--disable-slash-commands".into(),
-            "--mode".into(),
-            "accept-edits".into(),
-            "--dangerously-skip-permissions".into(),
-            "--settings".into(),
-            settings().to_string(),
-            "--model".into(),
-            model.clone(),
-        ];
+
         write_tool_policy(rules.path(), &runtime.disallowed_tools)?;
-        argv.extend(["--add-dir".into(), rules.path().display().to_string()]);
-        // Each added workspace loads its AGENTS.md as a system rule. Split at
-        // the CLI's per-file cap without changing the user's workspace.
-        let mut text = runtime.append_system_prompt.as_ref();
-        let mut index = 0;
-        while !text.is_empty() {
-            let end = text.floor_char_boundary(text.len().min(RULE_FILE_BYTES));
-            let end = if end < text.len() {
-                text[..end].rfind('\n').map_or(end, |i| i + 1)
-            } else {
-                end
-            };
-            let (chunk, rest) = text.split_at(end);
-            let directory = if index == 0 {
-                rules.path().to_owned()
-            } else {
-                let path = rules.path().join(format!("instructions-{index:04}"));
-                fs::create_dir(&path)?;
-                argv.extend(["--add-dir".into(), path.display().to_string()]);
-                path
-            };
-            fs::write(directory.join("AGENTS.md"), chunk)?;
-            index += 1;
-            text = rest;
-        }
-        // With additional roots agy selects the first workspace path in sorted
-        // order for relative shell commands. The canonical workspace precedes
-        // the isolated rules under /tmp and must remain a writable root.
-        argv.extend([
-            "--add-dir".into(),
-            crate::paths::CANONICAL_WORKING_DIR.into(),
-        ]);
+
+        // `agy acp` reads settings from `~/.gemini/antigravity-cli/settings.json`
+        // rather than a `--settings` CLI flag.
+        auth::write_settings(runtime.home_dir.as_ref(), &settings())?;
+
         // Install the member's personal Google credential (or clear a stale one
         // from a reused sandbox) before agy reads its local credential store.
         let credential = runtime
@@ -101,6 +68,18 @@ impl Launch {
             .map(|raw| auth::AntigravityCredential::parse(raw))
             .transpose()?;
         auth::reconcile_credential(runtime.home_dir.as_ref(), credential.as_ref())?;
+
+        let argv = vec![
+            binary.to_owned(),
+            "acp".into(),
+            "--dangerously-skip-permissions".into(),
+            "--disable-telemetry".into(),
+            "--add-dir".into(),
+            rules.path().display().to_string(),
+            "--add-dir".into(),
+            crate::paths::CANONICAL_WORKING_DIR.into(),
+        ];
+
         Ok(Self {
             argv,
             model,
@@ -116,14 +95,17 @@ impl Launch {
 /// apply.
 fn settings() -> serde_json::Value {
     json!({
-        "modelProvider": "", "useG1Credits": false,
-        "enableTerminalSandbox": false, "toolPermission": "always-proceed",
-        "allowNonWorkspaceAccess": true, "artifactReviewPolicy": "always-proceed"
+        "modelProvider": "",
+        "useG1Credits": false,
+        "enableTerminalSandbox": false,
+        "toolPermission": "always-proceed",
+        "allowNonWorkspaceAccess": true,
+        "artifactReviewPolicy": "always-proceed",
     })
 }
 
-fn model_slug(model: Option<&str>, effort: Option<&str>) -> Result<String, AgentError> {
-    let model = match model {
+fn model_spec(model: Option<&str>, effort: Option<&str>) -> Result<ModelSpec, AgentError> {
+    let family = match model {
         Some(model @ ("gemini-4-carbon" | "gemini-4-neon" | "gemini-4-hydrogen")) => model,
         _ => {
             return Err(AgentError::Execution(
@@ -133,13 +115,17 @@ fn model_slug(model: Option<&str>, effort: Option<&str>) -> Result<String, Agent
     };
     let effort = effort.unwrap_or("medium");
     if !matches!(effort, "low" | "medium" | "high")
-        && !(effort == "xhigh" && model != "gemini-4-carbon")
+        && !(effort == "xhigh" && family != "gemini-4-carbon")
     {
         return Err(AgentError::Execution(
             "Unsupported reasoning effort for the selected Antigravity model".into(),
         ));
     }
-    Ok(format!("{model}-{effort}"))
+    Ok(ModelSpec {
+        family: family.to_owned(),
+        effort: effort.to_owned(),
+        slug: format!("{family}-{effort}"),
+    })
 }
 
 fn write_tool_policy(dir: &Path, disallowed: &str) -> Result<(), AgentError> {
@@ -155,7 +141,6 @@ fn write_tool_policy(dir: &Path, disallowed: &str) -> Result<(), AgentError> {
             "WebSearch" => &["search_web"],
             "WebFetch" => &["read_url_content"],
             "Bash" => &["run_command", "send_command_input"],
-            // --disable-slash-commands prevents the native /loop invocation.
             "Skill(loop)" | "Skill(loop *)" => &[],
             _ => {
                 return Err(AgentError::Execution(
@@ -196,17 +181,6 @@ pub(super) fn configure_env(values: &mut Vec<(String, String)>) {
             )
     });
     values.push(("AGY_CLI_DISABLE_AUTO_UPDATE".into(), "true".into()));
-}
-
-pub(super) async fn write_prompt(
-    mut stdin: tokio::process::ChildStdin,
-    prompt: &str,
-) -> Result<(), AgentError> {
-    let mut line = serde_json::to_vec(&json!({"event":"user","message":{"content":prompt}}))?;
-    line.push(b'\n');
-    stdin.write_all(&line).await?;
-    stdin.shutdown().await?;
-    Ok(())
 }
 
 #[cfg(test)]

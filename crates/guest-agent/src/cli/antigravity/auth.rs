@@ -48,6 +48,7 @@ const CONFIG_REL_DIR: &[&str] = &[".gemini", "antigravity-cli"];
 /// first real sign-in during acceptance; isolated here as the single source of
 /// truth so a correction is a one-line change.
 const CREDENTIAL_FILE: &str = "antigravity-oauth-token";
+const SETTINGS_FILE: &str = "settings.json";
 
 const CONFIG_DIR_MODE: u32 = 0o700;
 
@@ -169,6 +170,26 @@ pub(super) fn reconcile_credential(
         }
         None => remove_credential(&token_path),
     }
+}
+
+/// Write `settings.json` inside `~/.gemini/antigravity-cli` atomically before
+/// launching `agy acp` (which does not accept a `--settings` CLI flag).
+pub(super) fn write_settings(home_dir: &str, settings: &Value) -> Result<(), AgentError> {
+    let config_dir = config_dir(home_dir);
+    prepare_config_dir(&config_dir)?;
+    let settings_path = config_dir.join(SETTINGS_FILE);
+    let bytes = serde_json::to_vec(settings)?;
+    replace_private_atomic(
+        &settings_path,
+        &bytes,
+        PrivateFileReplacementTarget::ReplaceFinalEntry,
+    )
+    .map_err(|error| {
+        AgentError::Execution(format!(
+            "failed to write antigravity settings at {}: {error}",
+            settings_path.display()
+        ))
+    })
 }
 
 #[cfg(test)]
