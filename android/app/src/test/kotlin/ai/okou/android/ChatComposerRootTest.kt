@@ -1436,6 +1436,8 @@ class ChatComposerRootTest {
         awaitConversation {
             history.uiState.value.phase == HistoryPhase.Ready
         }
+        val transcript = compose.onNodeWithTag("conversation").assertIsDisplayed()
+        val readingBounds = transcript.getUnclippedBoundsInRoot()
         val actions = compose.onNodeWithContentDescription("Chat actions")
         actions.performClick()
         compose.onNodeWithText("Archive chat").performClick()
@@ -1477,6 +1479,7 @@ class ChatComposerRootTest {
             .performClick()
         val conversationHost = hasAnyAncestor(hasTestTag("conversation_feedback"))
         compose.onNode(failure and conversationHost).assertIsDisplayed()
+        assertEquals(readingBounds, transcript.getUnclippedBoundsInRoot())
         compose.onNode(undo).assertDoesNotExist()
 
         actions.performClick()
@@ -1494,6 +1497,7 @@ class ChatComposerRootTest {
         compose.mainClock.advanceTimeBy(5_000)
         compose.onNode(secondError).assertDoesNotExist()
         compose.onNode(undo and conversationHost).assertIsDisplayed()
+        assertEquals(readingBounds, transcript.getUnclippedBoundsInRoot())
     }
 
     @Test

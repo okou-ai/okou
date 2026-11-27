@@ -1,7 +1,9 @@
 package ai.okou.android.chat
 
 import ai.okou.android.ContentReadProgress
+import ai.okou.android.ControlFailureSnackbar
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.rememberContentReadSkeleton
@@ -74,6 +76,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -114,9 +117,10 @@ internal fun ConversationRoute(
     historyAvailable: Boolean = true,
     controls: ConversationRunControls? = null,
     stopPlacement: ConversationStopPlacement? = null,
-    paneFeedbackVisible: Boolean = false,
+    feedback: SnackbarHostState? = null,
+    feedbackBottomPadding: Dp = 8.dp,
+    restorePaneFocus: (() -> Unit)? = null,
     queueOpen: Boolean = false,
-    queueFeedback: SnackbarHostState? = null,
     queuePosition: LazyListState? = null,
     dismissQueue: () -> Unit = {},
     codeReading: ConversationCodeReading? = null,
@@ -658,6 +662,13 @@ internal fun ConversationRoute(
         }
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
         val avatarViewport = remember { LayoutBoundsHolder() }
+        val currentFeedback = feedback?.currentSnackbarData
+        val queueFeedback = feedback?.takeIf {
+            queueOpen &&
+                !missing &&
+                (currentFeedback?.visuals as? ControlFailureSnackbar)?.kind == RunControlKind.Revoke
+        }
+        val paneFeedbackVisible = currentFeedback != null && queueFeedback == null
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(
@@ -804,6 +815,7 @@ internal fun ConversationRoute(
                             ),
                     )
                 }
+                // The jump and feedback float over the transcript to preserve its reading viewport.
                 Column(
                     contentWidth.align(Alignment.BottomCenter).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -851,6 +863,25 @@ internal fun ConversationRoute(
                                 },
                             )
                         }
+                    }
+                    if (feedback != null && queueFeedback == null) {
+                        val reportBounds =
+                            if (paneFeedbackVisible && stopPlacement != null) {
+                                DisposableEffect(stopPlacement) {
+                                    onDispose { stopPlacement.reportFeedbackBounds(null) }
+                                }
+                                Modifier.onGloballyPositioned {
+                                    stopPlacement.reportFeedbackBounds(it.boundsInRoot())
+                                }
+                            } else Modifier
+                        WorkspaceFeedbackHost(
+                            feedback,
+                            Modifier.padding(bottom = feedbackBottomPadding)
+                                .testTag("conversation_feedback"),
+                            manageTimeout = false,
+                            surfaceModifier = reportBounds,
+                            restorePaneFocus = restorePaneFocus,
+                        )
                     }
                 }
                 if (positioned && findTarget != null && foundIndex < 0) {
