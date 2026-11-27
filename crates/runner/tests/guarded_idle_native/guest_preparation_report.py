@@ -255,8 +255,8 @@ def validate(directory, contract):
         "promotion_probe_run_id", "promotion_probe_sandbox_id"))
     if len({*identity,history,thread,operation,runner,attempt,attempt_sandbox}) != 8:
         raise ValueError("fixed original promotion probe reused identity")
-    accounting = dict.fromkeys(cleanup.COUNTS,0)|{"registered_operations":2,"uncertain":2,
-        "cleanup_growth_bytes":policy["live_growth_bytes"]+policy["tail_growth_bytes"],"closed":True}
+    accounting = cleanup.zero_accounting(closed=True) | {"registered_operations":2,"uncertain":2,
+        "cleanup_growth_bytes":policy["live_growth_bytes"]+policy["tail_growth_bytes"]}
     exact(owners, {"original_home":home,"promotion_lock_busy":True,"promotion_probe_run_id":attempt,
         "promotion_probe_sandbox_id":attempt_sandbox,"original_capsule_retained":True,"original_session_history_retained":True,
         "original_backing_retained":True,"original_exit_polled_pending":True,"tracker_joined":True,

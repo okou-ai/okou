@@ -202,13 +202,12 @@ def prepare(test):
             "original_exit_polled_pending": True,
             "tracker_joined": True,
             "heartbeat_provider_peer_joined": True,
-            "accounting": dict.fromkeys(cleanup.COUNTS, 0)
+            "accounting": cleanup.zero_accounting(closed=True)
             | {
                 "registered_operations": 2,
                 "uncertain": 2,
                 "cleanup_growth_bytes": test.policy["live_growth_bytes"]
                 + test.policy["tail_growth_bytes"],
-                "closed": True,
             },
             "required_saving_complete": False,
             "cleanup_complete": False,

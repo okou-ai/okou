@@ -217,9 +217,17 @@ test("workflow search restores URL state and preserves both filters and sorting"
   await expectTitles(["Charlie launch"]);
   await fill(input, "outreach");
   await screen.findByText("No matching workflows");
-  click(await findAction("button", "Clear search"));
+  const user = userEvent.setup();
+  await user.click(
+    await findAction(
+      "button",
+      "Clear search",
+      screen.getByRole("group", { name: "Workflows" }),
+    ),
+  );
   await expectTitles(["Charlie launch"]);
   expect(input).toHaveValue("");
+  expect(input).toHaveFocus();
   expect(new URLSearchParams(location.search).get("automation")).toBe(
     "without",
   );
