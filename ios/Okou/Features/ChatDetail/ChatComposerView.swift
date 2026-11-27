@@ -25,10 +25,9 @@ struct ChatComposerView: View {
   var workflowSource: ComposerWorkflowSource?
 
   var sendTransition: ConversationSendTransition?
-  /// Writes a direction for a For you card rather than a chat message. The card stands above
-  /// the input as its context, so the input stays open; the card's own files are not the
-  /// member's content; and the page sets the input's width.
-  var writesDirection = false
+  /// A For you card owns its expanded input and decides whether to fold it away when the
+  /// keyboard closes. Its own files are context, and the page sets the input's width.
+  var directionKeyboardDismissed: (() -> Void)?
   var placeholder = ""
   var recommendedFollowup: String?
   var showsTrailingFeedbackInput = false
@@ -71,7 +70,7 @@ private struct ChatComposerContent: View {
   private var mentionSource: ComposerMentionSource? { configuration.mentionSource }
   private var workflowSource: ComposerWorkflowSource? { configuration.workflowSource }
   private var sendTransition: ConversationSendTransition? { configuration.sendTransition }
-  private var writesDirection: Bool { configuration.writesDirection }
+  private var writesDirection: Bool { configuration.directionKeyboardDismissed != nil }
   private var showsTrailingFeedbackInput: Bool { configuration.showsTrailingFeedbackInput }
   private var project: ChatProject? { configuration.project }
   private var removeProject: (() -> Void)? { configuration.removeProject }
@@ -153,6 +152,10 @@ private struct ChatComposerContent: View {
     if voiceActive { return hasContent && !current.containsOnlyFinishingRecording }
     return writesDirection || showsEditingLayout || hasText || hasMultipleVoiceParts
       || current.draft.document.hasFeedback || showsModels
+  }
+  private var presentsTool: Bool {
+    showsAddSheet || pendingAdd != nil || showsModels || showsConnectors || showsPhotos
+      || showsFiles || showsCamera || showsScanner
   }
   private var showsStop: Bool { canStop && !hasContent }
   private var voiceActive: Bool {
@@ -327,6 +330,20 @@ private struct ChatComposerContent: View {
     .padding(.top, OkouSpace.sm)
     .padding(.bottom, showsEditingLayout ? OkouSpace.sm : OkouSpace.six)
     .fixedSize(horizontal: false, vertical: true)
+    .background {
+      // A picker temporarily hides the keyboard. Only the uncovered direction editor owns
+      // dismissal, and only after an interactive hide has actually finished.
+      if let didDismiss = configuration.directionKeyboardDismissed, !presentsTool {
+        Color.clear.onReceive(
+          NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)
+        ) { notification in
+          guard scenePhase == .active,
+            notification.userInfo?[UIResponder.keyboardIsLocalUserInfoKey] as? Bool != false
+          else { return }
+          didDismiss()
+        }
+      }
+    }
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)
     .sensoryFeedback(.error, trigger: error) { _, new in new != nil }

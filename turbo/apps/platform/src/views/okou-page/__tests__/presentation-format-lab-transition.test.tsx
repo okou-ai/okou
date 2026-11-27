@@ -83,11 +83,7 @@ function expectPressed(
 }
 
 function formatSwitch() {
-  const row = screen.getByText("Presentation output format").closest("li");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Presentation output format Lab row not found");
-  }
-  return within(row).getByRole("switch");
+  return screen.getByRole("switch", { name: formatKey });
 }
 
 function homeLink() {

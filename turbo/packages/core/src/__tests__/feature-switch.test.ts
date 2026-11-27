@@ -446,7 +446,8 @@ describe("getFeatureSwitchMetadata", () => {
     const metadata = getFeatureSwitchMetadata();
     for (const key of Object.values(FeatureSwitchKey)) {
       expect(metadata[key]?.maintainer).toMatch(/@okou\.ai$/u);
-      expect(metadata[key]?.description).toEqual(expect.any(String));
+      expect(key).toMatch(/^[a-zA-Z0-9_]+$/u);
+      expect(metadata[key]?.description).toMatch(/\S/u);
       expect(metadata[key]?.rolloutStage).toMatch(
         /^(released|beta|alpha|internal)$/u,
       );

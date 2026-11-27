@@ -5871,7 +5871,6 @@
         "internal": "Internal",
         "released": "Released"
       },
-      "maintainer": "Maintainer: {{maintainer}}",
       "title": "Lab"
     },
     "models": {
