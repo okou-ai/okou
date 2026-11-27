@@ -721,7 +721,10 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         assertNull(model.state.value.detail)
         assertEquals(WorkflowReadFailure.Unavailable, model.state.value.detailFailure)
     }
+}
 
+@OptIn(ExperimentalCoroutinesApi::class)
+internal class WorkflowWriteModelTest : WorkflowModelTestFixture() {
     @Test
     fun successfulSaveRestartsCatalogWithoutRestartingAnIndependentConnectionRead() =
         check { service, model ->
@@ -824,6 +827,38 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             assertEquals(CanonicalOptional.Present(""), sent.instruction)
             assertNull(model.state.value.editor)
         }
+
+    @Test
+    fun instructionSaveKeepsTheConfirmedNameWhenTheCommandWasPrefilled() = check { service, model ->
+        service.detail = service.detail.copy(displayName = "   ")
+        service.catalogRead = {
+            listOf(service.summary.copy(displayName = service.detail.displayName))
+        }
+        model.select(service.summary.id)
+        model.visibilityChanged(true)
+        runCurrent()
+        model.edit(checkNotNull(model.state.value.detail).editableInstructions())
+
+        val editing = model.state.value.editing as WorkflowEditSession.Instructions
+        val instructions = "Review the final launch assets."
+        editing.instruction.edit { replace(0, length, instructions) }
+        val confirmedTitle = "Release review from another device"
+        service.detail = service.detail.copy(displayName = confirmedTitle)
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
+        runCurrent()
+
+        val draft = model.state.value.editor as WorkflowEdit.Instructions
+        assertEquals(confirmedTitle, draft.original.title)
+        assertEquals(service.summary.name, editing.title.text.toString())
+        model.save(draft)
+        runCurrent()
+
+        val sent = service.workflowUpdates.single()
+        assertEquals(CanonicalOptional.Absent, sent.displayName)
+        assertEquals(CanonicalOptional.Present(instructions), sent.instruction)
+        assertEquals(confirmedTitle, model.state.value.detail?.displayName)
+    }
 
     @Test
     fun workflowEditFromThePreviousFrameUsesTheLatestConfirmedValue() = check { service, model ->

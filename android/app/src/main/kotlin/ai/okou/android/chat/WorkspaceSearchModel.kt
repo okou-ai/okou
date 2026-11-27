@@ -7,6 +7,7 @@ import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.workflows.WorkflowReadFailure
 import ai.okou.android.workflows.WorkflowState
+import ai.okou.android.workflows.workflowDisplayTitle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.IOException
@@ -57,7 +58,7 @@ data class SearchWorkflowHit(
     val canUse: Boolean,
 ) {
     internal val title
-        get() = displayName?.takeIf(String::isNotBlank) ?: name
+        get() = workflowDisplayTitle(name, displayName)
 
     internal fun matches(keyword: String) =
         title.contains(keyword, ignoreCase = true) ||
