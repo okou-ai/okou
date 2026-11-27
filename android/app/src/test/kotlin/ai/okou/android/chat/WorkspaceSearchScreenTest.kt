@@ -42,6 +42,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
@@ -148,9 +149,71 @@ class WorkspaceSearchScreenTest {
             }
         }
 
+        assertVisibleExcerptMatch(keyword)
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun workflowPurposeMatchStaysVisibleInAllAndWorkflowsAtLargeFontScale() {
+        val keyword = "发布排期图"
+        val search = ChatSearchState(TextFieldValue(keyword))
+        val lateMatch =
+            SearchWorkflowHit(
+                id = "release-review",
+                name = "release-review",
+                displayName = "上线复核",
+                description = "背景".repeat(30) + keyword + "已更新",
+                canUse = true,
+            )
+        val ordinaryPurpose = "汇总上线待办"
+        val titleMatch =
+            SearchWorkflowHit(
+                id = "release-plan",
+                name = "release-plan",
+                displayName = keyword,
+                description = ordinaryPurpose,
+                canUse = true,
+            )
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalDensity provides Density(LocalDensity.current.density, 2f),
+            ) {
+                OkouTheme(false) {
+                    Box(Modifier.width(288.dp)) {
+                        WorkspaceSearchScreen(
+                            state = ChatListUiState(confirmedAt = 1),
+                            search = search,
+                            widthDp = 288,
+                            listWidth = null,
+                            focusOnEntry = false,
+                            onFocused = {},
+                            onClose = {},
+                            onOpen = {},
+                            workflowResults = SearchRead.Ready(listOf(lateMatch, titleMatch)),
+                            onOpenWorkflow = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        assertVisibleExcerptMatch(keyword, contains = "已更新")
+        compose.onNodeWithText(ordinaryPurpose, useUnmergedTree = true).assertIsDisplayed()
+
+        compose
+            .onNodeWithTag("search_type_Workflows")
+            .performScrollTo()
+            .performClick()
+            .assertIsSelected()
+        compose.onNodeWithTag("chat_search_query").assertTextContains(keyword)
+        assertVisibleExcerptMatch(keyword, contains = "已更新")
+        compose.onNodeWithText(ordinaryPurpose, useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    private fun assertVisibleExcerptMatch(keyword: String, contains: String = keyword) {
         val excerpt =
             compose.onNode(
-                hasText(keyword, substring = true) and
+                hasText(contains, substring = true) and
                     hasAnyAncestor(hasTestTag("chat_search_results")),
                 useUnmergedTree = true,
             )
@@ -161,7 +224,10 @@ class WorkspaceSearchScreenTest {
         val match = text.text.indexOf(keyword)
         assertTrue(layout.lineCount in 1..2)
         assertTrue(
-            match + keyword.length <= layout.getLineEnd(layout.lineCount - 1, visibleEnd = true),
+            "Expected the keyword in the visible excerpt",
+            match >= 0 &&
+                match + keyword.length <=
+                    layout.getLineEnd(layout.lineCount - 1, visibleEnd = true),
         )
         assertEquals(13.sp, layout.layoutInput.style.fontSize)
         assertEquals(20.sp, layout.layoutInput.style.lineHeight)
