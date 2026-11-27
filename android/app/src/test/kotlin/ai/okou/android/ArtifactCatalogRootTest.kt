@@ -961,10 +961,18 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             compose
                 .onNodeWithText(fixture.checklist.title, useUnmergedTree = true)
                 .getUnclippedBoundsInRoot()
-        val nextDay = compose.onNodeWithText("Yesterday").getUnclippedBoundsInRoot()
+        val today = compose.onNodeWithText("Today").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val nextDay =
+            compose.onNodeWithText("Yesterday").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val earlier =
+            compose.onNodeWithText("Earlier").assertIsDisplayed().getUnclippedBoundsInRoot()
         assertTrue(first.height >= 80.dp)
         assertEquals(8.dp, title.top - first.top)
-        assertEquals(16.dp, nextDay.top - first.bottom)
+        assertEquals(4.dp, first.top - today.bottom)
+        assertEquals(8.dp, nextDay.top - first.bottom)
+        assertEquals(first.left, today.left)
+        assertEquals(first.left, nextDay.left)
+        assertEquals(first.left, earlier.left)
     }
 
     @Test
@@ -1019,11 +1027,9 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             firstPage.countDown()
         }
         awaitText(fixture.summary.title)
-        val gutter = compose.onNodeWithTag("artifact_list").getUnclippedBoundsInRoot().left + 16.dp
-        for (label in listOf("Today", "Yesterday", "Earlier")) {
-            val heading = compose.onNodeWithText(label).assertIsDisplayed()
-            assertEquals(gutter, heading.getUnclippedBoundsInRoot().left)
-        }
+        compose.onNodeWithText("Today").assertIsDisplayed()
+        compose.onNodeWithText("Yesterday").assertIsDisplayed()
+        compose.onNodeWithText("Earlier").assertIsDisplayed()
         compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(80.dp)
         compose.onNodeWithTag("artifact_query").performTextReplacement("Product launch")
         awaitText(fixture.summary.title)
