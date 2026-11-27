@@ -134,6 +134,4 @@
     <string name="connector_access_allow_hour">1 घंटे के लिए अनुमति दें</string>
     <string name="connector_access_allow_day">24 घंटे के लिए अनुमति दें</string>
     <string name="connector_access_allow_week">7 दिनों के लिए अनुमति दें</string>
-    <string name="chat_connector_check_result">नतीजा देखें</string>
-    <string name="chat_connector_check_before_send">भेजने से पहले, चैट विकल्पों में कनेक्टर का चयन जाँचें।</string>
 </resources>

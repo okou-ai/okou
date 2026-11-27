@@ -130,6 +130,4 @@
     <string name="connector_access_allow_hour">Izinkan selama 1 jam</string>
     <string name="connector_access_allow_day">Izinkan selama 24 jam</string>
     <string name="connector_access_allow_week">Izinkan selama 7 hari</string>
-    <string name="chat_connector_check_result">Periksa hasil</string>
-    <string name="chat_connector_check_before_send">Periksa pilihan konektor di opsi chat sebelum mengirim.</string>
 </resources>

@@ -2,6 +2,7 @@ package ai.okou.android.connectors
 
 import ai.okou.android.api.ApiClient
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.boundedRetryDelayMillis
 import ai.okou.android.api.generated.ChatConnectorAccess
 import ai.okou.android.api.generated.ChatConnectorAccessAccountsItem
 import ai.okou.android.api.generated.ChatConnectorAccessQueryVariant1
@@ -103,11 +104,13 @@ import ai.okou.android.api.generated.connectorAccountImpact
 import ai.okou.android.api.generated.connectorAccountPolicies
 import ai.okou.android.api.generated.connectorAccounts
 import ai.okou.android.api.generated.connectorOauthCompletion
+import ai.okou.android.api.isTransientApiFailure
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -268,7 +271,7 @@ class ConnectorService(private val api: ApiClient) {
         )
     }
 
-    internal suspend fun chatAccess(
+    private suspend fun chatAccess(
         threadId: String,
         slug: String,
     ): List<ChatConnectorAccessAccountsItem> =
@@ -289,6 +292,7 @@ class ConnectorService(private val api: ApiClient) {
         choice: ChatConnectorOverride,
         canReadBack: () -> Boolean,
         onChecking: () -> Unit = {},
+        onUnconfirmedReadback: (List<ChatConnectorAccessAccountsItem>) -> Unit = {},
     ): List<ChatConnectorAccessAccountsItem> =
         try {
             api.write {
@@ -314,16 +318,45 @@ class ConnectorService(private val api: ApiClient) {
                 throw error
             if (!canReadBack()) throw error
 
-            if (!missingReset) onChecking()
-            chatAccess(threadId, choice.slug).also { accounts ->
-                // A reset of a removed account is complete when the account is absent from the
-                // chat.
-                val confirmed =
-                    if (missingReset) accounts.none { it.connectionId == choice.connectionId }
-                    else accounts.confirms(choice)
-                if (!confirmed) throw error
-            }
+            onChecking()
+            verifyChatOverride(threadId, choice, error, canReadBack, onUnconfirmedReadback)
         }
+
+    private suspend fun verifyChatOverride(
+        threadId: String,
+        choice: ChatConnectorOverride,
+        writeFailure: ApiFailure,
+        canReadBack: () -> Boolean,
+        onUnconfirmedReadback: (List<ChatConnectorAccessAccountsItem>) -> Unit,
+    ): List<ChatConnectorAccessAccountsItem> {
+        var latest: List<ChatConnectorAccessAccountsItem>? = null
+        var readFailure: ApiFailure? = null
+        var retries = 0
+        while (canReadBack()) {
+            val accounts =
+                try {
+                    chatAccess(threadId, choice.slug)
+                } catch (error: ApiFailure) {
+                    if (!error.isTransientApiFailure()) throw error
+                    readFailure = error
+                    null
+                }
+            if (accounts != null) {
+                val account = accounts.firstOrNull { it.connectionId == choice.connectionId }
+                if (account?.overrideEnabled == choice.enabled) return accounts
+                if (account == null) {
+                    onUnconfirmedReadback(accounts)
+                    throw writeFailure
+                }
+                latest = accounts
+                readFailure = null
+            }
+            val wait = boundedRetryDelayMillis(retries++, readFailure) ?: break
+            delay(wait)
+        }
+        if (latest != null) onUnconfirmedReadback(latest)
+        throw (readFailure ?: writeFailure)
+    }
 
     internal suspend fun inspect(
         connected: Map<String, ConnectedService>,

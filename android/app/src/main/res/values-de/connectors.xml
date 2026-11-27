@@ -134,6 +134,4 @@
     <string name="connector_access_allow_hour">1 Stunde zulassen</string>
     <string name="connector_access_allow_day">24 Stunden zulassen</string>
     <string name="connector_access_allow_week">7 Tage zulassen</string>
-    <string name="chat_connector_check_result">Ergebnis prüfen</string>
-    <string name="chat_connector_check_before_send">Prüfe vor dem Senden die Connector-Auswahl in den Chat-Optionen.</string>
 </resources>
