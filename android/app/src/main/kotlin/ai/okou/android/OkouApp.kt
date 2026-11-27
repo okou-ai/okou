@@ -954,6 +954,9 @@ internal fun OkouApp(
         }
     val activeComposerKey =
         (target as? WorkspaceTarget.Chat)?.let { "thread:${it.id}" } ?: newTarget?.key
+    LaunchedEffect(connectors, activeComposerKey) {
+        connectors?.chatOptions?.activate(activeComposerKey)
+    }
     LaunchedEffect(chatConnectorVisit, activeComposerKey, workspaceReady) {
         if (
             workspaceReady &&

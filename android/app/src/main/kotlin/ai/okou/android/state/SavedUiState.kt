@@ -176,6 +176,7 @@ internal enum class ComposerOptionsPage {
     Closed,
     Options,
     Connectors,
+    ConnectorAccounts,
     Model,
 }
 
@@ -184,6 +185,7 @@ internal data class ComposerOptionsPresentation(
     val restoreEditor: Boolean = false,
     val restoreKeyboard: Boolean = false,
     val returnAccount: String? = null,
+    val connectorSlug: String? = null,
 )
 
 @Composable
@@ -198,6 +200,7 @@ internal fun rememberComposerOptions(targetKey: String): MutableState<ComposerOp
                         value.restoreEditor,
                         value.restoreKeyboard,
                         value.returnAccount ?: "-",
+                        value.connectorSlug.orEmpty(),
                     )
                 },
                 restore = { values ->
@@ -206,6 +209,7 @@ internal fun rememberComposerOptions(targetKey: String): MutableState<ComposerOp
                         values[1] as Boolean,
                         values[2] as Boolean,
                         (values[3] as String).takeIf { it != "-" },
+                        (values.getOrNull(4) as? String)?.takeIf { it.isNotEmpty() },
                     )
                 },
             ),

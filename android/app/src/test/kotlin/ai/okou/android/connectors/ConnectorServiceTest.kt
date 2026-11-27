@@ -36,15 +36,16 @@ class ConnectorServiceTest {
 
             val accounts = service.accounts(CONNECTOR_CALENDAR)
             assertEquals(saved, accounts.first { it.id == CONNECTOR_CALENDAR_SECONDARY }.policy)
-            val chatAccounts = service.chatAccounts(null)
-            val group = chatAccounts.groups.single { it.entry.slug == CONNECTOR_CALENDAR }
+            val summary = service.chatOverview(null).single { it.entry.slug == CONNECTOR_CALENDAR }
+            val chatAccounts = service.chatAccounts(summary)
             assertTrue(chatAccounts.memberAccess)
             assertEquals(
+                setOf(CONNECTOR_CALENDAR_PRIMARY, CONNECTOR_CALENDAR_SECONDARY),
+                chatAccounts.accounts.map { it.account.id }.toSet(),
+            )
+            assertEquals(
                 saved,
-                group.accounts
-                    .first { it.account.id == CONNECTOR_CALENDAR_SECONDARY }
-                    .account
-                    .policy,
+                service.accountPolicies(CONNECTOR_CALENDAR)[CONNECTOR_CALENDAR_SECONDARY],
             )
             assertTrue(fixture.chatOverrideRequests.isEmpty())
 

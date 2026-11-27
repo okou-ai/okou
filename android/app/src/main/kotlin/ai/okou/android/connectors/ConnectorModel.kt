@@ -1185,6 +1185,7 @@ class ConnectorModel(
     private fun complete(target: ConnectorAccountTarget, result: ConnectorResult?) {
         authorizationDeadline = null
         verificationFailures = 0
+        chatOptions.invalidate(target.slug)
         mutableState.update { it.copy(action = ConnectorAction(target, result = result)) }
     }
 

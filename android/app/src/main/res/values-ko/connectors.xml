@@ -108,14 +108,16 @@
     <string name="chat_connector_scope">이 채팅에 적용됩니다. 처음에는 워크스페이스의 기본 계정이 사용됩니다.</string>
     <string name="chat_connector_empty">이 워크스페이스에 연결된 계정이 없습니다.</string>
     <string name="chat_connector_manage">커넥터 관리</string>
-    <string name="chat_connector_restore_defaults">워크스페이스 기본값 복원</string>
+    <string name="chat_connector_restore_defaults">모든 커넥터 기본값 복원</string>
+    <string name="chat_connector_policy_remaining">%1$s 남음</string>
+    <string name="chat_connector_policies_failed">액세스 정책을 불러올 수 없습니다.</string>
     <string name="chat_connector_saving">커넥터 선택 저장 중…</string>
     <string name="chat_connector_save_failed">커넥터 선택을 저장하지 못했습니다.</string>
     <string name="chat_connector_first_send_failed">커넥터 선택을 적용하지 못했습니다. 채팅 옵션에서 확인한 후 이 메시지를 다시 보내세요.</string>
     <string name="connector_device_denied">서비스 제공업체가 인증을 거부했습니다.</string>
     <string name="connector_device_expired">기기 코드가 만료되었습니다. 인증을 다시 시작하세요.</string>
     <string name="connector_device_failed">기기 인증을 완료하지 못했습니다.</string>
-    <string name="connector_access_scope">모든 채팅에 적용됩니다.</string>
+    <string name="connector_access_scope">액세스 정책은 이 워크스페이스의 모든 채팅에 적용됩니다.</string>
     <string name="connector_access_label">%1$s 접근 권한, %2$s</string>
     <string name="connector_access_allow">허용</string>
     <string name="connector_access_deny">거부</string>
@@ -128,4 +130,6 @@
     <string name="connector_access_allow_hour">1시간 동안 허용</string>
     <string name="connector_access_allow_day">24시간 동안 허용</string>
     <string name="connector_access_allow_week">7일 동안 허용</string>
+    <string name="chat_connector_check_result">결과 확인</string>
+    <string name="chat_connector_check_before_send">보내기 전에 채팅 옵션에서 커넥터 선택을 확인하세요.</string>
 </resources>
