@@ -403,18 +403,48 @@ class MemberPreferencesModelTest {
                 }
             }
         check(service) { model, api, _ ->
+            val reads = mutableListOf<Long>()
+            api.load = {
+                reads += currentTime
+                if (reads.size == 1) throw ApiFailure.Http(429, null, null, 1L)
+                api.stored
+            }
             model.selectColorTheme(UserPreferencesColorTheme.DEEP_LAGOON)
             runCurrent()
             assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
-            model.retry()
+            advanceTimeBy(3_000)
             runCurrent()
+            assertEquals(listOf(3_000L), reads)
+            val enabled = !api.stored.cloudBrowserEnabledByDefault
+            api.write = { request ->
+                api.stored
+                    .copy(
+                        cloudBrowserEnabledByDefault =
+                            checkNotNull(request.cloudBrowserEnabledByDefault),
+                    )
+                    .also { api.stored = it }
+            }
+            advanceTimeBy(400)
+            model.setCloudBrowser(enabled)
+            model.retry()
+            advanceTimeBy(599)
+            runCurrent()
+            assertEquals(listOf(3_000L), reads)
+            assertEquals(1, api.requests.size)
+            assertEquals(enabled, model.uiState.value.cloudBrowser)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(3_000L, 4_000L), reads)
             assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
             assertEquals(
                 UserPreferencesColorTheme.DEEP_LAGOON,
                 model.uiState.value.confirmed.colorTheme,
             )
             assertNull(model.uiState.value.pending)
-            assertEquals(1, api.requests.size)
+            assertEquals(2, api.requests.size)
+            assertNull(api.requests.last().colorTheme)
+            assertEquals(enabled, model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
             api.write = { throw IOException("offline") }
             model.selectLocale(UserPreferencesLocale.JA_JP)
             runCurrent()

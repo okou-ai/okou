@@ -276,8 +276,10 @@ internal class DefaultModelSettings(
                 patch,
             )
         clearSaveFailure()
-        mutable.value = current.copy(save = DefaultModelSave(request))
-        saveWait?.cancel()
+        val verifying = current.save?.takeIf { unconfirmedWrite != null && !readbackBlocked }
+        mutable.value =
+            current.copy(save = verifying?.copy(request = request) ?: DefaultModelSave(request))
+        if (verifying == null) saveWait?.cancel()
         resumeReadback()
     }
 
@@ -496,7 +498,7 @@ internal class DefaultModelSettings(
         if (fulfilled) clearSaveFailure()
         publishConfirmed(
             checkNotNull(current.record).confirm(request, response),
-            save = latest.takeUnless { fulfilled },
+            save = if (fulfilled) null else DefaultModelSave(latest.request),
         )
     }
 
@@ -535,22 +537,26 @@ internal class DefaultModelSettings(
         val undelivered = !readback && error is ApiFailure.Network && error.connectionFailed
         if (rejected || undelivered) unconfirmedWrite = null
         val current = mutable.value
-        if (current.save !== save) return
+        val latest = current.save ?: return
+        if ((rejected || undelivered) && latest !== save) {
+            mutable.value = current.copy(save = DefaultModelSave(latest.request))
+            return
+        }
         when {
-            rejected || (undelivered && !save.canRetry) -> {
+            rejected || (undelivered && !latest.canRetry) -> {
                 mutable.value = current.copy(save = null)
                 reportSaveFailure(DefaultModelNotice.SaveRolledBack)
             }
             readback -> {
                 val wait =
                     if (error.retryable() || error is ApiFailure.IncompatibleResponse)
-                        boundedRetryDelayMillis(save.failedAttempts, error)
+                        boundedRetryDelayMillis(latest.failedAttempts, error)
                     else null
-                deferReadback(save, wait)
+                deferReadback(latest, wait)
             }
             // An ambiguous PUT turns the remaining attempts into reads. Even if the last
             // safe attempt loses its response, check once before reporting an unknown outcome.
-            else -> deferSave(save, boundedRetryDelayMillis(save.failedAttempts, error))
+            else -> deferSave(latest, boundedRetryDelayMillis(latest.failedAttempts, error))
         }
     }
 

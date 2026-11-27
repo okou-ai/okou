@@ -191,6 +191,8 @@ class MemberPreferencesModel(
     private val onFailure: (Exception) -> Unit,
     initialPending: PreferenceChange? = null,
 ) : ViewModel() {
+    private class Recovery(val job: Job, val protectsReadback: Boolean)
+
     private val mutable =
         MutableStateFlow(MemberPreferencesState(initial, initialPending?.afterReadback(initial)))
     val uiState = mutable.asStateFlow()
@@ -198,7 +200,7 @@ class MemberPreferencesModel(
     internal val notices = saveNotice.asStateFlow()
     private var retired = false
     private var request: Job? = null
-    private var recovery: Job? = null
+    private var recovery: Recovery? = null
     private var saveFailures = 0
     private var readFailures = 0
     private var readRequested = false
@@ -249,7 +251,12 @@ class MemberPreferencesModel(
     private fun select(change: PreferenceChange) {
         if (!current()) return
         saveNotice.value = null
-        if (saveFailures <= finiteReadRetryDelays.size) saveFailures = 0
+        if (recovery?.protectsReadback == true) {
+            mutable.value = mutable.value.copy(pending = change)
+            return
+        }
+        if ((!needsWriteReadback || request == null) && saveFailures <= finiteReadRetryDelays.size)
+            saveFailures = 0
         mutable.value = mutable.value.copy(pending = change, recovering = false)
         readRequested = false
         clearRecovery()
@@ -278,7 +285,7 @@ class MemberPreferencesModel(
     }
 
     fun retry() {
-        if (!current()) return
+        if (!current() || recovery?.protectsReadback == true) return
         clearRecovery()
         if (mutable.value.pending == null) readRequested = true
         synchronize()
@@ -398,7 +405,7 @@ class MemberPreferencesModel(
     }
 
     private fun clearRecovery() {
-        recovery?.cancel()
+        recovery?.job?.cancel()
         recovery = null
         readFailures = 0
     }
@@ -480,7 +487,8 @@ class MemberPreferencesModel(
         saveFailures = if (wait != null) saveFailures + 1 else finiteReadRetryDelays.size + 1
         if (wait != null) {
             mutable.value = state.copy(status = PreferenceStatus.SaveFailed, recovering = true)
-            scheduleRecovery(wait)
+            val serverDelay = (error as? ApiFailure.Http)?.retryAfterSeconds ?: 0L
+            scheduleRecovery(wait, protectsReadback = needsWriteReadback && serverDelay > 0)
             return false
         }
         if (sent != null) return true // Last write still needs authoritative readback.
@@ -525,7 +533,7 @@ class MemberPreferencesModel(
         )
     }
 
-    private fun scheduleRecovery(wait: Long) {
+    private fun scheduleRecovery(wait: Long, protectsReadback: Boolean = false) {
         val failedRequest = checkNotNull(request)
         val job =
             viewModelScope.launch(start = CoroutineStart.LAZY) {
@@ -535,7 +543,7 @@ class MemberPreferencesModel(
                 recovery = null
                 synchronize()
             }
-        recovery = job
+        recovery = Recovery(job, protectsReadback)
         job.start()
     }
 

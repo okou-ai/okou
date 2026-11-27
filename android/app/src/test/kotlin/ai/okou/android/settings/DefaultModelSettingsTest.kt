@@ -650,6 +650,59 @@ class DefaultModelSettingsTest {
     }
 
     @Test
+    fun aNewChoiceKeepsTheActiveReadbackWait() = runTest {
+        ChatListApiFixture().use { api ->
+            DefaultModelApiFixture(api)
+            val original = api.service.defaultModelPreference()
+            val catalog = api.service.recoveryCatalog()
+            val models = api.service.recoveryModels()
+            val reads = mutableListOf<Long>()
+            val writes = mutableListOf<Pair<Long, String?>>()
+            val remote =
+                object : WorkspaceSession by api.service {
+                    override suspend fun recoveryCatalog() = catalog
+
+                    override suspend fun recoveryModels() = models
+
+                    override suspend fun defaultModelPreference(): DefaultModelPreference {
+                        reads += currentTime
+                        if (reads.size == 2) throw ApiFailure.Http(429, null, null, 1L)
+                        return original
+                    }
+
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference,
+                    ): DefaultModelPreference {
+                        writes += currentTime to update.selectedModel
+                        if (writes.size == 1) throw ApiFailure.Http(503, null, null, null)
+                        return original.copy(selectedModel = update.selectedModel)
+                    }
+                }
+            val model = model(api, service = remote, onFailure = {})
+            model.openAfterSync()
+            model.select(null)
+            runCurrent()
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L), reads)
+
+            advanceTimeBy(400)
+            model.select("claude-test")
+            assertEquals("claude-test", model.state.value.selected?.id)
+            advanceTimeBy(599)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L), reads)
+            assertEquals(listOf(0L to null), writes)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 4_000L), reads)
+            assertEquals(listOf(0L to null, 4_000L to "claude-test"), writes)
+            assertNull(model.state.value.pending)
+        }
+    }
+
+    @Test
     fun rejectedReadbackReconcilesOnForegroundingWithoutRepeatingTheWrite() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
@@ -699,8 +752,14 @@ class DefaultModelSettingsTest {
             val started = CompletableDeferred<Unit>()
             val fail = CompletableDeferred<Unit>()
             val writes = mutableListOf<Pair<String?, String?>>()
+            val reads = mutableListOf<Long>()
             val remote =
                 object : WorkspaceSession by api.service {
+                    override suspend fun defaultModelPreference(): DefaultModelPreference {
+                        reads += currentTime
+                        return api.service.defaultModelPreference()
+                    }
+
                     override suspend fun updateDefaultModelPreference(
                         update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
@@ -708,7 +767,7 @@ class DefaultModelSettingsTest {
                         if (update.serviceTier != null) {
                             started.complete(Unit)
                             fail.await()
-                            throw ApiFailure.Http(503, null, null, null)
+                            throw ApiFailure.Http(503, null, null, 1L)
                         }
                         return api.service.updateDefaultModelPreference(update)
                     }
@@ -721,7 +780,12 @@ class DefaultModelSettingsTest {
             assertEquals("claude-test", model.state.value.selected?.id)
             fail.complete(Unit)
 
+            advanceTimeBy(999)
+            runCurrent()
+            assertEquals(listOf(0L), reads)
+            advanceTimeBy(1)
             val confirmed = model.state.first { it.pending == null }
+            assertEquals(listOf(0L, 1_000L), reads)
             assertEquals(listOf("gpt-test" to "PRIORITY", "claude-test" to null), writes)
             assertEquals("claude-test", confirmed.selected?.id)
             assertEquals(JsonPrimitive("claude-test"), fixture.preference["selectedModel"])
