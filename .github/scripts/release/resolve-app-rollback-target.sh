@@ -61,6 +61,11 @@ data_router_mcp_floor=$(git show "$policy_main:.github/rollback-floors/data-rout
   || fail "Cannot read the Data Router stateless MCP App rollback floor from main."
 [[ "$data_router_mcp_floor" =~ ^[0-9a-f]{40}$ ]] || fail "Missing or invalid Data Router stateless MCP App rollback floor."
 git merge-base --is-ancestor "$data_router_mcp_floor" "$policy_main" || fail "Data Router stateless MCP App rollback floor is not on main."
+# The App also imports downloaded Run diagnostics after an independent rollback.
+template_guidance_diagnostic_floor=$(git show "$policy_main:.github/rollback-floors/template-guidance-diagnostic-app") \
+  || fail "Cannot read the template guidance diagnostic App rollback floor from main."
+[[ "$template_guidance_diagnostic_floor" =~ ^[0-9a-f]{40}$ ]] || fail "Missing or invalid template guidance diagnostic App rollback floor."
+git merge-base --is-ancestor "$template_guidance_diagnostic_floor" "$policy_main" || fail "Template guidance diagnostic App rollback floor is not on main."
 git cat-file -e "$TARGET_COMMIT^{commit}"
 git merge-base --is-ancestor "$TARGET_COMMIT" "$policy_main" || fail "App artifact is not reachable from main."
 git merge-base --is-ancestor "$floor" "$TARGET_COMMIT" || fail "App artifact predates the signed Telegram reader floor ($floor)."
@@ -68,6 +73,7 @@ git merge-base --is-ancestor "$slack_floor" "$TARGET_COMMIT" || fail "App artifa
 
 git merge-base --is-ancestor "$connector_resource_split_floor" "$TARGET_COMMIT" || fail "App artifact predates the Connector resource split ($connector_resource_split_floor)."
 git merge-base --is-ancestor "$data_router_mcp_floor" "$TARGET_COMMIT" || fail "App artifact predates the Data Router stateless MCP catalog request ($data_router_mcp_floor)."
+git merge-base --is-ancestor "$template_guidance_diagnostic_floor" "$TARGET_COMMIT" || fail "App artifact predates anchor-free template diagnostics readers ($template_guidance_diagnostic_floor)."
 
 # Fail closed if a later release removes a retained reader or its entry point.
 # Target source is data; no code from a rollback target is executed.
@@ -195,6 +201,7 @@ refresh_main
 git diff --quiet "$policy_main" origin/main -- .github/rollback-floors/telegram-settings-app \
   .github/rollback-floors/slack-settings-app .github/rollback-floors/connector-resource-split \
   .github/rollback-floors/data-router-stateless-mcp-app \
+  .github/rollback-floors/template-guidance-diagnostic-app \
   .github/scripts/release/resolve-app-rollback-target.sh .github/scripts/release/rollback-app-production.sh \
   .github/workflows/rollback-production.yml || fail "App rollback policy changed during validation; rerun from current main."
 git diff --quiet HEAD origin/main -- .github/scripts/release/resolve-app-rollback-target.sh \
