@@ -10,6 +10,12 @@ final class ConversationMeasurementCache {
     let environment: ConversationHeightDiskCache.Layout
     var height: CGFloat
     var diskKey: ConversationHeightDiskCache.Key?
+
+    func withRow(_ row: ConversationCollectionRow) -> Self {
+      var copy = self
+      copy.row = row
+      return copy
+    }
   }
 
   let namespace: [String]?
@@ -29,9 +35,7 @@ final class ConversationMeasurementCache {
     guard let value = entries[row.id], value.row.hasSameMeasuredLayout(as: row),
       value.width == width, value.category == category, value.environment == environment
     else { return nil }
-    var matched = value
-    matched.row = row
-    return matched
+    return value.withRow(row)
   }
 
   func store(_ measurement: Measurement) {
