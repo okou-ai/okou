@@ -5,6 +5,8 @@ import {
   computerUseSessionHostsContract as contract,
   computerUseHostsContract,
   computerUseCommandContract,
+  computerUseWriteCommandContract,
+  computerUseAuditEventsContract,
 } from "@okouai/api-contracts/contracts/computer-use";
 
 import {
@@ -81,11 +83,13 @@ describe("Native Computer Use session authentication", () => {
     authenticate(actor);
     const client = api(contract);
     const commands = api(computerUseCommandContract);
+    const audit = api(computerUseAuditEventsContract);
     const devices = setupApp({ context, routes: remoteDevicesRoutes })(
       remoteDevicesContract,
     );
+    const runtime = { ...runtimeBody, supportedCapabilities: ["app.open"] };
     const { body: first } = await accept(
-      client.register({ headers, body: runtimeBody }),
+      client.register({ headers, body: runtime }),
       [200],
     );
     const { body: directory } = await accept(devices.list({ headers }), [200]);
@@ -102,12 +106,40 @@ describe("Native Computer Use session authentication", () => {
       [200],
     );
     const { body: queued } = await accept(
-      commands.create({
+      api(computerUseWriteCommandContract).create({
         headers,
-        body: { kind: "apps.list", timeoutMs: 10_000 },
+        body: { kind: "app.open", app: "Fixture", timeoutMs: 10_000 },
       }),
       [200],
     );
+    const params = { hostId: first.hostId };
+    const connection = { connectionGeneration: first.connectionGeneration };
+    await accept(
+      client.next({
+        headers,
+        params,
+        body: {
+          ...connection,
+          supportedCapabilities: runtime.supportedCapabilities,
+        },
+      }),
+      [200],
+    );
+    await accept(
+      client.complete({
+        headers,
+        params: { ...params, commandId: queued.commandId },
+        body: {
+          ...connection,
+          status: "succeeded",
+          result: { app: "Fixture", opened: true },
+        },
+      }),
+      [200],
+    );
+    const auditQuery = { headers, query: { commandId: queued.commandId } };
+    const { body: before } = await accept(audit.list(auditQuery), [200]);
+    expect(before.auditEvents).toHaveLength(1);
     await accept(
       devices.delete({
         headers,
@@ -119,6 +151,8 @@ describe("Native Computer Use session authentication", () => {
 
     const { body: empty } = await accept(devices.list({ headers }), [200]);
     expect(empty.devices).toStrictEqual([]);
+    const { body: after } = await accept(audit.list(auditQuery), [200]);
+    expect(after.auditEvents).toStrictEqual([]);
     await accept(
       commands.get({ headers, params: { commandId: queued.commandId } }),
       [404],
@@ -133,7 +167,7 @@ describe("Native Computer Use session authentication", () => {
     );
 
     const { body: second } = await accept(
-      client.register({ headers, body: runtimeBody }),
+      client.register({ headers, body: runtime }),
       [200],
     );
     expect(second.hostId).not.toBe(first.hostId);

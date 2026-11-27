@@ -257,8 +257,12 @@ async function deleteRemoteDeviceRows(
       RETURNING id
     ), desktop_audit AS (
       DELETE FROM ${computerUseCommandAuditEvents}
-      WHERE host_id IN (SELECT id FROM desktop)
-         OR command_id IN (SELECT id FROM desktop_commands)
+      WHERE EXISTS (SELECT FROM desktop)
+        AND org_id = ${owner.orgId} AND user_id = ${owner.userId}
+        AND (
+          host_id IN (SELECT id FROM desktop)
+          OR command_id IN (SELECT id FROM desktop_commands)
+        )
     ), ios AS (
       DELETE FROM ${channelTables.ios}
       WHERE remote_device_id = (SELECT id FROM target)
