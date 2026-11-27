@@ -906,10 +906,6 @@ export function ArtifactDownloadMenu({
   );
   const pageSignal = useGet(pageSignal$);
   const lightbox = useGet(lightboxUrl$);
-  const featureSwitches = useLastResolved(featureSwitches$);
-  const markdownExportEnabled =
-    previewKind === "markdown" &&
-    featureSwitches?.[FeatureSwitchKey.MarkdownFirstOutput] === true;
   const markdownExportSignal =
     surface === "dialog" ? (lightbox?.ownerSignal ?? pageSignal) : pageSignal;
   const pdfExportPending = pdfExportLoadable.state === "loading";
@@ -984,7 +980,7 @@ export function ArtifactDownloadMenu({
           pending={downloadPending}
           paywallLocked={paywallLocked}
         />
-        {markdownExportEnabled && (
+        {previewKind === "markdown" && (
           <MarkdownArtifactExportItems
             docxPending={docxExportPending}
             onExport={startMarkdownExport}

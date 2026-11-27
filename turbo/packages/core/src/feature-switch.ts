@@ -132,12 +132,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.MarkdownFirstOutput]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Use Markdown for text-focused documents and HTML for visual or interactive deliverables, with structured Markdown previews and DOCX and PDF exports.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatThreadFork]: {
     maintainer: "ethan@okou.ai",
     description:
