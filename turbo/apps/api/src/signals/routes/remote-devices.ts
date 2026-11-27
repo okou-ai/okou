@@ -18,7 +18,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
   publishPhoneUseDevicesChanged,
@@ -34,6 +34,7 @@ import {
   remoteDeviceMode$,
   remoteDeviceRunActive,
   remoteDeviceStatementTime,
+  type RemoteDeviceOwner,
 } from "../services/remote-device-access";
 import {
   channelTables,
@@ -228,15 +229,17 @@ const deletionResult = object({
   vnc_ids: array(uuid()),
 });
 
-const deleteDevice$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const owner = get(organizationAuthContext$);
-  const { deviceId } = get(pathParamsOf(remoteDevicesContract.delete));
-  const db = set(writeDb$);
+async function deleteRemoteDeviceRows(
+  db: Db,
+  owner: RemoteDeviceOwner,
+  deviceId: string,
+) {
   const deletedAt = nowDate();
   // Desktop command history still references its host. Revoke that host
   // together with the device while removing the other channel configurations.
-  const deleted = await settle(
-    db.execute(sql`
+  return parseRawRows(
+    deletionResult,
+    await db.execute(sql`
     WITH target AS (
       UPDATE ${remoteDevices}
       SET deleted_at = ${deletedAt}, access_allowed = false, access_expires_at = null
@@ -266,6 +269,14 @@ const deleteDevice$ = command(async ({ get, set }, signal: AbortSignal) => {
            ARRAY(SELECT id FROM vnc) AS vnc_ids
     FROM target
   `),
+  );
+}
+
+const deleteDevice$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const owner = get(organizationAuthContext$);
+  const { deviceId } = get(pathParamsOf(remoteDevicesContract.delete));
+  const deleted = await settle(
+    deleteRemoteDeviceRows(set(writeDb$), owner, deviceId),
     signal,
   );
   signal.throwIfAborted();
@@ -283,7 +294,7 @@ const deleteDevice$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
     throw deleted.error;
   }
-  const [result] = parseRawRows(deletionResult, deleted.value);
+  const [result] = deleted.value;
   if (!result) {
     return missing;
   }
