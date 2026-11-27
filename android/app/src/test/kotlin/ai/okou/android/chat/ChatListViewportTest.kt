@@ -4,6 +4,7 @@ import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.resolvePalette
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -77,6 +79,7 @@ class ChatListViewportTest {
                     listState,
                     contentChangeKey = null,
                     syncing = false,
+                    filter = ChatListFilter.Inbox,
                     newChatEnabled = true,
                     newChat = {},
                     feedback = {
@@ -140,6 +143,7 @@ class ChatListViewportTest {
                     rememberLazyListState(),
                     contentChangeKey = null,
                     syncing = true,
+                    filter = ChatListFilter.Inbox,
                     newChatEnabled = false,
                     newChat = {},
                     feedback = {},
@@ -160,6 +164,81 @@ class ChatListViewportTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun refreshFadesReversesAndRetiresWhenTheFilterChanges() {
+        val syncing = mutableStateOf(false)
+        val filter = mutableStateOf(ChatListFilter.Inbox)
+        compose.setContent {
+            OkouTheme(dark = false) {
+                ChatListViewport(
+                    Modifier.fillMaxWidth().height(280.dp).testTag("viewport"),
+                    rememberLazyListState(),
+                    contentChangeKey = null,
+                    syncing = syncing.value,
+                    filter = filter.value,
+                    newChatEnabled = false,
+                    newChat = {},
+                    feedback = {},
+                ) { _, _ ->
+                    Box(Modifier.fillMaxWidth().height(56.dp).background(Color.White))
+                }
+            }
+        }
+        val viewport = compose.onNodeWithTag("viewport")
+        val progress = compose.onNodeWithContentDescription("Syncing chats…")
+        fun tint(): Float {
+            val pixels = viewport.captureToImage().toPixelMap()
+            return 1f - (0 until pixels.width).minOf { pixels[it, 2].blue }
+        }
+        fun advance(millis: Long) {
+            // SubcomposeLayout installs the overlay during Android layout, outside the test clock.
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(millis)
+        }
+        compose.mainClock.autoAdvance = false
+        try {
+            assertEquals(0f, tint())
+            compose.runOnIdle { syncing.value = true }
+            advance(64)
+            val entering = tint()
+            advance(160)
+            val active = tint()
+            assertTrue(
+                "Entry tint $entering, settled tint $active",
+                entering > 0f && entering < active,
+            )
+            progress.assertIsDisplayed()
+
+            compose.runOnIdle { syncing.value = false }
+            advance(64)
+            progress.assertDoesNotExist()
+            val exiting = tint()
+            assertTrue("Exit tint $exiting, settled tint $active", exiting > 0f && exiting < active)
+
+            compose.runOnIdle { syncing.value = true }
+            advance(32)
+            val reversing = tint()
+            assertTrue(
+                "Reversal tint $reversing, settled tint $active",
+                reversing > 0f && reversing < active,
+            )
+            advance(200)
+            progress.assertIsDisplayed()
+
+            compose.runOnIdle { syncing.value = false }
+            advance(48)
+            assertTrue(tint() > 0f)
+            compose.runOnIdle { filter.value = ChatListFilter.Unread }
+            advance(32)
+            assertEquals(0f, tint())
+            progress.assertDoesNotExist()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
     fun aReaderAtTheEndFollowsNewRowsAndViewportChanges() {
         val height = mutableStateOf(480.dp)
         val projectCount = mutableStateOf(0)
@@ -174,6 +253,7 @@ class ChatListViewportTest {
                     listState,
                     contentChangeKey = projectCount.value to "chat_${rowCount.value - 1}",
                     syncing = syncing.value,
+                    filter = ChatListFilter.Inbox,
                     newChatEnabled = true,
                     newChat = {},
                     feedback = {},

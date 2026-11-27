@@ -88,7 +88,10 @@ internal fun BuiltInToolsPage(
                             }
                         }
                     }
-                if (state.catalog.refreshing) ContentReadProgress(R.string.settings_data_tools)
+                ContentReadProgress(
+                    R.string.settings_data_tools,
+                    visible = state.catalog.refreshing,
+                )
             }
         }
     }

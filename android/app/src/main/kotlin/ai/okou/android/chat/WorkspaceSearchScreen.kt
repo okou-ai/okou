@@ -20,12 +20,6 @@ import ai.okou.android.workspaceSearchControlHeight
 import ai.okou.android.workspaceSearchFocusOutline
 import ai.okou.android.workspaceSearchSecondaryStyle
 import androidx.annotation.StringRes
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -807,13 +801,7 @@ private fun SearchResults(
             }
         }
         key(keyword, type) {
-            AnimatedVisibility(
-                visible = showProgress,
-                enter = fadeIn(tween(150, easing = LinearOutSlowInEasing)),
-                exit = fadeOut(tween(150, easing = FastOutLinearInEasing)),
-            ) {
-                ContentReadProgress(R.string.chat_search_loading, announce = showProgress)
-            }
+            ContentReadProgress(R.string.chat_search_loading, visible = showProgress)
         }
         Box(Modifier.align(Alignment.BottomCenter)) {
             WorkspaceFeedbackHost(
