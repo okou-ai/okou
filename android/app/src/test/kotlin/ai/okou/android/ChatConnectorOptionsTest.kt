@@ -92,6 +92,7 @@ class ChatConnectorOptionsTest {
     @After
     fun close() {
         val application = app
+        application.connectors.overviewReplyGate?.countDown()
         application.connectors.chatOverrideReplyGate?.countDown()
         application.connectors.chatOverrideReadReplyGate?.countDown()
         try {
@@ -178,41 +179,55 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
-    fun existingChatBlocksSendUntilAnUnconfirmedChoiceIsChecked() {
+    fun existingChatRestoresTheChoiceAndSendAfterThreeFailedChecks() {
         waitText("Personal chat")
         compose.onNodeWithText("Personal chat").performClick()
         waitForComposer()
-        compose.onNodeWithTag("message_input").performTextReplacement("Read my calendar")
+        val draft = compose.onNodeWithTag("message_input")
+        draft.performTextReplacement("Read my calendar")
         val send = compose.onNodeWithContentDescription("Send").assertIsEnabled()
         openPicker()
         val account = compose.onNodeWithTag(primaryTag)
         val readback = CountDownLatch(1)
-        app.connectors.loseChatOverrideReply = true
-        app.connectors.failChatOverrideReads = true
+        app.connectors.rejectChatOverride = 503
+        app.connectors.chatOverrideReadFailures.set(3)
         app.connectors.chatOverrideReadReplyGate = readback
         try {
             account.assertIsOn().performClick()
             waitText("Checking account…")
             account.assertIsOff().assertIsNotEnabled()
+            compose.waitUntil(10_000) { app.connectors.chatOverrideReads.size == 1 }
+            assertTrue(
+                compose.runOnIdle { connectorOptions().blocksSend(ComposerTarget(CHAT_PERSONAL)) },
+            )
+            assertTrue(app.chats.inputs.isEmpty())
         } finally {
             readback.countDown()
         }
-        waitText("The outcome is still unconfirmed.")
-        account.assertIsOff().assertIsNotEnabled()
-        assertEquals(listOf(CHAT_PERSONAL to CONNECTOR_CALENDAR), app.connectors.chatOverrideReads)
+        waitText("Could not save the connector choice.")
+        account.assertIsOn().assertIsEnabled()
         closeOptions()
-        send.assertIsNotEnabled()
-        compose
-            .onNodeWithText("Check the connector choice in Chat options before sending.")
-            .assertIsDisplayed()
+        send.assertIsEnabled()
+        draft.assertTextContains("Read my calendar")
+        assertEquals(
+            List(3) { CHAT_PERSONAL to CONNECTOR_CALENDAR },
+            app.connectors.chatOverrideReads,
+        )
+        assertEquals(1, app.connectors.chatOverrideRequests.size)
+        assertTrue(app.chats.inputs.isEmpty())
+    }
 
-        app.connectors.failChatOverrideReads = false
+    @Test
+    fun aLostWriteResponseCanConfirmOnTheNextReadWithoutResubmitting() {
+        waitText("Personal chat")
+        compose.onNodeWithText("Personal chat").performClick()
         openPicker()
-        compose.onNodeWithText("Check result").performClick()
+        app.connectors.loseChatOverrideReply = true
+        app.connectors.chatOverrideReadFailures.set(1)
+        val account = compose.onNodeWithTag(primaryTag)
+        account.assertIsOn().performClick()
         waitTag("chat-connector-reset")
         account.assertIsOff().assertIsEnabled()
-        closeOptions()
-        send.assertIsEnabled()
         assertEquals(
             List(2) { CHAT_PERSONAL to CONNECTOR_CALENDAR },
             app.connectors.chatOverrideReads,
@@ -221,90 +236,19 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
-    fun anUnconfirmedChoiceFollowsItsChatAndCanBeCheckedAfterTheServiceIsRemoved() {
+    fun threeUnchangedReadsRestoreTheConfirmedOverrideAfterAnUncertainReset() {
         waitText("Personal chat")
         compose.onNodeWithText("Personal chat").performClick()
-        waitForComposer()
-        compose.onNodeWithTag("message_input").performTextReplacement("Read my calendar")
-        app.connectors.loseChatOverrideReply = true
-        app.connectors.failChatOverrideReads = true
-        openPicker()
-        compose.onNodeWithTag(primaryTag).performClick()
-        waitText("The outcome is still unconfirmed.")
-        closeOptions()
-
-        val back = compose.onNodeWithContentDescription("Back")
-        val send = compose.onNodeWithContentDescription("Send")
-        back.performClick()
-        openNewChat()
-        compose.onNodeWithTag("message_input").performTextReplacement("Another draft")
-        send.assertIsEnabled()
-        back.performClick()
-        waitText("Personal chat")
-        compose.onNodeWithText("Personal chat").performClick()
-        waitForComposer()
-        compose.onNodeWithTag("message_input").assertTextContains("Read my calendar")
-        send.assertIsNotEnabled()
-
-        app.connectors.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
-        app.connectors.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
-        app.connectors.failChatOverrideReads = false
-        openOverview(waitForRows = false)
-        waitTag("chat-connector-service-slack")
-        compose.onNodeWithTag(calendarTag).assertDoesNotExist()
-        compose.onNodeWithText("Check result").assertIsDisplayed().performClick()
-        waitText("This account is no longer available.")
-        inSheet(hasContentDescription("Back")).performClick()
-        dismissParentOptions()
-
-        send.assertIsEnabled()
-        assertEquals(
-            List(2) { CHAT_PERSONAL to CONNECTOR_CALENDAR },
-            app.connectors.chatOverrideReads,
-        )
-        assertEquals(1, app.connectors.chatOverrideRequests.size)
-    }
-
-    @Test
-    fun anUnchangedReadKeepsARestorePendingUntilTheAccountIsUnavailable() {
-        waitText("Personal chat")
-        compose.onNodeWithText("Personal chat").performClick()
-        waitForComposer()
-        compose.onNodeWithTag("message_input").performTextReplacement("Read my calendar")
         openPicker()
         val account = compose.onNodeWithTag(primaryTag)
         account.assertIsOn().performClick()
         waitTag("chat-connector-reset")
         app.connectors.rejectChatOverride = 503
         compose.onNodeWithTag("chat-connector-reset").performClick()
-        waitText("The outcome is still unconfirmed.")
+        waitText("Could not save the connector choice.")
 
-        val readback = CountDownLatch(1)
-        app.connectors.chatOverrideReadReplyGate = readback
-        try {
-            val check = compose.onNodeWithText("Check result").assertIsEnabled()
-            val readyBounds = check.getUnclippedBoundsInRoot()
-            check.performClick()
-            waitText("Checking account…")
-            val checking = compose.onNodeWithText("Checking account…").assertIsNotEnabled()
-            assertEquals(readyBounds, checking.getUnclippedBoundsInRoot())
-        } finally {
-            readback.countDown()
-        }
-        waitText("The outcome is still unconfirmed.")
-        account.assertIsOn().assertIsNotEnabled()
-        closeOptions()
-
-        val send = compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
-        openPicker()
-        app.connectors.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
-        app.connectors.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
-        compose.onNodeWithText("Check result").performClick()
-        waitTag("chat-connector-manage")
-        compose.onNodeWithText("This account is no longer available.").assertIsDisplayed()
-        inSheet(hasContentDescription("Back")).performClick()
-        dismissParentOptions()
-        send.assertIsEnabled()
+        account.assertIsOff().assertIsEnabled()
+        compose.onNodeWithTag("chat-connector-reset").assertIsEnabled()
         assertEquals(
             List(3) { CHAT_PERSONAL to CONNECTOR_CALENDAR },
             app.connectors.chatOverrideReads,
@@ -313,63 +257,30 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
-    fun checkingFromTheOverviewRefreshesTheListWhenAnAccountWasReplaced() {
+    fun verificationDropsAnUnavailableAccountAndFetchesItsReplacement() {
         waitText("Personal chat")
         compose.onNodeWithText("Personal chat").performClick()
         openPicker()
-        app.connectors.rejectChatOverride = 503
-        compose.onNodeWithTag(primaryTag).performClick()
-        waitText("The outcome is still unconfirmed.")
-        inSheet(hasContentDescription("Back")).performClick()
-        waitTag(calendarTag)
-
+        val reply = CountDownLatch(1)
         val replacementId = "10000000-0000-4000-8000-000000000008"
-        app.connectors.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
-        app.connectors.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
-        app.connectors.addCalendarAccount(replacementId)
-        compose.onNodeWithText("Check result").performClick()
+        app.connectors.rejectChatOverride = 503
+        app.connectors.chatOverrideReplyGate = reply
+        try {
+            compose.onNodeWithTag(primaryTag).performClick()
+            compose.waitUntil(10_000) { app.connectors.chatOverrideRequests.size == 1 }
+            app.connectors.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+            app.connectors.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+            app.connectors.addCalendarAccount(replacementId)
+        } finally {
+            reply.countDown()
+        }
         waitText("This account is no longer available.")
         waitTag(calendarTag)
         compose.onNodeWithTag(calendarTag).performClick()
         waitTag("chat-connector-selection-$replacementId")
         compose.onNodeWithTag(primaryTag).assertDoesNotExist()
-        compose.onNodeWithText("This account is no longer available.").assertDoesNotExist()
-        val overviewRead = "/api/chat-connector-overview" to CHAT_PERSONAL
-        val accountsRead = "/api/connector-accounts/connections" to CONNECTOR_CALENDAR
-        assertEquals(2, app.connectors.chatConnectorReads.count { it == overviewRead })
-        assertEquals(2, app.connectors.chatConnectorReads.count { it == accountsRead })
-        assertEquals(
-            List(2) { CHAT_PERSONAL to CONNECTOR_CALENDAR },
-            app.connectors.chatOverrideReads,
-        )
+        assertEquals(listOf(CHAT_PERSONAL to CONNECTOR_CALENDAR), app.connectors.chatOverrideReads)
         assertEquals(1, app.connectors.chatOverrideRequests.size)
-    }
-
-    @Test
-    fun reopeningAServiceThatReconnectedAfterReadbackShowsItsNewAccount() {
-        waitText("Personal chat")
-        compose.onNodeWithText("Personal chat").performClick()
-        openPicker()
-        app.connectors.rejectChatOverride = 503
-        compose.onNodeWithTag(primaryTag).performClick()
-        waitText("The outcome is still unconfirmed.")
-
-        app.connectors.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
-        app.connectors.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
-        compose.onNodeWithText("Check result").performClick()
-        waitTag("chat-connector-manage")
-        compose.onNodeWithTag(calendarTag).assertDoesNotExist()
-
-        val replacementId = "10000000-0000-4000-8000-000000000008"
-        app.connectors.addCalendarAccount(replacementId)
-        compose.runOnIdle {
-            val workspace =
-                ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready
-            checkNotNull(workspace?.connectors).chatOptions.invalidate("slack")
-        }
-        waitTag(calendarTag)
-        compose.onNodeWithTag(calendarTag).performClick()
-        waitTag("chat-connector-selection-$replacementId")
     }
 
     @Test
@@ -410,17 +321,9 @@ class ChatConnectorOptionsTest {
         val serviceBounds = lastService.getUnclippedBoundsInRoot()
         val footerBounds = footer.getUnclippedBoundsInRoot()
         app.connectors.failChatOverview = true
-        val options = compose.runOnIdle {
-            checkNotNull(
-                    ViewModelProvider(compose.activity)[SessionModel::class.java]
-                        .uiState
-                        .value
-                        .ready
-                        ?.connectors,
-                )
-                .chatOptions
-        }
-        compose.runOnIdle { options.invalidate("slack") }
+        inSheet(hasContentDescription("Back")).performClick()
+        dismissParentOptions()
+        openOverview()
         val message = "Could not refresh connectors."
         waitText(message)
         val snackbar = compose.onNodeWithText(message).assertIsDisplayed()
@@ -433,10 +336,14 @@ class ChatConnectorOptionsTest {
         val overviewRead = "/api/chat-connector-overview" to null
         assertEquals(4, app.connectors.chatConnectorReads.count { it == overviewRead })
 
+        inSheet(hasContentDescription("Back")).performClick()
+        dismissParentOptions()
         app.connectors.failChatOverview = false
-        compose.runOnIdle { options.invalidate("slack") }
+        val recovered = app.connectors.chatConnectorReads.size + 1
+        openOverview()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(message).fetchSemanticsNodes().isEmpty()
+            app.connectors.chatConnectorReads.size == recovered &&
+                compose.onAllNodesWithText(message).fetchSemanticsNodes().isEmpty()
         }
         compose.onNodeWithTag(calendarTag).assertIsDisplayed()
         assertEquals(5, app.connectors.chatConnectorReads.count { it == overviewRead })
@@ -461,14 +368,7 @@ class ChatConnectorOptionsTest {
             val before = footer.getUnclippedBoundsInRoot()
 
             app.connectors.failChatOverview = true
-            compose.runOnIdle {
-                val workspace =
-                    ViewModelProvider(compose.activity)[SessionModel::class.java]
-                        .uiState
-                        .value
-                        .ready
-                checkNotNull(workspace?.connectors).chatOptions.invalidate("slack")
-            }
+            compose.runOnIdle { connectorOptions().invalidate("slack") }
             val message = "Could not refresh connectors."
             waitText(message)
             val layouts = mutableListOf<TextLayoutResult>()
@@ -488,7 +388,7 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
-    fun overviewAndSelectedServiceUseSeparateCachedReads() {
+    fun openingRefreshesTheWarmOverviewAndBackReusesBothReadScopes() {
         openNewChat()
         val overview = "/api/chat-connector-overview" to null
         val held = CountDownLatch(1)
@@ -510,13 +410,23 @@ class ChatConnectorOptionsTest {
         assertEquals(56.dp, row.bottom - row.top)
         inSheet(hasContentDescription("Back")).performClick()
         dismissParentOptions()
-        openOverview()
-        assertEquals(listOf(overview), app.connectors.chatConnectorReads.toList())
-
-        compose.onNodeWithTag(calendarTag).performClick()
-        waitTag(primaryTag)
+        val warmReply = CountDownLatch(1)
+        app.connectors.overviewReplyGate = warmReply
+        try {
+            openOverview()
+            compose.waitUntil(10_000) {
+                app.connectors.chatConnectorReads.count { it == overview } == 2
+            }
+            compose.onNodeWithTag("chat-connector-service-slack").assertIsDisplayed()
+            compose.onNodeWithTag(calendarTag).performClick()
+            waitTag(primaryTag)
+            app.connectors.removeAccount(CONNECTOR_SLACK_ACCOUNT)
+        } finally {
+            warmReply.countDown()
+        }
         val expected =
             listOf(
+                overview,
                 overview,
                 "/api/connector-accounts/connections" to CONNECTOR_CALENDAR,
                 "/api/feature-switches" to null,
@@ -525,6 +435,12 @@ class ChatConnectorOptionsTest {
         assertEquals(expected.size, app.connectors.chatConnectorReads.size)
         inSheet(hasContentDescription("Back")).performClick()
         waitTag(calendarTag)
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithTag("chat-connector-service-slack")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        }
         compose.onNodeWithTag(calendarTag).assertIsFocused().performClick()
         waitTag(primaryTag)
         assertEquals(expected.size, app.connectors.chatConnectorReads.size)
@@ -752,6 +668,16 @@ class ChatConnectorOptionsTest {
                 ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready,
             )
             .composer
+
+    private fun connectorOptions() =
+        checkNotNull(
+                ViewModelProvider(compose.activity)[SessionModel::class.java]
+                    .uiState
+                    .value
+                    .ready
+                    ?.connectors,
+            )
+            .chatOptions
 
     private fun openNewChat() {
         waitText("New chat")
