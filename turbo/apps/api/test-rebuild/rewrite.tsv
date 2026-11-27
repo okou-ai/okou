@@ -753,9 +753,9 @@ chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-ev
 chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-009	planned				pilot	a-run
 chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-010	planned				pilot	a-run
 chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-011	planned				pilot	a-run
-chat	src/signals/routes/__tests__/chat-events-budget-steer.test.ts	chat-events-budget-steer-001	revisit		revisit: reclassify to a-run: requires two dispatched Runs reaching the budget warning threshold (one active, one completed)		pilot	d-other
-chat	src/signals/routes/__tests__/chat-events-budget-steer.test.ts	chat-events-budget-steer-003	planned				pilot	a-run
-chat	src/signals/routes/__tests__/chat-events-budget-steer.test.ts	chat-events-budget-steer-004	planned				pilot	a-run
+chat	src/signals/routes/__tests__/chat-events-budget-steer.test.ts	chat-events-budget-steer-001	rewritten	251.6	timeout=600 (5-run idle non-first median 251.6ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	d-other
+chat	src/signals/routes/__tests__/chat-events-budget-steer.test.ts	chat-events-budget-steer-003	rewritten	230.0	timeout=600 (5-run idle non-first median 230.0ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
+chat	src/signals/routes/__tests__/chat-events-budget-steer.test.ts	chat-events-budget-steer-004	rewritten	261.7	timeout=600 (5-run idle non-first median 261.7ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
 chat	src/signals/routes/__tests__/chat-events-codex-execution.test.ts	chat-events-codex-execution-002	rewritten	118.2	timeout=400 (5-run idle non-first median 118.2ms)	src/signals/routes/__tests__/chat-events-model-execution.test.ts	R28	a-run
 chat	src/signals/routes/__tests__/chat-events-codex-execution.test.ts	chat-events-codex-execution-005	rewritten	236.9	timeout=600 (5-run idle non-first median 236.9ms)	src/signals/routes/__tests__/chat-events-model-execution.test.ts	R28	a-run
 chat	src/signals/routes/__tests__/chat-events-codex-execution.test.ts	chat-events-codex-execution-006	rewritten	103.7	timeout=400 (5-run idle non-first median 103.7ms)	src/signals/routes/__tests__/chat-events-model-execution.test.ts	R28	d-other
@@ -779,19 +779,19 @@ chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-
 chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-009	skipped		slow-setup: cold path unique to this case (the only writable row of its file, first in every order, no non-first sample); measured 182.8 and 271.8 ms; draft /home/user/pilot-env/wip/r16/chat-events-effort.test.ts		B11	d-other
 chat	src/signals/routes/__tests__/chat-events-history.test.ts	chat-events-history-001	revisit		revisit: reclassify to a-run: requires an initial completed native Run, two failed Runs, and inspecting and completing a retry Runner dispatch			d-other
 chat	src/signals/routes/__tests__/chat-events-history.test.ts	chat-events-history-002	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-identity.test.ts	chat-events-identity-002	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-identity.test.ts	chat-events-identity-003	revisit		revisit: reclassify to a-run: tests Run execution credentials (agent tokens issued to dispatched Runs) calling computer-use host write commands			d-other
+chat	src/signals/routes/__tests__/chat-events-identity.test.ts	chat-events-identity-002	rewritten	383.6	timeout=800 (5-run idle non-first median 383.6ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
+chat	src/signals/routes/__tests__/chat-events-identity.test.ts	chat-events-identity-003	rewritten	269.9	split 1->4: (1/4) timeout=600 (264.5ms), (2/4) timeout=400 (193.5ms), (3/4) timeout=600 (269.9ms), (4/4) timeout=400 (163.0ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	d-other
 chat	src/signals/routes/__tests__/chat-events-media.test.ts	chat-events-media-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-member-defaults.test.ts	chat-events-member-defaults-001	rewritten	148.4	timeout=400 (5-run idle non-first median 148.4ms)	src/signals/routes/__tests__/chat-events-model-execution.test.ts	R28	d-other
 chat	src/signals/routes/__tests__/chat-events-member-defaults.test.ts	chat-events-member-defaults-002	rewritten	227.9	split 1->2: (1/2) timeout=600 (227.9ms), (2/2) timeout=400 (134.8ms)	src/signals/routes/__tests__/chat-events-model-execution.test.ts	R28	d-other
-chat	src/signals/routes/__tests__/chat-events-message-queue.test.ts	chat-events-message-queue-002	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-message-queue.test.ts	chat-events-message-queue-003	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-message-queue.test.ts	chat-events-message-queue-005	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-002	revisit		revisit: reclassify to a-run: dispatches Opus Run, completes it recording native session, then dispatches Sonnet Run resuming that session			d-other
+chat	src/signals/routes/__tests__/chat-events-message-queue.test.ts	chat-events-message-queue-002	rewritten	204.2	timeout=400 (5-run idle non-first median 204.2ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
+chat	src/signals/routes/__tests__/chat-events-message-queue.test.ts	chat-events-message-queue-003	rewritten	307.4	timeout=600 (5-run idle non-first median 307.4ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
+chat	src/signals/routes/__tests__/chat-events-message-queue.test.ts	chat-events-message-queue-005	rewritten	280.0	timeout=400 (5-run idle non-first median 280.0ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
+chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-002	rewritten	339.3	timeout=800 (5-run idle non-first median 339.3ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	d-other
 chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-003	rewritten	191.3		src/signals/routes/__tests__/chat-events-admission.test.ts		d-other
-chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-004	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-005	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-009	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-004	rewritten	350.4	timeout=600 (5-run idle non-first median 350.4ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
+chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-005	rewritten	302.0	timeout=600 (5-run idle non-first median 302.0ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
+chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-009	rewritten	200.9	timeout=400 (5-run idle non-first median 200.9ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
 chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-002	rewritten	371.8	timeout=600 (5-run idle non-first median 371.8ms)	src/signals/routes/__tests__/chat-events-model-routing.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-003	rewritten	15.2		src/signals/routes/__tests__/chat-events-model-routing.test.ts		d-other
 chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-005	rewritten	233.7	timeout=400 (5-run idle non-first median 233.7ms)	src/signals/routes/__tests__/chat-events-model-routing.test.ts	R26	a-run
