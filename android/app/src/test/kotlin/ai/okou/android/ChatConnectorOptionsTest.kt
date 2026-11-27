@@ -384,7 +384,9 @@ class ChatConnectorOptionsTest {
         waitTag(calendarTag)
         compose.onNodeWithTag(calendarTag).performClick()
         val accounts = "/api/connector-accounts/connections" to CONNECTOR_CALENDAR
-        compose.waitUntil(10_000) { app.connectors.chatConnectorReads.count { it == accounts } == 2 }
+        compose.waitUntil(10_000) {
+            app.connectors.chatConnectorReads.count { it == accounts } == 2
+        }
         waitTag(primaryTag)
     }
 
