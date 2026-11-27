@@ -157,16 +157,7 @@ fn active_input_rejects_invalid_payloads() {
 }
 
 #[test]
-fn active_input_rejects_when_disabled_or_closed() {
-    let disabled = ActiveInputRuntime::new_disabled("run-1", "initial");
-    assert!(matches!(
-        disabled
-            .controller()
-            .handle_control_payload(br#"{"type":"active-input","text":"hello"}"#),
-        ActiveInputControlOutcome::Rejected { diagnostic }
-            if diagnostic == "active input is not supported for this agent"
-    ));
-
+fn active_input_rejects_when_closed() {
     let runtime = enabled_runtime();
     let controller = runtime.controller();
     assert!(controller.close_for_result_if_idle());

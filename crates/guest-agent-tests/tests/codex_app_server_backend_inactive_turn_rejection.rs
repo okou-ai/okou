@@ -91,7 +91,7 @@ async fn assert_rejection_scenario(
         ));
         then.status(200).json_body(json!({ "outcome": "steered" }));
     });
-    let input = ActiveInputRuntime::new_enabled(
+    let input = ActiveInputRuntime::new(
         RUN_ID,
         &runtime.config.prompt,
         HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)?,

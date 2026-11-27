@@ -1586,8 +1586,6 @@
       "dismissRecorded": "Suggestion dismissed",
       "done": "Fertig",
       "doneRecorded": "Notiert – das ist schon erledigt",
-      "draftIn": "Entwurf in {{title}}",
-      "draftInChat": "Entwurf im bestehenden Chat",
       "editDraft": "Entwurf im bestehenden Chat vorbereiten",
       "editReason": "Edit reason",
       "feedbackPrompt": "Wie findest du diesen Vorschlag?",

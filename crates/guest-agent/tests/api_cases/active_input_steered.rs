@@ -28,8 +28,7 @@ fn steered_path() -> String {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn explicit_null_event_id_is_rejected() -> Result<(), Box<dyn std::error::Error>> {
     let server = MockServer::start();
-    let runtime =
-        ActiveInputRuntime::new_enabled(RUN_ID, "initial", steer_http(&server.base_url())?);
+    let runtime = ActiveInputRuntime::new(RUN_ID, "initial", steer_http(&server.base_url())?);
     let controller = runtime.controller();
     let _writer = runtime.into_writer();
 
@@ -60,8 +59,7 @@ async fn accepted_input_is_deduplicated_and_declared_steered_once()
             .header("Content-Type", "application/json")
             .json_body(json!({ "outcome": "steered" }));
     });
-    let runtime =
-        ActiveInputRuntime::new_enabled(RUN_ID, "initial", steer_http(&server.base_url())?);
+    let runtime = ActiveInputRuntime::new(RUN_ID, "initial", steer_http(&server.base_url())?);
     let controller = runtime.controller();
     let mut writer = runtime.into_writer();
     let accepted_payload = payload(PROMPT)?;
@@ -122,8 +120,7 @@ async fn failed_input_is_not_declared_steered() -> Result<(), Box<dyn std::error
             .header("Content-Type", "application/json")
             .json_body(json!({ "outcome": "steered" }));
     });
-    let runtime =
-        ActiveInputRuntime::new_enabled(RUN_ID, "initial", steer_http(&server.base_url())?);
+    let runtime = ActiveInputRuntime::new(RUN_ID, "initial", steer_http(&server.base_url())?);
     let controller = runtime.controller();
     let mut writer = runtime.into_writer();
     let accepted_payload = payload(PROMPT)?;
@@ -163,8 +160,7 @@ async fn conflicting_and_failed_declarations_are_not_retried()
                     "error": { "code": "INPUT_ALREADY_CONSUMED", "message": "Input already consumed" }
                 }));
         });
-        let runtime =
-            ActiveInputRuntime::new_enabled(RUN_ID, "initial", steer_http(&server.base_url())?);
+        let runtime = ActiveInputRuntime::new(RUN_ID, "initial", steer_http(&server.base_url())?);
         let controller = runtime.controller();
         let mut writer = runtime.into_writer();
 
@@ -190,7 +186,7 @@ async fn conflicting_and_failed_declarations_are_not_retried()
 async fn finalization_waits_for_a_declaration_during_api_cold_start()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut server = common::ControlledHttpServer::start().await?;
-    let runtime = ActiveInputRuntime::new_enabled(RUN_ID, "initial", steer_http(&server.base_url)?);
+    let runtime = ActiveInputRuntime::new(RUN_ID, "initial", steer_http(&server.base_url)?);
     let controller = runtime.controller();
     let mut writer = runtime.into_writer();
     assert_eq!(
@@ -250,7 +246,7 @@ async fn assert_shared_steered_finalization(
     cancel_first: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut server = common::ControlledHttpServer::start().await?;
-    let runtime = ActiveInputRuntime::new_enabled(RUN_ID, "initial", steer_http(&server.base_url)?);
+    let runtime = ActiveInputRuntime::new(RUN_ID, "initial", steer_http(&server.base_url)?);
     let controller = runtime.controller();
     let mut writer = runtime.into_writer();
     assert_eq!(

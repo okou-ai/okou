@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.32.64](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.63...guest-storage-apply-v0.32.64) (2026-11-27)
+
+
+### Refactoring
+
+* **runner:** retire preserved download checks for instructions ([#51570](https://github.com/okou-ai/okou/issues/51570)) ([8e032d2](https://github.com/okou-ai/okou/commit/8e032d2f6c483b9e12eab92fa68004b42af9f9e3))
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** dispatch independent inline archives directly ([#51571](https://github.com/okou-ai/okou/issues/51571)) ([4560393](https://github.com/okou-ai/okou/commit/45603939616815b1b83afaa7f56656c4727b5d8a))
+* **runner-storage:** inline warm archives during mixed storage apply ([#51600](https://github.com/okou-ai/okou/issues/51600)) ([bdb05ea](https://github.com/okou-ai/okou/commit/bdb05eaedd853330ed18649d06ea545e53700cba))
+
 ## [0.32.63](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.62...guest-storage-apply-v0.32.63) (2026-11-27)
 
 

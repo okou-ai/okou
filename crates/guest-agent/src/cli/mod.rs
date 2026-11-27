@@ -606,12 +606,6 @@ fn disallowed_tools_with_builtin_web_search_disabled(
     Cow::Owned(format!("{disallowed_tools},{WEB_SEARCH_TOOL_NAME}"))
 }
 
-enum CliStdoutRecord {
-    Raw(String),
-    // Ignored provider records never enter the transcript.
-    Projected(Option<serde_json::Value>),
-}
-
 enum ParsedEventAction {
     Forward,
     Skip,
@@ -1049,6 +1043,16 @@ async fn execute_cli_inner(
         )
         .await;
     }
+    if matches!(runtime.framework, env::Framework::Antigravity) {
+        return antigravity::execute_antigravity_acp_for_runtime(
+            masker,
+            heartbeat_monitor,
+            http,
+            controls,
+            runtime,
+        )
+        .await;
+    }
 
     let CliExecutionControls {
         active_input,
@@ -1061,8 +1065,7 @@ async fn execute_cli_inner(
             codex_turn_start_gate: _,
     } = controls;
 
-    let replay_user_messages =
-        active_input.is_enabled() && matches!(runtime.framework, env::Framework::ClaudeCode);
+    let replay_user_messages = matches!(runtime.framework, env::Framework::ClaudeCode);
     log_info!(
         LOG_TAG,
         "Starting {} execution...",
@@ -1073,15 +1076,10 @@ async fn execute_cli_inner(
         write_claude_append_system_prompt_file(runtime)?;
     }
 
-    let antigravity = matches!(runtime.framework, env::Framework::Antigravity)
-        .then(|| antigravity::Launch::prepare(runtime))
-        .transpose()?;
-    let cmd = if let Some(launch) = &antigravity {
-        launch.argv.clone()
-    } else if matches!(runtime.framework, env::Framework::Pi) {
+    let cmd = if matches!(runtime.framework, env::Framework::Pi) {
         build_pi_command_for_runtime(runtime)?
     } else {
-        command::build_claude_command_for_runtime(runtime, replay_user_messages)
+        command::build_claude_command_for_runtime(runtime)
     };
     let (bin, args) = cmd
         .split_first()
@@ -1119,8 +1117,7 @@ async fn execute_cli_inner(
         env::Framework::Pi => {
             child_env_values.extend(pi_child_env_values(runtime));
         }
-        env::Framework::Antigravity => antigravity::configure_env(&mut child_env_values),
-        env::Framework::Codex => {}
+        env::Framework::Codex | env::Framework::Antigravity => {}
     }
     // Suppress Claude CLI features that are unnecessary or harmful in a
     // sandbox: startup network calls (statsig, Datadog, Segment, GCS update
@@ -1197,7 +1194,6 @@ async fn execute_cli_inner(
         .ok_or_else(|| AgentError::Execution("no stderr".into()))?;
 
     let pi_execution = matches!(runtime.framework, env::Framework::Pi);
-    let agy_execution = antigravity.is_some();
 
     // Stderr collector. Pi additionally carries session-preparation timings on
     // stderr; those are recorded as they arrive so their timestamps match the
@@ -1210,23 +1206,8 @@ async fn execute_cli_inner(
     let startup_segments = pi_startup.map(PiStartupTiming::segment_observer);
     // Keep both pipe workers owned if the execution future is abandoned.
     let mut stderr_handle = AbortOnDropHandle::new(tokio::spawn(async move {
-        if agy_execution {
-            // A login challenge can include an OAuth URL. The structured
-            // terminal record carries the safe authentication outcome.
-            let _ = tokio::io::copy(
-                &mut tokio::io::BufReader::new(stderr),
-                &mut tokio::io::sink(),
-            )
-            .await;
-            Vec::new()
-        } else {
-            diagnostics::collect_stderr_result_tail_observed(
-                stderr,
-                stderr_observer,
-                startup_segments,
-            )
+        diagnostics::collect_stderr_result_tail_observed(stderr, stderr_observer, startup_segments)
             .await
-        }
     }));
 
     let (pi_rpc_response_tx, pi_rpc_response_rx) = pi_rpc::response_channel();
@@ -1246,18 +1227,6 @@ async fn execute_cli_inner(
             )
         })
         .flatten();
-    let mut agy_projection = antigravity.as_ref().map(|launch| {
-        let output = session_output::start(
-            http.clone(),
-            runtime.run_id.as_ref(),
-            user_env_value(runtime.user_env, "OKOU_CHAT_THREAD_ID"),
-            session_output::FirstSessionOutputTiming {
-                api_start_time: runtime.api_start_time.to_string(),
-                ..Default::default()
-            },
-        );
-        antigravity::Projection::new(&launch.model, output, masker)
-    });
     let mut pi_rpc_projection = pi_execution.then(|| {
         let projection =
             pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref())
@@ -1284,8 +1253,6 @@ async fn execute_cli_inner(
                     pi_rpc_cancellation,
                 )
                 .await
-            } else if agy_execution {
-                antigravity::write_prompt(cli_stdin, &prompt).await
             } else {
                 drop(pi_rpc_response_rx);
                 write_claude_stream_json_to_stdin(cli_stdin, &run_id, &prompt, active_input).await
@@ -1512,36 +1479,20 @@ async fn execute_cli_inner(
                         .map_err(line_reader::BoundedLineError::Io)?;
                     stdout_discarding_record = false;
                 }
-                if let Some(event) = agy_projection.as_mut().and_then(antigravity::Projection::take_pending) {
-                    return Ok(Some(CliStdoutRecord::Projected(Some(event))));
-                }
-                let line = line_reader::read_bounded_utf8_line(
+                line_reader::read_bounded_utf8_line(
                     &mut reader,
                     &mut stdout_partial_line,
                     ORDINARY_CLI_STDOUT_MAX_LINE_BYTES,
-                ).await?;
-                match (agy_projection.as_mut(), line) {
-                    (Some(projection), Some(line)) => projection.project_line(&line)
-                        .map(|event| Some(CliStdoutRecord::Projected(event)))
-                        .map_err(line_reader::BoundedLineError::Io),
-                    (_, line) => Ok(line.map(CliStdoutRecord::Raw)),
-                }
+                )
+                .await
             }, if !stdout_closed => {
                 match line_result {
-                    Ok(Some(record)) => {
-                        let (line, event) = match record {
-                            CliStdoutRecord::Raw(line) => {
-                                if line.trim().is_empty() { continue; }
-                                let event = serde_json::from_str(line.trim()).ok();
-                                (line, event)
-                            }
-                            CliStdoutRecord::Projected(Some(event)) => {
-                                let mut transcript = event.clone();
-                                masker.mask_value(&mut transcript);
-                                (transcript.to_string(), Some(event))
-                            }
-                            CliStdoutRecord::Projected(None) => continue,
-                        };
+                    Ok(Some(line)) => {
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+                        let event: Option<serde_json::Value> =
+                            serde_json::from_str(line.trim()).ok();
 
                         if let Some(mut event) = event {
                             if let Some(startup_boundary) = pi_rpc_startup_boundary.as_mut() {
@@ -2129,7 +2080,7 @@ async fn execute_cli_inner(
     let last_read_event_at = event_pipeline
         .as_ref()
         .and_then(|pipeline| pipeline.ingestor.last_read_event_at());
-    let mut failure_diagnostic = event_pipeline
+    let failure_diagnostic = event_pipeline
         .as_ref()
         .and_then(|pipeline| pipeline.ingestor.failure_diagnostic());
 
@@ -2169,22 +2120,9 @@ async fn execute_cli_inner(
         );
     }
     let (mut exit_code, cli_observed_exit) = cli_exit_summary_from_status(&status);
-    if (pi_execution || agy_execution)
-        && jsonl_result.is_some_and(|result| result.status == JsonlResultStatus::Error)
+    if pi_execution && jsonl_result.is_some_and(|result| result.status == JsonlResultStatus::Error)
     {
         exit_code = 1;
-    }
-
-    if agy_execution && jsonl_result.is_none() && !has_control_error {
-        if exit_code == 0 {
-            exit_code = 1;
-        }
-        failure_diagnostic = Some(CliFailureDiagnostic {
-            message: "Antigravity exited without a terminal result".into(),
-            source: FailureDetailSource::FallbackExitCode,
-            failure_reason: None,
-            codex_failure: None,
-        });
     }
 
     // Apply the same drain deadline to stderr — orphaned child processes

@@ -131,6 +131,19 @@ internal abstract class ArtifactCatalogRootTestFixture {
         scenario.moveToState(Lifecycle.State.RESUMED)
     }
 
+    protected fun assertToolbarButtonSize(label: String) {
+        val control = compose.onNodeWithContentDescription(label)
+        val visibleBounds = control.getUnclippedBoundsInRoot()
+        val touchBounds = control.fetchSemanticsNode().touchBoundsInRoot
+        val minimum = with(compose.density) { 48.dp.roundToPx() }
+        assertEquals("Visual width for $label", 40.dp, visibleBounds.width)
+        assertEquals("Visual height for $label", 40.dp, visibleBounds.height)
+        assertTrue(
+            "Touch bounds for $label: $touchBounds",
+            touchBounds.width >= minimum && touchBounds.height >= minimum,
+        )
+    }
+
     protected fun loadedWebsiteUrl(): String? = websiteView()?.let { shadowOf(it).lastLoadedUrl }
 
     protected fun scrollWebsitePreview() {
@@ -1502,6 +1515,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         val artifacts = compose.onNodeWithContentDescription("Artifacts")
         val backToWorkspace = compose.onNodeWithContentDescription("Back to workspace")
         artifacts.performClick()
+        assertToolbarButtonSize("Back to workspace")
         backToWorkspace.performClick()
         query.assertTextContains("Native history").assertIsNotFocused()
         awaitText("1 matching message")
@@ -2069,6 +2083,8 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
                 assertEquals(pending.height, surface.getUnclippedBoundsInRoot().height)
                 compose.mainClock.autoAdvance = true
                 compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
+                assertToolbarButtonSize("Back to artifacts")
+                assertToolbarButtonSize("Image actions")
                 compose.onNodeWithContentDescription("Image actions").performClick()
                 compose.onNodeWithText("Save image").assertIsEnabled()
                 pending
@@ -2101,10 +2117,11 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         val expand = compose.onNodeWithContentDescription("Expand image viewer")
         val menu = compose.onNodeWithContentDescription("Image actions")
         compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
-        assertEquals(
-            4.dp,
-            menu.getUnclippedBoundsInRoot().left - expand.getUnclippedBoundsInRoot().right,
-        )
+        assertToolbarButtonSize("Expand image viewer")
+        val expandTouch = expand.fetchSemanticsNode().touchBoundsInRoot
+        val menuTouch = menu.fetchSemanticsNode().touchBoundsInRoot
+        val touchGap = with(compose.density) { (menuTouch.left - expandTouch.right).toDp() }
+        assertEquals(4.dp, touchGap)
         val image = compose.onNodeWithContentDescription(fixture.image.title)
         fun actions() = image.fetchSemanticsNode().config[SemanticsActions.CustomActions]
         val zoom = actions().single { it.label == "Zoom in" }

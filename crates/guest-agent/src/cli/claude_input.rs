@@ -60,10 +60,6 @@ pub(super) async fn write_claude_stream_json_to_stdin(
 ) -> Result<(), AgentError> {
     let initial_uuid = crate::active_input::claude_initial_prompt_uuid(run_id);
     write_claude_user_frame_to_stdin(&mut stdin, &initial_uuid, prompt).await?;
-    if !active_input.is_enabled() {
-        active_input.close_terminal();
-        return Ok(());
-    }
 
     while let Some(frame) = active_input.next_frame().await {
         active_input.mark_writing(&frame.uuid);

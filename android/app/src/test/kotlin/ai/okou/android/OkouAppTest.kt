@@ -347,9 +347,9 @@ class OkouAppTest {
                 .onNodeWithContentDescription(
                     compose.activity.getString(R.string.updates_downloading, percent),
                 )
-                .assertWidthIsEqualTo(40.dp)
+                .assertWidthIsEqualTo(48.dp)
         val bounds = action.getUnclippedBoundsInRoot()
-        assertEquals(40f, (bounds.bottom - bounds.top).value, 0.5f)
+        assertTrue(bounds.bottom - bounds.top > 48.dp)
         val touchBounds = action.fetchSemanticsNode().touchBoundsInRoot
         val minimumTouchSize = with(compose.density) { 48.dp.roundToPx() }
         assertTrue(touchBounds.width >= minimumTouchSize - 1)
@@ -387,7 +387,9 @@ class OkouAppTest {
         val logoBounds =
             compose.onNodeWithTag("workspace_search_leading").getUnclippedBoundsInRoot()
         assertEquals(8f, (searchBounds.left - logoBounds.right).value, 0.5f)
-        assertEquals(12f, (actionBounds.left - searchBounds.right).value, 0.5f)
+        assertEquals(8f, (actionBounds.left - searchBounds.right).value, 0.5f)
+        assertEquals(searchBounds.top, actionBounds.top)
+        assertEquals(searchBounds.bottom, actionBounds.bottom)
         val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
         val percentFormat = NumberFormat.getPercentInstance(Locale.GERMANY)
         val largeRelease = release.copy(size = 2_000_000_000L)

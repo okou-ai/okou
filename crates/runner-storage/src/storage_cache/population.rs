@@ -38,16 +38,20 @@ pub(super) async fn prepare_mixed(
         let mut ready = Vec::new();
         let mut complete = false;
         let mut early = early;
+        let mut warm_archives = PendingGuestArchives::default();
         async {
             let ordinary = async {
                 if concurrency > 0 {
+                    let retain_warm = early
+                        .as_ref()
+                        .is_some_and(|early| early.application.can_retain_warm_archives());
                     return prepare_ordinary(
                         groups,
                         home,
                         concurrency,
                         Some(&cancel_ordinary),
                         stage,
-                        None,
+                        retain_warm.then_some(&mut warm_archives),
                     )
                     .await
                     .map(OrdinaryPreparation::Staged);
@@ -141,16 +145,21 @@ pub(super) async fn prepare_mixed(
                 early
                     .application
                     .start_if_useful(
-                        stage.sandbox,
+                        stage,
                         early.plan,
                         early.owned_groups,
                         early.decoded_outcomes,
                         outcomes,
+                        &mut warm_archives,
                     )
                     .await?
             } else {
                 false
             };
+            if !warm_archives.is_empty() {
+                check_cancel(Some(&cancel_fresh))?;
+                flush_guest_stage_batch(&mut warm_archives.batch, stage).await?;
+            }
             if incremental
                 && !fresh.is_empty()
                 && let Some(early) = early.as_mut()

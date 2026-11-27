@@ -453,7 +453,7 @@ private fun ImageViewerButton(
     onClick: () -> Unit,
     tint: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
+    IconButton(onClick = onClick) {
         Icon(
             painterResource(icon),
             stringResource(label),

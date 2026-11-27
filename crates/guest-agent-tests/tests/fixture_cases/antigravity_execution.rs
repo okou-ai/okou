@@ -1,5 +1,5 @@
-//! Exercise framework selection, pipes, event delivery and process cleanup with
-//! an isolated peer for the pinned Antigravity stream-json protocol.
+//! Exercise framework selection, ACP JSON-RPC lifecycle, active-input steer,
+//! event delivery, and process cleanup with a deterministic Antigravity ACP peer.
 
 use std::collections::HashMap;
 use std::fs;
@@ -7,6 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::time::Duration;
 
+use guest_agent::active_input::{ActiveInputControlOutcome, ActiveInputRuntime};
 use guest_agent::cli::JsonlResultStatus;
 use guest_agent::env::{Framework, GuestConfig, GuestConfigRaw};
 use guest_agent::http::HttpClient;
@@ -20,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 const RUN: &str = "cc8ec675-4a68-4bf1-af0d-a3be79807935";
 const THREAD: &str = "61795dd2-782c-420a-9a17-7fe8773aa34d";
+const STEER_EVENT_ID: &str = "6bd71939-58df-48f2-81d4-468da3c788a5";
 const RULE: &str = "Use the run-specific system rule.";
 const PROMPT: &str = "First line\n\"Second\" line.";
 
@@ -118,14 +120,8 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
         .await?;
         cancelled?;
         if mode == "malformed" {
-            match result {
-                Err(err) => assert!(err.to_string().contains("Invalid Antigravity JSON record")),
-                Ok(result) => assert!(
-                    result
-                        .control_error
-                        .is_some_and(|e| e.to_string().contains("Invalid Antigravity JSON record"))
-                ),
-            }
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("Invalid Antigravity JSON record"));
         } else {
             let result = result?;
             assert!(result.stderr_lines.is_empty());
@@ -175,14 +171,13 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
                         .iter()
                         .filter(|r| r.path.ends_with("/session-output"))
                         .collect();
-                    // A preview is best effort. The durable message must carry the exact block ID to reconcile it.
                     for req in preview {
                         let body: Value = serde_json::from_str(&req.body)?;
                         assert_eq!(body["runEventId"], events[3]["runEventId"]);
                     }
                 }
                 "auth" => {
-                    assert_ne!(result.exit_code, 0);
+                    assert_eq!(result.exit_code, 1);
                     assert_eq!(
                         result.jsonl_result.unwrap().status,
                         JsonlResultStatus::Error
@@ -197,7 +192,7 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
                 }
                 "recovery" => assert_eq!(result.exit_code, 0),
                 "missing" => {
-                    assert_ne!(result.exit_code, 0);
+                    assert_eq!(result.exit_code, 1);
                     assert!(
                         result
                             .failure_diagnostic
@@ -223,5 +218,88 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
         assert!(!log.contains("configured-secret"));
         assert!(!Path::new(&fs::read_to_string(dir.join("rules-dir"))?).exists());
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn antigravity_acp_steers_active_input_into_active_turn()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = tempfile::tempdir()?;
+    let peer = root.path().join("agy-peer");
+    fs::write(&peer, include_str!("../fixtures/antigravity-peer.py"))?;
+    fs::set_permissions(&peer, fs::Permissions::from_mode(0o700))?;
+    let server = common::RecordingServer::start(200, Duration::ZERO).await?;
+    let masker = SecretMasker::from_raw("");
+
+    let runtime = runtime(root.path(), &server.base_url, "steer")?;
+    let dir = root.path().join("steer");
+
+    let active_input = ActiveInputRuntime::new(
+        &runtime.config.run_id,
+        &runtime.config.prompt,
+        runtime.http.clone(),
+    );
+    let controller = active_input.controller();
+    let payload = guest_contracts::active_input::encode_active_input(
+        STEER_EVENT_ID,
+        "Steer to the new answer.",
+    )?;
+
+    let execute = common::execute_cli_with_active_input_for_runtime(
+        &runtime,
+        &masker,
+        common::spawn_dummy_heartbeat(),
+        active_input.into_writer(),
+    );
+    let steer = async {
+        common::wait_for_path(&dir.join("ready"), Duration::from_secs(5)).await?;
+        assert_eq!(
+            controller.handle_control_payload(&payload),
+            ActiveInputControlOutcome::Accepted
+        );
+        Ok::<_, std::io::Error>(())
+    };
+    let (result, steered) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(execute, steer)
+    })
+    .await?;
+    steered?;
+
+    let result = result?;
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(
+        result.jsonl_result.unwrap().status,
+        JsonlResultStatus::Success
+    );
+    assert!(result.control_error.is_none());
+
+    let requests = server.requests()?;
+    let steered_calls: Vec<_> = requests
+        .iter()
+        .filter(|r| {
+            r.path == format!("/api/runners/runs/{RUN}/steerable-inputs/{STEER_EVENT_ID}/steered")
+        })
+        .collect();
+    assert_eq!(steered_calls.len(), 1);
+
+    let mut events = Vec::new();
+    for req in requests.iter().filter(|r| r.path.ends_with("/events")) {
+        let body: Value = serde_json::from_str(&req.body)?;
+        events.extend_from_slice(body["events"].as_array().unwrap());
+    }
+    assert_eq!(
+        events
+            .iter()
+            .map(|e| e["type"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["system", "assistant", "user", "assistant", "result"]
+    );
+    assert_eq!(events[3]["message"]["content"][0]["text"], "Steered answer");
+    assert_eq!(events[4]["result"], "Steered answer");
+    assert_eq!(events[4]["num_turns"], 2);
+    assert_eq!(events[4]["usage"]["input_tokens"], 32);
+    assert_eq!(events[4]["usage"]["output_tokens"], 10);
+    assert_eq!(events[4]["usage"]["total_tokens"], 42);
+
     Ok(())
 }

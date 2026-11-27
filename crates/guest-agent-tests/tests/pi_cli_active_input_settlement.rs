@@ -110,7 +110,7 @@ exec sleep 60
     common::ensure_canonical_workspace_for_test()?;
     let runtime = common::guest_runtime_from_process_env()?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
-    let active_input = ActiveInputRuntime::new_enabled(
+    let active_input = ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
         runtime.http.clone(),

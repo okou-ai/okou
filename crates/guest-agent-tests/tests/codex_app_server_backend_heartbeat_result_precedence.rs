@@ -40,8 +40,11 @@ async fn codex_terminal_result_written_before_heartbeat_remains_authoritative()
     let (heartbeat_delivered_tx, heartbeat_delivered_rx) = oneshot::channel();
     let (heartbeat_ready_tx, heartbeat_ready_rx) = oneshot::channel();
     let (resume_tx, resume_rx) = oneshot::channel();
-    let active_input =
-        ActiveInputRuntime::new_disabled(&runtime.config.run_id, &runtime.config.prompt);
+    let active_input = ActiveInputRuntime::new(
+        &runtime.config.run_id,
+        &runtime.config.prompt,
+        runtime.http.clone(),
+    );
     let controls =
         CliExecutionControls::new(active_input.into_writer(), CancellationToken::new(), None)
             .with_codex_turn_start_gate(CodexTurnStartGate {

@@ -95,7 +95,7 @@ async fn dropping_cli_execution_retires_both_stdio_workers()
     }
     let runtime = common::guest_runtime_from_process_env()?;
     let masker = SecretMasker::from_raw("");
-    let active_input = ActiveInputRuntime::new_enabled(
+    let active_input = ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
         runtime.http.clone(),

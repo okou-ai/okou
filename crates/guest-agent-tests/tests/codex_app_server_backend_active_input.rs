@@ -48,7 +48,7 @@ async fn codex_app_server_backend_steers_active_input_into_active_turn()
             .header("Content-Type", "application/json")
             .json_body(json!({ "outcome": "steered" }));
     });
-    let active_input = ActiveInputRuntime::new_enabled(
+    let active_input = ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
         HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)?,

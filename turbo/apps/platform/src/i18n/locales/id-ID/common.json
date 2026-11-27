@@ -1582,8 +1582,6 @@
       "dismissRecorded": "Suggestion dismissed",
       "done": "Selesai",
       "doneRecorded": "Dicatat, ini sudah selesai",
-      "draftIn": "Draf di {{title}}",
-      "draftInChat": "Draf di chat yang ada",
       "editDraft": "Siapkan draf di chat yang ada",
       "editReason": "Edit reason",
       "feedbackPrompt": "Bagaimana saran ini?",

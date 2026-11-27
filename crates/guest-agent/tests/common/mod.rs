@@ -434,7 +434,7 @@ pub fn active_input_payload(text: &str) -> Result<Vec<u8>, serde_json::Error> {
 pub fn active_input_runtime(
     runtime: &guest_agent::run_context::GuestRuntime,
 ) -> Result<guest_agent::active_input::ActiveInputRuntime, guest_agent::error::AgentError> {
-    Ok(guest_agent::active_input::ActiveInputRuntime::new_enabled(
+    Ok(guest_agent::active_input::ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
         guest_agent::http::HttpClient::new()?,
@@ -678,9 +678,10 @@ pub async fn execute_cli_for_runtime(
     masker: &guest_agent::masker::SecretMasker,
     heartbeat: guest_agent::cli::HeartbeatMonitor,
 ) -> Result<guest_agent::cli::CliExecutionResult, guest_agent::error::AgentError> {
-    let active_input = guest_agent::active_input::ActiveInputRuntime::new_disabled(
+    let active_input = guest_agent::active_input::ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
+        runtime.http.clone(),
     );
     execute_cli_with_active_input_for_runtime(
         runtime,
@@ -714,9 +715,10 @@ pub async fn execute_cli_with_cancellation_for_runtime(
     heartbeat: guest_agent::cli::HeartbeatMonitor,
     cancellation: tokio_util::sync::CancellationToken,
 ) -> Result<guest_agent::cli::CliExecutionResult, guest_agent::error::AgentError> {
-    let active_input = guest_agent::active_input::ActiveInputRuntime::new_disabled(
+    let active_input = guest_agent::active_input::ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
+        runtime.http.clone(),
     );
     guest_agent::cli::execute_cli_with_controls_for_config_started_at(
         masker,

@@ -6,7 +6,7 @@ categories after selecting a tier.
 """
 
 from .json_selective import ScalarField
-from .quantities import MAX_USAGE_QUANTITY, is_usage_quantity
+from .quantities import MAX_USAGE_QUANTITY, is_positive_usage_quantity, is_usage_quantity
 
 MODEL_USAGE_CATEGORY_INPUT = "tokens.input"
 MODEL_USAGE_CATEGORY_OUTPUT = "tokens.output"
@@ -23,6 +23,14 @@ MODEL_USAGE_CATEGORIES = (
     MODEL_USAGE_CATEGORY_CACHE_READ,
     MODEL_USAGE_CATEGORY_CACHE_CREATION,
 )
+
+
+def has_positive_model_provider_usage(source_usage: dict) -> bool:
+    """Return whether a normalized model usage source has a positive token count."""
+    for category in MODEL_USAGE_CATEGORIES:
+        if is_positive_usage_quantity(source_usage.get(category)):
+            return True
+    return False
 
 
 def update_model_usage_quantity(target: dict, category: str, value: object) -> None:

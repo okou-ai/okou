@@ -226,54 +226,6 @@ test("agent-suggestions-042 dragging across an option's text selects it instead 
   await expect(choice.promise).resolves.toBe("summarize");
 });
 
-test("agent-suggestions-043 each option says whether it sends to a new chat or drafts in its chat", async () => {
-  const base = proposal("Vendor renewals");
-  const [prepare] = base.content.options;
-  if (!prepare) {
-    throw new Error("The proposal fixture has an option");
-  }
-  const threadId = crypto.randomUUID();
-  const item: SuggestionCard = {
-    ...base,
-    content: {
-      ...base.content,
-      options: [
-        prepare,
-        {
-          ...prepare,
-          id: "continue",
-          label: "Continue Vendor renewals",
-          threadId,
-          draft: {
-            draftAttachments: null,
-            draftUserMessage: {
-              version: 1,
-              parts: [
-                {
-                  type: "chat_thread",
-                  threadId,
-                  titleSnapshot: "Renewals chat",
-                },
-                { type: "text", text: "Continue" },
-              ],
-            },
-          },
-        },
-      ],
-    },
-  };
-  feed([item]);
-  await openDeck();
-  const card = await activeCard(item);
-
-  await expect(
-    findFastControl("button", "Prepare Vendor renewals", card),
-  ).resolves.toHaveTextContent(/^Send to a new chat/);
-  await expect(
-    findFastControl("button", "Continue Vendor renewals", card),
-  ).resolves.toHaveTextContent(/^Draft in Renewals chat/);
-});
-
 test("agent-suggestions-020 changing cards discards the first inline direction", async () => {
   const one = proposal("Supply forecast");
   const two = proposal("Packing list", 1);

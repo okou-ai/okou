@@ -1582,8 +1582,6 @@
       "dismissRecorded": "Suggestion dismissed",
       "done": "完了",
       "doneRecorded": "すでに完了したと記録しました",
-      "draftIn": "「{{title}}」で下書き",
-      "draftInChat": "既存のチャットで下書き",
       "editDraft": "既存のチャットに下書きを作成",
       "editReason": "Edit reason",
       "feedbackPrompt": "この提案はいかがですか？",

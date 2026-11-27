@@ -263,8 +263,17 @@ fn run_manifest_with_files_in_runtime(
     archives: Option<std::collections::HashMap<&str, &[u8]>>,
     runtime_dir: Option<&Path>,
 ) -> Result<(), ApplyFailure> {
-    if archives.is_some() && manifest.archive_readiness.is_some() {
-        log_error!(LOG_TAG, "Inline Storage archives cannot use readiness");
+    if let (Some(archives), Some(readiness)) = (&archives, &manifest.archive_readiness)
+        && (readiness.check_only
+            || readiness.sources.iter().any(|url| {
+                url.strip_prefix("file://")
+                    .is_some_and(|path| archives.contains_key(path))
+            }))
+    {
+        log_error!(
+            LOG_TAG,
+            "Inline Storage archives must be ready application inputs"
+        );
         return Err(ApplyFailure::Failed);
     }
     if manifest

@@ -217,7 +217,8 @@ async fn download_storages_with_files_inner(
 ) -> RunnerResult<()> {
     // Complete all fallible preparation before the first Guest mutation.
     let prepare_started = Instant::now();
-    let allow_inline = !pending_archives.is_empty() && blank_mounts_outside_staging(&manifest);
+    let allow_inline =
+        !pending_archives.is_empty() && PendingGuestArchives::mounts_allow_inline(&manifest);
     let inputs = storage_inputs(manifest, files);
     telemetry.record(
         "runner_storage_manifest_batch_prepare",
@@ -297,27 +298,6 @@ async fn download_storages_with_files_inner(
         result?;
     }
     Ok(())
-}
-
-fn blank_mounts_outside_staging(manifest: &Manifest) -> bool {
-    use std::path::{Component, Path};
-
-    // Only fresh Home paths qualify. A custom or cleanup mount must not
-    // observe a change to the presence of a staged archive file.
-    manifest.cleanup_paths.is_empty()
-        && manifest.instruction_cleanups.is_empty()
-        && manifest
-            .storages
-            .iter()
-            .map(|entry| &entry.mount_path)
-            .chain(manifest.artifacts.iter().map(|entry| &entry.mount_path))
-            .all(|mount| {
-                let path = Path::new(mount);
-                path.starts_with("/home/user")
-                    && !path
-                        .components()
-                        .any(|component| component == Component::ParentDir)
-            })
 }
 
 enum PreparedStorageInput<'a> {

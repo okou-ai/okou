@@ -73,9 +73,10 @@ async fn codex_app_server_backend_uses_runtime_snapshot_and_preserves_large_prom
         std::env::set_var("CUSTOM_USER_ENV", "stale-process-user-env");
     }
 
-    let active_input = guest_agent::active_input::ActiveInputRuntime::new_disabled(
+    let active_input = guest_agent::active_input::ActiveInputRuntime::new(
         &runtime.config.run_id,
         &runtime.config.prompt,
+        runtime.http.clone(),
     );
     let cli_result = tokio::time::timeout(
         Duration::from_secs(5),

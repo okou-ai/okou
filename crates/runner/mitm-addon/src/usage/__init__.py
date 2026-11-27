@@ -52,6 +52,7 @@ from .model_json import (
     ModelUsageProtocol,
     create_model_json_response_inspector,
 )
+from .model_tokens import has_positive_model_provider_usage
 from .openai_chat_completions import (
     create_openai_chat_completions_sse_usage_extractor,
 )
@@ -78,7 +79,6 @@ from .providers.connectors import (
     report_connector_usage,
 )
 from .providers.model_provider import (
-    has_positive_model_provider_usage,
     is_model_provider_usage_billable,
     log_ignored_model_provider_usage_source,
     log_terminal_model_provider_usage_sources,
