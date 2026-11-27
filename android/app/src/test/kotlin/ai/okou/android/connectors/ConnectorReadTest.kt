@@ -129,6 +129,49 @@ class ConnectorReadTest {
     }
 
     @Test
+    fun aPolicyReadRestartsWhenTheNextComposerFindsANewAccount() = runBlocking {
+        ConnectorApiFixture().use { fixture ->
+            fixture.memberAccess = true
+            fixture.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+            val owner = SupervisorJob(coroutineContext.job)
+            val options =
+                ChatConnectorOptions(
+                    fixture.service,
+                    CoroutineScope(coroutineContext + owner),
+                    { true },
+                    TestTimeSource(),
+                ) {
+                    throw AssertionError(it)
+                }
+            val staleReply = CountDownLatch(1)
+            fixture.policyReadReplyGate = staleReply
+            val ids = setOf(CONNECTOR_CALENDAR_PRIMARY, CONNECTOR_CALENDAR_SECONDARY)
+            val policyRead = "/api/connector-account-access/policies" to CONNECTOR_CALENDAR
+            try {
+                options.openCalendar(ComposerTarget())
+                withContext(Dispatchers.IO) {
+                    assertTrue(fixture.policyReadReplyStarted.await(10, TimeUnit.SECONDS))
+                }
+                fixture.connectCalendarSecondary()
+                fixture.policyReadReplyGate = null
+                options.openCalendar(
+                    ComposerTarget(threadId = "30000000-0000-4000-8000-000000000001"),
+                )
+                val accounts = options.awaitCalendar { it.accounts.data != null }.accounts.data
+                assertEquals(ids, accounts?.accounts?.map { it.account.id }?.toSet())
+
+                staleReply.countDown()
+                val policies = options.awaitCalendar { it.policies.confirmedAt != null }.policies
+                assertEquals(ids, policies.data?.keys)
+                assertEquals(2, fixture.chatConnectorReads.count { it == policyRead })
+            } finally {
+                staleReply.countDown()
+                owner.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
     fun aFailedPolicyWriteKeepsTheConfirmedValueAndDisablingMemberAccessClearsIt() = runBlocking {
         ConnectorApiFixture().use { fixture ->
             fixture.memberAccess = true

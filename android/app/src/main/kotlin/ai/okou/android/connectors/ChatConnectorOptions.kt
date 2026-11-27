@@ -88,6 +88,8 @@ private data class ConfirmedMemberPolicy(
     val confirmedAt: TimeMark,
 )
 
+private class MemberPolicyRead(val accountIds: Set<String>, val job: Job)
+
 /** The workspace owns member policies and the reads for the active composer. */
 internal class ChatConnectorOptions(
     private val service: ConnectorService,
@@ -100,7 +102,7 @@ internal class ChatConnectorOptions(
     val state = mutable.asStateFlow()
     private var overviewRequest: Job? = null
     private val accountRequests = mutableMapOf<String, Job>()
-    private val policyRequests = mutableMapOf<String, Job>()
+    private val policyRequests = mutableMapOf<String, MemberPolicyRead>()
     private val recentPolicies = mutableMapOf<String, Map<String, ConfirmedMemberPolicy>>()
     private var targetGeneration = 0L
     private var readFailureRound = 0L
@@ -171,9 +173,7 @@ internal class ChatConnectorOptions(
                         val old = previous.orEmpty().associateBy { it.entry.slug }
                         if (next.data != null) {
                             retainOverviewPolicies(incoming)
-                            for (slug in policyRequests.keys - incoming.keys) policyRequests
-                                .remove(slug)
-                                ?.cancel()
+                            for (slug in policyRequests.keys - incoming.keys) cancelPolicyRead(slug)
                         }
                         val changed =
                             (snapshot.details.keys + accountRequests.keys).filter {
@@ -232,11 +232,11 @@ internal class ChatConnectorOptions(
                         val accounts = next.cached()
                         if (next.data?.memberAccess == false) {
                             recentPolicies.clear()
-                            policyRequests.values.toList().forEach { it.cancel() }
+                            policyRequests.values.toList().forEach { it.job.cancel() }
                             policyRequests.clear()
                         } else if (next.failure == ConnectorReadFailure.Unavailable) {
                             recentPolicies.remove(slug)
-                            policyRequests.remove(slug)?.cancel()
+                            cancelPolicyRead(slug)
                         }
                         updateDetails(slug) {
                             val policies =
@@ -264,16 +264,18 @@ internal class ChatConnectorOptions(
     }
 
     private fun showPolicies(target: ComposerTarget, slug: String) {
-        if (!canRead(target) || policyRequests[slug]?.isActive == true) return
+        if (!canRead(target)) return
         val details = mutable.value.details[slug] ?: return
         val accounts = details.accounts.data ?: return
-        if (
-            !accounts.memberAccess ||
-                accounts.accounts.isEmpty() ||
-                details.policies.confirmedAt != null
-        )
-            return
-        val ids = accounts.accounts.map { it.account.id }
+        if (!accounts.memberAccess) return
+        val inFlight = policyRequests[slug]?.takeIf { it.job.isActive }
+        if (inFlight != null) {
+            if (accounts.accounts.all { it.account.id in inFlight.accountIds }) return
+            // A newly observed account may be absent from the older policy response.
+            cancelPolicyRead(slug)
+        }
+        if (accounts.accounts.isEmpty() || details.policies.confirmedAt != null) return
+        val ids = accounts.accounts.mapTo(HashSet()) { it.account.id }
         val request =
             scope.launch(start = CoroutineStart.LAZY) {
                 try {
@@ -284,16 +286,17 @@ internal class ChatConnectorOptions(
                         publish = { publishPolicies(slug, ids, it.cached()) },
                     )
                 } finally {
-                    if (policyRequests[slug] === coroutineContext.job) policyRequests.remove(slug)
+                    if (policyRequests[slug]?.job === coroutineContext.job)
+                        policyRequests.remove(slug)
                 }
             }
-        policyRequests[slug] = request
+        policyRequests[slug] = MemberPolicyRead(ids, request)
         request.start()
     }
 
     private fun publishPolicies(
         slug: String,
-        requestedIds: List<String>,
+        requestedIds: Set<String>,
         read: ConnectorRead<Map<String, ConnectorMemberPolicy>>,
     ) {
         val current = mutable.value.details[slug]?.accounts?.data?.takeIf { it.memberAccess }
@@ -358,7 +361,11 @@ internal class ChatConnectorOptions(
 
     private fun cancelDetails(slug: String) {
         accountRequests.remove(slug)?.cancel()
-        policyRequests.remove(slug)?.cancel()
+        cancelPolicyRead(slug)
+    }
+
+    private fun cancelPolicyRead(slug: String) {
+        policyRequests.remove(slug)?.job?.cancel()
     }
 
     fun dismissFailure(target: ComposerTarget) {
@@ -550,7 +557,7 @@ internal class ChatConnectorOptions(
 
     fun applyPolicyReceipt(slug: String, connectionId: String, value: ConnectorMemberPolicy) {
         if (!authorized()) return
-        policyRequests.remove(slug)?.cancel()
+        cancelPolicyRead(slug)
         recentPolicies[slug] =
             recentPolicies[slug].orEmpty() +
                 (connectionId to ConfirmedMemberPolicy(value, clock.markNow()))

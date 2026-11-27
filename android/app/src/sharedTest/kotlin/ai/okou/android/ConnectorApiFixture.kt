@@ -232,10 +232,6 @@ internal class ConnectorApiFixture(
                     }
                     if (url.encodedPath == "/api/chat-connector-overview")
                         overviewReplyGate?.await()
-                    if (url.encodedPath == "/api/connector-account-access/policies") {
-                        policyReadReplyStarted.countDown()
-                        policyReadReplyGate?.await()
-                    }
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
                         discoveryRequested.countDown()
                         discoveryGate?.await()
@@ -285,6 +281,11 @@ internal class ConnectorApiFixture(
                         externalAccountReplyGate?.await()
                     }
                     val response = synchronized(accounts) { respond(request) }
+                    if (url.encodedPath == "/api/connector-account-access/policies") {
+                        val gate = policyReadReplyGate
+                        policyReadReplyStarted.countDown()
+                        gate?.await()
+                    }
                     if (url.pathSegments.size == 3 && url.pathSegments[1] == "connector-catalog")
                         detailReplyGate?.await()
                     if (request.method == "POST" && url.encodedPath == DEVICE_POLL_PATH) {
@@ -346,6 +347,13 @@ internal class ConnectorApiFixture(
             val id = CONNECTOR_CALENDAR_SECONDARY
             accounts[id] = accounts.getValue(id).copy(scopeMismatch = false)
             oauthCompletion = id
+        }
+    }
+
+    fun connectCalendarSecondary() {
+        synchronized(accounts) {
+            accounts[CONNECTOR_CALENDAR_SECONDARY] =
+                FixtureAccount(CONNECTOR_CALENDAR, "协作日历", "team@example.com")
         }
     }
 
