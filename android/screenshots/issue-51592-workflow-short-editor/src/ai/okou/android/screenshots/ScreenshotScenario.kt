@@ -53,8 +53,9 @@ class ScreenshotScenario {
                 assertFooter(scenario)
                 ScreenshotCapture.capture("wide-automation-editor.png")
             }
-            captureWindow(412, 892, 2f, UserPreferencesTheme.LIGHT) { scenario ->
+            captureWindow(412, 892, 1f, UserPreferencesTheme.LIGHT) { scenario ->
                 device.executeShellCommand("wm size 360x230")
+                device.executeShellCommand("settings put system font_scale 2.0")
                 assertWindow(scenario, 360, 230, 2f)
                 reveal(scenario, subject)
                 assertEquals(draft, node(subject).text)
@@ -194,9 +195,15 @@ class ScreenshotScenario {
             if (target != null && target.visibleBounds.height() >= 32 &&
                 target.visibleBounds.bottom <= bottom
             ) return
-            val x = device.displayWidth / 2
-            val start = if (device.displayHeight < 350) bottom - 16 else (bottom * 0.65f).toInt()
-            val end = maxOf(110, start - 140)
+            val scrollBounds =
+                device.findObjects(By.scrollable(true).pkg(app.packageName))
+                    .map { it.visibleBounds }
+                    .filter { it.height() >= 48 }
+                    .minByOrNull { it.height() }
+                    ?: error("No scrollable editor viewport for $selector")
+            val x = scrollBounds.centerX()
+            val start = minOf(bottom, scrollBounds.bottom) - 12
+            val end = maxOf(scrollBounds.top + 12, start - 140)
             assertTrue(device.swipe(x, start, x, end, 18))
             device.waitForIdle()
         }
