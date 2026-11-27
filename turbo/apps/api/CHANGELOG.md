@@ -10,6 +10,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.141.0](https://github.com/okou-ai/okou/compare/api-v2.140.3...api-v2.141.0) (2026-11-27)
+
+
+### Features
+
+* carry builtin firewall placeholders to runner ([#51568](https://github.com/okou-ai/okou/issues/51568)) ([1491876](https://github.com/okou-ai/okou/commit/149187644f73ac84bce660e192eab03ad38c251f))
+* **platform:** allow renaming remote devices ([#51545](https://github.com/okou-ai/okou/issues/51545)) ([da8e9a8](https://github.com/okou-ai/okou/commit/da8e9a8cf879e42a1a402c98d2b891a91703e404))
+
+
+### Bug Fixes
+
+* **api:** require web 0.1180.0 for suggestions compatibility ([#51578](https://github.com/okou-ai/okou/issues/51578)) ([7f8e736](https://github.com/okou-ai/okou/commit/7f8e736db39801406d4161c20e45800c0f04b33e))
+
+
+### Refactoring
+
+* **api:** retire the proactive scheduler handoff ([#51579](https://github.com/okou-ai/okou/issues/51579)) ([fd7c785](https://github.com/okou-ai/okou/commit/fd7c78522aa4d1bbd900ed50606b291fc582cbf5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.142.0
+    * @okouai/connectors bumped to 3.27.0
+    * @okouai/core bumped to 8.887.11
+    * @okouai/db bumped to 2.72.4
+    * @okouai/pi-agent-runtime bumped to 1.52.106
+
 ## [2.140.3](https://github.com/okou-ai/okou/compare/api-v2.140.2...api-v2.140.3) (2026-11-27)
 
 

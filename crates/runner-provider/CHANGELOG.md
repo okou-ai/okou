@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.29...runner-provider-v0.22.0) (2026-11-27)
+
+
+### Features
+
+* carry builtin firewall placeholders to runner ([#51568](https://github.com/okou-ai/okou/issues/51568)) ([1491876](https://github.com/okou-ai/okou/commit/149187644f73ac84bce660e192eab03ad38c251f))
+
+
+### Refactoring
+
+* **runner:** retire preserved download checks for instructions ([#51570](https://github.com/okou-ai/okou/issues/51570)) ([8e032d2](https://github.com/okou-ai/okou/commit/8e032d2f6c483b9e12eab92fa68004b42af9f9e3))
+
 ## [0.21.29](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.28...runner-provider-v0.21.29) (2026-11-27)
 
 ## [0.21.28](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.27...runner-provider-v0.21.28) (2026-11-27)

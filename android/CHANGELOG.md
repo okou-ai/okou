@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.68.1](https://github.com/okou-ai/okou/compare/android-v0.68.0...android-v0.68.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** align connector member policies with design ([#51563](https://github.com/okou-ai/okou/issues/51563)) ([1bbec76](https://github.com/okou-ai/okou/commit/1bbec76f953068aa17f88a2fed81144d4d5168bc))
+* **android:** align model account and credit settings feedback ([#51587](https://github.com/okou-ai/okou/issues/51587)) ([4f45923](https://github.com/okou-ai/okou/commit/4f45923a49a6bca012ed459cd476a20f508c7c61))
+* **android:** align model settings with the current design ([#51544](https://github.com/okou-ai/okou/issues/51544)) ([134888d](https://github.com/okou-ai/okou/commit/134888d8407562405fa645b19dd9f7d13a5715f7))
+* **android:** match update toolbar height to workspace search ([#51581](https://github.com/okou-ai/okou/issues/51581)) ([f1711d9](https://github.com/okou-ai/okou/commit/f1711d9041efe52b478ca6802f5e8a099a1feb8f))
+* **android:** roll back unconfirmed chat list writes ([#51561](https://github.com/okou-ai/okou/issues/51561)) ([ae9dedb](https://github.com/okou-ai/okou/commit/ae9dedb5f860c67c988d10d259d9dd57c0a843dd))
+* **android:** show terminal search failures after an empty result ([#51598](https://github.com/okou-ai/okou/issues/51598)) ([22de7b8](https://github.com/okou-ai/okou/commit/22de7b835766f79344a079f70c55d79fdd8d7d21))
+* **android:** stabilize tall bottom sheet swipe dismissal ([#51564](https://github.com/okou-ai/okou/issues/51564)) ([d6e060c](https://github.com/okou-ai/okou/commit/d6e060c1a7673e07ea03ad7bd2c0d7f06bfec012))
+* **android:** use native sizing in artifact toolbars ([#51590](https://github.com/okou-ai/okou/issues/51590)) ([17aa68e](https://github.com/okou-ai/okou/commit/17aa68e2d1274bcd7f2a4bd3970488cd93b2a3bc))
+
 ## [0.68.0](https://github.com/okou-ai/okou/compare/android-v0.67.0...android-v0.68.0) (2026-11-27)
 
 

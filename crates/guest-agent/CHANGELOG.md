@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.114.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.16...guest-agent-v0.114.0) (2026-11-27)
+
+
+### Features
+
+* **guest-agent:** switch antigravity to acp mode with mid-turn steer ([#51479](https://github.com/okou-ai/okou/issues/51479)) ([38fa091](https://github.com/okou-ai/okou/commit/38fa09173291da9b5758b08acbba152ee0437d4b))
+
 ## [0.113.16](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.15...guest-agent-v0.113.16) (2026-11-27)
 
 ## [0.113.15](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.14...guest-agent-v0.113.15) (2026-11-27)

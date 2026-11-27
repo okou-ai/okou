@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.10](https://github.com/okou-ai/okou/compare/runner-remote-v0.33.9...runner-remote-v0.33.10) (2026-11-27)
+
+
+### Refactoring
+
+* **runner-remote:** share routed ssh credential conversion ([#51609](https://github.com/okou-ai/okou/issues/51609)) ([57f499e](https://github.com/okou-ai/okou/commit/57f499eb2f5e078a6d55e42e5977ec88aa33b8f0))
+
 ## [0.33.9](https://github.com/okou-ai/okou/compare/runner-remote-v0.33.8...runner-remote-v0.33.9) (2026-11-27)
 
 ## [0.33.8](https://github.com/okou-ai/okou/compare/runner-remote-v0.33.7...runner-remote-v0.33.8) (2026-11-27)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.114](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.113...guest-control-proto-v0.22.114) (2026-11-27)
+
+
+### Refactoring
+
+* **runner:** retire preserved download checks for instructions ([#51570](https://github.com/okou-ai/okou/issues/51570)) ([8e032d2](https://github.com/okou-ai/okou/commit/8e032d2f6c483b9e12eab92fa68004b42af9f9e3))
+
 ## [0.22.113](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.112...guest-control-proto-v0.22.113) (2026-11-27)
 
 ## [0.22.112](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.111...guest-control-proto-v0.22.112) (2026-11-27)
