@@ -13,6 +13,7 @@ import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManu
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.okouFormInputStyle
 import ai.okou.android.okouFormLabelHeight
+import ai.okou.android.okouFormSupportingLineHeight
 import ai.okou.android.okouFormSupportingTextHeight
 import ai.okou.android.updates.updateFocusOutline
 import android.content.ActivityNotFoundException
@@ -99,11 +100,13 @@ internal fun ConnectorRenameSheet(
         }
     val saving = action?.busy == true && !action.reconciling
     val problem = action?.problem
+    val saveFailureMessage = stringResource(R.string.chat_rename_save_failed)
+    val supportingLineHeight = okouFormSupportingLineHeight(saveFailureMessage)
     val feedback =
         when {
             action?.reconciling == true && action.busy ->
                 stringResource(R.string.chat_rename_checking_result)
-            problem == ConnectorProblem.Failed -> stringResource(R.string.chat_rename_save_failed)
+            problem == ConnectorProblem.Failed -> saveFailureMessage
             problem != null -> stringResource(connectorActionProblemMessage(problem))
             else -> null
         }
@@ -144,7 +147,7 @@ internal fun ConnectorRenameSheet(
                     errorMessage ?: feedback,
                     if (errorMessage != null || definiteFailure) colors.error
                     else colors.onSurfaceVariant,
-                    Modifier.animateContentSize(),
+                    Modifier.animateContentSize().heightIn(min = supportingLineHeight),
                 )
             },
             errorMessage = errorMessage ?: feedback.takeIf { definiteFailure },
