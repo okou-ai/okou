@@ -828,6 +828,51 @@ internal class ChatListModelTest : ChatListModelTestFixture() {
     }
 
     @Test
+    fun archiveReadbackUsesItsRetryAfterForTheNextListAttempt() = runTest {
+        val source = ArchiveService()
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+
+            val startedAt = testScheduler.currentTime
+            val reads = mutableListOf<Long>()
+            source.beforeEvents = {
+                reads.add(testScheduler.currentTime - startedAt)
+                when (reads.size) {
+                    1 -> throw ApiFailure.Http(503, null, null, 30)
+                    2 -> throw ApiFailure.Http(503, null, null, 1)
+                    else -> Unit
+                }
+            }
+
+            model.refreshList()
+            runCurrent()
+            assertEquals(listOf(0L), reads)
+
+            advanceTimeBy(1_000)
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+            runCurrent()
+            assertEquals(listOf(0L, 1_000L), reads)
+            assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
+
+            advanceTimeBy(999)
+            runCurrent()
+            assertEquals(listOf(0L, 1_000L), reads)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 1_000L, 2_000L), reads)
+            assertTrue(
+                model.uiState.value.confirmedThreads.single { it.id == CHAT_PERSONAL }.archived,
+            )
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+
+            advanceTimeBy(28_000)
+            runCurrent()
+            assertEquals(listOf(0L, 1_000L, 2_000L), reads)
+        }
+    }
+
+    @Test
     fun restoredAcceptedChatWaitsForTheListWhenDetailConfirmsItExists() = runTest {
         val detail = CompletableDeferred<ThreadDetail>()
         var detailReads = 0
