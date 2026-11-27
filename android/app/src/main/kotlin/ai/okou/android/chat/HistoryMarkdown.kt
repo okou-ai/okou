@@ -697,8 +697,9 @@ internal fun workspaceSearchMarkdownExcerpt(
     if (first != null) {
         val block = document.workspaceSearchReadingBlock(first)?.second
         if (block != null) {
-            val part = block.markdownImages().containingMatch(first)?.value ?: block
-            val excerpt = part.searchExcerpt(source, ranges)
+            val escapes = block.tablePipeEscapes(source)
+            val part = block.markdownImages().containingMatch(first, escapes)?.value ?: block
+            val excerpt = part.searchExcerpt(source, ranges, escapes)
             if (excerpt.text.isNotBlank()) return excerpt
         }
     }
@@ -729,7 +730,10 @@ internal fun HistoryMessage.workspaceSearchTarget(
     if (block is LinkReferenceDefinition) return ConversationFindTarget(id, null)
     val imagePath =
         if (inlineImages && "![" in source && block !is ListBlock && block !is TableBlock) {
-            block.markdownImages().containingMatch(sourceMatch)?.let { "$path/${it.index}" }
+            block
+                .markdownImages()
+                .containingMatch(sourceMatch, block.tablePipeEscapes(source))
+                ?.let { "$path/${it.index}" }
         } else null
     return ConversationFindTarget(id, path, bodyIndex = 0, markdownImage = imagePath)
 }
@@ -739,12 +743,16 @@ private fun Node.workspaceSearchReadingBlock(range: IntRange): Pair<String, Node
         node.matchedReadingBlock(index.toString(), range)
     }
 
-private fun Sequence<Node>.containingMatch(range: IntRange): IndexedValue<Node>? =
+private fun Sequence<Node>.containingMatch(
+    range: IntRange,
+    escapes: List<Int> = emptyList(),
+): IndexedValue<Node>? =
     withIndex().firstOrNull { (_, node) ->
         val spans = node.sourceSpans
         val first = spans.firstOrNull() ?: return@firstOrNull false
         val last = spans.last()
-        range.first >= first.inputIndex && range.last < last.inputIndex + last.length
+        range.first >= escapes.originalMarkdownIndex(first.inputIndex) &&
+            range.last < escapes.originalMarkdownIndex(last.inputIndex + last.length)
     }
 
 private fun Node.matchedReadingBlock(path: String, range: IntRange): Pair<String, Node> {

@@ -16,13 +16,40 @@ import org.commonmark.node.Text
 
 internal data class SearchMessageExcerpt(val text: String, val ranges: List<IntRange>)
 
-internal fun Node.searchExcerpt(source: String, ranges: List<IntRange>): SearchMessageExcerpt =
-    MarkdownExcerpt(source, ranges.sortedBy { it.last })
+internal fun Node.searchExcerpt(
+    source: String,
+    ranges: List<IntRange>,
+    escapes: List<Int> = emptyList(),
+): SearchMessageExcerpt =
+    MarkdownExcerpt(source, ranges.sortedBy { it.last }, escapes)
         .apply { append(this@searchExcerpt) }
         .build()
 
+// GFM consumes a backslash before an escaped pipe before parsing the cell's inlines.
+internal fun Node.tablePipeEscapes(source: String): List<Int> {
+    val span = (this as? TableCell)?.sourceSpans?.singleOrNull() ?: return emptyList()
+    return buildList {
+        for (index in span.inputIndex until span.inputIndex + span.length - 1) {
+            if (source[index] == '\\' && source[index + 1] == '|') add(index)
+        }
+    }
+}
+
+internal fun List<Int>.originalMarkdownIndex(inlineIndex: Int): Int {
+    var index = inlineIndex
+    for (escape in this) {
+        if (escape >= index) break
+        index++
+    }
+    return index
+}
+
 /** Collect the visible literals paired with the search index's UTF-16 offsets. */
-private class MarkdownExcerpt(private val source: String, private val ranges: List<IntRange>) {
+private class MarkdownExcerpt(
+    private val source: String,
+    private val ranges: List<IntRange>,
+    private val escapes: List<Int>,
+) {
     private val text = StringBuilder()
     private val matches = mutableListOf<IntRange>()
 
@@ -50,9 +77,10 @@ private class MarkdownExcerpt(private val source: String, private val ranges: Li
     private fun appendLiteral(literal: String, spans: List<SourceSpan>) {
         val offset = text.length
         text.append(literal)
-        val sourceStart = spans.firstOrNull()?.inputIndex ?: return
+        val sourceStart =
+            spans.firstOrNull()?.let { escapes.originalMarkdownIndex(it.inputIndex) } ?: return
         val last = spans.last()
-        val sourceEnd = last.inputIndex + last.length
+        val sourceEnd = escapes.originalMarkdownIndex(last.inputIndex + last.length)
         // The service returns ordered, disjoint ranges. Find the first possible overlap.
         val index = ranges.binarySearch { it.last.compareTo(sourceStart) }
         val first = if (index < 0) -index - 1 else index

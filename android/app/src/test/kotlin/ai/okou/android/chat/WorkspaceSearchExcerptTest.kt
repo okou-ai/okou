@@ -33,6 +33,14 @@ class WorkspaceSearchExcerptTest {
     }
 
     @Test
+    fun escapedTablePipesKeepFollowingMatchesWhole() {
+        val source =
+            "| Phase | Schedule |\n| --- | --- |\n" +
+                "| Review | Mobile \\| Web \\| **approval** owner |"
+        assertExcerpt(source, "approval", "Mobile | Web | approval owner", 15)
+    }
+
+    @Test
     fun linkDestinationMatchKeepsReadableContextWithoutFalseEmphasis() {
         val source = "Inspect the [schedule](https://release.example) before release."
         val start = source.indexOf("release")
