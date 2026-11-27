@@ -100,16 +100,25 @@ private fun modelOptions(
                         }
                         .distinct()
                 val defaultEffort = routes.firstNotNullOfOrNull { it.defaultEffort }
+                val canSelect =
+                    effective.availability !=
+                        RecoveryModelsModelsItemMemberEffectiveAvailability.PLAN_RESTRICTED
                 DefaultModelChoice(
                     model.model,
                     model.displayName,
-                    effective.availability !=
-                        RecoveryModelsModelsItemMemberEffectiveAvailability.PLAN_RESTRICTED,
+                    canSelect,
                     efforts,
                     efforts.firstOrNull { it.name.equals(defaultEffort, ignoreCase = true) },
                     model.runOptions?.fast?.chatGptUsageMultiplier?.takeIf {
-                        subscription?.serviceTier ==
-                            RecoveryModelsModelsItemSubscriptionOptionsServiceTier.PRIORITY
+                        canSelect &&
+                            it.isFinite() &&
+                            it > 0 &&
+                            subscription?.serviceTier ==
+                                RecoveryModelsModelsItemSubscriptionOptionsServiceTier.PRIORITY &&
+                            routes.any { route ->
+                                route.subscriptionType == provider &&
+                                    "priority" in route.serviceTiers
+                            }
                     },
                 )
             }
