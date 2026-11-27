@@ -109,7 +109,11 @@ class ScreenshotScenario {
 
                             connector.failChatOverview = false
                             device.executeShellCommand("input keyevent KEYCODE_BACK")
+                            text("聊天选项")
+                            device.waitForIdle()
                             text("连接器").click()
+                            text("管理连接器")
+                            device.waitForIdle()
                             val calendar = text("Google Calendar")
                             val sheet = activeWindowId()
                             connector.failAccountReads = true
@@ -144,7 +148,11 @@ class ScreenshotScenario {
 
                             connector.failChatOverview = false
                             device.executeShellCommand("input keyevent KEYCODE_BACK")
+                            text("聊天选项")
+                            device.waitForIdle()
                             text("连接器").click()
+                            text("管理连接器")
+                            device.waitForIdle()
                             text("Google Calendar").click()
                             text("replacement@example.com")
                             check(!device.hasObject(By.pkg(app.packageName).text("暂时无法刷新连接器。")))
