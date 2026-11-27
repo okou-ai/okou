@@ -6222,6 +6222,7 @@ function shareGroupClassName({
     role === "user" && "[&_[data-chat-user-message-actions]]:hidden",
     // Keep the warm surface tint when adding hover feedback to a selection.
     "data-selected:bg-secondary-hover",
+    phase === "selecting" && "cursor-default",
     phase === "selecting" &&
       (hasSelection
         ? "data-selected:hover:bg-state-hover-overlay"
