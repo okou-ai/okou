@@ -53,7 +53,7 @@ export const notifyMailBodySchema = discriminatedUnion("kind", [
     kind: literal("notification").default("notification"),
     idempotencyKey: idempotencyKeySchema,
   }).strict(),
-  // Okou derives a Morning Brief key from the Run's automation event.
+  // Okou derives a Morning Brief key from the scheduled occurrence that started the Run.
   object({
     ...notifyMailFields,
     kind: literal("morning-brief"),

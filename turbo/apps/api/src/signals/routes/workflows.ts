@@ -9,6 +9,7 @@ import {
 import {
   workflowCopyVisibleQuery,
   type WorkflowCopySource,
+  type WorkflowCopyInput,
 } from "./workflow-copy-source";
 import {
   workflowCopySlugQuery,
@@ -1056,9 +1057,6 @@ const prepareCopiedWorkflowContent$ = command(
     },
     signal: AbortSignal,
   ) => {
-    if (args.source.files === null) {
-      throw new Error("Workflow attachment source is unavailable");
-    }
     const prepared = await set(
       prepareWorkflowAttachments$,
       {
@@ -1103,17 +1101,8 @@ function copiedWorkflowResponse(
   };
 }
 
-interface CopiedWorkflowPublicationInput {
-  readonly orgId: string;
-  readonly userId: string;
+interface CopiedWorkflowPublicationInput extends WorkflowCopyInput {
   readonly member: WorkflowMember;
-  readonly sourceWorkflow: WorkflowRow;
-  readonly sourceFiles:
-    | readonly {
-        readonly path: string;
-        readonly content: string;
-      }[]
-    | null;
   readonly inheritedAutonomyBudget: number | undefined;
   readonly currentTime: Date;
 }
@@ -1126,19 +1115,9 @@ const publishCopiedWorkflow$ = command(
   ) => {
     // Prepare with ordinary reads before KMS and object storage work. Concurrent
     // source changes may conflict; publication rechecks that exact source.
-    const snapshot = await set(readWorkflowCopySnapshot$, args, signal);
+    const source = await set(readWorkflowCopySnapshot$, args, signal);
     signal.throwIfAborted();
-    if (snapshot.kind === "conflict") {
-      return conflict(snapshot.message);
-    }
-    if (snapshot.source.files === null) {
-      throw new Error("Workflow attachment source is unavailable");
-    }
-    const preparedWebhooks = await prepareCopiedWebhooks(
-      args,
-      snapshot.source,
-      signal,
-    );
+    const preparedWebhooks = await prepareCopiedWebhooks(args, source, signal);
     const targetWorkflowId = randomUUID();
     const threadPreparation = await set(
       prepareWorkflowUserAutomationThread$,
@@ -1147,8 +1126,7 @@ const publishCopiedWorkflow$ = command(
         userId: args.userId,
         workflowId: targetWorkflowId,
         workflowTitle:
-          snapshot.source.sourceWorkflow.displayName ??
-          snapshot.source.sourceWorkflow.name,
+          source.sourceWorkflow.displayName ?? source.sourceWorkflow.name,
       },
       signal,
     );
@@ -1159,7 +1137,7 @@ const publishCopiedWorkflow$ = command(
           orgId: args.orgId,
           workflowId: targetWorkflowId,
           userId: args.userId,
-          source: snapshot.source,
+          source,
         },
         signal,
       );
@@ -1169,14 +1147,11 @@ const publishCopiedWorkflow$ = command(
           {
             orgId: args.orgId,
             userId: args.userId,
-            member: args.member,
-            sourceWorkflow: args.sourceWorkflow,
-            sourceFiles: args.sourceFiles,
             targetWorkflowId,
             threadPreparation,
             currentTime: args.currentTime,
             inheritedAutonomyBudget: args.inheritedAutonomyBudget,
-            source: snapshot.source,
+            source,
             preparedWebhooks,
             ...content,
           },
@@ -1189,10 +1164,7 @@ const publishCopiedWorkflow$ = command(
           throw publication.error;
         }
         // A rolled-back candidate remains durably queued for exact cleanup.
-        return workflowSlugConflict(
-          "private",
-          snapshot.source.sourceWorkflow.name,
-        );
+        return workflowSlugConflict("private", source.sourceWorkflow.name);
       }
       const copied = publication.value;
       if (copied.kind === "conflict") {
@@ -1265,22 +1237,23 @@ const copyWorkflowInner$ = command(
       }
       inheritedAutonomyBudget = derived.autonomyBudget;
     }
-    const [sourceWorkflow] = await db.select().from(
+    const [source] = await db.select().from(
       workflowCopyVisibleQuery({
         orgId: auth.orgId,
-        member,
+        userId: auth.userId,
         workflowId: params.workflowId,
       }),
     );
     signal.throwIfAborted();
-    if (!sourceWorkflow) {
+    if (!source) {
       return workflowNotFound(params.workflowId);
     }
+    const sourceWorkflow = source.workflow;
     const [slug] = await db.select().from(
       workflowCopySlugQuery({
         orgId: auth.orgId,
         userId: auth.userId,
-        sourceWorkflow,
+        name: sourceWorkflow.name,
       }),
     );
     signal.throwIfAborted();
@@ -1290,17 +1263,14 @@ const copyWorkflowInner$ = command(
     if (slugError) {
       return slugError;
     }
-    const sourceFiles =
-      sourceWorkflow.officialDefinitionName === null
-        ? await get(
-            workflowAttachmentFiles({
-              orgId: auth.orgId,
-              workflowId: sourceWorkflow.id,
-              attachments: sourceWorkflow.attachments,
-              contentBundle: sourceWorkflow.contentBundle,
-            }),
-          )
-        : null;
+    const sourceFiles = await get(
+      workflowAttachmentFiles({
+        orgId: auth.orgId,
+        workflowId: sourceWorkflow.id,
+        attachments: sourceWorkflow.attachments,
+        contentBundle: sourceWorkflow.contentBundle,
+      }),
+    );
     signal.throwIfAborted();
     // A copy is a fork owned by the caller: a new private workflow under the
     // target workspace. User-scoped runtime configuration is cloned only for the
@@ -1312,6 +1282,7 @@ const copyWorkflowInner$ = command(
         userId: auth.userId,
         member,
         sourceWorkflow,
+        workflowXmin: source.observedXmin,
         sourceFiles,
         inheritedAutonomyBudget,
         currentTime: nowDate(),

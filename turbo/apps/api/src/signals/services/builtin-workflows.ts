@@ -115,8 +115,6 @@ export function installedOfficialWorkflow(source: {
       : undefined;
   if (builtin) {
     return {
-      kind: "builtin" as const,
-      builtin,
       lifecycle: builtin.lifecycle,
       workflow: {
         displayName: builtin.displayName,
@@ -124,7 +122,7 @@ export function installedOfficialWorkflow(source: {
         instruction: "",
         files: [],
       },
-      copyInstruction: builtin.prompt,
+      exportInstruction: builtin.prompt,
     };
   }
   if (source.archivedOfficialSnapshot === null) {
@@ -138,12 +136,10 @@ export function installedOfficialWorkflow(source: {
       "Archived Official Workflow does not match its installation",
     );
   }
-  const { workflow, blueprints } = snapshot.revision.definition;
+  const { workflow } = snapshot.revision.definition;
   return {
-    kind: "archived" as const,
     lifecycle: snapshot.lifecycle,
     workflow,
-    blueprints,
-    copyInstruction: workflow.instruction,
+    exportInstruction: workflow.instruction,
   };
 }
