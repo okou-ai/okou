@@ -567,6 +567,7 @@ internal fun WorkflowEditor(
                             .updateFocusOutline(
                                 ButtonDefaults.shape,
                                 MaterialTheme.colorScheme.onPrimary,
+                                outlineInset = WorkflowFilledActionFocusInset,
                             )
                             .testTag("workflow_save")
                             .then(pendingSemantics),

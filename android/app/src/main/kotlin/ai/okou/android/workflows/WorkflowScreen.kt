@@ -124,6 +124,9 @@ import androidx.compose.ui.unit.sp
 
 private const val SECTION_EDITOR_FOCUS = "section"
 
+// Keep the stroke within a 40 dp surface centered in the 48 dp touch target.
+internal val WorkflowFilledActionFocusInset = 6.dp
+
 @Composable
 internal fun WorkflowScreen(
     model: WorkflowModel,
@@ -1044,6 +1047,7 @@ private fun WorkflowUseBar(
                         .updateFocusOutline(
                             ButtonDefaults.shape,
                             if (pending) colors.onBackground else colors.onPrimary,
+                            outlineInset = WorkflowFilledActionFocusInset,
                         )
                         .then(if (wide) Modifier else Modifier.fillMaxWidth())
                         .testTag("workflow_use"),
