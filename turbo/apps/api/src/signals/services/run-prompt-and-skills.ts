@@ -1,4 +1,3 @@
-import type { StoredTemplateGuidanceBundle } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 
 export interface SystemPromptVariables {
@@ -23,53 +22,15 @@ export interface UserPromptVariables {
   readonly message?: string;
 }
 
-type SkillVolumeSource =
-  | "system_skill"
-  | "connector_skill"
-  | "custom_connector_skill"
-  // Template guidance packages keep their existing storage provenance.
-  | "request_additional_volume";
-
-type BundleSkillSource = Extract<
-  SkillVolumeSource,
-  "system_skill" | "connector_skill" | "custom_connector_skill"
->;
-
-/** Accepted template package shared by this Run's Prompt and mount preparation. */
-export interface TemplateSkillVolume {
-  readonly source: "request_additional_volume";
-  readonly mountPath: string;
-  readonly templateGuidanceBundle: StoredTemplateGuidanceBundle;
+export interface NamedSkillBundle {
+  readonly name: string;
+  readonly contentBundle: ContentBundle;
 }
-
-export type SkillVolume =
-  | TemplateSkillVolume
-  | {
-      readonly source: BundleSkillSource;
-      readonly skillName: string;
-      readonly contentBundle: ContentBundle;
-    };
-
-export type SeedSkillVolume = SkillVolume & {
-  readonly source: "system_skill";
-};
 
 export interface RunPrompt {
   readonly systemPromptVariables: SystemPromptVariables;
   readonly userPromptVariables: UserPromptVariables;
 }
-
-/** Prompt text and the packages that support it. */
-export interface RunPromptAndSkills extends RunPrompt {
-  readonly skillVolumes: readonly SkillVolume[];
-}
-
-const VOLUME_SOURCE_ORDER = {
-  custom_connector_skill: 0,
-  system_skill: 1,
-  connector_skill: 2,
-  request_additional_volume: 4,
-} as const satisfies Readonly<Record<SkillVolumeSource, number>>;
 
 function mergePromptVariables<T extends object>(target: T, source: T): void {
   for (const key in source) {
@@ -94,35 +55,6 @@ export function mergeRunPrompt(parts: readonly RunPrompt[]): RunPrompt {
     mergePromptVariables(userPromptVariables, part.userPromptVariables);
   }
   return { systemPromptVariables, userPromptVariables };
-}
-
-type ResolvedSkillVolume =
-  | TemplateSkillVolume
-  | {
-      readonly contentBundle: ContentBundle;
-      readonly mountPath: string;
-      readonly skillName: string;
-    };
-
-/** Bind runtime skill paths at run assembly; template paths are already fixed. */
-export function resolveRunSkillVolumes(
-  volumes: readonly SkillVolume[],
-  skillsRoot: string,
-): readonly ResolvedSkillVolume[] {
-  // Preserve mount precedence and each source's captured order.
-  const ordered = [...volumes].sort((left, right) => {
-    return VOLUME_SOURCE_ORDER[left.source] - VOLUME_SOURCE_ORDER[right.source];
-  });
-  return ordered.map((volume) => {
-    if (volume.source === "request_additional_volume") {
-      return volume;
-    }
-    return {
-      contentBundle: volume.contentBundle,
-      mountPath: `${skillsRoot}/${volume.skillName}`,
-      skillName: volume.skillName,
-    };
-  });
 }
 
 interface RenderedRunPrompts {

@@ -4,11 +4,11 @@ import { resolveSkillRef } from "@okouai/core/github-url";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import type { ThreadContext } from "./thread-context.signals";
-import type { SeedSkillVolume } from "./run-prompt-and-skills";
+import type { NamedSkillBundle } from "./run-prompt-and-skills";
 
 const log = logger("api:system-skills");
 
-export function createSystemSkillVolumes(
+export function createSystemSkills(
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
   executionPackages$: ThreadContext["executionPackageSources$"],
 ) {
@@ -30,7 +30,7 @@ export function createSystemSkillVolumes(
         return [skill.url, skill];
       }),
     );
-    return skills.flatMap((skillName): readonly SeedSkillVolume[] => {
+    return skills.flatMap((skillName): readonly NamedSkillBundle[] => {
       // Only a usable bundle matters; the run keeps this pointer whatever the
       // catalog's source version is when the Runner starts.
       const bundle = contentBundleSchema.safeParse(
@@ -42,8 +42,7 @@ export function createSystemSkillVolumes(
       }
       return [
         {
-          skillName,
-          source: "system_skill",
+          name: skillName,
           contentBundle: bundle.data,
         },
       ];

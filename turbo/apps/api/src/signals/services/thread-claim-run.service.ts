@@ -51,10 +51,10 @@ import { feishuDeliveryFromContext } from "./feishu-queued-launch-context.servic
 import type { SlackThreadContext } from "./slack-queued-launch-context.service";
 import type { TelegramThreadContext } from "./telegram-queued-launch-context.service";
 import {
-  createPromptAndSkillVolumesSignals,
+  createPromptAndPackageSignals,
   type PreparedRunPrompt,
   RunPromptError,
-} from "./thread-run-prompt/prompt-and-skill-volumes";
+} from "./thread-run-prompt/prompt-and-packages";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import { createChatRunPreparationSnapshot } from "./chat-run-preparation-snapshot.signals";
 
@@ -1702,7 +1702,7 @@ export function createThreadClaimRunObjects(
       }
     );
   });
-  const promptResources = createPromptAndSkillVolumesSignals(
+  const promptResources = createPromptAndPackageSignals(
     bootstrap,
     pickedEvent$,
     threadContext,
@@ -2152,9 +2152,9 @@ export function createThreadClaimRunObjects(
       return officialWorkflow;
     }
     const timing = get(threadContext.dispatchTiming$);
-    const [skillVolumes, packageSources, ordinaryAutomation] =
+    const [startupSources, packageSources, ordinaryAutomation] =
       await Promise.all([
-        get(promptResources.skillVolumes$),
+        get(promptResources.packageSources$),
         timing.measure(
           "api_dispatch_prepare_execution_package_wait",
           "nested",
@@ -2166,20 +2166,15 @@ export function createThreadClaimRunObjects(
           ? get(threadContext.automationTarget$)
           : null,
       ]);
-    const { skillRoot, protectedMountPaths, mounts, memoryMountPath } =
-      prepareRunPackageMounts({
-        framework: route.framework,
-        skillVolumes,
-        officialWorkflow,
-      });
-    const officialMountPaths = mounts.officialWorkflowBundles.map(
-      ({ mount }) => {
-        return mount.mountPath;
-      },
-    );
+    const { mounts, memoryMountPath } = prepareRunPackageMounts({
+      framework: route.framework,
+      sources: startupSources,
+      officialWorkflow,
+    });
     const selected = selectExecutionPackages(packageSources?.sources ?? null, {
-      skillRoot,
-      protectedMountPaths: [...protectedMountPaths, ...officialMountPaths],
+      officialWorkflowNames: mounts.officialWorkflowBundles.map(({ name }) => {
+        return name;
+      }),
       ordinaryAutomation,
     });
     if ("error" in selected) {

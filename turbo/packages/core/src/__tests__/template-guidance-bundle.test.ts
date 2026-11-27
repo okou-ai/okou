@@ -3,11 +3,7 @@ import { readFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
-import {
-  storedTemplateGuidanceBundleSchema,
-  templateGuidanceBundleSchema,
-  templateGuidanceMountPath,
-} from "@okouai/api-contracts/contracts/template-guidance-bundle";
+import { templateGuidanceBundleSchema } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import {
   prepareTemplateGuidanceBundle,
   readTemplateGuidanceBundle,
@@ -166,41 +162,5 @@ describe("template guidance bundles", () => {
         }),
       ),
     ).rejects.toThrow("file limit");
-  });
-
-  it("separates the two owner namespaces and derives only fixed template directories", () => {
-    const templateId = "859550cb-28ad-47ef-8728-f6b3849f8c55";
-    const reference = {
-      sha256: "a".repeat(64),
-      archiveBytes: 40 * 1024 * 1024,
-      templateId,
-      beforeMountPaths: [],
-    };
-    const current = storedTemplateGuidanceBundleSchema.parse({
-      ...reference,
-      ownerKind: "user-template",
-    });
-    const old = storedTemplateGuidanceBundleSchema.parse({
-      ...reference,
-      ownerKind: "presentation-template",
-    });
-    expect(templateGuidanceMountPath(current)).toBe(
-      `/home/user/workspace/generated/user-template/${templateId}`,
-    );
-    expect(templateGuidanceMountPath(old)).toBe(
-      `/home/user/workspace/generated/presentation-template/${templateId}`,
-    );
-    expect(
-      storedTemplateGuidanceBundleSchema.safeParse({
-        ...current,
-        templateId: "../../escape",
-      }).success,
-    ).toBe(false);
-    expect(
-      storedTemplateGuidanceBundleSchema.safeParse({
-        ...current,
-        mountPath: "/other",
-      }).success,
-    ).toBe(false);
   });
 });

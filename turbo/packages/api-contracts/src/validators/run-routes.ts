@@ -63,6 +63,14 @@ const runContextFirewallSchema = union([
   runContextSanitizedFirewallSchema,
 ]);
 
+// Retained snapshots can include the old Runner startup order. Diagnostic
+// readers accept records without it before the writer cutover in #51330.
+const runContextTemplateGuidanceSchema = object({
+  ...storedTemplateGuidanceBundleSchema.shape,
+  beforeMountPaths:
+    storedTemplateGuidanceBundleSchema.shape.beforeMountPaths.optional(),
+});
+
 export const runContextResponseSchema = object({
   prompt: string(),
   appendSystemPrompt: string().nullable(),
@@ -75,7 +83,7 @@ export const runContextResponseSchema = object({
   firewalls: array(runContextFirewallSchema),
   networkPolicies: networkPoliciesSchema.nullable(),
   storageMounts: array(runContextStorageMountSchema),
-  templateGuidanceBundles: array(storedTemplateGuidanceBundleSchema).optional(),
+  templateGuidanceBundles: array(runContextTemplateGuidanceSchema).optional(),
   featureFlags: record(string(), boolean()).nullable(),
 });
 
