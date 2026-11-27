@@ -200,7 +200,7 @@ internal fun WorkspaceChatFeedback(
     runControls: ConversationRunControls?,
     codeFeedback: List<FeedbackReceipt<Int>>,
     dismissCodeFeedback: (FeedbackReceipt<Int>) -> Unit,
-    showWorkflowFeedback: Boolean,
+    visibleWorkflowId: String?,
     confirmingProjectDelete: String?,
     dismissProjectDelete: () -> Unit,
     renameEditor: ChatRenameEditor?,
@@ -248,14 +248,14 @@ internal fun WorkspaceChatFeedback(
     val failures = list.rowActionFailures
     fun ChatRowActionFailure.isVisible(): Boolean =
         when {
-            deleteFromWorkflow -> showWorkflowFeedback
+            feedbackWorkflowId != null -> feedbackWorkflowId == visibleWorkflowId
             feedbackConversationId != null -> feedbackConversationId == visibleConversationId
             else -> showChatList
         }
-    LaunchedEffect(chats, failures, showChatList, visibleConversationId, showWorkflowFeedback) {
+    LaunchedEffect(chats, failures, showChatList, visibleConversationId, visibleWorkflowId) {
         failures.forEach {
             // A rejected delete can arrive after navigation has already left the deleted chat.
-            val returnsToList = it.action == ChatRowAction.Delete && !it.deleteFromWorkflow
+            val returnsToList = it.action == ChatRowAction.Delete && it.feedbackWorkflowId == null
             if (it.rejected && !it.isVisible() && !returnsToList) chats.dismissRowActionFailure(it)
         }
     }
@@ -393,6 +393,7 @@ internal fun WorkspaceChatFeedback(
     }
     val listFailures = failures.filter {
         it.feedbackConversationId == null &&
+            it.feedbackWorkflowId == null &&
             it.isVisible() &&
             (it.renameThreadId == null || it.renameThreadId != openRenameId)
     }
@@ -667,6 +668,36 @@ private fun WorkspaceRenameForm(
 }
 
 @Composable
+internal fun WorkspaceWorkflowFeedback(
+    chats: ChatListModel?,
+    listState: State<ChatListUiState>,
+    workflowId: String?,
+    readErrors: List<PaneFeedbackError>,
+    snackbar: SnackbarHostState,
+) {
+    if (chats == null || workflowId == null) {
+        PaneFeedback(readErrors)
+        return
+    }
+    val list = listState.value
+    val failures = list.rowActionFailures.filter { it.feedbackWorkflowId == workflowId }
+    val error = failures.firstOrNull { it.rejected }
+    val result = failures.firstOrNull { !it.rejected }
+    PaneFeedback(
+        errors =
+            readErrors +
+                error?.let {
+                    PaneFeedbackError(it.feedbackOrder) {
+                        ChatRowFailureFeedback(chats, list, it, snackbar)
+                    }
+                },
+        result = {
+            if (result != null) ChatRowFailureFeedback(chats, list, result, snackbar)
+        },
+    )
+}
+
+@Composable
 private fun ChatRowFailureFeedback(
     chats: ChatListModel,
     list: ChatListUiState,
@@ -679,8 +710,9 @@ private fun ChatRowFailureFeedback(
             failure.fromUndo -> stringResource(R.string.chat_undo_failed)
             failure.rejected && !action.updatesChat && !failure.connectionFailed ->
                 stringResource(R.string.chat_read_action_failed)
-            action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow ->
-                stringResource(R.string.chat_delete_rejected)
+            action == ChatRowAction.Delete &&
+                failure.rejected &&
+                failure.feedbackWorkflowId == null -> stringResource(R.string.chat_delete_rejected)
             failure.rejected && action.recoversInBackground ->
                 stringResource(
                     if (failure.connectionFailed) R.string.chat_row_action_offline_named

@@ -7,6 +7,7 @@ import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouActionTreatment
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.OkouSwitch
+import ai.okou.android.PaneReadAnnouncements
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
 import ai.okou.android.WorkspaceFeedbackHost
@@ -49,6 +50,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -89,7 +91,7 @@ internal fun ConnectorDetails(
     state: ConnectorUiState,
     preview: ConnectorEntry?,
     wide: Boolean,
-    announcements: ConnectorReadAnnouncements,
+    announcements: PaneReadAnnouncements,
     initialAccountId: String? = null,
     onCloseInitialAccount: () -> Unit = {},
 ) {
@@ -127,7 +129,8 @@ internal fun ConnectorDetails(
         }
     var restoreAccountFocus by remember { mutableStateOf(false) }
     var restoreActionFocus by remember { mutableStateOf<FocusRequester?>(null) }
-    val permissionAnnouncements = remember(model) { ConnectorReadAnnouncements() }
+    val permissionAnnouncements = remember(model) { PaneReadAnnouncements() }
+    SideEffect { permissionAnnouncements.retain(listOfNotNull(state.permissions.failureRound)) }
     val accountFocus = remember { FocusRequester() }
     val addFocus = remember { FocusRequester() }
     val permissionsFocus = remember { FocusRequester() }
@@ -193,8 +196,7 @@ internal fun ConnectorDetails(
                 else R.string.connector_refresh_failed,
             )
             .takeUnless { detailUnavailable }
-    val serviceNotice =
-        listOfNotNull(detailNotice, accountNotice).maxByOrNull(ConnectorReadNotice::round)
+    val serviceNotices = listOfNotNull(detailNotice, accountNotice)
 
     val authorization = action?.authorization
     LaunchedEffect(authorization) {
@@ -391,7 +393,7 @@ internal fun ConnectorDetails(
         }
         if (panel == null && entry != null) {
             ConnectorReadFeedbackHost(
-                serviceNotice,
+                serviceNotices,
                 announcements,
                 Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
             )
@@ -492,7 +494,8 @@ internal fun ConnectorDetails(
                         cancel = ::dismissPanel,
                         readFeedback =
                             rememberConnectorReadFeedback(
-                                if (detail == null) accountNotice else serviceNotice,
+                                if (detail == null) listOfNotNull(accountNotice)
+                                else serviceNotices,
                                 announcements,
                             ),
                     )
@@ -697,7 +700,7 @@ internal fun ConnectorSheet(
 private fun ConnectorPermissionSheet(
     service: String,
     permissions: ConnectorRead<List<ConnectorPermission>>,
-    announcements: ConnectorReadAnnouncements,
+    announcements: PaneReadAnnouncements,
     close: () -> Unit,
 ) {
     val pendingHeight = if (isShortSettingsPanelWindow()) 160.dp else 208.dp
