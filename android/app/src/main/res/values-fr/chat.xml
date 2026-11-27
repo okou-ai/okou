@@ -8,9 +8,7 @@
     <string name="chat_undo_marked_read">Discussion marquée comme lue</string>
     <string name="chat_undo">Annuler</string>
     <string name="chat_action_connection_failed">Connexion impossible. Vérifiez votre connexion, puis réessayez.</string>
-    <string name="chat_undo_checking">Vérification de l’annulation…</string>
     <string name="chat_undo_failed">Impossible d’annuler la modification.</string>
-    <string name="chat_undo_unconfirmed">Impossible de confirmer l’annulation.</string>
     <string name="chat_feedback_dismiss">Fermer</string>
     <string name="chat_list_first_load_failed">Chargement temporairement indisponible</string>
     <string name="chat_list_title">Discussions</string>
@@ -21,15 +19,8 @@
     <string name="chat_metadata_unavailable">Les informations du projet sont temporairement indisponibles.</string>
     <string name="chat_inbox">Boîte de réception</string>
     <string name="chat_mark_all_read">Tout marquer comme lu</string>
-    <string name="chat_mark_all_read_unconfirmed">Certaines discussions sont peut-être encore non lues.</string>
     <string name="chat_mark_all_read_failed">Impossible de marquer les discussions comme lues.</string>
     <string name="chat_mark_all_read_partial_failed">Marquées comme lues\u00A0: %1$d. Échecs\u00A0: %2$d.</string>
-    <string name="chat_mark_all_read_mixed">Marquées comme lues : %1$d. Échecs : %2$d. Non confirmées : %3$d.</string>
-    <plurals name="chat_mark_all_read_partial">
-        <item quantity="one">%1$d conversation sur %2$d a été marquée comme lue.</item>
-        <item quantity="many">%1$d conversations sur %2$d ont été marquées comme lues.</item>
-        <item quantity="other">%1$d conversations sur %2$d ont été marquées comme lues.</item>
-    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d discussion marquée comme lue.</item>
         <item quantity="many">%1$d discussions marquées comme lues.</item>

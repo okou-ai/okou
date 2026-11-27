@@ -1561,8 +1561,7 @@ internal class ChatComposerRootTest : ChatComposerRootTestFixture() {
         actions.performClick()
         compose.onNode(hasText("Mark as read") or hasText("Mark as unread")).performClick()
         awaitConversation { ready.chats.uiState.value.rowActionFailures.any { it.rejected } }
-        val secondError =
-            hasText("Could not complete “Mark as", substring = true) and conversationHost
+        val secondError = hasText("Could not update the read status.") and conversationHost
         compose.onNode(failure).assertIsDisplayed()
         compose.onNode(secondError).assertDoesNotExist()
 

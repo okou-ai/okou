@@ -2913,7 +2913,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         choose("Mark as unread")
         compose.waitUntil(10_000) {
             compose
-                .onAllNodesWithText("Could not complete “Mark as unread”.")
+                .onAllNodesWithText("Could not update the read status.")
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
@@ -3176,7 +3176,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         val available = SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick)
         val muted = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Muted")
         val unconfirmed = "Could not confirm the chat change."
-        val rejected = "Could not finish changing the chat."
+        val rejected = "Could not complete “Unmute chat”."
         compose.waitUntil(10_000) {
             compose.onAllNodes(target.and(muted).and(available)).fetchSemanticsNodes().isNotEmpty()
         }
@@ -4682,7 +4682,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w1000dp-h800dp")
-    fun projectMoveReadsBackPartialTieWritesAndCanRecover() {
+    fun projectPinMoveRestoresTheFailedRankAndAcceptsItsLateEvent() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture
         val neighbor = "99999999-9999-4999-8999-999999999999"
@@ -4712,8 +4712,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
         fixture.events = {
             jsonResponse("""{"events":[${initial.joinToString(",")}],"hasMore":false}""")
         }
-        val readbacks = AtomicInteger()
-        val events = fixture.rowEventTail { readbacks.incrementAndGet() }
+        val events = fixture.rowEventTail()
         val rejectMoved = AtomicBoolean(true)
         val commands = CopyOnWriteArrayList<RecordedRequest>()
         fixture.commandResponse = { request ->
@@ -4750,27 +4749,15 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             compose.onNodeWithText("Move up").assertDoesNotExist()
             compose.onNodeWithText("Move down").performClick()
         }
-        val awaitingConfirmation = "Could not confirm the chat change."
+        val failedMove = "Could not complete “Move down”."
         moveDown()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(awaitingConfirmation).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText(failedMove).fetchSemanticsNodes().isNotEmpty()
         }
+        compose.onNodeWithText("Refresh chats").assertDoesNotExist()
         assertTrue(
-            target.fetchSemanticsNode().boundsInRoot.top <
-                first.fetchSemanticsNode().boundsInRoot.top,
-        )
-        compose.onNodeWithContentDescription("Dismiss").assertIsDisplayed()
-        val readsBeforeRefresh = readbacks.get()
-        compose.onNodeWithText("Refresh chats").performClick()
-        compose.waitUntil(10_000) {
-            readbacks.get() > readsBeforeRefresh &&
-                currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Ready
-        }
-        compose.onNodeWithText(awaitingConfirmation).assertIsDisplayed()
-        compose.onNodeWithText("Refresh chats").assertIsEnabled()
-        assertTrue(
-            target.fetchSemanticsNode().boundsInRoot.top <
-                first.fetchSemanticsNode().boundsInRoot.top,
+            first.fetchSemanticsNode().boundsInRoot.top <
+                target.fetchSemanticsNode().boundsInRoot.top,
         )
         assertEquals(2, commands.size)
         val lost = commands.last().jsonCommandBody()
@@ -4787,7 +4774,8 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
         compose.waitUntil(10_000) {
             currentList()?.confirmedThreads?.single { it.id == CHAT_PERSONAL }?.pinOrder == "a2"
         }
-        compose.onNodeWithText(awaitingConfirmation).assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(FEEDBACK_TIMEOUT_MILLIS)
+        compose.onNodeWithText(failedMove).assertDoesNotExist()
         rejectMoved.set(false)
         first.performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("Move up").performClick()

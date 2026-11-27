@@ -8,9 +8,7 @@
     <string name="chat_undo_marked_read">Chat marked as read</string>
     <string name="chat_undo">Undo</string>
     <string name="chat_action_connection_failed">Could not connect. Check your connection and try again.</string>
-    <string name="chat_undo_checking">Checking undo result…</string>
     <string name="chat_undo_failed">Could not undo the change.</string>
-    <string name="chat_undo_unconfirmed">Could not confirm the undo.</string>
     <string name="chat_feedback_dismiss">Dismiss</string>
     <string name="chat_list_first_load_failed">Temporarily unable to load</string>
     <string name="chat_list_title">Chats</string>
@@ -21,14 +19,8 @@
     <string name="chat_metadata_unavailable">Project information is temporarily unavailable.</string>
     <string name="chat_inbox">Inbox</string>
     <string name="chat_mark_all_read">Mark all as read</string>
-    <string name="chat_mark_all_read_unconfirmed">Some chats may still be unread.</string>
     <string name="chat_mark_all_read_failed">Could not mark chats as read.</string>
     <string name="chat_mark_all_read_partial_failed">Chats marked as read: %1$d. Failed: %2$d.</string>
-    <string name="chat_mark_all_read_mixed">Chats marked as read: %1$d. Failed: %2$d. Unconfirmed: %3$d.</string>
-    <plurals name="chat_mark_all_read_partial">
-        <item quantity="one">Marked %1$d of %2$d chats as read.</item>
-        <item quantity="other">Marked %1$d of %2$d chats as read.</item>
-    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">Marked %1$d chat as read.</item>
         <item quantity="other">Marked %1$d chats as read.</item>

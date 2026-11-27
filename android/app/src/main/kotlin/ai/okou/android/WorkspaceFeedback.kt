@@ -131,13 +131,8 @@ private fun ChatUndoFeedback(
                         else -> R.string.chat_undo_marked_read
                     },
                 )
-            ChatUndoPhase.Checking -> stringResource(R.string.chat_undo_checking)
-            ChatUndoPhase.Unconfirmed -> stringResource(R.string.chat_undo_unconfirmed)
         }
-    val action =
-        stringResource(
-            if (undo.phase == ChatUndoPhase.Offered) R.string.chat_undo else R.string.chat_refresh,
-        )
+    val action = stringResource(R.string.chat_undo)
     key(chats, undo.sequence) {
         val currentUndo = rememberUpdatedState(undo)
         val returnFocus = rememberUpdatedState(onFocusedUndo)
@@ -146,7 +141,7 @@ private fun ChatUndoFeedback(
                 ChatFeedbackContent(
                     message,
                     action,
-                    undo.phase != ChatUndoPhase.Checking && !actionPending,
+                    !actionPending,
                     showDismiss = true,
                 ),
             )
@@ -154,8 +149,7 @@ private fun ChatUndoFeedback(
             snackbar.showSnackbar(
                 ChatFeedbackSnackbar(content) { keyboardFocused ->
                     val current = currentUndo.value
-                    if (current.phase == ChatUndoPhase.Unconfirmed) chats.checkRowUndo(current)
-                    else if (chats.undoRowAction(current) && keyboardFocused)
+                    if (chats.undoRowAction(current) && keyboardFocused)
                         returnFocus.value(current.threadId)
                 },
             )
@@ -409,7 +403,7 @@ internal fun WorkspaceChatFeedback(
     val projectNotice = deleteFeedback.lastOrNull {
         !it.rejected && it.projectId != deleteProject?.id
     }
-    val batchError = if (showChatList) batchResults.firstOrNull { it.rejected > 0 } else null
+    val batchError = if (showChatList) batchResults.firstOrNull { it.hasFailures } else null
     val refreshError =
         if (showChatList) {
             val hasUsableContent =
@@ -429,7 +423,7 @@ internal fun WorkspaceChatFeedback(
         } else null
     val listUndo = list.rowUndo?.takeIf { showChatList && it.phase != ChatUndoPhase.Applying }
     val rowNotice = listFailures.firstOrNull { !it.rejected }
-    val batchNotice = batchResults.firstOrNull { it.rejected == 0 }?.takeIf { showChatList }
+    val batchNotice = batchResults.firstOrNull { !it.hasFailures }?.takeIf { showChatList }
     val moveNotice = list.chatMoveNotice?.takeIf { showChatList }
     PaneFeedback(
         errors =
@@ -567,35 +561,19 @@ private fun MarkAllReadSnackbar(
 ) {
     val message =
         when {
-            result.rejected == result.requested ->
-                stringResource(R.string.chat_mark_all_read_failed)
+            result.confirmed == 0 -> stringResource(R.string.chat_mark_all_read_failed)
             result.confirmed == result.requested ->
                 pluralStringResource(
                     R.plurals.chat_mark_all_read_success,
                     result.confirmed,
                     result.confirmed,
                 )
-            result.rejected > 0 && result.confirmed + result.rejected == result.requested ->
+            else ->
                 stringResource(
                     R.string.chat_mark_all_read_partial_failed,
                     result.confirmed,
-                    result.rejected,
+                    result.requested - result.confirmed,
                 )
-            result.rejected > 0 ->
-                stringResource(
-                    R.string.chat_mark_all_read_mixed,
-                    result.confirmed,
-                    result.rejected,
-                    result.requested - result.confirmed - result.rejected,
-                )
-            result.confirmed > 0 ->
-                pluralStringResource(
-                    R.plurals.chat_mark_all_read_partial,
-                    result.confirmed,
-                    result.confirmed,
-                    result.requested,
-                )
-            else -> stringResource(R.string.chat_mark_all_read_unconfirmed)
         }
     LaunchedEffect(chats, snackbar, result.feedbackOrder, message) {
         snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
@@ -699,6 +677,8 @@ private fun ChatRowFailureFeedback(
     val message =
         when {
             failure.fromUndo -> stringResource(R.string.chat_undo_failed)
+            failure.rejected && !action.updatesChat && !failure.connectionFailed ->
+                stringResource(R.string.chat_read_action_failed)
             action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow ->
                 stringResource(R.string.chat_delete_rejected)
             failure.rejected && action.recoversInBackground ->
@@ -712,8 +692,7 @@ private fun ChatRowFailureFeedback(
                     when {
                         failure.connectionFailed -> R.string.chat_action_connection_failed
                         failure.rejected -> R.string.chat_row_action_rejected
-                        action.updatesChat || failure.readIntent != null ->
-                            R.string.chat_row_action_failed
+                        action.updatesChat -> R.string.chat_row_action_failed
                         else -> R.string.chat_read_action_failed
                     },
                 )
