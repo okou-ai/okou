@@ -20,25 +20,7 @@ final class WorkspaceChatActions {
   private var chatLinkRequestID = UUID()
   private(set) var openingThreadID: String?
   private(set) var chatLinkError: String?
-  private var feedback: ChatThreadFeedback?
-  /// Failed writes remain recoverable on return, even if a newer chat owned the banner.
-  private var archiveFailures: [ChatThreadFeedback] = []
-  @ObservationIgnored private var visibleRows: Set<String> = []
-
-  var threadFeedback: ChatThreadFeedback? {
-    if let feedback, feedback.archiveVisit == nil { return feedback }
-    guard let workspace, feedback != nil || !archiveFailures.isEmpty else { return nil }
-    let current = ArchiveFeedbackVisit(workspace)
-    if feedback?.archiveVisit == current { return feedback }
-    guard
-      var failure = archiveFailures.last(where: {
-        $0.archiveVisit?.page == current.page && $0.archiveVisit?.id != current.id
-      })
-    else { return nil }
-    failure.requiresNavigation = false
-    return failure
-  }
-
+  private(set) var threadFeedback: ChatThreadFeedback?
   private(set) var fork: ChatForkStore?
   private(set) var threadPreview: ChatThreadPreviewResources?
 
@@ -101,8 +83,6 @@ final class WorkspaceChatActions {
   func openChatLink(_ destination: ChatLinkDestination) async -> Bool {
     guard let workspace else { return false }
     guard !closed, !needsUpgrade, !Task.isCancelled else { return false }
-    // A user opening a link owns navigation while its destination is being resolved.
-    workspace.sidebarInteraction.beginVisit()
     let requestID = UUID()
     chatLinkRequestID = requestID
     openingThreadID = nil
@@ -192,25 +172,7 @@ final class WorkspaceChatActions {
   }
 
   func dismissThreadFeedback(_ id: UUID) {
-    if feedback?.id == id { feedback = nil }
-    archiveFailures.removeAll { $0.id == id }
-  }
-
-  func performThreadFeedback(_ id: UUID) async {
-    guard let current = threadFeedback, current.id == id, current.actionTitle != nil else { return }
-    dismissThreadFeedback(id)
-    await current.action()
-  }
-
-  func setRowVisible(_ id: String, visible: Bool) {
-    if visible {
-      visibleRows.insert(id)
-      if feedback?.threadID == id, feedback?.kind == .archiveUndo(showsBanner: true) {
-        feedback?.kind = .archiveUndo(showsBanner: false)
-      }
-    } else {
-      visibleRows.remove(id)
-    }
+    if threadFeedback?.id == id { threadFeedback = nil }
   }
 
   @discardableResult
@@ -223,138 +185,80 @@ final class WorkspaceChatActions {
       id, projectID: projectID,
       onFailure: { [weak self] message in
         guard let self, !closed, !needsUpgrade else { return }
-        feedback = ChatThreadFeedback(
+        threadFeedback = ChatThreadFeedback(
           threadID: id, message: message, actionTitle: "Retry", persists: true, kind: .error
         ) { [weak self] in
           await self?.moveToProject(id, projectID: projectID)
         }
       },
       didBegin: {
-        if feedback?.threadID == id { feedback = nil }
+        if threadFeedback?.threadID == id { threadFeedback = nil }
         if let projectID { workspace.projects.expand(projectID) }
         didBegin()
       })
   }
 
-  private struct ArchiveChange {
-    let threadID: String
-    let archived: Bool
-    let isUndo: Bool
-    var returnsToChat: Bool
-    let eventID = UUID().uuidString.lowercased()
-  }
-
   @discardableResult
-  func setArchived(_ id: String, archived: Bool, leaveDetail: Bool = false) async -> Bool {
-    let leaving = archived && leaveDetail && workspace?.selectedThreadID == id
-    let change = ArchiveChange(
-      threadID: id, archived: archived, isUndo: false, returnsToChat: leaving)
-    return await applyArchiveChange(change, leaveDetail: leaving)
-  }
-
-  @discardableResult
-  private func applyArchiveChange(
-    _ change: ArchiveChange, leaveDetail: Bool = false, retry: Bool = false
+  func setArchived(
+    _ id: String, archived: Bool, leaveDetail: Bool = false,
+    restoreOnUndo: Bool = false, reopenOnSuccess: Bool = false,
+    eventID: String = UUID().uuidString.lowercased()
   ) async -> Bool {
-    let id = change.threadID
-    guard let workspace, !closed, !needsUpgrade, workspace.list.canUpdate(id),
+    guard let workspace else { return false }
+    guard !closed, !needsUpgrade, workspace.list.canUpdate(id),
       let thread = workspace.list.threads.first(where: { $0.id == id })
     else { return false }
-    guard !workspace.isCreating || (!leaveDetail && !(change.isUndo && change.returnsToChat))
-    else { return false }
+    let leaving = archived && leaveDetail && workspace.selectedThreadID == id
+    // Creation already owns the next navigation when its response arrives.
+    guard !workspace.isCreating || (!leaving && !reopenOnSuccess) else { return false }
+    let restore = leaving || restoreOnUndo
     var failure: String?
-    var pending: ChatThreadFeedback?
+    var pendingFeedbackID: UUID?
     let succeeded = await workspace.list.setArchived(
-      thread, archived: change.archived, eventID: change.eventID, retry: retry,
-      onFailure: { failure = $0 },
+      thread, archived: archived, eventID: eventID, onFailure: { failure = $0 },
       didBegin: {
-        // The automatic return to the list is part of this action's visit.
-        if leaveDetail { workspace.sidebarInteraction.setOpen(true) }
-        pending = ChatThreadFeedback(
+        // The list owns the write, so leaving the detail cannot cancel it.
+        if leaving { self.workspace?.sidebarInteraction.setOpen(true) }
+        let pending = ChatThreadFeedback(
           threadID: id,
-          message: change.archived
+          message: archived
             ? String(localized: "Archiving chat…") : String(localized: "Unarchiving chat…"),
-          actionTitle: nil, persists: true, isWorking: true,
-          archiveVisit: ArchiveFeedbackVisit(workspace)
+          actionTitle: nil, persists: true, isWorking: true
         ) {}
-        self.archiveFailures.removeAll { $0.threadID == id }
-        self.feedback = pending
+        pendingFeedbackID = pending.id
+        self.threadFeedback = pending
       })
     guard !closed, !needsUpgrade else { return false }
     if succeeded { workspace.notificationReadStateChanged() }
-    guard let pending, let source = pending.archiveVisit else { return succeeded }
-    if let failure {
-      guard workspace.list.threads.contains(where: { $0.id == id }),
-        feedback?.threadID != id || feedback?.id == pending.id
-      else { return false }
-      let recovery = archiveFailure(
-        change, source: source, title: thread.titleParts.text, reason: failure)
-      archiveFailures.append(recovery)
-      if feedback?.id == pending.id { feedback = recovery }
-    } else if feedback?.id == pending.id {
-      if succeeded, source == ArchiveFeedbackVisit(workspace),
-        workspace.list.threads.first(where: { $0.id == id })?.isArchived == change.archived
-      {
-        confirmArchiveChange(change, in: workspace)
-      } else {
-        feedback = nil
-      }
-    }
-    return succeeded
-  }
-
-  private func archiveFailure(
-    _ change: ArchiveChange, source: ArchiveFeedbackVisit, title: String, reason: String
-  ) -> ChatThreadFeedback {
-    ChatThreadFeedback(
-      threadID: change.threadID,
-      message: change.archived
-        ? String(localized: "Couldn’t confirm archiving “\(title)”.")
-        : String(localized: "Couldn’t confirm unarchiving “\(title)”."),
-      actionTitle: String(localized: "Retry"), actionHint: reason, persists: true,
-      requiresNavigation: change.isUndo && change.returnsToChat, kind: .error, archiveVisit: source
-    ) { [weak self] in
-      guard let self, let workspace = self.workspace else { return }
-      let current = ArchiveFeedbackVisit(workspace)
-      guard current.page == source.page else { return }
-      var retried = change
-      if current != source { retried.returnsToChat = false }
-      await self.applyArchiveChange(retried, retry: true)
-    }
-  }
-
-  private func confirmArchiveChange(_ change: ArchiveChange, in workspace: WorkspaceStore) {
-    let id = change.threadID
-    let message =
-      change.archived ? String(localized: "Chat archived") : String(localized: "Chat unarchived")
-    if change.isUndo {
-      if change.returnsToChat {
+    // A late acknowledgement must not replace feedback from a newer action or dismissal.
+    guard let pendingFeedbackID, threadFeedback?.id == pendingFeedbackID else { return succeeded }
+    if succeeded {
+      if reopenOnSuccess {
         selectChat(id)
         workspace.sidebarInteraction.setOpen(false)
       }
-      let visit = ArchiveFeedbackVisit(workspace)
-      let visible =
-        visit.page == .chat(id) || (workspace.sidebarInteraction.isOpen && visibleRows.contains(id))
-      feedback = ChatThreadFeedback(
-        threadID: id, message: message, actionTitle: nil,
-        kind: .archiveUndo(showsBanner: !visible), archiveVisit: visit
-      ) {}
-    } else {
-      let source = ArchiveFeedbackVisit(workspace)
-      feedback = ChatThreadFeedback(
-        threadID: id, message: message, actionTitle: String(localized: "Undo"),
-        actionHint: change.returnsToChat
-          ? String(localized: "Restores the chat and returns to it.") : "",
-        requiresNavigation: change.returnsToChat, archiveVisit: source
+      threadFeedback = ChatThreadFeedback(
+        threadID: id,
+        message: archived
+          ? String(localized: "Chat archived") : String(localized: "Chat unarchived"),
+        actionTitle: String(localized: "Undo"),
+        actionHint: restore ? String(localized: "Restores the chat and returns to it.") : "",
+        requiresNavigation: restore
       ) { [weak self] in
-        guard let self, let workspace = self.workspace, source == ArchiveFeedbackVisit(workspace)
-        else { return }
-        let undo = ArchiveChange(
-          threadID: id, archived: !change.archived, isUndo: true,
-          returnsToChat: change.returnsToChat)
-        await self.applyArchiveChange(undo)
+        guard let self else { return }
+        await self.setArchived(id, archived: !archived, reopenOnSuccess: restore)
+      }
+    } else {
+      threadFeedback = ChatThreadFeedback(
+        threadID: id, message: failure ?? "The archive change was not confirmed.",
+        actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess, kind: .error
+      ) { [weak self] in
+        await self?.setArchived(
+          id, archived: archived, restoreOnUndo: restore,
+          reopenOnSuccess: reopenOnSuccess, eventID: eventID)
       }
     }
+    return succeeded
   }
 
   /// Deletes a chat the user has confirmed. It leaves the list at once and stays out of it
@@ -373,8 +277,7 @@ final class WorkspaceChatActions {
     guard let workspace else { return false }
     guard !closed, !needsUpgrade else { return false }
     // Earlier feedback for this chat (Undo archive) has nothing left to act on.
-    archiveFailures.removeAll { $0.threadID == id }
-    if feedback?.threadID == id { feedback = nil }
+    if threadFeedback?.threadID == id { threadFeedback = nil }
     var failure: String?
     let deleted = await workspace.list.delete(
       id, eventID: eventID, onFailure: { failure = $0 })
@@ -382,7 +285,7 @@ final class WorkspaceChatActions {
     if deleted {
       workspace.notificationReadStateChanged()
     } else {
-      feedback = ChatThreadFeedback(
+      threadFeedback = ChatThreadFeedback(
         threadID: id,
         message: failure ?? String(localized: "The chat deletion was not confirmed."),
         actionTitle: String(localized: "Retry"), persists: true, actsOnHiddenChat: true,
@@ -406,14 +309,14 @@ final class WorkspaceChatActions {
         muted
         ? "Chat muted"
         : "Chat unmuted"
-      feedback = ChatThreadFeedback(
+      threadFeedback = ChatThreadFeedback(
         threadID: id, message: message, actionTitle: "Undo"
       ) { [weak self] in
         // Undo restores mute state without clearing unread replies, like the PWA.
         await self?.setMuted(id, muted: !muted, markRead: false)
       }
     } else {
-      feedback = ChatThreadFeedback(
+      threadFeedback = ChatThreadFeedback(
         threadID: id, message: failure ?? "The mute change was not confirmed.",
         actionTitle: "Retry", persists: true, kind: .error
       ) { [weak self] in
@@ -455,19 +358,17 @@ final class WorkspaceChatActions {
     guard !closed else { return }
     dismissFork()
     workspace.requestRefresh(.threadList)
-    feedback = ChatThreadFeedback(
+    threadFeedback = ChatThreadFeedback(
       threadID: thread.id, message: String(localized: "New chat created"),
       actionTitle: String(localized: "Open"), requiresNavigation: true,
       action: { [weak self] in self?.selectChat(thread.id) })
   }
 
   func threadUnavailable(_ id: String, wasSelected: Bool) {
-    archiveFailures.removeAll { $0.threadID == id }
-    if feedback?.threadID == id, feedback?.archiveVisit != nil { feedback = nil }
     if openingThreadID == id { cancelOpening() }
     dismissChatPreview(id)
     if wasSelected {
-      feedback = ChatThreadFeedback(
+      threadFeedback = ChatThreadFeedback(
         threadID: id, message: String(localized: "This chat is no longer available."),
         actionTitle: nil, kind: .error, action: {})
     }
@@ -480,8 +381,7 @@ final class WorkspaceChatActions {
     fork = nil
     threadPreview?.close()
     threadPreview = nil
-    feedback = nil
-    archiveFailures.removeAll()
+    threadFeedback = nil
   }
 }
 
@@ -530,8 +430,14 @@ extension WorkspaceStore {
   }
 
   @discardableResult
-  func setArchived(_ id: String, archived: Bool, leaveDetail: Bool = false) async -> Bool {
-    return await navigationActions.setArchived(id, archived: archived, leaveDetail: leaveDetail)
+  func setArchived(
+    _ id: String, archived: Bool, leaveDetail: Bool = false,
+    restoreOnUndo: Bool = false, reopenOnSuccess: Bool = false,
+    eventID: String = UUID().uuidString.lowercased()
+  ) async -> Bool {
+    return await navigationActions.setArchived(
+      id, archived: archived, leaveDetail: leaveDetail, restoreOnUndo: restoreOnUndo,
+      reopenOnSuccess: reopenOnSuccess, eventID: eventID)
   }
 
   @discardableResult

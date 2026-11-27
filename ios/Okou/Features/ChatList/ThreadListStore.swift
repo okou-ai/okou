@@ -476,12 +476,11 @@ final class ThreadListStore {
   @discardableResult
   func setArchived(
     _ thread: ChatThread, archived: Bool, eventID: String = UUID().uuidString.lowercased(),
-    retry: Bool = false, onFailure: (@MainActor (String) -> Void)? = nil,
+    onFailure: (@MainActor (String) -> Void)? = nil,
     didBegin: @MainActor () -> Void = {}
   ) async -> Bool {
     return await actions.setArchived(
-      thread, archived: archived, eventID: eventID, retry: retry, onFailure: onFailure,
-      didBegin: didBegin)
+      thread, archived: archived, eventID: eventID, onFailure: onFailure, didBegin: didBegin)
   }
 
   @discardableResult

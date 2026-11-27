@@ -331,7 +331,6 @@ final class ChatThreadArchiveTests: XCTestCase {
     defer { store.close() }
     await store.prepareWorkspaceComposer()
     await store.refresh()
-    store.sidebar.select(.unread)
     let before = try XCTUnwrap(store.list.threads.first)
     XCTAssertTrue(before.isUnread)
     XCTAssertTrue(store.list.hasUnreadThreads)
@@ -346,14 +345,8 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertFalse(store.list.hasUnreadThreads)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive"])
 
-    let undo = try XCTUnwrap(store.threadFeedback)
-    store.navigationActions.setRowVisible(undo.threadID, visible: true)
-    await store.navigationActions.performThreadFeedback(undo.id)
-    await store.navigationActions.performThreadFeedback(undo.id)
+    await (try XCTUnwrap(store.threadFeedback)).action()
 
-    XCTAssertEqual(store.threadFeedback?.message, "Chat unarchived")
-    XCTAssertNil(store.threadFeedback?.actionTitle)
-    XCTAssertEqual(store.threadFeedback?.kind, .archiveUndo(showsBanner: false))
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
     XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
     XCTAssertTrue(store.list.hasUnreadThreads)
@@ -376,7 +369,7 @@ final class ChatThreadArchiveTests: XCTestCase {
     await store.refresh()
     XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isArchived)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive"])
-    await store.navigationActions.performThreadFeedback(try XCTUnwrap(store.threadFeedback).id)
+    await (try XCTUnwrap(store.threadFeedback)).action()
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
   }
@@ -402,14 +395,9 @@ final class ChatThreadArchiveTests: XCTestCase {
     let undo = try XCTUnwrap(store.threadFeedback)
     XCTAssertFalse(undo.requiresNavigation)
     XCTAssertEqual(undo.actionTitle, "Undo")
-    await store.navigationActions.performThreadFeedback(undo.id)
+    await undo.action()
     XCTAssertTrue(store.sidebarInteraction.isOpen)
     XCTAssertEqual(store.sidebar.filter, .unread)
-    XCTAssertEqual(store.threadFeedback?.kind, .archiveUndo(showsBanner: true))
-    XCTAssertNil(store.threadFeedback?.actionTitle)
-    store.navigationActions.setRowVisible(undo.threadID, visible: true)
-    store.navigationActions.setRowVisible(undo.threadID, visible: false)
-    XCTAssertEqual(store.threadFeedback?.kind, .archiveUndo(showsBanner: false))
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
   }
@@ -421,7 +409,6 @@ final class ChatThreadArchiveTests: XCTestCase {
     await store.prepareWorkspaceComposer()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
-    store.sidebarInteraction.setOpen(false)
     let menu = ChatThreadMenu(
       workspace: store, threadID: ThreadActionsFixture.thread, moveToProject: { _ in })
     await menu.perform(.archive)
@@ -445,7 +432,7 @@ final class ChatThreadArchiveTests: XCTestCase {
       await creating.value
     }
     await fulfillment(of: [requested], timeout: 3)
-    await store.navigationActions.performThreadFeedback(undo.id)
+    await undo.action()
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "create"])
     store.selectChat(ThreadActionsFixture.thread)
@@ -461,24 +448,18 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertEqual(created?.id, ThreadActionsFixture.createdThread)
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.createdThread)
     store.selectChat(ThreadActionsFixture.thread)
-    try XCTUnwrap(store.selectedConversation).draft = "Keep the original reply"
     let saved = await store.setArchived(
       ThreadActionsFixture.thread, archived: true, leaveDetail: true)
     XCTAssertTrue(saved)
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "create", "unarchive", "archive"])
     XCTAssertTrue(store.sidebarInteraction.isOpen)
-    await store.navigationActions.performThreadFeedback(try XCTUnwrap(store.threadFeedback).id)
+    await (try XCTUnwrap(store.threadFeedback)).action()
     XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
-    XCTAssertEqual(store.selectedConversation?.draft, "Keep the original reply")
-    XCTAssertNil(store.threadFeedback?.actionTitle)
-    XCTAssertEqual(store.threadFeedback?.kind, .archiveUndo(showsBanner: false))
   }
 
-  func testDetailArchiveSurvivesNavigationAndCallerCancellationWithoutInterruptingNewChat()
-    async throws
-  {
+  func testDetailArchiveSurvivesNavigationAndCallerCancellationAndUndoRestoresChat() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
@@ -486,7 +467,6 @@ final class ChatThreadArchiveTests: XCTestCase {
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
     store.sidebar.select(.unread)
-    store.sidebarInteraction.setOpen(false)
     try XCTUnwrap(store.selectedConversation).draft = "Keep my reply after undo"
     let gate = ThreadActionGate()
     defer { gate.open() }
@@ -528,16 +508,18 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(store.newChatDraft, "Continue a different task")
-    XCTAssertNil(store.threadFeedback)
-    store.sidebarInteraction.goBack()
-    XCTAssertNil(store.threadFeedback)
-    XCTAssertEqual(
-      store.conversation(for: ThreadActionsFixture.thread)?.draft, "Keep my reply after undo")
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isArchived)
-    XCTAssertEqual(fixture.writes.map(\.action), ["archive"])
+    XCTAssertEqual(store.threadFeedback?.message, "Chat archived")
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
+    XCTAssertTrue(store.threadFeedback?.isWorking == false)
+    await (try XCTUnwrap(store.threadFeedback)).action()
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
+    XCTAssertEqual(store.selectedConversation?.draft, "Keep my reply after undo")
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
   }
 
-  func testArchiveFailureReturnsToSourceAndRetriesTheOriginalEventWithoutReopeningChat()
+  func testFailedArchiveRetryReusesEventAndRetainsDetailUndoDestinationAfterNavigation()
     async throws
   {
     let fixture = ThreadActionsFixture(muted: true)
@@ -546,228 +528,60 @@ final class ChatThreadArchiveTests: XCTestCase {
     await store.prepareWorkspaceComposer()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
-    store.sidebarInteraction.setOpen(false)
-    let gate = ThreadActionGate()
-    defer { gate.open() }
-    let requested = expectation(description: "Archive reached HTTP")
-    fixture.state.value.withLock {
-      $0.failNext["archive"] = 503
-      $0.nextGate = gate
-      $0.nextWriteRequested = { requested.fulfill() }
-    }
-    let archiving = Task {
-      await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
-    }
-    addTeardownBlock {
-      gate.open()
-      _ = await archiving.value
-    }
-    await fulfillment(of: [requested], timeout: 3)
+    fixture.state.value.withLock { $0.failNext["archive"] = 503 }
+    await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
     XCTAssertTrue(store.sidebarInteraction.isOpen)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Retry")
     store.startNewChat()
     store.sidebarInteraction.setOpen(false)
     store.newChatDraft = "A separate task"
-    gate.open()
-    let archived = await archiving.value
-    XCTAssertFalse(archived)
-    XCTAssertNil(store.threadFeedback)
-
-    store.sidebarInteraction.goBack()
+    let gate = ThreadActionGate()
+    defer { gate.open() }
+    let requested = expectation(description: "Archive retry reached HTTP")
+    fixture.state.value.withLock {
+      $0.nextGate = gate
+      $0.nextWriteRequested = { requested.fulfill() }
+    }
     let retry = try XCTUnwrap(store.threadFeedback)
-    XCTAssertEqual(retry.actionTitle, "Retry")
-    XCTAssertTrue(retry.message.contains("Planning a useful week"))
-    await store.navigationActions.performThreadFeedback(retry.id)
-    let archiveIDs = fixture.writes.filter { $0.action == "archive" }.compactMap(\.eventID)
-    XCTAssertEqual(archiveIDs, Array(repeating: try XCTUnwrap(archiveIDs.first), count: 2))
-    let undo = try XCTUnwrap(store.threadFeedback)
-    XCTAssertEqual(undo.actionTitle, "Undo")
-    XCTAssertFalse(undo.requiresNavigation)
-
-    fixture.state.value.withLock { $0.failNext["unarchive"] = 503 }
-    await store.navigationActions.performThreadFeedback(undo.id)
-    let retryUndo = try XCTUnwrap(store.threadFeedback)
-    XCTAssertEqual(retryUndo.actionTitle, "Retry")
-    XCTAssertTrue(retryUndo.persists)
-    await store.navigationActions.performThreadFeedback(retryUndo.id)
-    let undoIDs = fixture.writes.filter { $0.action == "unarchive" }.compactMap(\.eventID)
-    XCTAssertEqual(undoIDs, Array(repeating: try XCTUnwrap(undoIDs.first), count: 2))
+    let retrying = Task { await retry.action() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      retrying.cancel()
+      gate.open()
+      await retrying.value
+    }
+    await fulfillment(of: [requested], timeout: 3)
+    XCTAssertTrue(store.threadFeedback?.isWorking == true)
     XCTAssertNil(store.threadFeedback?.actionTitle)
-    XCTAssertEqual(store.threadFeedback?.message, "Chat unarchived")
-    XCTAssertTrue(store.sidebarInteraction.isOpen)
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
+    gate.open()
+    await retrying.value
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(store.newChatDraft, "A separate task")
-    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isMuted)
-  }
-
-  func testRetryReconcilesALostArchiveResponseBeforeSendingAnotherWrite() async throws {
-    let fixture = ThreadActionsFixture()
-    let store = fixture.workspace()
-    defer { store.close() }
-    await store.refresh()
-    let id = ThreadActionsFixture.thread
-    store.selectChat(id)
-    store.sidebarInteraction.setOpen(false)
-    fixture.state.value.withLock { $0.failNext["archive"] = 503 }
-    await store.setArchived(id, archived: true, leaveDetail: true)
-    let retry = try XCTUnwrap(store.threadFeedback)
-    XCTAssertEqual(retry.actionTitle, "Retry")
-    fixture.remote(kind: "archived", eventID: try XCTUnwrap(fixture.writes.first?.eventID))
-    await store.navigationActions.performThreadFeedback(retry.id)
-    XCTAssertEqual(fixture.writes.map(\.action), ["archive"])
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isArchived)
-    let undo = try XCTUnwrap(store.threadFeedback)
-    XCTAssertEqual(undo.actionTitle, "Undo")
-    XCTAssertTrue(undo.requiresNavigation)
-
-    fixture.state.value.withLock { $0.failNext["unarchive"] = 503 }
-    await store.navigationActions.performThreadFeedback(undo.id)
-    let retryUndo = try XCTUnwrap(store.threadFeedback)
-    fixture.remote(kind: "unarchived", eventID: try XCTUnwrap(fixture.writes.last?.eventID))
-    fixture.remote(kind: "archived")
-    await store.navigationActions.performThreadFeedback(retryUndo.id)
-
-    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isArchived)
-    XCTAssertTrue(store.sidebarInteraction.isOpen)
-    XCTAssertNil(store.threadFeedback)
-  }
-
-  func testOpeningAnotherChatWhileUndoIsPendingKeepsItsDraftAndConsumesTheUndo() async throws {
-    let fixture = ThreadActionsFixture()
-    let store = fixture.workspace()
-    defer { store.close() }
-    let first = ThreadActionsFixture.thread
-    let second = ThreadActionsFixture.createdThread
-    fixture.remote(kind: "created", threadID: second)
-    await store.prepareWorkspaceComposer()
-    await store.refresh()
-    store.selectChat(first)
-    store.sidebarInteraction.setOpen(false)
-    await store.setArchived(first, archived: true, leaveDetail: true)
-    let undo = try XCTUnwrap(store.threadFeedback)
-    let gate = ThreadActionGate()
-    defer { gate.open() }
-    let requested = expectation(description: "Undo reached HTTP")
-    fixture.state.value.withLock {
-      $0.nextGate = gate
-      $0.nextWriteRequested = { requested.fulfill() }
-    }
-    let undoing = Task { await store.navigationActions.performThreadFeedback(undo.id) }
-    addTeardownBlock {
-      gate.open()
-      await undoing.value
-    }
-    await fulfillment(of: [requested], timeout: 3)
-    store.selectChat(second)
-    store.sidebarInteraction.setOpen(false)
-    try XCTUnwrap(store.selectedConversation).draft = "Finish the other reply"
-    gate.open()
-    await undoing.value
-
-    XCTAssertNil(store.threadFeedback)
-    XCTAssertEqual(store.selectedThreadID, second)
-    XCTAssertEqual(store.selectedConversation?.draft, "Finish the other reply")
-    XCTAssertFalse(try XCTUnwrap(store.list.threads.first { $0.id == first }).isArchived)
-    store.sidebarInteraction.goBack()
-    await store.navigationActions.performThreadFeedback(undo.id)
-    XCTAssertNil(store.threadFeedback)
-    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
-  }
-
-  func testLeavingTheListExpiresUndoAndDirectUnarchiveOffersItsOwnSingleUndo() async throws {
-    let fixture = ThreadActionsFixture()
-    let store = fixture.workspace()
-    defer { store.close() }
-    fixture.remote(kind: "created", threadID: ThreadActionsFixture.createdThread)
-    await store.refresh()
-    let id = ThreadActionsFixture.thread
-    await store.setArchived(id, archived: true)
-    let oldUndo = try XCTUnwrap(store.threadFeedback)
-    store.selectChat(ThreadActionsFixture.createdThread)
-    store.sidebarInteraction.setOpen(false)
-    XCTAssertNil(store.threadFeedback)
-    store.sidebarInteraction.goBack()
-    XCTAssertNil(store.threadFeedback)
-    await store.navigationActions.performThreadFeedback(oldUndo.id)
-    XCTAssertEqual(fixture.writes.map(\.action), ["archive"])
-
-    store.sidebar.select(.archived)
-    await store.setArchived(id, archived: false)
-    let expired = try XCTUnwrap(store.threadFeedback)
-    store.sidebar.select(.recent)
-    store.sidebar.select(.archived)
-    XCTAssertNil(store.threadFeedback)
-    await store.navigationActions.performThreadFeedback(expired.id)
-    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
-
-    // The archived detail (including a deep-link entry) stays open on direct Unarchive.
-    fixture.remote(kind: "archived")
-    await store.refresh()
-    let opened = await store.openChatLink(.thread(id: id, runID: nil))
-    XCTAssertTrue(opened)
-    store.sidebarInteraction.setOpen(false)
-    await store.setArchived(id, archived: false, leaveDetail: true)
-    let undo = try XCTUnwrap(store.threadFeedback)
-    XCTAssertTrue(store.sidebarInteraction.showsChat)
-    XCTAssertEqual(undo.actionTitle, "Undo")
-    await store.navigationActions.performThreadFeedback(undo.id)
+    XCTAssertEqual(
+      fixture.writes.filter { $0.action == "archive" }.map(\.eventID),
+      Array(repeating: try XCTUnwrap(fixture.writes.first?.eventID), count: 2))
     XCTAssertEqual(store.threadFeedback?.message, "Chat archived")
-    XCTAssertNil(store.threadFeedback?.actionTitle)
-    XCTAssertEqual(store.selectedThreadID, id)
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first { $0.id == id }).isArchived)
-    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive", "unarchive", "archive"])
-  }
-
-  func testDirectUnarchiveFromArchivedSupersedesAnUnconfirmedArchive() async throws {
-    let fixture = ThreadActionsFixture()
-    let store = fixture.workspace()
-    defer { store.close() }
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isMuted)
+    fixture.state.value.withLock { $0.failNext["unarchive"] = 503 }
+    await (try XCTUnwrap(store.threadFeedback)).action()
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Retry")
+    XCTAssertTrue(store.threadFeedback?.persists == true)
+    await (try XCTUnwrap(store.threadFeedback)).action()
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
+    // Opening an archived chat (including via a deep link) and unarchiving keeps it open.
+    fixture.remote(kind: "archived")
     await store.refresh()
-    let id = ThreadActionsFixture.thread
-    fixture.state.value.withLock { $0.failNext["archive"] = 503 }
-    await store.setArchived(id, archived: true)
-    let retry = try XCTUnwrap(store.threadFeedback)
-    store.sidebar.select(.archived)
-    await store.setArchived(id, archived: false)
-    store.sidebar.select(.recent)
-
-    await store.navigationActions.performThreadFeedback(retry.id)
-    XCTAssertNil(store.threadFeedback)
-    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
-    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
-  }
-
-  func testLateArchiveAcknowledgementPreservesTheNewerChatUndo() async throws {
-    let fixture = ThreadActionsFixture()
-    let store = fixture.workspace()
-    defer { store.close() }
-    let first = ThreadActionsFixture.thread
-    let second = ThreadActionsFixture.createdThread
-    fixture.remote(kind: "created", threadID: second)
-    await store.refresh()
-    let gate = ThreadActionGate()
-    defer { gate.open() }
-    let requested = expectation(description: "First archive reached HTTP")
-    fixture.state.value.withLock {
-      $0.nextGate = gate
-      $0.nextWriteRequested = { requested.fulfill() }
-    }
-    let archiving = Task { await store.setArchived(first, archived: true) }
-    addTeardownBlock {
-      gate.open()
-      _ = await archiving.value
-    }
-    await fulfillment(of: [requested], timeout: 3)
-    await store.setArchived(second, archived: true)
-    let undo = try XCTUnwrap(store.threadFeedback)
-    gate.open()
-    _ = await archiving.value
-    XCTAssertEqual(store.threadFeedback?.id, undo.id)
-    XCTAssertEqual(undo.threadID, second)
-    await store.navigationActions.performThreadFeedback(undo.id)
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first { $0.id == first }).isArchived)
-    XCTAssertFalse(try XCTUnwrap(store.list.threads.first { $0.id == second }).isArchived)
+    let opened = await store.openChatLink(
+      .thread(id: ThreadActionsFixture.thread, runID: nil))
+    XCTAssertTrue(opened)
+    await store.setArchived(ThreadActionsFixture.thread, archived: false, leaveDetail: true)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
   }
 
   func testArchivedDetailDoesNotReadRepliesBehindTheList() async throws {
@@ -789,7 +603,7 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive"])
 
-    await store.navigationActions.performThreadFeedback(undo.id)
+    await undo.action()
     await store.selectedConversation?.refresh()
     XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
