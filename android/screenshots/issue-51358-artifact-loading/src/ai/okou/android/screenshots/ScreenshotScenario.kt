@@ -31,6 +31,7 @@ import java.net.ServerSocket
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -115,6 +116,31 @@ class ScreenshotScenario {
                 )
                 ScreenshotCapture.capture("artifact-document-wide.png")
             }
+        }
+
+    @Test
+    fun showsTheHostedDocumentAfterItsFirstVisibleFrame() =
+        withWorkspace(1180, 820) { api, fixture ->
+            val heading = "发布准备就绪"
+            val respond = api.commandResponse
+            api.commandResponse = { request ->
+                if (request.requestUrl?.encodedPath == "/artifact-bytes/site") {
+                    MockResponse()
+                        .setHeader("Content-Type", "text/html; charset=utf-8")
+                        .setBody(
+                            """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1">
+                        <style>body{font-family:system-ui,sans-serif;margin:32px;color:#211a13;background:#fff8f4}</style>
+                        <h1>$heading</h1><p>官网长版、邮件短版和社区配图已完成核对。</p></html>""",
+                        )
+                } else respond(request)
+            }
+            tap(By.desc("成果"))
+            tap(By.text(fixture.site.title))
+            node(By.text(heading))
+            assertTrue(!device.hasObject(By.text("正在加载预览").pkg(app.packageName)))
+            node(By.text("查看来源对话"))
+            ScreenshotCapture.capture("artifact-website-ready-wide.png")
         }
 
     private fun verifyCatalogPlaceholder(filterBottom: Int) {
