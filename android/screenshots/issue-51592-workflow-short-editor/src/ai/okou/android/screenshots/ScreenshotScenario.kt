@@ -44,14 +44,7 @@ class ScreenshotScenario {
     private val instructions = "Review the release owner.\n![Checklist](https://example.test/checklist.png)"
 
     @Test
-    fun workflowEditorsKeepDraftsActionsAndFeedbackReachable() {
-        val initialSize = displayOverride("size", "\\d+x\\d+")
-        val initialDensity = displayOverride("density", "\\d+")
-        val initialScale = device.executeShellCommand("settings get system font_scale").trim()
-        val initialIme = device.executeShellCommand("settings get secure show_ime_with_hard_keyboard").trim()
-        val failures = mutableListOf<Throwable>()
-        try {
-            device.executeShellCommand("wm density 160")
+    fun workflowEditorsKeepTheirActionsStableWhileSaving() = withDevice {
             captureWindow(412, 892, 1f, UserPreferencesTheme.LIGHT, capture = ::captureInstructions)
             captureWindow(1180, 820, 1f, UserPreferencesTheme.DARK, workflowTitle = { it.sharedTitle }) { scenario, fixture ->
                 openAutomation(scenario)
@@ -59,6 +52,10 @@ class ScreenshotScenario {
                 ScreenshotCapture.capture("wide-automation-editor.png")
                 captureSavingAutomation(fixture)
             }
+    }
+
+    @Test
+    fun shortAutomationEditorKeepsTheDraftActionsAndFeedbackReachable() = withDevice {
             captureWindow(412, 892, 1f, UserPreferencesTheme.LIGHT) { scenario, fixture ->
                 openAutomation(scenario)
                 device.executeShellCommand("wm size 360x280")
@@ -85,6 +82,10 @@ class ScreenshotScenario {
                 assertEquals(saveBounds, checkNotNull(saveControl(node(save))).visibleBounds)
                 ScreenshotCapture.capture("short-editor-feedback.png")
             }
+    }
+
+    @Test
+    fun workflowEditorUsesThePlatformImeInsetsAndBack() = withDevice {
             device.executeShellCommand("settings put secure show_ime_with_hard_keyboard 1")
             captureWindow(412, 520, 1f, UserPreferencesTheme.LIGHT) { scenario, _ ->
                 openAutomation(scenario)
@@ -101,6 +102,17 @@ class ScreenshotScenario {
                 reveal(scenario, save)
                 assertFooter(scenario)
             }
+    }
+
+    private fun withDevice(captures: () -> Unit) {
+        val initialSize = displayOverride("size", "\\d+x\\d+")
+        val initialDensity = displayOverride("density", "\\d+")
+        val initialScale = device.executeShellCommand("settings get system font_scale").trim()
+        val initialIme = device.executeShellCommand("settings get secure show_ime_with_hard_keyboard").trim()
+        val failures = mutableListOf<Throwable>()
+        try {
+            device.executeShellCommand("wm density 160")
+            captures()
         } catch (failure: Throwable) {
             failures += failure
         } finally {
@@ -226,7 +238,7 @@ class ScreenshotScenario {
     private fun captureSavingAutomation(fixture: WorkflowApiFixture) {
         action(By.text("Schedule")).click()
         val schedule = By.text("Schedule")
-        val before = node(schedule).visibleBounds
+        val before = checkNotNull(checkedMode(node(schedule))).visibleBounds
         val saveAction = action(save)
         val saveBounds = saveAction.visibleBounds
         val entered = CountDownLatch(1)
@@ -239,8 +251,8 @@ class ScreenshotScenario {
             saveAction.click()
             assertTrue("Create reached the fixture", entered.await(10, TimeUnit.SECONDS))
             assertEquals(saveBounds, awaitPendingSave().visibleBounds)
-            val mode = node(schedule)
-            assertTrue(generateSequence(mode) { it.parent }.any { it.isSelected && !it.isEnabled })
+            val mode = checkNotNull(checkedMode(node(schedule)))
+            assertTrue("The checked trigger mode is disabled while saving", !mode.isEnabled)
             assertEquals(before, mode.visibleBounds)
             ScreenshotCapture.capture("saving-automation-editor.png")
         } finally {
@@ -248,6 +260,9 @@ class ScreenshotScenario {
         }
         node(By.text("Paused"))
     }
+
+    private fun checkedMode(label: UiObject2): UiObject2? =
+        generateSequence(label) { it.parent }.firstOrNull { it.isChecked }
 
     private fun assertIme(scenario: ActivityScenario<MainActivity>, visible: Boolean) {
         val matches = object : Condition<UiDevice, Boolean> {
@@ -263,7 +278,9 @@ class ScreenshotScenario {
     }
 
     private fun awaitPendingSave(): UiObject2 = try {
-        node(pendingSave)
+        node(pendingSave).also {
+            assertEquals("Saving…", it.accessibilityNodeInfo.stateDescription?.toString())
+        }
     } catch (failure: Throwable) {
         runCatching {
             TestStorage().openOutputFile("pending-save-failure.xml").use(device::dumpWindowHierarchy)
