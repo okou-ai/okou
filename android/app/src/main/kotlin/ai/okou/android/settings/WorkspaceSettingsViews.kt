@@ -98,8 +98,8 @@ internal fun WorkspaceSettingsProgress(
             SettingsDestination.ModelAccounts -> state.accounts.refreshing
             else -> state.usagePack.refreshing || state.workspaceCredits.refreshing
         }
-    if (refreshing) {
-        ContentReadProgress(label)
+    key(model, destination) {
+        ContentReadProgress(label, visible = refreshing)
     }
 }
 

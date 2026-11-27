@@ -94,9 +94,7 @@ private fun EmailSubscriptionSheet(
         titleInset = 8.dp,
         snackbar = snackbar,
         progress = {
-            if (state.read.refreshing) {
-                ContentReadProgress(R.string.settings_email_refreshing)
-            }
+            ContentReadProgress(R.string.settings_email_refreshing, visible = state.read.refreshing)
         },
     ) {
         val indentation = Modifier.padding(horizontal = 8.dp)

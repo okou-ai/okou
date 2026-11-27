@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -48,9 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.flow.first
 
-internal val ChatListRowHeight = 52.dp
 internal val ChatListRowShape = RoundedCornerShape(8.dp)
-internal val ChatListRowPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 internal val ChatPaneBottomInset = 16.dp
 
 internal fun Density.chatInlineFeedbackHeight() = maxOf(216.dp, 16.sp.toDp() * 9)
@@ -68,6 +66,7 @@ internal fun ChatListViewport(
     listState: LazyListState,
     contentChangeKey: Any?,
     syncing: Boolean,
+    filter: ChatListFilter,
     newChatEnabled: Boolean,
     newChat: () -> Unit,
     feedback: @Composable () -> Unit,
@@ -120,15 +119,19 @@ internal fun ChatListViewport(
                 .single()
                 .measure(loose)
         val progress =
-            if (syncing) {
-                subcompose(ListLayer.Sync) { ContentReadProgress(R.string.chat_syncing) }
-                    .single()
-                    .measure(loose.copy(maxWidth = rows.width))
-            } else null
+            subcompose(ListLayer.Sync) {
+                    Box {
+                        key(filter) {
+                            ContentReadProgress(R.string.chat_syncing, visible = syncing)
+                        }
+                    }
+                }
+                .single()
+                .measure(loose.copy(maxWidth = rows.width))
         layout(bounds.maxWidth, bounds.maxHeight) {
             val rowsLeft = (bounds.maxWidth - rows.width) / 2
             rows.placeRelative(rowsLeft, 0)
-            progress?.placeRelative(rowsLeft, 0)
+            progress.placeRelative(rowsLeft, 0)
             floating?.placeRelative(0, actionTop)
             feedbackLayer.placeRelative((bounds.maxWidth - feedbackLayer.width) / 2, feedbackTop)
         }
