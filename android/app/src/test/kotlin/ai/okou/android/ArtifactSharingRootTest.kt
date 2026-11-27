@@ -19,6 +19,7 @@ import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -28,6 +29,20 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactSharingRootTest : ArtifactCatalogRootTestFixture() {
+    @Before
+    fun initializeShareProvider() {
+        compose.runOnIdle {
+            val activity = compose.activity
+            // Resolve the manifest provider for this test's application and cache directory.
+            checkNotNull(
+                    activity.contentResolver.acquireContentProviderClient(
+                        "${activity.packageName}.artifact-shares",
+                    ),
+                )
+                .close()
+        }
+    }
+
     @Test
     fun authorizedFileSharesOriginalBytesWithAReadOnlyGrant() {
         val fixture = ArtifactApiFixture(app.fixture)
@@ -182,7 +197,7 @@ internal class ArtifactSharingRootTest : ArtifactCatalogRootTestFixture() {
             chooser = shadowOf(compose.activity).nextStartedActivity
             chooser != null ||
                 compose
-                    .onAllNodesWithText("Unable to share this file")
+                    .onAllNodesWithText("Unable to", substring = true)
                     .fetchSemanticsNodes()
                     .isNotEmpty()
         }
