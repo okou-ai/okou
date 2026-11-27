@@ -171,7 +171,7 @@ internal fun ChatRowSwipe(
                 }
             }
     Box(
-        Modifier.clip(ChatListRowShape)
+        Modifier.clip(MaterialTheme.shapes.extraSmall)
             .onGloballyPositioned { windowX = it.positionInWindow().x }
             .then(input),
     ) {
