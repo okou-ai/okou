@@ -49,6 +49,7 @@ internal data class FixtureConnectorIcon(
     val asset: String,
     val invertInDarkMode: Boolean = false,
     val scale: Double? = null,
+    val svg: String? = null,
 )
 
 internal data class FixtureChatOverride(
@@ -121,6 +122,7 @@ internal class ConnectorApiFixture(
     val manualRequests = AtomicInteger()
     private var pendingRename: Pair<String, String?>? = null
     private val entries = buildList {
+        add(CatalogEntry("github", "GitHub", "", "engineering-team-execution", null))
         add(
             CatalogEntry(
                 CONNECTOR_CALENDAR,
@@ -209,7 +211,11 @@ internal class ConnectorApiFixture(
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val url = checkNotNull(request.requestUrl)
-                    if (url.encodedPath.startsWith("/fixture-icons/")) return rejected(404)
+                    if (url.encodedPath.startsWith("/fixture-icons/")) {
+                        val asset = url.pathSegments.last().removeSuffix(".svg")
+                        val artwork = icons.values.firstOrNull { it.asset == asset }?.svg ?: return rejected(404)
+                        return MockResponse().setHeader("Content-Type", "image/svg+xml").setBody(artwork)
+                    }
                     if (request.getHeader("Authorization") != "Bearer connector-test")
                         return rejected(401)
                     when (url.encodedPath) {
@@ -311,6 +317,16 @@ internal class ConnectorApiFixture(
                 },
             )
         service = ConnectorService(api)
+    }
+
+    fun seedComposerScreenshotAccounts() {
+        synchronized(accounts) {
+            authorizeGmail()
+            accounts["10000000-0000-4000-8000-000000000071"] =
+                FixtureAccount("google-drive", null, "drive@example.com")
+            accounts["10000000-0000-4000-8000-000000000072"] =
+                FixtureAccount("github", null, "release-operator")
+        }
     }
 
     fun authorizeGmail() {
