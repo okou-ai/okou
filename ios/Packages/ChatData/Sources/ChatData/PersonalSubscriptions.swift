@@ -3,8 +3,12 @@ import Foundation
 public enum PersonalSubscriptionType: String, CaseIterable, Sendable, Identifiable {
   case codex = "codex-oauth-token"
   case claude = "claude-code-oauth-token"
+  case antigravity = "antigravity"
   public var id: String { rawValue }
-  public var authPath: String { self == .codex ? "codex" : "claude-code" }
+  public var supportsDeviceAuth: Bool { self != .antigravity }
+  public static var deviceAuthCases: [PersonalSubscriptionType] {
+    allCases.filter(\.supportsDeviceAuth)
+  }
 }
 
 public struct PersonalSubscription: Decodable, Identifiable, Sendable {
@@ -116,6 +120,8 @@ public struct PersonalSubscriptionService: Sendable {
     case .claude:
       return try await client.request(
         "/api/model-providers/claude-code/device-auth/sessions", method: "POST", body: data)
+    case .antigravity:
+      throw APIClientError.invalidResponse
     }
   }
   public func complete(type: PersonalSubscriptionType, token: String, code: String? = nil)
@@ -132,6 +138,8 @@ public struct PersonalSubscriptionService: Sendable {
       return try await client.request(
         "/api/model-providers/claude-code/device-auth/sessions/complete",
         method: "POST", body: data)
+    case .antigravity:
+      throw APIClientError.invalidResponse
     }
   }
   public func cancel(type: PersonalSubscriptionType, token: String) async throws {
@@ -143,6 +151,8 @@ public struct PersonalSubscriptionService: Sendable {
     case .claude:
       try await client.data(
         "/api/model-providers/claude-code/device-auth/sessions/cancel", method: "POST", body: body)
+    case .antigravity:
+      throw APIClientError.invalidResponse
     }
   }
 }

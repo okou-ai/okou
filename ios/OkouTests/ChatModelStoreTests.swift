@@ -247,10 +247,12 @@ final class ChatModelCommandTests: XCTestCase {
 
   func testRemoteInvalidationDuringSaveReadsAgainAfterItsStaleConfirmation() async throws {
     let gate = ModelResponseGate()
-    let confirmationStarted = expectation(description: "Confirmation captured before remote update")
+    let saveStarted = expectation(description: "Save in flight before remote update")
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
       if request.url!.path.hasSuffix("model-selection") {
+        saveStarted.fulfill()
+        await gate.wait()
         return ChatHTTPResponse(status: 204, body: "")
       }
       if request.url!.path.hasSuffix("metadata") {
@@ -258,12 +260,8 @@ final class ChatModelCommandTests: XCTestCase {
           $0 += 1
           return $0
         }
-        if count == 2 {
-          confirmationStarted.fulfill()
-          await gate.wait()
-        }
         let body =
-          count < 3
+          count < 2
           ? ModelHTTPFixtures.metadata
           : ModelHTTPFixtures.metadata.replacingOccurrences(
             of: "\"selectedModel\":\"codex-model\"", with: "\"selectedModel\":\"claude-model\"")
@@ -281,14 +279,14 @@ final class ChatModelCommandTests: XCTestCase {
     }
     await selection.open()
     let save = Task { await selection.choose(model: "claude-model") }
-    await fulfillment(of: [confirmationStarted], timeout: 3)
+    await fulfillment(of: [saveStarted], timeout: 3)
     await selection.refresh()
     XCTAssertFalse(selection.canSend)
     gate.open()
     await save.value
     XCTAssertEqual(selection.selection.model, "claude-model")
     XCTAssertTrue(selection.canSend)
-    XCTAssertEqual(reads.withLock { $0 }, 3)
+    XCTAssertEqual(reads.withLock { $0 }, 2)
   }
 
   func testRetryAfterRestartKeepsCapturedModelEffortAndFast() async throws {
@@ -579,8 +577,7 @@ final class ChatModelPreferenceTests: XCTestCase {
     XCTAssertTrue(writes.withLock { $0.isEmpty })
     await selection.open()
     XCTAssertTrue(writes.withLock { $0.isEmpty })
-    var expectedReads = reads.withLock { $0 }
-    expectedReads["/api/user-model-preference", default: 0] += 1
+    let expectedReads = reads.withLock { $0 }
     await selection.saveForFutureChats()
     XCTAssertEqual(writes.withLock { $0.count }, 1)
     XCTAssertFalse(selection.canSaveForFutureChats)

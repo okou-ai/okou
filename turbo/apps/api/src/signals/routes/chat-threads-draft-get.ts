@@ -1,7 +1,3 @@
-import {
-  iosVoiceDraftTransforms,
-  androidVoiceDraftTransforms,
-} from "@okouai/api-contracts/client-transforms/voice-draft";
 import { computed } from "ccstate";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -42,10 +38,6 @@ function getThreadDraft(
 export const chatThreadDraftGetRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadDraftContract.get,
-    responseTransforms: [
-      iosVoiceDraftTransforms.thread,
-      androidVoiceDraftTransforms.thread,
-    ],
     handler: authRoute(
       { requireOrganization: true },
       getThreadDraft(chatThreadDraftContract.get),
