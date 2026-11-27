@@ -342,8 +342,118 @@ class BuiltInToolsSettingsTest {
         assertTrue(webSearchTool !in fixture.disabledTools())
     }
 
+    @Test
+    fun oldReadbackKeepsTheNewerChoicePendingUntilTheEarlierWriteCommits() = runTest {
+        val fixture = ToolFixture()
+        val loseResponse = CompletableDeferred<Unit>()
+        val writes = mutableListOf<Boolean>()
+        val service =
+            object : BuiltInToolsService by fixture {
+                override suspend fun setEnabled(id: String, enabled: Boolean): Boolean {
+                    writes += enabled
+                    if (!enabled) {
+                        loseResponse.await()
+                        throw ApiFailure.Http(503, null, null, null)
+                    }
+                    return fixture.setEnabled(id, enabled)
+                }
+            }
+        val notices = mutableListOf<SettingsNotice>()
+        val settings = model(service, notice = { notices += it })
+        settings.show()
+        runCurrent()
+        settings.toggle(webSearchTool, false)
+        runCurrent()
+        settings.toggle(webSearchTool, true)
+        loseResponse.complete(Unit)
+        runCurrent()
+
+        // The first read still sees the enabled value, and the earlier disable can commit later.
+        assertEquals(listOf(false), writes)
+        assertEquals(mapOf(webSearchTool to true), settings.state.value.savingTools)
+        fixture.setEnabled(webSearchTool, false)
+        advanceTimeBy(3_000)
+        runCurrent()
+
+        assertEquals(listOf(false, true), writes)
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
+        assertTrue(settings.state.value.savingTools.isEmpty())
+        assertTrue(webSearchTool !in fixture.disabledTools())
+        assertTrue(notices.isEmpty())
+    }
+
+    @Test
+    fun exhaustedInconclusiveReadbackReportsUncertaintyWithoutWritingAgain() = runTest {
+        val fixture = ToolFixture()
+        val writes = mutableListOf<Boolean>()
+        var reads = 0
+        val service =
+            object : BuiltInToolsService by fixture {
+                override suspend fun disabledTools(): Set<String> {
+                    reads++
+                    return fixture.disabledTools()
+                }
+
+                override suspend fun setEnabled(id: String, enabled: Boolean): Boolean {
+                    writes += enabled
+                    throw ApiFailure.Http(503, null, null, null)
+                }
+            }
+        val notices = mutableListOf<SettingsNotice>()
+        val settings = model(service, notice = { notices += it })
+        settings.show()
+        runCurrent()
+        settings.toggle(webSearchTool, false)
+        runCurrent()
+        settings.toggle(webSearchTool, true)
+        advanceTimeBy(3_000)
+        runCurrent()
+
+        assertEquals(mapOf(webSearchTool to true), settings.state.value.savingTools)
+        assertTrue(notices.isEmpty())
+        advanceTimeBy(3_000)
+        runCurrent()
+
+        assertEquals(4, reads)
+        assertEquals(listOf(false), writes)
+        assertTrue(settings.state.value.savingTools.isEmpty())
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
+        assertEquals(listOf(SettingsNotice.ToolSaveUnconfirmed), notices)
+    }
+
+    @Test
+    fun rejectedToolWriteRestoresTheConfirmedValueAndReportsFailure() = runTest {
+        val fixture = ToolFixture()
+        val service =
+            object : BuiltInToolsService by fixture {
+                override suspend fun disabledTools(): Set<String> {
+                    if (settingsWriteRejected) throw ApiFailure.Http(403, null, null, null)
+                    return fixture.disabledTools()
+                }
+
+                private var settingsWriteRejected = false
+
+                override suspend fun setEnabled(id: String, enabled: Boolean): Boolean {
+                    settingsWriteRejected = true
+                    throw ApiFailure.Http(403, null, null, null)
+                }
+            }
+        val notices = mutableListOf<SettingsNotice>()
+        val settings = model(service, notice = { notices += it })
+        settings.show()
+        runCurrent()
+        settings.toggle(webSearchTool, false)
+        assertEquals(false, settings.state.value.enabled(webSearchTool))
+        runCurrent()
+
+        assertTrue(settings.state.value.savingTools.isEmpty())
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
+        assertEquals(listOf(SettingsNotice.ToolSaveFailed), notices)
+    }
+
     private fun TestScope.model(
         service: BuiltInToolsService,
+        notice: (SettingsNotice) -> Unit = {},
         nowMillis: () -> Long = System::currentTimeMillis,
     ) =
         BuiltInToolsSettings(
@@ -354,7 +464,7 @@ class BuiltInToolsSettingsTest {
             authorized = { true },
             onSessionFailure = {},
             nowMillis = nowMillis,
-            notice = {},
+            notice = notice,
         )
 
     private class ToolFixture : BuiltInToolsService {

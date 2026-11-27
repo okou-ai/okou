@@ -26,6 +26,14 @@ private const val disabledToolsCache = "built-in-tools-disabled"
 private const val imageModelCache = "image-generation-model"
 private val disabledToolsSerializer = SetSerializer(String.serializer())
 
+private sealed interface SettingWrite<out T> {
+    data class Acknowledged<T>(val value: T) : SettingWrite<T>
+
+    data object Rejected : SettingWrite<Nothing>
+
+    data object NeedsReadback : SettingWrite<Nothing>
+}
+
 internal data class BuiltInToolsState(
     val catalog: SettingsRead<List<DataToolFamily>> = SettingsRead(),
     val disabled: Set<String>? = null,
@@ -193,8 +201,14 @@ internal class BuiltInToolsSettings(
     private suspend fun saveTool(id: String, first: Boolean, currentVisit: Long) {
         var attempted = first
         while (authorized()) {
+            val write = writeWithRetry { service.setEnabled(id, attempted) } ?: return
             val confirmed =
-                save({ service.setEnabled(id, attempted) }) { id !in service.disabledTools() }
+                when (write) {
+                    is SettingWrite.Acknowledged -> write.value
+                    SettingWrite.Rejected -> null
+                    SettingWrite.NeedsReadback -> verifyToolWrite(id, attempted)
+                }
+            currentCoroutineContext().ensureActive()
             if (!authorized()) return
             val latest = state.value.savingTools.getValue(id)
             val followUp = confirmed != null && latest != attempted && latest != confirmed
@@ -223,14 +237,23 @@ internal class BuiltInToolsSettings(
             if (!followUp) {
                 if (currentVisit == visit) {
                     when {
-                        confirmed == null -> notice(SettingsNotice.ToolSaveUnconfirmed)
-                        confirmed != latest -> notice(SettingsNotice.ToolSaveFailed)
+                        confirmed == null && write != SettingWrite.Rejected ->
+                            notice(SettingsNotice.ToolSaveUnconfirmed)
+                        state.value.enabled(id) != latest -> notice(SettingsNotice.ToolSaveFailed)
                     }
                 }
                 return
             }
             attempted = latest
         }
+    }
+
+    private suspend fun verifyToolWrite(id: String, attempted: Boolean): Boolean? = readResource {
+        val observed = id !in service.disabledTools()
+        val latest = state.value.savingTools.getValue(id)
+        val evidence = settingReadback(attempted, latest) { it == observed }
+        // A stale value cannot settle the write or release another PATCH for the same tool.
+        observed.takeUnless { evidence == SettingReadback.Unconfirmed }
     }
 
     fun chooseImage(id: String) {
@@ -248,10 +271,17 @@ internal class BuiltInToolsSettings(
         imageRevision++
         mutable.update { it.copy(draftImage = id, savingImage = true, imageFailed = false) }
         scope.launch {
+            val write =
+                writeWithRetry { service.selectImageModel(id) ?: defaultImageToolModel }
+                    ?: return@launch
             val model =
-                save({ service.selectImageModel(id) ?: defaultImageToolModel }) {
-                    service.imageModel() ?: defaultImageToolModel
+                when (write) {
+                    is SettingWrite.Acknowledged -> write.value
+                    SettingWrite.Rejected,
+                    SettingWrite.NeedsReadback ->
+                        readResource { service.imageModel() ?: defaultImageToolModel }
                 }
+            currentCoroutineContext().ensureActive()
             if (!authorized()) return@launch
             imageRevision++
             mutable.update {
@@ -269,43 +299,58 @@ internal class BuiltInToolsSettings(
 
     private suspend fun <T : Any> readResource(
         reportFailure: Boolean = true,
-        load: suspend () -> T,
+        load: suspend () -> T?,
     ): T? {
         var retries = 0
         while (authorized()) {
-            try {
-                return load()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                if (reportFailure) onSessionFailure(error)
-                val wait =
+            val wait =
+                try {
+                    load()?.let {
+                        return it
+                    }
+                    // A readback can succeed without confirming the attempted value.
+                    boundedRetryDelayMillis(retries)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    if (reportFailure && authorized()) onSessionFailure(error)
                     if (error is IOException) boundedRetryDelayMillis(retries, error)
                     else error.boundedApiRetryDelayMillis(retries)
-                if (wait == null) return null
-                retries++
-                delay(wait)
-                currentCoroutineContext().ensureActive()
-            }
+                }
+            if (wait == null || !authorized()) return null
+            retries++
+            delay(wait)
+            currentCoroutineContext().ensureActive()
         }
         return null
     }
 
-    private suspend fun <T : Any> save(send: suspend () -> T, readBack: suspend () -> T): T? {
+    private suspend fun <T : Any> writeWithRetry(send: suspend () -> T): SettingWrite<T>? {
         var retries = 0
         while (authorized()) {
             try {
-                return send()
+                return SettingWrite.Acknowledged(send())
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
                 if (authorized()) onSessionFailure(error)
+                if (!authorized()) return null
                 val undelivered = error is ApiFailure.Network && error.connectionFailed
                 val throttled = error is ApiFailure.Http && error.status == 429
                 val wait =
                     if (undelivered || throttled) boundedRetryDelayMillis(retries++, error)
                     else null
-                delay(wait ?: return readResource(load = readBack))
+                if (wait == null) {
+                    return if (
+                        undelivered ||
+                            error.definitivelyRejectedWrite() ||
+                            error is ApiFailure.UpdateRequired
+                    )
+                        SettingWrite.Rejected
+                    else SettingWrite.NeedsReadback
+                }
+                delay(wait)
                 currentCoroutineContext().ensureActive()
             }
         }
