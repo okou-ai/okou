@@ -486,6 +486,61 @@ def inventory_hosts(hosts, user, numbers):
     return results
 
 
+def maintain_host_locks(hosts, user):
+    source = (HERE / "cleanup-metal-resources.py").read_text()
+    success = True
+    with ThreadPoolExecutor(max_workers=min(len(hosts), 2)) as pool:
+        futures = {
+            host: pool.submit(
+                run,
+                ["ssh", f"{user}@{host}", "sudo", "python3", "-", "maintain-locks"],
+                input=source,
+                timeout=180,
+            )
+            for host in hosts
+        }
+        for host, future in futures.items():
+            try:
+                report = json.loads(future.result())
+                capacity = report["capacity_bytes"]
+                available = report["available_bytes"]
+                expired = report["expired"]
+                if (
+                    any(
+                        type(value) is not int
+                        for value in (capacity, available, expired)
+                    )
+                    or not 0 <= available <= capacity
+                    or capacity <= 0
+                    or expired < 0
+                ):
+                    raise ValueError("invalid metal lock maintenance result")
+            except (
+                OSError,
+                TypeError,
+                ValueError,
+                KeyError,
+                subprocess.SubprocessError,
+            ) as error:
+                print(
+                    f"::error::Metal lock maintenance unverified on {host}: {error}",
+                    file=sys.stderr,
+                )
+                success = False
+                continue
+            print(
+                f"Metal locks on {host}: {available}/{capacity} bytes available, "
+                f"{expired} expired records retired",
+                file=sys.stderr,
+            )
+            if available * 5 < capacity:
+                print(
+                    f"::warning::Metal lock storage below 20% free on {host}",
+                    file=sys.stderr,
+                )
+    return success
+
+
 def reconcile_batch(github, hosts, user, numbers):
     sessions = {}
     decisions = {}
@@ -682,7 +737,12 @@ def summarize(decisions):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.parse_args()
+    parser.add_argument(
+        "--maintain-locks",
+        action="store_true",
+        help="maintain lock storage before a full sweep",
+    )
+    args = parser.parse_args()
     for name in (
         "GH_TOKEN",
         "GITHUB_REPOSITORY",
@@ -712,6 +772,14 @@ def main():
     ):
         parser.error("RUNNER_PR_NUMBERS must be comma-separated positive PR numbers")
     selection = {int(value) for value in requested.split(",")} if requested else None
+    dry_run = os.environ.get("DRY_RUN", "false") == "true"
+    if (
+        args.maintain_locks
+        and selection is None
+        and not dry_run
+        and not maintain_host_locks(hosts, user)
+    ):
+        return 1
     started = time.monotonic()
     inventory = inventory_hosts(hosts, user, sorted(selection) if selection else [])
     print(
@@ -733,7 +801,7 @@ def main():
     )
     pulls = github.pulls(numbers)
     numbers = [number for number in numbers if pulls[number]["state"] != "OPEN"]
-    if os.environ.get("DRY_RUN", "false") == "true":
+    if dry_run:
         print(
             json.dumps(
                 {

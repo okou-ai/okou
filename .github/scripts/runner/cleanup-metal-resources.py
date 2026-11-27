@@ -2,6 +2,7 @@
 """Observe/reconcile PR resources on one host; GitHub authority stays in the caller.
 
 The session worker owns every selected namespace's lifecycle lock through cleanup.
+Full stale sweeps separately maintain the storage for those locks.
 Stripe listener replacement uses the same host-side retirement checks.
 Input is an explicit PR-number selection, never paths or shell fragments. Output
 is JSON; command errors go to stderr. No mutation is replayed after a timeout.
@@ -22,7 +23,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 UNIT = re.compile(
@@ -34,6 +35,11 @@ IMAGE_UNIT = re.compile(r"^vm0-ci-image-([a-f0-9]{64})\.service$")
 IMAGE_DIRECTORY = re.compile(r"pr-([1-9][0-9]*)-image-[1-9][0-9]*")
 IMAGE_OWNER_MARKER = re.compile(r"\.image-owner-[a-f0-9]{64}")
 NAMESPACE = re.compile(r"(?:^|-)pr-([1-9][0-9]*)(?:-|$)")
+PR_LOCK = re.compile(r"vm0-runner-lifecycle-pr-[1-9][0-9]*\.lock")
+CUTOFF_FORMAT = "%Y-%m-%dT%H:%M:%SZ\n"
+# GitHub allows reruns for 30 days and bounds workflow execution to 35 days.
+CUTOFF_RETENTION_SECONDS = 90 * 24 * 60 * 60
+LOCK_MOUNT_MIN_BYTES = 128 * 1024 * 1024
 PROPERTIES = (
     "Id",
     "LoadState",
@@ -60,8 +66,9 @@ STOP_TIMEOUT = 330
 
 
 @contextlib.contextmanager
-def lifecycle_descriptor(path):
-    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644)
+def lifecycle_descriptor(path, *, create=True):
+    flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+    fd = os.open(path, flags | (os.O_CREAT if create else 0), 0o644)
     try:
         info = os.fstat(fd)
         if (
@@ -73,6 +80,42 @@ def lifecycle_descriptor(path):
         yield fd
     finally:
         os.close(fd)
+
+
+def expire_cutoffs(directory, before):
+    expired = 0
+    boundary = datetime.fromtimestamp(before, UTC)
+    for path in directory.iterdir():
+        if not PR_LOCK.fullmatch(path.name):
+            continue
+        try:
+            info = path.lstat()
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.geteuid()
+                or info.st_nlink != 1
+                or info.st_size != 21
+                or info.st_mtime >= before
+            ):
+                continue
+            with lifecycle_descriptor(path, create=False) as fd:
+                if os.fstat(fd).st_ino != info.st_ino:
+                    continue
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if os.fstat(fd).st_mtime >= before:
+                    continue
+                record = os.pread(fd, 22, 0)
+                try:
+                    cutoff = datetime.strptime(record.decode("ascii"), CUTOFF_FORMAT)
+                except ValueError:
+                    continue
+                if cutoff.replace(tzinfo=UTC) < boundary:
+                    # Older workers still open this inode. Release its data page in place.
+                    os.ftruncate(fd, 0)
+                    expired += 1
+        except (BlockingIOError, FileNotFoundError):
+            continue
+    return expired
 
 
 def command(*args, allow_failure=False, pass_fds=()):
@@ -90,6 +133,53 @@ class Host:
 
     def path(self, absolute):
         return self.root / absolute.lstrip("/")
+
+    def maintain_locks(self):
+        directory = self.path("/var/lock").resolve()
+        fs = os.statvfs(directory)
+        if fs.f_blocks * fs.f_frsize < LOCK_MOUNT_MIN_BYTES:
+            if directory != self.path("/run/lock"):
+                raise RuntimeError(f"unexpected lifecycle lock directory: {directory}")
+            mounts = json.loads(
+                command(
+                    "findmnt",
+                    "--json",
+                    "--mountpoint",
+                    str(directory),
+                    "--output",
+                    "TARGET,FSTYPE,VFS-OPTIONS",
+                ).stdout
+            )["filesystems"]
+            if (
+                len(mounts) != 1
+                or mounts[0]["target"] != str(directory)
+                or mounts[0]["fstype"] != "tmpfs"
+            ):
+                raise RuntimeError(f"expected a dedicated tmpfs at {directory}")
+            # Keep mount flags such as nosuid and noexec. The tmpfs remount
+            # preserves filesystem settings that are omitted from its options.
+            options = mounts[0]["vfs-options"]
+            command(
+                "mount",
+                "-t",
+                "tmpfs",
+                "-o",
+                f"remount,{options},size={LOCK_MOUNT_MIN_BYTES}",
+                "tmpfs",
+                str(directory),
+            )
+            fs = os.statvfs(directory)
+            if fs.f_blocks * fs.f_frsize < LOCK_MOUNT_MIN_BYTES:
+                raise RuntimeError(
+                    f"lock mount capacity increase unconfirmed at {directory}"
+                )
+        expired = expire_cutoffs(directory, time.time() - CUTOFF_RETENTION_SECONDS)
+        fs = os.statvfs(directory)
+        return {
+            "capacity_bytes": fs.f_blocks * fs.f_frsize,
+            "available_bytes": fs.f_bavail * fs.f_frsize,
+            "expired": expired,
+        }
 
     def entries(self, absolute):
         directory = self.path(absolute)
@@ -602,18 +692,24 @@ class Host:
                     records = {}
                     for number, cutoff in closed.items():
                         value = datetime.strptime(cutoff, "%Y-%m-%dT%H:%M:%SZ")
-                        records[number] = value.strftime("%Y-%m-%dT%H:%M:%SZ\n").encode(
-                            "ascii"
-                        )
+                        records[number] = value.strftime(CUTOFF_FORMAT).encode("ascii")
                     # Keep the lock inode stable and record closure before deletion.
                     cutoffs = {}
                     for number, record in records.items():
                         fd = descriptors[number]
                         previous = os.pread(fd, 22, 0)
                         if previous < record:
-                            if os.pwrite(fd, record, 0) != len(record):
-                                raise RuntimeError("incomplete PR closure record")
-                            os.ftruncate(fd, len(record))
+                            try:
+                                if os.pwrite(fd, record, 0) != len(record):
+                                    raise RuntimeError("incomplete PR closure record")
+                                os.ftruncate(fd, len(record))
+                            except (OSError, RuntimeError) as error:
+                                path = (
+                                    directory / f"vm0-runner-lifecycle-pr-{number}.lock"
+                                )
+                                raise RuntimeError(
+                                    f"write PR closure cutoff {path}: {error}"
+                                ) from error
                         cutoffs[int(number)] = max(previous, record)
                     # Covers the shared stop budget plus inventory and teardown.
                     # The controller's response/batch deadlines must outlive it.
@@ -638,7 +734,7 @@ class Host:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["inventory", "session"])
+    parser.add_argument("operation", choices=["inventory", "session", "maintain-locks"])
     parser.add_argument("numbers", nargs="*", type=int)
     parser.add_argument("--root", default="/")
     args = parser.parse_args()
@@ -647,6 +743,11 @@ def main():
     ):
         parser.error("cleanup requires positive PR numbers")
     host = Host(args.root)
+    if args.operation == "maintain-locks":
+        if args.numbers:
+            parser.error("lock maintenance does not accept PR numbers")
+        print(json.dumps(host.maintain_locks(), separators=(",", ":")))
+        return
     if args.operation == "session":
         if len(args.numbers) > 8:
             parser.error("session batch exceeds eight namespaces")

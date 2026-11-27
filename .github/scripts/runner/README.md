@@ -169,7 +169,18 @@ cutoff with the workflow run's GitHub creation time while holding the lock.
 Reopening a PR can admit a fresh run created after closure. Rerunning an older
 run keeps its original creation time. Same-owner claims and new worker launches
 require the creation time recorded when that owner was admitted. The cutoff
-lasts for the life of the host lock file.
+stays in the existing lock inode so that workers from older workflow revisions
+continue to see it.
+
+A full, non-dry stale sweep maintains lock storage before reconciling PRs.
+On Ubuntu CI hosts it raises the dedicated `/run/lock` tmpfs to a 128 MiB floor
+in place when needed, preserving the mount options and live lock descriptors.
+It reports capacity, available bytes, and the number of expired records per host.
+It truncates each valid PR cutoff under its existing flock only when the cutoff
+and file modification time are both more than 90 days old. That covers the
+30-day GitHub rerun window and the 35-day run limit. An expired cutoff's empty lock
+inode remains available to waiters and future jobs. PR close jobs and targeted
+or dry stale sweeps leave mount maintenance to the next full sweep.
 Owner state transitions from `claiming` to `ready` only after the marker and
 admission record are committed under the lifecycle lock; cancellation sets
 `cancelled`. A retry after SSH loss while waiting for the lifecycle lock can
