@@ -93,6 +93,7 @@ open class TestOkouApplication : OkouApplication() {
     var chatService: ChatListService = TestChatService()
     var workflows: WorkflowService? = null
     var initialPreferences: UserPreferences? = null
+    @Volatile var screenshotPreferenceRead: (suspend (UserPreferences) -> UserPreferences)? = null
     internal var preferenceWrite:
         suspend (UpdatePreferencesRequest, () -> UserPreferences) -> UserPreferences =
         { _, save ->
@@ -190,7 +191,8 @@ open class TestOkouApplication : OkouApplication() {
             override suspend fun organization() =
                 testOrganization(identity.workspaceId).copy(role = workspaceRole)
 
-            override suspend fun preferences() = stored()
+            override suspend fun preferences(): UserPreferences =
+                screenshotPreferenceRead?.invoke(stored()) ?: stored()
 
             override suspend fun updatePreferences(
                 update: UpdatePreferencesRequest,
