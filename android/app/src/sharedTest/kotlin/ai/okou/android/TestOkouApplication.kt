@@ -100,6 +100,7 @@ open class TestOkouApplication : OkouApplication() {
         }
     var workspaceRole = OrganizationRole.MEMBER
     var connectorService: ConnectorService? = null
+    var screenshotBuiltInTools: ai.okou.android.settings.BuiltInToolsService? = null
     var searchService: ai.okou.android.chat.WorkspaceSearchService = EmptyWorkspaceSearchService
     var realtimeService: RealtimeService = TestRealtimeService()
     var composerService: ChatComposerService = TestChatComposerService()
@@ -149,6 +150,7 @@ open class TestOkouApplication : OkouApplication() {
             override val artifacts = (fixture ?: canonical.value).artifacts
             override val workflowService = workflows
             override val connectors = connectorService
+            override val builtInTools = screenshotBuiltInTools
             override val proactivePreferences = proactivePreferencesService
 
             override suspend fun usagePackCredits() =
