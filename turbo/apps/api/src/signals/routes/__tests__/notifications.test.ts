@@ -271,7 +271,7 @@ describe("agent mail notifications", () => {
     );
     expect(rejected.body.error).toMatchObject({
       code: "FORBIDDEN",
-      message: expect.stringContaining("official Morning Brief automation"),
+      message: expect.stringContaining("scheduled Morning Brief run"),
     });
     const ordinary = await accept(
       client().mail({ headers: fixture.headers, body: input }),

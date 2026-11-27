@@ -1,19 +1,12 @@
-import { settle } from "../utils";
 import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
-  copySourcePlans,
-  requireCopySource,
-  requireCopyVisibility,
-  officialCopyMaterialization,
+  copyAutomationsQuery,
   copyWebhooksQuery,
-  copySourceResult,
-  copyTransactionResult,
   workflowCopyConflict,
-  CopyPreparationConflict,
-  OFFICIAL_COPY_RECONFIGURE_MESSAGE,
   type WorkflowCopyInput,
+  type WorkflowCopySource,
 } from "./workflow-copy-source";
 import {
   copySlugConflict,
@@ -30,56 +23,32 @@ import {
   workflowCopyPublicationSql,
   copyPublicationResultSchema,
 } from "./workflow-copy-atomic-publication";
-import { installedOfficialWorkflow } from "../services/builtin-workflows";
 
 export const readWorkflowCopySnapshot$ = command(
-  async ({ get }, args: WorkflowCopyInput, signal: AbortSignal) => {
+  async (
+    { get },
+    args: WorkflowCopyInput,
+    signal: AbortSignal,
+  ): Promise<WorkflowCopySource> => {
     const db = get(db$);
-    const snapshotPromise = (async () => {
-      const p = copySourcePlans(args);
-      const [source] = await db.select().from(p.source);
-      signal.throwIfAborted();
-      const sourceRow = requireCopySource(source?.workflow, p.official);
-      if (!source) {
-        throw new Error("Workflow copy source observation is missing");
-      }
-      const official = installedOfficialWorkflow(sourceRow);
-      if (p.official && !official) {
-        throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
-      }
-      // Official blueprint reads precede visibility; ordinary rows follow it.
-      let rows = official ? await db.select().from(p.automations) : [];
-      signal.throwIfAborted();
-      const m = official
-        ? officialCopyMaterialization(sourceRow, official, rows)
-        : null;
-      const [visibleRow] = await db.select().from(p.visible);
-      signal.throwIfAborted();
-      const visible = requireCopyVisibility(visibleRow, args, p.official);
-      if (!official) {
-        rows = await db.select().from(p.automations);
-        signal.throwIfAborted();
-      }
-      const webhooks = rows.length
-        ? await db.select().from(copyWebhooksQuery(rows))
-        : [];
-      signal.throwIfAborted();
-      const facts = {
-        webhooks,
-        observation: {
-          workflowXmin: source.observedXmin,
-          automations: rows.map((row) => {
-            return { id: row.id, xmin: row.observedXmin };
-          }),
-        },
-      };
-      return copySourceResult(args, visible, m, rows, facts);
-    })();
-    const snapshot = copyTransactionResult(
-      await settle(snapshotPromise, signal),
-    );
+    const automations = await db.select().from(copyAutomationsQuery(args));
     signal.throwIfAborted();
-    return snapshot;
+    const webhooks = automations.length
+      ? await db.select().from(copyWebhooksQuery(automations))
+      : [];
+    signal.throwIfAborted();
+    return {
+      sourceWorkflow: args.sourceWorkflow,
+      files: args.sourceFiles,
+      sourceAutomations: automations,
+      webhooks,
+      observation: {
+        workflowXmin: args.workflowXmin,
+        automations: automations.map((row) => {
+          return { id: row.id, xmin: row.observedXmin };
+        }),
+      },
+    };
   },
 );
 

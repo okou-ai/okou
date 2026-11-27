@@ -3,27 +3,18 @@ import {
   proactiveRunReceipt$,
 } from "./proactive-run-context.service";
 import { createHash, randomUUID } from "node:crypto";
-import {
-  MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
-  MORNING_BRIEF_PREFERENCES_PATH,
-} from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import { MORNING_BRIEF_PREFERENCES_PATH } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import type {
   NotificationResponse,
   NotifyMailBody,
 } from "@okouai/api-contracts/contracts/notifications";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
-import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
 import { users } from "@okouai/db/schema/user";
-import { workflows } from "@okouai/db/schema/workflow";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command, computed } from "ccstate";
-import { and, asc, count, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { boolean, strictObject, string, enum as zEnum } from "zod";
 import {
@@ -34,7 +25,6 @@ import {
 } from "../../lib/error";
 import { env, optionalEnv } from "../../lib/env";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { isMorningBriefNotificationSource } from "../../lib/morning-brief-notification-source";
 import { db$, writeDb$ } from "../external/db";
 import { emailSubscription$ } from "./email-subscription.service";
 import {
@@ -91,7 +81,7 @@ function replay(receipt: Receipt, body: NotifyMailBody, payloadHash: string) {
   }
   return conflict(
     body.kind === "morning-brief"
-      ? "This Morning Brief automation event already has a notification with different content. Okou sends at most one Morning Brief email per event; retry only with the original subject and body."
+      ? "This scheduled Morning Brief already has a notification with different content. Retry with the original subject and body."
       : "This idempotency key already has different content. Reuse the original content or choose a new key for an intentional new notification.",
   );
 }
@@ -120,15 +110,10 @@ interface NotificationDelivery {
   readonly idempotencyKey: string;
   readonly payloadHash: string;
   readonly email: string | null;
-  readonly proactiveMorningBrief: boolean;
-  readonly runSource: Pick<
-    typeof agentRuns.$inferSelect,
-    "workflowAutomationId" | "officialWorkflowProvenance"
-  >;
 }
 
 const MORNING_BRIEF_SOURCE_REQUIRED =
-  "morning-brief notifications require a run from your official Morning Brief automation. Use --kind notification for ordinary updates.";
+  "morning-brief notifications require a scheduled Morning Brief run. Use --kind notification for ordinary updates.";
 
 const mailAdmissionSchema = strictObject({
   active: boolean(),
@@ -148,37 +133,6 @@ const mailAdmissionSchema = strictObject({
     ]).nullable(),
   }).nullable(),
 });
-
-function morningBriefSourceSql(owner: Owner) {
-  const query = new QueryBuilder();
-  const source = query
-    .select({ id: workflowAutomations.id })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-    .where(
-      and(
-        eq(workflowAutomations.id, sql`active_run.workflow_automation_id`),
-        eq(workflowAutomations.orgId, owner.orgId),
-        eq(workflowAutomations.ownerUserId, owner.userId),
-        eq(workflows.orgId, owner.orgId),
-        eq(workflows.ownerUserId, owner.userId),
-        inArray(workflows.officialDefinitionName, [
-          ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
-        ]),
-        eq(
-          workflowAutomations.officialBlueprintKey,
-          MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-        ),
-      ),
-    );
-  const definitionName = sql`definition->>'name'`;
-  return sql`${morningBriefReceiptSql(sql`active_run.id`, owner.orgId, owner.userId)} OR EXISTS (${source}) AND EXISTS (
-    SELECT 1 FROM jsonb_array_elements(
-      active_run.official_workflow_provenance->'definitions'
-    ) AS definition
-    WHERE ${inArray(definitionName, [...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES])}
-  )`;
-}
 
 function notificationOutboxSql(
   owner: Owner & { readonly runId: string },
@@ -209,15 +163,10 @@ function mailAdmissionSql(
   body: NotifyMailBody,
   delivery: NotificationDelivery,
   configured: boolean,
-  preparedSourceAllowed: boolean,
 ) {
   const query = new QueryBuilder();
   const run = query
-    .select({
-      id: agentRuns.id,
-      workflowAutomationId: agentRuns.workflowAutomationId,
-      officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
-    })
+    .select({ id: agentRuns.id })
     .from(agentRuns)
     .where(activeRunScope(owner))
     .for("update");
@@ -236,7 +185,9 @@ function mailAdmissionSql(
       ),
     );
   const sourceAllowed =
-    body.kind === "morning-brief" ? morningBriefSourceSql(owner) : sql`true`;
+    body.kind === "morning-brief"
+      ? morningBriefReceiptSql(sql`active_run.id`, owner.orgId, owner.userId)
+      : sql`true`;
   return sql`WITH active_run AS MATERIALIZED (${run}),
     preference AS (
       INSERT INTO ${users} (id) SELECT ${owner.userId} FROM active_run WHERE true
@@ -244,7 +195,7 @@ function mailAdmissionSql(
       RETURNING email_unsubscribed
     ), visible_winner AS MATERIALIZED (${winner}),
     eligibility AS MATERIALIZED (
-      SELECT ${preparedSourceAllowed} AND (${sourceAllowed}) AS source_allowed,
+      SELECT ${sourceAllowed} AS source_allowed,
         CASE WHEN preference.email_unsubscribed THEN 'unsubscribed'
           WHEN ${!delivery.email} THEN 'no-email'
           WHEN EXISTS (${suppression}) THEN 'suppressed'
@@ -275,39 +226,6 @@ function mailAdmissionSql(
         ) AS receipt LIMIT 1) AS receipt`;
 }
 
-/**
- * Okou sends one Morning Brief email per automation event. The key comes from
- * the event that started this Run rather than from the agent, whose context
- * can lose the prompt's identity before it decides to send.
- */
-const morningBriefNotificationKey$ = command(
-  async ({ set }, runId: string, signal: AbortSignal) => {
-    const [event] = await set(writeDb$)
-      .select({
-        automationId: chatAutomationContext.automationId,
-        automationEventId: chatAutomationContext.id,
-      })
-      .from(chatEvents)
-      .innerJoin(
-        chatAutomationContext,
-        eq(chatAutomationContext.id, chatEvents.contextId),
-      )
-      .where(
-        and(
-          eq(chatEvents.runId, runId),
-          eq(chatEvents.eventType, "input.prompt"),
-          eq(chatEvents.contextType, "automation"),
-        ),
-      )
-      .orderBy(asc(chatEvents.seqId))
-      .limit(1);
-    signal.throwIfAborted();
-    return event
-      ? `morning-brief:${event.automationId}:${event.automationEventId}`
-      : null;
-  },
-);
-
 const commitMailNotification$ = command(
   async (
     { set },
@@ -317,51 +235,15 @@ const commitMailNotification$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    const { idempotencyKey, payloadHash, runSource } = delivery;
+    const { idempotencyKey, payloadHash } = delivery;
     const keyScope = notificationKeyScope(owner, idempotencyKey);
-    let preparedSourceAllowed = true;
-    if (body.kind === "morning-brief" && !delivery.proactiveMorningBrief) {
-      const [source] = runSource.workflowAutomationId
-        ? await db
-            .select({
-              automationId: workflowAutomations.id,
-              automationOrgId: workflowAutomations.orgId,
-              automationOwnerUserId: workflowAutomations.ownerUserId,
-              workflowOrgId: workflows.orgId,
-              workflowOwnerUserId: workflows.ownerUserId,
-              officialDefinitionName: workflows.officialDefinitionName,
-              officialBlueprintKey: workflowAutomations.officialBlueprintKey,
-            })
-            .from(workflowAutomations)
-            .innerJoin(
-              workflows,
-              eq(workflows.id, workflowAutomations.workflowId),
-            )
-            .where(eq(workflowAutomations.id, runSource.workflowAutomationId))
-            .limit(1)
-        : [];
-      signal.throwIfAborted();
-      preparedSourceAllowed = isMorningBriefNotificationSource(
-        owner,
-        runSource,
-        source,
-      );
-    }
     const configured = Boolean(optionalEnv("RESEND_API_KEY"));
     // The preference upsert returns the current opt-out after any row wait.
     // Keep the existing Run -> user order; receipt and outbox commit together.
     signal.throwIfAborted();
     const rows = parseRawRows(
       mailAdmissionSchema,
-      await db.execute(
-        mailAdmissionSql(
-          owner,
-          body,
-          delivery,
-          configured,
-          preparedSourceAllowed,
-        ),
-      ),
+      await db.execute(mailAdmissionSql(owner, body, delivery, configured)),
     );
     signal.throwIfAborted();
     if (rows.length !== 1 || !rows[0]) {
@@ -403,15 +285,16 @@ const commitMailNotification$ = command(
 
 export const queueMailNotification$ = command(
   async (
-    { get, set },
+    { set },
     owner: Owner & { readonly runId: string },
     body: NotifyMailBody,
     signal: AbortSignal,
   ) => {
-    const [source] = await get(db$)
+    const db = set(writeDb$);
+    const [run] = await db
       .select({
-        provenance: agentRuns.officialWorkflowProvenance,
         triggerSource: agentRuns.triggerSource,
+        status: agentRuns.status,
       })
       .from(agentRuns)
       .where(
@@ -424,36 +307,23 @@ export const queueMailNotification$ = command(
       .limit(1);
     signal.throwIfAborted();
     const proactive =
-      source?.triggerSource === "proactive"
+      run?.triggerSource === "proactive"
         ? await set(proactiveRunReceipt$, owner, signal)
         : null;
     if (
-      source?.triggerSource === "proactive" &&
+      run?.triggerSource === "proactive" &&
       proactive?.task !== "morning-brief"
     ) {
       return resourceUnavailable(
         "Only Morning Brief may send mail from a proactive Run.",
       );
     }
-    if (
-      source?.provenance?.definitions.some((definition) => {
-        return definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME;
-      })
-    ) {
-      return resourceUnavailable(
-        "Proactive Suggestions only updates your home page and cannot send mail.",
-      );
-    }
+    const occurrenceKey = proactive && `morning-brief:${proactive.id}`;
     const idempotencyKey =
-      body.kind === "morning-brief"
-        ? proactive
-          ? `morning-brief:${proactive.id}`
-          : await set(morningBriefNotificationKey$, owner.runId, signal)
-        : body.idempotencyKey;
+      body.kind === "morning-brief" ? occurrenceKey : body.idempotencyKey;
     if (idempotencyKey === null) {
       return resourceUnavailable(MORNING_BRIEF_SOURCE_REQUIRED);
     }
-    const db = set(writeDb$);
     const keyScope = notificationKeyScope(owner, idempotencyKey);
     // The default purpose keeps its established byte encoding. An explicit
     // Morning Brief purpose adds a discriminator, so changing kind conflicts.
@@ -477,17 +347,7 @@ export const queueMailNotification$ = command(
       return replay(existing, body, payloadHash);
     }
 
-    const runScope = activeRunScope(owner);
-    const [run] = await db
-      .select({
-        workflowAutomationId: agentRuns.workflowAutomationId,
-        officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
-      })
-      .from(agentRuns)
-      .where(runScope)
-      .limit(1);
-    signal.throwIfAborted();
-    if (!run) {
+    if (run?.status !== "running") {
       return resourceUnavailable(
         "Mail notifications require an active run owned by you in this workspace.",
       );
@@ -501,8 +361,6 @@ export const queueMailNotification$ = command(
         idempotencyKey,
         payloadHash,
         email: subscription.email,
-        proactiveMorningBrief: proactive?.task === "morning-brief",
-        runSource: run,
       },
       signal,
     );

@@ -849,7 +849,7 @@ const collectWorkflow$ = command(
         ...exported,
         displayName: official.workflow.displayName,
         description: official.workflow.description,
-        instruction: official.copyInstruction,
+        instruction: official.exportInstruction,
       };
     }
     return step({ ...checkpoint, cursor: workflow.id }, [

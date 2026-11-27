@@ -28,10 +28,7 @@ import {
 import { prepareChatThreadInsert } from "../services/chat-thread-create.service";
 import type { WorkflowThreadPreparation } from "../services/workflow-user-automation-thread.service";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
-import {
-  type WorkflowCopyInput,
-  WorkflowCopySource,
-} from "./workflow-copy-source";
+import type { WorkflowCopySource } from "./workflow-copy-source";
 
 export type PreparedCopiedWebhook = Pick<
   typeof workflowWebhookAutomations.$inferInsert,
@@ -50,7 +47,9 @@ export type CopyWorkflowDatabaseResult =
       readonly accountConnectorSlugs: readonly WorkflowAutomationAccountConnectorSlug[];
     };
 
-export interface WorkflowCopyPublicationArgs extends WorkflowCopyInput {
+export interface WorkflowCopyPublicationArgs {
+  readonly orgId: string;
+  readonly userId: string;
   readonly attachments: WorkflowAttachments;
   readonly contentBundle: ContentBundle;
   readonly targetWorkflowId: string;
@@ -78,20 +77,21 @@ export function copyConnectorSlugs(
   ].sort();
 }
 
-export function workflowCopyRowValues(
+function workflowCopyRowValues(
   args: WorkflowCopyPublicationArgs,
 ): typeof workflows.$inferInsert {
+  const { sourceWorkflow } = args.source;
   return {
     id: args.targetWorkflowId,
     orgId: args.orgId,
-    name: args.sourceWorkflow.name,
+    name: sourceWorkflow.name,
     visibility: "private",
-    instruction: args.sourceWorkflow.instruction,
+    instruction: sourceWorkflow.instruction,
     attachments: args.attachments,
     contentBundle: args.contentBundle,
     ownerUserId: args.userId,
-    displayName: args.sourceWorkflow.displayName,
-    description: args.sourceWorkflow.description,
+    displayName: sourceWorkflow.displayName,
+    description: sourceWorkflow.description,
     createdBy: args.userId,
     updatedBy: args.userId,
     createdAt: args.currentTime,
@@ -129,7 +129,7 @@ export function workflowCopyAutomationValues(
 export function workflowCopySlugQuery(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly sourceWorkflow: WorkflowCopyInput["sourceWorkflow"];
+  readonly name: string;
 }) {
   return new QueryBuilder()
     .select({ id: workflows.id })
@@ -138,7 +138,7 @@ export function workflowCopySlugQuery(args: {
       and(
         eq(workflows.orgId, args.orgId),
         eq(workflows.ownerUserId, args.userId),
-        eq(workflows.name, args.sourceWorkflow.name),
+        eq(workflows.name, args.name),
         eq(workflows.visibility, "private"),
         isNull(workflows.officialDefinitionName),
       ),
@@ -245,13 +245,11 @@ export function workflowCopyThreadBindingValues(
 export function copyPublicationPlans(args: WorkflowCopyPublicationArgs) {
   return {
     slug: workflowCopySlugQuery({
-      ...args,
-      sourceWorkflow: args.source.sourceWorkflow,
+      orgId: args.orgId,
+      userId: args.userId,
+      name: args.source.sourceWorkflow.name,
     }),
-    workflow: workflowCopyRowValues({
-      ...args,
-      sourceWorkflow: args.source.sourceWorkflow,
-    }),
+    workflow: workflowCopyRowValues(args),
     thread: workflowCopyThreadPlan(args),
     bindingValues: workflowCopyThreadBindingValues(args),
   };
