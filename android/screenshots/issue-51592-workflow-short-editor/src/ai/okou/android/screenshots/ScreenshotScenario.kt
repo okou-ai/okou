@@ -1,5 +1,6 @@
 package ai.okou.android.screenshots
 
+import ai.okou.android.ConnectorApiFixture
 import ai.okou.android.MainActivity
 import ai.okou.android.ScreenshotCapture
 import ai.okou.android.TestAuthentication
@@ -32,7 +33,7 @@ class ScreenshotScenario {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val app = instrumentation.targetContext.applicationContext as TestOkouApplication
     private val device = UiDevice.getInstance(instrumentation)
-    private val subject = By.desc("Subject contains")
+    private val subject = By.clazz("android.widget.EditText").hasDescendant(By.desc("Subject contains"))
     private val save = By.text("Save")
     private val draft = "Release summary"
 
@@ -58,7 +59,7 @@ class ScreenshotScenario {
                 reveal(scenario, subject)
                 assertEquals(draft, node(subject).text)
                 ScreenshotCapture.capture("short-editor-fields.png")
-                reveal(scenario, save, minimumHeight = 48)
+                reveal(scenario, save)
                 assertFooter(scenario)
                 ScreenshotCapture.capture("short-editor-actions.png")
             }
@@ -89,6 +90,7 @@ class ScreenshotScenario {
         capture: (ActivityScenario<MainActivity>) -> Unit,
     ) {
         WorkflowApiFixture().use { fixture ->
+            val connectorFixture = ConnectorApiFixture()
             val originalPreferences = app.initialPreferences
             val preferenceData = app.snapshotApiPreferences()
             val auth = app.authentication as TestAuthentication
@@ -96,12 +98,14 @@ class ScreenshotScenario {
             val originalChats = app.chatService
             val originalComposer = app.composerService
             val originalWorkflows = app.workflows
+            val originalConnectors = app.connectorService
             try {
                 device.executeShellCommand("wm size ${width}x${height}")
                 device.executeShellCommand("settings put system font_scale $scale")
                 app.chatService = fixture.service
                 app.composerService = fixture.service
                 app.workflows = fixture.service
+                app.connectorService = connectorFixture.service
                 app.restoreApiPreferences(emptyMap())
                 app.initialPreferences =
                     testPreferences().copy(locale = UserPreferencesLocale.EN_US, theme = theme)
@@ -132,9 +136,11 @@ class ScreenshotScenario {
                 app.chatService = originalChats
                 app.composerService = originalComposer
                 app.workflows = originalWorkflows
+                app.connectorService = originalConnectors
                 auth.state.value = originalAuth
                 app.initialPreferences = originalPreferences
                 app.restoreApiPreferences(preferenceData)
+                connectorFixture.close()
             }
         }
     }
@@ -156,14 +162,18 @@ class ScreenshotScenario {
     }
 
     private fun assertFooter(scenario: ActivityScenario<MainActivity>) {
-        val control = checkNotNull(generateSequence(node(save)) { it.parent }.firstOrNull {
-            !it.isEnabled && it.visibleBounds.height() >= 48
-        }) { "Disabled Save must have a 48 dp target" }
+        val control = checkNotNull(saveControl(node(save))) { "Disabled Save must have a 48 dp target" }
         val area = control.visibleBounds
         assertTrue("Save preserved its target: $area", area.height() >= 48)
         assertTrue("Save needs a connection", !control.isEnabled)
         assertTrue(area.bottom <= safeBottom(scenario))
+        assertTrue(action(By.text("View connections")).isEnabled)
     }
+
+    private fun saveControl(label: UiObject2): UiObject2? =
+        generateSequence(label) { it.parent }.firstOrNull {
+            !it.isEnabled && it.visibleBounds.height() >= 48
+        }
 
     private fun safeBottom(scenario: ActivityScenario<MainActivity>): Int {
         var bottom = 0
@@ -175,16 +185,13 @@ class ScreenshotScenario {
         return bottom
     }
 
-    private fun reveal(
-        scenario: ActivityScenario<MainActivity>,
-        selector: BySelector,
-        minimumHeight: Int = 32,
-    ) {
+    private fun reveal(scenario: ActivityScenario<MainActivity>, selector: BySelector) {
         val scoped = By.copy(selector).pkg(app.packageName)
         repeat(16) {
-            val target = device.findObject(scoped)
+            val node = device.findObject(scoped)
+            val target = if (selector === save) node?.let(::saveControl) else node
             val bottom = safeBottom(scenario)
-            if (target != null && target.visibleBounds.height() >= minimumHeight &&
+            if (target != null && target.visibleBounds.height() >= 32 &&
                 target.visibleBounds.bottom <= bottom
             ) return
             val x = device.displayWidth / 2
