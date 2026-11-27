@@ -383,6 +383,7 @@ class PersonalInstructionsModelTest {
             runCurrent()
             assertEquals(3, reads)
             assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
+            assertEquals(InstructionsRead.Ready, model.uiState.value.read)
             assertTrue(model.uiState.value.saveRejected)
             assertTrue(model.uiState.value.canEdit)
             assertTrue(model.uiState.value.canSave)
@@ -390,6 +391,8 @@ class PersonalInstructionsModelTest {
             assertEquals(1, service.writes.size)
             assertNull(store.load(identity).draft)
             model.edit("Edited after verification")
+            assertFalse(model.uiState.value.saveRejected)
+            assertEquals(InstructionsRead.Ready, model.uiState.value.read)
             service.write = { content, version ->
                 assertEquals("v1", version)
                 service.saved.copy(content = content, version = "confirmed").also {

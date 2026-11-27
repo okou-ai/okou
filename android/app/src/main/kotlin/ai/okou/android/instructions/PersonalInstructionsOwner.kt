@@ -382,7 +382,7 @@ internal class PersonalInstructionsOwner(
             // Keep the edit and its conditional-write base after verification ends.
             replaceDraft(
                 draft.copy(attempted = false),
-                state.copy(read = InstructionsRead.RefreshFailed, saveRejected = true),
+                state.copy(read = InstructionsRead.Ready, saveRejected = true),
             )
             return
         }

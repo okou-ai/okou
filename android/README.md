@@ -70,8 +70,9 @@ retries once with that version if the text differs. Clearing the field and savin
 clears Instructions. A lost save response reads the server back with the shared
 bounded read retry policy. Matching text confirms the save. A different server
 value restores the edit against the latest confirmed version. If reads end
-without a result, the editor retains the attempted draft until a later read or
-confirmed discard.
+without a result, the field shows an inline save error and restores editing,
+Save, and Cancel. The retained text still uses the last confirmed version for
+the next conditional save.
 
 Activities for the same API origin/user/workspace share one editing transaction
 while retaining their own native selection and session authorization. Request
