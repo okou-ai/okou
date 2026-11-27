@@ -1,11 +1,11 @@
 package ai.okou.android.instructions
 
+import ai.okou.android.MemorySnapshotClock
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.workspaceStorageKey
 import ai.okou.android.isFreshMemorySnapshot
 import android.content.Context
-import android.os.SystemClock
 import android.util.AtomicFile
 import java.io.File
 import java.io.IOException
@@ -51,7 +51,7 @@ class PersonalInstructionsDraftStore(
     context: Context,
     private val directory: File = context.noBackupFilesDir.resolve("personal-instructions"),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val nowMillis: () -> Long = SystemClock::elapsedRealtime,
+    private val nowMillis: () -> Long = MemorySnapshotClock::nowMillis,
 ) {
     private data class Confirmed(val value: PersonalInstructions, val atMillis: Long)
 

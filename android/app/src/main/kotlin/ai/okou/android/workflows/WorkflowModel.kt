@@ -1,5 +1,6 @@
 package ai.okou.android.workflows
 
+import ai.okou.android.MemorySnapshotClock
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
@@ -13,7 +14,6 @@ import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.api.retryBoundedRead
 import ai.okou.android.isFreshMemorySnapshot
 import ai.okou.android.state.WorkflowTab
-import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -101,7 +101,7 @@ internal constructor(
     private val service: WorkflowService,
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
-    private val monotonicMillis: () -> Long = SystemClock::elapsedRealtime,
+    private val monotonicMillis: () -> Long = MemorySnapshotClock::nowMillis,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(WorkflowState())
     internal val state = mutable.asStateFlow()

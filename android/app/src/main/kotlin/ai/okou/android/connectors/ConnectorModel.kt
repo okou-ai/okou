@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.MemorySnapshotClock
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
@@ -135,6 +136,7 @@ class ConnectorModel(
     private val service: ConnectorService,
     private val authorized: () -> Boolean,
     private val clock: TimeSource = TimeSource.Monotonic,
+    private val snapshotClock: TimeSource = MemorySnapshotClock,
     private val sessionFailure: (Exception) -> Unit,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectorUiState())
@@ -143,7 +145,13 @@ class ConnectorModel(
         private set
 
     internal val chatOptions =
-        ChatConnectorOptions(service, viewModelScope, authorized, clock, ::reportSessionFailure)
+        ChatConnectorOptions(
+            service,
+            viewModelScope,
+            authorized,
+            snapshotClock,
+            ::reportSessionFailure,
+        )
     private val recentMatches =
         LinkedHashMap<ConnectorBrowseFilter, ConnectorRead<ConnectorBrowse>>(
             RECENT_READ_LIMIT,
@@ -1010,7 +1018,7 @@ class ConnectorModel(
         ) {
             closeRename(editor)
         }
-        val confirmed = ConnectorRead(accounts, confirmedAt = clock.markNow())
+        val confirmed = ConnectorRead(accounts, confirmedAt = snapshotClock.markNow())
         val cached = recentServices[slug]
         if (cached != null) recentServices[slug] = cached.copy(accounts = confirmed)
         mutableState.update { state ->
@@ -1180,7 +1188,7 @@ class ConnectorModel(
             onError = ::reportSessionFailure,
             publish = {
                 publish(
-                    if (it.isConfirmed) it.copy(confirmedAt = clock.markNow())
+                    if (it.isConfirmed) it.copy(confirmedAt = snapshotClock.markNow())
                     else it.copy(failureRound = ++readFailureRound),
                 )
             },
