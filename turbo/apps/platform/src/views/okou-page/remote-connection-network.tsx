@@ -92,9 +92,7 @@ function NetworkOptions({
         }
         return (
           <SelectGroup key={group.mode} className="gap-0 pt-2">
-            <SelectLabel className="px-2 py-1 text-[13px] font-normal leading-5">
-              {group.label}
-            </SelectLabel>
+            <SelectLabel>{group.label}</SelectLabel>
             {group.items.map((item) => {
               return (
                 <SelectItem

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { Check } from "lucide-react";
 
 import { MENU_ROW_HEIGHT_CLASS } from "./menu-row";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
@@ -139,6 +140,28 @@ const DropdownMenuItem = React.forwardRef<
 });
 DropdownMenuItem.displayName = "DropdownMenuItem";
 
+function DropdownMenuGroup(props: MenuPrimitive.Group.Props) {
+  return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />;
+}
+
+const DropdownMenuLabel = React.forwardRef<
+  HTMLDivElement,
+  MenuPrimitive.GroupLabel.Props
+>(({ className, ...props }, ref) => {
+  return (
+    <MenuPrimitive.GroupLabel
+      ref={ref}
+      data-slot="dropdown-menu-label"
+      className={cn(
+        "px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground/80",
+        className,
+      )}
+      {...props}
+    />
+  );
+});
+DropdownMenuLabel.displayName = "DropdownMenuLabel";
+
 const DropdownMenuCheckboxItem = React.forwardRef<
   HTMLElement,
   MenuPrimitive.CheckboxItem.Props
@@ -149,7 +172,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
       data-slot="dropdown-menu-checkbox-item"
       className={(state) => {
         return cn(
-          "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+          "relative flex cursor-default select-none items-center gap-2 rounded-lg pl-2 pr-8 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
           MENU_ROW_HEIGHT_CLASS,
           typeof className === "function" ? className(state) : className,
         );
@@ -160,7 +183,26 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 });
 DropdownMenuCheckboxItem.displayName = "DropdownMenuCheckboxItem";
 
-const DropdownMenuCheckboxItemIndicator = MenuPrimitive.CheckboxItemIndicator;
+const DropdownMenuCheckboxItemIndicator = React.forwardRef<
+  HTMLSpanElement,
+  MenuPrimitive.CheckboxItemIndicator.Props
+>(({ className, children, ...props }, ref) => {
+  return (
+    <MenuPrimitive.CheckboxItemIndicator
+      ref={ref}
+      data-slot="dropdown-menu-checkbox-item-indicator"
+      className={cn(
+        "pointer-events-none absolute right-2 flex size-4 shrink-0 items-center justify-center",
+        className,
+      )}
+      {...props}
+    >
+      {children ?? <Check aria-hidden="true" />}
+    </MenuPrimitive.CheckboxItemIndicator>
+  );
+});
+DropdownMenuCheckboxItemIndicator.displayName =
+  "DropdownMenuCheckboxItemIndicator";
 
 function DropdownMenuRadioGroup(props: MenuPrimitive.RadioGroup.Props) {
   return (
@@ -180,7 +222,7 @@ const DropdownMenuRadioItem = React.forwardRef<
       ref={ref}
       data-slot="dropdown-menu-radio-item"
       className={cn(
-        "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        "relative flex cursor-default select-none items-center gap-2 rounded-lg pl-2 pr-8 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
         MENU_ROW_HEIGHT_CLASS,
         className,
       )}
@@ -190,7 +232,25 @@ const DropdownMenuRadioItem = React.forwardRef<
 });
 DropdownMenuRadioItem.displayName = "DropdownMenuRadioItem";
 
-const DropdownMenuRadioItemIndicator = MenuPrimitive.RadioItemIndicator;
+const DropdownMenuRadioItemIndicator = React.forwardRef<
+  HTMLSpanElement,
+  MenuPrimitive.RadioItemIndicator.Props
+>(({ className, children, ...props }, ref) => {
+  return (
+    <MenuPrimitive.RadioItemIndicator
+      ref={ref}
+      data-slot="dropdown-menu-radio-item-indicator"
+      className={cn(
+        "pointer-events-none absolute right-2 flex size-4 shrink-0 items-center justify-center",
+        className,
+      )}
+      {...props}
+    >
+      {children ?? <Check aria-hidden="true" />}
+    </MenuPrimitive.RadioItemIndicator>
+  );
+});
+DropdownMenuRadioItemIndicator.displayName = "DropdownMenuRadioItemIndicator";
 
 const DropdownMenuSeparator = React.forwardRef<
   HTMLDivElement,
@@ -252,6 +312,8 @@ export {
   DropdownMenuPortal,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
   DropdownMenuCheckboxItemIndicator,

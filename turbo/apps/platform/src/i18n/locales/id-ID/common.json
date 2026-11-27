@@ -2607,6 +2607,7 @@
       "deleteTitle": "Hapus chat?",
       "draft": "Draf",
       "empty": "Mulai percakapan dan percakapan itu akan muncul di sini",
+      "filter": "Filter",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Kotak masuk",
       "inboxEmpty": "Kotak masuk Anda kosong",

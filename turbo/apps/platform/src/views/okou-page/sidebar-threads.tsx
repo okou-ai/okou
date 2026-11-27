@@ -36,7 +36,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Plus,
-  Check,
   CheckCheck,
   Trash,
   Pencil,
@@ -67,7 +66,12 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuSeparator,
   cn,
 } from "@okouai/ui";
@@ -147,7 +151,7 @@ const CHAT_THREAD_ROW_ICON_CLASS = "[&_svg]:size-[17px]";
 function chatThreadMenuContentClassName(touch: boolean) {
   return cn(
     "min-w-56 whitespace-nowrap",
-    touch && "[&_[role=menuitem]]:min-h-11",
+    touch && "[&_[role=menuitem]]:min-h-11 [&_[role=menuitemradio]]:min-h-11",
   );
 }
 
@@ -192,7 +196,7 @@ function ChatThreadMarkUnreadMenuItem({
         detach(markUnread(pageSignal), Reason.DomCallback);
       }}
     >
-      <MessageSquareDot size={16} className="mr-2" />
+      <MessageSquareDot size={16} />
       {t(($) => {
         return $.chat.sidebar.markUnread;
       })}
@@ -227,11 +231,7 @@ function ChatThreadArchiveMenuItem({
         detach(toggleArchived(pageSignal), Reason.DomCallback);
       }}
     >
-      {archived ? (
-        <ArchiveRestore size={16} className="mr-2" />
-      ) : (
-        <Archive size={16} className="mr-2" />
-      )}
+      {archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
       {label}
       <ChatThreadMenuShortcut
         shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleArchive.binding}
@@ -263,11 +263,7 @@ function ChatThreadMuteMenuItem({
         detach(toggleMuted(pageSignal), Reason.DomCallback);
       }}
     >
-      {muted ? (
-        <Bell size={16} className="mr-2" />
-      ) : (
-        <BellOff size={16} className="mr-2" />
-      )}
+      {muted ? <Bell size={16} /> : <BellOff size={16} />}
       {label}
     </DropdownMenuItem>
   );
@@ -313,11 +309,7 @@ function ChatThreadPinMenuItems({
           detach(togglePinned(pageSignal), Reason.DomCallback);
         }}
       >
-        {isPinned ? (
-          <PinOff size={16} className="mr-2" />
-        ) : (
-          <Pin size={16} className="mr-2" />
-        )}
+        {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
         {label}
         <ChatThreadMenuShortcut
           shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleChatPin.binding}
@@ -348,7 +340,7 @@ function ChatThreadRenameMenuItem({
         detach(openRename(pageSignal), Reason.DomCallback);
       }}
     >
-      <Pencil size={16} className="mr-2" />
+      <Pencil size={16} />
       {label}
       <ChatThreadMenuShortcut
         shortcut={GLOBAL_KEYBOARD_SHORTCUTS.rename.binding}
@@ -497,7 +489,7 @@ function ChatThreadMenuItems({
             detach(fork(signals.threadId, pageSignal), Reason.DomCallback);
           }}
         >
-          <GitFork size={16} className="mr-2" />
+          <GitFork size={16} />
           {t(($) => {
             return $.chat.fork.action;
           })}
@@ -509,7 +501,7 @@ function ChatThreadMenuItems({
           move(signals.threadId);
         }}
       >
-        <FolderInput size={16} className="mr-2" />
+        <FolderInput size={16} />
         {t(($) => {
           return $.projects.move;
         })}
@@ -520,7 +512,7 @@ function ChatThreadMenuItems({
         }}
         className="text-destructive focus:text-destructive"
       >
-        <Trash size={16} className="mr-2" />
+        <Trash size={16} />
         {t(($) => {
           return $.chat.actions.delete;
         })}
@@ -1233,7 +1225,7 @@ function MarkAllReadMenuItem({
 
   return (
     <DropdownMenuItem onClick={onSelect} disabled={disabled || !hasUnread}>
-      <CheckCheck size={16} className="mr-2" />
+      <CheckCheck size={16} />
       {t(($) => {
         return $.sidebar.markAllRead;
       })}
@@ -1248,62 +1240,44 @@ function ChatThreadFilterMenuItems() {
   const selectFilter = useSelectChatThreadFilter();
 
   return (
-    <>
-      <DropdownMenuItem
-        onClick={() => {
-          selectFilter("unarchived");
-        }}
-      >
-        <Check
-          size={16}
-          className={`mr-2 ${filter === "unarchived" ? "" : "invisible"}`}
-        />
-        {unarchivedLabel}
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => {
-          selectFilter("unread");
-        }}
-        aria-keyshortcuts={
-          GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.ariaKeyShortcuts
-        }
-      >
-        <Check
-          size={16}
-          className={`mr-2 ${filter === "unread" ? "" : "invisible"}`}
-        />
+    <DropdownMenuGroup>
+      <DropdownMenuLabel>
         {t(($) => {
-          return $.chat.sidebar.unreadOnly;
+          return $.chat.sidebar.filter;
         })}
-        <ChatThreadMenuShortcut
-          shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding}
-        />
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => {
-          selectFilter("withArchived");
-        }}
-      >
-        <Check
-          size={16}
-          className={`mr-2 ${filter === "withArchived" ? "" : "invisible"}`}
-        />
-        {withArchivedLabel}
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => {
-          selectFilter("muted");
-        }}
-      >
-        <Check
-          size={16}
-          className={`mr-2 ${filter === "muted" ? "" : "invisible"}`}
-        />
-        {t(($) => {
-          return $.chat.sidebar.muted;
-        })}
-      </DropdownMenuItem>
-    </>
+      </DropdownMenuLabel>
+      <DropdownMenuRadioGroup value={filter} onValueChange={selectFilter}>
+        <DropdownMenuRadioItem value="unarchived" closeOnClick>
+          {unarchivedLabel}
+          <DropdownMenuRadioItemIndicator />
+        </DropdownMenuRadioItem>
+        <DropdownMenuRadioItem
+          value="unread"
+          closeOnClick
+          aria-keyshortcuts={
+            GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.ariaKeyShortcuts
+          }
+        >
+          {t(($) => {
+            return $.chat.sidebar.unreadOnly;
+          })}
+          <ChatThreadMenuShortcut
+            shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding}
+          />
+          <DropdownMenuRadioItemIndicator />
+        </DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="muted" closeOnClick>
+          {t(($) => {
+            return $.chat.sidebar.muted;
+          })}
+          <DropdownMenuRadioItemIndicator />
+        </DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="withArchived" closeOnClick>
+          {withArchivedLabel}
+          <DropdownMenuRadioItemIndicator />
+        </DropdownMenuRadioItem>
+      </DropdownMenuRadioGroup>
+    </DropdownMenuGroup>
   );
 }
 
@@ -1339,13 +1313,15 @@ export function ChatThreadsListMenu({
           align="end"
           className={chatThreadMenuContentClassName(touch)}
         >
+          <ChatThreadFilterMenuItems />
           {markAllReadAction.visible ? (
             <>
-              <MarkAllReadMenuItem {...markAllReadAction} />
               <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <MarkAllReadMenuItem {...markAllReadAction} />
+              </DropdownMenuGroup>
             </>
           ) : null}
-          <ChatThreadFilterMenuItems />
         </DropdownMenuContent>
       </DropdownMenu>
     </TooltipProvider>

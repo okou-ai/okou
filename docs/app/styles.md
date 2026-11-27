@@ -558,6 +558,28 @@ type rail and its current-model rows pair a label with a summary line and state
 their own `h-11` and `h-12`; they sit outside this contract because they are not
 single-line list rows.
 
+Selection and grouping inside dropdown and select menus follow one shared
+contract owned by `@okouai/ui`:
+
+- **Right-side check indicator**: `DropdownMenuRadioItem`,
+  `DropdownMenuCheckboxItem`, and `SelectItem` reserve `pr-8` on the right for
+  the selected check (`DropdownMenuRadioItemIndicator` /
+  `DropdownMenuCheckboxItemIndicator` render a 16px `<Check />` at `right-2` by
+  default). Do not place selection checks on the left, pass custom `<Check>`
+  sizes, or hand-roll placeholder spans.
+- **No resting selected fill**: Selected menu options indicate state through the
+  right-side check alone rather than a resting `bg-state-selected` or
+  `bg-muted` background.
+- **Semantic radio and checkbox primitives**: Use `DropdownMenuRadioGroup` with
+  `DropdownMenuRadioItem` and `onValueChange` for single-select menus, and
+  `DropdownMenuCheckboxItem` for multi-select filters, rather than simulating
+  selection with `DropdownMenuItem`.
+- **Group headings**: Use `DropdownMenuGroup` with `DropdownMenuLabel` (or
+  `SelectGroup` with `SelectLabel`), sharing `px-2 pb-1 pt-1.5 text-xs
+font-medium text-muted-foreground/80` aligned with `pl-2` row content.
+- **Icon rhythm**: Menu items already provide `gap-2` (8px) between icons and
+  labels; do not add `mr-2` to leading icons.
+
 ### Fills inside interactive rows
 
 A fill drawn inside an element that takes a state — the icon tile in a menu

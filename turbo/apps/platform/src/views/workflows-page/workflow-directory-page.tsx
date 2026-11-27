@@ -6,14 +6,16 @@ import {
   useSet,
 } from "ccstate-react";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
-import { ArrowUpDown, Check, Download, Filter, Search, X } from "lucide-react";
+import { ArrowUpDown, Download, Filter, Search, X } from "lucide-react";
 import {
   surfaceVariants,
   Badge,
   Button,
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuRadioItemIndicator,
@@ -295,33 +297,23 @@ function MenuRadioSection<T extends string>({
   readonly closeOnClick: boolean;
 }) {
   return (
-    <DropdownMenuRadioGroup
-      value={value}
-      onValueChange={onChange}
-      aria-label={label}
-    >
-      <div
-        aria-hidden
-        className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground/80"
-      >
-        {label}
-      </div>
-      {options.map((option) => {
-        return (
-          <DropdownMenuRadioItem
-            key={option.value}
-            value={option.value}
-            closeOnClick={closeOnClick}
-            className="justify-between gap-4"
-          >
-            {option.label}
-            <DropdownMenuRadioItemIndicator>
-              <Check size={16} aria-hidden />
-            </DropdownMenuRadioItemIndicator>
-          </DropdownMenuRadioItem>
-        );
-      })}
-    </DropdownMenuRadioGroup>
+    <DropdownMenuGroup>
+      <DropdownMenuLabel>{label}</DropdownMenuLabel>
+      <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+        {options.map((option) => {
+          return (
+            <DropdownMenuRadioItem
+              key={option.value}
+              value={option.value}
+              closeOnClick={closeOnClick}
+            >
+              {option.label}
+              <DropdownMenuRadioItemIndicator />
+            </DropdownMenuRadioItem>
+          );
+        })}
+      </DropdownMenuRadioGroup>
+    </DropdownMenuGroup>
   );
 }
 

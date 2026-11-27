@@ -1,4 +1,4 @@
-import { Check, Lock, User, Users } from "lucide-react";
+import { Lock, User, Users } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -112,7 +112,7 @@ function VisibilityOptionList({
             aria-label={label}
             aria-describedby={`${descriptionId}-${value}`}
             closeOnClick
-            className="w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left data-checked:bg-state-selected"
+            className="w-full items-start gap-2.5 text-left"
           >
             <Icon
               size={16}
@@ -134,12 +134,7 @@ function VisibilityOptionList({
                     })}
               </span>
             </span>
-            {/* Reserve the check column so descriptions do not reflow. */}
-            <span className="mt-0.5 w-4 shrink-0">
-              <DropdownMenuRadioItemIndicator>
-                <Check size={16} className="text-foreground" aria-hidden />
-              </DropdownMenuRadioItemIndicator>
-            </span>
+            <DropdownMenuRadioItemIndicator className="top-2" />
           </DropdownMenuRadioItem>
         );
       })}

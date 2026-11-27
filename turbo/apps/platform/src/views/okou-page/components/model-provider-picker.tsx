@@ -451,7 +451,7 @@ function EnabledExplicitModelFirstModelPicker({
           </p>
         ) : (
           <SelectGroup>
-            <SelectLabel className="pl-2 pr-8 py-1.5 text-xs font-medium text-muted-foreground">
+            <SelectLabel>
               {t(($) => {
                 return $.settings.models.picker.models;
               })}

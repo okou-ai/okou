@@ -197,7 +197,10 @@ const SelectLabel = React.forwardRef<
     <SelectPrimitive.GroupLabel
       ref={ref}
       data-slot="select-label"
-      className={cn("px-3 py-1.5 text-sm text-muted-foreground", className)}
+      className={cn(
+        "px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground/80",
+        className,
+      )}
       {...props}
     />
   );
@@ -220,10 +223,10 @@ const SelectItem = React.forwardRef<HTMLElement, SelectPrimitive.Item.Props>(
         <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
         <SelectPrimitive.ItemIndicator
           render={
-            <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center" />
+            <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center" />
           }
         >
-          <Check className="h-4 w-4" />
+          <Check className="size-4" aria-hidden="true" />
         </SelectPrimitive.ItemIndicator>
       </SelectPrimitive.Item>
     );

@@ -2620,6 +2620,7 @@
       "deleteTitle": "Chat löschen?",
       "draft": "Entwurf",
       "empty": "Starten Sie eine Konversation; sie wird dann hier angezeigt",
+      "filter": "Filter",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Posteingang",
       "inboxEmpty": "Dein Posteingang ist leer",

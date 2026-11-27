@@ -156,17 +156,10 @@ export function SharePermissionChoices({
             aria-label={label}
             aria-description={described ? description : undefined}
             className={cn(
-              "flex w-full select-none gap-2 rounded-lg px-2 text-left outline-none transition-colors",
+              "flex w-full select-none gap-2 rounded-lg px-2 text-left outline-none transition-colors hover:bg-state-hover",
               described ? "items-start" : "items-center",
               MENU_ROW_HEIGHT_CLASS,
-              unavailable && "opacity-50",
-              // `state-hover` says "the pointer is here"; selection owns
-              // `state-selected`. Painting both with the hover layer made a
-              // hovered row and the current audience the same fill.
-              isSelected
-                ? "bg-state-selected hover:bg-state-selected-hover"
-                : "hover:bg-state-hover",
-              unavailable && "hover:bg-transparent",
+              unavailable && "opacity-50 hover:bg-transparent",
             )}
           >
             <Icon
@@ -181,12 +174,15 @@ export function SharePermissionChoices({
               description={described ? description : null}
               selected={isSelected}
             />
-            {isSelected && (
-              <Check
-                size={16}
-                className={cn("shrink-0", described && "mt-0.5")}
-              />
-            )}
+            <span
+              className={cn(
+                "flex size-4 shrink-0 items-center justify-center",
+                described && "mt-0.5",
+              )}
+              aria-hidden="true"
+            >
+              {isSelected && <Check className="size-4" />}
+            </span>
           </RadioPrimitive.Root>
         );
       })}

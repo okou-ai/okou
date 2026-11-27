@@ -95,7 +95,7 @@ test("Enter and Space each toggle a network type once, and Escape restores trigg
   // Opening from the keyboard moves focus to the first entry, All types.
   await waitFor(() => {
     expect(
-      queryAllByRoleFast("menuitem").find((item) => {
+      queryAllByRoleFast("menuitemcheckbox").find((item) => {
         return item.textContent?.trim() === "All types";
       }),
     ).toHaveFocus();

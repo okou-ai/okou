@@ -80,7 +80,10 @@ async function choose(name: string, scope?: HTMLElement) {
     : await findButton("More actions");
   click(trigger!);
   const menu = await screen.findByRole("menu");
-  const item = queryAllByRoleFast("menuitem", menu).find((el) => {
+  const item = [
+    ...queryAllByRoleFast("menuitem", menu),
+    ...queryAllByRoleFast("menuitemradio", menu),
+  ].find((el) => {
     return el.textContent?.trim() === name;
   });
   expect(item).toBeDefined();
@@ -429,12 +432,14 @@ test.each(["mobile", "desktop"] as const)(
     await expect(findButton("Artifacts and chats")).resolves.toBeEnabled();
     await user.click(more);
     const menu = await screen.findByRole("menu");
-    const labels = queryAllByRoleFast("menuitem", menu).map((item) => {
+    const labels = Array.from(
+      menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"]'),
+    ).map((item) => {
       return item.textContent;
     });
     expect(labels).toStrictEqual(
       layout === "desktop"
-        ? ["Automations", "Manage emails", "Open browser"]
+        ? ["Automations", "Open browser", "Manage emails"]
         : ["Pin", "Rename", "Mute", "Archive", "Automations", "Open browser"],
     );
     let origin = more;
@@ -452,8 +457,13 @@ test.each(["mobile", "desktop"] as const)(
       return expect(origin).toHaveFocus();
     });
     await user.click(more);
+    const reopenedMenu = await screen.findByRole("menu");
     await user.click(
-      await findNamedMenuItem("Automations", await screen.findByRole("menu")),
+      layout === "desktop"
+        ? within(reopenedMenu).getByRole("menuitemradio", {
+            name: "Automations",
+          })
+        : await findNamedMenuItem("Automations", reopenedMenu),
     );
     await expect(
       screen.findByRole("complementary", { name: "Automations" }),

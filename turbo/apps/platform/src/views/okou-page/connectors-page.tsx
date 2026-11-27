@@ -37,7 +37,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Search, Filter, ChevronDown, Check } from "lucide-react";
+import { Search, Filter, ChevronDown } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -108,7 +108,11 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuSeparator,
   Input,
   SegmentControl,
@@ -125,34 +129,7 @@ import {
 import { AddRemoteDeviceButton } from "./remote-device-directory.tsx";
 import { WorkspaceCanvasBackdrop } from "./workspace-inset.tsx";
 
-function ConnectorFilterSectionLabel({
-  children,
-}: {
-  readonly children: ReactNode;
-}) {
-  return (
-    <div className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground/80">
-      {children}
-    </div>
-  );
-}
-
-function ConnectorFilterOption({
-  active,
-  onSelect,
-  children,
-}: {
-  readonly active: boolean;
-  readonly onSelect: () => void;
-  readonly children: ReactNode;
-}) {
-  return (
-    <DropdownMenuItem className="justify-between gap-2" onClick={onSelect}>
-      <span className="flex min-w-0 items-center gap-2">{children}</span>
-      {active && <Check size={15} className="shrink-0 text-foreground" />}
-    </DropdownMenuItem>
-  );
-}
+const ALL_CONNECTOR_CATEGORIES_VALUE = "__all__";
 
 /** Configured resources determine whether a remote-access service is connected. */
 function configuredRemoteAccessResources(
@@ -458,48 +435,65 @@ function DirectoryControls() {
                 align="end"
                 className="max-h-[min(420px,var(--available-height))] w-64 overflow-y-auto"
               >
-                <ConnectorFilterSectionLabel>
-                  {t(($) => {
-                    return $.connectors.catalog.directory.browse;
-                  })}
-                </ConnectorFilterSectionLabel>
-                <ConnectorFilterOption
-                  active={!customScope && categoryFilter === null}
-                  onSelect={() => {
-                    setCategoryFilter(null);
+                <DropdownMenuRadioGroup
+                  value={
+                    customScope
+                      ? ""
+                      : (categoryFilter ?? ALL_CONNECTOR_CATEGORIES_VALUE)
+                  }
+                  onValueChange={(nextValue: string) => {
+                    setCategoryFilter(
+                      nextValue === ALL_CONNECTOR_CATEGORIES_VALUE
+                        ? null
+                        : nextValue,
+                    );
                   }}
                 >
-                  {t(($) => {
-                    return $.connectors.catalog.filters.all;
-                  })}
-                </ConnectorFilterOption>
-                <DropdownMenuSeparator />
-                <ConnectorFilterSectionLabel>
-                  {t(($) => {
-                    return $.connectors.catalog.filterCategory;
-                  })}
-                </ConnectorFilterSectionLabel>
-                {categories.map((section) => {
-                  const total = categoryCounts?.[section.category];
-                  return (
-                    <ConnectorFilterOption
-                      key={section.category}
-                      active={categoryFilter === section.category}
-                      onSelect={() => {
-                        setCategoryFilter(section.category);
-                      }}
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>
+                      {t(($) => {
+                        return $.connectors.catalog.directory.browse;
+                      })}
+                    </DropdownMenuLabel>
+                    <DropdownMenuRadioItem
+                      value={ALL_CONNECTOR_CATEGORIES_VALUE}
+                      closeOnClick
                     >
-                      <span className="min-w-0 truncate">
-                        {section.menuLabel}
-                      </span>
-                      {total !== undefined && (
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
-                          {total}
-                        </span>
-                      )}
-                    </ConnectorFilterOption>
-                  );
-                })}
+                      {t(($) => {
+                        return $.connectors.catalog.filters.all;
+                      })}
+                      <DropdownMenuRadioItemIndicator />
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>
+                      {t(($) => {
+                        return $.connectors.catalog.filterCategory;
+                      })}
+                    </DropdownMenuLabel>
+                    {categories.map((section) => {
+                      const total = categoryCounts?.[section.category];
+                      return (
+                        <DropdownMenuRadioItem
+                          key={section.category}
+                          value={section.category}
+                          closeOnClick
+                        >
+                          <span className="min-w-0 truncate">
+                            {section.menuLabel}
+                          </span>
+                          {total !== undefined && (
+                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
+                              {total}
+                            </span>
+                          )}
+                          <DropdownMenuRadioItemIndicator />
+                        </DropdownMenuRadioItem>
+                      );
+                    })}
+                  </DropdownMenuGroup>
+                </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             </DropdownMenu>
           )}

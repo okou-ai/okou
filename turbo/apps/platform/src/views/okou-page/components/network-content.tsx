@@ -1,10 +1,4 @@
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Filter,
-  Loader2,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Filter, Loader2 } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import {
   IconButton,
@@ -12,7 +6,6 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuCheckboxItemIndicator,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
   Table,
   TableBody,
@@ -300,22 +293,18 @@ function TypeFilter({
         <ChevronDown size={14} className="shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
-        <DropdownMenuItem
+        <DropdownMenuCheckboxItem
+          checked={typeFilter.mode === "all"}
           closeOnClick={false}
-          onClick={() => {
+          onCheckedChange={() => {
             onChange({ mode: "all" });
           }}
         >
-          <span
-            className="flex h-4 w-4 items-center justify-center"
-            aria-hidden
-          >
-            {typeFilter.mode === "all" && <Check size={14} />}
-          </span>
           {t(($) => {
             return $.activity.network.filter.allTypes;
           })}
-        </DropdownMenuItem>
+          <DropdownMenuCheckboxItemIndicator />
+        </DropdownMenuCheckboxItem>
         {typeOptions.map((type) => {
           const selected = selectedSet.has(type);
           return (
@@ -329,12 +318,8 @@ function TypeFilter({
                 );
               }}
             >
-              <span className="flex h-4 w-4 items-center justify-center">
-                <DropdownMenuCheckboxItemIndicator>
-                  <Check size={14} />
-                </DropdownMenuCheckboxItemIndicator>
-              </span>
               {type}
+              <DropdownMenuCheckboxItemIndicator />
             </DropdownMenuCheckboxItem>
           );
         })}

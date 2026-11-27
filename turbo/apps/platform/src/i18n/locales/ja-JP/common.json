@@ -2607,6 +2607,7 @@
       "deleteTitle": "チャットを削除しますか?",
       "draft": "草案",
       "empty": "会話を開始するとここに表示されます",
+      "filter": "絞り込み",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "受信トレイ",
       "inboxEmpty": "受信トレイは空です",

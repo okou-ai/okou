@@ -10,7 +10,12 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuCheckboxItemIndicator,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -308,5 +313,61 @@ describe("DropdownMenu", () => {
 
     expect(dialogPortal).toContainElement(menuPortal);
     expect(menuPortal).toContainElement(tooltipPortal);
+  });
+
+  it("renders group labels and radio items with a default right-side check indicator", async () => {
+    const user = userEvent.setup();
+    function RadioMenu() {
+      const [value, setValue] = useState("unarchived");
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger>Filter menu</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Filter</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={value} onValueChange={setValue}>
+                <DropdownMenuRadioItem value="unarchived">
+                  Unarchived
+                  <DropdownMenuRadioItemIndicator />
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="unread">
+                  Unread
+                  <DropdownMenuRadioItemIndicator />
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+    }
+
+    render(<RadioMenu />);
+    await user.click(screen.getByRole("button", { name: "Filter menu" }));
+
+    const group = await screen.findByRole("group", { name: "Filter" });
+    expect(group).toBeInTheDocument();
+
+    const unarchived = screen.getByRole("menuitemradio", {
+      name: "Unarchived",
+    });
+    const unread = screen.getByRole("menuitemradio", { name: "Unread" });
+    expect(unarchived).toHaveAttribute("aria-checked", "true");
+    expect(unread).toHaveAttribute("aria-checked", "false");
+    expect(
+      unarchived.querySelector(
+        '[data-slot="dropdown-menu-radio-item-indicator"] svg',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      unread.querySelector('[data-slot="dropdown-menu-radio-item-indicator"]'),
+    ).toBeNull();
+
+    await user.click(unread);
+    expect(unread).toHaveAttribute("aria-checked", "true");
+    expect(
+      unread.querySelector(
+        '[data-slot="dropdown-menu-radio-item-indicator"] svg',
+      ),
+    ).toBeInTheDocument();
   });
 });
