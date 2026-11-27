@@ -406,7 +406,7 @@ private fun WorkspaceSettingsContent(
                         SettingsSwitchRow(
                             stringResource(R.string.settings_cloud_browser),
                             leading = { SettingsIcon(R.drawable.ic_language) },
-                            checked = preferences?.cloudBrowser,
+                            checked = preferences?.cloudBrowser ?: true,
                             supportingText = stringResource(R.string.settings_cloud_browser_detail),
                             onCheckedChange = preferenceModel?.let { it::setCloudBrowser },
                         )

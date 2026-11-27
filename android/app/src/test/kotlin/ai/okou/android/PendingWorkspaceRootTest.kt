@@ -40,6 +40,8 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -308,7 +310,12 @@ class PendingWorkspaceRootTest {
         preparing.assertIsDisplayed()
         compose.onNodeWithText("Workspace A").assertDoesNotExist()
         compose.onNodeWithText("Model accounts").assertIsNotEnabled()
-        compose.onNodeWithText("Cloud Browser").assertIsNotEnabled()
+        val cloudBrowser = compose.onNodeWithText("Cloud Browser")
+        cloudBrowser.assertIsNotEnabled().assertIsOn()
+        compose.onNodeWithText("Language").assertIsNotEnabled()
+        compose.onNodeWithText("English").assertExists()
+        compose.onNodeWithText("Time zone").assertIsNotEnabled()
+        compose.onNodeWithText("UTC", substring = true).assertExists()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Dark").fetchSemanticsNodes().isNotEmpty()
         }
@@ -358,7 +365,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText("Display mode").assertIsEnabled()
         creditBalance.assertIsEnabled()
         compose.onNodeWithText("Model accounts").assertIsEnabled()
-        compose.onNodeWithText("Cloud Browser").assertIsEnabled()
+        cloudBrowser.assertIsEnabled().assertIsOff()
         compose.onNodeWithText("Follow system").assertExists()
     }
 

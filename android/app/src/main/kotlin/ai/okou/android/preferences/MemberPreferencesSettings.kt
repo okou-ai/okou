@@ -12,6 +12,8 @@ import ai.okou.android.SettingsSection
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
+import ai.okou.android.auth.initialLocale
+import ai.okou.android.auth.initialTimezone
 import ai.okou.android.resolveDark
 import ai.okou.android.resolvePalette
 import androidx.compose.foundation.background
@@ -45,18 +47,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.app.LocaleManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.repeatOnLifecycle
+import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
+
+// The preference initialization endpoint uses this value when the device has no valid zone.
+private const val defaultTimezone = "America/Los_Angeles"
 
 @Composable
 internal fun MemberPreferencesSettings(
@@ -72,17 +80,18 @@ internal fun MemberPreferencesSettings(
             onDispose { model.settingsVisibilityChanged(false) }
         }
     }
-    val theme = state?.theme ?: cachedAppearance?.theme
-    val colorTheme = state?.colorTheme ?: cachedAppearance?.colorTheme
+    val theme = state?.theme ?: cachedAppearance?.theme ?: UserPreferencesTheme.SYSTEM
+    val colorTheme =
+        state?.colorTheme ?: cachedAppearance?.colorTheme ?: UserPreferencesColorTheme.DEFAULT
     val systemDark = isSystemInDarkTheme()
-    val dark = theme?.resolveDark(systemDark) ?: systemDark
+    val dark = theme.resolveDark(systemDark)
     SettingsSection(stringResource(R.string.settings_appearance_group)) {
         SettingsGroup {
             val appearanceTitle = stringResource(R.string.appearance)
             val colorTitle = stringResource(R.string.preference_color_theme)
             SettingsPickerRow(
                 appearanceTitle,
-                value = theme?.let { stringResource(appearanceLabel(it)) },
+                value = stringResource(appearanceLabel(theme)),
                 leading = { SettingsIcon(R.drawable.ic_brightness_6) },
                 enabled = state != null,
             ) { dismiss ->
@@ -99,7 +108,7 @@ internal fun MemberPreferencesSettings(
             HorizontalDivider()
             SettingsPickerRow(
                 colorTitle,
-                value = colorTheme?.let { stringResource(paletteLabel(it)) },
+                value = stringResource(paletteLabel(colorTheme)),
                 leading = { SettingsIcon(R.drawable.ic_palette) },
                 enabled = state != null,
             ) { dismiss ->
@@ -117,9 +126,18 @@ internal fun MemberPreferencesSettings(
     SettingsSection(stringResource(R.string.settings_region)) {
         SettingsGroup {
             val languageTitle = stringResource(R.string.preference_language)
+            val locale =
+                state?.locale
+                    ?: run {
+                        val deviceLocale =
+                            LocaleManagerCompat.getSystemLocales(LocalContext.current)[0]
+                        UserPreferencesLocale.valueOf(
+                            initialLocale(deviceLocale ?: Locale.ROOT).name,
+                        )
+                    }
             SettingsPickerRow(
                 languageTitle,
-                value = state?.let { stringResource(languageLabel(it.locale)) },
+                value = stringResource(languageLabel(locale)),
                 leading = { SettingsIcon(R.drawable.ic_translate) },
                 enabled = state != null && state.supportedLocales.size > 1,
             ) { dismiss ->
@@ -134,7 +152,10 @@ internal fun MemberPreferencesSettings(
                 )
             }
             HorizontalDivider()
-            TimezonePicker(state?.timezone, model?.let { owner -> { owner.selectTimezone(it) } })
+            TimezonePicker(
+                state?.timezone ?: remember { initialTimezone() ?: defaultTimezone },
+                model?.let { owner -> { owner.selectTimezone(it) } },
+            )
         }
         if (model != null && state != null) {
             TimezoneScheduleFeedback(state, model::retry)
