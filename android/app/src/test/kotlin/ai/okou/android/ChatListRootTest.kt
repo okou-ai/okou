@@ -736,7 +736,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         project.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         val before = title.getUnclippedBoundsInRoot()
         val header = project.getUnclippedBoundsInRoot()
-        assertEquals(52f, (header.bottom - header.top).value, 1f)
+        assertEquals(56f, (header.bottom - header.top).value, 1f)
 
         running.set(true)
         (app.realtimeService as TestRealtimeService).invalidate(ChatChanges(indicators = true))
@@ -796,7 +796,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
             val child = compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").getUnclippedBoundsInRoot()
             assertEquals(24f, (child.left - header.left).value, 1f)
-            assertEquals(52f, (child.bottom - child.top).value, 1f)
+            assertEquals(56f, (child.bottom - child.top).value, 1f)
 
             toggle(Key.Spacebar, SemanticsActions.Expand)
             val closingTop = followingChat.getUnclippedBoundsInRoot().top

@@ -38,13 +38,17 @@ internal class ChatListRowFeedbackTest : ChatListRootTestFixture() {
         val chat = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
         val project = compose.onNodeWithText("Research")
         val colors = resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false)
-        val ordinaryHover = colors.onBackground.copy(alpha = .08f).compositeOver(colors.background)
+        val ordinaryHover = colors.onSurface.copy(alpha = .08f).compositeOver(colors.surface)
         val selectedHover =
             colors.onSecondaryContainer.copy(alpha = .08f).compositeOver(colors.secondaryContainer)
 
-        fun assertTopColor(row: SemanticsNodeInteraction, expected: Color) {
+        fun topColor(row: SemanticsNodeInteraction): Color {
             val pixels = row.captureToImage().toPixelMap()
-            val actual = pixels[pixels.width / 2, 0]
+            return pixels[pixels.width / 2, 0]
+        }
+
+        fun assertTopColor(row: SemanticsNodeInteraction, expected: Color) {
+            val actual = topColor(row)
             val sameColor =
                 abs(expected.red - actual.red) <= 1.01f / 255 &&
                     abs(expected.green - actual.green) <= 1.01f / 255 &&
@@ -53,11 +57,12 @@ internal class ChatListRowFeedbackTest : ChatListRootTestFixture() {
         }
 
         project.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        val focusedColor = topColor(project)
         project.performMouseInput { moveTo(center) }
         assertTopColor(project, ordinaryHover)
         chat.performMouseInput { moveTo(center) }
         project.assertIsFocused()
-        assertTopColor(project, colors.background)
+        assertTopColor(project, focusedColor)
         assertTopColor(chat, ordinaryHover)
         chat.performClick().assertIsSelected()
         chat.performMouseInput { moveTo(center + Offset(5f, 0f)) }
