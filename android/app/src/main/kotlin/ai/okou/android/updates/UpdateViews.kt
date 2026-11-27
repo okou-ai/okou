@@ -799,7 +799,7 @@ private fun UpdateAction(
                 .clip(shape)
                 .background(
                     if (useDisabledColors) disabledColors.disabledContainerColor
-                    else colors.surfaceVariant,
+                    else colors.surfaceContainerHigh,
                 )
                 .semantics(
                     mergeDescendants = true,
@@ -819,7 +819,7 @@ private fun UpdateAction(
                 modifier = Modifier.padding(contentPadding),
                 color =
                     if (useDisabledColors) disabledColors.disabledContentColor
-                    else colors.onBackground,
+                    else colors.onSurface,
                 style = updateProgressStyle(),
                 textAlign = TextAlign.Center,
             )

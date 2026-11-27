@@ -10,6 +10,8 @@ import ai.okou.android.updates.UpdateRecord
 import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
 import ai.okou.android.updates.UpdateTransfer
+import android.app.UiModeManager
+import android.content.res.Configuration
 import android.text.format.Formatter
 import android.view.KeyEvent
 import androidx.lifecycle.Lifecycle
@@ -203,6 +205,10 @@ class NativeUpdateTest {
         val previous = app.updateOwner
         app.updateOwner = owner
         var scenario: ActivityScenario<MainActivity>? = null
+        val mode = requireNotNull(app.getSystemService(UiModeManager::class.java))
+        val nightMode = mode.nightMode
+        val automation = instrumentation.uiAutomation
+        var adoptedNightModePermission = false
         val failures = mutableListOf<Throwable>()
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
@@ -678,6 +684,20 @@ class NativeUpdateTest {
             click(R.string.updates_download)
             assertNotNull(text(progressLabel))
             captureState("required-progress")
+
+            automation.adoptShellPermissionIdentity("android.permission.MODIFY_DAY_NIGHT_MODE")
+            adoptedNightModePermission = true
+            mode.nightMode = UiModeManager.MODE_NIGHT_YES
+            val nightConfiguration =
+                object : Condition<UiDevice, Boolean> {
+                    override fun apply(device: UiDevice): Boolean =
+                        (app.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                            Configuration.UI_MODE_NIGHT_YES
+                }
+            assertTrue(device.wait(nightConfiguration, 10_000) == true)
+            exists(R.string.updates_required)
+            assertNotNull(text(progressLabel))
+            captureState("required-progress-dark")
         } catch (error: Throwable) {
             failures += error
             try {
@@ -696,6 +716,8 @@ class NativeUpdateTest {
                     { file.delete() },
                     { app.updateOwner = previous },
                     { instrumentation.resetInTouchMode() },
+                    { if (adoptedNightModePermission) mode.nightMode = nightMode },
+                    { if (adoptedNightModePermission) automation.dropShellPermissionIdentity() },
                 )) try {
                 cleanup()
             } catch (error: Throwable) {
