@@ -23,12 +23,7 @@ export type { ComputerUsePermissions } from "@okouai/db/jsonb-contracts/computer
 
 export const computerUseHosts = pgTable(
   "computer_use_hosts",
-  {
-    ...computerUseHostColumns(),
-    activeRemoteDeviceId: uuid("active_remote_device_id").generatedAlwaysAs(
-      sql`CASE WHEN revoked_at IS NULL THEN remote_device_id END`,
-    ),
-  },
+  computerUseHostColumns(),
   (table) => {
     return [
       foreignKey({
