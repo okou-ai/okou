@@ -1634,6 +1634,29 @@ function artifactCatalogOrderBy(direction: ArtifactCatalogDirection): SQL[] {
   ];
 }
 
+function artifactCatalogListSelection() {
+  return {
+    id: artifacts.id,
+    entityId: artifacts.entityId,
+    kind: artifacts.kind,
+    logicalKey: artifacts.logicalKey,
+    displayKind: artifactCatalogEffectiveKind(),
+    aliasUrl: artifacts.aliasUrl,
+    sourceUrl: artifacts.sourceUrl,
+    videoSourceUrl: artifacts.videoSourceUrl,
+    title: artifacts.title,
+    thumbnail: artifacts.thumbnail,
+    visibility: artifacts.visibility,
+    createdAt: artifacts.createdAt,
+    updatedAt: artifacts.updatedAt,
+    // Preserve PostgreSQL microseconds in new keyset cursors.
+    cursorCreatedAt:
+      sql`to_char(${artifacts.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
+        pgTextDecoder,
+      ),
+  };
+}
+
 export const listArtifactCatalog$ = command(
   async (
     { get },
@@ -1659,26 +1682,7 @@ export const listArtifactCatalog$ = command(
       args.keyword,
       libraryQuery,
     );
-    const selection = {
-      id: artifacts.id,
-      entityId: artifacts.entityId,
-      kind: artifacts.kind,
-      logicalKey: artifacts.logicalKey,
-      displayKind: artifactCatalogEffectiveKind(),
-      aliasUrl: artifacts.aliasUrl,
-      sourceUrl: artifacts.sourceUrl,
-      videoSourceUrl: artifacts.videoSourceUrl,
-      title: artifacts.title,
-      thumbnail: artifacts.thumbnail,
-      visibility: artifacts.visibility,
-      createdAt: artifacts.createdAt,
-      updatedAt: artifacts.updatedAt,
-      // Preserve PostgreSQL microseconds in new keyset cursors.
-      cursorCreatedAt:
-        sql`to_char(${artifacts.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
-          pgTextDecoder,
-        ),
-    };
+    const selection = artifactCatalogListSelection();
     const category = artifactCatalogCategory();
     const catalog = libraryQuery
       ? db

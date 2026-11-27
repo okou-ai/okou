@@ -23,6 +23,7 @@ import {
   queueRecordedArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
+import { syncFileFromRunUploadedFileRow$ } from "./files-dual-write.service";
 
 interface RecordWebUploadedFileArgs {
   readonly runId: string | undefined;
@@ -211,6 +212,19 @@ const recordRunUploadedFile$ = command(
     );
     if (result.ok) {
       const [row] = result.value;
+      if (row) {
+        const meta = args.file.metadata as Record<string, unknown> | undefined;
+        if (
+          !meta ||
+          (!("siteId" in meta) && meta.generatedBy !== "zero-official-website")
+        ) {
+          await set(
+            syncFileFromRunUploadedFileRow$,
+            { fileId: row.id, origin: "agent" },
+            signal,
+          );
+        }
+      }
       return row;
     }
     if (!isForeignKeyViolation(result.error)) {

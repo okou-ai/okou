@@ -32,6 +32,10 @@ import {
   queueChangedArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
+import {
+  dualWriteFileRecord$,
+  dualWriteFileUpdate$,
+} from "./files-dual-write.service";
 
 const PRIVATE_STORAGE = "private-artifact-v1";
 export type PrivateArtifactUploadProtocol =
@@ -325,6 +329,23 @@ export const allocatePrivateArtifact$ = command(
         throw new Error("Private artifact identity belongs to another object");
       }
     }
+    await set(
+      dualWriteFileRecord$,
+      {
+        id,
+        orgId: args.orgId,
+        ownerUserId: args.userId,
+        storageKey: key,
+        filename: args.filename,
+        contentType: args.contentType,
+        sizeBytes: args.size,
+        origin:
+          args.purpose === "artifact" || args.runId !== undefined
+            ? "agent"
+            : "user",
+      },
+      signal,
+    );
     return location;
   },
 );
@@ -449,6 +470,15 @@ export const completePrivateArtifact$ = command(
     if (!outcome) {
       throw new Error("Private artifact completion returned no outcome");
     }
+    await set(
+      dualWriteFileUpdate$,
+      {
+        id: args.id,
+        contentType: args.contentType,
+        sizeBytes: args.size,
+      },
+      signal,
+    );
     if (outcome.changed) {
       await set(syncArtifactCatalogForFile$, args.id, signal);
     }

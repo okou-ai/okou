@@ -54,6 +54,10 @@ import {
   queueArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
+import {
+  dualWriteFileRecord$,
+  dualWriteFileUpdate$,
+} from "./files-dual-write.service";
 import { sourceForRun$ } from "./run-uploaded-files.service";
 import {
   artifactStorageBucket,
@@ -433,6 +437,21 @@ const ensureCanonicalInputAsset$ = command(
       .returning(canonicalAssetSelection());
     signal.throwIfAborted();
     if (inserted) {
+      await set(
+        dualWriteFileRecord$,
+        {
+          id: inserted.id,
+          orgId: inserted.orgId,
+          ownerUserId: args.userId,
+          storageKey: inserted.storageKey,
+          filename: inserted.filename,
+          contentType: inserted.contentType,
+          sizeBytes: inserted.sizeBytes,
+          checksumSha256: inserted.checksumSha256,
+          origin: "user",
+        },
+        signal,
+      );
       return inserted;
     }
     const existing = await set(
@@ -598,6 +617,16 @@ const markCanonicalInputReady$ = command(
         .returning(canonicalAssetSelection());
       signal.throwIfAborted();
       if (ready) {
+        await set(
+          dualWriteFileUpdate$,
+          {
+            id: ready.id,
+            sizeBytes: args.sizeBytes,
+            checksumSha256: args.checksumSha256,
+            contentType: args.contentType,
+          },
+          signal,
+        );
         return ready;
       }
       observed = await set(
@@ -1283,6 +1312,23 @@ const ensureCanonicalPublishedAsset$ = command(
         },
         signal,
       ));
+    if (inserted) {
+      await set(
+        dualWriteFileRecord$,
+        {
+          id: inserted.id,
+          orgId: inserted.orgId,
+          ownerUserId: args.userId,
+          storageKey: inserted.storageKey,
+          filename: inserted.filename,
+          contentType: inserted.contentType,
+          sizeBytes: inserted.sizeBytes,
+          checksumSha256: inserted.checksumSha256,
+          origin: "agent",
+        },
+        signal,
+      );
+    }
     if (!asset) {
       throw new Error("Canonical publication asset conflict is missing");
     }
@@ -1730,6 +1776,14 @@ export const materializeCanonicalPublishedAsset$ = command(
       ),
     );
     signal.throwIfAborted();
+    await set(
+      dualWriteFileUpdate$,
+      {
+        id: asset.id,
+        sizeBytes: head.contentLength,
+      },
+      signal,
+    );
     await set(syncArtifactCatalogForFile$, asset.id, signal);
     return { ok: true, assetId: asset.id, url };
   },
