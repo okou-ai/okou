@@ -245,7 +245,66 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
     fun wideCatalogRestoresFocusWithoutReplacingTheVisibleList() = verifyReturnAfterImageRemoval()
 
-    private fun verifyReturnAfterImageRemoval() {
+    @Test
+    fun recreatedCatalogReturnsToTheNearestResultWhenTheOpenedImageIsRemoved() =
+        verifyReturnAfterImageRemoval(recreateActivity = true)
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h520dp")
+    fun returningToAPartlyVisibleNeighborKeepsTheCatalogPosition() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.checklist.title)
+
+            val list = compose.onNodeWithTag("artifact_list")
+            val opened = compose.onNodeWithText(fixture.image.title)
+            list.performScrollToNode(hasText(fixture.image.title))
+            opened.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            opened.performKeyInput { pressKey(Key.Enter) }
+            compose.waitUntilExactlyOneExists(hasTestTag("artifact_image_toolbar"), 10_000)
+
+            fixture.removedCatalogIds = setOf(fixture.image.id)
+            resumeArtifactRoute()
+            compose.waitUntil("refreshed catalog omits the original row", 10_000) {
+                artifactModel.state.value.page?.items?.none { it.id == fixture.image.id } == true
+            }
+            val neighbor = compose.onNodeWithText(fixture.video.title)
+            list.performScrollToNode(hasText(fixture.video.title))
+            val viewportBottom = list.getUnclippedBoundsInRoot().bottom
+            val neighborBounds = neighbor.getUnclippedBoundsInRoot()
+            val visibleHeight = viewportBottom - neighborBounds.top
+            list.performSemanticsAction(SemanticsActions.ScrollBy) {
+                it(0f, with(compose.density) { (neighborBounds.height / 2 - visibleHeight).toPx() })
+            }
+            val before = neighbor.assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertTrue(before.top < viewportBottom && before.bottom > viewportBottom)
+
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+
+            neighbor.assertIsFocused()
+            assertEquals(before, neighbor.getUnclippedBoundsInRoot())
+            opened.assertDoesNotExist()
+
+            neighbor.performKeyInput { pressKey(Key.DirectionUp) }
+            compose.onNodeWithText(fixture.slides.title).assertIsFocused().performKeyInput {
+                pressKey(Key.DirectionDown)
+            }
+            assertTrue(
+                neighbor.assertIsFocused().getUnclippedBoundsInRoot().bottom <= viewportBottom,
+            )
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    private fun verifyReturnAfterImageRemoval(recreateActivity: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.setInTouchMode(false)
         try {
@@ -270,14 +329,17 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
             openImage()
 
             fixture.removedCatalogIds = setOf(fixture.image.id)
-            resumeArtifactRoute()
+            if (recreateActivity) {
+                compose.activityRule.scenario.recreate()
+                compose.waitUntilExactlyOneExists(hasTestTag("artifact_image_toolbar"), 10_000)
+            } else resumeArtifactRoute()
             compose.waitUntil("refreshed catalog omits the original row", 10_000) {
                 artifactModel.state.value.page?.items?.none { it.id == fixture.image.id } == true
             }
             compose.onNodeWithContentDescription("Back to artifacts").performClick()
 
             val nearest = hasText(fixture.slides.title) and isFocused()
-            compose.waitUntilExactlyOneExists(nearest, 10_000)
+            compose.waitUntilExactlyOneExists(hasTestTag("artifact_row") and isFocused(), 10_000)
             compose.onNode(nearest).assertIsDisplayed().assertHeightIsAtLeast(72.dp)
             query.assertTextContains("launch").assertIsNotFocused()
             opened.assertDoesNotExist()

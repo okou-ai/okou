@@ -73,13 +73,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.relocation.BringIntoViewModifierNode
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -273,14 +277,15 @@ internal fun ArtifactCatalogList(
                     items(rows, key = { it.id }) { item ->
                         val focusModifier =
                             when {
-                                item.id == restoreRow -> Modifier.focusRequester(rowFocus)
+                                item.id == restoreRow ->
+                                    PreserveCatalogRowPosition.focusRequester(rowFocus)
                                 canChooseAlternative -> {
                                     val requester = remember { FocusRequester() }
                                     DisposableEffect(item.id, requester) {
                                         alternativeRows[item.id] = requester
                                         onDispose { alternativeRows.remove(item.id) }
                                     }
-                                    Modifier.focusRequester(requester)
+                                    PreserveCatalogRowPosition.focusRequester(requester)
                                 }
                                 else -> Modifier
                             }
@@ -308,6 +313,20 @@ internal fun ArtifactCatalogList(
             ArtifactRefreshFeedback(refreshSnackbar, Modifier.align(Alignment.BottomCenter))
         }
     }
+}
+
+// Return targets are already visible. Keep their position until the focus request is consumed.
+private data object PreserveCatalogRowPosition : ModifierNodeElement<CatalogRowPositionNode>() {
+    override fun create() = CatalogRowPositionNode()
+
+    override fun update(node: CatalogRowPositionNode) = Unit
+}
+
+private class CatalogRowPositionNode : Modifier.Node(), BringIntoViewModifierNode {
+    override suspend fun bringIntoView(
+        childCoordinates: LayoutCoordinates,
+        boundsProvider: () -> Rect?,
+    ) = Unit
 }
 
 @Composable
