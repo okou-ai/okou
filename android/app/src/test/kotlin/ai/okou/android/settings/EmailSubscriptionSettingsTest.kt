@@ -14,6 +14,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -196,15 +197,16 @@ class EmailSubscriptionSettingsTest {
     }
 
     @Test
-    fun aLostWriteAndFailedReadbackDoNotPermitAnotherWriteUntilRecovered() = runTest {
+    fun aStaleReadKeepsTheTogglePendingUntilExhaustionAndLaterSyncsNormally() = runTest {
         ChatListApiFixture().use { api ->
-            var failReads = false
             var confirmed = initial
+            val reads = mutableListOf<Long>()
             var writes = 0
             val service =
                 object : WorkspaceSession by api.service {
                     override suspend fun emailSubscription(): EmailSubscription {
-                        if (failReads) throw ApiFailure.Http(503, null, null, null)
+                        reads += currentTime
+                        if (reads.size == 3) throw ApiFailure.Http(503, null, null, 1L)
                         return confirmed
                     }
 
@@ -212,7 +214,6 @@ class EmailSubscriptionSettingsTest {
                         subscribed: Boolean,
                     ): EmailSubscriptionUpdate {
                         writes++
-                        failReads = true
                         throw ApiFailure.Http(503, null, null, null)
                     }
                 }
@@ -221,31 +222,33 @@ class EmailSubscriptionSettingsTest {
             runCurrent()
             model.subscribe(true)
             runCurrent()
-            advanceTimeBy(6_000)
-            runCurrent()
             assertFalse(model.state.value.canChange)
             assertEquals(true, model.state.value.checked)
             assertEquals(initial, model.state.value.read.value)
-            assertEquals(listOf(SettingsNotice.EmailSubscriptionUnconfirmed), notices)
+            assertEquals(listOf(0L, 0L), reads)
+            assertTrue(notices.isEmpty())
             model.subscribe(false)
+            advanceTimeBy(3_999)
             runCurrent()
+            assertEquals(listOf(0L, 0L, 3_000L), reads)
+            assertFalse(model.state.value.canChange)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 0L, 3_000L, 4_000L), reads)
+            assertTrue(model.state.value.canChange)
+            assertEquals(false, model.state.value.checked)
+            assertNull(model.state.value.desired)
+            assertEquals(listOf(SettingsNotice.EmailSubscriptionFailed), notices)
             assertEquals(1, writes)
 
             model.visible(false)
-            failReads = false
-            model.visible(true)
-            runCurrent()
-            assertEquals(true, model.state.value.checked)
-            assertEquals(true, model.state.value.unconfirmed)
-            assertEquals(initial, model.state.value.read.value)
-
             confirmed = initial.copy(subscribed = true)
-            advanceTimeBy(3_000)
+            model.visible(true)
             runCurrent()
             assertTrue(model.state.value.canChange)
             assertEquals(true, model.state.value.checked)
-            assertNull(model.state.value.unconfirmed)
-            assertEquals(listOf(SettingsNotice.EmailSubscriptionUnconfirmed), notices)
+            assertNull(model.state.value.desired)
+            assertEquals(listOf(SettingsNotice.EmailSubscriptionFailed), notices)
             assertEquals(1, writes)
         }
     }

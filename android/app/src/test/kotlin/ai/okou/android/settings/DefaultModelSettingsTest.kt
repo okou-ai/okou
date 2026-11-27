@@ -524,7 +524,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun aDifferentReadbackDoesNotReplayOrRejectAnUnconfirmedWrite() = runTest {
+    fun exhaustedReadbackRollsBackWithoutReplayingAndLaterSyncs() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val original = api.service.defaultModelPreference()
@@ -572,23 +572,28 @@ class DefaultModelSettingsTest {
             advanceTimeBy(1)
             runCurrent()
             assertEquals(listOf(0L, 3_000L, 4_000L), reads)
-            assertEquals(listOf(DefaultModelNotice.SaveUnconfirmed), notices)
+            assertTrue(model.state.value.save?.checking == true)
+            assertTrue(notices.isEmpty())
             assertEquals("gpt-test", store.load(api.identity).confirmed.selectedModel)
 
-            advanceTimeBy(1_000)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 4_000L, 7_000L), reads)
+            assertNull(model.state.value.pending)
+            assertEquals("gpt-test", model.state.value.selected?.id)
+            assertEquals(listOf(DefaultModelNotice.SaveRolledBack), notices)
+
             model.foreground(false)
             model.foreground(true)
             runCurrent()
-            assertEquals(5_000L, reads.last())
-            assertTrue(model.state.value.pending != null)
-            assertEquals(listOf(DefaultModelNotice.SaveUnconfirmed), notices)
+            assertEquals(7_000L, reads.last())
 
             model.showSettings(null)
-            advanceTimeBy(595_000)
+            advanceTimeBy(593_000)
             runCurrent()
             assertEquals(600_000L, reads.last())
-            assertTrue(model.state.value.pending != null)
-            assertNull(model.state.value.selected)
+            assertNull(model.state.value.pending)
+            assertEquals("gpt-test", model.state.value.selected?.id)
 
             preference = original.copy(selectedModel = "auto")
             advanceTimeBy(600_000)
@@ -597,7 +602,7 @@ class DefaultModelSettingsTest {
             assertNull(model.state.value.pending)
             assertEquals("auto", store.load(api.identity).confirmed.selectedModel)
             assertEquals(listOf(0L), writes)
-            assertEquals(listOf(DefaultModelNotice.SaveUnconfirmed), notices)
+            assertEquals(listOf(DefaultModelNotice.SaveRolledBack), notices)
         }
     }
 
@@ -661,7 +666,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun aNewChoiceKeepsTheActiveReadbackWait() = runTest {
+    fun aNewChoiceWaitsForTheOlderReadbackBudgetBeforeSubmitting() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val original = api.service.defaultModelPreference()
@@ -678,8 +683,7 @@ class DefaultModelSettingsTest {
                     override suspend fun defaultModelPreference(): DefaultModelPreference {
                         reads += currentTime
                         if (reads.size == 2) throw ApiFailure.Http(429, null, null, 1L)
-                        return if (reads.size == 3) original.copy(selectedModel = null)
-                        else original
+                        return original
                     }
 
                     override suspend fun updateDefaultModelPreference(
@@ -709,13 +713,18 @@ class DefaultModelSettingsTest {
             advanceTimeBy(1)
             runCurrent()
             assertEquals(listOf(0L, 3_000L, 4_000L), reads)
-            assertEquals(listOf(0L to null, 4_000L to "claude-test"), writes)
+            assertEquals(listOf(0L to null), writes)
+            assertEquals("claude-test", model.state.value.selected?.id)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 4_000L, 7_000L), reads)
+            assertEquals(listOf(0L to null, 7_000L to "claude-test"), writes)
             assertNull(model.state.value.pending)
         }
     }
 
     @Test
-    fun reopeningSettingsKeepsTheScheduledReadbackWaitAfterAClockCorrection() = runTest {
+    fun reopeningSettingsKeepsTheActiveReadbackWaitAfterAClockCorrection() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val original = api.service.defaultModelPreference()
@@ -732,8 +741,8 @@ class DefaultModelSettingsTest {
                     override suspend fun defaultModelPreference(): DefaultModelPreference {
                         reads += currentTime
                         return when (reads.size) {
-                            4 -> throw ApiFailure.Http(429, null, null, 1L)
-                            5 -> original.copy(selectedModel = null)
+                            2 -> throw ApiFailure.Http(429, null, null, 1L)
+                            3 -> original.copy(selectedModel = null)
                             else -> original
                         }
                     }
@@ -756,16 +765,12 @@ class DefaultModelSettingsTest {
                 )
             model.openAfterSync()
             model.select(null)
-            advanceTimeBy(6_000)
+            advanceTimeBy(3_000)
             runCurrent()
-            assertEquals(DefaultModelNotice.SaveUnconfirmed, model.notices.first())
-
-            model.showSettings(null)
-            advanceTimeBy(594_000)
-            runCurrent()
-            val expectedReads = listOf(0L, 3_000L, 6_000L, 600_000L)
+            val expectedReads = listOf(0L, 3_000L)
             assertEquals(expectedReads, reads)
 
+            model.showSettings(null)
             advanceTimeBy(400)
             wallClockOffset = -60_000L
             model.showSettings(SettingsDestination.Overview)
@@ -779,14 +784,14 @@ class DefaultModelSettingsTest {
 
             advanceTimeBy(1)
             runCurrent()
-            assertEquals(expectedReads + 601_000L, reads)
-            assertEquals(listOf(0L to null, 601_000L to "claude-test"), writes)
+            assertEquals(expectedReads + 4_000L, reads)
+            assertEquals(listOf(0L to null, 4_000L to "claude-test"), writes)
             assertEquals("claude-test", model.state.value.record?.confirmed?.selectedModel)
         }
     }
 
     @Test
-    fun rejectedReadbackReconcilesOnForegroundingWithoutRepeatingTheWrite() = runTest {
+    fun unavailableReadbackRollsBackAndForegroundSyncAdoptsTheLateValue() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
             val fixtureResponse = api.commandResponse
@@ -807,21 +812,22 @@ class DefaultModelSettingsTest {
             val model = model(api, onFailure = {})
             assertFalse(model.openAfterSync().fast)
             model.fast(true)
-            assertEquals(DefaultModelNotice.SaveUnconfirmed, model.notices.first())
+            assertEquals(DefaultModelNotice.SaveRolledBack, model.notices.first())
             val blocked = model.state.value
-            assertTrue(blocked.pending != null)
-            assertTrue(blocked.fast)
-            advanceTimeBy(60_000)
+            assertNull(blocked.pending)
+            assertFalse(blocked.fast)
+            advanceTimeBy(600_000)
             runCurrent()
             assertEquals(1, blockedReads.get())
             assertEquals(1, writes.get())
 
             model.foreground(false)
+            model.showSettings(null)
             fixture.preference =
                 JsonObject(fixture.preference + ("serviceTier" to JsonPrimitive("priority")))
             rejectReadback.set(false)
             model.foreground(true)
-            val confirmed = model.state.first { it.pending == null }
+            val confirmed = model.state.first { it.fast }
             assertTrue(confirmed.fast)
             assertEquals(1, writes.get())
             assertTrue(fixture.writes.isEmpty())
@@ -931,7 +937,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun saveRetriesRespectTheirScheduleAndYieldToScheduledRead() = runTest {
+    fun safeSaveRetriesFinishBeforeTheScheduledRead() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val confirmed = api.service.defaultModelPreference()
@@ -1008,12 +1014,18 @@ class DefaultModelSettingsTest {
             model.showSettings(null)
             advanceTimeBy(1_000)
             runCurrent()
-            assertEquals(1_200_000L, reads.last())
+            assertEquals(600_000L, reads.last())
+            assertTrue(model.state.value.fast)
+            assertEquals(attemptTimes, writes)
+
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertEquals(1_205_000L, reads.last())
             assertFalse(model.state.value.fast)
             assertNull(store.load(api.identity).confirmed.serviceTier)
             advanceTimeBy(20_000)
-            assertEquals(attemptTimes, writes)
-            assertEquals(listOf(DefaultModelNotice.SaveRolledBack), notices)
+            assertEquals(attemptTimes + listOf(1_202_000L, 1_205_000L), writes)
+            assertEquals(List(2) { DefaultModelNotice.SaveRolledBack }, notices)
         }
     }
 

@@ -82,10 +82,8 @@ class EmailSubscriptionSettingTest {
         val before = row.getUnclippedBoundsInRoot()
         val saving = compose.onNodeWithText(text(R.string.settings_email_saving))
         val failed = compose.onNodeWithText(text(R.string.settings_email_save_failed))
-        val unconfirmed = compose.onNodeWithText(text(R.string.settings_email_save_unconfirmed))
         saving.assertDoesNotExist()
         failed.assertDoesNotExist()
-        unconfirmed.assertDoesNotExist()
 
         row.performClick().assertIsOn().assertIsNotEnabled()
         saving.assertIsDisplayed()
@@ -94,14 +92,12 @@ class EmailSubscriptionSettingTest {
         assertTrue(layout.single().lineCount > 1)
         assertEquals(before, row.getUnclippedBoundsInRoot())
         failed.assertDoesNotExist()
-        unconfirmed.assertDoesNotExist()
 
         compose.runOnIdle { write.complete(Unit) }
         row.assertIsOff().assertIsEnabled()
         failed.assertIsDisplayed()
         assertEquals(before, row.getUnclippedBoundsInRoot())
         saving.assertDoesNotExist()
-        unconfirmed.assertDoesNotExist()
     }
 
     private fun openSheet() {

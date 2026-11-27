@@ -76,7 +76,7 @@ internal fun ProactiveSettingsPage(
     val context by rememberUpdatedState(LocalContext.current)
     LaunchedEffect(model, lifecycle, snackbar) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            model.rejections.collect { setting ->
+            model.saveFailures.collect { setting ->
                 val message =
                     context.getString(
                         when (setting) {
@@ -260,11 +260,11 @@ private fun SuggestionsRow(
 
 private fun ProactiveSettingState.detail(default: Int): Int =
     when {
-        checking != null -> R.string.settings_proactive_save_unconfirmed
+        checking -> R.string.settings_save_checking
         confirmed?.needsTimezone == true -> R.string.settings_proactive_needs_timezone
         readFailed && confirmed == null -> R.string.settings_proactive_read_failed
         readFailed -> R.string.settings_proactive_refresh_failed
-        pending != null -> default
+        pending != null -> R.string.settings_saving
         else ->
             when (confirmed?.status) {
                 ProactiveStatus.Preparing -> R.string.settings_proactive_preparing

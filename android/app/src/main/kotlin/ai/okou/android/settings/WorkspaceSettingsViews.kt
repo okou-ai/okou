@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
@@ -60,6 +61,9 @@ import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -128,8 +132,6 @@ internal fun WorkspaceSettingsFeedback(
     val switchFailed by
         rememberUpdatedState(stringResource(R.string.settings_account_switch_failed))
     val emailFailed by rememberUpdatedState(stringResource(R.string.settings_email_save_failed))
-    val emailUnconfirmed by
-        rememberUpdatedState(stringResource(R.string.settings_email_save_unconfirmed))
     val toolFailed by
         rememberUpdatedState(stringResource(R.string.settings_preferences_save_rolled_back))
     val toolUnconfirmed by rememberUpdatedState(stringResource(R.string.settings_tool_save_failed))
@@ -140,7 +142,6 @@ internal fun WorkspaceSettingsFeedback(
                     when (notice) {
                         SettingsNotice.ModelAccountSwitchFailed -> switchFailed
                         SettingsNotice.EmailSubscriptionFailed -> emailFailed
-                        SettingsNotice.EmailSubscriptionUnconfirmed -> emailUnconfirmed
                         SettingsNotice.ToolSaveFailed -> toolFailed
                         SettingsNotice.ToolSaveUnconfirmed -> toolUnconfirmed
                     }
@@ -222,6 +223,30 @@ internal fun SettingsDetailStatus(
         modifier.semantics { liveRegion = LiveRegionMode.Polite },
         color = color,
         style = MaterialTheme.typography.bodyMedium,
+    )
+}
+
+@Composable
+internal fun SettingsWriteStatus(
+    text: String,
+    messages: List<String>,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    val style = MaterialTheme.typography.bodyMedium
+    val textMeasurer = rememberTextMeasurer(cacheSize = messages.size)
+    SettingsDetailStatus(
+        text,
+        modifier.fillMaxWidth().layout { measurable, constraints ->
+            val textConstraints = Constraints(maxWidth = constraints.maxWidth)
+            val reservedHeight = messages.maxOf {
+                textMeasurer.measure(it, style, constraints = textConstraints).size.height
+            }
+            val content = measurable.measure(constraints)
+            val height = constraints.constrainHeight(maxOf(content.height, reservedHeight))
+            layout(content.width, height) { content.placeRelative(0, 0) }
+        },
+        color = color,
     )
 }
 

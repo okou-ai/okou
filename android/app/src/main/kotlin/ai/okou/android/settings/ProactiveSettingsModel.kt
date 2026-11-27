@@ -21,7 +21,7 @@ internal data class ProactiveChoice(val enabled: Boolean, val visit: Long)
 internal data class ProactiveSettingState(
     val confirmed: ProactivePreference? = null,
     val choice: ProactiveChoice? = null,
-    val checking: ProactiveChoice? = null,
+    val checking: Boolean = false,
     val readFailed: Boolean = false,
     val hidden: Boolean = false,
 ) {
@@ -32,7 +32,7 @@ internal data class ProactiveSettingState(
         get() = pending ?: confirmed?.enabled
 
     val canChoose: Boolean
-        get() = confirmed != null && checking == null
+        get() = confirmed != null
 }
 
 /** Two independently readable settings, owned by the authorized workspace. */
@@ -44,8 +44,8 @@ internal class ProactiveSettingsModel(
     authorized: () -> Boolean,
     onSessionFailure: (Exception) -> Unit,
 ) {
-    private val mutableRejections = MutableSharedFlow<ProactiveSetting>(extraBufferCapacity = 4)
-    val rejections = mutableRejections.asSharedFlow()
+    private val mutableSaveFailures = MutableSharedFlow<ProactiveSetting>(extraBufferCapacity = 4)
+    val saveFailures = mutableSaveFailures.asSharedFlow()
 
     private val settings =
         ProactiveSetting.entries.associateWith { setting ->
@@ -58,7 +58,7 @@ internal class ProactiveSettingsModel(
                 authorized,
                 onSessionFailure,
             ) {
-                mutableRejections.tryEmit(setting)
+                mutableSaveFailures.tryEmit(setting)
             }
         }
     val morningBrief = settings.getValue(ProactiveSetting.MorningBrief)
@@ -78,7 +78,7 @@ internal class ProactiveSettingOwner(
     private val cache: WorkspaceSettingsCache?,
     private val authorized: () -> Boolean,
     private val onSessionFailure: (Exception) -> Unit,
-    private val reportRejection: () -> Unit,
+    private val reportSaveFailure: () -> Unit,
 ) {
     private val mutable = MutableStateFlow(ProactiveSettingState())
     val state = mutable.asStateFlow()
@@ -111,9 +111,7 @@ internal class ProactiveSettingOwner(
         reading = scope.launch {
             try {
                 restore()
-                val sent = mutable.value.checking
-                if (sent == null) publish(readPreference()) else reconcile(sent)
-                if (mutable.value.choice != null) submitChanges()
+                publish(readPreference())
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -181,19 +179,13 @@ internal class ProactiveSettingOwner(
     }
 
     private fun submitChanges() {
-        if (writing?.isActive == true || mutable.value.checking != null) return
+        if (writing?.isActive == true) return
         writing = scope.launch {
             try {
                 while (true) {
                     val sent = mutable.value.choice ?: break
                     requireCurrent()
-                    val before = mutable.value.confirmed
-                    if (before?.matches(sent.enabled) == true) {
-                        resolve(sent, before)
-                        continue
-                    }
                     write(sent)
-                    if (mutable.value.checking != null) break
                 }
             } finally {
                 writing = null
@@ -249,6 +241,7 @@ internal class ProactiveSettingOwner(
     }
 
     private suspend fun reconcile(sent: ProactiveChoice) {
+        mutable.value = mutable.value.copy(checking = true)
         try {
             if (
                 verifySettingWrite {
@@ -267,13 +260,11 @@ internal class ProactiveSettingOwner(
             throw cancelled
         } catch (error: Exception) {
             requireCurrent()
-            failedRead(error)
-            if (error is ApiFailure.Http && error.status == 403) {
-                resolve(sent, null, rejected = true)
-                return
-            }
+            onSessionFailure(error)
+            requireCurrent()
+            if (error is ApiFailure.Http && error.status == 403) discardConfirmation()
         }
-        mutable.value = mutable.value.copy(checking = sent)
+        resolve(sent, mutable.value.confirmed, rejected = true)
     }
 
     private fun publish(value: ProactivePreference?) {
@@ -297,7 +288,7 @@ internal class ProactiveSettingOwner(
             mutable.value.copy(
                 confirmed = null,
                 choice = null,
-                checking = null,
+                checking = false,
                 readFailed = !hide,
                 hidden = hide,
             )
@@ -311,14 +302,14 @@ internal class ProactiveSettingOwner(
     ) {
         val current = mutable.value.choice == sent
         val remaining = mutable.value.choice.takeUnless { current }
-        mutable.value = mutable.value.copy(choice = remaining, checking = null)
+        mutable.value = mutable.value.copy(choice = remaining, checking = false)
         if (
             remaining == null &&
                 (rejected || current && value?.matches(sent.enabled) != true) &&
                 visible &&
                 sent.visit == visit
         ) {
-            reportRejection()
+            reportSaveFailure()
         }
     }
 

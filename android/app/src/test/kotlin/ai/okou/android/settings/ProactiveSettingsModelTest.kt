@@ -121,7 +121,7 @@ class ProactiveSettingsModelTest {
             assertEquals(true, confirmed.enabled)
 
             fixture.morningWriteStatus = 400
-            val feedback = async(start = CoroutineStart.UNDISPATCHED) { model.rejections.first() }
+            val feedback = async(start = CoroutineStart.UNDISPATCHED) { model.saveFailures.first() }
             model.morningBrief.choose(false)
             assertEquals(false, model.morningBrief.state.value.enabled)
             assertEquals(ProactiveSetting.MorningBrief, feedback.await())
@@ -131,28 +131,53 @@ class ProactiveSettingsModelTest {
     }
 
     @Test
-    fun unknownResultWaitsForAuthoritativeReadbackAndDoesNotResend() = runTest {
+    fun exhaustedReadbackRollsBackAndLateServerStateSyncsWithoutResending() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = ProactiveSettingsApiFixture(api)
             val model = model(api)
             model.visible(true)
             model.morningBrief.state.first { it.confirmed != null }
             fixture.morningWriteStatus = 503
-            val rejection = async(start = CoroutineStart.UNDISPATCHED) { model.rejections.first() }
+            val failure = async(start = CoroutineStart.UNDISPATCHED) { model.saveFailures.first() }
             model.morningBrief.choose(true)
-            val uncertain = model.morningBrief.state.first { it.checking != null }
-            assertEquals(true, uncertain.enabled)
-            assertEquals(false, uncertain.confirmed?.enabled)
-            assertFalse(uncertain.canChoose)
-            assertFalse(rejection.isCompleted)
-            rejection.cancel()
+            val checking = model.morningBrief.state.first { it.checking }
+            assertEquals(true, checking.enabled)
+            assertEquals(false, checking.confirmed?.enabled)
+            assertFalse(failure.isCompleted)
+            val rolledBack = model.morningBrief.state.first { it.choice == null }
+            assertFalse(rolledBack.checking)
+            assertTrue(rolledBack.canChoose)
+            assertEquals(false, rolledBack.enabled)
+            assertEquals(ProactiveSetting.MorningBrief, failure.await())
             assertEquals(4, fixture.reads.count { it == "morning-brief" })
-            model.morningBrief.choose(true)
 
             fixture.morningEnabled = true
             model.refresh()
-            model.morningBrief.state.first { it.enabled == true && it.checking == null }
+            model.morningBrief.state.first { it.enabled == true && !it.checking }
             assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)
+        }
+    }
+
+    @Test
+    fun aNewerToggleSurvivesAnExhaustedReadback() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = ProactiveSettingsApiFixture(api).apply { morningWriteStatus = 503 }
+            val model = model(api)
+            model.visible(true)
+            model.morningBrief.state.first { it.confirmed != null }
+            model.morningBrief.choose(true)
+            model.morningBrief.state.first { it.checking }
+
+            fixture.morningWriteStatus = 200
+            model.morningBrief.choose(false)
+            assertEquals(false, model.morningBrief.state.value.enabled)
+            assertEquals(listOf(true), fixture.writes.map { it.second })
+
+            val confirmed = model.morningBrief.state.first { it.choice == null }
+            assertEquals(false, confirmed.confirmed?.enabled)
+            assertFalse(confirmed.checking)
+            assertEquals(listOf(true, false), fixture.writes.map { it.second })
+            assertEquals(4, fixture.reads.count { it == "morning-brief" })
         }
     }
 
