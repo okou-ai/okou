@@ -237,6 +237,8 @@ class ChatComposerRootTest {
                 .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
                 .performSemanticsAction(SemanticsActions.Dismiss)
         }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
         try {
             compose.waitUntilExactlyOneExists(hasText("Personal chat"), 8_000)
             compose.onNodeWithText("Personal chat").performClick()
@@ -290,11 +292,24 @@ class ChatComposerRootTest {
             val saving = hasText("Saving…") or hasText("Checking the save result…")
             compose.waitUntilDoesNotExist(saving, 8_000)
             fast.assertIsOn()
-            closeModel()
-
-            app.modelFixture.gptFastAvailable = false
-            openModel()
+            fast.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            fast.assertIsFocused()
+            compose.runOnIdle {
+                val defaultModel =
+                    checkNotNull(
+                            ViewModelProvider(compose.activity)[SessionModel::class.java]
+                                .uiState
+                                .value
+                                .ready,
+                        )
+                        .settings
+                        .defaultModel
+                defaultModel.foreground(false)
+                app.modelFixture.gptFastAvailable = false
+                defaultModel.foreground(true)
+            }
             compose.waitUntilDoesNotExist(hasText("Fast mode"), 8_000)
+            gpt.assertIsFocused()
             compose.onNodeWithText("High").performClick()
             compose.onNodeWithText("Medium").performClick()
             compose.waitUntilExactlyOneExists(hasText("Medium") and isEnabled(), 8_000)
@@ -317,6 +332,7 @@ class ChatComposerRootTest {
             assertTrue(app.modelFixture.writes.isEmpty())
         } finally {
             release.countDown()
+            instrumentation.resetInTouchMode()
         }
     }
 
