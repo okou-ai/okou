@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.62](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.61...guest-storage-apply-v0.32.62) (2026-11-27)
+
+
+### Performance Improvements
+
+* **runner:** reuse memory during the instructions check ([#51513](https://github.com/okou-ai/okou/issues/51513)) ([63edb54](https://github.com/okou-ai/okou/commit/63edb54e292ddc275688ac78ee7fb5158e563fa1))
+
 ## [0.32.61](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.60...guest-storage-apply-v0.32.61) (2026-11-27)
 
 ## [0.32.60](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.59...guest-storage-apply-v0.32.60) (2026-11-27)
