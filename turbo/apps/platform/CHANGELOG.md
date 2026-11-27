@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1198.0](https://github.com/okou-ai/okou/compare/app-v0.1197.1...app-v0.1198.0) (2026-11-27)
+
+
+### Features
+
+* **artifacts:** add unified artifact access api, files dual-write, and client migration ([#51416](https://github.com/okou-ai/okou/issues/51416)) ([2980f4b](https://github.com/okou-ai/okou/commit/2980f4b5f176b0fa5cd871b71a1c5a9a90717eb5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.143.0
+    * @okouai/core bumped to 8.888.0
+    * @okouai/ui bumped to 1.22.51
+
 ## [0.1197.1](https://github.com/okou-ai/okou/compare/app-v0.1197.0...app-v0.1197.1) (2026-11-27)
 
 

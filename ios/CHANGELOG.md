@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.74.0](https://github.com/okou-ai/okou/compare/ios-v0.73.0...ios-v0.74.0) (2026-11-27)
+
+
+### Features
+
+* **artifacts:** add unified artifact access api, files dual-write, and client migration ([#51416](https://github.com/okou-ai/okou/issues/51416)) ([2980f4b](https://github.com/okou-ai/okou/commit/2980f4b5f176b0fa5cd871b71a1c5a9a90717eb5))
+
 ## [0.73.0](https://github.com/okou-ai/okou/compare/ios-v0.72.0...ios-v0.73.0) (2026-11-27)
 
 
