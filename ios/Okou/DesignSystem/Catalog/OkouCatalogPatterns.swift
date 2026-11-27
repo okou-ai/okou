@@ -317,12 +317,10 @@
 
   struct OkouCatalogConnectorsPage: View {
     let close: (() -> Void)?
-    @State private var segment = 0
 
     var body: some View {
       OkouCatalogPage(.connectors, close: close) {
         OkouCatalogSection("Directory") {
-          OkouSegmentControl(selection: $segment, options: [(0, "Discover"), (1, "Custom")])
           OkouChipRail(inset: 0) {
             OkouChip(title: Text("All"), isSelected: true) {}
             OkouChip(title: Text("Documents"), isSelected: false) {}
