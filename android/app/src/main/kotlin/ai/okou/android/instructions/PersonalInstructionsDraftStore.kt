@@ -3,6 +3,7 @@ package ai.okou.android.instructions
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.workspaceStorageKey
+import ai.okou.android.isFreshMemorySnapshot
 import android.content.Context
 import android.os.SystemClock
 import android.util.AtomicFile
@@ -42,8 +43,6 @@ enum class InstructionsCommit {
 @Serializable
 private data class InstructionsDocument(val format: Int, val draft: InstructionsDraft?)
 
-private const val CONFIRMED_LIFETIME_MILLIS = 10 * 60_000L
-
 /**
  * Retains workspace editors and confirmed snapshots, and commits save intent across editor
  * lifetimes.
@@ -77,14 +76,14 @@ class PersonalInstructionsDraftStore(
     internal fun freshConfirmed(identity: WorkspaceIdentity): PersonalInstructions? {
         val key = identity.workspaceStorageKey()
         val snapshot = confirmed[key] ?: return null
-        if (nowMillis() - snapshot.atMillis < CONFIRMED_LIFETIME_MILLIS) return snapshot.value
+        if (snapshot.atMillis.isFreshMemorySnapshot(nowMillis())) return snapshot.value
         confirmed.remove(key)
         return null
     }
 
     internal fun rememberConfirmed(identity: WorkspaceIdentity, value: PersonalInstructions) {
         val now = nowMillis()
-        confirmed.values.removeAll { now - it.atMillis >= CONFIRMED_LIFETIME_MILLIS }
+        confirmed.values.removeAll { !it.atMillis.isFreshMemorySnapshot(now) }
         confirmed[identity.workspaceStorageKey()] = Confirmed(value, now)
     }
 

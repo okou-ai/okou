@@ -223,6 +223,7 @@ class PersonalInstructionsModelTest {
             assertEquals("本地 **draft** 👋\nsecond line", model.uiState.value.content)
             assertEquals("external", model.uiState.value.saved?.version)
             assertTrue(model.uiState.value.canSave)
+            advanceTimeBy(599_999)
             model.edit("")
             service.write = { content, version ->
                 val durable = checkNotNull(store.load(identity).draft)
@@ -240,6 +241,20 @@ class PersonalInstructionsModelTest {
             assertEquals("", service.saved.content)
             assertNull(model.uiState.value.draft)
             assertNull(store.load(identity).draft)
+
+            advanceTimeBy(1)
+            assertNull(store.freshConfirmed(identity.copy(workspaceId = "org-b")))
+            assertNull(store.freshConfirmed(identity.copy(userId = "user-b")))
+            val response = CompletableDeferred<PersonalInstructions>()
+            service.read = { response.await() }
+            model.closePanel()
+            model.open()
+            runCurrent()
+            assertEquals(InstructionsRequest.Refreshing, model.uiState.value.request)
+            assertEquals("", model.uiState.value.saved?.content)
+            assertTrue(model.uiState.value.canEdit)
+            response.complete(service.saved)
+            runCurrent()
         }
 
     @Test

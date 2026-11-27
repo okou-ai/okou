@@ -4,7 +4,6 @@ import ai.okou.android.api.generated.ChatConnectorAccessAccountsItem
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.api.generated.ConnectorOverviewItemAccountsItem
 import ai.okou.android.chat.ComposerTarget
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -120,7 +119,7 @@ internal class ChatConnectorOptions(
         accountRequests.remove(slug)?.cancel()
         mutable.value =
             previous.copy(
-                overview = previous.overview.copy(expiresAt = null),
+                overview = previous.overview.copy(confirmedAt = null),
                 details = previous.details - slug,
                 revision = previous.revision + 1,
             )
@@ -364,7 +363,7 @@ internal class ChatConnectorOptions(
         val retainedAccountCount =
             overview?.find { it.entry.slug == choice.slug }?.accounts?.size ?: 0
         val hasNewAccounts = accounts.size > retainedAccountCount
-        val overviewExpiry = snapshot.overview.expiresAt.takeUnless { hasNewAccounts }
+        val overviewConfirmation = snapshot.overview.confirmedAt.takeUnless { hasNewAccounts }
         val details = snapshot.details[choice.slug]
         val existing = details?.accounts?.data
         val confirmedDetails =
@@ -393,7 +392,8 @@ internal class ChatConnectorOptions(
             snapshot
                 .withChatSave(key, save)
                 .copy(
-                    overview = snapshot.overview.copy(data = overview, expiresAt = overviewExpiry),
+                    overview =
+                        snapshot.overview.copy(data = overview, confirmedAt = overviewConfirmation),
                     details = confirmedDetails,
                 )
     }
@@ -459,7 +459,7 @@ internal class ChatConnectorOptions(
     private fun saveInProgress() = mutable.value.save?.let { it.saving || it.blocksSend } == true
 
     private fun <T> ConnectorRead<T>.cached() =
-        if (data == null) this else copy(expiresAt = TimeSource.Monotonic.markNow() + 10.minutes)
+        if (data == null) this else copy(confirmedAt = TimeSource.Monotonic.markNow())
 
     private fun current(target: ComposerTarget) = authorized() && mutable.value.target == target.key
 }
