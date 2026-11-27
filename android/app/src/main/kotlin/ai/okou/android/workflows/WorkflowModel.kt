@@ -772,8 +772,7 @@ internal constructor(
         when (editor) {
             is WorkflowEdit.Instructions ->
                 mutate { before ->
-                    val request = editor.value.changesFrom(editor.original)
-                    val confirmed = service.updateWorkflow(before.id, request)
+                    val confirmed = service.updateWorkflow(before.id, editor.updateRequest())
                     if (confirmed.id != before.id) throw ApiFailure.IncompatibleResponse()
                     publishDetail(confirmed)
                 }

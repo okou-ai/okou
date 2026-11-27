@@ -2346,7 +2346,7 @@ for template_writer_case in \
   "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_AVAILABLE=0|Cannot read the template guidance bundle writer rollback floor from main" \
   "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_COMMIT=invalid|Missing or invalid template guidance bundle writer rollback floor" \
   "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_ON_MAIN=0|Template guidance bundle writer rollback floor is not on main" \
-  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_VALID=0|Rollback target predates bundle-only template publication"; do
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_VALID=0|Rollback target predates anchor-free template diagnostics readers"; do
   : >"${tmp_dir}/boundaries.log"
   assert_failure "${template_writer_case#*|}" \
     run_resolver "${tmp_dir}/template-writer.output" "${template_writer_case%%|*}"
@@ -2361,7 +2361,7 @@ for template_reader_case in \
   "MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_COMMIT=|Missing or invalid template guidance bundle reader rollback floor" \
   "MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_COMMIT=invalid|Missing or invalid template guidance bundle reader rollback floor" \
   "MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_ON_MAIN=0|Template guidance bundle reader rollback floor is not on main" \
-  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_API_VALID=0|Rollback target predates template guidance bundle readers"; do
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_API_VALID=0|Rollback target predates anchor-free template startup readers"; do
   : >"${tmp_dir}/boundaries.log"
   assert_failure "${template_reader_case#*|}" \
     run_resolver "${tmp_dir}/template-reader.output" "${template_reader_case%%|*}"
@@ -2377,7 +2377,7 @@ assert_failure "Rollback API target predates startup inputs" \
 assert_failure "predates startup inputs" \
   run_resolver "${tmp_dir}/startup-runner.output" MOCK_STARTUP_INPUTS_RUNNER_VALID=0
 
-assert_failure "predates template guidance bundle readers" \
+assert_failure "predates anchor-free template startup readers" \
   run_resolver "${tmp_dir}/template-runner.output" MOCK_TEMPLATE_GUIDANCE_BUNDLE_RUNNER_VALID=0
 [ ! -s "${tmp_dir}/template-runner.output" ] || fail "incompatible template Runner must not publish rollback outputs"
 if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then

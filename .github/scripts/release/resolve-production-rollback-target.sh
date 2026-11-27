@@ -1153,8 +1153,8 @@ if ! git merge-base --is-ancestor "$startup_inputs_commit" "$TARGET_COMMIT"; the
   fail "Rollback API target predates startup inputs: ${startup_inputs_commit}."
 fi
 
-# Template owner pointers and retained Runs survive an API rollback. Runner is
-# restored first, so independently require this released reader in both roles.
+# Runner is restored first and must accept template startup references without
+# ordering anchors. Require this release floor in both rollback roles.
 if ! template_guidance_bundle_reader_commit=$(git show "origin/main:${TEMPLATE_GUIDANCE_BUNDLE_READER_PATH}"); then
   fail "Cannot read the template guidance bundle reader rollback floor from main."
 fi
@@ -1165,11 +1165,11 @@ if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" orig
   fail "Template guidance bundle reader rollback floor is not on main."
 fi
 if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates template guidance bundle readers: ${template_guidance_bundle_reader_commit}."
+  fail "Rollback target predates anchor-free template startup readers: ${template_guidance_bundle_reader_commit}."
 fi
 
-# Frozen template sources must not acquire a legacy publisher again. This is an
-# API-only floor; the separately checked Runner reader floor stays unchanged.
+# API rollback must read diagnostic snapshots that omit template ordering anchors.
+# The compatible diagnostic reader was released after the Runner startup reader.
 if ! template_guidance_bundle_writer_commit=$(git show "origin/main:${TEMPLATE_GUIDANCE_BUNDLE_WRITER_PATH}"); then
   fail "Cannot read the template guidance bundle writer rollback floor from main."
 fi
@@ -1180,7 +1180,7 @@ if ! git merge-base --is-ancestor "$template_guidance_bundle_writer_commit" orig
   fail "Template guidance bundle writer rollback floor is not on main."
 fi
 if ! git merge-base --is-ancestor "$template_guidance_bundle_writer_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates bundle-only template publication: ${template_guidance_bundle_writer_commit}."
+  fail "Rollback target predates anchor-free template diagnostics readers: ${template_guidance_bundle_writer_commit}."
 fi
 
 # Reference-only claims require the corrected archive reader. Keep the API
@@ -1460,7 +1460,7 @@ if ! git merge-base --is-ancestor "$startup_inputs_commit" "$runner_tag_commit";
 fi
 
 if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" "$runner_tag_commit"; then
-  fail "Runner release ${runner_tag} predates template guidance bundle readers: ${template_guidance_bundle_reader_commit}."
+  fail "Runner release ${runner_tag} predates anchor-free template startup readers: ${template_guidance_bundle_reader_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$single_character_skill_runner_commit" "$runner_tag_commit"; then

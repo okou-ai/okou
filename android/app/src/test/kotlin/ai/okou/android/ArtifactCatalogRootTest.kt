@@ -44,6 +44,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -794,20 +795,27 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
             val artifacts = ArtifactApiFixture(app.fixture)
             artifacts.install()
             val workflows = WorkflowApiFixture(chats = app.fixture)
-            workflows.releaseTitle = "Weekly release workflow"
+            workflows.releaseTitle = "   "
+            val command = "release-review"
             val requestCount = AtomicInteger()
             val workflowVisible = AtomicBoolean(true)
             val respond = app.fixture.commandResponse
             app.fixture.commandResponse = { request ->
-                if (request.requestUrl?.encodedPath == "/api/workflows") {
-                    if (requestCount.incrementAndGet() == 1) firstRead.await()
-                    if (workflowVisible.get()) respond(request) else jsonResponse("[]")
-                } else respond(request)
+                when (request.requestUrl?.encodedPath) {
+                    "/api/workflows" -> {
+                        if (requestCount.incrementAndGet() == 1) firstRead.await()
+                        if (workflowVisible.get()) respond(request) else jsonResponse("[]")
+                    }
+                    "/api/chat-threads/$CHAT_PERSONAL/relations/children",
+                    "/api/chat-threads/$CHAT_PERSONAL/relations/communications" ->
+                        jsonResponse("""{"items":[]}""")
+                    else -> respond(request)
+                }
             }
             installAutomationHistory()
             app.responseGate.countDown()
             awaitText(artifacts.sourceTitle)
-            seedAutomationResources("Cached workflow title")
+            seedAutomationResources("   ")
             assertEquals(0, requestCount.get())
             openChatResources(artifacts.sourceTitle)
             compose.waitUntil(10_000) {
@@ -818,27 +826,35 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
             }
             awaitText(artifacts.slides.title)
             val list = compose.onNodeWithTag("chat_resources_list")
-            list.performScrollToNode(hasText("Cached workflow title"))
-            compose.onNodeWithText("Cached workflow title").assertIsDisplayed()
+            list.performScrollToNode(hasText("Workflows"))
+            compose.onNode(hasText("Workflows") and hasClickAction()).assertIsDisplayed()
             compose.onNodeWithContentDescription("Syncing chat resources").assertIsDisplayed()
             firstRead.countDown()
-            awaitText(workflows.releaseTitle)
+            awaitText(command)
+            compose.onNode(hasText("Workflows") and hasClickAction()).assertDoesNotExist()
             compose.onNodeWithText("Historical workflow title").assertDoesNotExist()
-            list.performScrollToNode(hasText(workflows.releaseTitle))
-            val row = compose.onNodeWithText(workflows.releaseTitle)
+            // Measure after the independent related-chats section has settled.
+            val chatResources = ready.chatArtifacts
+            compose.waitUntil(10_000) {
+                val related = chatResources.state.value.relatedChats.confirmed
+                related?.created != null && related.communicating != null
+            }
+            val workflowRow = hasText(command) and hasAnyAncestor(hasTestTag("chat_resources_list"))
+            list.performScrollToNode(hasText(command))
+            val row = compose.onNode(workflowRow)
             row.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
             val bounds = row.assertIsFocused().getUnclippedBoundsInRoot()
             row.performClick()
             awaitText(workflows.ruleTitle)
             compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
             compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
-            awaitText(workflows.releaseTitle)
+            compose.waitUntilExactlyOneExists(workflowRow and isFocused(), 10_000)
             assertEquals(bounds, row.assertIsFocused().getUnclippedBoundsInRoot())
 
             workflowVisible.set(false)
             (app.realtimeService as TestRealtimeService).invalidate()
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(workflows.releaseTitle).fetchSemanticsNodes().isEmpty()
+                compose.onAllNodesWithText(command).fetchSemanticsNodes().isEmpty()
             }
             list.performScrollToNode(hasText("Slack"))
             compose.onNodeWithText("Slack").assertIsDisplayed()

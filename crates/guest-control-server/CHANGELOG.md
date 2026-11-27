@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.158](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.157...guest-control-server-v0.24.158) (2026-11-27)
+
+
+### Performance Improvements
+
+* **guest-control:** stream sub-mib ordinary file batches ([#51427](https://github.com/okou-ai/okou/issues/51427)) ([e7a0fce](https://github.com/okou-ai/okou/commit/e7a0fcedd4f8e155de2a6cdce2c1c264041fd5bb))
+
 ## [0.24.157](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.156...guest-control-server-v0.24.157) (2026-11-27)
 
 ## [0.24.156](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.155...guest-control-server-v0.24.156) (2026-11-26)

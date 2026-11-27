@@ -61,7 +61,7 @@ test("projects-043 The composer preserves its message while changing from Launch
   await screen.findByLabelText("Remove Launch");
   await clickComposerAddMenuItem("Project");
   const menu = within(await screen.findByRole("menu", { name: "Project" }));
-  const current = menu.getByText("Launch").closest('[role="menuitem"]');
+  const current = menu.getByText("Launch").closest('[role="menuitemradio"]');
   expect(current).toHaveAttribute("aria-disabled", "true");
   click(menu.getByText("Campaign"));
   await screen.findByLabelText("Remove Campaign");
@@ -92,9 +92,9 @@ test("projects-045 The Coffee chip and current menu option display the folder em
   expect(within(chip).getByText("Coffee")).toBeVisible();
   await clickComposerAddMenuItem("Project");
   const selected = await screen.findByText("Coffee", {
-    selector: '[role="menuitem"] span.truncate',
+    selector: '[role="menuitemradio"] span.truncate',
   });
-  const row = selected.closest('[role="menuitem"]')!;
+  const row = selected.closest('[role="menuitemradio"]')!;
   expect(within(row as HTMLElement).getByText("☕")).toBeVisible();
   expect(row).toHaveAttribute("aria-disabled", "true");
 });

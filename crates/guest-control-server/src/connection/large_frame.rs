@@ -12,10 +12,10 @@ use crate::error::to_io_error;
 use crate::log::log;
 use crate::sealed_input;
 
-// Stream ordinary batches from 1 MiB into the sealed helper input while the
+// Stream ordinary batches from 768 KiB into the sealed helper input while the
 // frame is incomplete. This avoids full decoder buffering and the helper pipe
 // copy for medium archive staging requests.
-pub(super) const STREAMED_BATCH_MIN_BYTES: usize = 1024 * 1024;
+pub(super) const STREAMED_BATCH_MIN_BYTES: usize = 768 * 1024;
 
 // Medium decoded inputs already use sealed stdin. Receiving into the same
 // file avoids copying a complete decoder buffer into worker-owned bytes and

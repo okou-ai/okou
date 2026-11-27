@@ -306,15 +306,15 @@ function TypeFilter({
             onChange({ mode: "all" });
           }}
         >
-          <span
-            className="flex h-4 w-4 items-center justify-center"
-            aria-hidden
-          >
-            {typeFilter.mode === "all" && <Check size={14} />}
-          </span>
           {t(($) => {
             return $.activity.network.filter.allTypes;
           })}
+          <span
+            className="ml-auto flex size-4 shrink-0 items-center justify-center"
+            aria-hidden
+          >
+            {typeFilter.mode === "all" && <Check />}
+          </span>
         </DropdownMenuItem>
         {typeOptions.map((type) => {
           const selected = selectedSet.has(type);
@@ -329,12 +329,8 @@ function TypeFilter({
                 );
               }}
             >
-              <span className="flex h-4 w-4 items-center justify-center">
-                <DropdownMenuCheckboxItemIndicator>
-                  <Check size={14} />
-                </DropdownMenuCheckboxItemIndicator>
-              </span>
               {type}
+              <DropdownMenuCheckboxItemIndicator />
             </DropdownMenuCheckboxItem>
           );
         })}

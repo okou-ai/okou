@@ -29,6 +29,7 @@ import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -389,6 +390,49 @@ class ConnectorSheetLayoutTest {
                 cancel.performClick()
                 compose.onNode(rename).assertIsDisplayed()
                 compose.onNode(feedback).assertDoesNotExist()
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w820dp-h440dp")
+    fun shortAccountRenameKeepsTheFieldAndFooterReachable() {
+        ConnectorApiFixture().use { fixture ->
+            withConnectors(fixture) {
+                val calendar = hasText("Google Calendar")
+                compose.waitUntilAtLeastOneExists(calendar, 10_000)
+                compose.onNode(calendar).performClick()
+                val account = hasTestTag("connector-account-$CONNECTOR_CALENDAR_PRIMARY")
+                compose.waitUntilAtLeastOneExists(account, 10_000)
+                compose.onNode(account).performClick()
+                val rename = hasText("Rename") and isEnabled()
+                compose.waitUntilAtLeastOneExists(rename, 10_000)
+                compose.onNode(rename).performClick()
+
+                val panel = compose.onNodeWithTag("connector-sheet")
+                panel.assertWidthIsEqualTo(820.dp)
+                compose
+                    .onNode(
+                        hasContentDescription("Back") and
+                            hasAnyAncestor(hasTestTag("connector-sheet")),
+                    )
+                    .assertIsDisplayed()
+                val input = compose.onNodeWithTag("connector-input")
+                input.assertIsDisplayed().assertHeightIsAtLeast(56.dp)
+                val cancel = compose.onNodeWithText("Cancel")
+                val footer = cancel.assertIsDisplayed().getUnclippedBoundsInRoot()
+                assertEquals(12.dp, panel.getUnclippedBoundsInRoot().bottom - footer.bottom)
+                val save = compose.onNodeWithText("Save")
+                save.assertIsNotEnabled()
+                input.performTextReplacement("   ")
+                save.assertIsNotEnabled()
+                input.performTextReplacement("Renamed calendar")
+                save.assertIsEnabled()
+                assertEquals(footer, cancel.getUnclippedBoundsInRoot())
+                cancel.performClick()
+                compose.onNode(rename).assertIsDisplayed()
+                assertEquals(0, fixture.renameRequests.get())
             }
         }
     }

@@ -397,7 +397,7 @@ internal fun ChatArtifactResources(
                     items(workflowRows, key = { "workflow:${it.id}" }) { workflow ->
                         val key = "workflow:${workflow.id}"
                         ChatResourceRow(
-                            workflow.title,
+                            workflow.title.ifBlank { stringResource(R.string.workspace_workflows) },
                             stringResource(R.string.workflow_automations),
                             R.drawable.ic_account_tree,
                             returnFocus(key),
