@@ -689,10 +689,36 @@ describe("GET /api/artifacts/catalog", () => {
       owner.runnerGroup,
       runId,
     );
-    await stageAndCompleteFileUpload(
-      owner,
-      `Bearer ${okouTokenFromExecution(execution)}`,
-      { filename: "official-brief.txt", contentType: "text/plain" },
+    const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
+    const content = "Official morning brief";
+    installHostedUploadTransport(context, owner.storage);
+    const prepared = await accept(
+      setupApp({ context, routes: uploadsPrepareRoutes })(
+        uploadsContract,
+      ).prepare({
+        headers: { authorization: bearer },
+        body: {
+          filename: "official-brief.txt",
+          contentType: "text/plain",
+          size: Buffer.byteLength(content),
+          purpose: "artifact",
+        },
+      }),
+      [200],
+    );
+    if (!("uploadUrl" in prepared.body)) {
+      throw new Error("Expected a single-part Official artifact upload");
+    }
+    const uploaded = await fetch(prepared.body.uploadUrl, {
+      method: "PUT",
+      headers: prepared.body.uploadHeaders,
+      body: content,
+    });
+    expect(uploaded.status).toBe(200);
+    await chat.completeUploadWithBearer(
+      bearer,
+      { id: prepared.body.id },
+      [200],
     );
     await webhooks.requestAgentComplete(
       { runId, exitCode: 1, error: "Catalog source visibility inspected" },
