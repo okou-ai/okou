@@ -2452,6 +2452,30 @@ describe("shared thread routes", () => {
         }),
       ]),
     );
+    await enableArtifactLibrary(owner.actor);
+    for (const direction of ["asc", "desc"] as const) {
+      const query = { direction, chatThreadId: run.threadId, limit: 1 };
+      const firstLibraryPage = await chat.listArtifactCatalog(
+        owner.actor,
+        query,
+      );
+      expect(firstLibraryPage.nextCursor).toStrictEqual(expect.any(String));
+      const secondLibraryPage = await chat.listArtifactCatalog(owner.actor, {
+        ...query,
+        cursor: firstLibraryPage.nextCursor!,
+      });
+      expect(secondLibraryPage.nextCursor).toBeNull();
+      const expected = catalog.artifacts.map(({ id }) => {
+        return id;
+      });
+      expect(
+        [...firstLibraryPage.artifacts, ...secondLibraryPage.artifacts].map(
+          ({ id }) => {
+            return id;
+          },
+        ),
+      ).toStrictEqual(direction === "desc" ? expected : expected.reverse());
+    }
     const artifactId = catalog.artifacts[0]?.id;
     if (!artifactId) {
       throw new Error("Expected a shared-thread artifact");

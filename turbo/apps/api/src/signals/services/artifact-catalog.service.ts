@@ -1481,23 +1481,9 @@ function artifactCatalogKeywordFilter(
     .replaceAll("\\", String.raw`\\`)
     .replaceAll("%", String.raw`\%`)
     .replaceAll("_", String.raw`\_`)}%`;
-  const qb = new QueryBuilder();
   return or(
     ilike(artifacts.title, pattern),
-    libraryQuery
-      ? exists(
-          qb
-            .select({ id: runUploadedFiles.id })
-            .from(runUploadedFiles)
-            .where(
-              and(
-                eq(runUploadedFiles.id, artifacts.projectionFileId),
-                eq(runUploadedFiles.orgId, artifacts.orgId),
-                ilike(runUploadedFiles.filename, pattern),
-              ),
-            ),
-        )
-      : undefined,
+    libraryQuery ? ilike(runUploadedFiles.filename, pattern) : undefined,
   );
 }
 
@@ -1554,51 +1540,85 @@ export const listArtifactCatalog$ = command(
         ),
     };
     const category = artifactCatalogCategory();
-    const catalog = libraryQuery
-      ? db
-          .select({
-            ...selection,
-            category,
-            sourceChatThread: {
-              id: chatThreads.id,
-              title: chatThreads.title,
-            },
+    const filters = and(
+      eq(artifacts.orgId, args.orgId),
+      isNull(artifacts.deletedAt),
+      args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
+      args.category ? eq(category, args.category) : undefined,
+      args.chatThreadId
+        ? eq(artifacts.chatThreadId, args.chatThreadId)
+        : undefined,
+      keywordFilter,
+      cursorFilter,
+    );
+    const libraryOrderBy = () => {
+      return artifactCatalogOrderBy(direction).map((order) => {
+        return direction === "asc"
+          ? sql`${order} NULLS FIRST`
+          : sql`${order} NULLS LAST`;
+      });
+    };
+    const libraryCatalog = (authorUserId: string) => {
+      return db
+        .select({
+          ...selection,
+          // UNION ordering uses output names; distinguish this from the joined
+          // source thread's id without changing the response field.
+          id: sql`${artifacts.id}`.mapWith(artifacts.id).as("artifact_id"),
+          category,
+          sourceChatThread: {
+            id: chatThreads.id,
+            title: chatThreads.title,
+          },
+        })
+        .from(artifacts)
+        .leftJoin(
+          runUploadedFiles,
+          and(
+            eq(runUploadedFiles.id, artifacts.projectionFileId),
+            eq(runUploadedFiles.orgId, args.orgId),
+          ),
+        )
+        .leftJoin(
+          chatThreads,
+          and(
+            eq(chatThreads.id, artifacts.chatThreadId),
+            eq(chatThreads.orgId, args.orgId),
+            eq(chatThreads.userId, args.userId),
+            eq(chatThreads.hidden, false),
+          ),
+        )
+        .where(and(filters, eq(artifacts.authorUserId, authorUserId)))
+        .orderBy(...libraryOrderBy())
+        .limit(limit + 1);
+    };
+    // Each author namespace has its own ordered index range. Bound both before
+    // merging, while keeping all filters and the cursor inside each range.
+    const rows: readonly ArtifactCatalogListRow[] = libraryQuery
+      ? await libraryCatalog(args.userId)
+          .unionAll(
+            libraryCatalog(sharedThreadArtifactAuthorUserId(args.userId)),
+          )
+          .orderBy(() => {
+            const createdAt = sql.identifier("created_at");
+            const id = sql.identifier("artifact_id");
+            return direction === "asc"
+              ? [
+                  sql`${asc(createdAt)} NULLS FIRST`,
+                  sql`${asc(id)} NULLS FIRST`,
+                ]
+              : [
+                  sql`${desc(createdAt)} NULLS LAST`,
+                  sql`${desc(id)} NULLS LAST`,
+                ];
           })
+          .limit(limit + 1)
+      : await db
+          .select(selection)
           .from(artifacts)
-          .leftJoin(
-            runUploadedFiles,
-            and(
-              eq(runUploadedFiles.id, artifacts.projectionFileId),
-              eq(runUploadedFiles.orgId, args.orgId),
-            ),
-          )
-          .leftJoin(
-            chatThreads,
-            and(
-              eq(chatThreads.id, artifacts.chatThreadId),
-              eq(chatThreads.orgId, args.orgId),
-              eq(chatThreads.userId, args.userId),
-              eq(chatThreads.hidden, false),
-            ),
-          )
-      : db.select(selection).from(artifacts);
-    const rows: readonly ArtifactCatalogListRow[] = await catalog
-      .where(
-        and(
-          eq(artifacts.orgId, args.orgId),
-          artifactCatalogOwnerFilter(args.userId),
-          isNull(artifacts.deletedAt),
-          args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
-          args.category ? eq(category, args.category) : undefined,
-          args.chatThreadId
-            ? eq(artifacts.chatThreadId, args.chatThreadId)
-            : undefined,
-          keywordFilter,
-          cursorFilter,
-        ),
-      )
-      .orderBy(...artifactCatalogOrderBy(direction))
-      .limit(limit + 1);
+          .where(and(filters, artifactCatalogOwnerFilter(args.userId)))
+          .orderBy(...artifactCatalogOrderBy(direction))
+          .limit(limit + 1);
     signal.throwIfAborted();
 
     const hasMore = rows.length > limit;
