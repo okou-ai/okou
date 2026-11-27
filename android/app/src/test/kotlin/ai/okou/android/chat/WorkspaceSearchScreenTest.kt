@@ -664,11 +664,27 @@ class WorkspaceSearchScreenTest {
         compose.runOnIdle {
             remote =
                 remote.copy(
+                    messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Reading),
+                )
+        }
+        compose.mainClock.advanceTimeBy(280)
+        emptyMessages.assertIsDisplayed()
+        failure.assertDoesNotExist()
+        compose.runOnIdle {
+            remote =
+                remote.copy(
                     messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Failed),
                 )
         }
+        emptyMessages.assertDoesNotExist()
+        failure.assertIsDisplayed()
+        partial.assertDoesNotExist()
+        skeleton.assertDoesNotExist()
+        compose.onNodeWithTag("search_type_Messages").assertIsSelected()
+        query.assertTextContains("Missing")
+
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Ready(emptyList())) }
         emptyMessages.assertIsDisplayed()
-        partial.assertIsDisplayed()
         failure.assertDoesNotExist()
         compose.runOnIdle { remote = remote.copy(messages = SearchRead.AccessLost) }
         emptyMessages.assertDoesNotExist()
