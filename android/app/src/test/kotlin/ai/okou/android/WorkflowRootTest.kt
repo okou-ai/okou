@@ -1664,7 +1664,11 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithTag(missingTag).assertTextContains("Failed")
         compose.onNode(hasTestTag(missingTag) and hasClickAction()).assertDoesNotExist()
         val bounds = compose.onNodeWithTag(sourceTag).getUnclippedBoundsInRoot()
-        assertTrue(bounds.bottom - bounds.top >= 52.dp)
+        assertEquals(72.dp, bounds.bottom - bounds.top)
+        assertEquals(
+            72.dp,
+            compose.onNodeWithTag(missingTag).getUnclippedBoundsInRoot().height,
+        )
         compose.onNodeWithTag("workflow_use").assertIsDisplayed()
 
         compose.onNodeWithTag("workflow_earlier_runs").performClick()
