@@ -432,6 +432,33 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
+    fun confirmedEmptyOverviewKeepsItsBoundsWhenRefreshFeedbackAppears() {
+        openNewChat()
+        app.connectors.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+        app.connectors.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+        app.connectors.removeAccount(CONNECTOR_SLACK_ACCOUNT)
+        openOverview(waitForRows = false)
+        val empty = "There are no connected accounts in this workspace."
+        waitText(empty)
+        val footer = compose.onNodeWithTag("chat-connector-manage")
+        val before = footer.getUnclippedBoundsInRoot()
+
+        app.connectors.failChatOverview = true
+        compose.runOnIdle {
+            val workspace =
+                ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready
+            checkNotNull(workspace?.connectors).chatOptions.invalidate("slack")
+        }
+        val message = "Could not refresh connectors."
+        waitText(message)
+        val feedback =
+            compose.onNodeWithText(message).assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(feedback.bottom - feedback.top >= 20.dp)
+        compose.onNodeWithText(empty).assertIsDisplayed()
+        assertEquals(before, footer.getUnclippedBoundsInRoot())
+    }
+
+    @Test
     fun overviewAndSelectedServiceUseSeparateCachedReads() {
         openNewChat()
         val overview = "/api/chat-connector-overview" to null
