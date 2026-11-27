@@ -3044,6 +3044,16 @@
       "loading": "Loading accounts…",
       "loadMore": "Load more",
       "managerTitle": "Manage {{connector}} accounts",
+      "namePresetCustom": "Custom",
+      "namePresets": {
+        "company": "Company",
+        "customer": "Customer",
+        "personal": "Personal",
+        "primary": "Primary",
+        "secondary": "Secondary",
+        "work": "Work"
+      },
+      "namePromptCustomHint": "Leave blank to save without a name.",
       "namePromptDescription": "You can skip this and name the account later.",
       "namePromptTitle": "Name your {{connector}} account",
       "noAccounts": "No accounts",

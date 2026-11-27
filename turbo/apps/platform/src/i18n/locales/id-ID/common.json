@@ -3028,6 +3028,16 @@
       "loading": "Memuat akun…",
       "loadMore": "Muat lebih banyak",
       "managerTitle": "Kelola akun {{connector}}",
+      "namePresetCustom": "Kustom",
+      "namePresets": {
+        "company": "Perusahaan",
+        "customer": "Pelanggan",
+        "personal": "Pribadi",
+        "primary": "Utama",
+        "secondary": "Sekunder",
+        "work": "Kerja"
+      },
+      "namePromptCustomHint": "Biarkan kosong untuk menyimpan tanpa nama.",
       "namePromptDescription": "Anda dapat melewati langkah ini dan memberi nama akun nanti.",
       "namePromptTitle": "Beri nama akun {{connector}} Anda",
       "noAccounts": "Tidak ada akun",

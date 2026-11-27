@@ -3099,6 +3099,16 @@
       "loading": "Chargement des comptes…",
       "loadMore": "Charger plus",
       "managerTitle": "Gérer les comptes {{connector}}",
+      "namePresetCustom": "Personnalisé",
+      "namePresets": {
+        "company": "Entreprise",
+        "customer": "Client",
+        "personal": "Personnel",
+        "primary": "Principal",
+        "secondary": "Secondaire",
+        "work": "Travail"
+      },
+      "namePromptCustomHint": "Laissez vide pour enregistrer sans nom.",
       "namePromptDescription": "Vous pouvez ignorer cette étape et nommer le compte plus tard.",
       "namePromptTitle": "Nommer votre compte {{connector}}",
       "noAccounts": "Aucun compte",

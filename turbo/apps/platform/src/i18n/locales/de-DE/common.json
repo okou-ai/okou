@@ -3046,6 +3046,16 @@
       "loading": "Konten werden geladen…",
       "loadMore": "Mehr laden",
       "managerTitle": "{{connector}}-Konten verwalten",
+      "namePresetCustom": "Benutzerdefiniert",
+      "namePresets": {
+        "company": "Unternehmen",
+        "customer": "Kunde",
+        "personal": "Privat",
+        "primary": "Primär",
+        "secondary": "Sekundär",
+        "work": "Arbeit"
+      },
+      "namePromptCustomHint": "Leer lassen, um ohne Namen zu speichern.",
       "namePromptDescription": "Sie können diesen Schritt überspringen und das Konto später benennen.",
       "namePromptTitle": "{{connector}}-Konto benennen",
       "noAccounts": "Keine Konten",

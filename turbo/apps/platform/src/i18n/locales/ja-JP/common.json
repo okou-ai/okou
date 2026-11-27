@@ -3028,6 +3028,16 @@
       "loading": "アカウントを読み込み中…",
       "loadMore": "さらに読み込む",
       "managerTitle": "{{connector}} のアカウントを管理",
+      "namePresetCustom": "カスタム",
+      "namePresets": {
+        "company": "会社",
+        "customer": "顧客",
+        "personal": "個人",
+        "primary": "メイン",
+        "secondary": "サブ",
+        "work": "仕事"
+      },
+      "namePromptCustomHint": "空欄のまま保存すると名前なしで保存されます。",
       "namePromptDescription": "この手順をスキップして、後でアカウントに名前を付けることもできます。",
       "namePromptTitle": "{{connector}} アカウントに名前を付ける",
       "noAccounts": "アカウントなし",
