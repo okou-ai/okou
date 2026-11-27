@@ -722,8 +722,10 @@ private fun Node.searchExcerptAt(
 ): SearchMessageExcerpt? {
     val (_, block) = workspaceSearchReadingBlock(anchor) ?: return null
     val escapes = block.tablePipeEscapes(source)
-    val part = block.markdownImages().containingMatch(anchor, escapes)?.value ?: block
-    return part.searchExcerpt(source, ranges, escapes).takeIf { it.text.isNotBlank() }
+    val image = block.markdownImages().containingMatch(anchor, escapes)?.value
+    val description = image?.searchExcerpt(source, ranges, escapes)
+    if (description != null && description.text.isNotBlank()) return description
+    return block.searchExcerpt(source, ranges, escapes).takeIf { it.text.isNotBlank() }
 }
 
 internal fun HistoryMessage.workspaceSearchTarget(

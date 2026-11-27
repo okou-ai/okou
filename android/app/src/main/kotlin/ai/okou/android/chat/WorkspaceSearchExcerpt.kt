@@ -72,14 +72,16 @@ private class MarkdownExcerpt(
 
     fun build() = SearchMessageExcerpt(text.toString().trimEnd(), matches, sourceRange)
 
-    fun append(node: Node, escapes: List<Int> = emptyList()) {
+    fun append(node: Node, escapes: List<Int> = emptyList(), inImageDescription: Boolean = false) {
         when (node) {
             is Text -> appendText(node, escapes)
             is Code -> appendCode(node, escapes)
             is FencedCodeBlock ->
                 appendLines(node.literal, node.sourceSpans, escapes, skipLines = 1)
             is IndentedCodeBlock -> appendLines(node.literal, node.sourceSpans, escapes)
-            is HtmlInline -> appendLines(node.literal, node.sourceSpans, escapes)
+            is HtmlInline ->
+                // Image descriptions omit HTML in HistoryMarkdown, even when the reply shows it.
+                if (!inImageDescription) appendLines(node.literal, node.sourceSpans, escapes)
             is HtmlBlock -> appendLines(node.literal, node.sourceSpans, escapes)
             is SoftLineBreak,
             is HardLineBreak -> if (!firstMatchOnly) text.append(' ')
@@ -89,11 +91,16 @@ private class MarkdownExcerpt(
                     if (node is TableCell && escapes.isEmpty() && ranges.isNotEmpty())
                         node.tablePipeEscapes(source)
                     else escapes
+                val childInImageDescription = inImageDescription || node is Image
                 for (child in generateSequence(node.firstChild) { it.next }) {
-                    append(child, childEscapes)
+                    append(child, childEscapes, childInImageDescription)
                     if (firstMatchOnly && sourceRange != null) return
                 }
-                if (text.length > start && (node is Block || node is TableCell || node is Image))
+                if (
+                    text.length > start &&
+                        !inImageDescription &&
+                        (node is Block || node is TableCell || node is Image)
+                )
                     text.append(' ')
             }
         }

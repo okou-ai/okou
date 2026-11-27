@@ -28,8 +28,32 @@ class WorkspaceSearchExcerptTest {
     fun imageInTableUsesItsDescriptionWithoutTheLinkOrNeighbor() {
         val source =
             "| Phase | Schedule |\n| --- | --- |\n" +
-                "| Review | Check [![发布**排期**图](/artifacts/rollout)](https://example.org) before launch |"
+                "| Review | Check [![发布<span>**排期**</span>图](/artifacts/rollout)](https://example.org) before launch |"
         assertExcerpt(source, "排期", "发布排期图", 2)
+    }
+
+    @Test
+    fun imageWithoutADescriptionUsesItsSurroundingParagraph() {
+        val source = "Build passed.\n\nSee the chart below.\n![](/artifacts/release)"
+        val start = source.indexOf("release")
+        val range = start until start + 7
+        val excerpt = workspaceSearchMarkdownExcerpt(source, listOf(range))
+
+        assertEquals("See the chart below.", excerpt.text)
+        assertEquals(emptyList<IntRange>(), excerpt.ranges)
+        assertEquals(range, excerpt.sourceRange)
+    }
+
+    @Test
+    fun htmlInAnImageDescriptionDoesNotOutrankVisibleText() {
+        val source =
+            "![<span title=\"release\">Schedule</span>](/artifacts/chart)\n\nReview release notes."
+        val ranges = Regex("release").findAll(source).map { it.range }.toList()
+        val excerpt = workspaceSearchMarkdownExcerpt(source, ranges)
+
+        assertEquals("Review release notes.", excerpt.text)
+        assertEquals(listOf(7..13), excerpt.ranges)
+        assertEquals(ranges.last(), excerpt.sourceRange)
     }
 
     @Test
