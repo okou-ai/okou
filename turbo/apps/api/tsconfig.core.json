@@ -392,6 +392,7 @@
     "src/signals/services/network-config-mutation.service.ts",
     "src/signals/services/network-config-invalidation.service.ts",
     "src/signals/services/image-generation.service.ts",
+    "src/signals/services/files-dual-write.service.ts",
     "src/signals/services/private-artifact-storage.service.ts",
     "src/signals/services/provider-usage-publication.service.ts",
     "src/signals/services/run-uploaded-files.service.ts",

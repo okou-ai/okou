@@ -26,6 +26,7 @@ import {
   hostedSiteSessionViewer$,
 } from "../services/hosted-site-sessions.service";
 import { conflict, notFound, resourceUnavailable } from "../../lib/error";
+import { recordLegacyArtifactEndpointCall$ } from "../services/legacy-artifact-deprecation-telemetry";
 import type { RouteEntry } from "../route-entry";
 
 const preview$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -54,10 +55,16 @@ const preview$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const read$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "GET /api/host/sites/:siteId/visibility",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const body = await set(
     getHostedSiteVisibility$,
     {
-      ...get(organizationAuthContext$),
+      ...auth,
       ...get(pathParamsOf(hostContract.siteVisibility)),
     },
     signal,
@@ -69,6 +76,12 @@ const read$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "PATCH /api/host/sites/:siteId/visibility",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const body = await get(bodyResultOf(hostContract.updateSiteVisibility));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -77,7 +90,7 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   const result = await set(
     updateHostedSiteVisibility$,
     {
-      ...get(organizationAuthContext$),
+      ...auth,
       ...get(pathParamsOf(hostContract.updateSiteVisibility)),
       ...body.data,
     },

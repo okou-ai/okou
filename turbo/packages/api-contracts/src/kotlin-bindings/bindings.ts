@@ -52,11 +52,11 @@ import {
   billingStatusContract,
   billingUsagePackCreditsContract,
 } from "../contracts/billing";
+import { artifactAccessContract } from "../contracts/artifact-access";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { chatRelationsContract } from "../contracts/chat-relations";
 import { artifactDownloadsContract } from "../contracts/artifact-downloads";
 import { artifactReferencesContract } from "../contracts/artifact-references";
-import { artifactSharesContract } from "../contracts/artifact-shares";
 import { hostContract } from "../contracts/host";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
 import { connectedConnectorsContract } from "../contracts/connected-connectors";
@@ -345,32 +345,20 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: hostContract.sitePreview,
   },
   {
-    name: "artifactShareStatus",
-    response: "ArtifactShareStatus",
-    request: "ArtifactShareTarget",
-    route: artifactSharesContract.status,
+    name: "artifactVisibility",
+    response: "ArtifactVisibility",
+    route: artifactAccessContract.getVisibility,
   },
   {
-    name: "updateArtifactShare",
-    response: "ArtifactShareStatus",
-    request: "ArtifactShareUpdate",
-    route: artifactSharesContract.update,
+    name: "updateArtifactVisibility",
+    response: "ArtifactVisibility",
+    request: "ArtifactVisibilityUpdate",
+    route: artifactAccessContract.updateVisibility,
   },
   {
     name: "artifactSiteUrl",
     response: "ArtifactSiteUrl",
     route: hostContract.siteUrl,
-  },
-  {
-    name: "artifactSiteVisibility",
-    response: "ArtifactSiteVisibility",
-    route: hostContract.siteVisibility,
-  },
-  {
-    name: "updateArtifactSiteVisibility",
-    response: "ArtifactSiteVisibility",
-    request: "ArtifactSiteVisibilityUpdate",
-    route: hostContract.updateSiteVisibility,
   },
   {
     name: "connectedConnectors",
@@ -817,34 +805,19 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "output",
   },
   {
-    name: "ArtifactShareStatus",
-    schema: artifactSharesContract.status.responses[200],
+    name: "ArtifactVisibility",
+    schema: artifactAccessContract.getVisibility.responses[200],
     direction: "output",
   },
   {
-    name: "ArtifactShareTarget",
-    schema: artifactSharesContract.status.body,
-    direction: "input",
-  },
-  {
-    name: "ArtifactShareUpdate",
-    schema: artifactSharesContract.update.body,
+    name: "ArtifactVisibilityUpdate",
+    schema: artifactAccessContract.updateVisibility.body,
     direction: "input",
   },
   {
     name: "ArtifactSiteUrl",
     schema: hostContract.siteUrl.responses[200],
     direction: "output",
-  },
-  {
-    name: "ArtifactSiteVisibility",
-    schema: hostContract.siteVisibility.responses[200],
-    direction: "output",
-  },
-  {
-    name: "ArtifactSiteVisibilityUpdate",
-    schema: hostContract.updateSiteVisibility.body,
-    direction: "input",
   },
   {
     name: "ConnectedConnectors",

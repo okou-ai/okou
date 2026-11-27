@@ -301,7 +301,6 @@ private struct ChatSearchContent: View {
     case "hosted-site": "globe"
     case "presentation": "presentation"
     case "image", "avatar": "image"
-    case "video": "video"
     default: ChatArtifact(source: .file(item.id), filename: item.title).symbol
     }
   }

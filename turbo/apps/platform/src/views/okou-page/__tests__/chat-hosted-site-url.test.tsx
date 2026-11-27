@@ -5,6 +5,7 @@ import type {
   hostedDomainSetupSchema,
 } from "@okouai/api-contracts/contracts/hosted-site-domains";
 import type { infer as zInfer } from "zod";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import {
   act,
@@ -134,8 +135,17 @@ async function publishedReport(
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, site());
   });
-  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
-    return respond(200, { siteId, visibility: "public", revision: null });
+  context.mocks.api(artifactAccessContract.getVisibility, ({ respond }) => {
+    const current = site();
+    return respond(200, {
+      artifactId: siteId,
+      kind: "hosted-site",
+      visibility: "public",
+      ownerUrl: current.url,
+      shareUrl: current.url,
+      shortUrl: null,
+      organization: { id: "org_default", name: "Default Org" },
+    });
   });
   context.mocks.api(hostContract.siteBanner, ({ respond }) => {
     return respond(200, { siteId, showBanner: true, revision: null });

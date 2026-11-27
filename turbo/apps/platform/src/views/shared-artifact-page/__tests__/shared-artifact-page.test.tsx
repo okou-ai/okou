@@ -1,5 +1,5 @@
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
@@ -163,17 +163,15 @@ test("shared-artifact-page-008 carries the reader's return address into the acco
 
 test("shared-artifact-page-010 displays the public audience alongside the image type", async () => {
   imageReference();
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+  context.mocks.api(artifactAccessContract.getVisibility, ({ respond }) => {
     return respond(200, {
+      artifactId: fileId,
+      kind: "file",
+      visibility: "public",
       ownerUrl: `http://localhost${path}`,
-      shareId: fileId,
-      audience: "public",
-      organization: { id: "org_default", name: "Default Org" },
-      selectedTarget: { kind: "file", id: fileId },
-      selectedVersion: 1,
-      candidateVersion: 1,
-      url: "https://files.example.test/public/site-plan",
+      shareUrl: "https://files.example.test/public/site-plan",
       shortUrl: "https://files.example.test/public/site-plan",
+      organization: { id: "org_default", name: "Default Org" },
     });
   });
   await setupPage({ context, path });

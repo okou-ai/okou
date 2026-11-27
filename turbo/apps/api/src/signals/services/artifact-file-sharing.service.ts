@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, eq, exists, isNull } from "drizzle-orm";
+import { and, eq, exists, isNull, sql } from "drizzle-orm";
 import { artifactFileShares } from "@okouai/db/schema/artifact-file-share";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
@@ -10,6 +10,10 @@ import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import artifactInvitationTemplate from "../../lib/artifact-invitation-template.json";
 import type { ArtifactSharingResource } from "./artifact-sharing-resource.service";
+import {
+  deleteArtifactUserShareByFileId$,
+  syncArtifactUserShareByFileId$,
+} from "./artifact-access-dual-write.service";
 
 export const shareFileArtifact$ = command(
   async (
@@ -39,7 +43,10 @@ export const shareFileArtifact$ = command(
       })
       .onConflictDoUpdate({
         target: [artifactFileShares.fileId, artifactFileShares.email],
-        set: { email: args.email },
+        set: {
+          email: args.email,
+          userId: sql`COALESCE(${artifactFileShares.userId}, ${args.recipient?.userId ?? null})`,
+        },
       })
       .returning({
         id: artifactFileShares.id,
@@ -49,6 +56,17 @@ export const shareFileArtifact$ = command(
     signal.throwIfAborted();
     if (!share) {
       throw new Error("Artifact sharing did not return its grant");
+    }
+    if (share.userId) {
+      await set(
+        syncArtifactUserShareByFileId$,
+        {
+          fileId: args.resource.id,
+          userId: share.userId,
+          email: share.email,
+        },
+        signal,
+      );
     }
     await database
       .insert(emailOutbox)
@@ -111,8 +129,18 @@ export const removeFileArtifactShare$ = command(
           ),
         ),
       )
-      .returning({ id: artifactFileShares.id });
+      .returning({
+        id: artifactFileShares.id,
+        userId: artifactFileShares.userId,
+      });
     signal.throwIfAborted();
-    return removed ?? null;
+    if (removed?.userId) {
+      await set(
+        deleteArtifactUserShareByFileId$,
+        { fileId: args.resource.id, userId: removed.userId },
+        signal,
+      );
+    }
+    return removed ? { id: removed.id } : null;
   },
 );

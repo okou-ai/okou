@@ -1969,6 +1969,7 @@ export const storeGeneratedImage$ = command(
         s3Key,
         layout: artifact.layout,
         metadata: generatedImageMetadata(params.generation, artifact.isPrivate),
+        skipFilesDualWrite: artifact.isPrivate,
       },
       signal,
     );

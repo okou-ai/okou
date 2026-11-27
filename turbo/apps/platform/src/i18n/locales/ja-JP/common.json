@@ -498,8 +498,6 @@
         "presentationAria": "プレゼンテーションのアーティファクトを表示する",
         "sharedConversation": "共有された会話",
         "sharedConversationAria": "共有された会話のアーティファクトを表示",
-        "video": "動画",
-        "videoAria": "ビデオアーティファクトを表示する",
         "website": "ウェブサイト",
         "websiteAria": "Web サイトのアーティファクトを表示する"
       },

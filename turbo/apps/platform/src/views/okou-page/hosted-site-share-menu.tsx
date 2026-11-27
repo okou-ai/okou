@@ -80,7 +80,7 @@ function HostedSiteBannerSetting({
   const features = useLastResolved(featureSwitches$);
   const rows =
     features?.[FeatureSwitchKey.HostedSiteShareRows] ||
-    features?.[FeatureSwitchKey.HostedSiteEmailSharing];
+    features?.[FeatureSwitchKey.ArtifactUserSharing];
   const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   if (
     !signal ||
@@ -174,9 +174,7 @@ function HostedSitePermissions({
   const pending = useGet(session.pendingVisibility$);
   const organization = useLastResolved(currentOrgInfo$);
   const emailSharing =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.HostedSiteEmailSharing
-    ];
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ArtifactUserSharing];
   const signal = useGet(session.signal$);
   if (!signal || (loadable.state === "hasData" && !loadable.data)) {
     return null;
@@ -867,7 +865,7 @@ function HostedSiteShareActions({
   const features = useLastResolved(featureSwitches$);
   const rows =
     features?.[FeatureSwitchKey.HostedSiteShareRows] ||
-    features?.[FeatureSwitchKey.HostedSiteEmailSharing];
+    features?.[FeatureSwitchKey.ArtifactUserSharing];
   const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   if (!signal) {
     return null;
@@ -911,9 +909,7 @@ function HostedSiteShareActions({
         <ShareCopyButton
           className="mt-1.5 w-full"
           size={
-            features?.[FeatureSwitchKey.HostedSiteEmailSharing]
-              ? "default"
-              : "sm"
+            features?.[FeatureSwitchKey.ArtifactUserSharing] ? "default" : "sm"
           }
           copied={link !== null && copiedUrl === link}
           disabled={link === null}
@@ -979,7 +975,7 @@ function HostedSiteShareUrl({
   const features = useLastResolved(featureSwitches$);
   const rows =
     features?.[FeatureSwitchKey.HostedSiteShareRows] ||
-    features?.[FeatureSwitchKey.HostedSiteEmailSharing];
+    features?.[FeatureSwitchKey.ArtifactUserSharing];
   return (
     <>
       {editing ? (
@@ -1140,7 +1136,7 @@ function HostedSiteShareSessionMenu({
   const [sharing, share] = useLoadableSet(session.people.share$);
   const [removing, remove] = useLoadableSet(session.people.remove$);
   const features = useLastResolved(featureSwitches$);
-  const emailSharing = features?.[FeatureSwitchKey.HostedSiteEmailSharing];
+  const emailSharing = features?.[FeatureSwitchKey.ArtifactUserSharing];
   const domainEditor =
     domainOpen ||
     (editing && features?.[FeatureSwitchKey.HostedSiteCustomDomains]);

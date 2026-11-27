@@ -446,7 +446,6 @@ describe("okou slack upload-file command", () => {
       expect(logCalls).toContain("delivery: failed");
       const warnings = mockConsoleWarn.mock.calls.flat().join("\n");
       expect(warnings).toContain("Slack delivery failed: Slack upload failed");
-      expect(warnings).toContain(`--operation-id ${operationId}`);
     });
 
     it.each([404, 503])(
@@ -498,9 +497,7 @@ describe("okou slack upload-file command", () => {
         expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
           "Server delivery unavailable",
         );
-        expect(mockConsoleWarn.mock.calls.flat().join("\n")).toContain(
-          `--operation-id ${operationId}`,
-        );
+        expect(mockConsoleWarn).not.toHaveBeenCalled();
       },
     );
   });

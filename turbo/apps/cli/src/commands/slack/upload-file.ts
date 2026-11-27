@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { statSync, readFileSync } from "fs";
 import { basename } from "path";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import chalk from "chalk";
 import type { SlackUploadInitResponse } from "@okouai/api-contracts/contracts/integrations";
 import {
@@ -60,10 +60,6 @@ function readUploadFile(path: string): {
     throw new Error("File is empty");
   }
   return { content: readFileSync(path), size };
-}
-
-function warnDeliveryRetry(operationId: string): void {
-  console.warn(chalk.dim(`  Retry with --operation-id ${operationId}`));
 }
 
 type SlackUploadOutput = Pick<MessageSendOutput, "messages" | "delivery"> & {
@@ -126,7 +122,6 @@ function failedSlackDelivery(
   error: string,
 ): Pick<MessageSendOutput, "messages" | "delivery"> {
   console.warn(chalk.yellow(`⚠ Slack delivery failed: ${error}`));
-  warnDeliveryRetry(operationId);
   return { messages: [], delivery: { status: "failed", error, operationId } };
 }
 
@@ -136,16 +131,10 @@ async function publishCanonicalFile(
   fileContent: Buffer,
 ): Promise<SlackUploadOutput> {
   await uploadCanonicalBody(initialized, contentType, fileContent);
-  let materialized: Awaited<ReturnType<typeof deliverSlackFileUpload>>;
-  try {
-    materialized = await deliverSlackFileUpload({
-      assetId: initialized.assetId,
-      operationId: initialized.operationId,
-    });
-  } catch (error) {
-    warnDeliveryRetry(initialized.operationId);
-    throw error;
-  }
+  const materialized = await deliverSlackFileUpload({
+    assetId: initialized.assetId,
+    operationId: initialized.operationId,
+  });
   const fileUrl = materialized.url;
 
   if (materialized.delivery.status === "delivered") {
@@ -258,7 +247,12 @@ export const uploadFileCommand = new Command()
   .option("--title <title>", "Display title for the file")
   .option("-t, --text <text>", "Initial comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
-  .option("--operation-id <uuid>", "Reuse a failed upload operation")
+  .addOption(
+    new Option(
+      "--operation-id <uuid>",
+      "Deprecated: internal upload operation ID (kept for script compatibility)",
+    ).hideHelp(),
+  )
   .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
@@ -275,7 +269,7 @@ Notes:
   - Sending a DM does not grant access to its private history or attachments
   - Uses the bot token (not user SLACK_TOKEN), so no files:write permission is needed
   - Run-scoped calls upload to Okou storage; the server uploads and shares the Slack file
-  - Delivery failures are reported on stderr with an --operation-id retry hint
+  - External delivery is fire-and-forget; delivery failures are reported on stderr
 
 Output:
   Prints "✓ File uploaded" with the Slack file ID, permalink, and Okou file URL.

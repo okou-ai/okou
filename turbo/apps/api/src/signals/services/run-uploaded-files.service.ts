@@ -6,6 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/link-layout";
 import { and, eq, exists, isNotNull, sql } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import type { FileOrigin } from "@okouai/db/schema/file";
 import {
   RUN_UPLOADED_FILE_SOURCES,
   runUploadedFiles,
@@ -23,6 +24,7 @@ import {
   queueRecordedArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
+import { syncFileFromRunUploadedFileRow$ } from "./files-dual-write.service";
 
 interface RecordWebUploadedFileArgs {
   readonly runId: string | undefined;
@@ -36,6 +38,9 @@ interface RecordWebUploadedFileArgs {
   readonly s3Key: string;
   readonly layout: LinkLayout;
   readonly metadata: Record<string, unknown>;
+  readonly origin?: FileOrigin;
+  /** Skip `files` dual-write for run-association shadow rows whose real private file row already exists in `files`. */
+  readonly skipFilesDualWrite?: boolean;
 }
 
 interface RecordHostedSiteArtifactArgs {
@@ -103,6 +108,8 @@ interface RecordRunUploadedFileArgs {
   readonly runId: string;
   readonly source: RunUploadedFileSource;
   readonly externalId: string;
+  readonly origin?: FileOrigin;
+  readonly skipFilesDualWrite?: boolean;
   readonly file: Pick<
     typeof runUploadedFiles.$inferInsert,
     | "userId"
@@ -211,6 +218,22 @@ const recordRunUploadedFile$ = command(
     );
     if (result.ok) {
       const [row] = result.value;
+      if (row && !args.skipFilesDualWrite) {
+        const meta = args.file.metadata as Record<string, unknown> | undefined;
+        if (
+          !meta ||
+          (!("siteId" in meta) && meta.generatedBy !== "zero-official-website")
+        ) {
+          await set(
+            syncFileFromRunUploadedFileRow$,
+            {
+              fileId: row.id,
+              origin: args.origin ?? (args.runId ? "agent" : "user"),
+            },
+            signal,
+          );
+        }
+      }
       return row;
     }
     if (!isForeignKeyViolation(result.error)) {
@@ -327,6 +350,8 @@ export const recordWebUploadedFile$ = command(
         runId: args.runId,
         source,
         externalId: args.externalId,
+        origin: args.origin ?? (args.runId ? "agent" : "user"),
+        skipFilesDualWrite: args.skipFilesDualWrite,
         file: {
           userId: args.userId,
           orgId: args.orgId ?? null,

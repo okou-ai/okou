@@ -122,7 +122,7 @@ const CATEGORIES = [
     category: "video",
     label: "Videos",
     title: "launch-demo.mp4",
-    kind: "video",
+    kind: "file",
   },
   {
     category: "audio",

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { useGet, useLastLoadable, useLastResolved } from "ccstate-react";
+import { useGet, useLastLoadable } from "ccstate-react";
 import {
   File,
   FileText,
@@ -201,46 +201,19 @@ function ArtifactCatalogFallbackPreview({
   );
 }
 
-function ArtifactCatalogVideoPreview({
-  artifact,
-}: {
-  readonly artifact: CatalogArtifact;
-}) {
-  const resourceUrl = useLastResolved(artifact.videoUrl$);
-  return (
-    <video
-      src={resourceUrl ? `${resourceUrl}#t=0.001` : undefined}
-      preload="metadata"
-      muted
-      playsInline
-      aria-hidden="true"
-      data-testid="artifact-catalog-video-source"
-      className="h-full w-full object-contain"
-    />
-  );
-}
-
 /** Reuse the catalog's producer-owned thumbnail and broken-image state. */
 export function ArtifactCatalogCover({
   artifact,
   appearance = "gallery",
-  videoFallback = true,
 }: {
   readonly artifact: CatalogArtifact;
   readonly appearance?: ArtifactCatalogAppearance;
-  readonly videoFallback?: boolean;
 }) {
   const gallery = appearance === "gallery";
   const thumbnailLoadable = useLastLoadable(artifact.thumbnailUrl$);
   const thumbnailUrl =
     thumbnailLoadable.state === "hasData" ? thumbnailLoadable.data : null;
-  const thumbnailPending =
-    artifact.thumbnail !== null && thumbnailLoadable.state === "loading";
-  const sourceVideo =
-    videoFallback && artifact.videoSourceUrl && !thumbnailPending ? (
-      <ArtifactCatalogVideoPreview artifact={artifact} />
-    ) : null;
-  const fallbackPreview = sourceVideo ?? (
+  const fallbackPreview = (
     <ArtifactCatalogFallbackPreview
       artifact={artifact}
       appearance={appearance}
@@ -248,9 +221,7 @@ export function ArtifactCatalogCover({
   );
   const thumbnailFailed = useGet(artifact.thumbnailLoad.status$) === "error";
   const kindCoverShown =
-    artifact.kind !== "file" &&
-    sourceVideo === null &&
-    (thumbnailUrl === null || thumbnailFailed);
+    artifact.kind !== "file" && (thumbnailUrl === null || thumbnailFailed);
   return (
     <span
       data-testid="artifact-catalog-card-preview"

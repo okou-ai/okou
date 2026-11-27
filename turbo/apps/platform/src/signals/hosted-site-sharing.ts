@@ -8,10 +8,11 @@ import {
   type State,
 } from "ccstate";
 import type { infer as zInfer } from "zod";
+import { artifactAccessContract } from "@okouai/api-contracts/client/artifact-access";
 import { hostContract } from "@okouai/api-contracts/client/host";
 import { hostedSiteUrlSlugSchema } from "@okouai/api-contracts/validators/host";
 import type { hostedSiteUrlSchema } from "@okouai/api-contracts/contracts/host";
-import type { hostedSiteVisibilitySchema } from "@okouai/api-contracts/contracts/hosted-site-access";
+import type { ArtifactVisibilityValue } from "@okouai/api-contracts/contracts/artifact-access";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
@@ -32,7 +33,7 @@ import { createSharePeopleSignals } from "./share-people.ts";
 
 type SiteUrl = zInfer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
-type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
+type Visibility = ArtifactVisibilityValue;
 
 /**
  * Records the choice before the throttled save runs, so a click queued behind
@@ -48,7 +49,10 @@ function recordPendingChoice<T>(
   });
 }
 
-function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
+function createSiteVisibilitySignals(
+  site$: Computed<Promise<SiteUrl | null>>,
+  knownArtifactId?: string,
+) {
   const reload$ = state(0);
   const details$ = computed(async (get) => {
     const site = await get(site$);
@@ -62,13 +66,19 @@ function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
     }
     get(reload$);
     const result = await accept(
-      get(apiClient$)(hostContract).siteVisibility({
-        params: { siteId: site.siteId },
+      get(apiClient$)(artifactAccessContract).getVisibility({
+        params: { artifactId: knownArtifactId ?? site.siteId },
         fetchOptions: { cache: "no-store" },
       }),
       [200, 404],
     );
-    return result.status === 200 ? result.body : null;
+    return result.status === 200
+      ? {
+          siteId: site.siteId,
+          artifactId: result.body.artifactId,
+          visibility: result.body.visibility,
+        }
+      : null;
   });
   const persist$ = command(
     async ({ get, set }, visibility: Visibility, signal: AbortSignal) => {
@@ -78,9 +88,9 @@ function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
         return false;
       }
       await accept(
-        get(apiClient$)(hostContract).updateSiteVisibility({
-          params: { siteId: details.siteId },
-          body: { visibility, expectedRevision: details.revision },
+        get(apiClient$)(artifactAccessContract).updateVisibility({
+          params: { artifactId: details.artifactId },
+          body: { visibility },
           fetchOptions: { signal },
         }),
         [200],
@@ -285,11 +295,12 @@ function createSiteUrlSignals(sourceUrl: string) {
 
 function createSiteSharingSettings(
   details$: Computed<Promise<SiteUrl | null>>,
+  knownArtifactId?: string,
 ) {
-  const visibility = createSiteVisibilitySignals(details$);
+  const visibility = createSiteVisibilitySignals(details$, knownArtifactId);
   const peopleTarget$ = computed(async (get) => {
     const site = await get(visibility.visibility$);
-    return site ? { kind: "site" as const, id: site.siteId } : null;
+    return site ? { artifactId: site.artifactId } : null;
   });
   const people = createSharePeopleSignals(peopleTarget$);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
@@ -309,7 +320,56 @@ function createSiteSharingSettings(
   return { visibility, people, banner, hasSettings$ };
 }
 
-function createHostedSiteShareSession(sourceUrl: string) {
+function createHostedSiteSaveCommand(args: {
+  readonly details$: Computed<Promise<SiteUrl | null>>;
+  readonly saved$: State<SiteUrl | null>;
+  readonly editor: ReturnType<typeof createSiteUrlEditorSignals>;
+  readonly domains: ReturnType<typeof createHostedSiteDomainSignals>;
+  readonly cancel$: Command<void, []>;
+  readonly linkCopy: ReturnType<typeof createShareLinkCopy>;
+}) {
+  const { details$, saved$, editor, domains, cancel$, linkCopy } = args;
+  return throttleCommand(
+    command(async ({ get, set }, signal: AbortSignal) => {
+      set(linkCopy.clear$);
+      const configuration = await get(domains.settings$);
+      signal.throwIfAborted();
+      if (!configuration) {
+        return set(editor.save$, signal);
+      }
+      const details = await get(details$);
+      signal.throwIfAborted();
+      const draft = get(editor.draft$);
+      if (!details || draft === null) {
+        return;
+      }
+      const result = await set(domains.persist$, draft, signal);
+      signal.throwIfAborted();
+      if (!result) {
+        return;
+      }
+      const url = result.defaultUrl;
+      if (url !== details.url) {
+        set(recordHostedSiteUrlChange$, details.url, url);
+      }
+      set(saved$, {
+        ...details,
+        url,
+        publicSlug: new URL(url).hostname.split(".")[0]!,
+        effectiveUrl: result.effectiveUrl,
+      });
+      set(cancel$);
+      toast.success(
+        i18n.t(($) => {
+          return $.artifacts.siteUrl.updated;
+        }),
+      );
+    }),
+    0,
+  );
+}
+
+function createHostedSiteShareSession(sourceUrl: string, artifactId?: string) {
   const signal$ = state<AbortSignal | null>(null);
   const {
     saved$,
@@ -333,7 +393,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
     set(editor.cancel$);
   });
   const { visibility, people, banner, hasSettings$ } =
-    createSiteSharingSettings(details$);
+    createSiteSharingSettings(details$, artifactId);
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
   const setOpen$ = command(({ set }, open: boolean) => {
@@ -375,44 +435,14 @@ function createHostedSiteShareSession(sourceUrl: string) {
     visibility.pendingVisibility$,
     throttledVisibility$,
   );
-  const save$ = throttleCommand(
-    command(async ({ get, set }, signal: AbortSignal) => {
-      set(linkCopy.clear$);
-      const configuration = await get(domains.settings$);
-      signal.throwIfAborted();
-      if (!configuration) {
-        return set(editor.save$, signal);
-      }
-      const details = await get(details$);
-      signal.throwIfAborted();
-      const draft = get(editor.draft$);
-      if (!details || draft === null) {
-        return;
-      }
-      const result = await set(domains.persist$, draft, signal);
-      signal.throwIfAborted();
-      if (!result) {
-        return;
-      }
-      const url = result.defaultUrl;
-      if (url !== details.url) {
-        set(recordHostedSiteUrlChange$, details.url, url);
-      }
-      set(saved$, {
-        ...details,
-        url,
-        publicSlug: new URL(url).hostname.split(".")[0]!,
-        effectiveUrl: result.effectiveUrl,
-      });
-      set(cancel$);
-      toast.success(
-        i18n.t(($) => {
-          return $.artifacts.siteUrl.updated;
-        }),
-      );
-    }),
-    0,
-  );
+  const save$ = createHostedSiteSaveCommand({
+    details$,
+    saved$,
+    editor,
+    domains,
+    cancel$,
+    linkCopy,
+  });
   return {
     sourceUrl,
     signal$,
@@ -443,21 +473,33 @@ export type HostedSiteShareSession = ReturnType<
 >;
 
 function createHostedSiteShareScope() {
-  const source$ = state<{ readonly url: string } | null>(null);
+  const source$ = state<{
+    readonly url: string;
+    readonly artifactId?: string;
+  } | null>(null);
   const session$ = computed((get) => {
     const source = get(source$);
-    return source ? createHostedSiteShareSession(source.url) : null;
+    return source
+      ? createHostedSiteShareSession(source.url, source.artifactId)
+      : null;
   });
   const resetSession$ = resetSignal();
   const select$ = command(
-    ({ get, set }, url: string, parentSignal: AbortSignal) => {
+    (
+      { get, set },
+      selection: { readonly url: string; readonly artifactId?: string },
+      parentSignal: AbortSignal,
+    ) => {
       parentSignal.throwIfAborted();
       const signal = set(resetSession$, parentSignal);
-      if (!isHostedSiteUrl(url)) {
+      if (!isHostedSiteUrl(selection.url)) {
         set(source$, null);
         return;
       }
-      const source = { url };
+      const source = {
+        url: selection.url,
+        ...(selection.artifactId ? { artifactId: selection.artifactId } : {}),
+      };
       set(source$, source);
       const session = get(session$)!;
       set(session.signal$, signal);

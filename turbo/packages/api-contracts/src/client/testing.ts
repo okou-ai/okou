@@ -11,6 +11,8 @@ import { antigravityDeviceAuthContract as OriginalAntigravityDeviceAuthContract 
 import { antigravityDeviceAuthContract } from "./antigravity-device-auth";
 import { antigravityPersonalSubscriptionContract as OriginalAntigravityPersonalSubscriptionContract } from "../contracts/antigravity-personal-subscription";
 import { antigravityPersonalSubscriptionContract } from "./antigravity-personal-subscription";
+import { artifactAccessContract as OriginalArtifactAccessContract } from "../contracts/artifact-access";
+import { artifactAccessContract } from "./artifact-access";
 import { artifactCatalogContract as OriginalArtifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactCatalogContract } from "./artifact-catalog";
 import { artifactDownloadsContract as OriginalArtifactDownloadsContract } from "../contracts/artifact-downloads";
@@ -816,6 +818,7 @@ export const clientDescriptorContracts: readonly (readonly [
     antigravityPersonalSubscriptionContract,
     OriginalAntigravityPersonalSubscriptionContract,
   ],
+  [artifactAccessContract, OriginalArtifactAccessContract],
   [artifactCatalogContract, OriginalArtifactCatalogContract],
   [artifactDownloadsContract, OriginalArtifactDownloadsContract],
   [artifactGoogleDriveContract, OriginalArtifactGoogleDriveContract],

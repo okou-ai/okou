@@ -498,8 +498,6 @@
         "presentationAria": "프레젠테이션 아티팩트 표시",
         "sharedConversation": "공유된 대화",
         "sharedConversationAria": "공유된 대화 아티팩트 표시",
-        "video": "비디오",
-        "videoAria": "비디오 아티팩트 표시",
         "website": "웹사이트",
         "websiteAria": "웹사이트 아티팩트 표시"
       },

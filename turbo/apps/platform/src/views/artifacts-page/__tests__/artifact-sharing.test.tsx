@@ -1,10 +1,10 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
-import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import {
-  artifactSharesContract,
-  type ArtifactShareStatus,
-} from "@okouai/api-contracts/contracts/artifact-shares";
+  artifactAccessContract,
+  type ArtifactVisibilityResponse,
+  type ArtifactVisibilityValue,
+} from "@okouai/api-contracts/contracts/artifact-access";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -17,20 +17,20 @@ const host = "app.okou.ai";
 const path = "/artifacts/coast025ab.png";
 const ownerUrl = "https://app.okou.ai/artifacts/owner025ab.png";
 
-function permissions(audience: "private" | "public"): ArtifactShareStatus {
+const fileId = "55000000-0000-4000-8000-000000000025";
+
+function permissions(
+  visibility: ArtifactVisibilityValue,
+): ArtifactVisibilityResponse {
   const sharedUrl =
-    audience === "public" ? "https://a.okou.io/short025ab.png" : null;
+    visibility === "public" ? "https://a.okou.io/short025ab.png" : null;
   return {
-    audience,
+    artifactId: fileId,
+    kind: "file",
+    visibility,
     ownerUrl,
+    shareUrl: sharedUrl,
     shortUrl: sharedUrl,
-    url: sharedUrl,
-    selectedVersion: null,
-    candidateVersion: null,
-    shareId: sharedUrl ? "50000000-0000-4000-8000-000000000025" : null,
-    selectedTarget: sharedUrl
-      ? { kind: "file", id: "55000000-0000-4000-8000-000000000025" }
-      : null,
     organization: { id: "acme", name: "Acme" },
   };
 }
@@ -47,17 +47,17 @@ async function openOwnerMenu(
       filename: "Coast.png",
       contentType: "image/png",
       expiresAt: "2099-01-01T00:00:00Z",
-      target: { kind: "file", id: "55000000-0000-4000-8000-000000000025" },
+      target: { kind: "file", id: fileId },
     });
   });
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+  context.mocks.api(artifactAccessContract.getVisibility, ({ respond }) => {
     return respond(200, permissions(audience));
   });
   await setupPage({
     context,
     host,
     path,
-    featureSwitches: { [FeatureSwitchKey.HostedSiteEmailSharing]: invitations },
+    featureSwitches: { [FeatureSwitchKey.ArtifactUserSharing]: invitations },
   });
   await expect(
     screen.findByRole("heading", { name: "Coast.png" }),
@@ -123,15 +123,15 @@ test.each([false, true])(
   "artifact-sharing-002 The owner copies the canonical link across all audiences (invitations %s)",
   async (invitations) => {
     const clipboard = context.mocks.browser.clipboardWriteText();
-    const amendments: ArtifactShareStatus["audience"][] = [];
-    context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
-      amendments.push(body.audience);
-      return respond(200, {
-        ...permissions(body.audience === "public" ? "public" : "private"),
-        audience: body.audience,
-      });
-    });
-    context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+    const amendments: ArtifactVisibilityValue[] = [];
+    context.mocks.api(
+      artifactAccessContract.updateVisibility,
+      ({ body, respond }) => {
+        amendments.push(body.visibility);
+        return respond(200, permissions(body.visibility));
+      },
+    );
+    context.mocks.api(artifactAccessContract.listShares, ({ respond }) => {
       return respond(200, { shares: [] });
     });
     const menu = within(await openOwnerMenu("private", invitations));

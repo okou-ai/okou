@@ -1,3 +1,4 @@
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { HostedSiteVisibility } from "@okouai/api-contracts/contracts/hosted-site-access";
@@ -41,7 +42,8 @@ export async function openSharing(
     url: stable,
   });
   let audience = options.audience ?? "public",
-    revision = crypto.randomUUID(),
+    updateCount = 0,
+    conflicted = false,
     bannerRevision = crypto.randomUUID(),
     showBanner = true;
   const clipboard = context.mocks.browser.clipboardWriteText();
@@ -60,9 +62,8 @@ export async function openSharing(
       isActive: true,
     });
   });
-  const initialRevision = revision;
   context.mocks.api(hostContract.sitePreview, ({ respond }) => {
-    if (options.preserveTemporaryPreview && revision !== initialRevision) {
+    if (options.preserveTemporaryPreview && updateCount > 0) {
       return respond(500, {
         error: {
           code: "INTERNAL_SERVER_ERROR",
@@ -77,17 +78,31 @@ export async function openSharing(
       expiresAt: privatePreview ? "2099-01-01T00:00:00.000Z" : null,
     });
   });
-  context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
-    await options.visibilityRead;
-    return options.denyVisibility
-      ? respond(403, { error: { code: "FORBIDDEN", message: "Access denied" } })
-      : respond(200, { siteId: site, visibility: audience, revision });
-  });
   context.mocks.api(
-    hostContract.updateSiteVisibility,
+    artifactAccessContract.getVisibility,
+    async ({ respond }) => {
+      await options.visibilityRead;
+      return options.denyVisibility
+        ? respond(403, {
+            error: { code: "FORBIDDEN", message: "Access denied" },
+          })
+        : respond(200, {
+            artifactId: site,
+            kind: "hosted-site",
+            visibility: audience,
+            ownerUrl: stable,
+            shareUrl: audience === "public" ? stable : null,
+            shortUrl: null,
+            organization: { id: "org_default", name: "Default Org" },
+          });
+    },
+  );
+  context.mocks.api(
+    artifactAccessContract.updateVisibility,
     async ({ body, respond }) => {
       await options.beforeWrite?.(body.visibility);
-      if (body.expectedRevision !== revision) {
+      if (conflicted) {
+        conflicted = false;
         return respond(409, {
           error: {
             code: "CONFLICT",
@@ -96,8 +111,16 @@ export async function openSharing(
         });
       }
       audience = body.visibility;
-      revision = crypto.randomUUID();
-      return respond(200, { siteId: site, visibility: audience, revision });
+      updateCount += 1;
+      return respond(200, {
+        artifactId: site,
+        kind: "hosted-site",
+        visibility: audience,
+        ownerUrl: stable,
+        shareUrl: audience === "public" ? stable : null,
+        shortUrl: null,
+        organization: { id: "org_default", name: "Default Org" },
+      });
     },
   );
   context.mocks.api(hostContract.siteBanner, ({ respond }) => {
@@ -132,7 +155,7 @@ export async function openSharing(
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.HostedSiteShareRows]: true,
-      [FeatureSwitchKey.HostedSiteEmailSharing]: options.emailSharing ?? false,
+      [FeatureSwitchKey.ArtifactUserSharing]: options.emailSharing ?? false,
       [FeatureSwitchKey.FreePlanArtifactPaywall]: options.free ?? false,
     },
   });
@@ -158,7 +181,7 @@ export async function openSharing(
     },
     moveToOrg: () => {
       audience = "organization";
-      revision = crypto.randomUUID();
+      conflicted = true;
     },
   };
 }

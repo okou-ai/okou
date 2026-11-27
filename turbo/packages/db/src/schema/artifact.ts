@@ -1,4 +1,5 @@
 import {
+  check,
   index,
   integer,
   jsonb,
@@ -10,7 +11,10 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
+import type {
+  ArtifactCatalogCategory,
+  ArtifactCatalogKind,
+} from "@okouai/api-contracts/contracts/artifact-catalog";
 import { builtInGenerationJobs } from "./built-in-generation-job";
 import { chatThreads } from "./chat-thread";
 import { hostedSites } from "./hosted-site";
@@ -43,6 +47,13 @@ export const ARTIFACT_KINDS = [
   "presentation",
 ] as const;
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
+
+export const ARTIFACT_VISIBILITIES = [
+  "private",
+  "organization",
+  "public",
+] as const;
+export type ArtifactVisibility = (typeof ARTIFACT_VISIBILITIES)[number];
 
 /**
  * Common artifact registry. Holds only what the catalog list renders, so the
@@ -78,12 +89,23 @@ export const artifacts = pgTable(
     projectionCreatedAt: timestamp("projection_created_at").notNull(),
     title: text("title").notNull(),
     thumbnail: jsonb("thumbnail").$type<ArtifactThumbnail>(),
+    visibility: varchar("visibility", { length: 16 })
+      .$type<ArtifactVisibility>()
+      .notNull()
+      .default("private"),
+    category: varchar("category", {
+      length: 32,
+    }).$type<ArtifactCatalogCategory>(),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
     return [
+      check(
+        "artifacts_visibility_check",
+        sql`${table.visibility} IN ('private', 'organization', 'public')`,
+      ),
       uniqueIndex("artifacts_kind_entity_unique").on(
         table.kind,
         table.entityId,
@@ -118,6 +140,15 @@ export const artifacts = pgTable(
         table.createdAt.desc(),
         table.id.desc(),
       ),
+      index("artifacts_author_category_created_idx")
+        .on(
+          table.orgId,
+          table.authorUserId,
+          table.category,
+          table.createdAt.desc(),
+          table.id.desc(),
+        )
+        .where(sql`${table.deletedAt} IS NULL`),
     ];
   },
 );

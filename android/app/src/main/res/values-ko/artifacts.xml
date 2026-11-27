@@ -12,7 +12,6 @@
     <string name="artifact_filter_sites">웹사이트</string>
     <string name="artifact_filter_images">이미지</string>
     <string name="artifact_filter_presentations">프레젠테이션</string>
-    <string name="artifact_filter_videos">동영상</string>
     <string name="artifact_file">파일</string>
     <string name="artifact_site">웹사이트</string>
     <string name="artifact_image">이미지</string>

@@ -13,6 +13,7 @@ import { deleteS3Objects } from "../external/s3";
 import { settleIncludingAbort } from "../utils";
 import { artifactStorageBucket } from "./private-artifact-storage.service";
 import { revokeDeletedFileArtifactShare$ } from "./artifact-shares.service";
+import { dualWriteFileSoftDelete$ } from "./files-dual-write.service";
 
 const L = logger("BrowserScreenshotCleanup");
 
@@ -78,6 +79,11 @@ const retireBrowserScreenshot$ = command(
       if (retired.length === 0) {
         return false;
       }
+      await set(
+        dualWriteFileSoftDelete$,
+        { id: file.id, deletedAt: file.deletedAt ?? nowDate() },
+        signal,
+      );
     } else if (item.objectKey.startsWith("artifacts/")) {
       // Historical captures predate independent private file ownership and
       // current private-only publishers. Retain their exact public key.

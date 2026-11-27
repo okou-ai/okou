@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, statSync } from "fs";
 import { basename, extname } from "path";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import {
   completeTeamsFileUpload,
   initTeamsFileUpload,
@@ -53,7 +53,12 @@ export const uploadFileCommand = new Command()
   .option("--reply-to <activity-id>", "Activity ID to reply to in thread")
   .option("-t, --text <message>", "Message text to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
-  .option("--operation-id <uuid>", "Resume an existing file delivery operation")
+  .addOption(
+    new Option(
+      "--operation-id <uuid>",
+      "Deprecated: internal upload operation ID (kept for script compatibility)",
+    ).hideHelp(),
+  )
   .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
@@ -73,8 +78,7 @@ Notes:
   - Requires your verified account; group targets require access for both you and the bot
   - You can DM other recipients, subject to the platform's bot delivery rules
   - Sending a DM does not grant access to its private history or attachments
-  - The operation ID is printed to stderr before upload; reuse --operation-id to resume a supported canonical delivery
-  - An uncertain canonical send is never automatically repeated
+  - External delivery is fire-and-forget; an uncertain send is never automatically repeated
   - Uploads through Okou storage first, then sends the Teams message with the file URL
   - Use the Conversation ID and Activity ID from the current Teams run prompt`,
   )
@@ -117,7 +121,6 @@ Notes:
           options.contentType ?? inferContentType(options.file);
         const fileContent = readFileSync(options.file);
         const operationId = options.operationId ?? randomUUID();
-        console.warn(`Upload operation: ${operationId}`);
         const prepared = await initTeamsFileUpload({
           canonical: {
             version: 2,
@@ -138,7 +141,7 @@ Notes:
           typeof prepared.uploadRequired !== "boolean"
         ) {
           throw new Error(
-            "The Teams upload API did not acknowledge this operation. Check the API deployment before retrying with the same --operation-id.",
+            "The Teams upload API did not acknowledge this operation. Check the API deployment before retrying.",
           );
         }
         if (prepared.uploadRequired) {

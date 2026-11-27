@@ -2,20 +2,9 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.api.ApiClient
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.generated.ArtifactShareStatus
-import ai.okou.android.api.generated.ArtifactShareStatusSelectedTargetVariant1
-import ai.okou.android.api.generated.ArtifactShareStatusSelectedTargetVariant2
-import ai.okou.android.api.generated.ArtifactShareTargetVariant1
-import ai.okou.android.api.generated.ArtifactShareTargetVariant1Kind
-import ai.okou.android.api.generated.ArtifactShareTargetVariant2
-import ai.okou.android.api.generated.ArtifactShareTargetVariant2Kind
-import ai.okou.android.api.generated.ArtifactShareUpdate
-import ai.okou.android.api.generated.ArtifactShareUpdateAudience
-import ai.okou.android.api.generated.ArtifactShareUpdateTargetVariant1
-import ai.okou.android.api.generated.ArtifactShareUpdateTargetVariant1Kind
-import ai.okou.android.api.generated.ArtifactSiteVisibility
-import ai.okou.android.api.generated.ArtifactSiteVisibilityUpdate
-import ai.okou.android.api.generated.ArtifactSiteVisibilityUpdateVisibility
+import ai.okou.android.api.generated.ArtifactVisibility
+import ai.okou.android.api.generated.ArtifactVisibilityUpdate
+import ai.okou.android.api.generated.ArtifactVisibilityUpdateVisibility
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,8 +19,12 @@ internal sealed interface ArtifactLinkSource {
 
     data class LegacyDeployment(val id: String) : ArtifactLinkSource
 
-    data class Website(val address: HttpUrl, val siteId: String? = null, val version: Int? = null) :
-        ArtifactLinkSource
+    data class Website(
+        val address: HttpUrl,
+        val siteId: String? = null,
+        val version: Int? = null,
+        val artifactId: String? = null,
+    ) : ArtifactLinkSource
 }
 
 internal enum class ArtifactAudience {
@@ -53,7 +46,7 @@ internal data class ArtifactLink(
     val version: ArtifactLinkVersion? = null,
     val canManage: Boolean = false,
     val siteId: String? = null,
-    val revision: String? = null,
+    val artifactId: String? = null,
 )
 
 internal class ArtifactLinkAccess(private val api: ApiClient) {
@@ -68,16 +61,7 @@ internal class ArtifactLinkAccess(private val api: ApiClient) {
         when (source) {
             is ArtifactLinkSource.File ->
                 withPolicy("file:${source.id}") {
-                    api.read {
-                            artifactShareStatus(
-                                it,
-                                ArtifactShareTargetVariant1(
-                                    ArtifactShareTargetVariant1Kind.FILE,
-                                    source.id,
-                                ),
-                            )
-                        }
-                        .fileLink(source)
+                    api.read { artifactVisibility(it, source.id) }.fileLink()
                 }
             is ArtifactLinkSource.LegacyDeployment -> legacyDeploymentLink(source.id)
             is ArtifactLinkSource.Website -> websiteLink(source)
@@ -92,33 +76,29 @@ internal class ArtifactLinkAccess(private val api: ApiClient) {
             is ArtifactLinkSource.File ->
                 withPolicy("file:${source.id}") {
                     api.write {
-                            updateArtifactShare(
+                            updateArtifactVisibility(
                                 it,
-                                ArtifactShareUpdate(
-                                    ArtifactShareUpdateTargetVariant1(
-                                        ArtifactShareUpdateTargetVariant1Kind.FILE,
-                                        source.id,
-                                    ),
-                                    ArtifactShareUpdateAudience.valueOf(audience.name),
+                                confirmed.artifactId ?: source.id,
+                                ArtifactVisibilityUpdate(
+                                    ArtifactVisibilityUpdateVisibility.valueOf(audience.name),
                                 ),
                             )
                         }
-                        .fileLink(source)
+                        .fileLink()
                 }
             is ArtifactLinkSource.Website -> {
                 val siteId = checkNotNull(confirmed.siteId)
                 withPolicy("site:$siteId") {
                     val status = api.write {
-                        updateArtifactSiteVisibility(
+                        updateArtifactVisibility(
                             it,
-                            siteId,
-                            ArtifactSiteVisibilityUpdate(
-                                ArtifactSiteVisibilityUpdateVisibility.valueOf(audience.name),
-                                confirmed.revision,
+                            confirmed.artifactId ?: siteId,
+                            ArtifactVisibilityUpdate(
+                                ArtifactVisibilityUpdateVisibility.valueOf(audience.name),
                             ),
                         )
                     }
-                    status.link(
+                    status.siteLink(
                         siteId,
                         confirmed.address,
                         confirmed.version,
@@ -185,67 +165,63 @@ internal class ArtifactLinkAccess(private val api: ApiClient) {
             return ArtifactLink(address, ArtifactAudience.PUBLIC, version = version)
         }
         return withPolicy("site:${site.siteId}") {
-            val status = api.read { artifactSiteVisibility(it, site.siteId) }
-            status.link(site.siteId, address, version, api.organization().name)
+            val status = api.read { artifactVisibility(it, source.artifactId ?: site.siteId) }
+            status.siteLink(site.siteId, address, version, api.organization().name)
         }
     }
 
-    private suspend fun legacyDeploymentLink(id: String): ArtifactLink {
-        val status = api.read {
-            artifactShareStatus(
-                it,
-                ArtifactShareTargetVariant2(ArtifactShareTargetVariant2Kind.HTML, id),
-            )
-        }
-        val matches =
-            (status.selectedTarget as? ArtifactShareStatusSelectedTargetVariant2)?.id == id
-        return status.link(
-            matches,
-            ArtifactLinkVersion.Deployment(status.candidateVersion?.toInt()),
-            canManage = false,
-        )
-    }
+    private suspend fun legacyDeploymentLink(id: String): ArtifactLink =
+        api.read { artifactVisibility(it, id) }.legacyDeploymentLink()
 }
 
 private val legacyDeploymentHost =
     Regex("dpl-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})")
 
-private fun ArtifactShareStatus.fileLink(source: ArtifactLinkSource.File): ArtifactLink {
-    val matches = (selectedTarget as? ArtifactShareStatusSelectedTargetVariant1)?.id == source.id
-    return link(matches, version = null, canManage = true)
-}
-
-private fun ArtifactShareStatus.link(
-    selectedTargetMatches: Boolean,
-    version: ArtifactLinkVersion?,
-    canManage: Boolean,
-): ArtifactLink {
-    val confirmed =
-        if (selectedTargetMatches) ArtifactAudience.valueOf(audience.name)
-        else ArtifactAudience.PRIVATE
+private fun ArtifactVisibility.fileLink(): ArtifactLink {
+    val confirmed = ArtifactAudience.valueOf(visibility.name)
     val address =
-        (if (confirmed == ArtifactAudience.PRIVATE) ownerUrl else url)?.let(::artifactHttpsUrl)
+        (if (confirmed == ArtifactAudience.PRIVATE) ownerUrl else shareUrl)?.let(::artifactHttpsUrl)
             ?: throw ApiFailure.IncompatibleResponse()
-    return ArtifactLink(address, confirmed, organization.name, version, canManage)
+    return ArtifactLink(
+        address,
+        confirmed,
+        organization.name,
+        version = null,
+        canManage = true,
+        artifactId = artifactId,
+    )
 }
 
-private fun ArtifactSiteVisibility.link(
-    expectedSiteId: String,
+private fun ArtifactVisibility.legacyDeploymentLink(): ArtifactLink {
+    val confirmed = ArtifactAudience.valueOf(visibility.name)
+    val address =
+        (if (confirmed == ArtifactAudience.PRIVATE) ownerUrl else shareUrl)?.let(::artifactHttpsUrl)
+            ?: throw ApiFailure.IncompatibleResponse()
+    return ArtifactLink(
+        address,
+        confirmed,
+        organization.name,
+        ArtifactLinkVersion.Deployment(deploymentVersion?.toInt()),
+        canManage = false,
+        artifactId = artifactId,
+    )
+}
+
+private fun ArtifactVisibility.siteLink(
+    siteId: String,
     address: HttpUrl,
     version: ArtifactLinkVersion?,
     workspace: String?,
-): ArtifactLink {
-    if (siteId != expectedSiteId) throw ApiFailure.IncompatibleResponse()
-    return ArtifactLink(
+): ArtifactLink =
+    ArtifactLink(
         address,
         ArtifactAudience.valueOf(visibility.name),
-        workspace,
+        workspace ?: organization.name,
         version,
         canManage = true,
         siteId = siteId,
-        revision = revision,
+        artifactId = artifactId,
     )
-}
 
 internal enum class ArtifactLinkPhase {
     Idle,

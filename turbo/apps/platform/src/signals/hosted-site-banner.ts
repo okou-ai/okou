@@ -1,7 +1,5 @@
 import { command, computed, state, type Computed } from "ccstate";
-import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/client/host";
-import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
@@ -9,9 +7,7 @@ import { apiClient$ } from "./api-client.ts";
 import { passArtifactPaywall$ } from "./okou-page/artifact-paywall.ts";
 
 export function createHostedSiteBannerSignals(
-  site$: Computed<
-    Promise<zInfer<typeof hostedSiteVisibilityStatusSchema> | null>
-  >,
+  site$: Computed<Promise<{ readonly siteId: string } | null>>,
 ) {
   const reload$ = state(0);
   const banner$ = computed(async (get) => {

@@ -15,6 +15,10 @@ export const clientDescriptorManifest = [
     contracts: ["antigravityPersonalSubscriptionContract"],
   },
   {
+    module: "artifact-access",
+    contracts: ["artifactAccessContract"],
+  },
+  {
     module: "artifact-catalog",
     contracts: ["artifactCatalogContract"],
   },

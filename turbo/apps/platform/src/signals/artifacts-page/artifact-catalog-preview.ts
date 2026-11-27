@@ -46,6 +46,7 @@ export function createCatalogPreviewSessionsRefresh$(
       "sidebar",
       {
         url,
+        artifactId: detail.id,
         deletionIdentity: { artifactId: detail.id },
         fileId: "file" in detail ? detail.file.id : undefined,
       },

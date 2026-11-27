@@ -1,8 +1,8 @@
 // @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
 import { test, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -61,21 +61,24 @@ test("artifact-action-telemetry-001 catalog archive downloads report their disti
         });
   });
   serveReference(context, zip);
-  context.mocks.api(artifactSharesContract.status, ({ body, respond }) => {
-    return body.id === zip.id
-      ? respond(200, {
-          ownerUrl,
-          shareId: null,
-          audience: "private",
-          organization: { id: "org_default", name: "Field team" },
-          selectedTarget: null,
-          selectedVersion: null,
-          candidateVersion: null,
-          url: null,
-          shortUrl: null,
-        })
-      : respond(404, { error: { code: "NOT_FOUND", message: "Unknown file" } });
-  });
+  context.mocks.api(
+    artifactAccessContract.getVisibility,
+    ({ params, respond }) => {
+      return params.artifactId === item.id
+        ? respond(200, {
+            artifactId: item.id,
+            kind: "file",
+            visibility: "private",
+            ownerUrl,
+            shareUrl: null,
+            shortUrl: null,
+            organization: { id: "org_default", name: "Field team" },
+          })
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Unknown file" },
+          });
+    },
+  );
   await setupPage({
     context,
     host: "app.okou.ai",

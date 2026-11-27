@@ -20,7 +20,6 @@ import {
 } from "../../../test-fixtures/ably-realtime";
 
 import {
-  AVAILABILITY_URL,
   GENERATION_ARTIFACT_ID,
   serveGenerationVisibility,
 } from "./artifact-visibility-fixtures";
@@ -175,13 +174,22 @@ describe("okou generate image command", () => {
   );
 
   it("rejects explicit visibility before billing when private artifacts are disabled", async () => {
-    let generated = false;
+    let publicFallbackCalled = false;
     server.use(
-      http.get(AVAILABILITY_URL, () => {
-        return HttpResponse.json({ enabled: false });
-      }),
       http.post(`${IMAGE_URL}/private`, () => {
-        generated = true;
+        return HttpResponse.json(
+          {
+            error: {
+              code: "FORBIDDEN",
+              message:
+                "Private artifact creation is unavailable for this request",
+            },
+          },
+          { status: 403 },
+        );
+      }),
+      http.post(IMAGE_URL, () => {
+        publicFallbackCalled = true;
         return acceptImage();
       }),
     );
@@ -197,9 +205,9 @@ describe("okou generate image command", () => {
         "--wait",
       ]),
     ).rejects.toThrow("process.exit called");
-    expect(generated).toBe(false);
+    expect(publicFallbackCalled).toBe(false);
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "Artifact visibility is unavailable on this API",
+      "Private artifact creation is unavailable",
     );
   });
 

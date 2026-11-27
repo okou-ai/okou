@@ -18,6 +18,17 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "artifact-access",
+    contracts: ["artifactAccessContract"],
+    bindings: [
+      {
+        name: "artifactShareEmailSchema",
+        source: "validators/artifact-access",
+        imported: "artifactShareEmailSchema",
+      },
+    ],
+  },
+  {
     module: "artifact-catalog",
     contracts: ["artifactCatalogContract"],
     bindings: [
