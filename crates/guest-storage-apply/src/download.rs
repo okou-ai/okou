@@ -930,10 +930,7 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
     }
 
     let source = match task.inline_archive {
-        Some(archive) => Ok(source::ArchiveSource::local(
-            archive,
-            Some(archive.len() as u64),
-        )),
+        Some(archive) => Ok(source::ArchiveSource::inline(archive)),
         None => source::open_archive(
             &task.url,
             attempt_metrics.as_ref(),
