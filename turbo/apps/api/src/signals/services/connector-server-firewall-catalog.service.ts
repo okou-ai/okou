@@ -7,7 +7,7 @@ import {
 } from "@okouai/connectors/connector-auth-method";
 import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
 import type { FirewallPermissionPolicyDefaultMetadata } from "@okouai/connectors/firewall-metadata/policy";
-import { projectRunnerRuntimeFirewall } from "@okouai/connectors/firewall-metadata/runner-runtime-catalog";
+import { projectRuntimeFirewall } from "@okouai/connectors/firewall-metadata/runner-runtime-catalog";
 import {
   extractSecretNamesFromApis,
   normalizeFirewallFixedHost,
@@ -692,7 +692,7 @@ export function createAcceptedConnectorServerFirewallCatalogFromConnectors(args:
     getRuntimeFirewall: (connectorSlug) => {
       const entry = entries.get(connectorSlug);
       return entry
-        ? projectRunnerRuntimeFirewall(acceptedEntryFirewall(entry).firewall)
+        ? projectRuntimeFirewall(acceptedEntryFirewall(entry).firewall)
         : null;
     },
     getExecutionMetadata: (connectorSlug) => {

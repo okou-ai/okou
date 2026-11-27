@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { canonicalJsonValue } from "../connector-catalog/entry-payload";
 
-import type { Firewall, FirewallBaseHostPolicy } from "../firewall-contracts";
+import type {
+  Firewall,
+  FirewallBaseHostPolicy,
+  RunnerBuiltinFirewall,
+} from "../firewall-contracts";
 
 interface RunnerRuntimePermissionSource {
   readonly name: string;
@@ -25,21 +29,18 @@ export interface RunnerRuntimeFirewallCatalog {
   readonly catalogDigest: string;
   readonly catalogVersion: string;
   readonly names: readonly string[];
-  readonly firewalls: Record<string, Firewall>;
+  readonly firewalls: Record<string, RunnerBuiltinFirewall>;
 }
 
 function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-export function projectRunnerRuntimeFirewall(
-  firewall: RunnerRuntimeFirewallSource,
+export function projectRuntimeFirewall(
+  firewall: Pick<RunnerRuntimeFirewallSource, "name" | "apis">,
 ): Firewall {
   return {
     name: firewall.name,
-    ...(firewall.placeholders === undefined
-      ? {}
-      : { placeholders: { ...firewall.placeholders } }),
     apis: firewall.apis.map((api) => {
       return {
         base: api.base,
@@ -56,8 +57,17 @@ export function projectRunnerRuntimeFirewall(
   };
 }
 
+export function projectRunnerRuntimeFirewall(
+  firewall: RunnerRuntimeFirewallSource,
+): RunnerBuiltinFirewall {
+  const projected = projectRuntimeFirewall(firewall);
+  return firewall.placeholders === undefined
+    ? projected
+    : { ...projected, placeholders: { ...firewall.placeholders } };
+}
+
 export function createRunnerRuntimeFirewallCatalog(
-  firewalls: readonly Firewall[],
+  firewalls: readonly RunnerBuiltinFirewall[],
 ): RunnerRuntimeFirewallCatalog {
   const names = new Set<string>();
   for (const firewall of firewalls) {

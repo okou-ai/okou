@@ -672,7 +672,6 @@ async fn codex_catalog_prefetch_skips_ineligible_runs() {
     matching_inline_firewall.firewalls = Some(vec![FirewallEntry::Inline {
         firewall: Firewall {
             name: "model-provider:codex-oauth-token".into(),
-            placeholders: None,
             apis: Vec::new(),
         },
         custom_connector_id: None,

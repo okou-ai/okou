@@ -118,7 +118,6 @@ fn custom_runtime_firewall_with_source(
     FirewallEntry::Inline {
         firewall: Firewall {
             name: format!("custom_connector_{}", custom_connector_id.replace('-', "")),
-            placeholders: None,
             apis: vec![FirewallApi {
                 network_intent: None,
                 id: "custom-api:0".to_string(),

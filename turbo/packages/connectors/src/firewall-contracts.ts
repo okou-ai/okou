@@ -310,7 +310,6 @@ export const firewallApiSchema = object({
 export const firewallSchema = object({
   name: string(),
   apis: array(firewallApiSchema),
-  placeholders: record(string(), string()).optional(),
 });
 
 export const firewallsSchema = array(firewallSchema);
@@ -355,6 +354,11 @@ export const firewallConfigSchema = object({
   ),
   placeholders: record(string(), string()).optional(),
 });
+
+export const runnerBuiltinFirewallSchema = firewallSchema.extend({
+  placeholders: firewallConfigSchema.shape.placeholders,
+});
+export type RunnerBuiltinFirewall = zInfer<typeof runnerBuiltinFirewallSchema>;
 
 export const firewallPolicyValueSchema = zEnum(["allow", "deny", "ask"]);
 export type FirewallPolicyValue = zInfer<typeof firewallPolicyValueSchema>;

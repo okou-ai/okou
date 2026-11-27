@@ -194,16 +194,22 @@ pub enum FirewallEntry {
     },
 }
 
-/// A firewall definition shared by inline execution entries and builtin catalogs.
+/// A firewall definition carried by an inline execution entry.
 ///
 /// `name` is the canonical identifier and is also used as the `networkPolicies`
-/// map key. For builtin catalogs, changes to base URL, auth, `hostPolicy`,
-/// permission, or serialized-shape semantics must remain compatible with the
-/// TypeScript catalog producer and projection and the Python cache and runtime
-/// validators. Detailed validity rules belong in executable validators and
-/// shared behavioral contracts.
+/// map key.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Firewall {
+    pub name: String,
+    pub apis: Vec<FirewallApi>,
+}
+
+/// An unresolved builtin firewall exchanged by the API and Runner catalog cache.
+///
+/// The serialized shape and validation rules are shared with the TypeScript
+/// catalog producer and the Python cache and runtime validators.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BuiltinFirewall {
     pub name: String,
     pub apis: Vec<FirewallApi>,
     /// Declared synthetic markers carried with the firewall definition.
@@ -211,7 +217,7 @@ pub struct Firewall {
     pub placeholders: Option<BTreeMap<String, String>>,
 }
 
-impl Firewall {
+impl BuiltinFirewall {
     /// Validates an unresolved builtin firewall before cache publication.
     ///
     /// This gate checks the structural and syntax invariants available before
@@ -223,16 +229,18 @@ impl Firewall {
     /// credentialed-destination and host-policy checks, matcher compilation,
     /// and request-time enforcement.
     pub fn validate_for_cache(&self) -> Result<(), String> {
-        self.validate_shape()?;
+        validate_firewall_shape(&self.name, &self.apis)?;
         for (index, api) in self.apis.iter().enumerate() {
             api.validate_for_cache()
                 .map_err(|e| format!("firewall {} apis[{index}]: {e}", self.name))?;
         }
         Ok(())
     }
+}
 
+impl Firewall {
     pub fn validate_for_connector_runtime(&self) -> Result<(), String> {
-        self.validate_shape()?;
+        validate_firewall_shape(&self.name, &self.apis)?;
         let mut api_ids = HashSet::new();
         for (index, api) in self.apis.iter().enumerate() {
             api.validate_for_connector_runtime()
@@ -246,16 +254,16 @@ impl Firewall {
         }
         Ok(())
     }
+}
 
-    fn validate_shape(&self) -> Result<(), String> {
-        if self.name.is_empty() {
-            return Err("firewall name must be non-empty".to_string());
-        }
-        if self.apis.is_empty() {
-            return Err(format!("firewall {} must have at least one api", self.name));
-        }
-        Ok(())
+fn validate_firewall_shape(name: &str, apis: &[FirewallApi]) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("firewall name must be non-empty".to_string());
     }
+    if apis.is_empty() {
+        return Err(format!("firewall {name} must have at least one api"));
+    }
+    Ok(())
 }
 
 /// A single firewall API entry with base URL and auth headers for proxy-side matching.

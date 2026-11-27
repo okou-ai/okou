@@ -3,7 +3,7 @@ use serde_json::json;
 
 #[test]
 fn firewall_validation_rejects_aws_rule_without_aws_auth() {
-    let firewall: Firewall = serde_json::from_value(serde_json::json!({
+    let firewall: BuiltinFirewall = serde_json::from_value(serde_json::json!({
         "name": "aws",
         "apis": [{
             "base": "https://ec2.us-east-1.amazonaws.com",
@@ -167,7 +167,6 @@ fn execution_context_rejects_unknown_firewall_kind() {
 fn firewall_round_trip() {
     let fw = Firewall {
         name: "github".into(),
-        placeholders: None,
         apis: vec![FirewallApi {
             network_intent: None,
             id: "api-1".into(),
@@ -220,16 +219,18 @@ fn custom_network_intent_is_valid_only_for_custom_execution() {
     });
     let direct: Firewall = serde_json::from_value(value.clone()).unwrap();
     direct.validate_for_connector_runtime().unwrap();
-    assert!(direct.validate_for_cache().is_err());
+    let builtin_direct: BuiltinFirewall = serde_json::from_value(value.clone()).unwrap();
+    assert!(builtin_direct.validate_for_cache().is_err());
     assert_eq!(serde_json::to_value(&direct).unwrap(), value);
 
     let mut bound = value.clone();
     bound["apis"][0]["networkIntent"] = serde_json::json!({
         "kind": "cloudflare_access", "configId": "5e7fd365-c432-41b2-a780-cfa467655b44", "generation": 1
     });
-    let prepared: Firewall = serde_json::from_value(bound).unwrap();
+    let prepared: Firewall = serde_json::from_value(bound.clone()).unwrap();
     prepared.validate_for_connector_runtime().unwrap();
-    assert!(prepared.validate_for_cache().is_err());
+    let builtin_prepared: BuiltinFirewall = serde_json::from_value(bound).unwrap();
+    assert!(builtin_prepared.validate_for_cache().is_err());
 
     let mut unknown = value;
     unknown["apis"][0]["networkIntent"]["kind"] = "unknown".into();
@@ -261,7 +262,7 @@ fn firewall_preserves_host_policy_and_aws_sigv4() {
         }]
     });
 
-    let firewall: Firewall = serde_json::from_value(json).unwrap();
+    let firewall: BuiltinFirewall = serde_json::from_value(json).unwrap();
     firewall.validate_for_cache().unwrap();
     let round_trip = serde_json::to_value(&firewall).unwrap();
 
@@ -277,7 +278,7 @@ fn firewall_preserves_host_policy_and_aws_sigv4() {
 
 #[test]
 fn firewall_validation_rejects_aws_sigv4_with_headers() {
-    let firewall: Firewall = serde_json::from_value(serde_json::json!({
+    let firewall: BuiltinFirewall = serde_json::from_value(serde_json::json!({
         "name": "aws",
         "apis": [{
             "base": "https://s3.amazonaws.com",
@@ -302,7 +303,7 @@ fn firewall_validation_rejects_aws_sigv4_with_headers() {
 
 #[test]
 fn firewall_validation_rejects_empty_provider_owned_host_policy() {
-    let firewall: Firewall = serde_json::from_value(serde_json::json!({
+    let firewall: BuiltinFirewall = serde_json::from_value(serde_json::json!({
         "name": "example",
         "apis": [{
             "base": "https://api.example.com",
@@ -322,7 +323,7 @@ fn firewall_validation_rejects_empty_provider_owned_host_policy() {
 
 #[test]
 fn firewall_validation_rejects_empty_apis() {
-    let firewall: Firewall = serde_json::from_value(serde_json::json!({
+    let firewall: BuiltinFirewall = serde_json::from_value(serde_json::json!({
         "name": "empty",
         "apis": []
     }))

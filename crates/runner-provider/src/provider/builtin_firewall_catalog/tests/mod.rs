@@ -483,7 +483,7 @@ fn catalog(name: &str) -> BuiltinFirewallCatalog {
         catalog_version: "test-catalog".to_string(),
         firewalls: BTreeMap::from([(
             name.to_string(),
-            Firewall {
+            BuiltinFirewall {
                 name: name.to_string(),
                 placeholders: None,
                 apis: vec![FirewallApi {

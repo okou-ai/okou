@@ -260,7 +260,6 @@ async fn real_python_registry_owner_accepts_rust_writer_source_bound_inline_buil
     let firewalls = [FirewallEntry::Inline {
         firewall: Firewall {
             name: "builtin-mcp".to_owned(),
-            placeholders: None,
             apis: vec![FirewallApi {
                 network_intent: None,
                 id: "builtin-mcp:0".to_owned(),
