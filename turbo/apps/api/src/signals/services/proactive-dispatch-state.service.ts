@@ -14,12 +14,12 @@ import { writeDb$ } from "../external/db";
 import {
   hourlySuggestionsCron,
   morningBriefCronExpression,
-} from "./official-workflow-owner-schedule";
+} from "./proactive-cadence";
 import { proactiveNightlyCron } from "./proactive-nightly-schedule";
 import {
   loadProactivePreferences$,
-  type ProactiveWorkflowOwner,
-} from "./proactive-workflows-eligibility.service";
+  type ProactiveScheduleOwner,
+} from "./proactive-member-preferences.service";
 import { calculateNextRun } from "./time-automation";
 
 const cadence = Object.freeze({
@@ -29,7 +29,7 @@ const cadence = Object.freeze({
 });
 
 export function nextProactiveSlot(
-  owner: ProactiveWorkflowOwner,
+  owner: ProactiveScheduleOwner,
   task: ProactiveTask,
   timezone: string | null,
   from: Date,
@@ -40,7 +40,7 @@ export function nextProactiveSlot(
     : null;
 }
 
-export function scheduleOwner(owner: ProactiveWorkflowOwner) {
+export function scheduleOwner(owner: ProactiveScheduleOwner) {
   return and(
     eq(proactiveSchedules.orgId, owner.orgId),
     eq(proactiveSchedules.userId, owner.userId),
@@ -49,7 +49,7 @@ export function scheduleOwner(owner: ProactiveWorkflowOwner) {
 
 /** A repeated choice preserves pauses, outstanding obligations and the original cursor. */
 interface SchedulePreference {
-  readonly owner: ProactiveWorkflowOwner;
+  readonly owner: ProactiveScheduleOwner;
   readonly tasks: readonly ProactiveTask[];
   readonly enabled: boolean;
   readonly timezone: string | null;
@@ -114,11 +114,32 @@ export const setStandalonePreferences$ = command(
   },
 );
 
+/** A timezone change updates both schedules using the member's saved Suggestions choice. */
+export const syncSuggestionSchedules$ = command(
+  async ({ set }, owner: ProactiveScheduleOwner, signal: AbortSignal) => {
+    const { suggestions, timezone } = await set(
+      loadProactivePreferences$,
+      owner,
+      signal,
+    );
+    await set(
+      setStandalonePreferences$,
+      {
+        owner,
+        tasks: ["suggestions", "learning"],
+        enabled: suggestions,
+        timezone,
+      },
+      signal,
+    );
+  },
+);
+
 /** The preference, both schedule revisions and optional Feed choice change in one commit. */
 export const saveStandaloneSuggestions$ = command(
   async (
     { set },
-    owner: ProactiveWorkflowOwner,
+    owner: ProactiveScheduleOwner,
     enabled: boolean,
     withFeed: boolean,
     signal: AbortSignal,
@@ -157,7 +178,7 @@ export const saveStandaloneSuggestions$ = command(
 export const standalonePreference$ = command(
   async (
     { set },
-    owner: ProactiveWorkflowOwner,
+    owner: ProactiveScheduleOwner,
     feature: "morning-brief" | "suggestions",
     signal: AbortSignal,
   ): Promise<ProactivePreference> => {

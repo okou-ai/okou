@@ -1,5 +1,5 @@
 import { rootSignal$ } from "../context/root";
-import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
+import { platformPaidRunCreditAccess$ } from "./platform-paid-run.service";
 import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
@@ -590,7 +590,7 @@ export const resolveBillableFirewallCacheExpiry$ = command(
       return insufficientCredits();
     }
     if (
-      (await set(officialWorkflowCreditAccess$, params.auth, signal)) === "free"
+      (await set(platformPaidRunCreditAccess$, params.auth, signal)) === "free"
     ) {
       return {
         expiresAt:

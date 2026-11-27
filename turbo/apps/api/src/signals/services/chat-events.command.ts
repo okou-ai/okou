@@ -159,9 +159,9 @@ import {
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import {
-  OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
-  isOfficialWorkflowThread$,
-} from "./official-workflow-policy.service";
+  PLATFORM_TASK_THREAD_READ_ONLY_MESSAGE,
+  isPlatformTaskThread$,
+} from "./platform-task-thread.service";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import type { ExistingSendThreadRow } from "./execution-org-member-context.signals";
@@ -2593,8 +2593,8 @@ const prepareNormalSendAuthorization$ = command(
       }
       const resolvedSource = await chatRunSource;
       signal.throwIfAborted();
-      if (existing?.isOfficialWorkflowThread) {
-        return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
+      if (existing?.isPlatformTaskThread) {
+        return forbidden(PLATFORM_TASK_THREAD_READ_ONLY_MESSAGE);
       }
       if (!resolvedSource.ok) {
         throw resolvedSource.error;
@@ -3557,10 +3557,8 @@ const assertOwnedThread$ = command(
     if (!thread) {
       return notFound("Chat thread not found");
     }
-    if (
-      await set(isOfficialWorkflowThread$, { threadId, orgId, userId }, signal)
-    ) {
-      return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
+    if (await set(isPlatformTaskThread$, { threadId, orgId, userId }, signal)) {
+      return forbidden(PLATFORM_TASK_THREAD_READ_ONLY_MESSAGE);
     }
     return undefined;
   },

@@ -1,8 +1,5 @@
 import { db$, writeDb$ } from "../external/db";
-import {
-  workflows,
-  workflowUserAutomationThreads,
-} from "@okouai/db/schema/workflow";
+import { isPlatformTaskThread$ } from "./platform-task-thread.service";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { badRequestMessage } from "../../lib/error";
 import {
@@ -29,7 +26,7 @@ import type {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { MODEL_FIRST_SELECTION_PROVIDER_ID } from "@okouai/api-contracts/validators/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   metadataCommitWithEventsSql,
   metadataModelSettingsPatchSql,
@@ -381,27 +378,20 @@ const commitMetadata$ = command(
       args.patch.model !== null &&
       args.patch.model !== AUTO_SELECTED_MODEL
     ) {
-      const [official] = await readDb
-        .select({ id: workflows.id })
-        .from(workflowUserAutomationThreads)
-        .innerJoin(
-          workflows,
-          eq(workflows.id, workflowUserAutomationThreads.workflowId),
+      if (
+        await set(
+          isPlatformTaskThread$,
+          {
+            threadId: args.threadId,
+            orgId: args.principal.orgId,
+            userId: args.principal.userId,
+          },
+          signal,
         )
-        .where(
-          and(
-            eq(workflowUserAutomationThreads.chatThreadId, args.threadId),
-            eq(workflowUserAutomationThreads.userId, args.principal.userId),
-            eq(workflowUserAutomationThreads.orgId, args.principal.orgId),
-            isNotNull(workflows.officialDefinitionName),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (official) {
+      ) {
         return {
           kind: "response",
-          response: badRequestMessage("Official Workflow threads use Auto"),
+          response: badRequestMessage("Platform task threads use Auto"),
         };
       }
     }

@@ -1,6 +1,6 @@
 import { settle } from "../utils";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
+import { platformPaidRunCreditAccess$ } from "./platform-paid-run.service";
 import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { Buffer } from "node:buffer";
 
@@ -1975,7 +1975,7 @@ export const storeGeneratedImage$ = command(
     signal.throwIfAborted();
 
     const creditAccess = await set(
-      officialWorkflowCreditAccess$,
+      platformPaidRunCreditAccess$,
       {
         orgId: params.orgId,
         userId: params.userId,

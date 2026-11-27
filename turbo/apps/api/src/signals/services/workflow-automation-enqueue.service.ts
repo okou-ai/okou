@@ -69,11 +69,6 @@ export interface RunWorkflowAutomationNowArgs {
    * Plain source facts are never serialized into the durable queue payload.
    */
   readonly sourcePlan?: WorkflowQueueSourcePlan;
-  /**
-   * Consumes the due schedule occurrence in the same transaction as the queue
-   * event. Only journaled legacy Morning Brief ticks pass one.
-   */
-  readonly scheduleClaim?: WorkflowScheduleClaimPlan;
   /** The observed ordinary cron or loop slot to consume with its queue event. */
   readonly recurringScheduleClaim?: WorkflowRecurringScheduleClaim;
   readonly timing?: ApiDispatchTimingCollector;
@@ -108,21 +103,11 @@ export function scheduleTriggerContext(args: {
   };
 }
 
-export interface WorkflowScheduleClaimPlan {
-  readonly claimId: string;
-  readonly automationId: string;
-  readonly orgId: string;
-  readonly ownerUserId: string;
-  readonly workflowId: string;
+export interface WorkflowRecurringScheduleClaim {
   readonly scheduledAnchorAt: Date;
   readonly claimedAt: Date;
   readonly automationSnapshot: WorkflowAutomationSnapshot | undefined;
 }
-
-export type WorkflowRecurringScheduleClaim = Pick<
-  WorkflowScheduleClaimPlan,
-  "scheduledAnchorAt" | "claimedAt" | "automationSnapshot"
->;
 
 export class ScheduleOccurrenceUnavailableError extends Error {
   constructor() {

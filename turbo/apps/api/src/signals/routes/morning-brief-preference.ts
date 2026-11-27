@@ -5,12 +5,11 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { reconcileExistingMorningBrief$ } from "../services/morning-brief-recovery.service";
+import { standalonePreference$ } from "../services/proactive-dispatch-state.service";
 import { proactivePreferenceAccess$ } from "../services/proactive-preference-access";
 import {
-  morningBriefPreference$,
+  reconcileExistingMorningBrief$,
   updateMorningBriefPreference$,
-  type MorningBriefPreferenceFailure,
 } from "../services/morning-brief-preference.service";
 
 const morningBriefPreferenceReadAuth = {
@@ -25,17 +24,10 @@ const morningBriefPreferenceWriteAuth = {
   requiredCapability: "suggestion:write",
 } as const;
 
-function memberFromAuth(auth: {
-  readonly userId: string;
-  readonly orgRole?: string | null;
-}) {
-  return { userId: auth.userId, role: auth.orgRole ?? "member" };
-}
-
-function failureResponse(failure: MorningBriefPreferenceFailure) {
+function preferenceConflict(message: string) {
   return {
-    status: failure.kind === "bad-request" ? (400 as const) : (409 as const),
-    body: { error: { code: failure.code, message: failure.message } },
+    status: 409 as const,
+    body: { error: { code: "MORNING_BRIEF_STATE_CONFLICT" as const, message } },
   };
 }
 
@@ -45,20 +37,11 @@ const getMorningBriefPreferenceInner$ = command(
     if (denied) {
       return denied;
     }
-    const auth = get(organizationAuthContext$);
-    signal.throwIfAborted();
-    const result = await set(
-      morningBriefPreference$,
-      {
-        orgId: auth.orgId,
-        member: memberFromAuth(auth),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return result.kind === "ok"
-      ? { status: 200 as const, body: result.preference }
-      : failureResponse(result);
+    const owner = get(organizationAuthContext$);
+    return {
+      status: 200 as const,
+      body: await set(standalonePreference$, owner, "morning-brief", signal),
+    };
   },
 );
 
@@ -69,22 +52,17 @@ const retryMorningBriefPreferenceInner$ = command(
     if (denied) {
       return denied;
     }
-    const auth = get(organizationAuthContext$);
-    const reconciled = await set(
-      reconcileExistingMorningBrief$,
-      { orgId: auth.orgId, member: memberFromAuth(auth) },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (reconciled === "conflict" || reconciled === "ineligible") {
-      return failureResponse({
-        kind: "conflict",
-        code: "MORNING_BRIEF_STATE_CONFLICT",
-        message:
-          "Morning Brief could not be reconciled. Retry after configuration is available.",
-      });
+    const owner = get(organizationAuthContext$);
+    const reconciled = await set(reconcileExistingMorningBrief$, owner, signal);
+    if (reconciled === "conflict") {
+      return preferenceConflict(
+        "Morning Brief could not be reconciled. Retry after configuration is available.",
+      );
     }
-    return await set(getMorningBriefPreferenceInner$, signal);
+    return {
+      status: 200 as const,
+      body: await set(standalonePreference$, owner, "morning-brief", signal),
+    };
   },
 );
 
@@ -101,19 +79,21 @@ const updateMorningBriefPreferenceInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const result = await set(
+    const saved = await set(
       updateMorningBriefPreference$,
-      {
-        orgId: auth.orgId,
-        member: memberFromAuth(auth),
-        enabled: body.data.enabled,
-      },
+      auth,
+      body.data.enabled,
       signal,
     );
-    signal.throwIfAborted();
-    return result.kind === "ok"
-      ? { status: 200 as const, body: result.preference }
-      : failureResponse(result);
+    if (!saved) {
+      return preferenceConflict(
+        "Morning Brief changed concurrently. Retry the preference update.",
+      );
+    }
+    return {
+      status: 200 as const,
+      body: await set(standalonePreference$, auth, "morning-brief", signal),
+    };
   },
 );
 

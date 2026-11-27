@@ -1,3 +1,4 @@
+import { createProactiveCronApi } from "./helpers/proactive-cron";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { runDataRouterRequestContract } from "@okouai/api-contracts/contracts/data-router";
@@ -40,7 +41,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { feedRoutes } from "../feed";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -71,6 +72,7 @@ const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
+const cron = Object.freeze({ authorization: "Bearer test-cron-secret" });
 
 function authHeaders(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -293,7 +295,7 @@ describe("Daily profile learning through Suggestions", () => {
 });
 
 describe("Proactive Suggestions preference", () => {
-  it("recovers an interrupted opt-in and stops checking membership once both schedules are installed", async () => {
+  it("saves both Suggestions schedules without installing a Workflow or involving the automation cron", async () => {
     const app = await setupApp({
       context,
       isolatePg: true,
@@ -305,70 +307,31 @@ describe("Proactive Suggestions preference", () => {
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor, { timezone: "UTC" });
     const headers = authHeaders(actor);
-    const preference = app(proactiveSuggestionsContract);
-    const membership =
-      context.mocks.clerk.organizations.getOrganizationMembershipList;
-    membership.mockRejectedValueOnce(
-      new Error("Membership service temporarily unavailable"),
-    );
-    const pending = await accept(
-      preference.update({ headers, body: { enabled: true } }),
+    const settings = app(proactiveSuggestionsContract);
+    const result = await accept(
+      settings.update({ headers, body: { enabled: true } }),
       [200],
     );
-    expect(pending.body).toMatchObject({ enabled: true, status: "error" });
-
-    const shard =
-      createHash("sha256")
-        .update(`${actor.orgId}/${actor.userId}`)
-        .digest()
-        .readUInt32BE() % 60;
-    // Both ticks are in the owner's shard. The new hourly schedule is not due until the next hour.
-    const tickTime = Date.UTC(2030, 0, 2, 12, shard, 5);
-    async function tick(at: number) {
-      mockNow(at);
-      await accept(
-        app(cronExecuteWorkflowAutomationsContract).execute({
-          headers: { authorization: "Bearer test-cron-secret" },
-        }),
-        [200],
-      );
-      await flushWaitUntilForTest();
-    }
-    await tick(tickTime);
-    const repaired = await accept(preference.get({ headers }), [200]);
-    expect(repaired.body).toMatchObject({ enabled: true, status: "enabled" });
-    const list = await accept(
+    expect(result.body).toMatchObject({ enabled: true, status: "enabled" });
+    const tick = await accept(
+      app(cronExecuteWorkflowAutomationsContract).execute({
+        headers: { authorization: "Bearer test-cron-secret" },
+      }),
+      [200],
+    );
+    expect(tick.body).toMatchObject({ executed: 0, skipped: 0 });
+    const listed = await accept(
       workflowCollectionClient().list({ headers, query: {} }),
       [200],
     );
-    const schedules = list.body.filter((w) => {
-      return (
-        w.official?.definitionName === "agent-suggestions" ||
-        w.official?.definitionName === "proactive-learning"
-      );
-    });
-    expect(schedules).toHaveLength(2);
-    async function installations() {
-      return await Promise.all(
-        schedules.map(async ({ id }) => {
-          const detail = await accept(
-            workflowClient().get({ headers, params: { workflowId: id } }),
-            [200],
-          );
-          return { id, updatedAt: detail.body.updatedAt };
-        }),
-      );
-    }
-    const before = await installations();
-    membership.mockClear();
-    await tick(tickTime + 10_000);
-    expect(membership).not.toHaveBeenCalledWith(
-      expect.objectContaining({ organizationId: actor.orgId }),
-    );
-    await expect(installations()).resolves.toStrictEqual(before);
+    expect(
+      listed.body.filter((workflow) => {
+        return workflow.official;
+      }),
+    ).toHaveLength(0);
   });
 
-  it("clears the departed member's opt-in and preserves both paused schedules", async () => {
+  it("clears the departed member's Suggestions opt-in", async () => {
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor, { timezone: "UTC" });
     const pref = setupApp({ context, routes: proactiveSuggestionsRoutes })(
@@ -380,33 +343,6 @@ describe("Proactive Suggestions preference", () => {
       [200],
     );
     expect(enabled.body.status).toBe("enabled");
-    const listed = await accept(
-      workflowCollectionClient().list({ headers, query: {} }),
-      [200],
-    );
-    const workflows = listed.body.filter((workflow) => {
-      return (
-        workflow.official?.definitionName === "agent-suggestions" ||
-        workflow.official?.definitionName === "proactive-learning"
-      );
-    });
-    expect(workflows).toHaveLength(2);
-    const originals = await Promise.all(
-      workflows.map(async (workflow) => {
-        const response = await accept(
-          automationClient().list({
-            headers,
-            params: { workflowId: workflow.id },
-          }),
-          [200],
-        );
-        const [automation] = response.body;
-        if (!automation?.enabled) {
-          throw new Error("Expected the owner's enabled schedule");
-        }
-        return { workflowId: workflow.id, id: automation.id };
-      }),
-    );
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({
       type: "organizationMembership.deleted",
@@ -423,23 +359,6 @@ describe("Proactive Suggestions preference", () => {
       [200],
     );
     expect(preference.body).toMatchObject({ enabled: false, status: "paused" });
-    for (const original of originals) {
-      const response = await accept(
-        automationClient().list({
-          headers,
-          params: { workflowId: original.workflowId },
-        }),
-        [200],
-      );
-      expect(response.body).toMatchObject([
-        {
-          id: original.id,
-          enabled: false,
-          nextRunAt: null,
-          official: { intendedEnabled: false },
-        },
-      ]);
-    }
   });
 
   it("keeps the Suggestions choice while the member has no timezone", async () => {
@@ -483,7 +402,7 @@ describe("Proactive Suggestions preference", () => {
 });
 
 describe("Morning Brief preference", () => {
-  it("shares one schedule across simultaneous first opt-ins and later toggles", async () => {
+  it("preserves simultaneous first opt-ins and subsequent toggles without installing Morning Brief", async () => {
     const { actor } = await prepareBriefMember();
     await bdd.updateUserTimezone(actor, "Asia/Shanghai");
     const headers = authHeaders(actor);
@@ -492,41 +411,19 @@ describe("Morning Brief preference", () => {
       return accept(preferences.update({ headers, body: { enabled } }), [200]);
     };
     await Promise.all([setEnabled(true), setEnabled(true)]);
-    const installed = await listMorningBriefInstallations(actor);
-    expect(installed).toHaveLength(1);
-    const [workflow] = installed;
-    if (!workflow) {
-      throw new Error("Expected the Morning Brief installation");
-    }
-    const listSchedules = () => {
-      return accept(
-        automationClient().list({
-          headers,
-          params: { workflowId: workflow.id },
-        }),
-        [200],
-      );
-    };
-    const first = await listSchedules();
-    expect(first.body).toHaveLength(1);
-    const [schedule] = first.body;
-    if (!schedule) {
-      throw new Error("Expected the Morning Brief schedule");
-    }
-    expect(schedule).toMatchObject({
-      kind: "schedule",
-      enabled: true,
-      chatThreadId: null,
-      schedule: { type: "cron", timezone: "Asia/Shanghai" },
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+    expect(
+      (await accept(preferences.get({ headers }), [200])).body,
+    ).toMatchObject({ enabled: true, status: "enabled" });
+    expect((await setEnabled(false)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
     });
-    await setEnabled(false);
-    expect((await listSchedules()).body).toMatchObject([
-      { id: schedule.id, enabled: false },
-    ]);
-    await setEnabled(true);
-    expect((await listSchedules()).body).toMatchObject([
-      { id: schedule.id, enabled: true, chatThreadId: null },
-    ]);
+    expect((await setEnabled(true)).body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
   });
 
   it("preserves enable intent while timezone is unavailable", async () => {
@@ -538,7 +435,8 @@ describe("Morning Brief preference", () => {
     );
     expect(unavailableTimezone.body).toMatchObject({
       enabled: false,
-      unavailableReason: "missing-timezone",
+      status: "paused",
+      unavailableReason: null,
     });
     const rejectedTimezone = await accept(
       morningBriefPreferenceClient().update({
@@ -699,7 +597,6 @@ function proactiveCard() {
 }
 
 describe("Standalone proactive dispatch", () => {
-  const cron = { authorization: "Bearer test-cron-secret" };
   it("drains globally, preserves choices saved during the handoff and skips an inactive member's original slot", async () => {
     const app = await setupApp({
       context,
@@ -730,24 +627,11 @@ describe("Standalone proactive dispatch", () => {
       workflowCollectionClient().list({ headers, query: {} }),
       [200],
     );
-    const learning = installed.body.find((workflow) => {
-      return workflow.official?.definitionName === "proactive-learning";
-    });
-    if (!learning) {
-      throw new Error("Expected the original Learning installation");
-    }
-    const automations = await accept(
-      automationClient().list({ headers, params: { workflowId: learning.id } }),
-      [200],
-    );
-    const [nightly] = automations.body;
-    if (!nightly) {
-      throw new Error("Expected the original nightly schedule");
-    }
-    await accept(
-      automationClient().run({ headers, params: { id: nightly.id } }),
-      [409],
-    );
+    expect(
+      installed.body.filter((workflow) => {
+        return workflow.official;
+      }),
+    ).toHaveLength(0);
     await accept(
       client.handoff({ headers: {}, body: { action: "drain", apply: true } }),
       [401],
@@ -772,7 +656,7 @@ describe("Standalone proactive dispatch", () => {
     expect(drained.body).toMatchObject({
       phase: "draining",
       changed: true,
-      copied: 3,
+      copied: 0,
     });
     await accept(brief.update({ headers, body: { enabled: false } }), [200]);
     const early = await accept(
@@ -804,7 +688,7 @@ describe("Standalone proactive dispatch", () => {
     ).toMatchObject({ phase: "standalone", inactive: 0, enqueued: 0 });
   });
 
-  it("waits for an accepted Morning Brief, then reuses its thread and retains the delivery rights captured at the next start", async () => {
+  it("reuses the hidden thread across mornings and honors the delivery rights captured at each start", async () => {
     const app = await setupApp({
       context,
       isolatePg: true,
@@ -843,74 +727,51 @@ describe("Standalone proactive dispatch", () => {
       [200],
     );
     await accept(brief.update({ headers, body: { enabled: true } }), [200]);
-    const [workflow] = await listMorningBriefInstallations(actor);
-    if (!workflow) {
-      throw new Error("Missing original Morning Brief installation");
-    }
-    const history = async () => {
-      const reply = await accept(
-        automationClient().list({
-          headers: authHeaders(actor),
-          params: { workflowId: workflow.id },
-        }),
-        [200],
-      );
-      const [schedule] = reply.body;
-      if (!schedule) {
-        throw new Error("Missing original Morning Brief schedule");
-      }
-      return schedule;
-    };
-    const { nextRunAt } = await history();
-    if (!nextRunAt) {
-      throw new Error("Missing original Morning Brief slot");
-    }
-    clockTime = Date.parse(nextRunAt) + 1000;
+    const scheduled = createProactiveCronApi(context);
+    await scheduled.activate();
+    clockTime = Date.UTC(2030, 0, 2, 6, 59);
     mockNow(clockTime);
     await owned.run(() => {
       return runs.registerDirectRunner(owned.runnerGroup);
     });
-    await accept(
-      app(cronExecuteWorkflowAutomationsContract).execute({ headers: cron }),
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const started = await history();
-    if (!started.chatThreadId) {
-      throw new Error("Missing Morning Brief conversation");
-    }
-    const threadId = started.chatThreadId;
-    const first = await launchedAutomationRunId(actor, threadId);
-    if (!first) {
-      throw new Error("Missing active legacy Morning Brief");
-    }
-    const client = app(cronProactiveContract);
-    const tick = () => {
-      return accept(client.compare({ headers: cron }), [200]);
-    };
-    const firstTicks = await Promise.all([tick(), tick()]);
-    for (const response of firstTicks) {
-      expect(response.body).toMatchObject({ phase: "draining" });
-    }
-    clockTime += 5 * 60_000;
-    mockNow(clockTime);
-    expect((await tick()).body).toMatchObject({ phase: "draining" });
+    await expect(scheduled.dispatch()).resolves.toMatchObject({ enqueued: 1 });
+    const first = await scheduled.latestRun(actor, "Morning Brief");
     const earlier = await owned.runExecution(first);
+    const threadId = earlier.execution.platformEnvironment.OKOU_CHAT_THREAD_ID;
+    if (!threadId) {
+      throw new Error("Expected the Morning Brief thread");
+    }
+    await expect(
+      chat.readThreadMetadata(actor, threadId),
+    ).resolves.toMatchObject({ hidden: true });
+    expect(earlier.execution.piSessionId).toBe(first);
+    const modelEdit = await chat.requestUpdateThreadModelSelection(
+      actor,
+      threadId,
+      "claude-fable-5-1",
+      [400],
+    );
+    expect(modelEdit.body).toMatchObject({
+      error: { message: "Platform task threads use Auto" },
+    });
+    const firstHeaders = {
+      authorization: `Bearer ${earlier.execution.platformEnvironment.OKOU_TOKEN}`,
+    };
+    await accept(
+      app(feedContract).create({
+        headers: firstHeaders,
+        body: proactiveCard(),
+      }),
+      [403],
+    );
     await webhooks.requestAgentComplete(
       { runId: first, exitCode: 0 },
       earlier.sandboxHeaders,
       [200],
     );
     await flushWaitUntilForTest();
-    const finished = await history();
-    if (!finished.nextRunAt) {
-      throw new Error("Legacy completion must establish the final cursor");
-    }
-    const activationTicks = await Promise.all([tick(), tick()]);
-    for (const response of activationTicks) {
-      expect(response.body).toMatchObject({ phase: "standalone", enqueued: 0 });
-    }
-    clockTime = Date.parse(finished.nextRunAt) - 60_000;
+    // Enable Suggestions just before the next morning tick to capture both permissions.
+    clockTime += 24 * 60 * 60_000 - 1000;
     mockNow(clockTime);
     await accept(
       suggestions.updateWithFeed({
@@ -919,18 +780,12 @@ describe("Standalone proactive dispatch", () => {
       }),
       [200],
     );
-    clockTime += 60_000;
+    clockTime += 1000;
     mockNow(clockTime);
     await owned.run(() => {
       return runs.registerDirectRunner(owned.runnerGroup);
     });
-    const nextSlot = await tick();
-    expect(nextSlot.body).toMatchObject({ enqueued: 1 });
-    await accept(
-      app(cronCleanupSandboxesContract).cleanup({ headers: cron }),
-      [200],
-    );
-    await flushWaitUntilForTest();
+    await scheduled.dispatch();
     const second = await launchedAutomationRunId(actor, threadId);
     if (!second || second === first) {
       throw new Error(
@@ -938,6 +793,8 @@ describe("Standalone proactive dispatch", () => {
       );
     }
     const { execution, sandboxHeaders } = await owned.runExecution(second);
+    expect(execution.piSessionId).toBe(second);
+    expect(execution.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(threadId);
     const agentHeaders = {
       authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
     };
@@ -1523,14 +1380,19 @@ describe("Workflow schedule recovery", () => {
     ).body;
   }
 
-  it("completes an in-flight user schedule using its edited recurrence", async () => {
+  it("fires a user's morning-brief workflow on schedule and honors its edited recurrence", async () => {
+    const pollApp = await setupApp({
+      context,
+      isolatePg: true,
+      routes: cronExecuteWorkflowAutomationsRoutes,
+    });
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     const client = automationClient();
     const { actor } = await workflowBdd.setupWorkflowOrg({
       timezone: "UTC",
     });
     const workflowId = await workflowBdd.createWorkflow(actor, {
-      name: "edited-in-flight-schedule",
+      name: "morning-brief",
     });
     const automation = (
       await accept(
@@ -1544,13 +1406,26 @@ describe("Workflow schedule recovery", () => {
     ).body;
     const runnerGroup = await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
-    const [fired] = await Promise.all([
-      runScheduleNow(actor, automation.id),
-      runs.heartbeatRunner(runnerGroup),
-    ]);
-    const execution = await runs.executionInput(fired.runId);
-    expect(execution.cliAgentType).toBe("claude-code");
     mockNow(new Date("2030-01-01T00:10:00.000Z"));
+    await runs.registerDirectRunner(runnerGroup);
+    const poll = pollApp(cronExecuteWorkflowAutomationsContract);
+    const tick = await accept(poll.execute({ headers: cron }), [200]);
+    expect(tick.body.executed).toBe(1);
+    const active = await accept(
+      client.get({
+        headers: authHeaders(actor),
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    const runId = active.body.chatThreadId
+      ? await launchedAutomationRunId(actor, active.body.chatThreadId)
+      : undefined;
+    if (!runId) {
+      throw new Error("Expected the user's scheduled workflow Run");
+    }
+    const execution = await runs.executionInput(runId);
+    expect(execution.cliAgentType).toBe("claude-code");
     const schedule = {
       type: "cron" as const,
       cronExpression: "*/5 * * * *",
@@ -1569,7 +1444,7 @@ describe("Workflow schedule recovery", () => {
       nextRunAt: "2030-01-01T00:15:00.000Z",
     });
     mockNow(new Date("2030-01-01T00:16:00.000Z"));
-    await createChatEventsFixture(context).completeChatRunOk(fired.runId, {
+    await createChatEventsFixture(context).completeChatRunOk(runId, {
       authorization: `Bearer ${execution.sandboxToken}`,
     });
     await flushWaitUntilForTest();
@@ -1587,7 +1462,7 @@ describe("Workflow schedule recovery", () => {
     });
   });
 
-  it("stops a user-created schedule after three failed manual runs", async () => {
+  it("records manual runs for a user's proactive-learning workflow and stops it after three failures", async () => {
     const startedAt = Date.parse("2030-01-01T00:00:00.000Z");
     mockNow(startedAt);
     const client = automationClient();
@@ -1595,7 +1470,7 @@ describe("Workflow schedule recovery", () => {
       timezone: "UTC",
     });
     const workflowId = await workflowBdd.createWorkflow(actor, {
-      name: "user-managed-schedule",
+      name: "proactive-learning",
     });
     let automation = (
       await accept(
@@ -1611,9 +1486,11 @@ describe("Workflow schedule recovery", () => {
     runs.acceptStorageDownloads();
     for (let failure = 0; failure < 3; failure += 1) {
       // Each user retry has its own request time rather than replaying one click.
-      mockNow(startedAt + (failure + 1) * 60_000);
+      const firedAt = new Date(startedAt + (failure + 1) * 60_000);
+      mockNow(firedAt);
       await runs.registerDirectRunner(runnerGroup);
       automation = await failManualScheduleRun(actor, automation);
+      expect(automation.lastRunAt).toBe(firedAt.toISOString());
     }
     expect(automation).toMatchObject({ enabled: false, nextRunAt: null });
   });

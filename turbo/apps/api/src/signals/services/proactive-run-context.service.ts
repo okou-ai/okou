@@ -2,7 +2,7 @@ import {
   pgTextDecoder,
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
-import { activeOfficialScheduleOwnerQuery } from "./official-schedule-activity.service";
+import { activePlatformScheduleOwnerQuery } from "./platform-schedule-activity.service";
 import { nowDate } from "../../lib/time";
 import {
   proactiveTasks,
@@ -59,7 +59,7 @@ export function proactiveInputSql(
       AND o.chat_thread_id=${identity.chatThreadId}::uuid AND s.chat_thread_id=o.chat_thread_id
       AND o.settled_at IS NULL AND o.run_id IS NULL AND o.preference_revision=s.preference_revision
       AND s.enabled AND s.intended_enabled AND (o.task='morning-brief' OR ${suggestions})
-      AND EXISTS (${activeOfficialScheduleOwnerQuery(identity, nowDate())})
+      AND EXISTS (${activePlatformScheduleOwnerQuery(identity, nowDate())})
       AND EXISTS (SELECT 1 FROM proactive_dispatch_handoff WHERE phase='standalone')
       ${commit ? sql`AND ${suggestions}=${commit.suggestionsEnabled} AND coalesce(f.suggestions,true)=${commit.cardDeliveryEnabled} FOR UPDATE OF s,o` : sql.empty()}`;
 }
