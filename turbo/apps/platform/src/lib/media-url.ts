@@ -1,9 +1,5 @@
 /** URL shape predicates shared by markdown rendering and tree preparation. */
 
-export function isImageUrl(href: string): boolean {
-  return /\.(png|jpe?g|gif|webp|svg|bmp|avif)(?:\?|#|$)/i.test(href);
-}
-
 /**
  * Only `http:` / `https:` URLs are safe to render as `<img src>` or `<video src>`.
  * Blocks `javascript:`, `data:`, `file:`, etc. in assistant-rendered markdown.
