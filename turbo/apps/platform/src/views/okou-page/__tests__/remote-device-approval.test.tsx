@@ -4,8 +4,8 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { now } from "../../../lib/time.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { mockNow, now } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   createMessageExperienceHelpers,
@@ -296,4 +296,124 @@ test("the exact approval link opens an owner confirmation without a transcript c
   click(await findFastControl("button", "Cancel", dialog));
   expect(dialog).not.toBeInTheDocument();
   expect(window.location.search).toBe("");
+});
+
+test("the chat device panel counts effective grants, filters devices and restores focus on return", async () => {
+  enableRemoteDevices();
+  let devices = Array.from({ length: 24 }, (_, index) => {
+    return {
+      id: "b0000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
+      displayName:
+        index === 23 ? "Find this test machine" : `Build Mac ${index + 1}`,
+      accessAllowed: index < 3,
+      accessExpiresAt:
+        index === 1
+          ? new Date(now() - 60_000).toISOString()
+          : index === 2
+            ? new Date(now() + 3_600_000).toISOString()
+            : null,
+      channels: [],
+    };
+  });
+  context.mocks.api(remoteDevicesContract.list, ({ respond }) => {
+    return respond(200, { devices });
+  });
+  const saveStarted = context.mocks.deferred<void>();
+  const finishSave = context.mocks.deferred<void>();
+  context.mocks.api(
+    remoteDevicesContract.setAccess,
+    async ({ params, body, respond }) => {
+      const device = devices.find(({ id }) => {
+        return id === params.deviceId;
+      });
+      if (!device) {
+        throw new Error("Unexpected device");
+      }
+      expect(body).toStrictEqual({ mode: "always" });
+      saveStarted.resolve();
+      await finishSave.promise;
+      const updated = { ...device, accessAllowed: true, accessExpiresAt: null };
+      devices = devices.map((value) => {
+        return value.id === updated.id ? updated : value;
+      });
+      return respond(200, updated);
+    },
+  );
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [],
+  });
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+  click(await findFastControl("button", "Connectors"));
+  const entry = await findFastControl("button", /Remote devices.*2 authorized/);
+  expect(screen.queryByText("Build Mac 1")).toBeNull();
+  click(entry);
+  const back = await findFastControl("button", "Back");
+  expect(back).toHaveFocus();
+  const search = screen.getByRole("searchbox", { name: "Search devices" });
+  await fill(search, "test machine");
+  expect(screen.queryByText("Build Mac 1")).toBeNull();
+  const manage = await findFastControl("link", "Manage devices");
+  expect(manage).toHaveAttribute("href", "/connectors?scope=remote-control");
+  await fill(search, "missing");
+  expect(screen.getByText("No matching devices")).toBeInTheDocument();
+  await fill(search, "test machine");
+  const row = screen.getByText("Find this test machine").closest("li");
+  if (!row) {
+    throw new Error("Device row was not rendered");
+  }
+  click(await findFastControl("button", "Deny", row));
+  click(within(await screen.findByRole("menu")).getByText("Allow always"));
+  await saveStarted.promise;
+  await fill(search, "missing");
+  await fill(search, "test machine");
+  const pending = await findFastControl(
+    "button",
+    /Find this test machine access, Deny/,
+  );
+  expect(pending).toHaveAttribute("aria-busy", "true");
+  finishSave.resolve();
+  await findFastControl("button", /Find this test machine access, Allow/);
+  click(back);
+  await expect(
+    findFastControl("button", /Remote devices.*3 authorized/),
+  ).resolves.toHaveFocus();
+});
+
+test("a temporary grant expires while the chat device panel is open", async () => {
+  enableRemoteDevices();
+  const start = Date.parse("2026-11-27T02:00:00Z");
+  const expiresAt = start + 100;
+  mockNow(start, context.signal);
+  context.mocks.api(remoteDevicesContract.list, ({ respond }) => {
+    return respond(200, {
+      devices: [
+        {
+          id: deviceId,
+          displayName: "Build Mac",
+          accessAllowed: true,
+          accessExpiresAt: new Date(expiresAt).toISOString(),
+          channels: [],
+        },
+      ],
+    });
+  });
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [],
+  });
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+  click(await findFastControl("button", "Connectors"));
+  click(await findFastControl("button", /Remote devices.*1 authorized/));
+  await findFastControl("button", /Build Mac access, Allow/);
+
+  mockNow(expiresAt, context.signal);
+
+  await expect(
+    findFastControl("button", /Build Mac access, Deny/),
+  ).resolves.toBeVisible();
+  click(await findFastControl("button", "Back"));
+  await expect(
+    findFastControl("button", /Remote devices.*0 authorized/),
+  ).resolves.toBeVisible();
 });

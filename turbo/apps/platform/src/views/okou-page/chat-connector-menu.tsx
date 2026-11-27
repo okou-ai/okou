@@ -445,9 +445,11 @@ export function ChatConnectorMenu({
   signals,
   footer,
   onOpenAddDialog,
+  bounded = false,
 }: {
   readonly signals: ComposerSignals;
   readonly footer: ReactNode;
+  readonly bounded?: boolean;
   readonly onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
@@ -461,7 +463,7 @@ export function ChatConnectorMenu({
   const searchConnectors = useSet(signals.connector.searchConnectors$);
   const entries =
     overview.state === "hasData" ? overview.data : (previous ?? []);
-  const showSearch = entries.length > 20;
+  const showSearch = bounded || entries.length > 20;
   const filtered =
     showSearch && ui.popoverSearch.trim()
       ? entries.filter((entry) => {
@@ -472,6 +474,7 @@ export function ChatConnectorMenu({
       : entries;
   return (
     <ComposerConnectorMenuShell
+      bounded={bounded}
       loading={overview.state === "loading" && !previous}
       hasContent={entries.length > 0 || failed}
       error={

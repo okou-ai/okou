@@ -32,21 +32,10 @@ export const storedTemplateGuidanceBundleSchema = templateGuidanceBundleSchema
   .extend({
     ownerKind: zEnum(["user-template", "presentation-template"]),
     templateId: uuid(),
-    // Keep overlay precedence when bundle and legacy Storage mounts coexist.
-    // Missing optional legacy mounts are skipped when selecting the next anchor.
+    // Older Runner startup readers require the field until #51330.
     beforeMountPaths: array(string()),
   })
   .strict();
 export type StoredTemplateGuidanceBundle = zInfer<
   typeof storedTemplateGuidanceBundleSchema
 >;
-
-export function templateGuidanceMountPath(
-  reference: Pick<StoredTemplateGuidanceBundle, "ownerKind" | "templateId">,
-): string {
-  const directory =
-    reference.ownerKind === "user-template"
-      ? "user-template"
-      : "presentation-template";
-  return `/home/user/workspace/generated/${directory}/${reference.templateId}`;
-}

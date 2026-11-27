@@ -14,7 +14,6 @@ import {
   LayoutGrid,
   List,
   Loader2,
-  MessagesSquare,
   Search,
   X,
 } from "lucide-react";
@@ -197,38 +196,6 @@ function moveArtifactFocus(event: KeyboardEvent<HTMLElement>) {
   }
 }
 
-function ArtifactSourceChat({
-  artifact,
-  className,
-}: {
-  readonly artifact: CatalogArtifact;
-  readonly className?: string;
-}) {
-  const { t } = useTranslation();
-  const source = artifact.sourceChatThread;
-  if (!source) {
-    return null;
-  }
-  return (
-    <a
-      href={`/chats/${encodeURIComponent(source.id)}`}
-      aria-label={t(
-        ($) => {
-          return $.artifacts.library.openSourceChat;
-        },
-        { title: source.title },
-      )}
-      className={cn(
-        "flex min-w-0 items-center gap-1.5 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring",
-        className,
-      )}
-    >
-      <MessagesSquare className="size-3.5 shrink-0" aria-hidden="true" />
-      <span className="truncate">{source.title}</span>
-    </a>
-  );
-}
-
 function useArtifactPreview(artifact: CatalogArtifact) {
   const { t } = useTranslation();
   const openArtifact = useSet(openArtifact$);
@@ -268,12 +235,12 @@ function ArtifactLibraryCard({
   const displayKind = artifactGalleryKind(artifact);
   const kindLabel = useArtifactKindLabel(displayKind);
   const controlClassName =
-    "group block w-full min-w-0 rounded-surface text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+    "group col-span-2 col-start-1 row-span-2 row-start-1 block w-full min-w-0 rounded-surface text-left no-underline outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
   const content = (
     <>
       <ArtifactCatalogCover artifact={artifact} videoFallback={false} />
-      <span className="mt-3 block truncate px-1 text-sm font-medium text-foreground">
-        {artifact.title}
+      <span className="mt-3 flex h-8 min-w-0 items-center pl-4 pr-16 text-sm font-medium text-foreground">
+        <span className="truncate">{artifact.title}</span>
       </span>
     </>
   );
@@ -283,7 +250,7 @@ function ArtifactLibraryCard({
       data-artifact-id={artifact.id}
       aria-label={artifact.title}
       data-state={selected ? "selected" : undefined}
-      className="min-w-0 rounded-surface p-1 data-[state=selected]:bg-state-selected"
+      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_2rem_auto] items-center rounded-surface p-1 data-[state=selected]:bg-state-selected"
     >
       {artifact.kind === "shared-thread" ? (
         <a
@@ -312,20 +279,15 @@ function ArtifactLibraryCard({
           {content}
         </button>
       )}
-      <ArtifactSourceChat artifact={artifact} className="mx-1 mt-1.5" />
-      <div className="mt-1 flex min-w-0 items-center gap-2 pl-1">
-        <div className="min-w-0 flex-1 text-xs text-muted-foreground">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span aria-hidden="true" className="shrink-0">
-              {artifactKindIcon(displayKind, 13)}
-            </span>
-            <span className="truncate">{kindLabel}</span>
-          </span>
-          <span className="mt-1 block truncate">
-            <ArtifactTimestamp value={artifact.createdAt} timezone={timezone} />
-          </span>
-        </div>
+      <div className="col-start-2 row-start-2 mr-4">
         <ArtifactCatalogRowActions artifact={artifact} />
+      </div>
+      <div className="col-span-2 row-start-3 mx-4 mb-3 mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="truncate">{kindLabel}</span>
+        <span aria-hidden="true">·</span>
+        <span className="shrink-0">
+          <ArtifactTimestamp value={artifact.createdAt} timezone={timezone} />
+        </span>
       </div>
     </article>
   );
@@ -354,21 +316,13 @@ function ArtifactLibraryRow({
       >
         {artifactKindIcon(displayKind, 18)}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-foreground">
-          {artifact.title}
-        </span>
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground @4xl:hidden">
-          <span>{kindLabel}</span>
-          <span className="@3xl:hidden">
-            <ArtifactTimestamp value={artifact.createdAt} timezone={timezone} />
-          </span>
-        </span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+        {artifact.title}
       </span>
     </>
   );
   const controlClassName =
-    "flex min-w-0 w-full items-center gap-3 rounded-sm py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring";
+    "flex min-w-0 w-full items-center gap-3 rounded-sm py-2 text-left no-underline outline-none focus-visible:ring-2 focus-visible:ring-ring";
   return (
     <TableRow
       ref={scrollIntoView ? scrollTargetRef : undefined}
@@ -416,7 +370,6 @@ function ArtifactLibraryRow({
             {content}
           </button>
         )}
-        <ArtifactSourceChat artifact={artifact} className="mb-2 ml-12" />
       </TableCell>
       <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground @3xl:table-cell">
         <ArtifactTimestamp value={artifact.createdAt} timezone={timezone} />

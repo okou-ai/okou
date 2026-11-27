@@ -1,6 +1,5 @@
 import {
   templateGuidanceBundleSchema,
-  templateGuidanceMountPath,
   type StoredTemplateGuidanceBundle,
   type TemplateGuidanceBundle,
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
@@ -22,10 +21,7 @@ import {
 } from "../../lib/template-usage-identity";
 import { projectUserMessage } from "./chat-user-message.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
-import type {
-  RunPromptAndSkills,
-  TemplateSkillVolume,
-} from "./run-prompt-and-skills";
+import type { RunPrompt } from "./run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import {
   selectedUserTemplateIds,
@@ -42,8 +38,8 @@ type PrefetchedTemplates = Pick<
 >;
 
 export type RunTemplatesResult =
-  | (RunPromptAndSkills & {
-      readonly skillVolumes: readonly TemplateSkillVolume[];
+  | (RunPrompt & {
+      readonly templateGuidanceBundles: StoredTemplateGuidanceBundle[];
       readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
     })
   | {
@@ -55,7 +51,7 @@ export type RunTemplatesResult =
 
 type RunTemplateGuidanceResult =
   | {
-      readonly skillVolumes: readonly TemplateSkillVolume[];
+      readonly templateGuidanceBundles: StoredTemplateGuidanceBundle[];
       readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
       readonly renderPrompt: () => string;
     }
@@ -82,7 +78,7 @@ export function createRunTemplates(
     }
     return {
       templateUsageIdentities: prepared.templateUsageIdentities,
-      skillVolumes: prepared.skillVolumes,
+      templateGuidanceBundles: prepared.templateGuidanceBundles,
       systemPromptVariables: {
         generationTemplatePrompt: prepared.renderPrompt(),
       },
@@ -245,7 +241,8 @@ function buildRunTemplateGuidance(args: {
   if (guidance.status === "invalid") {
     return { error: { code: "BAD_REQUEST", message: guidance.message } };
   }
-  const references: StoredTemplateGuidanceBundle[] = [
+  // Older Runner startup readers require an anchor list until #51330.
+  const templateGuidanceBundles: StoredTemplateGuidanceBundle[] = [
     ...presentations.map((row) => {
       return {
         ownerKind: "presentation-template" as const,
@@ -266,12 +263,6 @@ function buildRunTemplateGuidance(args: {
   return {
     templateUsageIdentities: templateUsageIdentities(templates, mounted),
     renderPrompt: guidance.render,
-    skillVolumes: references.map((reference) => {
-      return {
-        source: "request_additional_volume" as const,
-        mountPath: templateGuidanceMountPath(reference),
-        templateGuidanceBundle: reference,
-      };
-    }),
+    templateGuidanceBundles,
   };
 }

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.32.59](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.58...guest-storage-apply-v0.32.59) (2026-11-27)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** reuse parent directories during quarantine checks ([#51354](https://github.com/okou-ai/okou/issues/51354)) ([a2b4322](https://github.com/okou-ai/okou/commit/a2b4322e3e25c3573b6d9b44576fad69ae77ed7c))
+
+## [0.32.58](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.57...guest-storage-apply-v0.32.58) (2026-11-27)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** dispatch independent decoded mounts directly ([#51306](https://github.com/okou-ai/okou/issues/51306)) ([35b4915](https://github.com/okou-ai/okou/commit/35b4915483d12022e98680101b99cb769e4ececf))
+
 ## [0.32.57](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.56...guest-storage-apply-v0.32.57) (2026-11-27)
 
 

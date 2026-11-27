@@ -10,7 +10,7 @@ import { MercuryDisclosure } from "./components/settings/mercury-disclosure.tsx"
 type ConnectorCallbackPageStatus = "loading" | "success" | "error";
 
 interface ConnectorCallbackPageProps {
-  readonly connectorIcon: PublicConnectorCatalogIcon | undefined;
+  readonly connectorIcon?: PublicConnectorCatalogIcon | undefined;
   readonly iconContent?: ReactNode;
   readonly connectorSlug: ConnectorSlug | null;
   readonly connectorLabel: string;
@@ -59,6 +59,7 @@ export function ConnectorCallbackPage({
 
   return (
     <ConnectorFlowCard
+      connectorSlug={connectorSlug}
       connectorIcon={connectorIcon}
       iconContent={
         connectorSlug === "link" ? linkWalletIcon(connectorLabel) : iconContent

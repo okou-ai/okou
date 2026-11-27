@@ -86,7 +86,17 @@ internal data class ArtifactInfo(
     val browserUrl: HttpUrl? = null,
     val resolvedAccess: ArtifactAccess? = null,
     val linkSource: ArtifactLinkSource? = null,
-)
+) {
+    val thumbnailUrl: String?
+        get() = item.thumbnail ?: (resource as? ArtifactResource.File)?.cover
+
+    fun independentThumbnailUrl(originalUrl: String?): String? {
+        val file = resource as? ArtifactResource.File ?: return null
+        return listOfNotNull(item.thumbnail, file.cover).firstOrNull {
+            it != file.url && it != originalUrl
+        }
+    }
+}
 
 internal sealed interface ArtifactResource {
     data class File(val url: String, val name: String, val type: String, val cover: String?) :
@@ -103,6 +113,8 @@ internal sealed interface ArtifactContent {
     data class Text(val rendered: AnnotatedString, val markdown: Boolean) : ArtifactContent
 
     data class Image(val bitmap: Bitmap) : ArtifactContent
+
+    class EncodedImage(val bytes: ByteArray, val fallback: Bitmap? = null) : ArtifactContent
 
     data class Website(val url: HttpUrl, val remainingRetries: Int) : ArtifactContent
 
@@ -327,14 +339,18 @@ internal constructor(
     internal suspend fun fileContent(
         file: ArtifactResource.File,
         access: ArtifactAccess,
+        keepImageSource: Boolean,
     ): ArtifactContent {
         val url = access.url ?: return ArtifactContent.Unsupported
         val type = access.type.substringBefore(';').trim().lowercase(Locale.ROOT)
         val extension = access.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
         return when {
             type.startsWith("image/") && type != "image/svg+xml" ->
-                readBitmap(url, 1440, MAX_IMAGE_BYTES)?.let { ArtifactContent.Image(it) }
-                    ?: ArtifactContent.Unsupported
+                if (keepImageSource)
+                    ArtifactContent.EncodedImage(transfers.download(url, MAX_IMAGE_BYTES))
+                else
+                    readBitmap(url, 1440, MAX_IMAGE_BYTES)?.let { ArtifactContent.Image(it) }
+                        ?: ArtifactContent.Unsupported
             type.startsWith("video/") -> ArtifactContent.Media(url, video = true)
             type.startsWith("audio/") -> ArtifactContent.Media(url, video = false)
             type in documentTypes ||
@@ -526,6 +542,9 @@ internal constructor(
 
 private const val ChatAttachmentPreviewPrefix = "chat-attachment:"
 
+internal fun isGeneratedArtifactPreview(id: String): Boolean =
+    !id.startsWith(ExternalImagePreviewPrefix) && chatAttachment(id) == null
+
 internal fun ChatAttachmentReference.attachmentPreviewId(): String =
     ChatAttachmentPreviewPrefix +
         listOf(id, filename, contentType).joinToString("/") { Uri.encode(it) }
@@ -629,6 +648,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
         resource: ArtifactResource,
         browser: HttpUrl? = null,
         linkSource: ArtifactLinkSource? = null,
+        thumbnail: String? = null,
     ) =
         ArtifactInfo(
             ArtifactItem(
@@ -636,6 +656,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
                 title,
                 kind,
                 parseArtifactTimestamp(artifactTimestampParser(), created),
+                thumbnail,
             ),
             source,
             resource,
@@ -695,6 +716,7 @@ private fun ArtifactDetail.toInfo(): ArtifactInfo {
                     file.contentType,
                     file.previewImageUrl,
                 ),
+                thumbnail = thumbnail?.url,
             )
         is ArtifactDetailVariant3 ->
             entry(

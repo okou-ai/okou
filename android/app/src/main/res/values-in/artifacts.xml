@@ -64,6 +64,7 @@
     <string name="chat_resources_messages">Pesan</string>
     <string name="artifact_preview_loading">Memuat pratinjau…</string>
     <string name="artifact_image_unavailable">Gambar tidak tersedia</string>
+    <string name="artifact_image_original_unavailable">Gambar asli tidak tersedia</string>
     <string name="artifact_image_actions">Tindakan gambar</string>
     <string name="artifact_image_expand">Perluas penampil gambar</string>
     <string name="artifact_image_collapse">Ciutkan penampil gambar</string>

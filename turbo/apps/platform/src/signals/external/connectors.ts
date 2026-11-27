@@ -292,7 +292,6 @@ export const loadConnectorCatalogItem$ = command(
       signal,
       { showErrorToast: false },
     );
-    // Callback pages need public metadata even when the user is signed out.
     return result.status === 200
       ? withConnectorCompletion(result.body.connector)
       : null;

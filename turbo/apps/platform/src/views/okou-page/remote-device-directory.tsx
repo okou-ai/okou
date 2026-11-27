@@ -18,7 +18,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
   Skeleton,
@@ -34,7 +33,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Clock,
   KeyRound,
   Laptop,
   Monitor,
@@ -43,6 +41,7 @@ import {
   Terminal,
 } from "lucide-react";
 import type { FormEvent } from "react";
+import { i18n } from "../../i18n/index.ts";
 import { useTranslation } from "react-i18next";
 import { formatRelativeTimestamp } from "../../i18n/format.ts";
 import { now } from "../../lib/time.ts";
@@ -53,13 +52,13 @@ import {
   createRemoteDevice$,
   invalidateRemoteDeviceDirectory$,
   mountRemoteDeviceCreation$,
-  mountRemoteDeviceDirectory$,
   moveRemoteDeviceChannel$,
   remoteDeviceCreation$,
   remoteDeviceDirectory$,
   selectedRemoteDeviceId$,
   setRemoteDeviceCreationOpen$,
   updateRemoteDeviceAccess$,
+  remoteDeviceAccessPending$,
   updateRemoteDeviceName$,
 } from "../../signals/remote-devices.ts";
 import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
@@ -67,9 +66,9 @@ import { searchParams$ } from "../../signals/route.ts";
 import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 
-const directoryParams = Object.freeze({ scope: "remote-control" });
+export const directoryParams = Object.freeze({ scope: "remote-control" });
 
-function deviceLink(deviceId?: string) {
+export function deviceLink(deviceId?: string) {
   return {
     searchParams: new URLSearchParams(
       deviceId
@@ -79,33 +78,32 @@ function deviceLink(deviceId?: string) {
   };
 }
 
-function ChannelKind({ kind }: { readonly kind: RemoteDeviceChannelKind }) {
-  const { t } = useTranslation();
+export function channelKindLabel(kind: RemoteDeviceChannelKind) {
   switch (kind) {
     case "desktop": {
-      return t(($) => {
+      return i18n.t(($) => {
         return $.remoteControlSetup.computerUse;
       });
     }
     case "ios": {
-      return t(($) => {
+      return i18n.t(($) => {
         return $.remoteDevices.ios;
       });
     }
     case "ssh": {
-      return t(($) => {
+      return i18n.t(($) => {
         return $.ssh.label;
       });
     }
     case "vnc": {
-      return t(($) => {
+      return i18n.t(($) => {
         return $.vnc.label;
       });
     }
   }
 }
 
-const channelIcons = {
+export const channelIcons = {
   desktop: Laptop,
   ios: Smartphone,
   ssh: Terminal,
@@ -138,7 +136,7 @@ function DeviceChannels({
         return (
           <li key={kind} className="leading-none">
             <Badge className="text-xs text-muted-foreground">
-              <ChannelKind kind={kind} />
+              {channelKindLabel(kind)}
             </Badge>
           </li>
         );
@@ -147,7 +145,10 @@ function DeviceChannels({
   );
 }
 
-function deviceAccessAllowed(device: RemoteDeviceDirectoryItem, time: number) {
+export function deviceAccessAllowed(
+  device: RemoteDeviceDirectoryItem,
+  time: number,
+) {
   return (
     device.accessAllowed &&
     (device.accessExpiresAt === null ||
@@ -156,17 +157,11 @@ function deviceAccessAllowed(device: RemoteDeviceDirectoryItem, time: number) {
 }
 
 function RemoteDeviceAllowMenu({
-  compact,
-  accessLabel,
   duration,
-  status,
   pending,
   update,
 }: {
-  readonly compact: boolean;
-  readonly accessLabel: string;
   readonly duration: string | null;
-  readonly status: string;
   readonly pending: boolean;
   readonly update: (policy: RemoteDeviceAccess) => void;
 }) {
@@ -200,36 +195,28 @@ function RemoteDeviceAllowMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={compact ? accessLabel : undefined}
         disabled={pending}
         render={
           <Button
             type="button"
             size="xs"
-            variant={compact ? "neutral" : "quiet"}
+            variant="quiet"
             pending={pending}
             className={cn(
-              "min-w-0 gap-1.5 text-xs [&_svg]:size-3",
-              !compact && "rounded-r-none focus-visible:ring-inset",
-              !compact &&
-                duration &&
+              "min-w-0 gap-1.5 rounded-r-none text-xs focus-visible:ring-inset [&_svg]:size-3",
+              duration &&
                 "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-400",
             )}
           />
         }
       >
-        {!compact && duration && <Check size={12} aria-hidden />}
-        {compact && duration && <Clock size={12} aria-hidden />}
+        {duration && <Check size={12} aria-hidden />}
         <span className="truncate">
-          {compact
-            ? status
-            : t(($) => {
-                return $.connectors.permissions.actions.allow;
-              })}
+          {t(($) => {
+            return $.connectors.permissions.actions.allow;
+          })}
         </span>
-        {!compact && duration && (
-          <span className="truncate text-[11px]">{duration}</span>
-        )}
+        {duration && <span className="truncate text-[11px]">{duration}</span>}
         <ChevronDown size={12} aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -245,20 +232,6 @@ function RemoteDeviceAllowMenu({
             </DropdownMenuItem>
           );
         })}
-        {compact && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                update({ mode: "denied" });
-              }}
-            >
-              {t(($) => {
-                return $.connectors.permissions.actions.deny;
-              })}
-            </DropdownMenuItem>
-          </>
-        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -266,14 +239,13 @@ function RemoteDeviceAllowMenu({
 
 function RemoteDevicePolicyControl({
   device,
-  compact = false,
 }: {
   readonly device: RemoteDeviceDirectoryItem;
-  readonly compact?: boolean;
 }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const [saving, save] = useLoadableSet(updateRemoteDeviceAccess$);
+  const pending = useGet(remoteDeviceAccessPending$).has(device.id);
   const time = now();
   const allowed = deviceAccessAllowed(device, time);
   const duration = allowed
@@ -299,45 +271,37 @@ function RemoteDevicePolicyControl({
   return (
     <div className="flex min-w-0 flex-col items-end gap-1">
       <div
-        role={compact ? undefined : "group"}
-        aria-label={compact ? undefined : accessLabel}
-        className={cn(
-          "flex max-w-full items-center",
-          !compact && "rounded-md border border-surface-border",
-        )}
+        role="group"
+        aria-label={accessLabel}
+        className="flex max-w-full items-center rounded-md border border-surface-border"
       >
         <RemoteDeviceAllowMenu
-          compact={compact}
-          status={status}
           duration={duration}
-          accessLabel={accessLabel}
-          pending={saving.state === "loading"}
+          pending={pending}
           update={update}
         />
-        {!compact && (
-          <Button
-            type="button"
-            size="xs"
-            variant="quiet"
-            aria-pressed={!allowed}
-            disabled={saving.state === "loading"}
-            onClick={() => {
-              if (allowed) {
-                update({ mode: "denied" });
-              }
-            }}
-            className={cn(
-              "shrink-0 gap-1.5 rounded-l-none border-l border-surface-border text-xs focus-visible:ring-inset [&_svg]:size-3",
-              !allowed &&
-                "bg-rose-500/10 text-rose-700 hover:bg-rose-500/15 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-400",
-            )}
-          >
-            <Ban size={12} aria-hidden />
-            {t(($) => {
-              return $.connectors.permissions.actions.deny;
-            })}
-          </Button>
-        )}
+        <Button
+          type="button"
+          size="xs"
+          variant="quiet"
+          aria-pressed={!allowed}
+          disabled={pending}
+          onClick={() => {
+            if (allowed) {
+              update({ mode: "denied" });
+            }
+          }}
+          className={cn(
+            "shrink-0 gap-1.5 rounded-l-none border-l border-surface-border text-xs focus-visible:ring-inset [&_svg]:size-3",
+            !allowed &&
+              "bg-rose-500/10 text-rose-700 hover:bg-rose-500/15 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-400",
+          )}
+        >
+          <Ban size={12} aria-hidden />
+          {t(($) => {
+            return $.connectors.permissions.actions.deny;
+          })}
+        </Button>
       </div>
       {saving.state === "hasError" && (
         <span role="alert" className="text-xs text-destructive">
@@ -350,7 +314,7 @@ function RemoteDevicePolicyControl({
   );
 }
 
-function RemoteDeviceLoadError() {
+export function RemoteDeviceLoadError() {
   const { t } = useTranslation();
   const retry = useSet(invalidateRemoteDeviceDirectory$);
   return (
@@ -369,86 +333,6 @@ function RemoteDeviceLoadError() {
         })}
       </Button>
     </div>
-  );
-}
-
-export function ComposerRemoteDevices() {
-  const { t } = useTranslation();
-  const mount = useSet(mountRemoteDeviceDirectory$);
-  const load = useLoadable(remoteDeviceDirectory$);
-  const devices = useLastResolved(remoteDeviceDirectory$);
-  return (
-    <section
-      ref={mount}
-      className="shrink-0 border-t border-border/50 bg-gray-50 p-2 dark:bg-gray-100"
-      aria-label={t(($) => {
-        return $.remoteDevices.title;
-      })}
-    >
-      <h3 className="mb-1 px-1 text-xs text-muted-foreground">
-        {t(($) => {
-          return $.remoteDevices.title;
-        })}
-      </h3>
-      {load.state === "hasError" && <RemoteDeviceLoadError />}
-      {!devices && load.state === "loading" && (
-        <Skeleton className="h-8 w-full" />
-      )}
-      {devices?.map((device) => {
-        const Icon = channelIcons[device.channels[0]?.kind ?? "desktop"];
-        return (
-          <div
-            key={device.id}
-            className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1.5"
-          >
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-              <Link
-                pathname="/connectors"
-                options={deviceLink(device.id)}
-                className="flex min-w-0 items-center gap-2 text-sm hover:underline"
-              >
-                <Icon
-                  size={16}
-                  aria-hidden
-                  className="shrink-0 text-muted-foreground"
-                />
-                <span className="min-w-0 truncate">{device.displayName}</span>
-              </Link>
-              {device.channels.length > 0 && <DeviceChannels device={device} />}
-            </div>
-            <RemoteDevicePolicyControl device={device} compact />
-          </div>
-        );
-      })}
-      <div className="mt-1 flex flex-wrap items-center gap-x-3 border-t border-divider px-1 pt-1">
-        <Link
-          pathname="/connectors"
-          options={{
-            searchParams: new URLSearchParams({
-              ...directoryParams,
-              setup: "add",
-            }),
-          }}
-          className="inline-flex items-center gap-1.5 py-1 text-sm hover:underline"
-        >
-          <Plus size={14} aria-hidden />
-          {t(($) => {
-            return $.remoteDevices.add;
-          })}
-        </Link>
-        {devices && devices.length > 0 && (
-          <Link
-            pathname="/connectors"
-            options={deviceLink()}
-            className="py-1 text-sm text-muted-foreground hover:text-foreground hover:underline"
-          >
-            {t(($) => {
-              return $.remoteDevices.manage;
-            })}
-          </Link>
-        )}
-      </div>
-    </section>
   );
 }
 
@@ -671,7 +555,7 @@ function RemoteDeviceChannelRow({
             {channel.displayName}
           </div>
           <div className="text-xs text-muted-foreground">
-            <ChannelKind kind={channel.kind} />
+            {channelKindLabel(channel.kind)}
             {channel.lastSeenAt && (
               <>
                 {" · "}

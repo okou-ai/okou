@@ -26,6 +26,8 @@ export interface ComposerConnectorUiState {
   readonly selectedCustomConnectorId: string | null;
   readonly addDialogSearch: string;
   readonly popoverSearch: string;
+  readonly deviceSearch: string;
+  readonly popoverPane: "connectors" | "devices" | "returned";
   readonly popoverOpen: boolean;
   readonly phoneUseSetupOpen: boolean;
   readonly remoteAccessDialogOpen: boolean;
@@ -116,6 +118,8 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     selectedCustomConnectorId: null,
     addDialogSearch: "",
     popoverSearch: "",
+    deviceSearch: "",
+    popoverPane: "connectors",
     popoverOpen: false,
     phoneUseSetupOpen: false,
     ...remoteAccessDialogState(false),
@@ -297,6 +301,8 @@ function createConnectorUiSignals(
       set(updateConnectorUiState$, {
         popoverOpen: false,
         popoverSearch: "",
+        deviceSearch: "",
+        popoverPane: "connectors",
         popoverSortOrder: null,
       });
     }

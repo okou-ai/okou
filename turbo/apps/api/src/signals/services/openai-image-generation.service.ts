@@ -43,7 +43,7 @@ import { completeRunBuiltInAdmission$ } from "./run-built-in-admission.service";
 import { resolveProviderReferenceUrls$ } from "./provider-reference-url.service";
 import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { processUsageEventKeys$ } from "./credit-usage.service";
-import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
+import { platformPaidRunCreditAccess$ } from "./platform-paid-run.service";
 import {
   builtInGenerationImageUsageKeys,
   builtInGenerationUsageIdempotencyKey,
@@ -320,7 +320,7 @@ const settleStoredOpenAiImageJob$ = command(
       signal,
     );
     const access = await set(
-      officialWorkflowCreditAccess$,
+      platformPaidRunCreditAccess$,
       {
         orgId: job.orgId,
         userId: job.userId,

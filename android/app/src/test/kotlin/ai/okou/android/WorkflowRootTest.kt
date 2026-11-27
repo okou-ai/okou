@@ -33,6 +33,7 @@ import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
+import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -84,6 +86,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowSystemClock
 
 class WorkflowRootApplication : TestOkouApplication() {
     internal lateinit var fixture: WorkflowApiFixture
@@ -549,11 +552,12 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun detailLoadingSharesTheContentInsetAndKeepsTheUseButtonInPlace() {
         val detail = CountDownLatch(1)
         app.fixture.beforeReleaseDetailRead = { detail.await() }
         val use = compose.onNodeWithTag("workflow_use")
-        val (loadingBounds, pendingBounds) =
+        val (loadingBounds, pendingBounds, pendingTabs) =
             try {
                 compose.onNodeWithContentDescription("Workflows").performClick()
                 app.gate.countDown()
@@ -561,8 +565,11 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
                 compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
                 waitForTag("workflow_loading")
                 val skeleton = compose.onNodeWithTag("workflow_loading").assertIsDisplayed()
-                skeleton.getUnclippedBoundsInRoot() to
-                    use.assertIsDisplayed().assertIsNotEnabled().getUnclippedBoundsInRoot()
+                Triple(
+                    skeleton.getUnclippedBoundsInRoot(),
+                    use.assertIsDisplayed().assertIsNotEnabled().getUnclippedBoundsInRoot(),
+                    compose.onNodeWithTag("workflow_loading_tabs").getUnclippedBoundsInRoot(),
+                )
             } finally {
                 detail.countDown()
             }
@@ -572,6 +579,9 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         assertEquals(title.left, loadingBounds.left)
         assertEquals(title.top, loadingBounds.top)
         assertEquals(pendingBounds, use.assertIsEnabled().getUnclippedBoundsInRoot())
+        val tabs = compose.onNodeWithTag("workflow_tab_instructions").getUnclippedBoundsInRoot()
+        assertEquals(tabs.top, pendingTabs.top)
+        assertEquals(tabs.bottom, pendingTabs.bottom)
     }
 
     @Test
@@ -1448,6 +1458,103 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
 )
 internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
     @Test
+    fun returningToExpiredHistoryDoesNotRestartTheSkeletonDelayWhenDetailArrives() {
+        openWorkflowDetail()
+        val historyTab = compose.onNodeWithTag("workflow_tab_history")
+        historyTab.performClick()
+        val runTag = "workflow_run_$WORKFLOW_SOURCE_RUN"
+        val source = hasTestTag(runTag) and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(source).performClick()
+        waitForTag("conversation")
+
+        val detailRequested = CountDownLatch(1)
+        val historyRequested = CountDownLatch(1)
+        val releaseDetail = CountDownLatch(1)
+        val releaseHistory = CountDownLatch(1)
+        app.fixture.beforeReleaseDetailRead = {
+            detailRequested.countDown()
+            releaseDetail.await()
+        }
+        app.fixture.beforeHistoryRead = {
+            historyRequested.countDown()
+            releaseHistory.await()
+        }
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.runOnIdle { ShadowSystemClock.advanceBy(Duration.ofMinutes(10)) }
+            back()
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitUntil(10_000) {
+                detailRequested.count == 0L && historyRequested.count == 0L
+            }
+            compose.mainClock.advanceTimeBy(288)
+            compose.onNodeWithTag("workflow_loading").assertIsDisplayed()
+
+            releaseDetail.countDown()
+            val tabs = compose.onAllNodesWithTag("workflow_tab_history")
+            compose.waitUntil(10_000) {
+                compose.mainClock.advanceTimeByFrame()
+                tabs.fetchSemanticsNodes().isNotEmpty()
+            }
+            historyTab.assertIsSelected()
+            compose.onNodeWithTag("workflow_history_loading").assertIsDisplayed()
+        } finally {
+            releaseDetail.countDown()
+            releaseHistory.countDown()
+            compose.mainClock.autoAdvance = true
+        }
+        waitForTag(runTag)
+        compose.onNodeWithTag(runTag).assertTextContains("Running")
+        compose.onNodeWithTag("workflow_history_loading").assertDoesNotExist()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun historyLoadingWaitsForTheSharedDelayAndReservesScaledRows() {
+        val originalScale = app.resources.configuration.fontScale
+        val release = CountDownLatch(1)
+        app.fixture.beforeHistoryRead = { release.await() }
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            openWorkflowDetail()
+            val use = compose.onNodeWithTag("workflow_use")
+            val useBounds = use.assertIsEnabled().getUnclippedBoundsInRoot()
+            val loading = compose.onNodeWithTag("workflow_history_loading")
+            compose.mainClock.autoAdvance = false
+            val rowBounds =
+                try {
+                    compose.onNodeWithTag("workflow_tab_history").performClick()
+                    compose.mainClock.advanceTimeByFrame()
+                    compose.mainClock.advanceTimeBy(200)
+                    loading.assertDoesNotExist()
+                    compose.mainClock.advanceTimeBy(80)
+                    loading.assertIsDisplayed()
+                    compose
+                        .onAllNodesWithTag("workflow_history_loading_row")[0]
+                        .getUnclippedBoundsInRoot()
+                } finally {
+                    compose.mainClock.autoAdvance = true
+                    release.countDown()
+                }
+            assertTrue(rowBounds.bottom - rowBounds.top > 64.dp)
+            val tag = "workflow_run_$WORKFLOW_SOURCE_RUN"
+            waitForTag(tag)
+            loading.assertDoesNotExist()
+            val loaded = compose.onNodeWithTag(tag).assertTextContains("Running")
+            val loadedBounds = loaded.getUnclippedBoundsInRoot()
+            assertEquals(rowBounds.top, loadedBounds.top)
+            assertEquals(rowBounds.left, loadedBounds.left)
+            assertEquals(rowBounds.right, loadedBounds.right)
+            assertEquals(useBounds, use.assertIsEnabled().getUnclippedBoundsInRoot())
+        } finally {
+            release.countDown()
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
+    }
+
+    @Test
     fun firstHistoryFailureUsesTheBodyBetweenTheHeadingAndUseAction() {
         val fixture = app.fixture
         val respond = fixture.chats.commandResponse
@@ -1943,6 +2050,58 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    fun openIntroductionSurvivesARefreshThatRemovesTheSearchMatch() {
+        app.gate.countDown()
+        val entry = compose.onNodeWithContentDescription("Search workspace")
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        val originalTitle = app.fixture.releaseTitle
+        val keyword = "checklist"
+        fun search() {
+            entry.performClick()
+            scope.performClick()
+            query.performTextInput(keyword)
+            waitFor(originalTitle)
+        }
+
+        search()
+        compose.onNodeWithContentDescription("Back").performClick()
+        val catalogRequested = CountDownLatch(1)
+        val releaseCatalog = CountDownLatch(1)
+        app.fixture.beforeCatalog = {
+            catalogRequested.countDown()
+            releaseCatalog.await()
+        }
+        try {
+            search()
+            compose.waitUntil(5_000) { catalogRequested.count == 0L }
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+
+            val renamed = "Deployment review"
+            app.fixture.releaseTitle = renamed
+            releaseCatalog.countDown()
+            waitFor(renamed)
+            compose.onNodeWithText("Add to new chat draft").assertIsDisplayed()
+            compose.onNodeWithText("View workflow details").performClick()
+            waitForTag("workflow_detail_title")
+            compose.onNodeWithTag("workflow_detail_title").assertTextContains(renamed)
+            back()
+
+            query.assertTextContains(keyword)
+            scope.assertIsSelected()
+            compose.onNodeWithText("No matching workflows").assertIsDisplayed()
+            // The cached empty result can appear while the catalog refresh is still running.
+            val focusedResults = hasTestTag("chat_search_results") and isFocused()
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(focusedResults).fetchSemanticsNodes().isNotEmpty()
+            }
+        } finally {
+            releaseCatalog.countDown()
+        }
+    }
+
+    @Test
     fun workflowIntroRestoresResultsFocusWhileOtherSearchTypesAreLoading() {
         val messagesRequested = CountDownLatch(1)
         val releaseMessages = CountDownLatch(1)
@@ -1977,8 +2136,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
 
             compose.onNodeWithText(originalTitle).performClick()
             waitFor("View workflow details")
-            val updatedTitle = "Launch planning"
-            app.fixture.releaseTitle = updatedTitle
+            app.fixture.releaseInCatalog = false
             releaseCatalog.countDown()
 
             compose.waitUntil(10_000) {
@@ -1989,7 +2147,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
             scope.assertIsSelected()
 
             query.performTextReplacement("launch")
-            waitFor(updatedTitle)
+            waitFor(app.fixture.sharedTitle)
             compose.onNodeWithText("View workflow details").assertDoesNotExist()
         } finally {
             releaseCatalog.countDown()

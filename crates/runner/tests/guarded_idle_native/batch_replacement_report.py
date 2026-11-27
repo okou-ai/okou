@@ -9,7 +9,7 @@ import progress_report as foreground
 import pressure_report as pressure
 import report
 import status_evidence
-from cleanup_report import COUNTS, accounting, exact_coverage, has_accounting_shape, supplied_policy
+from cleanup_report import accounting, exact_coverage, has_accounting_shape, supplied_policy, zero_accounting
 from report import exact, validate_batch_phase_clock as clock, validate_evidence_uuid
 
 PREFIX = "NATIVE_BATCH_REPLACEMENT_WITNESS "
@@ -43,7 +43,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
     )
     identities = report.original_resource_ids(result["cases"])
     operations, runners, paths = set(), set(), set()
-    zero = dict.fromkeys(COUNTS, 0) | {"closed": False}
+    zero = zero_accounting(closed=False)
     for case, events in witnesses.items():
         terminal = terminals[case]
         report.validate_witness_phases(

@@ -73,7 +73,7 @@ class DefaultModelSettingTest {
                             gptModel = "gpt-6.2-sol",
                             gptLabel = "GPT 6.2 Sol",
                         )
-                        .apply { gptFastUsageMultiplier = null }
+                        .apply { gptFastMultiplier = null }
                 val file = temporary.newFolder().resolve("default-model.preferences_pb")
                 val store = DefaultModelStore(PreferenceDataStoreFactory.create { file }, scope)
                 store.save(
@@ -112,7 +112,7 @@ class DefaultModelSettingTest {
                 fun setMultiplier(value: Double) {
                     compose.runOnIdle {
                         model.foreground(false)
-                        fixture.gptFastUsageMultiplier = value
+                        fixture.gptFastMultiplier = value
                         model.foreground(true)
                     }
                 }

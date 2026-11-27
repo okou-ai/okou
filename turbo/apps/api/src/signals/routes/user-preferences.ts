@@ -13,8 +13,8 @@ import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
-import { ensureProactiveWorkflows$ } from "../services/proactive-workflows-lifecycle.service";
-import { reconcileExistingMorningBrief$ } from "../services/morning-brief-recovery.service";
+import { syncSuggestionSchedules$ } from "../services/proactive-dispatch-state.service";
+import { reconcileExistingMorningBrief$ } from "../services/morning-brief-preference.service";
 
 import { badRequestMessage, conflict } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -109,20 +109,17 @@ const updateUserPreferencesInner$ = command(
     }
     if (body.data.timezone !== undefined) {
       await set(
-        ensureProactiveWorkflows$,
+        syncSuggestionSchedules$,
         { orgId: auth.orgId, userId: auth.userId },
         signal,
       );
       const reconciled = await set(
         reconcileExistingMorningBrief$,
-        {
-          orgId: auth.orgId,
-          member: { userId: auth.userId, role: auth.orgRole ?? "member" },
-        },
+        { orgId: auth.orgId, userId: auth.userId },
         signal,
       );
       if (reconciled === "conflict") {
-        // Preferences are saved; the existing installation still needs repair.
+        // Preferences are saved; the existing schedule still needs its new timezone.
         return conflict(
           "Morning Brief could not be reconciled. Retry the time zone update.",
         );
@@ -234,16 +231,13 @@ const initializeUserPreferencesInner$ = command(
     // only creates missing memory or an empty HEAD and never rewrites content.
     await set(initializeMemberMemory$, identity, signal);
     signal.throwIfAborted();
-    await set(ensureProactiveWorkflows$, identity, signal);
+    await set(syncSuggestionSchedules$, identity, signal);
     signal.throwIfAborted();
     // An unavailable brief does not invalidate initialized preferences. Its
     // Settings status and explicit retry remain the recovery surface.
     await set(
       reconcileExistingMorningBrief$,
-      {
-        orgId: auth.orgId,
-        member: { userId: auth.userId, role: auth.orgRole ?? "member" },
-      },
+      { orgId: auth.orgId, userId: auth.userId },
       signal,
     );
     signal.throwIfAborted();

@@ -1,3 +1,4 @@
+import { platformPaidCreditPolicies } from "./platform-paid-run.service";
 import { priceUsageEvents } from "./credit-usage-pricing";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { usageEvent } from "@okouai/db/runtime/usage-event";
@@ -89,8 +90,7 @@ export const prepareUsageSettlementBatch$ = command(
                 eq(billingRunAttribution.orgId, args.orgId),
                 inArray(billingRunAttribution.runId, runIds),
                 inArray(billingRunAttribution.creditChargePolicy, [
-                  "official_workflow_free",
-                  "platform_proactive",
+                  ...platformPaidCreditPolicies,
                 ]),
               ),
             );

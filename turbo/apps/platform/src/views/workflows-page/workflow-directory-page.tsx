@@ -6,7 +6,7 @@ import {
   useSet,
 } from "ccstate-react";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
-import { ArrowUpDown, Check, Download, Filter, Search } from "lucide-react";
+import { ArrowUpDown, Check, Download, Filter, Search, X } from "lucide-react";
 import {
   surfaceVariants,
   Badge,
@@ -563,7 +563,10 @@ function WorkflowFilterBar({
       })}
       className="@container flex items-center gap-2"
     >
-      <div className="relative min-w-0 flex-1 @[520px]:max-w-sm">
+      <div
+        data-workflow-search
+        className="relative min-w-0 flex-1 @[520px]:max-w-sm"
+      >
         <Search
           size={15}
           aria-hidden
@@ -577,8 +580,30 @@ function WorkflowFilterBar({
           }}
           placeholder={searchLabel}
           aria-label={searchLabel}
-          className="pl-9"
+          className="pl-9 pr-9"
         />
+        {searchQuery && (
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+            aria-label={t(($) => {
+              return $.workflows.list.clearSearch;
+            })}
+            onClick={(event) => {
+              // The button unmounts once the query is empty, so hand focus
+              // back to the field instead of letting it fall to the body.
+              event.currentTarget
+                .closest("[data-workflow-search]")
+                ?.querySelector("input")
+                ?.focus();
+              setSearchQuery("");
+            }}
+          >
+            <X size={14} />
+          </Button>
+        )}
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <FilterDropdown />

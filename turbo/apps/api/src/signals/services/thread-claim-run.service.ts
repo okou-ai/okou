@@ -9,7 +9,7 @@ import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-qu
 import { writeDb$ } from "../external/db";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { finalizeClaimedRunUserMessage$ } from "./chat-run-event.service";
-import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
+import { morningBriefScheduleClaimBound$ } from "./legacy-morning-brief-settlement.service";
 import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
@@ -38,6 +38,7 @@ import {
 import { createConnectorAdmissionSignals } from "./thread-connector-environment.signals";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import { createOfficialWorkflowSignal } from "./thread-official-workflow.signals";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
@@ -51,10 +52,10 @@ import { feishuDeliveryFromContext } from "./feishu-queued-launch-context.servic
 import type { SlackThreadContext } from "./slack-queued-launch-context.service";
 import type { TelegramThreadContext } from "./telegram-queued-launch-context.service";
 import {
-  createPromptAndSkillVolumesSignals,
+  createPromptAndPackageSignals,
   type PreparedRunPrompt,
   RunPromptError,
-} from "./thread-run-prompt/prompt-and-skill-volumes";
+} from "./thread-run-prompt/prompt-and-packages";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import { createChatRunPreparationSnapshot } from "./chat-run-preparation-snapshot.signals";
 
@@ -245,7 +246,7 @@ import {
 } from "./agent-run-metadata-write.service";
 import type { EnqueuedChatInputFacts } from "./chat-run-preparation-facts";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
-import { OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE } from "./official-workflow-policy.service";
+import { PLATFORM_TASK_THREAD_READ_ONLY_MESSAGE } from "./platform-task-thread.service";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
 import type { ModelFirstPin } from "./model-selection.service";
@@ -501,6 +502,7 @@ type LaunchAutomation = ThreadAutomationTarget["automation"];
 
 function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   readonly workflowName: string | null;
+  readonly officialDefinitionName: string | null;
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
   readonly automation: LaunchAutomation;
@@ -522,7 +524,7 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
     ),
     ...EVENT_POLICY[eventType],
     ...(eventType === "manual" &&
-    proactiveWorkflowKind(args.workflowName) === "learning"
+    proactiveWorkflowKind(args.officialDefinitionName) === "learning"
       ? { recordLastRunId: false, recordLastRunAt: false }
       : {}),
   };
@@ -1030,9 +1032,9 @@ export function createThreadClaimRunObjects(
           "Proactive occurrence is no longer eligible",
         );
       }
-      if (event.preparation.isOfficialWorkflowThread && !proactive) {
+      if (event.preparation.isPlatformTaskThread && !proactive) {
         throw new QueuedPromptLaunchUnavailableError(
-          OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
+          PLATFORM_TASK_THREAD_READ_ONLY_MESSAGE,
         );
       }
       if (event.contextType === "automation") {
@@ -1511,6 +1513,7 @@ export function createThreadClaimRunObjects(
       }
       const material = buildWorkflowAutomationQueuedLaunchMaterial({
         workflowName: event.workflowName,
+        officialDefinitionName: target.workflow.officialDefinitionName,
         eventType: event.eventType,
         eventPayload: await get(threadContext.automationPayload$),
         automation: target.automation,
@@ -1697,10 +1700,11 @@ export function createThreadClaimRunObjects(
         args,
         officialWorkflow: assembly.officialWorkflow,
         runPrompt: assembly.runPrompt,
+        pricedBuiltInRoute: model.pricedBuiltInRoute,
       }
     );
   });
-  const promptResources = createPromptAndSkillVolumesSignals(
+  const promptResources = createPromptAndPackageSignals(
     bootstrap,
     pickedEvent$,
     threadContext,
@@ -1830,7 +1834,10 @@ export function createThreadClaimRunObjects(
       const { args, officialWorkflow: officialWorkflowRun, runPrompt } = input;
       const usage = (async () => {
         const runtime = await get(runModelInputs$);
-        if (isRouteError(runtime)) {
+        if (
+          isRouteError(runtime) ||
+          !isBuiltInModelProviderType(runtime.modelProvider.type)
+        ) {
           return runtime;
         }
         const [catalog, modelPricing] = await Promise.all([
@@ -1841,6 +1848,7 @@ export function createThreadClaimRunObjects(
           catalog,
           modelProvider: runtime.modelProvider,
           providerPermissions: runtime.providerPermissions,
+          pricedRoute: input.pricedBuiltInRoute,
           routePricing: runRoutePricingFromSnapshot(
             {
               modelProvider: runtime.modelProvider,
@@ -2150,9 +2158,9 @@ export function createThreadClaimRunObjects(
       return officialWorkflow;
     }
     const timing = get(threadContext.dispatchTiming$);
-    const [skillVolumes, packageSources, ordinaryAutomation] =
+    const [startupSources, packageSources, ordinaryAutomation] =
       await Promise.all([
-        get(promptResources.skillVolumes$),
+        get(promptResources.packageSources$),
         timing.measure(
           "api_dispatch_prepare_execution_package_wait",
           "nested",
@@ -2164,20 +2172,15 @@ export function createThreadClaimRunObjects(
           ? get(threadContext.automationTarget$)
           : null,
       ]);
-    const { skillRoot, protectedMountPaths, mounts, memoryMountPath } =
-      prepareRunPackageMounts({
-        framework: route.framework,
-        skillVolumes,
-        officialWorkflow,
-      });
-    const officialMountPaths = mounts.officialWorkflowBundles.map(
-      ({ mount }) => {
-        return mount.mountPath;
-      },
-    );
+    const { mounts, memoryMountPath } = prepareRunPackageMounts({
+      framework: route.framework,
+      sources: startupSources,
+      officialWorkflow,
+    });
     const selected = selectExecutionPackages(packageSources?.sources ?? null, {
-      skillRoot,
-      protectedMountPaths: [...protectedMountPaths, ...officialMountPaths],
+      officialWorkflowNames: mounts.officialWorkflowBundles.map(({ name }) => {
+        return name;
+      }),
       ordinaryAutomation,
     });
     if ("error" in selected) {
@@ -3676,6 +3679,7 @@ function threadDispatchInput(args: ThreadRunContext): DirectRunInput {
   return {
     run: {
       id: args.identity.runId,
+      triggerSource: metadata.triggerSource,
       userId: rows.userId,
       orgId: rows.orgId,
       chatThreadId: rows.chatThreadId,

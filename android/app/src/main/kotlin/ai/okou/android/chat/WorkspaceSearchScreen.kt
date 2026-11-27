@@ -63,9 +63,11 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -77,12 +79,15 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+
+private val searchMatchWeight = FontWeight(650)
 
 private data class SearchSources(
     val chats: ChatListUiState,
@@ -668,7 +673,7 @@ private fun SearchResults(
                             search,
                             row.key,
                             restoreResultFocus,
-                            highlightedSearchTitle(chat.searchTitle(untitled), keyword),
+                            highlightedSearchText(chat.searchTitle(untitled), keyword),
                             metadata = metadata,
                         ) {
                             search.returnToResult(row.key, inputMode.inputMode)
@@ -689,8 +694,8 @@ private fun SearchResults(
                             search,
                             row.key,
                             restoreResultFocus,
-                            highlightedSearchTitle(chat.searchTitle(untitled), keyword),
-                            snippet = messageSnippet(hit),
+                            highlightedSearchText(chat.searchTitle(untitled), keyword),
+                            snippet = { MessageSearchExcerpt(hit) },
                             metadata = metadata,
                         ) {
                             search.returnToResult(row.key, inputMode.inputMode)
@@ -703,11 +708,12 @@ private fun SearchResults(
                             search,
                             row.key,
                             restoreResultFocus,
-                            highlightedSearchTitle(hit.title, keyword),
-                            snippet =
+                            highlightedSearchText(hit.title, keyword),
+                            snippet = {
                                 hit.description
                                     ?.takeIf { it.isNotBlank() }
-                                    ?.let { highlightedSearchTitle(it, keyword) },
+                                    ?.let { SearchExcerptText(highlightedSearchText(it, keyword)) }
+                            },
                         ) {
                             search.returnToResult(row.key, inputMode.inputMode)
                             onOpenWorkflow?.invoke(hit)
@@ -719,7 +725,7 @@ private fun SearchResults(
                             search,
                             row.key,
                             restoreResultFocus,
-                            highlightedSearchTitle(hit.title, keyword),
+                            highlightedSearchText(hit.title, keyword),
                             metadata = stringResource(hit.kind.label()),
                         ) {
                             search.returnToResult(row.key, inputMode.inputMode)
@@ -835,7 +841,7 @@ private fun SearchResult(
     key: String,
     restoreResultFocus: Boolean,
     title: AnnotatedString,
-    snippet: AnnotatedString? = null,
+    snippet: @Composable () -> Unit = {},
     metadata: String? = null,
     onOpen: () -> Unit,
 ) {
@@ -866,15 +872,7 @@ private fun SearchResult(
         verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
     ) {
         Text(title, style = chatListTitleStyle(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (snippet != null) {
-            Text(
-                snippet,
-                style = workspaceSearchSecondaryStyle(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        snippet()
         if (metadata != null) {
             Text(
                 metadata,
@@ -944,26 +942,53 @@ private val WorkspaceSearchType.emptyLabel: Int
             WorkspaceSearchType.Artifacts -> R.string.chat_search_no_artifacts
         }
 
-private fun highlightedSearchTitle(text: String, keyword: String): AnnotatedString {
+@Composable
+private fun highlightedSearchText(text: String, keyword: String): AnnotatedString {
     val start =
         keyword.takeIf(String::isNotEmpty)?.let { text.indexOf(it, ignoreCase = true) } ?: -1
+    val matchStyle = searchMatchStyle()
     return buildAnnotatedString {
         append(text)
-        if (start >= 0)
-            addStyle(SpanStyle(fontWeight = FontWeight.SemiBold), start, start + keyword.length)
+        if (start >= 0) addStyle(matchStyle, start, start + keyword.length)
     }
 }
 
-private fun messageSnippet(hit: SearchMessageHit): AnnotatedString {
+@Composable
+private fun searchMatchStyle() =
+    SpanStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = searchMatchWeight)
+
+@Composable
+private fun SearchExcerptText(
+    text: AnnotatedString,
+    onTextLayout: (TextLayoutResult) -> Unit = {},
+) {
+    Text(
+        text,
+        style = workspaceSearchSecondaryStyle(),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = onTextLayout,
+    )
+}
+
+@Composable
+private fun MessageSearchExcerpt(hit: SearchMessageHit) {
     val text = hit.content
-    val first = hit.firstRange
-    var from = ((first?.first ?: 0) - 20).coerceAtLeast(0)
+    if (text.isBlank()) return
+    val first = hit.ranges.minByOrNull { it.first }
+    val matchStyle = searchMatchStyle()
+    val density = LocalDensity.current
+    val window = LocalWindowInfo.current.containerSize
+    var startAtMatch by remember(hit, density, window) { mutableStateOf(false) }
+    val leadingContext = if (startAtMatch) 0 else 20
+    var from = ((first?.first ?: 0) - leadingContext).coerceIn(0, text.lastIndex)
     var to = ((first?.last?.plus(1) ?: from) + 54).coerceAtMost(text.length)
     if (from > 0 && text[from].isLowSurrogate()) from--
     if (to < text.length && text[to].isLowSurrogate()) to++
-    return buildAnnotatedString {
-        if (from > 0) append('…')
-        val leading = length
+    val leading = if (from > 0 && !startAtMatch) 1 else 0
+    val snippet = buildAnnotatedString {
+        if (leading > 0) append('…')
         // Keep the two-line preview flowing without shifting its match offsets.
         for (index in from until to) {
             val character = text[index]
@@ -974,13 +999,20 @@ private fun messageSnippet(hit: SearchMessageHit): AnnotatedString {
             val end = minOf(range.last + 1, to)
             if (start < end) {
                 addStyle(
-                    SpanStyle(fontWeight = FontWeight.SemiBold),
+                    matchStyle,
                     start - from + leading,
                     end - from + leading,
                 )
             }
         }
         if (to < text.length) append('…')
+    }
+    SearchExcerptText(snippet) { layout ->
+        if (!startAtMatch && first != null && from < first.first && layout.lineCount > 0) {
+            val matchEnd = minOf(first.last + 1, text.length) - from + leading
+            if (layout.getLineEnd(layout.lineCount - 1, visibleEnd = true) < matchEnd)
+                startAtMatch = true
+        }
     }
 }
 

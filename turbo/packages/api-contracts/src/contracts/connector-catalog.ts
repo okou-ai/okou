@@ -355,6 +355,22 @@ export const connectorCatalogContract = c.router({
     },
     summary: "Get public connector catalog metadata and connect hints",
   },
+  icon: {
+    method: "GET",
+    path: "/api/connector-catalog/:connectorSlug/icon",
+    pathParams: connectorCatalogPathParamsSchema,
+    responses: {
+      200: c.otherResponse({
+        contentType: "image/svg+xml",
+        body: c.type<Blob>(),
+      }),
+      302: c.noBody(),
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Show the public connector mark by slug",
+  },
   permissions: {
     method: "GET",
     path: "/api/connector-catalog/:connectorSlug/permissions",

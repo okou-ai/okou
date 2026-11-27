@@ -1,6 +1,10 @@
 import { computed } from "ccstate";
-import { asc, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  AUTO_RUN_PRICING_PROVIDER,
+  AUTO_SELECTED_MODEL,
+} from "@okouai/core/auto-run-model";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
@@ -15,6 +19,19 @@ import {
 } from "./context-rowset";
 import { validateModelCatalog } from "./model-catalog.service";
 import { usagePricingByKey } from "./built-in-route-pricing";
+
+function selectAutoPricingProvider(builder: QueryBuilder) {
+  return builder
+    .select({ provider: modelRoutes.upstreamModel })
+    .from(modelRoutes)
+    .where(
+      and(
+        eq(modelRoutes.model, AUTO_SELECTED_MODEL),
+        eq(modelRoutes.providerType, "built-in"),
+        eq(modelRoutes.enabled, true),
+      ),
+    );
+}
 
 /** Read execution-wide configuration and the model catalog in one snapshot. */
 export function createGlobalModelContext() {
@@ -59,13 +76,23 @@ export function createGlobalModelContext() {
           .as("payload"),
       })
       .from(builtInModelKeys);
+    // Auto bills the preset in this snapshot. Legacy Auto keeps its old key.
     const prices = builder
       .select({
         payload: contextJsonProjection(pricing)
           .mapWith(zodDriverValueDecoder(zUnknown()))
           .as("payload"),
       })
-      .from(usagePricing);
+      .from(usagePricing)
+      .where(
+        and(
+          eq(usagePricing.kind, "model"),
+          or(
+            inArray(usagePricing.provider, selectAutoPricingProvider(builder)),
+            eq(usagePricing.provider, AUTO_RUN_PRICING_PROVIDER),
+          ),
+        ),
+      );
     const modelRows = builder
       .select({
         payload: contextJsonProjection(models)

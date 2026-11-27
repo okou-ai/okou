@@ -63,6 +63,19 @@ function linkByName(name: string, container: ParentNode): HTMLElement {
   return link;
 }
 
+function menuItemByName(name: string, menu: HTMLElement): HTMLElement {
+  const item = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      candidate.textContent?.trim() === name
+    );
+  });
+  if (!item) {
+    throw new Error(`Expected menu item "${name}"`);
+  }
+  return item;
+}
+
 function itemFor(title: string): HTMLElement {
   const item = getButtonByName(
     `Preview ${title}`,
@@ -415,7 +428,7 @@ test("View preferences belong to the active workspace and are restored after swi
 });
 
 test.each(["Grid view", "List view"] as const)(
-  "%s keeps the source chat as a separate native navigation link and omits unavailable sources",
+  "%s keeps source navigation in the actions menu with separate preview and usable deletion for unavailable sources",
   async (view) => {
     const summary = artifact({
       id: FIRST_ID,
@@ -435,16 +448,24 @@ test.each(["Grid view", "List view"] as const)(
         previewImageUrl: null,
       },
     };
+    const unavailable = artifact({
+      id: SECOND_ID,
+      title: "source-unavailable.txt",
+    });
+    let deleted = false;
     context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
       return respond(200, {
-        artifacts: [
-          summary,
-          artifact({ id: SECOND_ID, title: "source-unavailable.txt" }),
-        ],
+        artifacts: deleted ? [summary] : [summary, unavailable],
         nextCursor: null,
       });
     });
-    context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    context.mocks.api(artifactCatalogContract.delete, ({ params, respond }) => {
+      expect(params.artifactId).toBe(SECOND_ID);
+      deleted = true;
+      return respond(200, { deleted: true });
+    });
+    context.mocks.api(artifactCatalogContract.get, ({ params, respond }) => {
+      expect(params.artifactId).toBe(FIRST_ID);
       return respond(200, detail);
     });
     context.mocks.http.get(
@@ -465,23 +486,37 @@ test.each(["Grid view", "List view"] as const)(
         name: view === "List view" ? undefined : "sourced-report.txt",
       }),
     ).resolves.toBeInTheDocument();
-    const source = linkByName(
-      "Open source chat: Launch planning",
-      itemFor("sourced-report.txt"),
+    expect(itemFor("sourced-report.txt")).not.toHaveTextContent(
+      "Launch planning",
     );
-    expect(source).toHaveRole("link");
-    expect(source).toHaveAttribute("href", `/chats/${SOURCE_THREAD_ID}`);
-    expect(source).toHaveTextContent("Launch planning");
-    const preview = getButtonByName(
-      "Preview sourced-report.txt",
-      getCatalogViewport(),
+    click(
+      getButtonByName(
+        "More artifact actions",
+        itemFor("source-unavailable.txt"),
+      ),
     );
-    expect(preview).not.toContainElement(source);
-    expect(source.closest("button")).toBeNull();
-    expect(
-      queryAllByRoleFast("link", itemFor("source-unavailable.txt")),
-    ).toStrictEqual([]);
-    click(preview);
+    const unavailableMenu = await screen.findByRole("menu");
+    click(menuItemByName("Delete", unavailableMenu));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Delete source-unavailable.txt?",
+    });
+    click(getButtonByName("Delete", confirmation));
+
+    await expect(
+      screen.findByText("Artifact deleted"),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(confirmation).not.toBeInTheDocument();
+      expect(
+        within(getCatalogViewport()).queryByText("source-unavailable.txt"),
+      ).not.toBeInTheDocument();
+    });
+    click(
+      getButtonByName(
+        "Preview sourced-report.txt",
+        itemFor("sourced-report.txt"),
+      ),
+    );
     const sidebar = await screen.findByTestId("artifact-sidebar");
     await expect(
       within(sidebar).findByText("The source report preview"),
@@ -492,13 +527,24 @@ test.each(["Grid view", "List view"] as const)(
     });
 
     click(
-      linkByName(
-        "Open source chat: Launch planning",
-        itemFor("sourced-report.txt"),
-      ),
+      getButtonByName("More artifact actions", itemFor("sourced-report.txt")),
     );
+    const menu = await screen.findByRole("menu");
+    const sourceLabel = "Open source chat: Launch planning";
+    const source = menuItemByName(sourceLabel, menu);
+    expect(source.tagName).toBe("A");
+    expect(source).toHaveRole("menuitem");
+    expect(source).toHaveAttribute("href", `/chats/${SOURCE_THREAD_ID}`);
+    expect(source).toHaveAccessibleName(sourceLabel);
+    expect(source).toHaveTextContent(sourceLabel);
+    expect(menuItemByName("Delete", menu)).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/artifacts");
+    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+    click(source);
+
     await waitFor(() => {
       expect(window.location.pathname).toBe(`/chats/${SOURCE_THREAD_ID}`);
+      expect(menu).not.toBeInTheDocument();
     });
     expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
   },

@@ -108,7 +108,7 @@ function ChatShareSelectionControls({
       </span>
       {phase === "selecting" ? (
         <Button
-          variant="quiet"
+          variant="ghost"
           size="sm"
           disabled={selectableCount === 0}
           onClick={() => {
@@ -145,7 +145,7 @@ function ChatShareCloseButton({
   const pageSignal = useGet(pageSignal$);
   return (
     <Button
-      variant="quiet"
+      variant="ghost"
       size="sm"
       onClick={() => {
         detach(

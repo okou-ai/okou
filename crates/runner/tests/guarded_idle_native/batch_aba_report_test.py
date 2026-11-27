@@ -36,7 +36,7 @@ class BatchAbaReportTests(unittest.TestCase):
             self.events.extend(terminal)
             old, backing = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
             runner = str(uuid.uuid4())
-            zero = dict.fromkeys(cleanup.COUNTS, 0) | {"closed": False}
+            zero = cleanup.zero_accounting(closed=False)
             queued = zero | {"registered_operations": 2, "queued": 2}
             active = zero | {"registered_operations": 1, "started": 1, "tracked_tasks": 1,
                              "cleanup_growth_bytes": self.policy["tail_growth_bytes"]}

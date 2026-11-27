@@ -51,7 +51,7 @@ import {
   type EnqueuedChatInputFacts,
   type ProjectReferenceRow,
 } from "./chat-run-preparation-facts";
-import { officialWorkflowThreadCondition } from "./official-workflow-policy.service";
+import { platformTaskThreadCondition } from "./platform-task-thread.service";
 import {
   memberMemoryArchiveCondition,
   memberMemoryHeadFields,
@@ -136,7 +136,7 @@ function buildPreparationTables(
 function pickedPromptColumns(
   head: ReturnType<typeof buildPreparationTables>["head"],
   hasCapacity: SQL,
-  owner: Parameters<typeof officialWorkflowThreadCondition>[0],
+  owner: Parameters<typeof platformTaskThreadCondition>[0],
   requestInput?: EnqueuedChatInputFacts,
 ) {
   // These policies apply only to prompts with capacity to launch.
@@ -159,8 +159,8 @@ function pickedPromptColumns(
       head,
       hasCapacity,
     ),
-    isOfficialWorkflowThread:
-      sql`CASE WHEN ${hasPromptCapacity} THEN ${officialWorkflowThreadCondition(owner)}
+    isPlatformTaskThread:
+      sql`CASE WHEN ${hasPromptCapacity} THEN ${platformTaskThreadCondition(owner)}
         ELSE false END`.mapWith(pgBooleanDecoder),
     captureNetworkBodies:
       sql`CASE WHEN ${hasPromptCapacity} THEN ${capture} ELSE false END`.mapWith(
@@ -465,7 +465,7 @@ export function createChatRunPreparationSnapshot(
       thread,
       preparation: {
         hasCompletedPredecessorHistory,
-        isOfficialWorkflowThread: row.isOfficialWorkflowThread,
+        isPlatformTaskThread: row.isPlatformTaskThread,
         captureNetworkBodies: row.captureNetworkBodies,
         computerUseHostGrant: row.computerUseHostGrant,
         phoneUseGrant: row.phoneUseGrant,

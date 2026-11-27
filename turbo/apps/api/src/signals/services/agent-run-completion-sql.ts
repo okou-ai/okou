@@ -132,6 +132,11 @@ function outputIdentity(input: CompletionPublicationInput) {
 
 function outputDecision(input: CompletionPublicationInput) {
   const identity = outputIdentity(input);
+  // Keep unbound thread-ID completions until older standalone Pi callbacks
+  // drain and rollback cannot relaunch them (#50929). Bound retries stay exact.
+  const matchesPiSession = sql`(${identity.sessionId}::text = CASE WHEN r.official_workflow_provenance IS NOT NULL
+      THEN r.id::text ELSE COALESCE(r.chat_thread_id,r.id)::text END
+    OR (r.trigger_source = 'proactive' AND ${identity.sessionId}::text = r.id::text))`;
   const exactRetry = sql`r.status IN ('completed','failed','cancelled') AND r.result IS NOT NULL
     AND r.existing_valid AND r.result ? 'storageOutputs'
     AND r.framework = ${identity.type} AND r.framework_session_id = ${identity.sessionId}
@@ -152,8 +157,7 @@ function outputDecision(input: CompletionPublicationInput) {
       WHEN r.launch_snapshot->'schemaVersion' = '5'::jsonb AND
         (${identity.disposition}::text IS DISTINCT FROM 'native_only' OR NOT ${identity.nativeSessionValid}
           OR r.launch_snapshot->>'framework' IS DISTINCT FROM ${identity.type}::text
-          OR r.launch_snapshot->>'framework' = 'pi' AND ${identity.sessionId}::text IS DISTINCT FROM
-            CASE WHEN r.official_workflow_provenance IS NOT NULL THEN r.id::text ELSE COALESCE(r.chat_thread_id,r.id)::text END) THEN 'native'
+          OR r.launch_snapshot->>'framework' = 'pi' AND ${matchesPiSession} IS NOT TRUE) THEN 'native'
       WHEN COALESCE(r.launch_snapshot->>'framework' = 'pi',false) <> ${identity.type === "pi"} THEN 'type'
       WHEN r.status IN ('completed','failed','cancelled') AND r.result IS NOT NULL AND NOT COALESCE(r.existing_valid,false) THEN 'invalid-data'
       WHEN r.status IN ('completed','failed','cancelled') AND r.result IS NOT NULL AND r.result ? 'storageOutputs' AND r.missing_version THEN 'invalid-version'

@@ -32,6 +32,8 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
     @Volatile var readyReferenceDenied = false
     @Volatile var readyFileId = "10000000-1000-4000-8000-000000000007"
     @Volatile var beforeReadyReference: () -> Unit = {}
+    @Volatile var beforeReadyThumbnail: () -> Unit = {}
+    @Volatile var invalidReadyThumbnail = false
     @Volatile var deniedExternalFilename: String? = null
 
     fun install(
@@ -75,13 +77,18 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
                 path.startsWith("/inline-thumbnail/") || path.startsWith("/inline-original/") -> {
                     assertNull(request.getHeader("Authorization"))
                     assertNull(request.getHeader("Cookie"))
-                    if (path.startsWith("/inline-thumbnail/")) thumbnails.add(name)
-                    else originals.add(name)
+                    val thumbnail = path.startsWith("/inline-thumbnail/")
+                    if (thumbnail) thumbnails.add(name) else originals.add(name)
+                    if (thumbnail && name == readyReference) beforeReadyThumbnail()
                     if (name == deniedExternalFilename) MockResponse().setResponseCode(403)
                     else
                         MockResponse()
                             .setHeader("Content-Type", "image/png")
-                            .setBody(Buffer().write(image))
+                            .setBody(
+                                if (thumbnail && name == readyReference && invalidReadyThumbnail)
+                                    Buffer().writeUtf8("invalid image")
+                                else Buffer().write(image),
+                            )
                 }
                 else -> previous(request)
             }

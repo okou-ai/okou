@@ -4,7 +4,7 @@ import {
   useLastResolved,
   useSet,
 } from "ccstate-react";
-import type { ComponentProps, Ref } from "react";
+import type { ComponentProps, ReactNode, Ref } from "react";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -45,11 +45,13 @@ export function ArtifactDeleteMoreMenu({
   onDelete,
   onOpenChange,
   iconSize = 16,
+  children,
 }: {
   readonly triggerRef?: Ref<HTMLButtonElement>;
   readonly onDelete: () => void;
   readonly onOpenChange?: ComponentProps<typeof DropdownMenu>["onOpenChange"];
   readonly iconSize?: number;
+  readonly children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
@@ -74,6 +76,7 @@ export function ArtifactDeleteMoreMenu({
         </DropdownMenuTrigger>
       </ArtifactActionTooltip>
       <DropdownMenuContent align="end" sideOffset={6}>
+        {children}
         <DropdownMenuItem className="text-destructive" onClick={onDelete}>
           <Trash2 size={14} />
           {t(($) => {

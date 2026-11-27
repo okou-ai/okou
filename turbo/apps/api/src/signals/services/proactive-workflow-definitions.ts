@@ -1,29 +1,13 @@
-import {
-  PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY,
-  PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
-} from "@okouai/api-contracts/contracts/proactive-suggestions";
-import {
-  PROACTIVE_LEARNING_BLUEPRINT_KEY,
-  PROACTIVE_LEARNING_DEFINITION_NAME,
-} from "@okouai/api-contracts/contracts/proactive";
+import { MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive";
 
 // Retained identities stop installed schedules without deleting their history.
-export const RETIRED_PROACTIVE_DEFINITION_NAMES = [
+const RETIRED_PROACTIVE_DEFINITION_NAMES = [
   "proactive-action",
   "proactive-planning",
   "proactive-jobs",
 ] as const;
-
-export const PROACTIVE_WORKFLOW_DEFINITIONS = {
-  suggestions: {
-    name: PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
-    blueprintKey: PROACTIVE_SUGGESTIONS_BLUEPRINT_KEY,
-  },
-  learning: {
-    name: PROACTIVE_LEARNING_DEFINITION_NAME,
-    blueprintKey: PROACTIVE_LEARNING_BLUEPRINT_KEY,
-  },
-} as const;
 
 export function proactiveWorkflowKind(name: string | null) {
   if (name === PROACTIVE_LEARNING_DEFINITION_NAME) {
@@ -37,5 +21,19 @@ export function proactiveWorkflowKind(name: string | null) {
 export function isRetiredProactiveWorkflow(name: string | null) {
   return RETIRED_PROACTIVE_DEFINITION_NAMES.some((retired) => {
     return retired === name;
+  });
+}
+
+/** These installed identities are historical. A user's Workflow may have the same name. */
+export const LEGACY_PROACTIVE_WORKFLOW_NAMES = [
+  ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
+  PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
+  PROACTIVE_LEARNING_DEFINITION_NAME,
+  ...RETIRED_PROACTIVE_DEFINITION_NAMES,
+] as const;
+
+export function isLegacyProactiveWorkflow(definitionName: string | null) {
+  return LEGACY_PROACTIVE_WORKFLOW_NAMES.some((name) => {
+    return name === definitionName;
   });
 }

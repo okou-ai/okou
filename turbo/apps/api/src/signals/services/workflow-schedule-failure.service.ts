@@ -18,7 +18,7 @@ import {
   automationDisabledFeedEventInsertSql,
   automationDisableTransitionColumns,
 } from "./automation-disabled-feed-event-sql";
-import { settleMorningBriefSchedulePreRunFailure$ } from "./morning-brief-schedule-claim.service";
+import { settleMorningBriefSchedulePreRunFailure$ } from "./legacy-morning-brief-settlement.service";
 import { calculateNextRun } from "./time-automation";
 import { scheduleFailurePauseValues } from "./workflow-schedule-failure-policy";
 import type {

@@ -14,9 +14,11 @@ import { cn } from "@okouai/ui";
 export function ConnectorIcon({
   icon,
   size = 28,
+  loading = "lazy",
 }: {
   icon: PublicConnectorCatalogIcon | undefined;
   size?: number;
+  loading?: "lazy" | "eager";
 }) {
   const scaled = icon?.scale !== undefined;
 
@@ -34,10 +36,11 @@ export function ConnectorIcon({
           src={icon.url}
           alt=""
           decoding="async"
+          referrerPolicy="no-referrer"
           // A browsed category is a grid of a whole catalog section, so most
           // of its marks are far below the fold. Without this the largest
           // category opens by requesting every icon it holds at once.
-          loading="lazy"
+          loading={loading}
           className={cn(
             "block h-full w-full max-h-full max-w-full object-contain",
             "opacity-0 data-[loaded=true]:opacity-100 motion-safe:transition-opacity motion-safe:duration-150 motion-safe:ease-out",

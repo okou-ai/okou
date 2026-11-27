@@ -183,6 +183,10 @@ export const iosClientContracts: readonly {
     route: chatConnectorAccessContract.updateAccountPolicy,
   },
   {
+    id: "ios.chatConnectorAccessContract.overview",
+    route: chatConnectorAccessContract.overview,
+  },
+  {
     id: "ios.chatConnectorAccessContract.overviewTarget",
     route: chatConnectorAccessContract.overviewTarget,
   },

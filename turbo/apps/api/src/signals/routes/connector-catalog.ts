@@ -43,6 +43,7 @@ import {
 } from "../services/connector-catalog-slug-source.service";
 import { notFound, providerUnavailable } from "../../lib/error";
 import { settle } from "../utils";
+import { connectorIconResponse } from "../services/connector-icon-response";
 import { builtinConnectorAccountSlugs } from "../services/connector-account-lifecycle.service";
 import { acceptedConnectorCatalogRelease$ } from "../services/connector-catalog-release.service";
 
@@ -342,6 +343,30 @@ const getConnectorCatalogInner$ = command(
   },
 );
 
+// The logo is a public asset. Resolve it against the accepted release without
+// reading an account, an organization's catalog, or a connector's auth methods.
+const getConnectorCatalogIcon$ = command(
+  async ({ get }, signal: AbortSignal) => {
+    const { connectorSlug } = get(pathParamsOf(connectorCatalogContract.icon));
+    const [row] = await get(db$)
+      .select({ icon: connectorCatalogEntries.icon })
+      .from(connectorCatalog)
+      .leftJoin(
+        connectorCatalogEntries,
+        connectorCatalogSlugJoin([connectorSlug]),
+      )
+      .where(connectorCatalogCurrentWhere());
+    signal.throwIfAborted();
+    if (!row) {
+      return connectorCatalogUnavailable();
+    }
+    if (!row.icon) {
+      return connectorCatalogNotFound();
+    }
+    return connectorIconResponse(row.icon, signal);
+  },
+);
+
 const connectorCatalogIdentity$ = computed((get) => {
   const { orgId, userId } = get(organizationAuthContext$);
   return Promise.resolve({ orgId, userId });
@@ -419,6 +444,10 @@ export const connectorCatalogRoutes: readonly RouteEntry[] = [
   {
     route: connectorCatalogContract.get,
     handler: authRoute(connectorCatalogAuth, getConnectorCatalogInner$),
+  },
+  {
+    route: connectorCatalogContract.icon,
+    handler: getConnectorCatalogIcon$,
   },
   {
     route: connectorCatalogContract.permissions,

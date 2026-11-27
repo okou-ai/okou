@@ -238,9 +238,8 @@ private struct WorkspaceRootView: View {
   }
 
   private var workspace: some View {
-    // The page is held while a For you action runs, which the session graph records.
-    ForYouBusyReader(forYou: store.forYou) { forYouBusy in
-      workspaceNavigation(forYouBusy: forYouBusy)
+    ForYouNavigationReader(forYou: store.forYou) { state in
+      workspaceNavigation(forYouState: state)
     }
     .sensoryFeedback(.selection, trigger: sidebar.isOpen)
     .task(id: sidebar.path.contains(.forYou)) {
@@ -284,8 +283,8 @@ private struct WorkspaceRootView: View {
     .modifier(RequiredUpdateCover(store: store))
   }
 
-  private func workspaceNavigation(forYouBusy: Bool) -> some View {
-    WorkspaceNavigation(sidebar: sidebar, forYouBusy: forYouBusy) {
+  private func workspaceNavigation(forYouState: ForYouStore.NavigationState) -> some View {
+    WorkspaceNavigation(sidebar: sidebar, forYouState: forYouState) {
       // Mount the sidebar after identity and its complete local baseline are restored.
       RestoredSidebarGate(store: store) {
         if authentication.presentation?.userID == userID,
@@ -407,21 +406,21 @@ private struct WorkspaceRootView: View {
   }
 }
 
-/// Resolves whether a For you action is running from the workspace session's graph, for the
-/// navigation that holds the page while one runs. It applies under the workspace's Store
-/// provider.
-private struct ForYouBusyReader<Content: View>: View {
+/// Resolve only the deck changes that affect navigation under the workspace's Store provider.
+private struct ForYouNavigationReader<Content: View>: View {
   let forYou: ForYouStore
-  let content: (Bool) -> Content
-  @ResolvedValue private var busy: Bool?
+  let content: (ForYouStore.NavigationState) -> Content
+  @ResolvedValue private var state: ForYouStore.NavigationState?
 
-  init(forYou: ForYouStore, @ViewBuilder content: @escaping (Bool) -> Content) {
+  init(
+    forYou: ForYouStore, @ViewBuilder content: @escaping (ForYouStore.NavigationState) -> Content
+  ) {
     self.forYou = forYou
     self.content = content
-    _busy = ResolvedValue(forYou.busyValue)
+    _state = ResolvedValue(forYou.navigationState)
   }
 
-  var body: some View { content(busy ?? forYou.busy) }
+  var body: some View { content(state ?? forYou.deck.navigationState) }
 }
 
 /// Shows its content once the workspace has restored the sidebar's cached chats, Projects and

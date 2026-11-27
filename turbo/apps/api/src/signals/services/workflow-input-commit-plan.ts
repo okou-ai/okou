@@ -16,7 +16,6 @@ import {
   pendingWorkflowScheduleTickCondition,
   type workflowAutomationQueueEventPlan,
   type WorkflowRecurringScheduleClaim,
-  type WorkflowScheduleClaimPlan,
 } from "./workflow-automation-enqueue.service";
 import type {
   WorkflowAutomationBinding,
@@ -24,11 +23,7 @@ import type {
 } from "./workflow-input-queue.service";
 import type { threadModelReplacementWritePlan } from "./chat-input-model.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
-import {
-  consumeRecurringWorkflowScheduleCtes,
-  consumeWorkflowScheduleAnchorSql,
-  journalWorkflowScheduleClaimSql,
-} from "./workflow-schedule-queue.service";
+import { consumeRecurringWorkflowScheduleCtes } from "./workflow-schedule-queue.service";
 import { workflowRewardQueuedEventInsert } from "./workflow-reward-source-publication";
 
 export const workflowInputCommitRowSchema = object({
@@ -159,7 +154,6 @@ export function workflowInputCommitSql(args: {
     readonly binding: WorkflowAutomationBinding;
     readonly claim: WorkflowRecurringScheduleClaim;
   };
-  readonly scheduleClaim?: WorkflowScheduleClaimPlan;
   readonly queueStatement: SQL;
   readonly replacement?: {
     readonly statement: SQL;
@@ -215,24 +209,6 @@ export function workflowInputCommitSql(args: {
     guards.push(
       sql`WHEN NOT EXISTS (SELECT 1 FROM workflow_consumed_claim) THEN '__TX0333_V1_SCHEDULE__'`,
     );
-  } else if (args.scheduleClaim) {
-    ctes.push(
-      sql`workflow_consumed_claim AS (${consumeWorkflowScheduleAnchorSql(args.scheduleClaim, currentTime, accepted)})`,
-    );
-    ctes.push(
-      sql`workflow_journaled_claim AS (${journalWorkflowScheduleClaimSql(
-        args.scheduleClaim,
-        plan.row.id,
-        currentTime,
-        sql`EXISTS (SELECT 1 FROM workflow_consumed_claim)`,
-      )})`,
-    );
-    guards.push(
-      sql`WHEN NOT EXISTS (SELECT 1 FROM workflow_consumed_claim) THEN '__TX0333_V1_SCHEDULE__'`,
-    );
-    guards.push(
-      sql`WHEN NOT EXISTS (SELECT 1 FROM workflow_journaled_claim) THEN '__TX0333_V1_JOURNAL__'`,
-    );
   }
   if (args.replacePendingTicks) {
     ctes.push(
@@ -284,7 +260,7 @@ export function workflowInputRollbackReason(error: unknown) {
     return null;
   }
   return (
-    /^invalid input syntax for type integer: "__TX0333_V1_(DUPLICATE|SCHEDULE|JOURNAL|SOURCE_\d+)__"$/.exec(
+    /^invalid input syntax for type integer: "__TX0333_V1_(DUPLICATE|SCHEDULE|SOURCE_\d+)__"$/.exec(
       error.cause.message,
     )?.[1] ?? null
   );

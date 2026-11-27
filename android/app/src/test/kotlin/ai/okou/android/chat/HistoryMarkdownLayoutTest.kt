@@ -60,6 +60,23 @@ class HistoryMarkdownLayoutTest {
     }
 
     @Test
+    fun workspaceSearchOpensAnImageAfterEscapedPipesInTheSameCell() {
+        val source =
+            "Read the [plan](https://example.org/Release).\n\n" +
+                "| Phase | Schedule |\n| --- | --- |\n" +
+                "| Review | ${"\\| ".repeat(24)}![Release chart](/artifacts/launch) |"
+        val ranges = Regex("Release").findAll(source).map { it.range }.toList()
+        val excerpt = workspaceSearchMarkdownExcerpt(source, ranges)
+        assertEquals("Release chart", excerpt.text)
+        assertEquals(listOf(0..6), excerpt.ranges)
+        assertEquals(ranges.last(), excerpt.sourceRange)
+
+        val target = reply(source).workspaceSearchTarget(excerpt.sourceRange, inlineImages = true)
+        assertEquals("1/1/1", target.markdownBlockPath)
+        assertEquals("1/1/1/0", target.markdownImage)
+    }
+
+    @Test
     fun workspaceSearchFocusesTheReplyWhenOnlyALinkDefinitionMatches() {
         val keyword = "release-notes"
         val source = "Read the [guide][docs].\n\n[docs]: https://example.com/$keyword"

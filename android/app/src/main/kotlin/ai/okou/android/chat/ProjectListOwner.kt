@@ -52,6 +52,7 @@ internal constructor(
     val phase: ChatReadPhase = ChatReadPhase.Idle,
     val source: ChatListSource? = null,
     val cacheUnavailable: Boolean = false,
+    internal val refreshFailureOrder: Long? = null,
     val renamingId: String? = null,
     val deletingId: String? = null,
     internal val unconfirmedRenameAttempts: Map<String, RenameSubmission> = emptyMap(),
@@ -86,6 +87,7 @@ internal class ProjectListOwner(
     private val dispatcher: CoroutineDispatcher,
     private val wallMillis: () -> Long,
     private val syncChatsAfterDelete: suspend () -> Unit,
+    private val visibleListFeedbackScope: () -> Any?,
     private val readState: () -> ProjectListUiState,
     private val publish: (ProjectListUiState) -> Unit,
 ) {
@@ -608,6 +610,7 @@ internal class ProjectListOwner(
 
     fun refresh(verifyWrite: Boolean = false) {
         if (current() && projectsJob?.isActive != true) {
+            val feedbackScope = visibleListFeedbackScope().takeUnless { verifyWrite }
             val retry = if (verifyWrite) null else ChatDependencyRetry()
             projectsRetry = retry
             state = state.copy(phase = ChatReadPhase.Loading)
@@ -707,6 +710,7 @@ internal class ProjectListOwner(
                         snapshot.copy(
                             phase = ChatReadPhase.Ready,
                             source = ChatListSource.Network,
+                            refreshFailureOrder = null,
                             renameRejection =
                                 snapshot.renameRejection.takeIf { resolvedRejection == null },
                             confirmedRenameIds = confirmedRenameIds,
@@ -725,17 +729,34 @@ internal class ProjectListOwner(
                     throw cancelled
                 } catch (error: Exception) {
                     // A missing Projects collection does not revoke the workspace session.
-                    if (error is ApiFailure.Http && error.status == 404) {
+                    val collectionMissing = error is ApiFailure.Http && error.status == 404
+                    if (current()) {
+                        if (!collectionMissing) onFailure(error)
                         if (current()) {
-                            unresolvedProjectRenames.clear()
-                            // Keep the confirmed checkpoint for catch-up and rename receipts.
-                            publishProjects(
-                                state.copy(source = null, phase = ChatReadPhase.Failed),
-                            )
+                            val snapshot = state
+                            val failed =
+                                snapshot.copy(
+                                    source = snapshot.source.takeUnless { collectionMissing },
+                                    phase = ChatReadPhase.Failed,
+                                    refreshFailureOrder =
+                                        if (
+                                            feedbackScope != null &&
+                                                feedbackScope === visibleListFeedbackScope()
+                                        )
+                                            nextChatFeedbackOrder()
+                                        else
+                                            snapshot.refreshFailureOrder.takeUnless {
+                                                collectionMissing
+                                            },
+                                )
+                            if (collectionMissing) {
+                                unresolvedProjectRenames.clear()
+                                // Keep the confirmed checkpoint for catch-up and rename receipts.
+                                publishProjects(failed)
+                            } else {
+                                state = failed
+                            }
                         }
-                    } else if (current()) {
-                        onFailure(error)
-                        if (current()) state = state.copy(phase = ChatReadPhase.Failed)
                     }
                 } finally {
                     projectsRetry = null

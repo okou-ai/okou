@@ -20,15 +20,22 @@ import {
 
 const context = testContext();
 
+test("a saved callback with an explicit icon retains its published URL", async () => {
+  const url = "https://static.vm0.io/test-fixtures/connectors/github.svg";
+  const query = new URLSearchParams({
+    iconUrl: url,
+    iconInvertInDarkMode: "false",
+  });
+  await setupPage({
+    context,
+    auth: null,
+    host: "app.okou.ai",
+    path: `/connectors/github/callback/success?${query}`,
+  });
+  expect(screen.getByAltText("")).toHaveAttribute("src", url);
+});
+
 test("connector-callbacks-007 a completed Mercury connection identifies its banking providers", async () => {
-  const connector = catalogConnector({
-    slug: "mercury",
-    label: "Mercury",
-    method: browserAuthMethod(),
-  });
-  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
-    return respond(200, { connector });
-  });
   await setupPage({
     context,
     auth: null,
@@ -100,40 +107,15 @@ test("connector-callbacks-008 a denied Notion callback replaces the provider que
   expect(result.searchParams.has("state")).toBeFalsy();
 });
 
-test("connector-callbacks-002 GitHub publishes its account and catalog mark after the public callback", async () => {
-  const mark = "https://icons.example.test/authorized-github.svg";
-  let authorized = false;
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(401, {
-      error: { code: "UNAUTHORIZED", message: "Sign in" },
-    });
-  });
+test("connector-callbacks-002 GitHub publishes its account and mark after the public callback", async () => {
   context.mocks.api(
     builtinConnectorsSlugCallbackContract.callback,
     ({ query, params, respond }) => {
-      authorized =
-        params.connectorSlug === "github" &&
-        query.code === "port-code" &&
-        query.state === "review";
+      expect(params.connectorSlug).toBe("github");
+      expect(query).toMatchObject({ code: "port-code", state: "review" });
       return respond(200, { status: "success", username: "octocat" });
     },
   );
-  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
-    const connector = catalogConnector({
-      slug: "github",
-      label: "GitHub",
-      method: browserAuthMethod(),
-    });
-    return respond(200, {
-      connector: {
-        ...connector,
-        icon: {
-          ...connector.icon,
-          url: authorized ? mark : "https://icons.example.test/pending.svg",
-        },
-      },
-    });
-  });
   await setupPage({
     context,
     auth: null,
@@ -142,23 +124,15 @@ test("connector-callbacks-002 GitHub publishes its account and catalog mark afte
   });
   await screen.findByRole("heading", { name: "GitHub connected" });
   expect(screen.getByText(/^Connected as octocat\./)).toBeInTheDocument();
-  expect(screen.getByAltText("")).toHaveAttribute("src", mark);
+  expect(screen.getByAltText("")).toHaveAttribute(
+    "src",
+    "https://api.okou.ai/api/connector-catalog/github/icon",
+  );
   expect(location.pathname).toBe("/connectors/github/callback/success");
   const query = new URLSearchParams(location.search);
   expect(query.has("code")).toBeFalsy();
   expect(query.has("state")).toBeFalsy();
 });
-
-function serveStravaCatalog() {
-  const connector = catalogConnector({
-    slug: "strava",
-    label: "Strava",
-    method: browserAuthMethod(),
-  });
-  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
-    return respond(200, { connector });
-  });
-}
 
 test("a native denial keeps the connector error and an app return fallback after automatic opening", async () => {
   const attempt = "b86a89e2-052a-4c88-ae3e-1d71aa1631d2";
@@ -197,18 +171,19 @@ test("a native denial keeps the connector error and an app return fallback after
 });
 
 test.each([null, "app.okou.ai"] as const)(
-  "A Strava confirmation returns to iOS with the attempt identifier over %s",
+  "A Google Search Console confirmation returns to iOS with the attempt identifier over %s",
   async (host) => {
-    serveStravaCatalog();
     const attempt = "b86a89e2-052a-4c88-ae3e-1d71aa1631d2";
     const destination = "ai.okou.ios://connector-authorization/" + attempt;
     const navigation = context.mocks.browser.locationAssign();
+    const grant = context.mocks.deferred<void>();
     context.mocks.api(
       builtinConnectorsSlugCallbackContract.callback,
-      ({ query, respond }) => {
+      async ({ query, respond }) => {
+        await grant.promise;
         expect(query).toMatchObject({
-          code: "activity-read",
-          state: "trail-return",
+          code: "console-grant",
+          state: "browser-state",
           scope: "read",
           responseMode: "json",
         });
@@ -223,11 +198,22 @@ test.each([null, "app.okou.ai"] as const)(
         });
       },
     );
-    await setupPage({
+    const page = await startPage({
       context,
       auth: null,
-      path: "/connectors/strava/callback?code=activity-read&state=trail-return&scope=read",
+      host: "app.okou.ai",
+      path: "/connectors/google-search-console/callback?code=console-grant&state=browser-state&scope=read",
     });
+    await page.content;
+    const image = screen.getByAltText("");
+    expect(image).toHaveAttribute(
+      "src",
+      "https://api.okou.ai/api/connector-catalog/google-search-console/icon",
+    );
+    expect(image).toHaveAttribute("loading", "eager");
+    expect(image).toHaveAttribute("referrerpolicy", "no-referrer");
+    grant.resolve();
+    await page.ready;
     const link = await findNamedLink("Return to Okou");
     expect(link).toHaveAttribute("href", destination);
     expect(
@@ -247,7 +233,6 @@ test.each([
 ] as const)(
   "A saved Strava result reopens iOS over %s with status %s",
   async (host, status) => {
-    serveStravaCatalog();
     const attempt = "b9a238d5-0fb4-43ec-9cd2-d8d5547911a9";
     const destination = "ai.okou.ios://connector-authorization/" + attempt;
     const navigation = context.mocks.browser.locationAssign();
@@ -265,6 +250,10 @@ test.each([
         attempt +
         (host ? "&nativeAppHttpsHost=" + host : ""),
     });
+    expect(screen.getByAltText("")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/api/connector-catalog/strava/icon"),
+    );
     const link = await findNamedLink("Return to Okou");
     expect(link).toHaveAttribute("href", destination);
     expect(

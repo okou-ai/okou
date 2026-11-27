@@ -6,10 +6,10 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 
 /**
- * Official schedules run at the platform's expense, so an occurrence is served
+ * Platform schedules run at the platform's expense, so an occurrence is served
  * only when its owner started a Run in the same workspace within this window.
  */
-const OFFICIAL_SCHEDULE_ACTIVITY_WINDOW_MS = 7 * 24 * 60 * 60_000;
+const PLATFORM_SCHEDULE_ACTIVITY_WINDOW_MS = 7 * 24 * 60 * 60_000;
 
 // A member starts these Runs from a chat surface. Automation, Agent, webhook
 // and test Runs do not show that the member is still using Okou.
@@ -27,7 +27,7 @@ const MANUAL_RUN_TRIGGER_SOURCES = [
   "github",
 ] as const satisfies readonly TriggerSource[];
 
-function officialOwnerActivityCondition(
+function platformOwnerActivityCondition(
   owner: { readonly orgId: string; readonly userId: string },
   at: Date,
 ) {
@@ -37,23 +37,23 @@ function officialOwnerActivityCondition(
     inArray(agentRuns.triggerSource, [...MANUAL_RUN_TRIGGER_SOURCES]),
     gte(
       agentRuns.createdAt,
-      new Date(at.getTime() - OFFICIAL_SCHEDULE_ACTIVITY_WINDOW_MS),
+      new Date(at.getTime() - PLATFORM_SCHEDULE_ACTIVITY_WINDOW_MS),
     ),
   );
 }
 
-export function activeOfficialScheduleOwnerQuery(
+export function activePlatformScheduleOwnerQuery(
   owner: { readonly orgId: string; readonly userId: string },
   at: Date,
 ) {
   return new QueryBuilder()
     .select({ id: agentRuns.id })
     .from(agentRuns)
-    .where(officialOwnerActivityCondition(owner, at))
+    .where(platformOwnerActivityCondition(owner, at))
     .limit(1);
 }
 
-export const officialScheduleOwnerIsActive$ = command(
+export const platformScheduleOwnerIsActive$ = command(
   async (
     { get },
     owner: { readonly orgId: string; readonly userId: string },
@@ -63,7 +63,7 @@ export const officialScheduleOwnerIsActive$ = command(
     const [manualRun] = await get(db$)
       .select({ id: agentRuns.id })
       .from(agentRuns)
-      .where(officialOwnerActivityCondition(owner, at))
+      .where(platformOwnerActivityCondition(owner, at))
       .limit(1);
     signal.throwIfAborted();
     return manualRun !== undefined;

@@ -17,7 +17,7 @@ internal class DefaultModelApiFixture(
     @Volatile var codexExecution = false
     @Volatile var gptSortOrder = 1
     @Volatile var gptFastAvailable = true
-    @Volatile var gptFastUsageMultiplier: Double? = 2.5
+    @Volatile var gptFastMultiplier: Double? = 2.5
     @Volatile var planRestricted = false
     @Volatile var onlyAuto = false
     @Volatile var beforeCatalogReturn: (() -> Unit)? = null
@@ -95,8 +95,7 @@ internal class DefaultModelApiFixture(
     private val catalog
         get(): String {
             val runOptions =
-                gptFastUsageMultiplier?.let { """{"fast":{"chatGptUsageMultiplier":$it}}""" }
-                    ?: "{}"
+                gptFastMultiplier?.let { """{"fast":{"chatGptUsageMultiplier":$it}}""" } ?: "{}"
             return """{"models":[{"model":"$gptModel","displayName":"$gptLabel","sortOrder":$gptSortOrder,"replacedBy":null,"resolvedModel":"$gptModel","builtInOnRestrictedPlans":false,"piRouteClass":null,"runOptions":$runOptions},{"model":"claude-test","displayName":"Claude Sonnet 5","sortOrder":2,"replacedBy":null,"resolvedModel":"claude-test","builtInOnRestrictedPlans":false,"piRouteClass":null}],"routes":[{"model":"$gptModel","providerType":"codex-oauth-token","concreteProviderType":"codex-oauth-token","subscriptionType":"codex-oauth-token","upstreamModel":"$gptModel","enabled":true,"priority":1,"serviceTiers":["priority"],"defaultServiceTier":null,"efforts":$gptEfforts,"defaultEffort":"medium","piRuntimeCapable":$piUltra},{"model":"claude-test","providerType":"claude-code-oauth-token","concreteProviderType":"claude-code-oauth-token","subscriptionType":"claude-code-oauth-token","upstreamModel":"claude-test","enabled":true,"priority":1,"serviceTiers":[],"defaultServiceTier":null,"efforts":["medium","high"],"defaultEffort":"medium"}],"systemDefaultModel":"$gptModel"}"""
         }
 

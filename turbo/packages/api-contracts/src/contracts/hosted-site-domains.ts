@@ -36,6 +36,11 @@ export const hostedDomainSetupSchema = object({
 export const hostedDomainVerificationSchema = object({
   status: zEnum(["ready", "incomplete", "unavailable"]),
   eligibleForSelection: boolean().default(false),
+  automatic: object({
+    id: uuid(),
+    expiresAt: iso.datetime(),
+    status: zEnum(["checking", "timed_out"]),
+  }).optional(),
   checkedAt: iso.datetime(),
   recordChecks: array(hostedDomainRecordCheckSchema),
   validationRecords: array(

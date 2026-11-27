@@ -25,19 +25,25 @@ import {
   openAudioInputQuotaRecovery$,
 } from "../voice-io/voice-io-stt.ts";
 
-const recordAsMessage$ = computed(async (get) => {
+export const composerVoiceMessagesEnabled$ = computed(async (get) => {
   const switches = await get(featureSwitches$);
   return switches[FeatureSwitchKey.ComposerVoiceMessages];
 });
 
 export const composerVoiceQuota$ = computed(async (get) => {
-  return (await get(recordAsMessage$)) ? null : await get(audioInputQuota$);
+  return (await get(composerVoiceMessagesEnabled$))
+    ? null
+    : await get(audioInputQuota$);
 });
 
 const L = logger("Composer:VoiceDraft");
 export type ComposerVoiceInputStatus =
   "idle" | "recording" | "transcribing" | "recorded" | "failed" | "discarding";
-type ComposerVoiceAction = "toggle" | "finish" | "discard";
+export type ComposerVoiceDeliveryMode = "text" | "voice";
+export type ComposerVoicePendingAction =
+  "starting" | "transcribing" | "uploading" | "discarding";
+type ComposerVoiceAction =
+  "toggle" | "finish" | "finish-text" | "finish-voice" | "discard";
 type DeliverVoiceInputCommand = Command<Promise<void>, [string, AbortSignal]>;
 interface ComposerVoiceInputState {
   readonly status: "idle" | "recording" | "recorded";
@@ -127,6 +133,10 @@ function createVoiceDraftData(draftTarget: string) {
 
 type VoiceDraftData = ReturnType<typeof createVoiceDraftData>;
 type VoiceDraftCommand = Command<Promise<void>, [AbortSignal]>;
+type DeliverVoiceDraftCommand = Command<
+  Promise<void>,
+  [ComposerVoiceDeliveryMode, AbortSignal]
+>;
 
 function createVoiceDraftDelivery(
   data: VoiceDraftData,
@@ -142,74 +152,92 @@ function createVoiceDraftDelivery(
       return { editorContext: set(readEditorContext$) };
     }),
   });
-  const deliver$ = command(async ({ get, set }, signal: AbortSignal) => {
-    set(providerUnavailable$, null);
-    const recording = await get(recording$);
-    signal.throwIfAborted();
-    if (!recording) {
-      return;
-    }
-    const key = await get(storageKey$);
-    signal.throwIfAborted();
-    if (recording.asVoiceMessage) {
-      const blob = await readVoiceDraftAudio(key, recording.id);
+  const deliver$ = command(
+    async (
+      { get, set },
+      mode: ComposerVoiceDeliveryMode,
+      signal: AbortSignal,
+    ) => {
+      set(providerUnavailable$, null);
+      const recording = await get(recording$);
       signal.throwIfAborted();
-      const file = new File([blob], "Voice recording.wav", { type: blob.type });
-      const uploaded = await set(
-        uploadFileToStorage$,
-        file,
-        undefined,
-        true,
+      if (!recording) {
+        return;
+      }
+      const key = await get(storageKey$);
+      signal.throwIfAborted();
+      if (mode === "voice") {
+        await set(incremental.cancel$, signal);
+        signal.throwIfAborted();
+        const blob = await readVoiceDraftAudio(key, recording.id);
+        signal.throwIfAborted();
+        const file = new File([blob], "Voice recording.wav", {
+          type: blob.type,
+        });
+        const uploaded = await set(
+          uploadFileToStorage$,
+          file,
+          undefined,
+          true,
+          signal,
+        );
+        signal.throwIfAborted();
+        await set(deliverClip$, uploaded.id, signal);
+      } else {
+        if (recording.asVoiceMessage) {
+          const quota = await get(audioInputQuota$);
+          signal.throwIfAborted();
+          if (!quota.allowed) {
+            await set(openAudioInputQuotaRecovery$, signal);
+            return;
+          }
+        }
+        const result = await set(incremental.transcribe$, signal);
+        signal.throwIfAborted();
+        if (result === undefined) {
+          return;
+        }
+        if (result.kind === "unavailable") {
+          set(providerUnavailable$, {
+            recordingId: recording.id,
+            message: result.message,
+          });
+          return;
+        }
+        const text = result.text;
+        if (text === undefined) {
+          return;
+        }
+        if (text.trim()) {
+          await set(deliverText$, text, signal);
+        } else {
+          toast.info(
+            i18n.t(($) => {
+              return $.chat.voice.noSpeechDetected;
+            }),
+          );
+        }
+      }
+
+      signal.throwIfAborted();
+      // Once the editor accepts this recording, a failed cleanup must not duplicate it.
+      set(ownedRecording$, { key, recording: null });
+      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
+      const removed = await settle(
+        deleteVoiceDraftRecording(key, recording.id),
         signal,
       );
       signal.throwIfAborted();
-      await set(deliverClip$, uploaded.id, signal);
-    } else {
-      const result = await set(incremental.transcribe$, signal);
-      signal.throwIfAborted();
-      if (result === undefined) {
-        return;
-      }
-      if (result.kind === "unavailable") {
-        set(providerUnavailable$, {
-          recordingId: recording.id,
-          message: result.message,
-        });
-        return;
-      }
-      const text = result.text;
-      if (text === undefined) {
-        return;
-      }
-      if (text.trim()) {
-        await set(deliverText$, text, signal);
-      } else {
-        toast.info(
+      if (!removed.ok) {
+        L.error("Voice recording cleanup failed", removed.error);
+        toast.error(
           i18n.t(($) => {
-            return $.chat.voice.noSpeechDetected;
+            return $.chat.voice.cleanupFailed;
           }),
         );
       }
-    }
-
-    signal.throwIfAborted();
-    // Once the editor accepts this recording, a failed cleanup must not duplicate it.
-    set(ownedRecording$, { key, recording: null });
-    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-    const removed = await settle(
-      deleteVoiceDraftRecording(key, recording.id),
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!removed.ok) {
-      L.error("Voice recording cleanup failed", removed.error);
-      toast.error(
-        i18n.t(($) => {
-          return $.chat.voice.cleanupFailed;
-        }),
-      );
-    }
-  });
+    },
+  );
   return {
     deliver$,
     initialize$: incremental.initialize$,
@@ -220,7 +248,7 @@ function createVoiceDraftDelivery(
 
 function createVoiceDraftMutations(
   data: VoiceDraftData,
-  deliver$: VoiceDraftCommand,
+  deliver$: DeliverVoiceDraftCommand,
   initializeTranscription$: VoiceDraftCommand,
   appendTranscription$: Command<Promise<void>, [boolean, AbortSignal]>,
   cancelTranscription$: VoiceDraftCommand,
@@ -307,17 +335,19 @@ function createVoiceDraftMutations(
     );
     signal.throwIfAborted();
   });
-  const finish$ = command(async ({ set }, signal: AbortSignal) => {
-    await withRecordingFailureToast(
-      set(capture.finish$, signal),
-      i18n.t(($) => {
-        return $.chat.voice.finishRecordingFailed;
-      }),
-      signal,
-    );
-    signal.throwIfAborted();
-    await set(deliver$, signal);
-  });
+  const finish$ = command(
+    async ({ set }, mode: ComposerVoiceDeliveryMode, signal: AbortSignal) => {
+      await withRecordingFailureToast(
+        set(capture.finish$, signal),
+        i18n.t(($) => {
+          return $.chat.voice.finishRecordingFailed;
+        }),
+        signal,
+      );
+      signal.throwIfAborted();
+      await set(deliver$, mode, signal);
+    },
+  );
   return { start$, finish$, discard$ };
 }
 
@@ -332,6 +362,7 @@ function createVoiceActionBindings(
   const owner$ = computed((get) => {
     return get(internalOwner$);
   });
+  const pendingAction$ = state<ComposerVoicePendingAction | null>(null);
   // The page or forward-target command owns cancellation, independently of
   // whether React currently mounts this composer's controls.
   const setup$ = command(({ get, set }, parentSignal: AbortSignal) => {
@@ -345,6 +376,7 @@ function createVoiceActionBindings(
         if (get(internalOwner$) === owner) {
           set(capture.cancel$);
           set(internalOwner$, null);
+          set(pendingAction$, null);
         }
       },
       { once: true },
@@ -362,14 +394,34 @@ function createVoiceActionBindings(
       }
       const signal = AbortSignal.any([owner.signal, parentSignal]);
       signal.throwIfAborted();
+      const pending: ComposerVoicePendingAction =
+        action === "discard"
+          ? "discarding"
+          : action === "finish-voice"
+            ? "uploading"
+            : action === "finish" ||
+                action === "finish-text" ||
+                get(capture.capture$)
+              ? "transcribing"
+              : "starting";
+      set(pendingAction$, pending);
       if (action === "discard") {
         await set(discard$, signal);
-      } else if (action === "finish" || get(capture.capture$)) {
-        await set(finish$, signal);
+      } else if (action === "finish-voice") {
+        await set(finish$, "voice", signal);
+      } else if (
+        action === "finish" ||
+        action === "finish-text" ||
+        get(capture.capture$)
+      ) {
+        await set(finish$, "text", signal);
       } else {
         await set(start$, signal);
       }
       signal.throwIfAborted();
+      if (get(pendingAction$) === pending) {
+        set(pendingAction$, null);
+      }
     },
   );
   const root$ = state<{ readonly element: HTMLElement } | null>(null);
@@ -395,7 +447,7 @@ function createVoiceActionBindings(
       ?.element.querySelector<HTMLButtonElement>("[data-composer-voice-toggle]")
       ?.click();
   });
-  return { owner$, setup$, run$, setRootRef$, toggle$ };
+  return { owner$, pendingAction$, setup$, run$, setRootRef$, toggle$ };
 }
 
 export function createComposerVoiceInputSignals(

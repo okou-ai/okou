@@ -64,6 +64,7 @@ import ai.okou.android.chat.projectDestinations
 import ai.okou.android.chat.rememberChatAttachmentPicker
 import ai.okou.android.chat.rowActions
 import ai.okou.android.chat.searchCatalog
+import ai.okou.android.chat.searchWorkflowById
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.connectors.ConnectorsPage
@@ -787,7 +788,7 @@ internal fun OkouApp(
             result.id,
             WorkspaceTarget.Chat(result.id),
             fromSearch = true,
-            searchMessageAnchor = SearchMessageAnchor(hit.seqId, hit.firstRange),
+            searchMessageAnchor = SearchMessageAnchor(hit.seqId, hit.sourceRange),
         )
         composer?.acknowledge(result.id)
         activeChats.history.open(result)
@@ -1027,6 +1028,10 @@ internal fun OkouApp(
         chats?.listVisibilityChanged(needsChatList)
         onDispose { chats?.listVisibilityChanged(false) }
     }
+    DisposableEffect(chats, showChatList) {
+        chats?.listPaneVisibilityChanged(showChatList)
+        onDispose { chats?.listPaneVisibilityChanged(false) }
+    }
     LaunchedEffect(newChat, provisionalId, provisionalChat, createdId) {
         if (newChat != null && navigation.target == newChat && provisionalId != null) {
             conversations.open(provisionalId)
@@ -1183,6 +1188,7 @@ internal fun OkouApp(
             snackbar,
             conversationSnackbar,
             showChatList,
+            provisionalChats,
             visibleConversationId,
             navigationError =
                 conversationNavigationErrors.firstOrNull { it.threadId == visibleConversationId },
@@ -1763,11 +1769,12 @@ internal fun OkouApp(
                                         else workflowState?.searchCatalog(searchState.keyword)
                                     }
                                 val selectedWorkflowId = searchWorkflowId
-                                val intro = selectedWorkflowId?.let { id ->
-                                    (workflowRead as? SearchRead.Ready)?.rows?.firstOrNull {
-                                        it.id == id
+                                val intro =
+                                    remember(workflowState?.catalog, selectedWorkflowId) {
+                                        selectedWorkflowId?.let {
+                                            workflowState?.searchWorkflowById(it)
+                                        }
                                     }
-                                }
                                 val unavailableWorkflowId = selectedWorkflowId.takeIf {
                                     workflowRead == SearchRead.Failed ||
                                         workflowRead == SearchRead.AccessLost ||

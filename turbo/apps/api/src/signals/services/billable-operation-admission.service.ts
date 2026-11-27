@@ -1,4 +1,4 @@
-import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
+import { platformPaidRunCreditAccess$ } from "./platform-paid-run.service";
 import { command } from "ccstate";
 
 import { resolveOrgCreditAvailability$ } from "./run-admission.service";
@@ -22,7 +22,7 @@ export const checkBillableOperationCredits$ = command(
     if (!availability || availability.status !== "active") {
       return false;
     }
-    const access = await set(officialWorkflowCreditAccess$, args, signal);
+    const access = await set(platformPaidRunCreditAccess$, args, signal);
     if (access === "closed") {
       return "closed";
     }

@@ -1,37 +1,15 @@
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { command } from "ccstate";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
-import { loadProactivePreferences$ } from "./proactive-workflows-eligibility.service";
-import {
-  PROACTIVE_WORKFLOW_DEFINITIONS,
-  RETIRED_PROACTIVE_DEFINITION_NAMES,
-  isRetiredProactiveWorkflow,
-  proactiveWorkflowKind,
-} from "./proactive-workflow-definitions";
-
+import { and, eq } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
-import { visibleWorkflowCondition } from "./workflow-visibility";
+import {
+  visibleWorkflowCondition,
+  dispatchableWorkflowCondition,
+} from "./workflow-visibility";
 
 type WorkflowAutomationRow = typeof workflowAutomations.$inferSelect;
-
-function proactiveRunDefinitionCondition(
-  kind: keyof typeof PROACTIVE_WORKFLOW_DEFINITIONS,
-) {
-  return or(
-    ...[
-      PROACTIVE_WORKFLOW_DEFINITIONS[kind],
-      ...RETIRED_PROACTIVE_DEFINITION_NAMES.map((name) => {
-        return { name };
-      }),
-    ].map((definition) => {
-      return sql`${agentRuns.officialWorkflowProvenance} @> ${JSON.stringify({ definitions: [{ name: definition.name }] })}::jsonb`;
-    }),
-  );
-}
 
 export const workflowAutomationCanFire$ = command(
   async (
@@ -67,7 +45,6 @@ export const workflowAutomationCanFire$ = command(
     const [visible] = await db
       .select({
         id: workflows.id,
-        definitionName: workflows.officialDefinitionName,
       })
       .from(workflows)
       .where(
@@ -75,44 +52,11 @@ export const workflowAutomationCanFire$ = command(
           eq(workflows.id, automation.workflowId),
           eq(workflows.orgId, automation.orgId),
           visibleWorkflowCondition(automation.ownerUserId),
+          dispatchableWorkflowCondition(),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!visible || isRetiredProactiveWorkflow(visible.definitionName)) {
-      return false;
-    }
-    const proactiveKind = proactiveWorkflowKind(visible.definitionName);
-    if (proactiveKind !== null) {
-      const eligibility = await set(
-        loadProactivePreferences$,
-        { orgId: automation.orgId, userId: automation.ownerUserId },
-        signal,
-      );
-      if (!eligibility[proactiveKind]) {
-        return false;
-      }
-      // Wait for any previous proactive check owned by this member.
-      // The current schedule already serializes its own occurrences.
-      const [otherCheck] = await db
-        .select({ id: agentRuns.id })
-        .from(activeAgentRuns)
-        .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
-        .where(
-          and(
-            eq(activeAgentRuns.orgId, automation.orgId),
-            eq(activeAgentRuns.userId, automation.ownerUserId),
-            inArray(agentRuns.status, ["pending", "running"]),
-            sql`${agentRuns.workflowAutomationId} IS DISTINCT FROM ${automation.id}::uuid`,
-            proactiveRunDefinitionCondition(proactiveKind),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (otherCheck) {
-        return false;
-      }
-    }
-    return true;
+    return visible !== undefined;
   },
 );
