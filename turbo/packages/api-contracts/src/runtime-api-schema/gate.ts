@@ -79,6 +79,7 @@ export interface RuntimeApiGateInput {
   readonly iosAppStoreFloor?: NativeFloorChange;
   readonly iosAppStorePublishedVersion?: string | undefined;
   readonly iosPolicyErrors?: readonly string[];
+  readonly iosSubmissionErrors?: readonly string[];
   readonly iosTransforms?: readonly ClientResponseTransform[];
   readonly androidFloor?: NativeFloorChange;
   readonly androidPublishedVersion?: string;
@@ -96,6 +97,7 @@ interface RuntimeApiGateFinding extends RuntimeApiCompatFinding {
 
 interface RuntimeApiGateError {
   readonly kind:
+    | "ios-submission-incompatible"
     | `${NativeOwner}-floor-invalid`
     | `${NativeOwner}-transform-invalid`
     | `${NativeOwner}-transform-unreachable`;
@@ -137,6 +139,9 @@ export function evaluateRuntimeApiGate(
       return { kind: "ios-floor-invalid", message };
     },
   );
+  for (const message of input.iosSubmissionErrors ?? []) {
+    errors.push({ kind: "ios-submission-incompatible", message });
+  }
   const desktop = nativeContext(input, nativeClients.desktop, errors);
   const ios = nativeContext(input, nativeClients.ios, errors);
   const android = nativeContext(input, nativeClients.android, errors);
