@@ -7,6 +7,7 @@ import ai.okou.android.artifacts.ImageViewerGroup
 import ai.okou.android.artifacts.ImageViewerPage
 import ai.okou.android.artifacts.ImageViewerToolbar
 import ai.okou.android.artifacts.attachmentPreviewId
+import ai.okou.android.artifacts.isImageUnavailable
 import ai.okou.android.artifacts.rememberArtifactExportControls
 import ai.okou.android.artifacts.rememberArtifactSaveLauncher
 import ai.okou.android.state.rememberArtifactPageState
@@ -42,7 +43,9 @@ internal fun ChatSentImageViewer(
     val state by model.state.collectAsStateWithLifecycle()
     val page = rememberArtifactPageState()
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
-    val original = state.preview?.takeIf { it.id == selected }?.access?.save
+    val current = state.preview?.takeIf { it.id == selected }
+    val revoked = model.sentImageProblem(selected)
+    val original = current?.access?.save.takeIf { revoked == null }
     val export =
         rememberArtifactExportControls(model, state, page, selected, saveLauncher, original)
     LifecycleStartEffect(model, visit) {
@@ -56,6 +59,7 @@ internal fun ChatSentImageViewer(
         pager,
         wide,
         onBack,
+        activeUnavailable = revoked != null || current?.problem.isImageUnavailable,
         toolbar = { number, expanded, toggle ->
             ImageViewerToolbar(
                 R.string.back,
@@ -82,8 +86,8 @@ internal fun ChatSentImageViewer(
                 }
                 .collectAsStateWithLifecycle(model.inlineImages.thumbnail(visit.threadId, id))
         val preview =
-            state.preview?.takeIf { active && it.id == id }
-                ?: model.sentImageProblem(id)?.let { ArtifactPreviewState(id, null, problem = it) }
+            model.sentImageProblem(id)?.let { ArtifactPreviewState(id, null, problem = it) }
+                ?: state.preview?.takeIf { active && it.id == id }
         ImageViewerPage(
             preview,
             model,
@@ -93,6 +97,7 @@ internal fun ChatSentImageViewer(
             modifier,
             localFile = visit.localFiles[image.id],
             thumbnail = thumbnail,
+            keyboardPaging = ids.size > 1,
             saveResult = export.result.takeIf { active },
             shareSnackbar = export.snackbar.takeIf { active },
         )

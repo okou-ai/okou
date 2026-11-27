@@ -7,6 +7,7 @@ import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.TextDisposition
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -20,7 +21,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
-import androidx.compose.ui.test.swipeRight
 import java.nio.file.Files
 import java.util.Base64
 import java.util.concurrent.CountDownLatch
@@ -30,10 +30,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -84,7 +86,7 @@ internal class ChatSentImageViewerRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
-    fun dragKeepsTheCurrentPageUntilSettledAndRevokedItemCanBeLeft() {
+    fun dragKeepsTheCurrentPageUntilSettledAndKeyboardCanLeaveARevokedItem() {
         val fixture = openConversation()
         compose.onNodeWithContentDescription(fixture.first).performClick()
         awaitPage(1)
@@ -107,9 +109,53 @@ internal class ChatSentImageViewerRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithContentDescription("Image actions").assertDoesNotExist()
         assertTrue(fixture.second !in fixture.originalReads)
 
-        pager.performTouchInput { swipeRight() }
+        pager.performKeyInput { pressKey(Key.DirectionLeft) }
         awaitPage(1)
         awaitImage(fixture.first)
+    }
+
+    @Test
+    fun shareThatLosesAccessToAZoomedImageLeavesTheGroupNavigable() {
+        val fixture = openConversation()
+        compose.onNodeWithContentDescription(fixture.first).performClick()
+        awaitImage(fixture.first)
+        val image = compose.onNodeWithTag("artifact_image_transform")
+        image.performKeyInput { pressKey(Key.Plus) }
+        compose.waitUntil(5_000) {
+            image.fetchSemanticsNode().config[SemanticsActions.CustomActions].any {
+                it.label == "Fit image"
+            }
+        }
+        compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
+        compose.onNodeWithContentDescription("Image actions").performClick()
+
+        fixture.denied = fixture.first
+        compose.onNodeWithText("Share image").performClick()
+        awaitText("Unable to share this file")
+        awaitText("Image unavailable")
+        compose.onNodeWithTag("artifact_image_transform").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Image actions").assertDoesNotExist()
+        assertNull(shadowOf(compose.activity).nextStartedActivity)
+
+        compose.onNodeWithTag("image_viewer_pager").performKeyInput { pressKey(Key.DirectionRight) }
+        awaitPage(2)
+        awaitImage(fixture.second)
+    }
+
+    @Test
+    fun deniedDownloadKeepsAnAuthorizedChatImageVisible() {
+        val fixture = openConversation()
+        compose.onNodeWithContentDescription(fixture.first).performClick()
+        awaitImage(fixture.first)
+        compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
+        compose.onNodeWithContentDescription("Image actions").performClick()
+
+        fixture.downloadDenied = fixture.first
+        compose.onNodeWithText("Share image").performClick()
+        awaitText("Unable to share this file")
+        awaitImage(fixture.first)
+        compose.onNodeWithContentDescription("Image actions").assertDoesNotExist()
+        assertNull(shadowOf(compose.activity).nextStartedActivity)
     }
 
     private fun openConversation(): ChatImageGalleryFixture {

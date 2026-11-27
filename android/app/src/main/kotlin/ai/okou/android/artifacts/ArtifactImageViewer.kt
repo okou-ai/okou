@@ -196,17 +196,14 @@ internal fun ImageViewerPage(
     localFile: File? = null,
     thumbnail: Bitmap? = null,
     unavailableLocal: Boolean = false,
+    keyboardPaging: Boolean = false,
     saveResult: ArtifactSaveResult? = null,
     shareSnackbar: SnackbarHostState? = null,
 ) {
     val imageSize = rememberConstraintsSizeResolver()
     val adjacent = zoom == null
     val showEarlySkeleton = remember { adjacent }
-    val unavailable =
-        unavailableLocal ||
-            preview?.problem == ArtifactProblem.Denied ||
-            preview?.problem == ArtifactProblem.Missing ||
-            preview?.problem == ArtifactProblem.Unavailable
+    val unavailable = unavailableLocal || preview?.problem.isImageUnavailable
     val originalUnavailable = preview?.problem == ArtifactProblem.OriginalUnavailable
     val source = (preview?.content as? ArtifactContent.EncodedImage).takeUnless { unavailable }
     val bitmap = (preview?.content as? ArtifactContent.Image)?.bitmap ?: source?.fallback
@@ -245,6 +242,12 @@ internal fun ImageViewerPage(
         }
     val fallbackPainter = remember(fallback) { fallback?.let { BitmapPainter(it.asImageBitmap()) } }
     val image = original?.painter ?: fallbackPainter
+    val emptyPageFocus =
+        if (keyboardPaging && !adjacent && image == null) {
+            val focus = remember { FocusRequester() }
+            LaunchedEffect(focus) { focus.requestFocus() }
+            Modifier.focusRequester(focus).focusable()
+        } else Modifier
 
     val tileSource =
         remember(data) {
@@ -284,7 +287,7 @@ internal fun ImageViewerPage(
         previewOnly = preview?.access?.previewOnly == true,
         saveResult = saveResult,
         shareSnackbar = shareSnackbar,
-        modifier = modifier,
+        modifier = modifier.then(emptyPageFocus),
     ) {
         val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)
         Box(Modifier.fillMaxSize().then(imageSize)) {
@@ -307,6 +310,12 @@ internal fun ImageViewerPage(
         }
     }
 }
+
+internal val ArtifactProblem?.isImageUnavailable: Boolean
+    get() =
+        this == ArtifactProblem.Denied ||
+            this == ArtifactProblem.Missing ||
+            this == ArtifactProblem.Unavailable
 
 internal data class ImageViewerPageNumber(val page: Int, val count: Int)
 

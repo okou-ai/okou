@@ -4,22 +4,17 @@ import ai.okou.android.R
 import ai.okou.android.state.ArtifactImageViewerState
 import ai.okou.android.state.rememberArtifactImageViewerState
 import ai.okou.android.state.rememberImageViewerExpanded
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -43,6 +38,7 @@ internal fun ImageViewerGroup(
     pager: PagerState,
     wide: Boolean,
     back: () -> Unit,
+    activeUnavailable: Boolean,
     overlayStart: Dp? = null,
     toolbar: @Composable (ImageViewerPageNumber?, Boolean, () -> Unit) -> Unit,
     content: @Composable (Int, ZoomState?, ArtifactImageViewerState?, Modifier) -> Unit,
@@ -50,8 +46,11 @@ internal fun ImageViewerGroup(
     var expanded by rememberImageViewerExpanded()
     val count = pager.pageCount
     val selected = pager.settledPage
-    val zoom = key(selected) { rememberZoomState() }
-    val viewer = key(selected) { rememberArtifactImageViewerState(zoom.zoomable::viewpoint) }
+    val zoom = key(selected, activeUnavailable) { rememberZoomState() }
+    val viewer =
+        key(selected, activeUnavailable) {
+            rememberArtifactImageViewerState(zoom.zoomable::viewpoint)
+        }
     val scope = rememberCoroutineScope()
     val reducedMotion = scope.coroutineContext[MotionDurationScale]?.scaleFactor == 0f
     val previous = stringResource(R.string.artifact_image_previous_page)
@@ -83,26 +82,19 @@ internal fun ImageViewerGroup(
         if (count == 1) {
             content(0, zoom, viewer, modifier)
         } else {
-            val focus = remember { FocusRequester() }
-            LaunchedEffect(focus) { focus.requestFocus() }
             HorizontalPager(
                 state = pager,
-                userScrollEnabled = !zoom.zoomable.isZoomed,
+                userScrollEnabled = activeUnavailable || !zoom.zoomable.isZoomed,
                 modifier =
-                    modifier
-                        .fillMaxSize()
-                        .testTag("image_viewer_pager")
-                        .focusRequester(focus)
-                        .onPreviewKeyEvent { event ->
-                            if (event.type != KeyEventType.KeyDown || zoom.zoomable.isZoomed)
-                                return@onPreviewKeyEvent false
-                            when (event.key) {
-                                Key.DirectionLeft -> move(if (rtl) 1 else -1)
-                                Key.DirectionRight -> move(if (rtl) -1 else 1)
-                                else -> false
-                            }
+                    modifier.fillMaxSize().testTag("image_viewer_pager").onPreviewKeyEvent {
+                        when {
+                            it.type != KeyEventType.KeyDown -> false
+                            !activeUnavailable && zoom.zoomable.isZoomed -> false
+                            it.key == Key.DirectionLeft -> move(if (rtl) 1 else -1)
+                            it.key == Key.DirectionRight -> move(if (rtl) -1 else 1)
+                            else -> false
                         }
-                        .focusable(),
+                    },
             ) { index ->
                 val active = index == selected
                 val semantics =
