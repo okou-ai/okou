@@ -541,9 +541,11 @@ private fun MessageBody(
     val imageRequest = requestedImage
     if (imageRequest != null && openImages != null && images != null) {
         val threadId = returnActions.threadId
-        LaunchedEffect(message, imageRequest, images, threadId) {
+        val interactiveLinks = links != null
+        LaunchedEffect(message, imageRequest, images, threadId, interactiveLinks) {
             val (source, key) = imageRequest
-            val candidates = withContext(Dispatchers.Default) { message.replyImagePages() }
+            val candidates =
+                withContext(Dispatchers.Default) { message.replyImagePages(interactiveLinks) }
             val unavailable = images.unavailableSources(threadId)
             val pages = candidates.filter { (_, page) -> page.source !in unavailable }
             val start = pages.indexOfFirst { (focus, page) ->

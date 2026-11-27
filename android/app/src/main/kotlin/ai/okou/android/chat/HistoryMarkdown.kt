@@ -116,24 +116,23 @@ internal fun imageFocusReply(focusKey: String?): String? =
 private fun imageFocusKey(messageBlock: String, path: String, source: String?) =
     "image/$messageBlock/$path/${source.hashCode()}"
 
-internal fun HistoryMessage.replyImagePages(): List<Pair<String, ChatImagePage>> =
-    blocks.flatMapIndexed { index, block ->
-        block
-            .artifactMarkdownBlocks()
-            .indexedImages()
-            .mapNotNull { (path, image) ->
-                val source = image.source ?: return@mapNotNull null
-                if (
-                    image.outerLink?.let(::conversationLink) != null ||
-                        image.outerLink?.let(::messageArtifactLink)?.startsWith("/artifacts/") ==
-                            true
-                )
-                    return@mapNotNull null
-                imageFocusKey("$id/$index", path, source) to
-                    ChatImagePage(source, image.description)
-            }
-            .toList()
-    }
+internal fun HistoryMessage.replyImagePages(
+    interactiveLinks: Boolean,
+): List<Pair<String, ChatImagePage>> = blocks.flatMapIndexed { index, block ->
+    block
+        .artifactMarkdownBlocks()
+        .indexedImages()
+        .mapNotNull { (path, image) ->
+            val source = image.source ?: return@mapNotNull null
+            if (
+                (interactiveLinks && image.outerLink?.let(::conversationLink) != null) ||
+                    image.outerLink?.let(::messageArtifactLink)?.startsWith("/artifacts/") == true
+            )
+                return@mapNotNull null
+            imageFocusKey("$id/$index", path, source) to ChatImagePage(source, image.description)
+        }
+        .toList()
+}
 
 /** Lay out the first visible reply with formatting and keep it while the next chunk is parsed. */
 @Composable
