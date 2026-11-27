@@ -1,7 +1,6 @@
 import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
 import { act, screen, waitFor } from "@testing-library/react";
-import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -46,33 +45,29 @@ async function record(
     },
     finalPcmSamples: speech(tail),
   });
-  context.mocks.http.post(
-    "*" + voiceIoTranscribeContract.segment.path,
-    async ({ request }) => {
-      const fields = await request.formData();
-      const file = fields.get("file");
-      if (!(file instanceof File)) {
-        throw new Error("Expected microphone audio");
-      }
-      const pcmBytes = file.size - 44;
-      expect(pcmBytes).toBeGreaterThanOrEqual(0);
-      expect(pcmBytes % Int16Array.BYTES_PER_ELEMENT).toBe(0);
-      const metadata = JSON.parse(String(fields.get("options"))) as {
-        overlapDurationSeconds: number;
-      };
-      const count = files.push({
-        start: Number(file.name.match(/(\d+)\.wav$/)?.[1]),
-        length: pcmBytes / Int16Array.BYTES_PER_ELEMENT,
-        type: file.type,
-        overlap: metadata.overlapDurationSeconds,
-      });
-      onWindowReceived?.(count);
-      return HttpResponse.json({
-        transcript: "Window " + String(count),
-        language: "en",
-      });
-    },
-  );
+  context.mocks.api(voiceIoTranscribeContract.segment, ({ body, respond }) => {
+    const file = body.get("file");
+    if (!(file instanceof File)) {
+      throw new Error("Expected microphone audio");
+    }
+    const pcmBytes = file.size - 44;
+    expect(pcmBytes).toBeGreaterThanOrEqual(0);
+    expect(pcmBytes % Int16Array.BYTES_PER_ELEMENT).toBe(0);
+    const metadata = JSON.parse(String(body.get("options"))) as {
+      overlapDurationSeconds: number;
+    };
+    const count = files.push({
+      start: Number(file.name.match(/(\d+)\.wav$/)?.[1]),
+      length: pcmBytes / Int16Array.BYTES_PER_ELEMENT,
+      type: file.type,
+      overlap: metadata.overlapDurationSeconds,
+    });
+    onWindowReceived?.(count);
+    return respond(200, {
+      transcript: "Window " + String(count),
+      language: "en",
+    });
+  });
   context.mocks.api(voiceIoPolishSegmentsContract.post, ({ body, respond }) => {
     return respond(200, { text: body.segments.join(" ") });
   });
