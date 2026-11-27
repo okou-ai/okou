@@ -1,4 +1,4 @@
-#if DEBUG
+#if DEBUG || STAGING
   import CCStateSwiftUI
   import ChatData
   import Foundation

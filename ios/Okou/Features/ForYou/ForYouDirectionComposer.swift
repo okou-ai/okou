@@ -30,6 +30,7 @@ struct ForYouDirectionComposer: View {
   let card: ForYouCard
   let suggestion: ForYouSuggestion
   let workspace: WorkspaceStore
+  let keyboardDismissed: () -> Void
   /// The confirmed chats for mentions, the workspace's status and whether a deck action is
   /// running, kept in the workspace session's Store.
   @ResolvedValue private var threads: [ChatThread]?
@@ -38,12 +39,13 @@ struct ForYouDirectionComposer: View {
 
   init(
     direction: ForYouDirection, card: ForYouCard, suggestion: ForYouSuggestion,
-    workspace: WorkspaceStore
+    workspace: WorkspaceStore, keyboardDismissed: @escaping () -> Void
   ) {
     self.direction = direction
     self.card = card
     self.suggestion = suggestion
     self.workspace = workspace
+    self.keyboardDismissed = keyboardDismissed
     _threads = ResolvedValue(workspace.list.threadsValue)
     _actionStatus = ResolvedValue(workspace.actionStatusValue)
     _deckBusy = ResolvedValue(workspace.forYou.busyValue)
@@ -65,7 +67,7 @@ struct ForYouDirectionComposer: View {
         submit: { await workspace.forYou.sendDirection(card, from: direction) }, refresh: nil,
         modelSelection: direction.models, connectorSelection: direction.models.connectors,
         mentionSource: ComposerMentionSource(threads: threads ?? workspace.list.threads),
-        workflowSource: workspace.composerWorkflows, writesDirection: true,
+        workflowSource: workspace.composerWorkflows, directionKeyboardDismissed: keyboardDismissed,
         placeholder: String(localized: "What do you have in mind?")
       )
     }
