@@ -1,16 +1,58 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, Search } from "lucide-react";
-import { cn, PopoverClose } from "@okouai/ui";
+import { Plus, Search, X } from "lucide-react";
+import { Button, cn, Input, PopoverClose } from "@okouai/ui";
 
 function ConnectorSearch({
   search,
   onSearchChange,
+  bounded,
 }: {
   readonly search: string;
   readonly onSearchChange: (search: string) => void;
+  readonly bounded: boolean;
 }) {
   const { t } = useTranslation();
+  if (bounded) {
+    const label = t(($) => {
+      return $.chat.connectors.find;
+    });
+    return (
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-divider px-2.5 py-2">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            size={16}
+            aria-hidden
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            type="search"
+            aria-label={label}
+            placeholder={label}
+            value={search}
+            className="pl-8"
+            onChange={(event) => {
+              return onSearchChange(event.currentTarget.value);
+            }}
+          />
+        </div>
+        <PopoverClose
+          render={
+            <Button
+              size="icon-sm"
+              variant="quiet"
+              className="sm:hidden"
+              aria-label={t(($) => {
+                return $.workflows.common.close;
+              })}
+            />
+          }
+        >
+          <X size={16} aria-hidden />
+        </PopoverClose>
+      </div>
+    );
+  }
   return (
     <div className="mt-1 flex shrink-0 items-center gap-2 px-3 py-1 border-b border-border/50">
       <Search
@@ -74,6 +116,7 @@ export function ComposerConnectorMenuShell({
   contentRole = "list",
   contentLabel,
   contentKey,
+  bounded,
 }: {
   readonly children: ReactNode;
   readonly footer: ReactNode;
@@ -87,13 +130,15 @@ export function ComposerConnectorMenuShell({
   readonly contentRole?: "list" | "group";
   readonly contentLabel?: string;
   readonly contentKey?: string;
+  readonly bounded: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <div
       className={cn(
         "flex min-h-0 flex-col outline-none",
-        showSearch && "h-100",
+        bounded && "flex-1 overflow-y-auto",
+        showSearch && !bounded && "h-100",
       )}
     >
       {error && (
@@ -104,13 +149,19 @@ export function ComposerConnectorMenuShell({
           <span>{error}</span>
         </div>
       )}
-      {(hasContent || loading) && (
-        <div className="flex min-h-0 flex-1 flex-col">
+      {(bounded || hasContent || loading) && (
+        <div
+          className={cn("flex min-h-0 flex-1 flex-col", bounded && "min-h-14")}
+        >
           {showSearch && (
-            <ConnectorSearch search={search} onSearchChange={onSearchChange} />
+            <ConnectorSearch
+              search={search}
+              onSearchChange={onSearchChange}
+              bounded={bounded}
+            />
           )}
           {loading ? (
-            <div className="flex flex-col pt-1 pb-2 animate-pulse">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-1 pb-2 animate-pulse">
               {Array.from({ length: 3 }, (_, i) => {
                 return (
                   <div key={i} className="flex items-center gap-2 px-3 py-2">

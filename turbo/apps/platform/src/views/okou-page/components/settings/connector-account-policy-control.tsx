@@ -43,6 +43,47 @@ export function AccountPolicyControl({
   if (!policy) {
     return null;
   }
+  const accessLabel = t(
+    ($) => {
+      return $.connectorChatAccess.accountAccess;
+    },
+    {
+      account: label,
+    },
+  );
+  return (
+    <AccessPolicyDropdown
+      policy={policy}
+      accessLabel={accessLabel}
+      pending={saving.state === "loading"}
+      error={
+        saving.state === "hasError"
+          ? t(($) => {
+              return $.authorization.permission.errors.updateFailed;
+            })
+          : undefined
+      }
+      onChange={(choice) => {
+        detach(update(account.id, choice, signal), Reason.DomCallback);
+      }}
+    />
+  );
+}
+
+export function AccessPolicyDropdown({
+  policy,
+  accessLabel,
+  pending,
+  error,
+  onChange,
+}: {
+  readonly policy: NonNullable<AccountPolicyControlProps["policy"]>;
+  readonly accessLabel: string;
+  readonly pending: boolean;
+  readonly error?: string;
+  readonly onChange: (choice: ConnectorAccountPolicyChoice) => void;
+}) {
+  const { t } = useTranslation();
   const allow = t(($) => {
     return $.connectors.permissions.actions.allow;
   });
@@ -61,14 +102,6 @@ export function AccountPolicyControl({
   const visibleDuration = policy.expiresAt
     ? permissionGrantExpiryText(policy.expiresAt, nowMs, "compact")
     : duration;
-  const accessLabel = t(
-    ($) => {
-      return $.connectorChatAccess.accountAccess;
-    },
-    {
-      account: label,
-    },
-  );
   const options: readonly (readonly [ConnectorAccountPolicyChoice, string])[] =
     [
       [
@@ -103,19 +136,20 @@ export function AccountPolicyControl({
           aria-label={[accessLabel, status, duration]
             .filter(Boolean)
             .join(", ")}
-          disabled={saving.state === "loading"}
+          disabled={pending}
           render={
             <Button
               type="button"
               size="xs"
               variant="neutral"
-              pending={saving.state === "loading"}
+              className="max-w-full"
+              pending={pending}
             />
           }
         >
           <span>{status}</span>
           {visibleDuration && (
-            <span className="max-w-28 truncate text-xs text-muted-foreground">
+            <span className="min-w-0 max-w-28 truncate text-xs text-muted-foreground">
               {visibleDuration}
             </span>
           )}
@@ -127,7 +161,7 @@ export function AccountPolicyControl({
               <DropdownMenuItem
                 key={value}
                 onClick={() => {
-                  detach(update(account.id, value, signal), Reason.DomCallback);
+                  onChange(value);
                 }}
               >
                 {text}
@@ -137,18 +171,16 @@ export function AccountPolicyControl({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {
-              detach(update(account.id, "deny", signal), Reason.DomCallback);
+              onChange("deny");
             }}
           >
             {deny}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {saving.state === "hasError" && (
+      {error && (
         <span role="alert" className="text-xs text-destructive">
-          {t(($) => {
-            return $.authorization.permission.errors.updateFailed;
-          })}
+          {error}
         </span>
       )}
     </div>
