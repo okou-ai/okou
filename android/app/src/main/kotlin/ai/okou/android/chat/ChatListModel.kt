@@ -2202,9 +2202,9 @@ class ChatListModel(
         val now = monotonicMillis()
         listFailures = (listFailures + 1).coerceAtMost(continuousRetryDelays.size)
         val maxDelay = Long.MAX_VALUE - now.coerceAtLeast(0L)
-        val nextRetry = now + minOf(delayMillis, maxDelay)
-        listRetryAt = maxOf(nextRetry, listRetryAt ?: nextRetry)
-        scheduleListRetry(checkNotNull(listRetryAt))
+        val retryAt = now + minOf(delayMillis, maxDelay)
+        listRetryAt = retryAt
+        scheduleListRetry(retryAt)
     }
 
     private fun startListRebase(checkpoint: ChatCheckpoint) {
