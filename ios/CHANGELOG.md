@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.72.0](https://github.com/okou-ai/okou/compare/ios-v0.71.2...ios-v0.72.0) (2026-11-27)
+
+
+### Features
+
+* **api,ios:** remove transitional client transforms and support google ai on ios ([#51397](https://github.com/okou-ai/okou/issues/51397)) ([837d89a](https://github.com/okou-ai/okou/commit/837d89a786d8b798eb44305ade70b8a17fd66c1d))
+
 ## [0.71.2](https://github.com/okou-ai/okou/compare/ios-v0.71.1...ios-v0.71.2) (2026-11-27)
 
 
