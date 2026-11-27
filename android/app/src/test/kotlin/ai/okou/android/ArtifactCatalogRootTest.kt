@@ -1019,9 +1019,11 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             firstPage.countDown()
         }
         awaitText(fixture.summary.title)
-        compose.onNodeWithText("Today").assertIsDisplayed()
-        compose.onNodeWithText("Yesterday").assertIsDisplayed()
-        compose.onNodeWithText("Earlier").assertIsDisplayed()
+        val gutter = compose.onNodeWithTag("artifact_list").getUnclippedBoundsInRoot().left + 16.dp
+        for (label in listOf("Today", "Yesterday", "Earlier")) {
+            val heading = compose.onNodeWithText(label).assertIsDisplayed()
+            assertEquals(gutter, heading.getUnclippedBoundsInRoot().left)
+        }
         compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(80.dp)
         compose.onNodeWithTag("artifact_query").performTextReplacement("Product launch")
         awaitText(fixture.summary.title)
@@ -1037,7 +1039,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         val titleStyle = previewTitleLayouts.single().layoutInput.style
         assertEquals(22.sp, titleStyle.fontSize)
         assertEquals(28.sp, titleStyle.lineHeight)
-        assertEquals(FontWeight.SemiBold, titleStyle.fontWeight)
+        assertEquals(FontWeight.Normal, titleStyle.fontWeight)
         compose.onNodeWithText("Save file").assertDoesNotExist()
         compose
             .onNodeWithText("View source conversation")
@@ -1626,15 +1628,35 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     @Test
-    fun uncachedDocumentResolvesItsAccessBeforeDisplayingContent() {
+    fun uncachedDocumentKeepsTheSharedDelayBeforeShowingItsPlaceholder() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
+        val releaseDocument = CountDownLatch(1)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/artifact-bytes/summary") {
+                check(releaseDocument.await(10, TimeUnit.SECONDS))
+            }
+            respond(request)
+        }
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         compose.onNodeWithContentDescription("Artifacts").performClick()
         awaitText(fixture.summary.title)
-        compose.onNodeWithText(fixture.summary.title).performClick()
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithText(fixture.summary.title).performClick()
+            val placeholder = compose.onNodeWithTag("artifact_preview_loading")
+            compose.mainClock.advanceTimeBy(160)
+            placeholder.assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(160)
+            placeholder.assertIsDisplayed()
+        } finally {
+            releaseDocument.countDown()
+            compose.mainClock.autoAdvance = true
+        }
         awaitText("Positioning: help teams move ongoing work forward", partial = true)
+        compose.onNodeWithTag("artifact_preview_loading").assertDoesNotExist()
         assertTrue(fixture.requestedReferences.isNotEmpty())
     }
 
