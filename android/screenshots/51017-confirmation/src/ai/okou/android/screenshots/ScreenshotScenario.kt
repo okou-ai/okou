@@ -324,10 +324,11 @@ class ScreenshotScenario {
     private fun focusFirstAction(selector: BySelector) {
         find(selector)
         instrumentation.setInTouchMode(false)
-        if (
-            !device.hasObject(By.copy(selector).focused(true)) &&
-            !device.hasObject(By.focused(true).hasChild(By.copy(selector)))
-        ) {
+        val label = By.copy(selector).focused(true)
+        val control = By.focused(true).hasChild(By.copy(selector))
+        repeat(6) {
+            device.waitForIdle(1_000)
+            if (device.hasObject(label) || device.hasObject(control)) return
             check(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
         }
         device.awaitKeyboardFocus(By.copy(selector))
