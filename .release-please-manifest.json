@@ -5,7 +5,7 @@
   "turbo/packages/core": "8.887.11",
   "turbo/apps/cli": "10.44.33",
   "turbo/apps/api": "2.141.0",
-  "turbo/apps/platform": "0.1197.0",
+  "turbo/apps/platform": "0.1197.1",
   "turbo/apps/app-worker": "1.12.18",
   "turbo/apps/host-worker": "1.10.39",
   "turbo/packages/api-contracts": "2.142.0",

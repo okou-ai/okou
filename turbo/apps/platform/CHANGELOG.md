@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1197.1](https://github.com/okou-ai/okou/compare/app-v0.1197.0...app-v0.1197.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **app:** remove the for you option action line ([#51614](https://github.com/okou-ai/okou/issues/51614)) ([ce9866b](https://github.com/okou-ai/okou/commit/ce9866b17e85d98cb6a1710c41e9f2db2fd3da67))
+
 ## [0.1197.0](https://github.com/okou-ai/okou/compare/app-v0.1196.3...app-v0.1197.0) (2026-11-27)
 
 
