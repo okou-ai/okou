@@ -116,23 +116,6 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("enables Markdown-first output for everyone and honors Lab overrides", () => {
-    const key = FeatureSwitchKey.MarkdownFirstOutput;
-    for (const identity of [
-      {},
-      { userId: "external-user", orgId: "external-org" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-    ]) {
-      expect(isFeatureEnabled(key, identity)).toBe(true);
-      expect(getAllFeatureStates(identity)[key]).toBe(true);
-      for (const enabled of [false, true]) {
-        const context = { ...identity, overrides: { [key]: enabled } };
-        expect(isFeatureEnabled(key, context)).toBe(enabled);
-        expect(getAllFeatureStates(context)[key]).toBe(enabled);
-      }
-    }
-  });
-
   it("enables presentation format for staff and honors Lab overrides", () => {
     const key = FeatureSwitchKey.PresentationOutputFormat;
     const identity = {
@@ -450,9 +433,9 @@ describe("getFeatureSwitchMetadata", () => {
     const metadata = getFeatureSwitchMetadata();
 
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
-    expect(metadata[FeatureSwitchKey.MarkdownFirstOutput].rolloutStage).toBe(
-      "released",
-    );
+    expect(
+      metadata[FeatureSwitchKey.OnboardingMultipleOutputs].rolloutStage,
+    ).toBe("released");
     expect(metadata[FeatureSwitchKey.ComposerVoiceMessages].rolloutStage).toBe(
       "beta",
     );
