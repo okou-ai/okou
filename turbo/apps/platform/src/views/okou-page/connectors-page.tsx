@@ -286,7 +286,7 @@ function ConnectorsScopeSegment() {
         data-testid="connectors-scope-remote-control"
       >
         {t(($) => {
-          return $.connectors.catalog.scope.remoteControl;
+          return $.remoteDevices.title;
         })}
         <RemoteControlScopeCount />
       </SegmentControlItem>

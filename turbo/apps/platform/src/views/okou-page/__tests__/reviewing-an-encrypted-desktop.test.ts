@@ -138,7 +138,7 @@ test("remote-control-guided-setup-065 Back retains an encrypted desktop draft an
   expect(field("VNC password")).toHaveValue(secret);
   await press("Back");
   expect(field("Device address")).toHaveValue(host);
-  await press("Remote control");
+  await press("Remote devices");
   await screen.findByText("No devices added yet");
   await press("Add connection");
   await press(/^VNC/);

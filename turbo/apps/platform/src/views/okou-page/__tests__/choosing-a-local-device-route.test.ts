@@ -62,7 +62,7 @@ async function select(label: string | RegExp, name: string | RegExp) {
   await choose.click(await screen.findByRole("option", { name }));
 }
 async function emptyDirectory() {
-  await press("Remote control");
+  await press("Remote devices");
   await screen.findByText("No devices added yet");
 }
 async function fromVncToShell() {

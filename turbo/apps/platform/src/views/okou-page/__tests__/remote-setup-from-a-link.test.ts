@@ -119,7 +119,7 @@ test("remote-control-guided-setup-026 VNC setup returns directly to the connecti
   expect(screen.queryByText(/Install Tailscale/)).toBeNull();
   click(control);
   await screen.findByRole("heading", { name: /login method/i });
-  await findFastControl("button", "Remote control");
+  await findFastControl("button", "Remote devices");
   click(await findFastControl("button", "Back"));
   await expect(
     findFastControl("button", /Control.*screen/i),

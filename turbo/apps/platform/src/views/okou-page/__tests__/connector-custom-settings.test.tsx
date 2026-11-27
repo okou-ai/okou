@@ -247,7 +247,7 @@ test("connectors-directory-custom-007 Back from the custom catalog returns to th
   reports();
   await setupPage({ context, path: "/connectors" });
   await findButton("Connect GitHub");
-  await selectScope("Remote control");
+  await selectScope("Remote devices");
   await findButton("Add connection");
   await selectScope("Custom");
   await screen.findByText("Acme Reports");
@@ -302,7 +302,7 @@ test("connectors-directory-custom-009 Remote control keeps the custom directory 
   };
   expect(customHeading()).not.toBeInTheDocument();
   expect(queryButton("New custom connector")).toBeNull();
-  await selectScope("Remote control");
+  await selectScope("Remote devices");
   await findButton("Add connection");
   expect(new URL(location.href).searchParams.get("scope")).toBe(
     "remote-control",
