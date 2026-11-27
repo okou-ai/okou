@@ -316,16 +316,8 @@ function ArtifactLibraryRow({
       >
         {artifactKindIcon(displayKind, 18)}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-foreground">
-          {artifact.title}
-        </span>
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground @4xl:hidden">
-          <span>{kindLabel}</span>
-          <span className="@3xl:hidden">
-            <ArtifactTimestamp value={artifact.createdAt} timezone={timezone} />
-          </span>
-        </span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+        {artifact.title}
       </span>
     </>
   );
