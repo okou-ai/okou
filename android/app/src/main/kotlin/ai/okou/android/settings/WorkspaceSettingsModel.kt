@@ -339,13 +339,18 @@ internal constructor(
                 val state = mutable.value
                 val incoming = result.value
                 if (result.unavailable) {
+                    val confirming =
+                        state.switching.filterValues {
+                            it.phase == AccountSwitchPhase.Confirming
+                        }
                     mutable.value =
                         state.copy(
                             accounts =
                                 result.copy(
                                     refreshFailure =
                                         if (
-                                            incoming != null &&
+                                            confirming.isEmpty() &&
+                                                incoming != null &&
                                                 visible == SettingsDestination.ModelAccounts
                                         )
                                             SettingsRefreshFailure()
@@ -358,6 +363,9 @@ internal constructor(
                                     else intent
                                 },
                         )
+                    confirming.values.forEach { _ ->
+                        reportActionFailure(SettingsNotice.ModelAccountSwitchFailed)
+                    }
                 } else if (incoming == null) {
                     mutable.update { it.copy(accounts = result) }
                 } else {
@@ -366,9 +374,10 @@ internal constructor(
                     val rejected =
                         verifying
                             .filterValues { intent ->
-                                incoming.none {
-                                    it.id == intent.accountId && it.isActive == true
-                                }
+                                intent.phase == AccountSwitchPhase.Confirming &&
+                                    incoming.none {
+                                        it.id == intent.accountId && it.isActive == true
+                                    }
                             }
                             .keys
                     mutable.value =

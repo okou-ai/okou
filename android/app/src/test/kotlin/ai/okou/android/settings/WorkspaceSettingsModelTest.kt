@@ -167,6 +167,11 @@ class WorkspaceSettingsModelTest {
                             AccountSwitchPhase.Unconfirmed
                     }
                 assertTrue(unconfirmed.accounts.value!!.first().isActive == true)
+                assertNull(unconfirmed.accounts.refreshFailure)
+                assertEquals(
+                    SettingsNotice.ModelAccountSwitchFailed,
+                    model.uiState.value.actionFailures.single().value,
+                )
                 model.activate(SettingsApiFixture.alternateAccount)
                 model.visible(null)
                 accountReadsAvailable = true
@@ -184,6 +189,45 @@ class WorkspaceSettingsModelTest {
             }
         } finally {
             closeOwners(store, reopenedStore)
+        }
+    }
+
+    @Test
+    fun failedSwitchVerificationDoesNotReportTheSameFailureAfterReconciliation() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                val fixture = SettingsApiFixture(api)
+                var accountReadsAvailable = true
+                val service =
+                    object : WorkspaceSession by api.service {
+                        override suspend fun recoverySubscriptions() =
+                            if (accountReadsAvailable) api.service.recoverySubscriptions()
+                            else throw ApiFailure.Http(503, null, null, null)
+                    }
+                val model = settings(store, api, service = service)
+                model.visible(SettingsDestination.ModelAccounts)
+                val confirmed = model.uiState.first { it.accounts.value != null }.accounts.value
+                fixture.activationStatus = 500
+                accountReadsAvailable = false
+                model.activate(SettingsApiFixture.alternateAccount)
+                val failed = model.uiState.first { it.actionFailures.isNotEmpty() }
+                val notice = failed.actionFailures.single()
+                assertEquals(SettingsNotice.ModelAccountSwitchFailed, notice.value)
+                assertEquals(confirmed, failed.accounts.value)
+                assertNull(failed.accounts.refreshFailure)
+
+                model.visible(SettingsDestination.Overview)
+                accountReadsAvailable = true
+                model.visible(SettingsDestination.ModelAccounts)
+                val reconciled = model.uiState.first { it.switching.isEmpty() }
+                assertEquals(confirmed, reconciled.accounts.value)
+                assertEquals(listOf(notice), model.uiState.value.actionFailures)
+                assertEquals(listOf(SettingsApiFixture.alternateAccount), fixture.activations)
+            }
+        } finally {
+            closeOwners(store)
         }
     }
 
