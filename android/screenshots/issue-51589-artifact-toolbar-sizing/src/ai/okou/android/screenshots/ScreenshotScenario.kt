@@ -4,6 +4,7 @@ import ai.okou.android.ArtifactApiFixture
 import ai.okou.android.ChatCacheSnapshot
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.MainActivity
+import ai.okou.android.R
 import ai.okou.android.ScreenshotCapture
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
@@ -63,6 +64,7 @@ class ScreenshotScenario {
                 check(isFocused(image)) { "Could not reach the original image with Tab" }
                 check(device.pressKeyCode(KeyEvent.KEYCODE_ENTER))
                 node(By.desc("返回成果列表"))
+                node(By.desc("图片操作"))
                 ScreenshotCapture.capture("artifact-image-toolbar-$layout.png")
 
                 fixture.removedCatalogIds = setOf(fixture.image.id)
@@ -140,7 +142,14 @@ class ScreenshotScenario {
         val cache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         ChatListApiFixture().use { api ->
             try {
-                val fixture = ArtifactApiFixture(api, chinese = true)
+                val image = app.resources.openRawResource(R.drawable.okou_conversation_avatar)
+                    .use { it.readBytes() }
+                val fixture = ArtifactApiFixture(
+                    api,
+                    chinese = true,
+                    imageBody = image,
+                    imageDownloadAllowed = true,
+                )
                 fixture.install()
                 auth.state.value =
                     testAuthenticationState(user = "artifact-return-${UUID.randomUUID()}")
