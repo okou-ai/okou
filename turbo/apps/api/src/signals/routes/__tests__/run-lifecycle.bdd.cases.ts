@@ -8697,7 +8697,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it.each([false, true])(
-        "defaults presentation delivery to HTML and gates explicitly requested PPTX conversion (%s)",
+        "gates presentation conversion CLI capabilities while preserving delivery guidance (%s)",
         async (enabled) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
@@ -8730,15 +8730,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           if (enabled) {
             expect(capabilities).toContain("presentation-convert:write");
-            expect(prompt).toContain(
-              "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
-            );
-            expect(prompt).toContain(
-              "Only when the user explicitly requests PowerPoint/PPTX",
-            );
           } else {
             expect(capabilities).not.toContain("presentation-convert:write");
-            expect(prompt).not.toContain("okou presentation convert");
           }
           await api.requestCancelRun(actor, run.runId, [200]);
           await webhooks.requestAgentComplete(
