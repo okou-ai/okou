@@ -376,7 +376,7 @@ function ConnectionChecks({
   };
   return (
     <ul
-      className="ml-0.5 space-y-2 border-l border-border pl-3 text-xs"
+      className="ml-0.5 text-xs"
       aria-label={t(($) => {
         return $.artifacts.customDomain.verificationChecks;
       })}
@@ -396,7 +396,10 @@ function ConnectionChecks({
                 ? "active"
                 : "waiting";
         return (
-          <li key={name} className="flex items-center gap-2">
+          <li
+            key={name}
+            className="relative flex min-h-7 items-center gap-2 pl-3 before:absolute before:inset-y-0 before:left-0 before:border-l before:border-border after:absolute after:top-1/2 after:left-0 after:w-2 after:border-t after:border-border last:before:bottom-1/2"
+          >
             <DomainIndicator state={state} />
             {labels[name]}
           </li>
