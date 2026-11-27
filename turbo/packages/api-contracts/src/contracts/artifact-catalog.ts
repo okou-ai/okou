@@ -41,6 +41,20 @@ export const ARTIFACT_CATALOG_KINDS = [
 
 export type ArtifactCatalogKind = (typeof ARTIFACT_CATALOG_KINDS)[number];
 
+export const ARTIFACT_CATALOG_CATEGORIES = [
+  "document",
+  "presentation",
+  "website",
+  "spreadsheet",
+  "image",
+  "video",
+  "audio",
+  "other",
+] as const;
+
+export type ArtifactCatalogCategory =
+  (typeof ARTIFACT_CATALOG_CATEGORIES)[number];
+
 interface ArtifactThumbnail {
   url: string;
 }
@@ -61,8 +75,12 @@ interface ArtifactSummaryBase {
   updatedAt: string;
 }
 
-export type ArtifactSummary = ArtifactSummaryBase &
-  (
+export type ArtifactSummary = ArtifactSummaryBase & {
+  /** Display category supplied by the gated Library list. */
+  category?: ArtifactCatalogCategory;
+  /** Current, authorized original conversation for the Library list. */
+  sourceChatThread?: { id: string; title: string };
+} & (
     | { kind: "shared-thread"; sharedThreadId: string }
     | { kind: Exclude<ArtifactCatalogKind, "shared-thread"> }
   );
@@ -153,6 +171,7 @@ export interface ArtifactCatalogListQuery {
   readonly limit?: number;
   readonly cursor?: string;
   readonly kind?: ArtifactCatalogKind;
+  readonly category?: ArtifactCatalogCategory;
   readonly chatThreadId?: string;
   readonly keyword?: string;
   readonly direction?: ArtifactCatalogDirection;
@@ -162,6 +181,7 @@ export interface ArtifactCatalogListClientQuery {
   readonly limit?: unknown;
   readonly cursor?: string;
   readonly kind?: ArtifactCatalogKind;
+  readonly category?: ArtifactCatalogCategory;
   readonly chatThreadId?: string;
   readonly keyword?: string;
   readonly direction?: ArtifactCatalogDirection;
@@ -270,6 +290,7 @@ export interface ArtifactCatalogDeleteRouteTypes extends AnyRouteTypeSlots {
 }
 
 const artifactKindSchema = zEnum(ARTIFACT_CATALOG_KINDS);
+const artifactCategorySchema = zEnum(ARTIFACT_CATALOG_CATEGORIES);
 
 /**
  * Static preview descriptor rendered by the catalog grid. Absent when the
@@ -298,12 +319,17 @@ const artifactSummaryBaseSchema = object({
   updatedAt: string(),
 });
 
+const artifactLibrarySummarySchema = artifactSummaryBaseSchema.extend({
+  category: artifactCategorySchema.optional(),
+  sourceChatThread: object({ id: uuid(), title: string() }).optional(),
+});
+
 const artifactSummarySchema = discriminatedUnion("kind", [
-  artifactSummaryBaseSchema.extend({
+  artifactLibrarySummarySchema.extend({
     kind: literal("shared-thread"),
     sharedThreadId: uuid(),
   }),
-  artifactSummaryBaseSchema.extend({
+  artifactLibrarySummarySchema.extend({
     kind: artifactKindSchema.exclude(["shared-thread"]),
   }),
 ]);
@@ -312,6 +338,7 @@ const artifactCatalogListQuerySchema = object({
   limit: coerce.number().int().positive().max(200).optional(),
   cursor: string().optional(),
   kind: artifactKindSchema.optional(),
+  category: artifactCategorySchema.optional(),
   chatThreadId: uuid().optional(),
   keyword: string().trim().min(1).max(256).optional(),
   direction: zEnum(["asc", "desc"]).optional(),

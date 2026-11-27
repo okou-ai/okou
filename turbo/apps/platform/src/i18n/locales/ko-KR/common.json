@@ -642,20 +642,35 @@
       "video": "비디오"
     },
     "library": {
-      "allArtifacts": "모든 아티팩트",
-      "allTypes": "모든 유형",
+      "categories": {
+        "all": "전체",
+        "audio": "오디오",
+        "document": "문서 및 PDF",
+        "image": "이미지",
+        "other": "기타",
+        "presentation": "프레젠테이션",
+        "spreadsheet": "스프레드시트",
+        "video": "동영상",
+        "website": "웹사이트"
+      },
       "clearFilters": "필터 지우기",
       "clearSearch": "검색 지우기",
       "created": "생성일",
       "emptyDescription": "다른 이름이나 유형으로 검색해 보세요.",
       "emptyTitle": "아티팩트를 찾을 수 없습니다",
+      "gridView": "그리드 보기",
+      "listView": "목록 보기",
       "loadMore": "더 불러오기",
       "name": "이름",
+      "openSourceChat": "원본 채팅 열기: {{title}}",
       "retry": "다시 시도",
       "search": "아티팩트 검색",
       "sortAscending": "오름차순 정렬",
       "sortDescending": "내림차순 정렬",
-      "type": "유형"
+      "today": "오늘",
+      "type": "유형",
+      "view": "보기",
+      "yesterday": "어제"
     },
     "metadata": {
       "generated": "생성됨 {{date}}",

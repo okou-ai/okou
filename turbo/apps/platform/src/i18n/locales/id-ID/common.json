@@ -642,20 +642,35 @@
       "video": "Video"
     },
     "library": {
-      "allArtifacts": "Semua artefak",
-      "allTypes": "Semua jenis",
+      "categories": {
+        "all": "Semua",
+        "audio": "Audio",
+        "document": "Dokumen dan PDF",
+        "image": "Gambar",
+        "other": "Lainnya",
+        "presentation": "Presentasi",
+        "spreadsheet": "Spreadsheet",
+        "video": "Video",
+        "website": "Situs web"
+      },
       "clearFilters": "Hapus filter",
       "clearSearch": "Hapus pencarian",
       "created": "Dibuat",
       "emptyDescription": "Coba nama atau jenis lain.",
       "emptyTitle": "Tidak ada artefak ditemukan",
+      "gridView": "Tampilan kisi",
+      "listView": "Tampilan daftar",
       "loadMore": "Muat lebih banyak",
       "name": "Nama",
+      "openSourceChat": "Buka chat sumber: {{title}}",
       "retry": "Coba lagi",
       "search": "Cari artefak",
       "sortAscending": "Urutkan menaik",
       "sortDescending": "Urutkan menurun",
-      "type": "Jenis"
+      "today": "Hari ini",
+      "type": "Jenis",
+      "view": "Tampilan",
+      "yesterday": "Kemarin"
     },
     "metadata": {
       "generated": "Dibuat {{date}}",

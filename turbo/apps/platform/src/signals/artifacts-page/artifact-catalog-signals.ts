@@ -6,6 +6,7 @@ import {
 } from "./artifact-catalog-instance.ts";
 import { artifactIdPathParamsSchema } from "@okouai/api-contracts/validators/artifact-catalog";
 import type {
+  ArtifactCatalogCategory,
   ArtifactCatalogDirection,
   ArtifactCatalogKind,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -27,6 +28,28 @@ const routeLibraryMode$ = state(false);
 const internalPreviewTrigger$ = state<HTMLElement | null>(null);
 
 export const selectedArtifactCatalogKind$ = pageCatalog.selectedKind$;
+export const selectedArtifactCatalogCategory$ = pageCatalog.selectedCategory$;
+
+function artifactCatalogCategoryFromSearchParams(
+  params: URLSearchParams,
+): ArtifactCatalogCategory | null {
+  const category = params.get("category");
+  switch (category) {
+    case "document":
+    case "presentation":
+    case "website":
+    case "spreadsheet":
+    case "image":
+    case "video":
+    case "audio":
+    case "other": {
+      return category;
+    }
+    default: {
+      return null;
+    }
+  }
+}
 
 export function artifactCatalogKindFromSearchParams(
   params: URLSearchParams,
@@ -59,10 +82,16 @@ export const initializeArtifactCatalogQueryFromRoute$ = command(
     signal.throwIfAborted();
     set(routeLibraryMode$, libraryEnabled);
     set(internalPreviewTrigger$, null);
+    const category = libraryEnabled
+      ? artifactCatalogCategoryFromSearchParams(params)
+      : null;
     set(
       pageCatalog.initializeQuery$,
       {
-        kind: artifactCatalogKindFromSearchParams(params, libraryEnabled),
+        category,
+        kind: category
+          ? null
+          : artifactCatalogKindFromSearchParams(params, libraryEnabled),
         search: libraryEnabled ? (params.get("q") ?? "") : "",
         direction: params.get("direction") === "asc" ? "asc" : "desc",
       },
@@ -76,7 +105,14 @@ const writeArtifactCatalogQueryToRoute$ = command(
     const next = new URLSearchParams(get(searchParams$));
     const kind = get(pageCatalog.selectedKind$);
     if (get(routeLibraryMode$)) {
-      next.set("tab", kind ?? "all");
+      const category = get(pageCatalog.selectedCategory$);
+      if (category) {
+        next.set("category", category);
+        next.delete("tab");
+      } else {
+        next.delete("category");
+        next.set("tab", kind ?? "all");
+      }
       const search = get(pageCatalog.search$);
       if (search) {
         next.set("q", search);
@@ -124,6 +160,13 @@ const writeArtifactCatalogQueryToRoute$ = command(
 export const setArtifactCatalogKind$ = command(
   ({ set }, kind: ArtifactCatalogKind | null) => {
     set(pageCatalog.setKind$, kind);
+    set(writeArtifactCatalogQueryToRoute$, false);
+  },
+);
+
+export const setArtifactCatalogCategory$ = command(
+  ({ set }, category: ArtifactCatalogCategory | null) => {
+    set(pageCatalog.setCategory$, category);
     set(writeArtifactCatalogQueryToRoute$, false);
   },
 );

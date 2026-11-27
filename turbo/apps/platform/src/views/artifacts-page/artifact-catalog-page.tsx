@@ -1,25 +1,7 @@
-import type { ReactNode, UIEvent as ReactUIEvent } from "react";
+import type { UIEvent as ReactUIEvent } from "react";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
-import {
-  ChevronRight,
-  File,
-  FileText,
-  Music,
-  Table2,
-  Image,
-  Presentation,
-  MessagesSquare,
-  User,
-  Video,
-  Globe,
-} from "lucide-react";
-import {
-  useGet,
-  useLastLoadable,
-  useLastResolved,
-  useLoadable,
-  useSet,
-} from "ccstate-react";
+import { ChevronRight, MessagesSquare } from "lucide-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { surfaceVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -42,15 +24,14 @@ import { ChatThreadSidebarShell } from "../okou-page/chat-thread-sidebar-shell.t
 import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
 import { ArtifactLibraryPage } from "./artifact-library-page.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ArtifactThumbnailImage } from "../okou-page/artifact-thumbnail.tsx";
 import { emptyArtifactImg } from "../okou-page/platform-assets.ts";
 import {
-  FilePreviewIcon,
-  getFilePreviewAccentClass,
-} from "../okou-page/file-preview-icon.tsx";
-import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
-import type { ArtifactKind } from "../../signals/chat-page/artifact-card-signals.ts";
-import { officeFilePreviewKind } from "../okou-page/office-file-preview.ts";
+  ArtifactCatalogCover,
+  artifactGalleryKind,
+  artifactKindIcon,
+  useArtifactKindLabel,
+  type ArtifactCatalogAppearance,
+} from "./artifact-catalog-cover.tsx";
 import { artifactCatalogViewportRef$ } from "../../signals/artifact-deletion.ts";
 
 // Distance from the bottom of the scroll container at which the next page is
@@ -61,8 +42,6 @@ const ARTIFACT_GRID_CLASS_NAME =
 const ARTIFACT_GALLERY_CLASS_NAME =
   "grid grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-x-6 gap-y-8";
 
-type ArtifactCatalogAppearance = "card" | "gallery";
-
 const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
   "presentation",
   "hosted-site",
@@ -72,205 +51,6 @@ const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
   "shared-thread",
   "file",
 ];
-
-type ArtifactDisplayKind =
-  ArtifactCatalogKind | ArtifactKind | "document" | "spreadsheet";
-
-function artifactGalleryKind(artifact: CatalogArtifact): ArtifactDisplayKind {
-  return artifact.kind === "file"
-    ? (officeFilePreviewKind(artifact.title) ??
-        classifyChatAttachment({ filename: artifact.title }))
-    : artifact.kind;
-}
-
-function artifactKindIcon(kind: ArtifactDisplayKind, size: number): ReactNode {
-  return kind === "presentation" ? (
-    <Presentation size={size} />
-  ) : kind === "hosted-site" || kind === "html" ? (
-    <Globe size={size} />
-  ) : kind === "image" ? (
-    <Image size={size} />
-  ) : kind === "video" ? (
-    <Video size={size} />
-  ) : kind === "avatar" ? (
-    <User size={size} />
-  ) : kind === "shared-thread" ? (
-    <MessagesSquare size={size} />
-  ) : kind === "audio" ? (
-    <Music size={size} />
-  ) : kind === "csv" || kind === "json" || kind === "spreadsheet" ? (
-    <Table2 size={size} />
-  ) : kind === "document" ||
-    kind === "markdown" ||
-    kind === "pdf" ||
-    kind === "text" ? (
-    <FileText size={size} />
-  ) : (
-    <File size={size} />
-  );
-}
-
-function useArtifactKindLabel(kind: ArtifactDisplayKind): string {
-  const { t } = useTranslation();
-  if (kind === "csv" || kind === "spreadsheet") {
-    return t(($) => {
-      return $.artifacts.kinds.spreadsheet;
-    });
-  }
-  if (kind === "markdown") {
-    return t(($) => {
-      return $.artifacts.kinds.markdown;
-    });
-  }
-  if (kind === "pdf" || kind === "document") {
-    return t(($) => {
-      return $.artifacts.kinds.document;
-    });
-  }
-  if (kind === "text") {
-    return t(($) => {
-      return $.artifacts.kinds.text;
-    });
-  }
-  if (kind === "json") {
-    return t(($) => {
-      return $.artifacts.kinds.data;
-    });
-  }
-  if (kind === "audio") {
-    return t(($) => {
-      return $.artifacts.kinds.audio;
-    });
-  }
-  const kindLabel =
-    kind === "presentation"
-      ? t(($) => {
-          return $.artifacts.kinds.presentation;
-        })
-      : kind === "hosted-site" || kind === "html"
-        ? t(($) => {
-            return $.artifacts.kinds.hostedSite;
-          })
-        : kind === "image"
-          ? t(($) => {
-              return $.artifacts.kinds.image;
-            })
-          : kind === "video"
-            ? t(($) => {
-                return $.artifacts.kinds.video;
-              })
-            : kind === "avatar"
-              ? t(($) => {
-                  return $.artifacts.kinds.avatar;
-                })
-              : kind === "shared-thread"
-                ? t(($) => {
-                    return $.artifacts.kinds.sharedConversation;
-                  })
-                : t(($) => {
-                    return $.artifacts.kinds.file;
-                  });
-
-  return kindLabel;
-}
-
-/** Name the corner badge or fallback cover that carries the card's kind mark. */
-function useArtifactKindIconLabel(kind: ArtifactCatalogKind): string {
-  const { t } = useTranslation();
-  const kindLabel = useArtifactKindLabel(kind);
-  return t(
-    ($) => {
-      return $.artifacts.catalog.kindIcon;
-    },
-    { kind: kindLabel },
-  );
-}
-
-function ArtifactKindIcon({ kind }: { readonly kind: ArtifactCatalogKind }) {
-  const label = useArtifactKindIconLabel(kind);
-  return (
-    <span
-      role="img"
-      aria-label={label}
-      data-testid={`artifact-catalog-kind-icon-${kind}`}
-      className="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white shadow-sm ring-1 ring-white/15"
-    >
-      {artifactKindIcon(kind, 16)}
-    </span>
-  );
-}
-
-/**
- * The cover a card falls back to when it has no thumbnail to show. A file
- * shows its format, which the generic corner badge does not carry. Every other
- * kind has no such sub-type, so it shows the kind's own mark instead and the
- * card drops the badge rather than stamping the same icon twice.
- */
-function ArtifactCatalogFallbackPreview({
-  artifact,
-  appearance,
-}: {
-  readonly artifact: CatalogArtifact;
-  readonly appearance: ArtifactCatalogAppearance;
-}) {
-  const kindIconLabel = useArtifactKindIconLabel(artifact.kind);
-  const showsFileFormat = artifact.kind === "file";
-  return (
-    <span
-      className={cn(
-        "relative flex h-full w-full items-center justify-center overflow-hidden p-6",
-        appearance === "gallery"
-          ? "bg-gray-50"
-          : cn("bg-gradient-to-br", getFilePreviewAccentClass(artifact.title)),
-      )}
-    >
-      {appearance === "card" && (
-        <>
-          <span className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.45),transparent_55%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_55%)]" />
-          <span className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/10 to-transparent" />
-        </>
-      )}
-      <span
-        role={showsFileFormat ? undefined : "img"}
-        aria-label={showsFileFormat ? undefined : kindIconLabel}
-        data-testid={
-          showsFileFormat
-            ? undefined
-            : `artifact-catalog-kind-cover-${artifact.kind}`
-        }
-        className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-foreground/10 bg-background/90 text-muted-foreground shadow-sm transition-transform duration-200 group-hover:scale-105"
-      >
-        {showsFileFormat ? (
-          <FilePreviewIcon
-            filename={artifact.title}
-            testId="artifact-catalog-file-preview-icon"
-          />
-        ) : (
-          artifactKindIcon(artifact.kind, 30)
-        )}
-      </span>
-    </span>
-  );
-}
-
-function ArtifactCatalogVideoPreview({
-  artifact,
-}: {
-  artifact: CatalogArtifact;
-}) {
-  const resourceUrl = useLastResolved(artifact.videoUrl$);
-  return (
-    <video
-      src={resourceUrl ? `${resourceUrl}#t=0.001` : undefined}
-      preload="metadata"
-      muted
-      playsInline
-      aria-hidden="true"
-      data-testid="artifact-catalog-video-source"
-      className="h-full w-full object-contain"
-    />
-  );
-}
 
 function ArtifactCatalogCard({
   artifact,
@@ -288,30 +68,6 @@ function ArtifactCatalogCard({
   const displayKind = gallery ? artifactGalleryKind(artifact) : artifact.kind;
   const kindLabel = useArtifactKindLabel(displayKind);
   const scrollArtifactCardIntoViewRef = useSet(scrollArtifactCardIntoViewRef$);
-  const thumbnailLoadable = useLastLoadable(artifact.thumbnailUrl$);
-  const thumbnailUrl =
-    thumbnailLoadable.state === "hasData" ? thumbnailLoadable.data : null;
-  const thumbnailPending =
-    artifact.thumbnail !== null && thumbnailLoadable.state === "loading";
-  const sourceVideo =
-    artifact.videoSourceUrl && !thumbnailPending ? (
-      <ArtifactCatalogVideoPreview artifact={artifact} />
-    ) : null;
-  const fallbackPreview = sourceVideo ?? (
-    <ArtifactCatalogFallbackPreview
-      artifact={artifact}
-      appearance={appearance}
-    />
-  );
-  // A broken thumbnail hands the cover back to the fallback, so the badge
-  // follows the same state the image component renders from.
-  const thumbnailFailed = useGet(artifact.thumbnailLoad.status$) === "error";
-  // The cover carries the kind's own icon for every kind but `file`, so the
-  // corner badge would show the same mark twice on the same card.
-  const kindCoverShown =
-    artifact.kind !== "file" &&
-    sourceVideo === null &&
-    (thumbnailUrl === null || thumbnailFailed);
   return (
     <button
       ref={scrollIntoView ? scrollArtifactCardIntoViewRef : undefined}
@@ -335,33 +91,7 @@ function ArtifactCatalogCard({
           : "overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-foreground/20",
       )}
     >
-      <span
-        data-testid="artifact-catalog-card-preview"
-        className={cn(
-          "relative aspect-[16/10] w-full shrink-0 overflow-hidden",
-          gallery
-            ? "rounded-surface border border-border bg-gray-50 transition-colors group-hover:border-foreground/20"
-            : "bg-background",
-        )}
-      >
-        {thumbnailUrl ? (
-          <ArtifactThumbnailImage
-            src={thumbnailUrl}
-            load={artifact.thumbnailLoad}
-            className={cn(
-              "h-full w-full",
-              gallery ? "object-contain" : "object-cover",
-            )}
-            fallback={fallbackPreview}
-            testId="artifact-catalog-thumbnail"
-          />
-        ) : (
-          fallbackPreview
-        )}
-        {gallery || kindCoverShown ? null : (
-          <ArtifactKindIcon kind={artifact.kind} />
-        )}
-      </span>
+      <ArtifactCatalogCover artifact={artifact} appearance={appearance} />
       <span
         className={cn(
           "flex min-w-0 shrink-0",
