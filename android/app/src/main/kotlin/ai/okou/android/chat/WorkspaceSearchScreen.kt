@@ -11,6 +11,7 @@ import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.artifacts.label
 import ai.okou.android.observeReturnFocus
+import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.rememberReadFailureFeedback
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
@@ -85,7 +86,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 
 private val searchMatchWeight = FontWeight(650)
 
@@ -540,15 +540,11 @@ private fun SearchResults(
             !sourceUnavailable &&
             reads.all { it == null || it is SearchRead.Ready }
     val showDelayedFeedback =
-        key(keyword, type, pending) {
-            var shown by remember { mutableStateOf(false) }
-            if (reading && !shown) {
-                LaunchedEffect(Unit) {
-                    delay(ContentReadFeedbackDelayMillis)
-                    shown = true
-                }
-            }
-            shown
+        key(keyword, type) {
+            rememberContentReadFeedbackAfter(
+                ContentReadFeedbackDelayMillis.takeIf { pending },
+                start = reading,
+            )
         }
     val showSkeleton = showDelayedFeedback && items.isEmpty() && !showEmpty
     val showProgress =

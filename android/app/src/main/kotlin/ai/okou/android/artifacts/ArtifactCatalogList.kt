@@ -207,7 +207,12 @@ internal fun ArtifactCatalogList(
             )
             return@Column
         }
-        val showSkeleton = rememberContentReadSkeleton(hasContent = page != null)
+        val showSkeleton =
+            rememberContentReadSkeleton(
+                hasContent = page != null,
+                awaitingRead = current?.initialReadRound != null,
+                readScope = current?.initialReadRound,
+            )
         Box(Modifier.fillMaxWidth().weight(1f)) {
             LazyColumn(
                 modifier =
