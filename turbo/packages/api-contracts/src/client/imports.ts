@@ -44,6 +44,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "artifact-library-previews",
+    contracts: ["artifactLibraryPreviewsContract"],
+    bindings: [],
+  },
+  {
     module: "artifact-og",
     contracts: ["artifactOgContract"],
     bindings: [],

@@ -1,3 +1,6 @@
+import { artifactLibraryPreviewsContract } from "@okouai/api-contracts/contracts/artifact-library-previews";
+import { now } from "../../../lib/time";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
 import {
   artifactCatalogContract,
@@ -358,5 +361,87 @@ describe("artifact library list queries", () => {
         nextCursor: null,
       });
     }
+  });
+});
+
+describe("artifact library batch covers", () => {
+  it("serves completed private covers without another storage HEAD and honors the library switch", async () => {
+    await upload("cover-one.png", "image/png");
+    await upload("cover-two.png", "image/png");
+    const entries = (await list({})).artifacts;
+    const body = {
+      artifactIds: entries.map(({ id }) => {
+        return id;
+      }),
+    };
+    const previews = client()(artifactLibraryPreviewsContract);
+    await accept(previews.resolve({ headers, body }), [403]);
+    await enableLibrary();
+    const storage = context.mocks.s3.send.getMockImplementation();
+    context.mocks.s3.send.mockImplementation((...args) => {
+      if (args[0] instanceof HeadObjectCommand) {
+        throw new Error("Object metadata endpoint is unavailable");
+      }
+      return storage ? storage(...args) : Promise.resolve({});
+    });
+    const resolved = await accept(
+      previews.resolve({
+        headers,
+        body: {
+          artifactIds: [...body.artifactIds, body.artifactIds[0]!],
+        },
+      }),
+      [200],
+    );
+    expect(resolved.headers.get("cache-control")).toBe("private, no-store");
+    expect(resolved.body.previews).toHaveLength(2);
+    expect(
+      resolved.body.previews
+        .map(({ artifactId }) => {
+          return artifactId;
+        })
+        .sort(),
+    ).toStrictEqual([...body.artifactIds].sort());
+    for (const preview of resolved.body.previews) {
+      expect(preview.contentType).toBe("image/png");
+      expect(Date.parse(preview.expiresAt)).toBeGreaterThan(now());
+      const bytes = await fetch(preview.url);
+      expect(bytes.status).toBe(200);
+      await expect(bytes.text()).resolves.toBe("library content");
+    }
+    await enableLibrary(false);
+    await accept(previews.resolve({ headers, body }), [403]);
+  });
+
+  it("does not reveal another owner, workspace or deleted cover", async () => {
+    const userId = `user_${randomUUID()}`;
+    const orgId = `org_${randomUUID()}`;
+    mocks.clerk.session(userId, orgId);
+    await upload("private.png", "image/png");
+    await enableLibrary();
+    const [entry] = (await list({ direction: "desc" })).artifacts;
+    const body = { artifactIds: [entry!.id, randomUUID()] };
+    const previews = client()(artifactLibraryPreviewsContract);
+    const visible = await accept(previews.resolve({ headers, body }), [200]);
+    expect(visible.body.previews).toHaveLength(1);
+    for (const actor of [
+      { userId: `user_${randomUUID()}`, orgId },
+      { userId, orgId: `org_${randomUUID()}` },
+    ]) {
+      mocks.clerk.session(actor.userId, actor.orgId);
+      await enableLibrary();
+      const hidden = await accept(previews.resolve({ headers, body }), [200]);
+      expect(hidden.body).toStrictEqual({ previews: [] });
+    }
+    mocks.clerk.session(userId, orgId);
+    await accept(
+      client()(artifactCatalogContract).delete({
+        headers,
+        params: { artifactId: entry!.id },
+      }),
+      [200],
+    );
+    const deleted = await accept(previews.resolve({ headers, body }), [200]);
+    expect(deleted.body).toStrictEqual({ previews: [] });
   });
 });
