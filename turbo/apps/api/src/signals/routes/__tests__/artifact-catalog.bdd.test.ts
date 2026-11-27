@@ -813,6 +813,8 @@ describe("GET /api/artifacts/catalog", () => {
       sandboxHeaders,
       [200],
     );
+    // The terminal webhook settles the Morning Brief schedule in the background.
+    await flushWaitUntilForTest();
     await enableArtifactLibrary(owner.actor);
     const catalog = await chat.listArtifactCatalog(owner.actor, {
       direction: "asc",
@@ -828,13 +830,14 @@ describe("GET /api/artifacts/catalog", () => {
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, catalog.artifacts[0]!.id),
     ).resolves.not.toHaveProperty("sourceChatThreadId");
-    await accept(
+    const disabled = await accept(
       client(morningBriefPreferenceContract).update({
         headers: authenticateSharedThread(owner.actor),
         body: { enabled: false },
       }),
       [200],
     );
+    expect(disabled.body).toMatchObject({ enabled: false, status: "paused" });
   });
 
   it("withdraws the owned object for a historical public file", async () => {
