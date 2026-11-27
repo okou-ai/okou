@@ -80,7 +80,9 @@ struct NewChatSubmissionView: View {
         }
         .padding(.horizontal, ConversationCollectionRow.messageHorizontalInset)
         .padding(.top, OkouSpace.xl)
-        ConversationFooterView(state: .running, showsAvatar: true, avatarMotion: .animated)
+        ConversationFooterView(
+          state: .running, showsAvatar: true, avatarMotion: .animated,
+          sendTransition: submission.transition)
       }
     }
     .defaultScrollAnchor(.bottom, for: .initialOffset)

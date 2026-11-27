@@ -337,7 +337,8 @@ struct ChatDetailView: View {
     case .footer(let executionState, let showsAvatar):
       ConversationFooterView(
         state: executionState, showsAvatar: showsAvatar, avatarMotion: motion,
-        summary: conversation.activitySummary)
+        summary: conversation.activitySummary,
+        sendTransition: anchor != nil ? scrolling.sendTransition : nil)
     case .usage(let runID, let answer):
       HStack(spacing: OkouSpace.sm) {
         if let answer { messageActions(for: answer) }

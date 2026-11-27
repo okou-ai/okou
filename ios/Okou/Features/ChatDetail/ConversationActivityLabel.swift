@@ -15,9 +15,16 @@ struct ConversationFooterView: View {
   let showsAvatar: Bool
   let avatarMotion: OkouAvatar.Motion
   var summary: ConversationActivitySummary?
+  var sendTransition: ConversationSendTransition?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   static func showsActivity(for state: ChatExecutionState) -> Bool {
     state == .queued || state == .running
+  }
+
+  @MainActor
+  static func hidesActivity(during sendTransition: ConversationSendTransition?) -> Bool {
+    sendTransition?.hidesBubbleID != nil
   }
 
   static func measuredHeight(
@@ -34,6 +41,7 @@ struct ConversationFooterView: View {
   }
 
   var body: some View {
+    let hidesActivity = Self.hidesActivity(during: sendTransition)
     VStack(alignment: .leading, spacing: Self.contentSpacing) {
       if Self.showsActivity(for: state) {
         HStack(spacing: OkouSpace.sm) {
@@ -48,6 +56,9 @@ struct ConversationFooterView: View {
           }
         }
         .padding(.leading, showsAvatar ? 0 : OkouSpace.six)
+        .opacity(hidesActivity ? 0 : 1)
+        .animation(
+          hidesActivity || reduceMotion ? nil : .easeOut(duration: 0.16), value: hidesActivity)
       }
       Color.clear.frame(height: Self.anchorHeight)
     }
