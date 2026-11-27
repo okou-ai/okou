@@ -61,8 +61,8 @@ export const captureRunNativeSession$ = command(
     if (sessionId === undefined) {
       return;
     }
-    // Earlier standalone Pi launches used the thread ID. Both producers can
-    // still report initialization, but the first binding remains immutable.
+    // An earlier API launched standalone Pi with the thread ID. Remove that
+    // case after its callbacks drain and rollback cannot launch it (#50929).
     if (
       run.launchSnapshot?.schemaVersion === 5 &&
       framework === "pi" &&

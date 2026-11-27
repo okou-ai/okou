@@ -132,8 +132,8 @@ function outputIdentity(input: CompletionPublicationInput) {
 
 function outputDecision(input: CompletionPublicationInput) {
   const identity = outputIdentity(input);
-  // Standalone Pi producers have used both the thread and Run IDs. Once
-  // initialization binds a session, completion must report that exact ID.
+  // Keep unbound thread-ID completions until older standalone Pi callbacks
+  // drain and rollback cannot relaunch them (#50929). Bound retries stay exact.
   const matchesPiSession = sql`(${identity.sessionId}::text = CASE WHEN r.official_workflow_provenance IS NOT NULL
       THEN r.id::text ELSE COALESCE(r.chat_thread_id,r.id)::text END
     OR (r.trigger_source = 'proactive' AND ${identity.sessionId}::text = r.id::text))`;
