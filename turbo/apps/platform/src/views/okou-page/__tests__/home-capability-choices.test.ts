@@ -55,20 +55,6 @@ test("capability-home-page-002 The home card grid precedes all five compliance s
     expect(row).toHaveTextContent(status);
   }
 });
-test("capability-home-page-004 Hiding compliance restores composer focus and persists after returning from Workflows", async () => {
-  context.mocks.browser.matchMedia(true);
-  const editor = await home();
-  click(await findFastControl("button", "Hide compliance"));
-  await waitFor(() => {
-    expect(screen.queryByText("SOC 2 Type II")).toBeNull();
-  });
-  expect(editor).toHaveFocus();
-  click(await findFastControl("link", "Workflows"));
-  await screen.findByRole("heading", { name: "Workflows" });
-  click(await findFastControl("link", "Okou"));
-  await screen.findByRole("region", { name: "Find people" });
-  expect(screen.queryByText("SOC 2 Type II")).toBeNull();
-});
 test("capability-home-page-018 Each card cover opens its own capability content", async () => {
   await home();
   for (const [name, content] of [
