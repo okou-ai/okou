@@ -124,9 +124,8 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
             let generation = uuid::Uuid::new_v4().to_string();
             let image = paths.image(&generation).unwrap();
             // GC consumes real allocated files without a crash/restart boundary.
-            drop(create_image(&image, b"home", SIZE));
-            let identity =
-                metadata::HomeImageFileIdentity::from_metadata(&std::fs::metadata(image).unwrap());
+            let image_metadata = create_image(&image, b"home", SIZE).metadata().unwrap();
+            let identity = metadata::HomeImageFileIdentity::from_metadata(&image_metadata);
             let physical = PhysicalMetadata {
                 image_generation: &generation,
                 current_image: identity,

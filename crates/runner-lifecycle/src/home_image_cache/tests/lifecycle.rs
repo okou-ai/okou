@@ -464,14 +464,13 @@ async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_ro
         let generation = RunId::new_v4();
         let image = paths.image(&generation.to_string()).unwrap();
         // Inventory reads completed writes in-process, not crash durability.
-        drop(create_image(&image, b"home", SIZE));
+        let image_metadata = create_image(&image, b"home", SIZE).metadata().unwrap();
         metadata.image_generation = generation.to_string();
         metadata.profile_name = profile.into();
         metadata.reuse_key = reuse_key.into();
         metadata.last_completed_at = completed_at.into();
-        metadata.current_image = super::super::metadata::HomeImageFileIdentity::from_metadata(
-            &std::fs::symlink_metadata(&image).unwrap(),
-        );
+        metadata.current_image =
+            super::super::metadata::HomeImageFileIdentity::from_metadata(&image_metadata);
         metadata_bytes.clear();
         serde_json::to_writer(&mut metadata_bytes, &metadata).unwrap();
         std::fs::write(paths.metadata(), &metadata_bytes).unwrap();
