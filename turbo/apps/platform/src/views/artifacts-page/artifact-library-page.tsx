@@ -248,7 +248,12 @@ function ArtifactLibraryCard({
   const content = (
     <>
       <ArtifactCatalogCover artifact={artifact} videoFallback={false} />
-      <span className="mt-3 flex h-8 min-w-0 items-center pl-4 pr-16 text-sm font-medium text-foreground">
+      <span
+        className={cn(
+          "mt-3 flex h-8 min-w-0 items-center pl-4 text-sm font-medium text-foreground",
+          artifact.favorited !== undefined ? "pr-24" : "pr-16",
+        )}
+      >
         <span className="truncate">{artifact.title}</span>
       </span>
     </>
@@ -259,7 +264,7 @@ function ArtifactLibraryCard({
       data-artifact-id={artifact.id}
       aria-label={artifact.title}
       data-state={selected ? "selected" : undefined}
-      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_2rem_auto] items-center rounded-surface p-1 data-[state=selected]:bg-state-selected"
+      className="group/artifact grid min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_2rem_auto] items-center rounded-surface p-1 data-[state=selected]:bg-state-selected"
     >
       {artifact.kind === "shared-thread" ? (
         <a
@@ -343,7 +348,7 @@ function ArtifactLibraryRow({
       ref={scrollIntoView ? scrollTargetRef : undefined}
       data-artifact-id={artifact.id}
       data-state={selected ? "selected" : undefined}
-      className="cursor-default hover:bg-state-hover/60 data-[state=selected]:bg-state-selected"
+      className="group/artifact cursor-default hover:bg-state-hover/60 data-[state=selected]:bg-state-selected"
       onClick={(event) => {
         if (
           event.target instanceof Element &&
@@ -654,16 +659,7 @@ function ArtifactLibraryToolbar({
         </h1>
         <ArtifactLibrarySearch loading={loading} />
         <ArtifactLibraryViewToggle view={view} />
-        {collection === "favorites" ? (
-          <span className="flex h-9 items-center gap-1.5 px-2 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.artifacts.favorites.favorited;
-            })}
-            <ArrowDown aria-hidden="true" className="size-3.5" />
-          </span>
-        ) : (
-          <ArtifactLibrarySort />
-        )}
+        {collection !== "favorites" && <ArtifactLibrarySort />}
       </div>
       <ArtifactLibraryCollectionToggle />
       <div className="min-w-0 overflow-x-auto pb-1">
@@ -717,7 +713,15 @@ function ArtifactLibraryTable({
         <col />
         <col className="hidden w-36 @3xl:table-column" />
         <col className="hidden w-28 @4xl:table-column" />
-        <col className="w-12" />
+        <col
+          className={
+            artifacts.some((artifact) => {
+              return artifact.favorited !== undefined;
+            })
+              ? "w-24"
+              : "w-12"
+          }
+        />
       </colgroup>
       <TableHeader className="sr-only">
         <TableRow className="hover:bg-transparent">

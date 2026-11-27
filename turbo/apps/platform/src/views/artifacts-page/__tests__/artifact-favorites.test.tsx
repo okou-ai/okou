@@ -60,6 +60,91 @@ function favorite(
   };
 }
 
+test.each(["Grid view", "List view"])(
+  "Library direct stars toggle favorites in %s without opening a preview or changing collections",
+  async (view) => {
+    let favorited = false;
+    const document = artifact({ id: OWN_ID, title: "Launch plan.txt" });
+    context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+      return respond(200, { artifacts: [document], nextCursor: null });
+    });
+    context.mocks.api(
+      artifactFavoritesContract.status,
+      ({ query, respond }) => {
+        expect(query.artifactIds).toBe(OWN_ID);
+        return respond(200, { favorites: { [OWN_ID]: favorited } });
+      },
+    );
+    context.mocks.api(artifactFavoritesContract.create, ({ body, respond }) => {
+      expect(body).toStrictEqual({ artifactId: OWN_ID });
+      favorited = true;
+      return respond(200, { artifactId: OWN_ID, favorited: true });
+    });
+    context.mocks.api(
+      artifactFavoritesContract.remove,
+      ({ params, respond }) => {
+        expect(params.artifactId).toBe(OWN_ID);
+        favorited = false;
+        return respond(200, { artifactId: OWN_ID, favorited: false });
+      },
+    );
+    await setupPage({ context, path: "/artifacts", featureSwitches: features });
+    await expect(
+      findArtifactAction(document.title),
+    ).resolves.toBeInTheDocument();
+    const viewport = getCatalogViewport();
+    if (view === "List view") {
+      click(getButtonByName(view, viewport));
+    }
+    await waitFor(() => {
+      expect(getButtonByName(view, viewport)).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+    for (const [action, result, pressed, message] of [
+      [
+        "Add to favorites",
+        "Remove from favorites",
+        "true",
+        "Added to favorites",
+      ],
+      [
+        "Remove from favorites",
+        "Add to favorites",
+        "false",
+        "Removed from favorites",
+      ],
+    ] as const) {
+      const star = getButtonByName(action, viewport);
+      expect(star).toHaveAttribute(
+        "aria-pressed",
+        pressed === "true" ? "false" : "true",
+      );
+      expect(star).toBeEnabled();
+      click(star);
+      await waitFor(() => {
+        const updatedStar = getButtonByName(result, viewport);
+        expect(updatedStar).toHaveAttribute("aria-pressed", pressed);
+        expect(updatedStar).toBeEnabled();
+      });
+      await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+      expect(getButtonByName("More artifact actions", viewport)).toBeEnabled();
+      expect(collection("Your artifacts")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(collection("Favorites")).toHaveAttribute("aria-pressed", "false");
+      expect(location.pathname).toBe("/artifacts");
+      expect(location.search).toBe("");
+      expect(
+        screen.queryByRole("complementary", { name: "Artifact" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+    }
+  },
+);
+
 test("Library menus toggle a favorite and only the toast action opens Favorites", async () => {
   let favorited = false;
   const document = artifact({ id: OWN_ID, title: "Launch plan.txt" });
@@ -90,6 +175,9 @@ test("Library menus toggle a favorite and only the toast action opens Favorites"
   });
   await setupPage({ context, path: "/artifacts", featureSwitches: features });
   await expect(findArtifactAction(document.title)).resolves.toBeInTheDocument();
+  expect(
+    getButtonByName("Created Sort ascending", getCatalogViewport()),
+  ).toBeEnabled();
   const card = screen.getByRole("article", { name: document.title });
   click(getButtonByName("More artifact actions", card));
   let menu = await screen.findByRole("menu");
@@ -104,6 +192,13 @@ test("Library menus toggle a favorite and only the toast action opens Favorites"
     expect(collection("Favorites")).toHaveAttribute("aria-pressed", "true");
   });
   await expect(findArtifactAction(document.title)).resolves.toBeInTheDocument();
+  expect(getButtonByName("Grid view", getCatalogViewport())).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(
+    within(getCatalogViewport()).queryByText("Favorited"),
+  ).not.toBeInTheDocument();
   click(
     getButtonByName(
       "More artifact actions",
@@ -282,27 +377,39 @@ async function openExistingArtifactPage(
   expect(screen.queryByText("Favorites")).not.toBeInTheDocument();
 }
 
-test("The existing library keeps search and deletion when Star is disabled", async () => {
-  await openExistingArtifactPage({
-    [FeatureSwitchKey.ArtifactLibrary]: true,
-    [FeatureSwitchKey.Star]: false,
-  });
-  expect(
-    screen.getByRole("searchbox", { name: "Search artifacts" }),
-  ).toBeInTheDocument();
-  click(
-    getButtonByName(
-      "More artifact actions",
-      screen.getByRole("article", { name: "Existing deck" }),
-    ),
-  );
-  const menu = await screen.findByRole("menu");
-  expect(
-    queryAllByRoleFast("menuitem", menu).map((item) => {
-      return item.textContent?.trim();
-    }),
-  ).toStrictEqual(["Delete"]);
-});
+test.each(["Grid view", "List view"])(
+  "The existing library keeps search and deletion without direct stars in %s when Star is disabled",
+  async (view) => {
+    await openExistingArtifactPage({
+      [FeatureSwitchKey.ArtifactLibrary]: true,
+      [FeatureSwitchKey.Star]: false,
+    });
+    expect(
+      screen.getByRole("searchbox", { name: "Search artifacts" }),
+    ).toBeInTheDocument();
+    const viewport = getCatalogViewport();
+    if (view === "List view") {
+      click(getButtonByName(view, viewport));
+    }
+    await waitFor(() => {
+      expect(getButtonByName(view, viewport)).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+    expect(queryButtonByName("Add to favorites", viewport)).toBeUndefined();
+    expect(
+      queryButtonByName("Remove from favorites", viewport),
+    ).toBeUndefined();
+    click(getButtonByName("More artifact actions", viewport));
+    const menu = await screen.findByRole("menu");
+    expect(
+      queryAllByRoleFast("menuitem", menu).map((item) => {
+        return item.textContent?.trim();
+      }),
+    ).toStrictEqual(["Delete"]);
+  },
+);
 
 test("The existing gallery stays usable when Artifact Library is disabled", async () => {
   await openExistingArtifactPage({
@@ -310,6 +417,8 @@ test("The existing gallery stays usable when Artifact Library is disabled", asyn
     [FeatureSwitchKey.Star]: true,
   });
   expect(queryButtonByName("More artifact actions")).toBeUndefined();
+  expect(queryButtonByName("Add to favorites")).toBeUndefined();
+  expect(queryButtonByName("Remove from favorites")).toBeUndefined();
   expect(getButtonByName("Show presentation artifacts")).toHaveAttribute(
     "aria-pressed",
     "true",
