@@ -236,8 +236,7 @@ impl AppServerState {
         params: &Value,
         output: &mut W,
     ) -> io::Result<ServerAction> {
-        let Some(thread_id) = non_empty_string_param(params, "threadId") else {
-            write_error(output, id, INVALID_REQUEST, "missing threadId")?;
+        let Some(thread_id) = required_id_param(params, "threadId", &id, output)? else {
             return Ok(ServerAction::Continue);
         };
         if self.scenario == Scenario::ResumeRolloutMissing {
@@ -308,8 +307,7 @@ impl AppServerState {
             return Ok(ServerAction::Continue);
         }
 
-        let Some(thread_id) = non_empty_string_param(params, "threadId") else {
-            write_error(output, id, INVALID_REQUEST, "missing threadId")?;
+        let Some(thread_id) = required_id_param(params, "threadId", &id, output)? else {
             return Ok(ServerAction::Continue);
         };
         let Some(current_thread) =
@@ -600,12 +598,10 @@ impl AppServerState {
         params: &Value,
         output: &mut W,
     ) -> io::Result<ServerAction> {
-        let Some(thread_id) = non_empty_string_param(params, "threadId") else {
-            write_error(output, id, INVALID_REQUEST, "missing threadId")?;
+        let Some(thread_id) = required_id_param(params, "threadId", &id, output)? else {
             return Ok(ServerAction::Continue);
         };
-        let Some(turn_id) = non_empty_string_param(params, "turnId") else {
-            write_error(output, id, INVALID_REQUEST, "missing turnId")?;
+        let Some(turn_id) = required_id_param(params, "turnId", &id, output)? else {
             return Ok(ServerAction::Continue);
         };
         let Some(current_thread) =
@@ -664,8 +660,7 @@ impl AppServerState {
             )?;
             return Ok(ServerAction::Continue);
         }
-        let Some(thread_id) = non_empty_string_param(params, "threadId") else {
-            write_error(output, id, INVALID_REQUEST, "missing threadId")?;
+        let Some(thread_id) = required_id_param(params, "threadId", &id, output)? else {
             return Ok(ServerAction::Continue);
         };
         let Some(current_thread) =
@@ -1052,8 +1047,22 @@ fn string_param<'a>(params: &'a Value, name: &str) -> Option<&'a str> {
     params.get(name).and_then(Value::as_str)
 }
 
-fn non_empty_string_param<'a>(params: &'a Value, name: &str) -> Option<&'a str> {
-    string_param(params, name).filter(|value| !value.is_empty())
+fn required_id_param<'a, W: Write>(
+    params: &'a Value,
+    name: &str,
+    request_id: &Value,
+    output: &mut W,
+) -> io::Result<Option<&'a str>> {
+    let value = string_param(params, name).filter(|value| !value.is_empty());
+    if value.is_none() {
+        write_error(
+            output,
+            request_id.clone(),
+            INVALID_REQUEST,
+            &format!("missing {name}"),
+        )?;
+    }
+    Ok(value)
 }
 
 fn text_inputs(params: &Value) -> Result<Vec<String>, String> {
