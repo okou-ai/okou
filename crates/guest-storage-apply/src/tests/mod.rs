@@ -151,6 +151,68 @@ fn binary_storage_rejects_an_unbound_inline_source_before_cleanup() {
 }
 
 #[test]
+fn wide_decoded_input_finishes_other_mounts_after_a_write_failure() {
+    use guest_contracts::storage_files::{StorageFile, encode_input};
+    use std::fs;
+    use std::os::unix::fs::MetadataExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().canonicalize().unwrap();
+    let mounts = (0..20)
+        .map(|index| {
+            path.join(format!("skill-{index}"))
+                .to_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    let blocked = std::path::Path::new(&mounts[0]).join("SKILL.md");
+    fs::create_dir_all(&blocked).unwrap();
+    let mut manifest = json!({"storageMounts": mounts.iter().map(|mount| json!({
+        "mountPath": mount, "archiveUrl": "decoded://"
+    })).collect::<Vec<_>>()});
+    let files = (0..mounts.len())
+        .map(|index| {
+            [StorageFile {
+                path: "SKILL.md".into(),
+                mode: 0o640,
+                mtime: 1234,
+                content: format!("skill-{index}").into_bytes(),
+            }]
+        })
+        .collect::<Vec<_>>();
+    let groups = mounts
+        .iter()
+        .zip(&files)
+        .map(|(mount, files)| (mount.as_str(), files.as_slice()))
+        .collect::<Vec<_>>();
+    let apply = |manifest: &serde_json::Value| {
+        let input = encode_input(&serde_json::to_vec(manifest).unwrap(), &groups).unwrap();
+        super::run_storage_files_bytes_in_runtime(&input, root.path())
+    };
+    assert_eq!(
+        apply(&manifest),
+        Err(super::ApplyFailure::TargetUnavailable)
+    );
+    assert!(blocked.is_dir());
+    for (index, mount) in mounts.iter().enumerate().skip(1) {
+        let file = std::path::Path::new(mount).join("SKILL.md");
+        assert_eq!(fs::read(&file).unwrap(), files[index][0].content);
+        let metadata = file.metadata().unwrap();
+        assert_eq!(metadata.mode() & 0o777, 0o640);
+        assert_eq!(metadata.mtime(), 1234);
+        assert_eq!(metadata.uid(), path.metadata().unwrap().uid());
+    }
+
+    // A different mount's source error cannot be treated as a recoverable
+    // target conflict when Runner decides whether to continue on reused Home.
+    manifest["storageMounts"][1]["templateGuidance"] = json!({
+        "sha256": "0".repeat(64), "archiveBytes": 1
+    });
+    assert_eq!(apply(&manifest), Err(super::ApplyFailure::Failed));
+}
+
+#[test]
 fn shared_workflow_packages_materialize_independent_names_and_preserve_attachments() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();

@@ -20,6 +20,8 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+mod decoded;
+
 const LOCAL_CONCURRENT: usize = 4;
 const LARGE_LOCAL_ARTIFACT_BYTES: u64 = 256 * 1024;
 #[cfg(target_os = "linux")]
@@ -234,6 +236,16 @@ impl<'input> StartedDownload<'input> {
         }
     }
 
+    fn attempt(mut self, runner: AttemptRunner) -> DownloadCompletion<'input> {
+        let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| runner(&mut self)))
+            .map(AttemptOutcome::Finished)
+            .unwrap_or_else(|error| AttemptOutcome::Panicked(panic_message(error.as_ref())));
+        DownloadCompletion {
+            download: self,
+            outcome,
+        }
+    }
+
     fn finish(self, result: Result<(), DownloadError>) -> Result<(), ApplyFailure> {
         match result {
             Ok(()) => {
@@ -292,6 +304,27 @@ impl DownloadReservation {
 struct DownloadCompletion<'input> {
     download: StartedDownload<'input>,
     outcome: AttemptOutcome,
+}
+
+impl DownloadCompletion<'_> {
+    fn finish(self) -> Result<(), ApplyFailure> {
+        match self.outcome {
+            AttemptOutcome::Finished(result) => self.download.finish(result),
+            AttemptOutcome::Panicked(message) => {
+                log_error!(LOG_TAG, "Thread panicked: {message}");
+                Err(ApplyFailure::Failed)
+            }
+        }
+    }
+}
+
+fn record_failure(batch: &mut Result<(), ApplyFailure>, result: Result<(), ApplyFailure>) {
+    // A general failure takes precedence over a recoverable target conflict.
+    if let Err(failure) = result
+        && *batch != Err(ApplyFailure::Failed)
+    {
+        *batch = Err(failure);
+    }
 }
 
 enum DownloadEvent {
@@ -429,24 +462,9 @@ impl<'input> DownloadScheduler<'input> {
 
     fn record_completion(&mut self, completion: DownloadCompletion<'input>) {
         self.active_attempts -= 1;
-
-        match completion.outcome {
-            AttemptOutcome::Finished(result) => {
-                self.reservations
-                    .retain(|reserved| reserved.id != completion.download.id);
-                if let Err(failure) = completion.download.finish(result)
-                    && self.result != Err(ApplyFailure::Failed)
-                {
-                    self.result = Err(failure);
-                }
-            }
-            AttemptOutcome::Panicked(msg) => {
-                self.reservations
-                    .retain(|reserved| reserved.id != completion.download.id);
-                log_error!(LOG_TAG, "Thread panicked: {msg}");
-                self.result = Err(ApplyFailure::Failed);
-            }
-        }
+        self.reservations
+            .retain(|reserved| reserved.id != completion.download.id);
+        record_failure(&mut self.result, completion.finish());
     }
 }
 
@@ -641,6 +659,12 @@ fn download_with_readiness(
         concurrency
     );
 
+    if readiness.is_none() && decoded::can_dispatch(&pending) {
+        let result = decoded::download(pending, concurrency, attempt_runner);
+        telemetry.finish();
+        return result;
+    }
+
     let success = thread::scope(|scope| {
         // The readiness watcher owns a 'static notification callback. Keep its
         // wakeups separate from completion values that borrow this input and
@@ -682,15 +706,10 @@ fn download_with_readiness(
                             break;
                         }
                     };
-                    let Ok(mut download) = work else {
+                    let Ok(download) = work else {
                         break;
                     };
-                    let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                        attempt_runner(&mut download)
-                    }))
-                    .map(AttemptOutcome::Finished)
-                    .unwrap_or_else(|e| AttemptOutcome::Panicked(panic_message(e.as_ref())));
-                    let _ = completion_tx.send(DownloadCompletion { download, outcome });
+                    let _ = completion_tx.send(download.attempt(attempt_runner));
                     let _ = event_tx.send(DownloadEvent::Completed);
                 }
             });
