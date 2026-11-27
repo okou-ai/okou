@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1193.0](https://github.com/okou-ai/okou/compare/app-v0.1192.0...app-v0.1193.0) (2026-11-27)
+
+
+### Features
+
+* **artifacts:** add visual browsing to library ([#51115](https://github.com/okou-ai/okou/issues/51115)) ([d11e612](https://github.com/okou-ai/okou/commit/d11e6120de54a6d91addd74541361e0497d5ae0a))
+
+
+### Bug Fixes
+
+* **lab:** show feature switch slugs and descriptions ([#51264](https://github.com/okou-ai/okou/issues/51264)) ([bdb24a5](https://github.com/okou-ai/okou/commit/bdb24a5be24c0a172d11b195a824cc6af0e637c5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.137.0
+    * @okouai/core bumped to 8.887.1
+    * @okouai/ui bumped to 1.22.40
+
 ## [0.1192.0](https://github.com/okou-ai/okou/compare/app-v0.1191.1...app-v0.1192.0) (2026-11-26)
 
 

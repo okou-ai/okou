@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.138.0](https://github.com/okou-ai/okou/compare/api-v2.137.3...api-v2.138.0) (2026-11-27)
+
+
+### Features
+
+* **artifacts:** add visual browsing to library ([#51115](https://github.com/okou-ai/okou/issues/51115)) ([d11e612](https://github.com/okou-ai/okou/commit/d11e6120de54a6d91addd74541361e0497d5ae0a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.137.0
+    * @okouai/core bumped to 8.887.1
+    * @okouai/db bumped to 2.71.7
+    * @okouai/pi-agent-runtime bumped to 1.52.96
+
 ## [2.137.3](https://github.com/okou-ai/okou/compare/api-v2.137.2...api-v2.137.3) (2026-11-26)
 
 
