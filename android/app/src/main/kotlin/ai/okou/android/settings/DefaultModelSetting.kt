@@ -1,5 +1,6 @@
 package ai.okou.android.settings
 
+import ai.okou.android.CompactPanelTopAppBar
 import ai.okou.android.R
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsModal
@@ -8,7 +9,7 @@ import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFeedbackHost
-import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.settingsPanelContentPadding
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -203,8 +204,7 @@ internal fun ModelPickerSheet(
     snackbar: SnackbarHostState? = null,
     footer: @Composable () -> Unit = {},
 ) {
-    val windowHeight = currentWindowSizeDp().height
-    val fullScreen = windowHeight < 480
+    val fullScreen = isShortSettingsPanelWindow()
     val scroll = rememberScrollState()
     val selected = choices?.firstOrNull { it.id == selectedId }
     val fastMultiplier = selected?.takeIf { it.canSelect }?.fastMultiplier
@@ -234,27 +234,34 @@ internal fun ModelPickerSheet(
                 .padding(settingsPanelContentPadding(compactHeight = fullScreen))
                 .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = dismiss,
-                    modifier = Modifier.size(48.dp).focusRequester(backFocus),
-                ) {
-                    androidx.compose.material3.Icon(
-                        androidx.compose.ui.res.painterResource(R.drawable.ic_arrow_back),
-                        stringResource(R.string.back),
+            if (fullScreen) {
+                CompactPanelTopAppBar(
+                    title,
+                    back = dismiss,
+                    backFocus = backFocus,
+                )
+            } else
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = dismiss,
+                        modifier = Modifier.size(48.dp).focusRequester(backFocus),
+                    ) {
+                        androidx.compose.material3.Icon(
+                            androidx.compose.ui.res.painterResource(R.drawable.ic_arrow_back),
+                            stringResource(R.string.back),
+                        )
+                    }
+                    Text(
+                        title,
+                        Modifier.semantics { heading() },
+                        style =
+                            MaterialTheme.typography.titleLarge.copy(
+                                fontSize = 22.sp,
+                                lineHeight = 28.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
                     )
                 }
-                Text(
-                    title,
-                    Modifier.semantics { heading() },
-                    style =
-                        MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 22.sp,
-                            lineHeight = 28.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        ),
-                )
-            }
             Column(
                 Modifier.weight(1f, fill = false).verticalScroll(scroll),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
