@@ -14,7 +14,6 @@ import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowDetailVisibility
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
-import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.retainSearchResultsWhileComposing
@@ -52,6 +51,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -123,6 +123,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private const val SECTION_EDITOR_FOCUS = "section"
+
+// Keep the stroke within a 40 dp surface centered in the 48 dp touch target.
+internal val WorkflowFilledActionFocusInset = 6.dp
 
 @Composable
 internal fun WorkflowScreen(
@@ -517,16 +520,19 @@ private fun WorkflowDirectory(
                 modifier =
                     actionFocus.modifier
                         .semantics { if (keepCreateFocus) disabled() }
-                        .heightIn(min = 48.dp)
                         .updateFocusOutline(
                             ButtonDefaults.textShape,
                             MaterialTheme.colorScheme.onBackground,
                         )
                         .testTag("workflow_create"),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                contentPadding = ButtonDefaults.TextButtonWithIconContentPadding,
             ) {
-                Icon(painterResource(R.drawable.ic_add), null, Modifier.size(18.dp))
-                Spacer(Modifier.size(6.dp))
+                Icon(
+                    painterResource(R.drawable.ic_add),
+                    null,
+                    Modifier.size(ButtonDefaults.IconSize),
+                )
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                 Text(stringResource(R.string.workflow_new))
             }
         }
@@ -669,19 +675,19 @@ private fun WorkflowEmpty(
             },
             style = workflowBodyStyle().copy(fontWeight = FontWeight.SemiBold),
         )
-        val recovery = Modifier.workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
-        when {
-            hasQuery ->
-                ChatListTextAction(
-                    R.string.workflow_clear_search,
-                    recovery,
-                    enabled = enabled,
-                    onClick = reset,
+        if (hasQuery || scoped) {
+            TextButton(
+                onClick = { if (hasQuery) reset() else onScope(WorkflowScope.All) },
+                modifier = Modifier.workspaceSearchFocusOutline(ButtonDefaults.textShape),
+                enabled = enabled,
+            ) {
+                Text(
+                    stringResource(
+                        if (hasQuery) R.string.workflow_clear_search
+                        else R.string.workflow_show_all,
+                    ),
                 )
-            scoped ->
-                ChatListTextAction(R.string.workflow_show_all, recovery, enabled = enabled) {
-                    onScope(WorkflowScope.All)
-                }
+            }
         }
     }
 }
@@ -945,18 +951,23 @@ private fun WorkflowDetailPane(
                                     )
                                 }
                             item(key = "history_earlier") {
-                                ChatListTextAction(
-                                    if (state.historyRead == WorkflowHistoryRead.Earlier)
-                                        R.string.workflow_history_loading
-                                    else R.string.workflow_history_earlier,
+                                TextButton(
                                     onClick = onEarlierRuns,
                                     enabled = !handoffPending && state.historyRead?.loading != true,
                                     modifier =
                                         Modifier.workspaceSearchFocusOutline(
-                                                RoundedCornerShape(12.dp),
+                                                ButtonDefaults.textShape,
                                             )
                                             .testTag("workflow_earlier_runs"),
-                                )
+                                ) {
+                                    Text(
+                                        stringResource(
+                                            if (state.historyRead == WorkflowHistoryRead.Earlier)
+                                                R.string.workflow_history_loading
+                                            else R.string.workflow_history_earlier,
+                                        ),
+                                    )
+                                }
                             }
                         }
                     }
@@ -1030,11 +1041,13 @@ private fun WorkflowUseBar(
                 { onUse(actionFocus.keyboardFocused) },
                 enabled = enabled && !pending,
                 retainDisabledFocus = enabled && pending,
+                useMaterialButtonDefaults = true,
                 modifier =
                     actionFocus.modifier
                         .updateFocusOutline(
                             ButtonDefaults.shape,
                             if (pending) colors.onBackground else colors.onPrimary,
+                            outlineInset = WorkflowFilledActionFocusInset,
                         )
                         .then(if (wide) Modifier else Modifier.fillMaxWidth())
                         .testTag("workflow_use"),
@@ -1178,10 +1191,11 @@ private fun WorkflowSectionHeader(
     modifier: Modifier = Modifier,
     action: (@Composable () -> Unit)? = null,
 ) {
-    Row(
+    FlowRow(
         modifier.fillMaxWidth().padding(bottom = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             stringResource(label),
@@ -1232,7 +1246,6 @@ internal fun WorkflowAction(
 ) =
     WorkflowActionRipple(pendingStatus != null) {
         val colors = MaterialTheme.colorScheme
-        val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
         val pending = pendingStatus != null
         val showProgress = pending && showPendingProgress
         val pendingSemantics =
@@ -1250,7 +1263,6 @@ internal fun WorkflowAction(
         OutlinedButton(
             { if (!pending) onClick() },
             modifier
-                .heightIn(min = 48.dp)
                 .updateFocusOutline(
                     ButtonDefaults.outlinedShape,
                     colors.onBackground,
@@ -1262,7 +1274,6 @@ internal fun WorkflowAction(
                 if (pending) defaults.copy(contentColor = defaults.disabledContentColor)
                 else defaults,
             border = ButtonDefaults.outlinedButtonBorder(enabled && !pending),
-            contentPadding = padding,
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
@@ -1272,11 +1283,14 @@ internal fun WorkflowAction(
                     textAlign = TextAlign.Center,
                 )
                 if (showProgress) {
-                    CircularProgressIndicator(
-                        Modifier.size(16.dp).clearAndSetSemantics {},
-                        color = LocalContentColor.current,
-                        strokeWidth = 2.dp,
-                    )
+                    // Keep button measurement tied to the label while the request is pending.
+                    Box(Modifier.matchParentSize().wrapContentSize(unbounded = true)) {
+                        CircularProgressIndicator(
+                            Modifier.size(16.dp).clearAndSetSemantics {},
+                            color = LocalContentColor.current,
+                            strokeWidth = 2.dp,
+                        )
+                    }
                 }
             }
         }

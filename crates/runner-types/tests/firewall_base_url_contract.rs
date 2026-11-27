@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use runner_types::types::{Firewall, FirewallApi, FirewallAuth};
+use runner_types::types::{BuiltinFirewall, FirewallApi, FirewallAuth};
 use serde::Deserialize;
 
 const SUPPORTED_HOSTNAME_POLICY: &str = "vm0-uts46-16.0-v1";
@@ -86,9 +86,10 @@ fn firewall_cache_validation_accepts_encoded_partial_alabels() {
     }
 }
 
-fn firewall(base: String) -> Firewall {
-    Firewall {
+fn firewall(base: String) -> BuiltinFirewall {
+    BuiltinFirewall {
         name: "contract-test".to_string(),
+        placeholders: None,
         apis: vec![FirewallApi {
             network_intent: None,
             id: String::new(),

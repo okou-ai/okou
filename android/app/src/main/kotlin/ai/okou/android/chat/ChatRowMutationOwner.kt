@@ -26,6 +26,7 @@ internal class ChatRowMutationOwner(
         val alreadySatisfied: Boolean,
         val recoverByTarget: Boolean,
         val renameAcknowledged: Boolean,
+        val uncertainEdit: ChatRowEdit?,
     )
 
     class Confirmation(val failure: ChatRowActionFailure?, val ownWriteConfirmed: Boolean)
@@ -81,6 +82,7 @@ internal class ChatRowMutationOwner(
         var connectionFailed = false
         var alreadySatisfied = false
         var renameAcknowledged = false
+        var uncertainEdit: ChatRowEdit? = null
         val retries = if (optimistic && action.recoversInBackground) ChatWriteRetries() else null
         try {
             requireCurrent()
@@ -120,6 +122,8 @@ internal class ChatRowMutationOwner(
             requireCurrent()
             if (submittedCount > 0 && (connectionFailed || error.rejectsEdit(action))) {
                 submittedCount--
+            } else if (submittedCount > 0 && action != ChatRowAction.Rename) {
+                uncertainEdit = edits[edits.size - submittedCount]
             }
         }
         return Submission(
@@ -131,6 +135,7 @@ internal class ChatRowMutationOwner(
             alreadySatisfied,
             retries != null,
             renameAcknowledged,
+            uncertainEdit,
         )
     }
 
@@ -186,14 +191,36 @@ internal class ChatRowMutationOwner(
         }
         val confirmedElsewhere =
             submission.recoverByTarget && projection.settleConfirmedTargets(edits)
-        if (confirmedElsewhere) publishRows()
+        val rolledBackUnknown =
+            submission.uncertainEdit?.let { projection.discardEdits(listOf(it)) } == true
+        if (confirmedElsewhere || rolledBackUnknown) publishRows()
         val settled = projection.confirmEdits(edits)
         if (settled && submission.action == ChatRowAction.Rename) publishRows()
         // A move that never reached its requested rank write already reported failure.
         // Its attempted rank edits still need event reconciliation.
-        return if (settled || rollback != null)
-            Confirmation(null, settled && canOfferUndo && !confirmedElsewhere)
-        else
+        return if (rolledBackUnknown && rollback == null)
+            Confirmation(
+                ChatRowActionFailure(
+                    submission.action,
+                    rejected = true,
+                    conversationId = conversationId,
+                    deleteFromWorkflow = deleteFromWorkflow,
+                ),
+                false,
+            )
+        // Successful write responses remain valid when the canonical list read is late.
+        else if (settled || rollback != null || submission.action != ChatRowAction.Rename) {
+            val archiveAcknowledged =
+                submission.uncertainEdit == null &&
+                    (submission.action == ChatRowAction.Archive ||
+                        submission.action == ChatRowAction.Unarchive)
+            Confirmation(
+                null,
+                canOfferUndo &&
+                    !rolledBackUnknown &&
+                    (archiveAcknowledged || settled && !confirmedElsewhere),
+            )
+        } else
             Confirmation(
                 ChatRowActionFailure(
                     submission.action,

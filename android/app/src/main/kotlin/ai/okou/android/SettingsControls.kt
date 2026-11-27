@@ -67,6 +67,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -98,6 +99,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -397,7 +399,6 @@ internal fun SettingsModal(
     showDragHandle: Boolean = true,
     fitContentInsets: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
-    reserveTopInset: Boolean = false,
     snackbar: SnackbarHostState? = null,
     onBack: (() -> Unit)? = null,
     content: @Composable (centered: Boolean) -> Unit,
@@ -440,12 +441,9 @@ internal fun SettingsModal(
         val confirm by rememberUpdatedState(confirmDismiss)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
+            // Keep the content viewport stable as the sheet moves below the status bar.
             modifier =
-                if (reserveTopInset)
-                    Modifier.windowInsetsPadding(
-                        WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
-                    )
-                else Modifier,
+                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)),
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
@@ -547,6 +545,45 @@ internal fun settingsPanelContentPadding(compactHeight: Boolean) =
 
 @Composable internal fun isShortSettingsPanelWindow() = currentWindowSizeDp().height < 480
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CompactPanelTopAppBar(
+    title: String,
+    back: (() -> Unit)? = null,
+    backEnabled: Boolean = true,
+    backFocus: FocusRequester? = null,
+    titleFocus: FocusRequester? = null,
+) {
+    TopAppBar(
+        modifier = Modifier.testTag("compact-panel-top-app-bar"),
+        title = {
+            Text(
+                title,
+                Modifier.then(
+                        if (titleFocus != null) Modifier.focusRequester(titleFocus).focusable()
+                        else Modifier,
+                    )
+                    .semantics { heading() },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        navigationIcon = {
+            if (back != null) {
+                val focus = if (backFocus == null) Modifier else Modifier.focusRequester(backFocus)
+                IconButton(back, focus.size(48.dp), enabled = backEnabled) {
+                    Icon(
+                        painterResource(R.drawable.ic_arrow_back),
+                        stringResource(R.string.back),
+                    )
+                }
+            }
+        },
+        // The modal already applies the window insets to the panel.
+        windowInsets = WindowInsets(0),
+    )
+}
+
 internal enum class SettingsSheetScroll {
     Panel,
     Body,
@@ -568,20 +605,21 @@ internal fun SettingsSheet(
     showBack: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
     snackbar: SnackbarHostState? = null,
+    manageSnackbarTimeout: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compactHeight = isShortSettingsPanelWindow()
+    val fullScreen = compactHeight && fullScreenInShortWindow
+    val scrollWholePanel = scroll == SettingsSheetScroll.Panel && !fullScreen
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
     SettingsModal(
         onDismiss,
         dismissible = dismissible,
-        fullScreen = compactHeight && fullScreenInShortWindow,
-        fitContentInsets = compactHeight && fullScreenInShortWindow,
+        fullScreen = fullScreen,
+        fitContentInsets = fullScreen,
         confirmDismiss = confirmDismiss,
-        // Give native scroll bodies stable height as the sheet opens and consumes the top inset.
-        reserveTopInset = scroll == SettingsSheetScroll.None,
     ) { centered ->
         var panelBottom by remember { mutableFloatStateOf(0f) }
         var actionTop by remember { mutableStateOf<Float?>(null) }
@@ -591,19 +629,26 @@ internal fun SettingsSheet(
                     .fillMaxWidth()
                     .padding(settingsPanelContentPadding(compactHeight))
                     .padding(
-                        top = if (centered && !(compactHeight && showBack)) 16.dp else 0.dp,
+                        top =
+                            if (centered && !fullScreen && !(compactHeight && showBack)) 16.dp
+                            else 0.dp,
                     )
-                    .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
+                    .then(if (scrollWholePanel) scrollModifier else Modifier),
             ) {
                 Box(Modifier.fillMaxWidth()) {
-                    val compactTitle = compactHeight && fullScreenInShortWindow
                     val titleStyle =
                         MaterialTheme.typography.titleLarge.copy(
-                            fontSize = if (compactTitle) 16.sp else 22.sp,
-                            lineHeight = if (compactTitle) 24.sp else 28.sp,
+                            fontSize = 22.sp,
+                            lineHeight = 28.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
-                    if (showBack) {
+                    if (fullScreen) {
+                        CompactPanelTopAppBar(
+                            title,
+                            back = onDismiss.takeIf { showBack },
+                            backEnabled = dismissible,
+                        )
+                    } else if (showBack) {
                         Row(
                             Modifier.heightIn(min = 64.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -628,12 +673,8 @@ internal fun SettingsSheet(
                 }
                 val body = Modifier.fillMaxWidth()
                 val bodyModifier =
-                    when (scroll) {
-                        SettingsSheetScroll.Panel -> body
-                        SettingsSheetScroll.Body ->
-                            body.weight(1f, fill = false).then(scrollModifier)
-                        SettingsSheetScroll.None -> body.weight(1f, fill = false)
-                    }
+                    if (scrollWholePanel) body
+                    else body.weight(1f, fill = false).then(scrollModifier)
                 Column(bodyModifier) {
                     Column(
                         Modifier.fillMaxWidth(),
@@ -667,7 +708,11 @@ internal fun SettingsSheet(
                     Box(
                         Modifier.align(Alignment.BottomCenter).padding(bottom = actionInset + 8.dp),
                     ) {
-                        WorkspaceFeedbackHost(snackbar, Modifier)
+                        WorkspaceFeedbackHost(
+                            snackbar,
+                            Modifier,
+                            manageTimeout = manageSnackbarTimeout,
+                        )
                     }
                 }
             }
@@ -685,21 +730,26 @@ internal fun SettingsSheetDescription(text: String) {
     )
 }
 
-private val buttonFocusOutlineTheme =
-    RippleThemeConfiguration(
-        focus =
-            RippleThemeConfiguration.Focus.InsetRing(
-                outerStrokeInset = 1.dp,
-                outerStrokeWidth = 2.dp,
-                innerStrokeInset = 0.dp,
-                innerStrokeWidth = 0.dp,
-            ),
-    )
-
 @Composable
-internal fun WithButtonFocusOutline(color: Color, content: @Composable () -> Unit) {
+internal fun WithButtonFocusOutline(
+    color: Color,
+    inset: Dp = 1.dp,
+    content: @Composable () -> Unit,
+) {
+    val theme =
+        remember(inset) {
+            RippleThemeConfiguration(
+                focus =
+                    RippleThemeConfiguration.Focus.InsetRing(
+                        outerStrokeInset = inset,
+                        outerStrokeWidth = 2.dp,
+                        innerStrokeInset = 0.dp,
+                        innerStrokeWidth = 0.dp,
+                    ),
+            )
+        }
     CompositionLocalProvider(
-        LocalRippleThemeConfiguration provides buttonFocusOutlineTheme,
+        LocalRippleThemeConfiguration provides theme,
         LocalRippleConfiguration provides
             RippleConfiguration(
                 focus =
@@ -908,6 +958,7 @@ internal fun <T> SettingsChoiceSheet(
     options: List<T>,
     selectedIndex: Int,
     optionKey: (T) -> String,
+    snackbar: SnackbarHostState? = null,
     choice: @Composable (T, Modifier) -> Unit,
 ) {
     val initialIndex = remember { if (selectedIndex in options.indices) selectedIndex else 0 }
@@ -917,6 +968,7 @@ internal fun <T> SettingsChoiceSheet(
         dismiss,
         initialKey = options.getOrNull(initialIndex)?.let(optionKey),
         isAvailable = { key -> options.any { optionKey(it) == key } },
+        snackbar = snackbar,
     ) { position ->
         LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = scroll) {
             items(options, key = optionKey) { option ->
@@ -932,11 +984,18 @@ internal fun SettingsChoicePanel(
     dismiss: () -> Unit,
     initialKey: String?,
     isAvailable: (String) -> Boolean,
+    snackbar: SnackbarHostState? = null,
     content: @Composable ((String) -> Modifier) -> Unit,
 ) {
     var focusedKey by rememberSettingsChoiceFocus()
     val inputMode = LocalInputModeManager.current
-    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+    SettingsSheet(
+        title,
+        dismiss,
+        scroll = SettingsSheetScroll.None,
+        snackbar = snackbar,
+        manageSnackbarTimeout = false,
+    ) {
         // Reattach focus when resizing replaces the bottom sheet with a dialog or vice versa.
         val openingKey = remember { focusedKey?.takeIf(isAvailable) ?: initialKey }
         val focus = remember { FocusRequester() }

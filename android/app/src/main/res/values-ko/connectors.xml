@@ -130,6 +130,4 @@
     <string name="connector_access_allow_hour">1시간 동안 허용</string>
     <string name="connector_access_allow_day">24시간 동안 허용</string>
     <string name="connector_access_allow_week">7일 동안 허용</string>
-    <string name="chat_connector_check_result">결과 확인</string>
-    <string name="chat_connector_check_before_send">보내기 전에 채팅 옵션에서 커넥터 선택을 확인하세요.</string>
 </resources>

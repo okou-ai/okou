@@ -42,26 +42,6 @@ pub mod client {
     }
 }
 
-/// Codex OAuth token contract constants shared by TypeScript and Rust.
-pub mod codex_oauth_token {
-    /// Fake Codex OAuth token placeholder marker values.
-    /// These values are not secrets and are not usable credentials.
-    pub mod placeholders {
-        /// Fake marker bytes for the `CHATGPT_ACCESS_TOKEN` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CHATGPT_ACCESS_TOKEN: &str =
-            "chatgpt-token-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocal";
-
-        /// Fake marker bytes for the `CHATGPT_ACCOUNT_ID` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CHATGPT_ACCOUNT_ID: &str = "ws_VM0_PLACEHOLDER_DO_NOT_TRUST";
-
-        /// Fake marker bytes for the `CHATGPT_REFRESH_TOKEN` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CHATGPT_REFRESH_TOKEN: &str = "rt_VM0_PLACEHOLDER_DO_NOT_TRUST";
-    }
-}
-
 /// Data Router contract constants shared with the Runner addon.
 pub mod data_router {
     /// Maximum raw request-body bytes accepted by Data Router.
@@ -70,8 +50,9 @@ pub mod data_router {
 
 /// Model-provider environment contract constants shared by TypeScript and Rust.
 pub mod model_provider_env {
-    /// Namespaced synthetic values accepted by compatible Runners.
-    pub mod namespaced_placeholders {
+    /// Fake model-provider environment placeholder marker values.
+    /// These values are not secrets and are not usable credentials.
+    pub mod placeholders {
         /// Fake marker bytes for the `CHATGPT_ACCESS_TOKEN` placeholder.
         /// This value is not a secret and must not be treated as a usable credential.
         pub const CHATGPT_ACCESS_TOKEN: &str =
@@ -92,31 +73,6 @@ pub mod model_provider_env {
         /// Fake marker bytes for the `OPENAI_API_KEY` placeholder.
         /// This value is not a secret and must not be treated as a usable credential.
         pub const OPENAI_API_KEY: &str = "OkouModelProviderOpenRouterCodexOpenaiApiKey";
-    }
-
-    /// Fake model-provider environment placeholder marker values.
-    /// These values are not secrets and are not usable credentials.
-    pub mod placeholders {
-        /// Fake marker bytes for the `CHATGPT_ACCESS_TOKEN` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CHATGPT_ACCESS_TOKEN: &str =
-            "chatgpt-token-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocal";
-
-        /// Fake marker bytes for the `CHATGPT_ACCOUNT_ID` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CHATGPT_ACCOUNT_ID: &str = "ws_VM0_PLACEHOLDER_DO_NOT_TRUST";
-
-        /// Fake marker bytes for the `CHATGPT_REFRESH_TOKEN` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CHATGPT_REFRESH_TOKEN: &str = "rt_VM0_PLACEHOLDER_DO_NOT_TRUST";
-
-        /// Fake marker bytes for the `CLAUDE_CODE_OAUTH_TOKEN` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const CLAUDE_CODE_OAUTH_TOKEN: &str = "sk-ant-oat01-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCofAA";
-
-        /// Fake marker bytes for the `OPENAI_API_KEY` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const OPENAI_API_KEY: &str = "sk-proj-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocaT3BlbkFJCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLoca";
     }
 }
 

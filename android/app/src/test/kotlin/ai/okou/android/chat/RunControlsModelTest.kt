@@ -187,6 +187,7 @@ internal abstract class RunControlsModelTestFixture {
                             },
                         )[RunControlsModel::class.java]
                     history.open(thread())
+                    controls.showActionFeedbackFor(CHAT_PERSONAL)
                     history.uiState.first { it.phase == HistoryPhase.Ready }
                     history.uiState.first { it.detailPhase == ChatReadPhase.Ready }
                     runCurrent()
@@ -342,12 +343,13 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
             }
             f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
             val failed = f.controls.uiState.first { it.actionFailures.isNotEmpty() }
-            val intent = failed.actionFailures.single()
+            val receipt = failed.actionFailures.single()
+            val intent = receipt.value
             assertEquals(RunControlPhase.Retryable, failed.phases[intent.id])
             assertEquals(3, f.remote.posts.size)
             assertEquals(1, f.remote.posts.distinct().size)
-            assertTrue(f.controls.consumeActionFailure(intent))
-            assertFalse(f.controls.consumeActionFailure(intent))
+            assertTrue(f.controls.consumeActionFailure(receipt))
+            assertFalse(f.controls.consumeActionFailure(receipt))
             f.remote.write = {
                 jsonResponse("""{"threadId":"$CHAT_PERSONAL"}""").setResponseCode(201)
             }
@@ -528,7 +530,7 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
                 f.controls.uiState.first {
                     it.phases.values.all { phase -> phase == RunControlPhase.Retryable }
                 }
-            assertEquals(submitted.pending, checked.actionFailures)
+            assertEquals(submitted.pending, checked.actionFailures.map { it.value })
             assertEquals(2, f.remote.posts.size)
         }
     }

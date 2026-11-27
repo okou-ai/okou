@@ -9,11 +9,7 @@ import {
   type RustConstantValue,
   rustConstantBindings,
 } from "../constants";
-import {
-  MODEL_PROVIDER_ENV_PLACEHOLDERS,
-  MODEL_PROVIDER_FIREWALL_CONFIGS,
-} from "../../contracts/model-providers";
-import { MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS } from "../../contracts/model-provider-firewalls";
+import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "../../contracts/model-provider-firewalls";
 import {
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
@@ -85,9 +81,6 @@ import {
   RUNNER_DISPATCH_MAX_BODY_BYTES,
   RUNNER_DISPATCH_MAX_VALIDITY_MS,
 } from "../../contracts/runner-dispatch";
-
-const codexOauthPlaceholders =
-  MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"].placeholders!;
 
 const canonicalGuestHomeDirDoc = [
   "Canonical home directory path expected for the sandbox user inside runner guests.",
@@ -610,24 +603,6 @@ const expectedBindings = [
     rustDoc: storageManifestMaxPathBytesDoc,
   },
   {
-    rustModulePath: ["codex_oauth_token", "placeholders"],
-    rustConstName: "CHATGPT_ACCESS_TOKEN",
-    value: rustString(codexOauthPlaceholders.CHATGPT_ACCESS_TOKEN),
-    rustDoc: placeholderRustDoc("CHATGPT_ACCESS_TOKEN"),
-  },
-  {
-    rustModulePath: ["codex_oauth_token", "placeholders"],
-    rustConstName: "CHATGPT_ACCOUNT_ID",
-    value: rustString(codexOauthPlaceholders.CHATGPT_ACCOUNT_ID),
-    rustDoc: placeholderRustDoc("CHATGPT_ACCOUNT_ID"),
-  },
-  {
-    rustModulePath: ["codex_oauth_token", "placeholders"],
-    rustConstName: "CHATGPT_REFRESH_TOKEN",
-    value: rustString(codexOauthPlaceholders.CHATGPT_REFRESH_TOKEN),
-    rustDoc: placeholderRustDoc("CHATGPT_REFRESH_TOKEN"),
-  },
-  {
     rustModulePath: ["model_provider_env", "placeholders"],
     rustConstName: "CLAUDE_CODE_OAUTH_TOKEN",
     value: rustString(MODEL_PROVIDER_ENV_PLACEHOLDERS.CLAUDE_CODE_OAUTH_TOKEN),
@@ -657,16 +632,6 @@ const expectedBindings = [
     value: rustString(MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_REFRESH_TOKEN),
     rustDoc: placeholderRustDoc("CHATGPT_REFRESH_TOKEN"),
   },
-  ...Object.entries(MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS).map(
-    ([name, value]) => {
-      return {
-        rustModulePath: ["model_provider_env", "namespaced_placeholders"],
-        rustConstName: name,
-        value: rustString(value),
-        rustDoc: placeholderRustDoc(name),
-      };
-    },
-  ),
 ] as const;
 
 const exampleModuleDocs = [
@@ -732,7 +697,6 @@ describe("Rust constant bindings", () => {
     const secondRender = renderRustConstants(rustConstantBindings);
 
     expect(secondRender).toBe(firstRender);
-    expect(firstRender).toContain("pub mod codex_oauth_token {");
     expect(firstRender).toContain("pub mod model_provider_env {");
     expect(firstRender).toContain("pub mod client {");
     expect(firstRender).toContain("pub mod paid_tools {");
@@ -867,14 +831,14 @@ describe("Rust constant bindings", () => {
       `pub const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR: &str = "${ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR}";`,
     );
     expect(firstRender).toContain(
-      `pub const CHATGPT_ACCOUNT_ID: &str = "${codexOauthPlaceholders.CHATGPT_ACCOUNT_ID}";`,
+      `pub const CHATGPT_ACCOUNT_ID: &str = "${MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_ACCOUNT_ID}";`,
     );
     expect(firstRender).toContain("pub const OPENAI_API_KEY: &str =");
     expect(firstRender).toContain(
       MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
     );
     expect(firstRender).toContain(
-      `pub const CHATGPT_REFRESH_TOKEN: &str = "${codexOauthPlaceholders.CHATGPT_REFRESH_TOKEN}";`,
+      `pub const CHATGPT_REFRESH_TOKEN: &str = "${MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_REFRESH_TOKEN}";`,
     );
     expect(firstRender).toContain("shared TypeScript/Rust contract values");
   });

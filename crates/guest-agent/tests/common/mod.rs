@@ -43,7 +43,7 @@ pub use cli_test_support::{
     readiness::{unique_temp_path, wait_for_file_contains, wait_for_path},
 };
 
-use cli_test_support::json_fixture::parse_json_lines;
+use cli_test_support::json_fixture::read_json_lines;
 use nix::sys::resource::{Resource, getrlimit, rlim_t, setrlimit};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -473,8 +473,7 @@ pub fn read_codex_session_history_events_for_runtime(
         )
         .into());
     };
-    let history = std::fs::read_to_string(history_path)?;
-    parse_json_lines(&history).map_err(Into::into)
+    read_json_lines(history_path)
 }
 
 pub fn expected_codex_turn_usage() -> Value {

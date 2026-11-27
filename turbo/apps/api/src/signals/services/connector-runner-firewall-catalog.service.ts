@@ -3,7 +3,7 @@ import {
   createRunnerRuntimeFirewallCatalog,
   projectRunnerRuntimeFirewall,
 } from "@okouai/connectors/firewall-metadata/runner-runtime-catalog";
-import type { Firewall } from "@okouai/connectors/firewall-types";
+import type { RunnerBuiltinFirewall } from "@okouai/connectors/firewall-contracts";
 
 import {
   connectorCatalog,
@@ -26,7 +26,9 @@ interface ConnectorRunnerFirewallCatalog {
   readonly catalogVersion: string;
   readonly names: readonly string[];
   has(name: string): boolean;
-  load(names: readonly string[] | undefined): Promise<Record<string, Firewall>>;
+  load(
+    names: readonly string[] | undefined,
+  ): Promise<Record<string, RunnerBuiltinFirewall>>;
 }
 
 interface CatalogCache {
@@ -43,16 +45,18 @@ function capturedCatalogKey(captured: CapturedCatalog): string {
   return `${captured.schemaVersion}\0${captured.hash}`;
 }
 
-const localModelProviderFirewalls = singleton((): readonly Firewall[] => {
-  return Object.values(MODEL_PROVIDER_FIREWALL_CONFIGS).map((firewall) => {
-    if (!firewall.name.startsWith(MODEL_PROVIDER_FIREWALL_PREFIX)) {
-      throw new Error(
-        `Local model-provider runner firewall has invalid ownership: ${firewall.name}`,
-      );
-    }
-    return projectRunnerRuntimeFirewall(firewall);
-  });
-});
+const localModelProviderFirewalls = singleton(
+  (): readonly RunnerBuiltinFirewall[] => {
+    return Object.values(MODEL_PROVIDER_FIREWALL_CONFIGS).map((firewall) => {
+      if (!firewall.name.startsWith(MODEL_PROVIDER_FIREWALL_PREFIX)) {
+        throw new Error(
+          `Local model-provider runner firewall has invalid ownership: ${firewall.name}`,
+        );
+      }
+      return projectRunnerRuntimeFirewall(firewall);
+    });
+  },
+);
 
 function createCatalog(
   connectors: readonly Parameters<typeof connectorCatalogFirewallConfig>[0][],

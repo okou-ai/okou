@@ -59,12 +59,11 @@
     <string name="instructions_title">Instruksi pribadi</string>
     <string name="instructions_loading">Memuat Instruksi…</string>
     <string name="instructions_refresh_failed">Petunjuk tidak dapat diperbarui. Petunjuk yang terakhir dimuat ditampilkan.</string>
-    <string name="instructions_uncertain">Hasil penyimpanan belum terkonfirmasi. Perubahan Anda tetap dipertahankan.</string>
     <string name="instructions_load_failed">Untuk sementara tidak dapat dimuat</string>
     <string name="instructions_unavailable">Instruksi pribadi tidak tersedia dalam konteks ini.</string>
     <string name="instructions_unsaved">Ada perubahan yang belum disimpan.</string>
     <string name="instructions_local_failed">Tidak dapat menyimpan draf lokal. Coba lagi.</string>
-    <string name="instructions_save_rejected">Penyimpanan ditolak. Perubahan tetap disimpan.</string>
+    <string name="instructions_save_rejected">Gagal menyimpan. Perubahan Anda masih ada.</string>
     <string name="instructions_invalid">Teks berisi karakter yang tidak didukung.</string>
     <string name="instructions_checking">Memeriksa hasil penyimpanan…</string>
     <string name="instructions_save">Simpan</string>

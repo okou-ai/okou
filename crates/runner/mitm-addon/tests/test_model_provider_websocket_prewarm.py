@@ -10,6 +10,10 @@ import mitm_addon
 import model_websocket_usage
 import openai_responses_events
 import usage
+from tests.deferred_callback_helpers import (
+    ScheduledCallback,
+    capture_deferred_callbacks,
+)
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import (
     ModelUsageLog,
@@ -19,8 +23,6 @@ from tests.model_provider_flow_helpers import (
     read_model_usage_log,
 )
 from tests.model_provider_websocket_helpers import (
-    ScheduledWebSocketTrim,
-    capture_deferred_websocket_trims,
     capture_openai_responses_extractor_feeds,
     feed_websocket_client_message,
     feed_websocket_server_message,
@@ -33,8 +35,8 @@ from usage.quantities import MAX_USAGE_QUANTITY
 @pytest.fixture(autouse=True)
 def deferred_websocket_trim_scheduler(
     monkeypatch: pytest.MonkeyPatch,
-) -> list[ScheduledWebSocketTrim]:
-    return capture_deferred_websocket_trims(monkeypatch)
+) -> list[ScheduledCallback]:
+    return capture_deferred_callbacks(monkeypatch)
 
 
 def _openai_websocket_created_frame(response_id: str) -> bytes:

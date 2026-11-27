@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use runner_types::types::{
-    Firewall, FirewallApi, FirewallAuth, FirewallAwsSigv4Auth, FirewallPermission,
+    BuiltinFirewall, FirewallApi, FirewallAuth, FirewallAwsSigv4Auth, FirewallPermission,
 };
 use serde::Deserialize;
 
@@ -61,9 +61,10 @@ fn firewall_rule_validation_matches_shared_contract() {
     );
 }
 
-fn firewall(rule: String) -> Firewall {
-    Firewall {
+fn firewall(rule: String) -> BuiltinFirewall {
+    BuiltinFirewall {
         name: "contract-test".to_string(),
+        placeholders: None,
         apis: vec![FirewallApi {
             network_intent: None,
             id: String::new(),

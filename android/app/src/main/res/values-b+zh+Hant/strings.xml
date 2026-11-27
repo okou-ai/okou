@@ -59,12 +59,11 @@
     <string name="instructions_title">個人指令</string>
     <string name="instructions_loading">正在載入個人指令…</string>
     <string name="instructions_refresh_failed">暫時無法更新，顯示上次讀取的個人指令。</string>
-    <string name="instructions_uncertain">儲存結果尚未確認，修改已保留。</string>
     <string name="instructions_load_failed">暫時無法載入</string>
     <string name="instructions_unavailable">目前無法使用個人指令。</string>
     <string name="instructions_unsaved">你有未儲存的變更。</string>
     <string name="instructions_local_failed">無法儲存本機草稿，請重試。</string>
-    <string name="instructions_save_rejected">儲存遭拒，變更已保留。</string>
+    <string name="instructions_save_rejected">未能儲存，變更已保留。</string>
     <string name="instructions_invalid">文字含有不支援的字元。</string>
     <string name="instructions_checking">正在確認儲存結果…</string>
     <string name="instructions_save">儲存</string>

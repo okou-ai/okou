@@ -1,4 +1,4 @@
-use guest_contracts::agent_instructions::InstructionOperation;
+use guest_contracts::agent_instructions::{InstructionOperation, MAX_METADATA_BYTES};
 
 use crate::frame::encode_into;
 use crate::payloads::exec_operation::encode_exec_result_frame_into_with_prefix;
@@ -30,7 +30,7 @@ pub fn encode_guest_agent_instructions_request_frame_into(
     runtime_dir: &str,
     metadata: &[u8],
 ) -> Result<(), ProtocolError> {
-    validate_metadata(operation, metadata)?;
+    validate_metadata(metadata)?;
     let input = encode_guest_storage_manifest_request(timeout_ms, run_id, runtime_dir, metadata)?;
     let tag = match operation {
         InstructionOperation::Check => 0,
@@ -65,21 +65,18 @@ pub fn decode_guest_agent_instructions_request(
         }
     };
     let input = decode_guest_storage_manifest_request(input)?;
-    validate_metadata(operation, input.manifest_json)?;
+    validate_metadata(input.manifest_json)?;
     Ok(DecodedGuestAgentInstructionsRequest { operation, input })
 }
 
-fn validate_metadata(
-    operation: InstructionOperation,
-    metadata: &[u8],
-) -> Result<(), ProtocolError> {
-    if metadata.len() > operation.metadata_limit() {
+fn validate_metadata(metadata: &[u8]) -> Result<(), ProtocolError> {
+    if metadata.len() > MAX_METADATA_BYTES {
         return Err(ProtocolError::PayloadTooLarge(
             "instruction metadata",
             metadata.len(),
         ));
     }
-    // Instructions have no binary storage-file variant, even under 64 KiB.
+    // Instructions have no binary storage-file variant.
     if metadata.starts_with(guest_contracts::storage_files::INPUT_MAGIC) {
         return Err(ProtocolError::InvalidPayload("binary instruction metadata"));
     }
@@ -130,7 +127,7 @@ mod tests {
     #[test]
     fn fixed_actions_round_trip_and_reject_invalid_envelopes() {
         for operation in [InstructionOperation::Check, InstructionOperation::Apply] {
-            let metadata = vec![b' '; operation.metadata_limit()];
+            let metadata = vec![b' '; MAX_METADATA_BYTES];
             let mut frame = Vec::new();
             encode_guest_agent_instructions_request_frame_into(
                 &mut frame,
@@ -160,7 +157,7 @@ mod tests {
             invalid.push(0);
             assert!(decode_guest_agent_instructions_request(&invalid).is_err());
             let before = frame.clone();
-            let oversized = vec![0; operation.metadata_limit() + 1];
+            let oversized = vec![0; MAX_METADATA_BYTES + 1];
             assert!(
                 encode_guest_agent_instructions_request_frame_into(
                     &mut frame, 7, operation, 123, "run", "/run", &oversized

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.33.12](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.11...guest-contracts-v0.33.12) (2026-11-27)
+
+## [0.33.11](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.10...guest-contracts-v0.33.11) (2026-11-27)
+
+
+### Performance Improvements
+
+* **runner:** reuse memory during the instructions check ([#51513](https://github.com/okou-ai/okou/issues/51513)) ([63edb54](https://github.com/okou-ai/okou/commit/63edb54e292ddc275688ac78ee7fb5158e563fa1))
+
 ## [0.33.10](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.9...guest-contracts-v0.33.10) (2026-11-27)
 
 ## [0.33.9](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.8...guest-contracts-v0.33.9) (2026-11-27)

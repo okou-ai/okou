@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-mod decoded;
+mod direct;
 
 const LOCAL_CONCURRENT: usize = 4;
 const LARGE_LOCAL_ARTIFACT_BYTES: u64 = 256 * 1024;
@@ -608,16 +608,13 @@ fn download_with_readiness(
     // Two ready writers help an isolated dense Artifact on a two-CPU Guest.
     // Other substantial writes in the batch benefit from the existing budget.
     #[cfg(target_os = "linux")]
-    let concurrency = if allow_artifact_priority
+    let inline_two_workers = allow_artifact_priority
         && (MIN_INLINE_ARTIFACT_BATCH_TASKS..WIDE_LOCAL_INFLATE_TASKS).contains(&tasks.len())
-        && inline_batch_prefers_two_workers(&tasks)
-    {
-        2
-    } else {
-        concurrency
-    };
-    // Local archives compete for CPU. Prefer longer ready work without changing
-    // the original pending order used to enforce logical and physical ownership.
+        && inline_batch_prefers_two_workers(&tasks);
+    #[cfg(target_os = "linux")]
+    let concurrency = if inline_two_workers { 2 } else { concurrency };
+    // Local archives compete for CPU. Prefer longer ready work while active
+    // reservations protect logical and resolved targets.
     let pending = tasks
         .into_iter()
         .enumerate()
@@ -659,8 +656,17 @@ fn download_with_readiness(
         concurrency
     );
 
-    if readiness.is_none() && decoded::can_dispatch(&pending) {
-        let result = decoded::download(pending, concurrency, attempt_runner);
+    if readiness.is_none() && direct::can_dispatch_decoded(&pending) {
+        let result = direct::download(pending, concurrency, attempt_runner);
+        telemetry.finish();
+        return result;
+    }
+
+    #[cfg(target_os = "linux")]
+    if inline_two_workers && direct::targets_are_independent(&pending) {
+        let mut pending = pending;
+        direct::prioritize_inline_archives(&mut pending);
+        let result = direct::download(pending, concurrency, attempt_runner);
         telemetry.finish();
         return result;
     }
@@ -767,8 +773,7 @@ fn find_startable_download(
     selection: DownloadSelection,
     on_conflict: &mut impl FnMut(usize, &Path, usize, &Path),
 ) -> Option<(usize, usize)> {
-    // Independent tasks may bypass blocked work, but conflicting tasks must
-    // retain their order even when the earlier task has not started yet.
+    // Only active reservations restrict the order of ready downloads.
     let mut selected: Option<(usize, usize, u64)> = None;
     for (index, download) in pending.iter().enumerate() {
         let work = match selection {
@@ -805,17 +810,6 @@ fn find_startable_download(
             })
         {
             on_conflict(download.id, pending_path, blocking.id, reserved_path);
-            continue;
-        }
-
-        if pending.iter().take(index).any(|earlier| {
-            conflicting_mount_paths(
-                &download.task,
-                earlier.task.logical_mount_path(),
-                earlier.task.effective_mount_path(),
-            )
-            .is_some()
-        }) {
             continue;
         }
 
@@ -930,10 +924,7 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
     }
 
     let source = match task.inline_archive {
-        Some(archive) => Ok(source::ArchiveSource::local(
-            archive,
-            Some(archive.len() as u64),
-        )),
+        Some(archive) => Ok(source::ArchiveSource::inline(archive)),
         None => source::open_archive(
             &task.url,
             attempt_metrics.as_ref(),

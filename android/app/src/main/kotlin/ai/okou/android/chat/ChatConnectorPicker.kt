@@ -1,8 +1,6 @@
 package ai.okou.android.chat
 
 import ai.okou.android.ContentReadFailureLayout
-import ai.okou.android.OkouActionButton
-import ai.okou.android.OkouActionTreatment
 import ai.okou.android.R
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.connectors.ChatConnectorOptions
@@ -16,6 +14,7 @@ import ai.okou.android.connectors.ConnectorButton
 import ai.okou.android.connectors.ConnectorButtonTreatment
 import ai.okou.android.connectors.ConnectorChevron
 import ai.okou.android.connectors.ConnectorMark
+import ai.okou.android.connectors.ConnectorNavigationRow
 import ai.okou.android.connectors.ConnectorReadAnnouncements
 import ai.okou.android.connectors.ConnectorReadFailure
 import ai.okou.android.connectors.ConnectorReadFailureContent
@@ -29,7 +28,8 @@ import ai.okou.android.connectors.label
 import ai.okou.android.connectors.needsAttention
 import ai.okou.android.connectors.notice
 import ai.okou.android.connectors.rememberConnectorReadFeedback
-import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.isShortSettingsPanelWindow
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.settings.ModelPickerSheet
 import ai.okou.android.state.ComposerOptionsPage
@@ -46,6 +46,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
@@ -57,7 +58,10 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,14 +72,15 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -85,10 +90,11 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -107,11 +113,13 @@ internal fun ChatConnectorOptionsButton(
     manageConnectors: (ConnectorAccountTarget?) -> Unit,
     defaultModel: DefaultModelSettings? = null,
     conversationModel: ConversationModelControls? = null,
+    conversationSnackbar: SnackbarHostState? = null,
+    onOptionsFeedbackInOverlay: (Boolean) -> Unit = {},
     attachmentPickerActive: Boolean = false,
     pickAttachment: ((photos: Boolean) -> Unit)? = null,
+    buttonFocus: FocusRequester = remember { FocusRequester() },
 ) {
     var presentation by rememberComposerOptions(target.key)
-    val buttonFocus = remember { FocusRequester() }
     val entryFocus = remember { FocusRequester() }
     val modelFocus = remember { FocusRequester() }
     val accountFocus = remember { FocusRequester() }
@@ -126,6 +134,16 @@ internal fun ChatConnectorOptionsButton(
     val readAnnouncements = remember(options, target.key) { ConnectorReadAnnouncements() }
     val page = presentation.page
     val open = page != ComposerOptionsPage.Closed
+    val feedbackInOptions =
+        conversationSnackbar != null &&
+            (page == ComposerOptionsPage.Model || page == ComposerOptionsPage.Options)
+    val routeFeedback by rememberUpdatedState(onOptionsFeedbackInOverlay)
+    if (feedbackInOptions) {
+        DisposableEffect(Unit) {
+            routeFeedback(true)
+            onDispose { routeFeedback(false) }
+        }
+    }
     DisposableEffect(defaultModel, open) {
         if (open) defaultModel?.showComposerOptions(true)
         onDispose { if (open) defaultModel?.showComposerOptions(false) }
@@ -220,15 +238,14 @@ internal fun ChatConnectorOptionsButton(
     val readFeedback = rememberConnectorReadFeedback(readNotice, readAnnouncements)
     val save = state?.save
     val saving = save?.saving == true
-    val checking = save?.phase == ChatConnectorSavePhase.Checking
-    val showResultCheck =
-        options != null && (checking || save?.phase == ChatConnectorSavePhase.Unconfirmed)
-    val inlineSave = save.takeUnless { showResultCheck }
+    var openingOverview by remember(options, target) { mutableStateOf(false) }
+    var openingAccounts by remember(options, target) { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(options, target, showingConnectors, saving, state?.revision, lifecycle) {
         if (showingConnectors && !saving && options != null && state != null)
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                options.showOverview(target)
+                options.showOverview(target, openingOverview)
+                openingOverview = false
             }
     }
     LaunchedEffect(
@@ -243,7 +260,8 @@ internal fun ChatConnectorOptionsButton(
     ) {
         if (showingAccounts && !saving && options != null && summary != null && overviewConfirmed)
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                options.showAccounts(target, summary.entry.slug)
+                options.showAccounts(target, summary.entry.slug, openingAccounts)
+                openingAccounts = false
             }
     }
 
@@ -334,8 +352,10 @@ internal fun ChatConnectorOptionsButton(
                 }
             },
             dismiss = ::back,
+            snackbar = conversationSnackbar,
+            footerHasAction = edits?.phase == ConversationModelSave.NeedsCheck,
             footer = {
-                (edits?.failure ?: edits?.phase?.message)?.let { message ->
+                edits?.phase?.message?.let { message ->
                     ConnectorOptionFeedback(message, Modifier.padding(top = 8.dp))
                 }
                 if (edits?.phase == ConversationModelSave.NeedsCheck) {
@@ -396,26 +416,17 @@ internal fun ChatConnectorOptionsButton(
             else -> stringResource(R.string.chat_options_title)
         }
     val footer: (@Composable () -> Unit)? =
-        if (showingOverview || showingAccounts && showResultCheck) {
+        if (showingOverview) {
             {
-                Column(
-                    Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (showResultCheck)
-                        ChatConnectorResultCheck(checking) { options.checkSave(target) }
-                    if (showingOverview) {
-                        ConnectorButton(
-                            stringResource(R.string.chat_connector_manage),
-                            onClick = { openDirectory(null) },
-                            enabled = !saving,
-                            modifier =
-                                Modifier.focusRequester(accountFocus)
-                                    .testTag("chat-connector-manage"),
-                            treatment = ConnectorButtonTreatment.Text,
-                        )
-                    }
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    ConnectorButton(
+                        stringResource(R.string.chat_connector_manage),
+                        onClick = { openDirectory(null) },
+                        enabled = !saving,
+                        modifier =
+                            Modifier.focusRequester(accountFocus).testTag("chat-connector-manage"),
+                        treatment = ConnectorButtonTreatment.Text,
+                    )
                 }
             }
         } else null
@@ -429,13 +440,14 @@ internal fun ChatConnectorOptionsButton(
             },
             dismissible = !saving,
             expandInShortWindow = true,
-            back = if (showingConnectors || currentWindowSizeDp().height < 480) ::back else null,
+            back = if (showingConnectors || isShortSettingsPanelWindow()) ::back else null,
             actions = footer,
             feedback = readFeedback.takeIf { hasReadContent },
+            actionFeedback = conversationSnackbar.takeIf { feedbackInOptions },
             inContentFeedbackMessage =
                 if (hasReadContent) stringResource(R.string.connector_refresh_failed) else null,
             centerCompactContent =
-                inlineSave == null &&
+                save == null &&
                     (coldFailure == ConnectorReadFailure.Network ||
                         coldFailure == ConnectorReadFailure.Sustained),
             retainedScroll = overviewScroll.takeIf { showingOverview },
@@ -508,6 +520,7 @@ internal fun ChatConnectorOptionsButton(
                         ConnectorOptionRow(
                             stringResource(R.string.connector_title),
                             onClick = {
+                                openingOverview = true
                                 presentation =
                                     presentation.copy(
                                         page = ComposerOptionsPage.Connectors,
@@ -520,25 +533,26 @@ internal fun ChatConnectorOptionsButton(
                         )
                 }
             } else if (showingOverview) {
-                if (inlineSave != null) ChatConnectorSaveFeedback(inlineSave.phase)
+                if (save != null) ChatConnectorSaveFeedback(save.phase)
                 when {
                     overviewData == null ->
                         ChatConnectorReadPlaceholder(
                             coldFailure,
-                            R.string.connector_loading,
                             R.string.connector_load_failed,
-                        )
+                        ) {
+                            ChatConnectorOverviewSkeleton()
+                        }
                     overviewData.isEmpty() -> ConnectorOptionFeedback(R.string.chat_connector_empty)
                     else ->
                         Column {
                             for (service in overviewData) {
                                 val entry = service.entry
-                                val count = service.accounts.size
                                 key(entry.slug) {
                                     ChatConnectorServiceRow(
                                         service,
                                         onClick = {
                                             options.dismissFailure(target)
+                                            openingAccounts = true
                                             presentation =
                                                 presentation.copy(
                                                     page = ComposerOptionsPage.ConnectorAccounts,
@@ -549,7 +563,6 @@ internal fun ChatConnectorOptionsButton(
                                             if (entry.slug == slug)
                                                 Modifier.focusRequester(serviceFocus)
                                             else Modifier,
-                                        count = count,
                                         enabled = !saving,
                                     )
                                 }
@@ -557,12 +570,13 @@ internal fun ChatConnectorOptionsButton(
                         }
                 }
             } else if (rows == null || summary == null) {
-                if (inlineSave != null) ChatConnectorSaveFeedback(inlineSave.phase)
+                if (save != null) ChatConnectorSaveFeedback(save.phase)
                 ChatConnectorReadPlaceholder(
                     coldFailure,
-                    R.string.connector_loading_accounts,
                     R.string.connector_accounts_failed,
-                )
+                ) {
+                    ConnectorSkeleton(stringResource(R.string.connector_loading_accounts), rows = 2)
+                }
             } else {
                 val serviceSlug = summary.entry.slug
                 val newChat = target.threadId == null
@@ -572,7 +586,6 @@ internal fun ChatConnectorOptionsButton(
                 val pendingChoices = save?.pending.orEmpty().associateBy { it.connectionId }
                 val canEdit =
                     !saving &&
-                        save?.blocksSend != true &&
                         (memberAccess || !newChat || composerState.canEditDraftConnectors(target))
                 ConnectorOptionFeedback(
                     if (memberAccess) R.string.connector_access_scope
@@ -609,18 +622,18 @@ internal fun ChatConnectorOptionsButton(
                                     openDirectory(ConnectorAccountTarget(serviceSlug, id))
                                 },
                             )
-                            if (inlineSave?.connectionId == id) {
+                            if (save?.connectionId == id) {
                                 ChatConnectorSaveFeedback(
-                                    inlineSave.phase,
+                                    save.phase,
                                     Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp),
                                 )
                             }
                         }
                     }
                 }
-                if (inlineSave != null && rows.none { it.account.id == inlineSave.connectionId })
+                if (save != null && rows.none { it.account.id == save.connectionId })
                     ChatConnectorSaveFeedback(
-                        inlineSave.phase,
+                        save.phase,
                         Modifier.padding(horizontal = 12.dp),
                     )
                 if (policies.failure != null)
@@ -649,11 +662,11 @@ internal fun ChatConnectorOptionsButton(
 @Composable
 private fun ChatConnectorReadPlaceholder(
     failure: ConnectorReadFailure?,
-    @StringRes loading: Int,
     @StringRes unavailable: Int,
+    skeleton: @Composable () -> Unit,
 ) {
     Box(Modifier.fillMaxWidth().heightIn(min = 160.dp), propagateMinConstraints = true) {
-        if (failure == null) ConnectorSkeleton(stringResource(loading), rows = 2)
+        if (failure == null) skeleton()
         else
             ConnectorReadFailureContent(
                 failure,
@@ -665,27 +678,19 @@ private fun ChatConnectorReadPlaceholder(
 }
 
 @Composable
-private fun ChatConnectorResultCheck(checking: Boolean, onCheck: () -> Unit) {
-    val action = stringResource(R.string.chat_connector_check_result)
-    val progress = stringResource(R.string.connector_working)
-    Column(
-        Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        val status = Modifier.fillMaxWidth()
-        ConnectorOptionFeedback(
-            R.string.connector_verify_pending,
-            if (checking) status.clearAndSetSemantics {}.alpha(0f) else status,
-        )
-        OkouActionButton(
-            if (checking) progress else action,
-            onClick = onCheck,
-            enabled = !checking,
-            treatment = OkouActionTreatment.Text,
-            layoutLabels = listOf(action, progress),
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
+private fun ChatConnectorOverviewSkeleton() {
+    if (!rememberContentReadSkeleton()) return
+    val label = stringResource(R.string.connector_loading)
+    Column(Modifier.fillMaxWidth().semantics { contentDescription = label }) {
+        repeat(3) {
+            ListItem(
+                leadingContent = { ChatSkeletonBlock(Modifier.size(24.dp)) },
+                trailingContent = { Box(Modifier.size(24.dp)) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            ) {
+                ChatSkeletonBlock(Modifier.size(width = 120.dp, height = 14.dp))
+            }
+        }
     }
 }
 
@@ -704,10 +709,7 @@ private fun ChatConnectorSaveFeedback(
 internal fun ChatConnectorSavePhase.message(): Int =
     when (this) {
         ChatConnectorSavePhase.Saving -> R.string.chat_connector_saving
-        ChatConnectorSavePhase.Checking -> R.string.connector_working
-        ChatConnectorSavePhase.Unconfirmed -> R.string.connector_verify_pending
         ChatConnectorSavePhase.Failed -> R.string.chat_connector_save_failed
-        ChatConnectorSavePhase.AccountUnavailable -> R.string.connector_account_unavailable
     }
 
 @Composable
@@ -715,29 +717,35 @@ private fun ChatConnectorServiceRow(
     service: ChatConnectorSummary,
     onClick: () -> Unit,
     modifier: Modifier,
-    count: Int,
     enabled: Boolean,
 ) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .testTag("chat-connector-service-${service.entry.slug}")
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val count = service.accounts.size
+    ConnectorNavigationRow(
+        onClick = onClick,
+        modifier = modifier.testTag("chat-connector-service-${service.entry.slug}"),
+        enabled = enabled,
+        leadingContent = { ConnectorMark(service.entry.icon, 24.dp) },
+        trailingContent = {
+            Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(24.dp))
+        },
     ) {
-        ConnectorMark(service.entry.icon, 24.dp)
-        Text(service.entry.name, Modifier.weight(1f), style = connectorBodyType())
-        if (count > 1)
-            Text(
-                pluralStringResource(R.plurals.connector_accounts_count, count, count),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = connectorFeedbackType(),
-            )
-        Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(24.dp))
+        if (count <= 1) Text(service.entry.name)
+        else {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(service.entry.name, Modifier.weight(2f))
+                Text(
+                    pluralStringResource(R.plurals.connector_accounts_count, count, count),
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.End,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
     }
 }
 

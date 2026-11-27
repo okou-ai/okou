@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.MemorySnapshotClock
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
@@ -10,11 +11,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.util.Locale
-import kotlin.math.roundToInt
-import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.DurationUnit
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
@@ -31,7 +29,6 @@ import okhttp3.HttpUrl
 internal const val CONNECTOR_ACCOUNT_NAME_LIMIT = 255
 internal const val CONNECTOR_EXTERNAL_CODE_LIMIT = 4096
 private const val RECENT_READ_LIMIT = 8
-private const val ACCOUNT_READBACK_LIMIT = 3
 
 internal data class ConnectorBrowseFilter(val keyword: String?, val category: String?) {
     companion object {
@@ -74,12 +71,14 @@ internal data class ConnectorAction(
     val busy: Boolean = false,
     val authorization: ConnectorAuthorization? = null,
     val browserOpened: Boolean = false,
-    val reconciling: Boolean = false,
     val problem: ConnectorProblem? = null,
     val result: ConnectorResult? = null,
 ) {
+    val reconciling: Boolean
+        get() = authorization is ConnectorAuthorization.Receipt
+
     val blocksOtherActions: Boolean
-        get() = busy || reconciling || authorization != null
+        get() = busy || authorization != null
 
     val awaitingExternalReceipt: Boolean
         get() =
@@ -137,6 +136,7 @@ class ConnectorModel(
     private val service: ConnectorService,
     private val authorized: () -> Boolean,
     private val clock: TimeSource = TimeSource.Monotonic,
+    private val snapshotClock: TimeSource = MemorySnapshotClock,
     private val sessionFailure: (Exception) -> Unit,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectorUiState())
@@ -145,7 +145,13 @@ class ConnectorModel(
         private set
 
     internal val chatOptions =
-        ChatConnectorOptions(service, viewModelScope, authorized, ::reportSessionFailure)
+        ChatConnectorOptions(
+            service,
+            viewModelScope,
+            authorized,
+            snapshotClock,
+            ::reportSessionFailure,
+        )
     private val recentMatches =
         LinkedHashMap<ConnectorBrowseFilter, ConnectorRead<ConnectorBrowse>>(
             RECENT_READ_LIMIT,
@@ -173,7 +179,6 @@ class ConnectorModel(
     private var filter: ConnectorBrowseFilter? = null
     private var authorizationDeadline: TimeMark? = null
     private var pendingExternalCode: String? = null
-    private var pendingChange: PendingChange? = null
 
     override fun onCleared() {
         renameEditor = null
@@ -243,7 +248,6 @@ class ConnectorModel(
         if (permissionsRequested) refreshPermissions()
         mutableState.value.impact?.let { refreshImpact(it.accountId) }
         checkAuthorization()
-        reconcilePendingChange()
     }
 
     private fun refreshDirectory(browse: Boolean = true, accounts: Boolean = true) {
@@ -558,11 +562,7 @@ class ConnectorModel(
         val confirmedName = account.displayName ?: account.identity
         if (confirmedName != null && label == normalizedRenameName(confirmedName)) return
         val target = ConnectorAccountTarget(slug, id)
-        change(
-            PendingChange(target, ConnectorResult.Renamed) { account ->
-                account?.displayName == label
-            },
-        ) {
+        change(target, ConnectorResult.Renamed) {
             val saved = service.rename(target.slug, id, label)
             replaceAccount(target, id) { it.copy(displayName = saved) }
         }
@@ -575,7 +575,7 @@ class ConnectorModel(
                 ConnectorAccountStatus.Connected
         )
             return
-        change(PendingChange(target, null) { it?.defaultEnabled == enabled }) {
+        change(target) {
             val saved = service.setDefaultEnabled(target.slug, id, enabled)
             replaceAccount(target, id) { it.copy(defaultEnabled = saved) }
         }
@@ -583,35 +583,11 @@ class ConnectorModel(
 
     internal fun setMemberPolicy(id: String, choice: ConnectorAccountPolicyRequestPolicy) {
         val target = currentAccount(id) ?: return
-        val previous =
-            mutableState.value.accountsFor(target.slug).find { it.id == id }?.policy ?: return
-        val requestedAt = Clock.System.now()
-        val durationHours =
-            when (choice) {
-                ConnectorAccountPolicyRequestPolicy.DENY,
-                ConnectorAccountPolicyRequestPolicy.ALLOW_ALWAYS -> null
-                ConnectorAccountPolicyRequestPolicy.ALLOW_1H -> 1
-                ConnectorAccountPolicyRequestPolicy.ALLOW_24H -> 24
-                ConnectorAccountPolicyRequestPolicy.ALLOW_7D -> 168
-            }
-        val shouldAllow = choice != ConnectorAccountPolicyRequestPolicy.DENY
-        change(
-            PendingChange(target, null) { account ->
-                val saved = account?.policy ?: return@PendingChange false
-                val expiry = saved.expiresAt
-                if (saved.allowed != shouldAllow) return@PendingChange false
-                if (durationHours == null) {
-                    expiry == null
-                } else {
-                    expiry != null &&
-                        expiry != previous.expiresAt &&
-                        (expiry - requestedAt).toDouble(DurationUnit.HOURS).roundToInt() ==
-                            durationHours
-                }
-            },
-        ) {
+        if (mutableState.value.accountsFor(target.slug).find { it.id == id }?.policy == null) return
+        change(target) {
             val saved = service.setAccountPolicy(target.slug, id, choice)
             replaceAccount(target, id) { it.copy(policy = saved) }
+            chatOptions.applyPolicyReceipt(target.slug, id, saved)
         }
     }
 
@@ -619,78 +595,27 @@ class ConnectorModel(
         val target = currentAccount(id) ?: return
         val impact = mutableState.value.impact ?: return
         if (impact.accountId != id || impact.read.data == null) return
-        change(PendingChange(target, ConnectorResult.Disconnected) { it == null }) {
+        change(target, ConnectorResult.Disconnected) {
             service.disconnect(target.slug, id)
             replaceAccount(target, id) { null }
         }
     }
 
-    private fun change(change: PendingChange, write: suspend () -> Unit) {
-        val target = change.target
+    private fun change(
+        target: ConnectorAccountTarget,
+        result: ConnectorResult? = null,
+        write: suspend () -> Unit,
+    ) {
         if (!canStart()) return
-        invalidateConnectionReads()
-        runAction(ConnectorAction(target)) {
-            try {
-                write()
-                complete(target, change.result)
-            } catch (error: Exception) {
-                if (
-                    error is CancellationException ||
-                        error.connectionFailed() ||
-                        !error.hasUncertainResponse()
-                ) {
-                    throw error
-                }
-                pendingChange = change
-                updateAction {
-                    it.copy(reconciling = true, problem = ConnectorProblem.VerificationPending)
-                }
-                verifyChange(change)
-            } finally {
-                if (open) {
-                    refreshDirectory()
-                    refreshDetail()
-                }
-            }
-        }
-    }
-
-    private fun reconcilePendingChange() {
-        val pending = pendingChange ?: return
-        val action = mutableState.value.action ?: return
-        if (actionJob?.isActive == true || action.busy) return
-        runAction(action) {
-            verifyChange(pending)
-            if (open) {
+        runAction(ConnectorAction(target), refreshOnFailure = false) {
+            write()
+            if (!authorized()) return@runAction
+            complete(target, result)
+            if (open && foreground) {
                 refreshDirectory()
                 refreshDetail()
             }
         }
-    }
-
-    private suspend fun verifyChange(change: PendingChange) {
-        change.readbackAttempts++
-        val accounts = service.accounts(change.target.slug)
-        invalidateConnectionReads()
-        publishAccounts(change.target.slug, accounts)
-        if (change.matches(accounts.find { it.id == change.target.connectionId })) {
-            pendingChange = null
-            complete(change.target, change.result)
-            return
-        }
-
-        // The read can race a commit after a lost response. Keep checking the original account.
-        if (change.readbackAttempts < ACCOUNT_READBACK_LIMIT) {
-            updateAction { it.copy(problem = ConnectorProblem.VerificationPending) }
-        } else {
-            finishPendingChange()
-            updateAction { it.copy(reconciling = false, problem = ConnectorProblem.Failed) }
-        }
-    }
-
-    private fun finishPendingChange() {
-        pendingChange = null
-        verificationFailures = 0
     }
 
     internal fun startAuthorization(id: String?, methodId: String, values: Map<String, String>) {
@@ -963,7 +888,6 @@ class ConnectorModel(
                 }
             it.copy(
                 authorization = ConnectorAuthorization.Receipt(receipt, externalCodeSessionId),
-                reconciling = true,
             )
         }
         val connected = service.accountIsConnected(target.slug, receipt)
@@ -979,7 +903,6 @@ class ConnectorModel(
             updateAction {
                 it.copy(
                     authorization = null,
-                    reconciling = false,
                     problem = ConnectorProblem.AuthorizationIncomplete,
                 )
             }
@@ -1050,6 +973,7 @@ class ConnectorModel(
         id: String,
         replace: (ConnectorSavedAccount) -> ConnectorSavedAccount?,
     ) {
+        if (!authorized()) return
         val slug = target.slug
         fun update(accounts: List<ConnectorSavedAccount>) = accounts.mapNotNull {
             if (it.id == id) replace(it) else it
@@ -1095,7 +1019,7 @@ class ConnectorModel(
         ) {
             closeRename(editor)
         }
-        val confirmed = ConnectorRead(accounts, confirmedAt = clock.markNow())
+        val confirmed = ConnectorRead(accounts, confirmedAt = snapshotClock.markNow())
         val cached = recentServices[slug]
         if (cached != null) recentServices[slug] = cached.copy(accounts = confirmed)
         mutableState.update { state ->
@@ -1123,6 +1047,7 @@ class ConnectorModel(
     private fun runAction(
         action: ConnectorAction,
         mayAuthorize: Boolean = false,
+        refreshOnFailure: Boolean = true,
         block: suspend () -> Unit,
     ) {
         if (!authorized() || actionJob?.isActive == true) return
@@ -1141,29 +1066,20 @@ class ConnectorModel(
                 val connectionFailed = error.connectionFailed()
                 val uncertain = error.hasUncertainResponse()
                 val canRetryBrowserReceipt = uncertain && !authorizationExpired()
-                val currentChange = pendingChange
-                val readbackExhausted =
-                    currentChange != null &&
-                        currentChange.target == action.target &&
-                        currentChange.readbackAttempts >= ACCOUNT_READBACK_LIMIT
-                val verificationEnded = definitive || readbackExhausted
-                if (verificationEnded && currentChange != null) finishPendingChange()
                 updateAction {
                     val checkExternalSession =
                         it.authorization is ConnectorAuthorization.External &&
                             (action.awaitingExternalReceipt || uncertain && !connectionFailed)
                     val verifying =
-                        !verificationEnded &&
+                        !definitive &&
                             (it.reconciling ||
                                 it.awaitingBrowserReceipt && canRetryBrowserReceipt ||
                                 checkExternalSession)
                     it.copy(
-                        reconciling = it.reconciling && !verificationEnded,
                         authorization =
                             if (definitive && it.reconciling) null else it.authorization,
                         problem =
                             when {
-                                readbackExhausted -> ConnectorProblem.Failed
                                 verifying && connectionFailed ->
                                     ConnectorProblem.VerificationNetwork
                                 verifying -> ConnectorProblem.VerificationPending
@@ -1191,7 +1107,7 @@ class ConnectorModel(
                             )
                     }
                 }
-                if (open) {
+                if (refreshOnFailure && open && foreground) {
                     refreshDirectory()
                     refreshDetail()
                 }
@@ -1222,7 +1138,7 @@ class ConnectorModel(
                 !foreground ||
                 !authorized() ||
                 verificationJob?.isActive == true ||
-                (pendingChange == null && !authReadback)
+                !authReadback
         )
             return
         val wait =
@@ -1234,17 +1150,18 @@ class ConnectorModel(
         verificationJob = viewModelScope.launch {
             delay(wait)
             verificationJob = null
-            if (open && foreground) {
-                checkAuthorization()
-                reconcilePendingChange()
-            }
+            if (open && foreground) checkAuthorization()
         }
     }
 
     private fun complete(target: ConnectorAccountTarget, result: ConnectorResult?) {
         authorizationDeadline = null
         verificationFailures = 0
-        chatOptions.invalidate(target.slug)
+        val changedConnection =
+            target.connectionId.takeIf {
+                result == ConnectorResult.Authorized || result == ConnectorResult.Disconnected
+            }
+        chatOptions.invalidate(target.slug, changedConnection)
         mutableState.update { it.copy(action = ConnectorAction(target, result = result)) }
     }
 
@@ -1276,19 +1193,11 @@ class ConnectorModel(
             onError = ::reportSessionFailure,
             publish = {
                 publish(
-                    if (it.isConfirmed) it.copy(confirmedAt = clock.markNow())
+                    if (it.isConfirmed) it.copy(confirmedAt = snapshotClock.markNow())
                     else it.copy(failureRound = ++readFailureRound),
                 )
             },
         )
-
-    private class PendingChange(
-        val target: ConnectorAccountTarget,
-        val result: ConnectorResult?,
-        val matches: (ConnectorSavedAccount?) -> Boolean,
-    ) {
-        var readbackAttempts = 0
-    }
 }
 
 private fun <K, V> LinkedHashMap<K, V>.rememberRead(key: K, value: V) {

@@ -28,13 +28,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -149,7 +149,7 @@ internal fun PersonalInstructionsSettings(
         }
     }
     var closeAfterSave by rememberSettingsFlag()
-    var discardDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }
+    var discardRevision by remember(model) { mutableStateOf<Long?>(null) }
     var editorFocused by rememberSettingsFlag()
     var editorKeyboardVisible by rememberSettingsFlag()
     LaunchedEffect(closeAfterSave, state.phase, state.saveConfirmed) {
@@ -161,11 +161,7 @@ internal fun PersonalInstructionsSettings(
     val title = stringResource(R.string.instructions_title)
     val snackbar = remember { SnackbarHostState() }
     val refreshFailure =
-        if (
-            state.read == InstructionsRead.RefreshFailed &&
-                state.phase == InstructionsPhase.Ready &&
-                !state.saveRejected
-        )
+        if (state.read == InstructionsRead.RefreshFailed)
             stringResource(R.string.instructions_refresh_failed)
         else null
     LaunchedEffect(refreshFailure) {
@@ -190,24 +186,23 @@ internal fun PersonalInstructionsSettings(
         when {
             state.localFailure -> R.string.instructions_local_failed
             state.saveRejected -> R.string.instructions_save_rejected
-            state.phase == InstructionsPhase.Checking -> R.string.instructions_checking
-            state.phase == InstructionsPhase.Uncertain -> R.string.instructions_uncertain
             state.read == InstructionsRead.Failed && editing != null ->
                 R.string.instructions_load_failed
             else -> null
         }?.let { stringResource(it) }
     val supportLineHeight =
-        okouFormSupportingLineHeight(stringResource(R.string.instructions_uncertain))
+        okouFormSupportingLineHeight(stringResource(R.string.instructions_save_rejected))
     val supportHeight = supportLineHeight + OkouFormLayout.SupportingTextGap
     val inputStyle = okouFormInputStyle()
+    val editorPadding = OutlinedTextFieldDefaults.contentPaddingWithoutLabel()
+    val editorShape = OutlinedTextFieldDefaults.shape
     val editorMinHeight =
         with(LocalDensity.current) {
-            val padding = OkouFormLayout.FieldPadding
             maxOf(
                 112.dp,
                 inputStyle.lineHeight.toDp() * 2 +
-                    padding.calculateTopPadding() +
-                    padding.calculateBottomPadding() +
+                    editorPadding.calculateTopPadding() +
+                    editorPadding.calculateBottomPadding() +
                     2.dp,
             )
         }
@@ -218,9 +213,8 @@ internal fun PersonalInstructionsSettings(
         acceptNativeInput()
         val current = model.uiState.value
         if (current.saveInProgress) return false
-        val draft = current.draft
-        if (draft != null) {
-            if (discardDraft == null) discardDraft = draft
+        if (current.draft != null) {
+            if (discardRevision == null) discardRevision = current.draftRevision
             return false
         }
         return true
@@ -229,7 +223,7 @@ internal fun PersonalInstructionsSettings(
         if (confirmDismiss()) dismiss()
     }
     BackHandler {
-        if (discardDraft != null) discardDraft = null else requestDismiss()
+        if (discardRevision != null) discardRevision = null else requestDismiss()
     }
     fun save() {
         acceptNativeInput()
@@ -308,8 +302,8 @@ internal fun PersonalInstructionsSettings(
                         TextFieldLineLimits.MultiLine(minHeightInLines = 2, maxHeightInLines = 8),
                     keyboardOptions =
                         KeyboardOptions(showKeyboardOnFocus = !restoreFocus || restoreKeyboard),
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = OkouFormLayout.FieldPadding,
+                    shape = editorShape,
+                    contentPadding = editorPadding,
                     readOnly = !state.canEdit,
                 )
             }
@@ -327,7 +321,7 @@ internal fun PersonalInstructionsSettings(
                                 if (showSkeleton)
                                     Modifier.background(
                                         MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        RoundedCornerShape(12.dp),
+                                        editorShape,
                                     )
                                 else Modifier,
                             )
@@ -351,14 +345,14 @@ internal fun PersonalInstructionsSettings(
             }
         }
     }
-    discardDraft?.let { draft ->
+    discardRevision?.let { revision ->
         OkouConfirmationDialog(
-            onDismiss = { discardDraft = null },
+            onDismiss = { discardRevision = null },
             title = stringResource(R.string.instructions_discard),
             confirm = stringResource(R.string.instructions_discard),
             onConfirm = {
-                discardDraft = null
-                if (model.discardEdits(draft)) {
+                discardRevision = null
+                if (model.discardEdits(revision)) {
                     closeAfterSave = false
                     dismiss()
                 }

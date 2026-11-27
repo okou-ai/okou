@@ -27,7 +27,7 @@ class PersonalInstructionsModel(
 
     fun retryLocalDraft() = editor.retryLocalDraft(connection)
 
-    fun discardEdits(draft: InstructionsDraft) = editor.discardEdits(connection, draft)
+    internal fun discardEdits(draftRevision: Long) = editor.discardEdits(connection, draftRevision)
 
     fun refresh() = editor.refresh(connection)
 

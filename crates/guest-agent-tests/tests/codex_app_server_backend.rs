@@ -4,7 +4,7 @@
 //! and guest runtime path overrides used during setup.
 
 mod codex_app_server_startup_policy;
-use cli_test_support::json_fixture::parse_json_lines;
+use cli_test_support::json_fixture::{parse_json_lines, read_json_lines};
 use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
@@ -215,15 +215,13 @@ async fn codex_app_server_backend_runs_initial_turn_and_synthesizes_thread_start
 fn read_sandbox_ops(
     paths: &guest_agent::paths::GuestPaths,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
-    let log = std::fs::read_to_string(paths.sandbox_ops_file())?;
-    parse_json_lines(&log).map_err(Into::into)
+    read_json_lines(paths.sandbox_ops_file())
 }
 
 fn read_agent_log_events(
     paths: &guest_agent::paths::GuestPaths,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
-    let log = std::fs::read_to_string(paths.agent_log_file())?;
-    parse_json_lines(&log).map_err(Into::into)
+    read_json_lines(paths.agent_log_file())
 }
 
 fn read_codex_session_history_events(

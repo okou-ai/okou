@@ -550,9 +550,9 @@ class ConnectorAccountFlowTest {
         }
 
     @Test
-    fun anUnconfirmedRenameCanBeDismissedAndStillReconcilesOnRefresh() =
+    fun aFailedRenameCanBeDismissedBeforeNormalRefreshFindsTheNewName() =
         withCalendar { fixture, model ->
-            val pending = "The outcome is still unconfirmed."
+            val failure = "Could not save. Your changes are still here."
             compose.onNodeWithText("工作日历").performClick()
             compose.onNodeWithText("Rename").performClick()
             compose.onNodeWithTag("connector-input").performTextReplacement("Meeting calendar")
@@ -560,16 +560,16 @@ class ConnectorAccountFlowTest {
             fixture.failAccountReads = true
             compose.onNodeWithText("Save").performClick()
 
-            awaitText(pending)
+            awaitText(failure)
             compose.onNodeWithText("Cancel").assertIsEnabled().performClick()
             compose.onNodeWithText("Rename account").assertDoesNotExist()
-            compose.onNodeWithText("Rename").assertIsNotEnabled()
-            compose.onNodeWithText(pending).assertExists()
+            compose.onNodeWithText("Rename").assertIsEnabled()
+            awaitText("工作日历")
 
             fixture.failAccountReads = false
             compose.runOnIdle { model.resume() }
             awaitText("Meeting calendar")
-            compose.waitUntilAtLeastOneExists(hasText("Rename") and isEnabled(), 10_000)
+            assertEquals(1, fixture.renameRequests.get())
         }
 
     @Test

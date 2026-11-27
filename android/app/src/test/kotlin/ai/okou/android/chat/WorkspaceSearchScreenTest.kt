@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.graphics.toArgb
@@ -35,6 +36,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -229,7 +231,7 @@ class WorkspaceSearchScreenTest {
                 match + keyword.length <=
                     layout.getLineEnd(layout.lineCount - 1, visibleEnd = true),
         )
-        assertEquals(13.sp, layout.layoutInput.style.fontSize)
+        assertEquals(14.sp, layout.layoutInput.style.fontSize)
         assertEquals(20.sp, layout.layoutInput.style.lineHeight)
         val style = text.spanStyles.single()
         assertEquals(match, style.start)
@@ -398,19 +400,23 @@ class WorkspaceSearchScreenTest {
         val actionBounds = viewAll.getUnclippedBoundsInRoot()
         assertTrue(actionBounds.bottom - actionBounds.top >= 48.dp)
         assertTrue(actionBounds.right - actionBounds.left >= 48.dp)
-        val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("View all", useUnmergedTree = true).performSemanticsAction(
-            SemanticsActions.GetTextLayoutResult,
-        ) {
-            it(layouts)
+        fun assertDefaultActionTypography(label: String) {
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText(label, useUnmergedTree = true).performSemanticsAction(
+                SemanticsActions.GetTextLayoutResult,
+            ) {
+                it(layouts)
+            }
+            val style = layouts.single().layoutInput.style
+            assertEquals(
+                resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false).primary,
+                style.color,
+            )
+            assertEquals(14.sp, style.fontSize)
+            assertEquals(20.sp, style.lineHeight)
+            assertEquals(FontWeight.Medium, style.fontWeight)
         }
-        val style = layouts.single().layoutInput.style
-        assertEquals(
-            resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false).primary,
-            style.color,
-        )
-        assertEquals(13.sp, style.fontSize)
-        assertEquals(20.sp, style.lineHeight)
+        assertDefaultActionTypography("View all")
         viewAll.performClick()
         query.assertTextContains("Launch")
         artifactTab.assertIsSelected().assertIsFocused()
@@ -419,7 +425,12 @@ class WorkspaceSearchScreenTest {
 
         compose.runOnIdle { search.edit(TextFieldValue("Missing")) }
         compose.onNodeWithText("No matching artifacts").assertIsDisplayed()
-        compose.onNodeWithText("Search all types").performClick()
+        assertDefaultActionTypography("Search all types")
+        val recover = compose.onNode(hasText("Search all types") and hasClickAction())
+        val recoveryBounds = recover.getUnclippedBoundsInRoot()
+        assertTrue(recoveryBounds.bottom - recoveryBounds.top >= 48.dp)
+        assertTrue(recoveryBounds.right - recoveryBounds.left >= 48.dp)
+        recover.performClick()
         query.assertTextContains("Missing")
         all.assertIsSelected().assertIsFocused()
         assertEquals(16.dp, all.getUnclippedBoundsInRoot().left)
@@ -522,8 +533,17 @@ class WorkspaceSearchScreenTest {
         compose.runOnIdle { chats = listOf(chat) }
         val firstChatHeading = compose.onNode(hasText("Chats") and results)
         assertEquals(firstHeadingBounds.top, firstChatHeading.getUnclippedBoundsInRoot().top)
-        val chatBottom = compose.onNodeWithText("Launch plan").getUnclippedBoundsInRoot().bottom
-        assertEquals(26.dp, firstArtifactHeading.getUnclippedBoundsInRoot().top - chatBottom)
+        val chatRow =
+            compose.onNode(hasText("Launch plan") and hasClickAction()).getUnclippedBoundsInRoot()
+        val chatTitle =
+            compose.onNodeWithText("Launch plan", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertEquals(56.dp, chatRow.bottom - chatRow.top)
+        assertEquals(16.dp, chatTitle.left - chatRow.left)
+        assertEquals(chatTitle.left, firstChatHeading.getUnclippedBoundsInRoot().left)
+        assertEquals(26.dp, firstArtifactHeading.getUnclippedBoundsInRoot().top - chatRow.bottom)
+        val artifact =
+            compose.onNode(hasText("Launch brief") and hasClickAction()).getUnclippedBoundsInRoot()
+        assertTrue(artifact.bottom - artifact.top >= 72.dp)
     }
 
     @Test
@@ -579,13 +599,12 @@ class WorkspaceSearchScreenTest {
         all.assertIsSelected()
         query.assertTextContains("Missing")
 
-        compose.onNodeWithTag("search_type_Chats").performClick()
         compose.runOnIdle {
             chats = chats.copy(listReadFailure = ChatListReadFailure.NeedsRetry)
         }
-        compose.onNodeWithText("No matching chats").assertIsDisplayed()
-        partial.assertIsDisplayed()
-        failure.assertDoesNotExist()
+        compose.onNodeWithTag("search_type_Chats").performClick()
+        compose.onNodeWithText("No matching chats").assertDoesNotExist()
+        partial.assertDoesNotExist()
         compose.runOnIdle {
             chats = chats.copy(listReadFailure = null)
             remote =
@@ -602,43 +621,45 @@ class WorkspaceSearchScreenTest {
         compose.onNodeWithText("No matching results").assertIsDisplayed()
         query.assertTextContains("Missing")
 
-        compose.onNodeWithTag("search_type_Messages").performClick()
         val emptyMessages = compose.onNodeWithText("No matching messages")
-        val progress = compose.onNodeWithContentDescription("Searching…")
+        val skeleton = compose.onNodeWithContentDescription("Searching…")
         compose.runOnIdle {
             remote =
                 remote.copy(
                     messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Scheduled),
                 )
         }
+        compose.onNodeWithTag("search_type_Messages").performClick()
         compose.mainClock.advanceTimeBy(320)
-        emptyMessages.assertIsDisplayed()
-        progress.assertDoesNotExist()
+        emptyMessages.assertDoesNotExist()
+        skeleton.assertDoesNotExist()
         compose.runOnIdle {
             remote =
                 remote.copy(
                     messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Reading),
                 )
         }
-        emptyMessages.assertIsDisplayed()
+        emptyMessages.assertDoesNotExist()
         compose.mainClock.advanceTimeBy(280)
-        progress.assertIsDisplayed()
+        skeleton.assertIsDisplayed()
         compose.runOnIdle {
             remote =
                 remote.copy(
                     messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Failed),
                 )
         }
-        emptyMessages.assertIsDisplayed()
-        partial.assertIsDisplayed()
-        progress.assertDoesNotExist()
+        emptyMessages.assertDoesNotExist()
+        failure.assertIsDisplayed()
+        partial.assertDoesNotExist()
+        skeleton.assertDoesNotExist()
 
         compose.onNodeWithTag("search_type_Chats").performClick()
         partial.assertDoesNotExist()
         compose.onNodeWithTag("search_type_Messages").performClick()
-        partial.assertIsDisplayed()
+        failure.assertIsDisplayed()
 
         compose.runOnIdle { remote = remote.copy(messages = SearchRead.Ready(emptyList())) }
+        emptyMessages.assertIsDisplayed()
         partial.assertDoesNotExist()
         compose.runOnIdle {
             remote =
@@ -648,6 +669,10 @@ class WorkspaceSearchScreenTest {
         }
         emptyMessages.assertIsDisplayed()
         partial.assertIsDisplayed()
+        failure.assertDoesNotExist()
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.AccessLost) }
+        emptyMessages.assertDoesNotExist()
+        partial.assertDoesNotExist()
     }
 
     @Test
@@ -797,9 +822,18 @@ class WorkspaceSearchScreenTest {
         }
         progress.assertIsDisplayed()
         partial.assertDoesNotExist()
-        compose.runOnIdle { artifacts = SearchRead.Failed }
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.runOnIdle {
+                artifacts = SearchRead.Failed
+                Snapshot.sendApplyNotifications()
+            }
+            compose.mainClock.advanceTimeBy(48)
+            progress.assertDoesNotExist()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
         partial.assertIsDisplayed()
-        progress.assertDoesNotExist()
         assertEquals(rowBounds, row.getUnclippedBoundsInRoot())
         assertEquals(viewportBounds, viewport.getUnclippedBoundsInRoot())
         assertTrue(partial.getUnclippedBoundsInRoot().top > rowBounds.bottom)

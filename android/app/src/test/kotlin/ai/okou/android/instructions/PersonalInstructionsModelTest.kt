@@ -30,13 +30,12 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = TestOkouApplication::class)
-class PersonalInstructionsModelTest {
+internal abstract class PersonalInstructionsModelTestFixture {
     @get:Rule val temporary = TemporaryFolder()
-    private val identity = WorkspaceIdentity("https://api.example/", "user-a", "session-a", "org-a")
+    protected val identity =
+        WorkspaceIdentity("https://api.example/", "user-a", "session-a", "org-a")
 
-    private class Service : PersonalInstructionsService {
+    protected class Service : PersonalInstructionsService {
         var saved =
             PersonalInstructions("org-a", "user-a", "Original", "2026-11-14T00:00:00Z", "v1")
         val writes = mutableListOf<Pair<String, String>>()
@@ -57,7 +56,7 @@ class PersonalInstructionsModelTest {
         }
     }
 
-    private fun check(
+    protected fun check(
         blockedDisk: Boolean = false,
         action:
             suspend TestScope.(
@@ -100,7 +99,12 @@ class PersonalInstructionsModelTest {
             Dispatchers.resetMain()
         }
     }
+}
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+internal class PersonalInstructionsModelTest : PersonalInstructionsModelTestFixture() {
     @Test
     fun freshReopenAndJoiningAnOpenPanelKeepContentButExpiredReopenLoads() =
         check { service, store, create, _ ->
@@ -129,7 +133,7 @@ class PersonalInstructionsModelTest {
             assertEquals("Edit while refreshing", model.uiState.value.content)
             assertEquals("v2", model.uiState.value.saved?.version)
             assertTrue(model.uiState.value.canSave)
-            assertTrue(model.discardEdits(checkNotNull(model.uiState.value.draft)))
+            assertTrue(model.discardEdits(model.uiState.value.draftRevision))
             assertEquals("Updated elsewhere", model.uiState.value.content)
 
             other.closePanel()
@@ -186,7 +190,7 @@ class PersonalInstructionsModelTest {
         assertEquals("Original", model.uiState.value.content)
         model.edit("Edit from the confirmed value")
         assertTrue(model.uiState.value.canSave)
-        assertTrue(model.discardEdits(checkNotNull(model.uiState.value.draft)))
+        assertTrue(model.discardEdits(model.uiState.value.draftRevision))
 
         service.read = { throw ApiFailure.Http(403, null, null, null) }
         model.refresh()
@@ -278,7 +282,7 @@ class PersonalInstructionsModelTest {
         }
 
     @Test
-    fun staleSaveRereadsTheLatestVersionAndResubmitsTheSameInputOnce() =
+    fun staleSaveRequiresAnotherExplicitSaveAgainstTheLatestVersion() =
         check { service, store, create, _ ->
             val model = create(false)
             model.open()
@@ -303,6 +307,14 @@ class PersonalInstructionsModelTest {
             runCurrent()
             heldRefresh.complete(old)
             runCurrent()
+            assertEquals(1, reads)
+            assertEquals(listOf("My local edit" to "v1"), service.writes)
+            assertEquals("My local edit", model.uiState.value.content)
+            assertTrue(model.uiState.value.saveRejected)
+            assertTrue(model.uiState.value.canSave)
+            model.save()
+            runCurrent()
+            assertEquals(2, reads)
             assertEquals(listOf("My local edit" to "v1", "My local edit" to "v2"), service.writes)
             assertEquals("My local edit", model.uiState.value.content)
             assertEquals("My local edit", service.saved.content)
@@ -312,7 +324,8 @@ class PersonalInstructionsModelTest {
             service.write = { _, _ -> throw ApiFailure.Http(409, null, null, null) }
             model.save()
             runCurrent()
-            assertEquals(4, service.writes.size)
+            assertEquals(3, service.writes.size)
+            assertEquals(2, reads)
             assertTrue(model.uiState.value.saveRejected)
             assertEquals("New edit", model.uiState.value.content)
             assertTrue(model.uiState.value.canSave)
@@ -320,34 +333,13 @@ class PersonalInstructionsModelTest {
         }
 
     @Test
-    fun discardConfirmationSurvivesARefreshButCannotClearNewInputInAnotherWindow() =
-        check { service, store, create, _ ->
-            val first = create(false)
-            val second = create(false)
-            first.open()
-            runCurrent()
-            first.edit("Original draft")
-            val originalDraft = checkNotNull(first.uiState.value.draft)
-            second.edit("New draft")
-            assertFalse(first.discardEdits(originalDraft))
-            assertEquals("New draft", first.uiState.value.content)
-            val confirmedDraft = checkNotNull(second.uiState.value.draft)
-            service.saved = service.saved.copy(content = "Changed on Web", version = "v2")
-            second.refresh()
-            runCurrent()
-            assertEquals("New draft", first.uiState.value.content)
-            assertTrue(second.uiState.value.canSave)
-            assertTrue(first.discardEdits(confirmedDraft))
-            assertEquals("Changed on Web", second.uiState.value.content)
-            assertNull(store.load(identity).draft)
-        }
-
-    @Test
-    fun anAcceptedButDisconnectedSaveReconcilesWithoutReplayingTheWrite() =
+    fun anAcceptedButDisconnectedSaveStaysEditableUntilANormalRead() =
         check { service, store, create, _ ->
             val model = create(false)
             model.open()
             runCurrent()
+            var reads = 0
+            service.read = { service.saved.also { reads++ } }
             model.edit("New Instructions")
             service.write = { content, _ ->
                 service.saved = service.saved.copy(content = content, version = "committed")
@@ -357,99 +349,81 @@ class PersonalInstructionsModelTest {
             runCurrent()
             assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
             assertEquals("New Instructions", model.uiState.value.content)
-            assertNull(model.uiState.value.draft)
-            assertNull(store.load(identity).draft)
-            assertEquals(1, service.writes.size)
-        }
-
-    @Test
-    fun unresolvedSaveSurvivesRetirementAndAReadRestoresTheEdit() =
-        check { service, store, create, _ ->
-            var model = create(false)
-            model.open()
-            runCurrent()
-            model.edit("Frozen intent")
-            service.write = { _, _ -> throw ApiFailure.Network(IOException("unknown outcome")) }
-            var reads = 0
-            service.read = {
-                reads++
-                throw ApiFailure.Network(IOException("read unavailable"))
-            }
-            model.save()
-            runCurrent()
-            assertEquals(InstructionsPhase.Checking, model.uiState.value.phase)
-            assertFalse(model.discardEdits(checkNotNull(model.uiState.value.draft)))
-            advanceTimeBy(6_000)
-            runCurrent()
-            assertEquals(3, reads)
-            assertEquals(InstructionsPhase.Uncertain, model.uiState.value.phase)
-            model.edit("Replacement must not erase recovery")
-            model.save()
-            runCurrent()
-            assertEquals("Frozen intent", model.uiState.value.content)
-            assertEquals(1, service.writes.size)
-            assertTrue(checkNotNull(store.load(identity).draft).attempted)
-
-            service.read = { service.saved }
-            model = create(true)
-            model.open()
-            runCurrent()
-            assertEquals("Frozen intent", model.uiState.value.content)
-            assertTrue(model.uiState.value.canEdit)
+            assertEquals("Original", model.uiState.value.saved?.content)
             assertTrue(model.uiState.value.canSave)
             assertTrue(model.uiState.value.saveRejected)
-            assertNull(store.load(identity).draft)
-            service.write = { content, version ->
-                assertEquals("v1", version)
-                service.saved.copy(content = content, version = "confirmed").also {
-                    service.saved = it
-                }
-            }
-            model.save()
-            model.save()
+            assertFalse(model.uiState.value.saveConfirmed)
+            assertEquals(0, reads)
+            assertEquals(1, service.writes.size)
+            model.refresh()
             runCurrent()
-            assertEquals(2, service.writes.size)
+            assertEquals(1, reads)
             assertNull(model.uiState.value.draft)
-            assertEquals("Frozen intent", service.saved.content)
+            assertFalse(model.uiState.value.saveConfirmed)
+            assertNull(store.load(identity).draft)
+            assertEquals(1, service.writes.size)
         }
 
     @Test
-    fun unconfirmedSaveCanBeDiscardedAfterReadRetriesStop() = check { service, store, create, _ ->
+    fun failedSaveRestoresEditingAndNextTapRefreshesTheBase() = check { service, store, create, _ ->
         val model = create(false)
         model.open()
         runCurrent()
         model.edit("Frozen intent")
-        service.write = { _, _ -> throw ApiFailure.Network(IOException("response lost")) }
-        service.read = { throw ApiFailure.Network(IOException("still unavailable")) }
+        service.write = { _, _ -> throw ApiFailure.Network(IOException("unknown outcome")) }
+        var reads = 0
+        service.read = { service.saved.also { reads++ } }
         model.save()
         runCurrent()
-        advanceTimeBy(6_000)
-        runCurrent()
-        assertEquals(InstructionsPhase.Uncertain, model.uiState.value.phase)
-        assertFalse(model.uiState.value.canSave)
-        assertTrue(model.discardEdits(checkNotNull(model.uiState.value.draft)))
-        runCurrent()
-        assertEquals("Original", model.uiState.value.content)
-        assertNull(store.load(identity).draft)
+        assertEquals(0, reads)
+        assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
+        assertEquals(InstructionsRead.Ready, model.uiState.value.read)
+        assertTrue(model.uiState.value.saveRejected)
+        assertTrue(model.uiState.value.canEdit)
+        assertTrue(model.uiState.value.canSave)
+        assertEquals("Frozen intent", model.uiState.value.content)
         assertEquals(1, service.writes.size)
+        assertNull(store.load(identity).draft)
+        model.edit("Edited after failure")
+        assertFalse(model.uiState.value.saveRejected)
+        assertEquals(InstructionsRead.Ready, model.uiState.value.read)
+        service.saved = service.saved.copy(content = "Changed on Web", version = "v2")
+        service.write = { content, version ->
+            assertEquals("v2", version)
+            service.saved.copy(content = content, version = "confirmed").also {
+                service.saved = it
+            }
+        }
+        model.save()
+        model.save()
+        runCurrent()
+        assertEquals(2, service.writes.size)
+        assertEquals(1, reads)
+        assertNull(model.uiState.value.draft)
+        assertEquals("Edited after failure", service.saved.content)
     }
 
     @Test
-    fun conflictingReadbackRestoresTheEditAgainstTheNewVersion() =
+    fun aRetryWithAnUnavailableBaseRetainsTheEditWithoutSubmitting() =
         check { service, store, create, _ ->
             val model = create(false)
             model.open()
             runCurrent()
             model.edit("My edit")
-            service.write = { _, _ ->
-                service.saved = service.saved.copy(content = "New server value", version = "v2")
-                throw ApiFailure.Network(IOException("response lost"))
+            service.write = { _, _ -> throw ApiFailure.Network(IOException("response lost")) }
+            model.save()
+            runCurrent()
+            var reads = 0
+            service.read = {
+                reads++
+                throw ApiFailure.Network(IOException("offline"))
             }
             model.save()
             runCurrent()
+            assertEquals(1, reads)
             assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
             assertEquals("My edit", model.uiState.value.content)
-            assertEquals("New server value", model.uiState.value.saved?.content)
+            assertEquals("Original", model.uiState.value.saved?.content)
             assertTrue(model.uiState.value.saveRejected)
             assertTrue(model.uiState.value.canSave)
             assertNull(store.load(identity).draft)
@@ -458,7 +432,7 @@ class PersonalInstructionsModelTest {
 
     @Test
     fun featureLocal403DoesNotRetireWorkspaceAndNulNeverBecomesASave() =
-        check { service, _, create, failures ->
+        check { service, store, create, failures ->
             val model = create(false)
             service.read = { throw ApiFailure.Http(403, "FORBIDDEN", "Unavailable", null) }
             model.open()
@@ -473,6 +447,13 @@ class PersonalInstructionsModelTest {
             runCurrent()
             assertFalse(model.uiState.value.canSave)
             assertTrue(service.writes.isEmpty())
+            model.edit("Write denied")
+            service.write = { _, _ -> throw ApiFailure.Http(403, "FORBIDDEN", "Unavailable", null) }
+            model.save()
+            runCurrent()
+            assertEquals(InstructionsPhase.Unavailable, model.uiState.value.phase)
+            assertNull(store.freshConfirmed(identity))
+            assertTrue(failures.isEmpty())
             service.read = { throw ApiFailure.Http(401, null, null, null) }
             model.refresh()
             runCurrent()
@@ -675,8 +656,9 @@ class PersonalInstructionsModelTest {
                 sender.save()
                 runCurrent()
                 val replacement = create(true)
-                assertEquals(InstructionsPhase.Uncertain, observer.uiState.value.phase)
-                assertFalse(observer.uiState.value.canEdit)
+                assertEquals(InstructionsPhase.Ready, observer.uiState.value.phase)
+                assertTrue(observer.uiState.value.canEdit)
+                assertTrue(observer.uiState.value.saveRejected)
                 assertTrue(checkNotNull(store.load(identity).draft).attempted)
                 replacement.refresh()
                 runCurrent()
@@ -772,7 +754,8 @@ class PersonalInstructionsModelTest {
                 runCurrent()
                 advanceTimeBy(6_000)
                 runCurrent()
-                assertEquals(InstructionsPhase.Uncertain, fresh.uiState.value.phase)
+                assertEquals(InstructionsPhase.Ready, fresh.uiState.value.phase)
+                assertTrue(fresh.uiState.value.saveRejected)
                 held.complete(Unit)
                 runCurrent()
                 assertTrue(checkNotNull(store.load(identity).draft).attempted)
@@ -788,4 +771,82 @@ class PersonalInstructionsModelTest {
                 runCurrent()
             }
         }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+internal class PersonalInstructionsDiscardTest : PersonalInstructionsModelTestFixture() {
+    @Test
+    fun discardConfirmationSurvivesARefreshButCannotClearNewInputInAnotherWindow() =
+        check { service, store, create, _ ->
+            val first = create(false)
+            val second = create(false)
+            first.open()
+            runCurrent()
+            first.edit("Original draft")
+            val originalRevision = first.uiState.value.draftRevision
+            second.edit("New draft")
+            assertFalse(first.discardEdits(originalRevision))
+            assertEquals("New draft", first.uiState.value.content)
+            second.edit("Original draft")
+            assertFalse(first.discardEdits(originalRevision))
+            second.edit("New draft")
+            val confirmedRevision = second.uiState.value.draftRevision
+            service.saved = service.saved.copy(content = "Changed on Web", version = "v2")
+            second.refresh()
+            runCurrent()
+            assertEquals("New draft", first.uiState.value.content)
+            assertTrue(second.uiState.value.canSave)
+            assertTrue(first.discardEdits(confirmedRevision))
+            assertEquals("Changed on Web", second.uiState.value.content)
+            assertNull(store.load(identity).draft)
+        }
+
+    @Test
+    fun discardConfirmationSurvivesResolvingAnInterruptedSave() =
+        check { service, store, create, _ ->
+            create(false).open()
+            runCurrent()
+            store
+                .persist(
+                    identity,
+                    InstructionsDraft("Interrupted draft", service.saved, attempted = true),
+                )
+                .await()
+
+            val read = CompletableDeferred<PersonalInstructions>()
+            service.read = { read.await() }
+            val model = create(true)
+            model.open()
+            runCurrent()
+            assertTrue(model.uiState.value.canEdit)
+            val confirmedRevision = model.uiState.value.draftRevision
+
+            service.saved = service.saved.copy(content = "Changed on Web", version = "v2")
+            read.complete(service.saved)
+            runCurrent()
+            assertEquals("Interrupted draft", model.uiState.value.content)
+            assertTrue(model.discardEdits(confirmedRevision))
+            assertEquals("Changed on Web", model.uiState.value.content)
+            assertNull(store.load(identity).draft)
+        }
+
+    @Test
+    fun unconfirmedSaveCanBeDiscardedImmediately() = check { service, store, create, _ ->
+        val model = create(false)
+        model.open()
+        runCurrent()
+        model.edit("Frozen intent")
+        service.write = { _, _ -> throw ApiFailure.Network(IOException("response lost")) }
+        model.save()
+        runCurrent()
+        assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
+        assertTrue(model.uiState.value.canSave)
+        assertTrue(model.discardEdits(model.uiState.value.draftRevision))
+        runCurrent()
+        assertEquals("Original", model.uiState.value.content)
+        assertNull(store.load(identity).draft)
+        assertEquals(1, service.writes.size)
+    }
 }

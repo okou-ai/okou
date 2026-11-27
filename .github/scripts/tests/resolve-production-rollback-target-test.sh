@@ -14,6 +14,7 @@ fail() {
 }
 
 target_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+model_provider_placeholder_reader_floor=$(<"${repo_root}/.github/rollback-floors/model-provider-placeholder-reader")
 connector_resource_split_floor=$(<"${repo_root}/.github/rollback-floors/connector-resource-split")
 retired_billing_issuance_floor=$(<"${repo_root}/.github/rollback-floors/retired-billing-issuance")
 decoded_storage_reader_floor=$(<"${repo_root}/.github/rollback-floors/decoded-storage-capacity-reader")
@@ -239,6 +240,8 @@ case "${1:-}" in
       [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dcb3ce10bce5c4d9e8f7c27586b5ccb876fcf290" ] && [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
       [ "${MOCK_DIRECT_DISPATCH_GZIP_READER_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_MODEL_PROVIDER_PLACEHOLDER_READER_FLOOR" ] && [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+      [ "${MOCK_MODEL_PROVIDER_PLACEHOLDER_RUNNER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "37e6bb51029f05ff1d7a7a6c28b03f139dfd067c" ]; then
       [ "${MOCK_LINK_GRANT_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "52525252525252525252525252525252525252ab" ]; then
@@ -549,6 +552,10 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/model-provider-placeholder-reader" ]; then
+      printf '%s\n' "$MOCK_MODEL_PROVIDER_PLACEHOLDER_READER_FLOOR"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/single-character-skill-bundle-reader" ]; then
       [ "${MOCK_SINGLE_CHARACTER_SKILL_READ_FAIL:-0}" = "0" ] || exit 1
       printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_RUNNER_COMMIT-beefbeefbeefbeefbeefbeefbeefbeefbeefbeef}"
@@ -750,6 +757,7 @@ run_resolver() {
     GITHUB_REPOSITORY=okou-ai/okou \
     METAL_USER=ci \
     MOCK_BOUNDARY_LOG="${tmp_dir}/boundaries.log" \
+    MOCK_MODEL_PROVIDER_PLACEHOLDER_READER_FLOOR="$model_provider_placeholder_reader_floor" \
     MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR="$connector_resource_split_floor" \
     MOCK_RETIRED_BILLING_ISSUANCE_FLOOR="$retired_billing_issuance_floor" \
     MOCK_DECODED_STORAGE_READER_FLOOR="$decoded_storage_reader_floor" \
@@ -1901,6 +1909,14 @@ assert_failure "predates bundled-only CLI startup" \
 [ ! -s "${tmp_dir}/bundled-cli-runner.output" ] || fail "incompatible CLI Runner must not publish outputs"
 if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
   fail "incompatible CLI Runner must fail before Runner artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates the model-provider placeholder cutover" \
+  run_resolver "${tmp_dir}/model-provider-placeholder-runner.output" MOCK_MODEL_PROVIDER_PLACEHOLDER_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/model-provider-placeholder-runner.output" ] || fail "pre-cutover Runner must not publish rollback outputs"
+if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "pre-cutover Runner must fail before Runner artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"

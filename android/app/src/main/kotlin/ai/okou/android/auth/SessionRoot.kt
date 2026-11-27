@@ -21,10 +21,8 @@ import ai.okou.android.entryBrandNameStyle
 import ai.okou.android.entrySpacing
 import ai.okou.android.entryTopPadding
 import ai.okou.android.instructions.PersonalInstructionsSettings
-import ai.okou.android.preferences.MemberPreferenceSaveFeedback
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.settings.BuiltInToolsPage
-import ai.okou.android.settings.DefaultModelFeedback
 import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.EmailSubscriptionSetting
 import ai.okou.android.settings.ProactiveSettingsPage
@@ -136,7 +134,6 @@ internal fun SessionRoot(
                     if (ready != null) WorkspaceRealtimeLifecycle(ready.chats.updates)
                     val snackbar = remember { SnackbarHostState() }
                     var feedbackInOverlay by remember { mutableStateOf(false) }
-                    if (ready != null) DefaultModelFeedback(ready.settings.defaultModel, snackbar)
                     val startupRecovery: (@Composable () -> Unit)? =
                         if (state.stage == SessionStage.Unavailable && !state.working) {
                             {
@@ -183,7 +180,6 @@ internal fun SessionRoot(
                                 appUpdates,
                                 retry,
                                 snackbar,
-                                feedbackInOverlay,
                                 { feedbackInOverlay = it },
                             )
                         },
@@ -313,15 +309,13 @@ private fun WorkspaceSettingsContent(
     appUpdates: @Composable (() -> Unit)?,
     retry: () -> Unit,
     snackbar: SnackbarHostState,
-    feedbackInOverlay: Boolean,
     onFeedbackInOverlay: (Boolean) -> Unit,
 ) {
     val ready = state.ready
     if (ready != null) {
         val tools = ready.settings.builtInTools
         DisposableEffect(tools) { onDispose { tools?.leaveSettings() } }
-        WorkspaceSettingsFeedback(ready.settings, snackbar, destination, feedbackInOverlay)
-        MemberPreferenceSaveFeedback(ready.preferences, snackbar)
+        WorkspaceSettingsFeedback(ready.settings, ready.preferences, snackbar, destination)
     }
     val rowFocus = remember { SettingsDestination.entries.associateWith { FocusRequester() } }
     var focused by remember { mutableStateOf<SettingsDestination?>(null) }
@@ -350,9 +344,9 @@ private fun WorkspaceSettingsContent(
             AccountSettings(account, state.entryFailure == SessionEntryFailure.SignOut, signOut)
         SettingsDestination.BuiltInTools -> {
             val tools = ready?.settings?.builtInTools
-            if (ready != null && tools != null)
-                BuiltInToolsPage(ready.organization.name, tools, snackbar)
-            else WorkspaceSettingsPreparation(state, retry)
+            if (ready != null && tools != null) {
+                BuiltInToolsPage(ready.organization.name, tools, snackbar, onFeedbackInOverlay)
+            } else WorkspaceSettingsPreparation(state, retry)
         }
         SettingsDestination.ProactiveServices -> {
             val proactive = ready?.settings?.proactive
@@ -361,7 +355,6 @@ private fun WorkspaceSettingsContent(
                     ready.organization.name,
                     proactive,
                     ready.preferences,
-                    snackbar,
                 )
             } else WorkspaceSettingsPreparation(state, retry)
         }

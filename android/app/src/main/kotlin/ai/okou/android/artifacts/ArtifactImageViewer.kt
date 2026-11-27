@@ -9,8 +9,10 @@ import ai.okou.android.state.ArtifactImageViewerState
 import ai.okou.android.state.ArtifactImageViewpoint
 import ai.okou.android.state.rememberArtifactImageViewerState
 import android.graphics.Bitmap
+import android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -22,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -37,12 +40,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
@@ -50,10 +55,12 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.BitmapImage
 import coil3.compose.AsyncImagePainter
@@ -69,10 +76,12 @@ import com.github.panpf.zoomimage.compose.zoom.ZoomableState
 import com.github.panpf.zoomimage.compose.zoom.keyZoom
 import com.github.panpf.zoomimage.subsampling.ImageSource
 import com.github.panpf.zoomimage.subsampling.fromByteArray
+import com.github.panpf.zoomimage.subsampling.fromFile
 import com.github.panpf.zoomimage.util.IntSizeCompat
 import com.github.panpf.zoomimage.zoom.ContentScaleCompat
 import com.github.panpf.zoomimage.zoom.GestureType
 import com.github.panpf.zoomimage.zoom.ScalesCalculator
+import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -97,69 +106,18 @@ internal fun ArtifactImageViewer(
 ) {
     val zoom = rememberZoomState()
     val viewer = rememberArtifactImageViewerState(zoom.zoomable::viewpoint)
-    val imageSize = rememberConstraintsSizeResolver()
-    val unavailable =
-        preview.problem == ArtifactProblem.Denied ||
-            preview.problem == ArtifactProblem.Missing ||
-            preview.problem == ArtifactProblem.Unavailable
-    val originalUnavailable = preview.problem == ArtifactProblem.OriginalUnavailable
-    val source = (preview.content as? ArtifactContent.EncodedImage).takeUnless { unavailable }
-    val bitmap = (preview.content as? ArtifactContent.Image)?.bitmap ?: source?.fallback
-    val decoded = source?.let { rememberDecodedArtifactImage(it.bytes, imageSize) }
-    val original = decoded as? AsyncImagePainter.State.Success
-    val independentThumbnail =
-        preview.info?.independentThumbnailUrl(preview.access?.url?.toString())
-    val thumbnailUrl =
-        if (bitmap == null && original == null && !unavailable && !originalUnavailable) {
-            independentThumbnail ?: preview.info?.thumbnailUrl?.takeIf { preview.access != null }
-        } else null
-    val thumbnail = thumbnailUrl?.let { url ->
-        key(model, url) {
-            val cacheOnly = independentThumbnail == null
-            val result by
-                produceState<Bitmap?>(null, cacheOnly) {
-                    value = model.thumbnail(url, cacheOnly)
-                }
-            result
-        }
-    }
-    val fallback = (bitmap ?: thumbnail).takeUnless { unavailable }
-    val fallbackPainter = remember(fallback) { fallback?.let { BitmapPainter(it.asImageBitmap()) } }
-    val image = original?.painter ?: fallbackPainter
-
-    val tileSource = remember(source) { source?.let { ImageSource.fromByteArray(it.bytes) } }
-    LaunchedEffect(zoom, source, original) {
-        zoom.setSubsamplingImage(tileSource.takeIf { original != null })
-        val decodedBitmap = (original?.result?.image as? BitmapImage)?.bitmap
-        if (source != null && decodedBitmap != null)
-            model.retainDecodedImage(preview.id, source, decodedBitmap)
-    }
-    val problem =
-        when {
-            unavailable -> R.string.artifact_image_unavailable
-            originalUnavailable ->
-                R.string.artifact_image_original_unavailable.takeIf { image != null }
-            preview.problem != null ||
-                preview.content == ArtifactContent.Unsupported ||
-                decoded is AsyncImagePainter.State.Error -> R.string.artifact_image_load_failed
-            else -> null
-        }
-    val loading =
-        rememberContentReadFeedbackAfter(
-            ContentReadFeedbackDelayMillis.takeIf { image == null && problem == null },
-        )
-    val pane: @Composable (Boolean) -> Unit = { fullWindow ->
-        Column(
-            Modifier.fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
-                .testTag("artifact_preview"),
-        ) {
+    ImageViewerSurface(
+        wide,
+        viewer.expanded,
+        { viewer.expanded = it },
+        onBack,
+        toolbar = { fullWindow, toggle ->
             ImageViewerToolbar(
                 backLabel,
                 onBack,
                 wide,
                 fullWindow,
-                { viewer.expanded = !fullWindow },
+                toggle,
                 saveEnabled,
                 onSave,
                 onShare,
@@ -169,44 +127,200 @@ internal fun ArtifactImageViewer(
                 restoreSourceFocus,
                 onSourceFocusRestored,
             )
-            ImageViewport(
-                hasImage = image != null,
-                problem = problem,
-                loading = loading,
-                previewOnly = preview.access?.previewOnly == true,
-                saveResult = saveResult,
-                shareSnackbar = shareSnackbar,
-                modifier = Modifier.weight(1f),
-            ) {
-                val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)
-                Box(Modifier.fillMaxSize().then(imageSize)) {
-                    if (image != null)
-                        ZoomableArtifactImage(image, preview.item?.title, zoom, viewport, viewer)
-                }
-            }
-        }
-    }
-    if (wide && viewer.expanded) {
-        Dialog(
-            onDismissRequest = { viewer.expanded = false },
-            properties =
-                DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-        ) {
-            Box(
-                Modifier.fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .windowInsetsPadding(WindowInsets.safeDrawing),
-            ) {
-                pane(true)
-            }
-        }
-    } else {
-        pane(false)
+        },
+    ) { modifier ->
+        ImageViewerPage(
+            preview,
+            model,
+            preview.item?.title,
+            zoom,
+            viewer,
+            modifier,
+            saveResult = saveResult,
+            shareSnackbar = shareSnackbar,
+        )
     }
 }
 
 @Composable
-private fun ImageViewerToolbar(
+internal fun ImageViewerSurface(
+    wide: Boolean,
+    expanded: Boolean,
+    setExpanded: (Boolean) -> Unit,
+    onBack: () -> Unit,
+    overlayStart: Dp? = null,
+    toolbar: @Composable (Boolean, () -> Unit) -> Unit,
+    content: @Composable (Modifier) -> Unit,
+) {
+    val fullWindow = wide && expanded
+    val pane: @Composable () -> Unit = {
+        Column(
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .testTag("artifact_preview"),
+        ) {
+            toolbar(fullWindow) { setExpanded(!fullWindow) }
+            content(Modifier.weight(1f))
+        }
+    }
+    if (overlayStart != null || fullWindow) {
+        Dialog(
+            onDismissRequest = { if (fullWindow) setExpanded(false) else onBack() },
+            properties =
+                DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        ) {
+            val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+            SideEffect { window?.clearFlags(FLAG_DIM_BEHIND) }
+            Box(
+                Modifier.fillMaxSize()
+                    .padding(start = overlayStart?.takeUnless { fullWindow } ?: 0.dp)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .windowInsetsPadding(WindowInsets.safeDrawing),
+            ) {
+                pane()
+            }
+        }
+    } else {
+        pane()
+    }
+}
+
+@Composable
+internal fun ImageViewerPage(
+    preview: ArtifactPreviewState?,
+    model: ArtifactCatalogModel?,
+    description: String?,
+    zoom: ZoomState?,
+    viewer: ArtifactImageViewerState?,
+    modifier: Modifier,
+    localFile: File? = null,
+    thumbnail: Bitmap? = null,
+    unavailableLocal: Boolean = false,
+    keyboardPaging: Boolean = false,
+    saveResult: ArtifactSaveResult? = null,
+    shareSnackbar: SnackbarHostState? = null,
+) {
+    val imageSize = rememberConstraintsSizeResolver()
+    val adjacent = zoom == null
+    val showEarlySkeleton = remember { adjacent }
+    val unavailable = unavailableLocal || preview?.problem.isImageUnavailable
+    val originalUnavailable = preview?.problem == ArtifactProblem.OriginalUnavailable
+    val source = (preview?.content as? ArtifactContent.EncodedImage).takeUnless { unavailable }
+    val bitmap = (preview?.content as? ArtifactContent.Image)?.bitmap ?: source?.fallback
+    val data =
+        (source?.bytes ?: localFile).takeUnless { adjacent || unavailable || originalUnavailable }
+    val decoded = data?.let { rememberDecodedViewerImage(it, imageSize) }
+    val original = decoded as? AsyncImagePainter.State.Success
+    val independentThumbnail =
+        preview?.info?.independentThumbnailUrl(preview.access?.url?.toString())
+    val thumbnailUrl =
+        if (
+            bitmap == null &&
+                thumbnail == null &&
+                original == null &&
+                !unavailable &&
+                !originalUnavailable
+        ) {
+            independentThumbnail ?: preview?.info?.thumbnailUrl?.takeIf { preview.access != null }
+        } else null
+    val readThumbnail =
+        thumbnailUrl
+            ?.takeIf { model != null }
+            ?.let { url ->
+                key(model, url) {
+                    val cacheOnly = independentThumbnail == null
+                    val result by
+                        produceState<Bitmap?>(null, cacheOnly) {
+                            value = model?.thumbnail(url, cacheOnly)
+                        }
+                    result
+                }
+            }
+    val fallback =
+        (bitmap ?: (thumbnail ?: readThumbnail).takeUnless { originalUnavailable }).takeUnless {
+            unavailable
+        }
+    val fallbackPainter = remember(fallback) { fallback?.let { BitmapPainter(it.asImageBitmap()) } }
+    val image = original?.painter ?: fallbackPainter
+    val emptyPageFocus =
+        if (keyboardPaging && !adjacent && image == null) {
+            val focus = remember { FocusRequester() }
+            LaunchedEffect(focus) { focus.requestFocus() }
+            Modifier.focusRequester(focus).focusable()
+        } else Modifier
+
+    val tileSource =
+        remember(data) {
+            when (data) {
+                is ByteArray -> ImageSource.fromByteArray(data)
+                is File -> ImageSource.fromFile(data)
+                else -> null
+            }
+        }
+    if (zoom != null)
+        LaunchedEffect(zoom, data, original) {
+            zoom.setSubsamplingImage(tileSource.takeIf { original != null })
+            val decodedBitmap = (original?.result?.image as? BitmapImage)?.bitmap
+            if (preview != null && source != null && decodedBitmap != null)
+                model?.retainDecodedImage(preview.id, source, decodedBitmap)
+        }
+    val problem =
+        when {
+            unavailable -> R.string.artifact_image_unavailable
+            originalUnavailable ->
+                if (image != null) R.string.artifact_image_original_unavailable else null
+            preview?.problem != null ||
+                preview?.content == ArtifactContent.Unsupported ||
+                decoded is AsyncImagePainter.State.Error && (source != null || model == null) ->
+                R.string.artifact_image_load_failed
+            else -> null
+        }
+    val loading =
+        rememberContentReadFeedbackAfter(
+            ContentReadFeedbackDelayMillis.takeIf { !adjacent && image == null && problem == null },
+        )
+    ImageViewport(
+        hasImage = image != null,
+        problem = problem,
+        skeleton = loading || adjacent || showEarlySkeleton,
+        loadingLabel = loading,
+        previewOnly = preview?.access?.previewOnly == true,
+        saveResult = saveResult,
+        shareSnackbar = shareSnackbar,
+        modifier = modifier.then(emptyPageFocus),
+    ) {
+        val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)
+        Box(Modifier.fillMaxSize().then(imageSize)) {
+            if (image != null && zoom != null && viewer != null) {
+                ZoomableArtifactImage(
+                    image,
+                    description.takeUnless { unavailable },
+                    zoom,
+                    viewport,
+                    viewer,
+                )
+            } else if (image != null) {
+                Image(
+                    image,
+                    null,
+                    Modifier.fillMaxSize().padding(16.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+        }
+    }
+}
+
+internal val ArtifactProblem?.isImageUnavailable: Boolean
+    get() =
+        this == ArtifactProblem.Denied ||
+            this == ArtifactProblem.Missing ||
+            this == ArtifactProblem.Unavailable
+
+internal data class ImageViewerPageNumber(val page: Int, val count: Int)
+
+@Composable
+internal fun ImageViewerToolbar(
     @StringRes backLabel: Int,
     onBack: () -> Unit,
     wide: Boolean,
@@ -218,8 +332,9 @@ private fun ImageViewerToolbar(
     sharing: Boolean,
     onSource: (() -> Unit)?,
     links: ArtifactLinkActions?,
-    restoreSourceFocus: Boolean,
-    onSourceFocusRestored: () -> Unit,
+    restoreSourceFocus: Boolean = false,
+    onSourceFocusRestored: () -> Unit = {},
+    pageNumber: ImageViewerPageNumber? = null,
 ) {
     val actionsFocus = remember { FocusRequester() }
     val hasActions = onSave != null || onSource != null || links != null
@@ -237,9 +352,37 @@ private fun ImageViewerToolbar(
             .testTag("artifact_image_toolbar"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ImageViewerButton(R.drawable.ic_arrow_back, backLabel, onBack)
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-            if (sharing) {
+        Box(Modifier.width(if (pageNumber != null && wide) 100.dp else 48.dp)) {
+            ImageViewerButton(R.drawable.ic_arrow_back, backLabel, onBack)
+        }
+        Box(
+            Modifier.weight(1f),
+            contentAlignment = if (pageNumber != null) Alignment.Center else Alignment.CenterEnd,
+        ) {
+            if (pageNumber != null) {
+                val spoken =
+                    stringResource(
+                        R.string.artifact_image_page_description,
+                        pageNumber.page,
+                        pageNumber.count,
+                    )
+                Text(
+                    stringResource(
+                        R.string.artifact_image_page_number,
+                        pageNumber.page,
+                        pageNumber.count,
+                    ),
+                    Modifier.padding(horizontal = 4.dp)
+                        .clearAndSetSemantics {
+                            contentDescription = spoken
+                            liveRegion = LiveRegionMode.Polite
+                        }
+                        .testTag("image_viewer_page_number"),
+                    style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                    color = colors.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+            } else if (sharing) {
                 Text(
                     stringResource(R.string.artifact_share_preparing),
                     Modifier.padding(horizontal = 8.dp).semantics {
@@ -321,15 +464,15 @@ private fun ImageViewerButton(
 }
 
 @Composable
-private fun rememberDecodedArtifactImage(
-    bytes: ByteArray,
+private fun rememberDecodedViewerImage(
+    data: Any,
     size: ConstraintsSizeResolver,
 ): AsyncImagePainter.State? {
     val context = LocalContext.current
     val request =
-        remember(context, bytes, size) {
+        remember(context, data, size) {
             ImageRequest.Builder(context)
-                .data(bytes)
+                .data(data)
                 .size(size)
                 .memoryCachePolicy(CachePolicy.DISABLED)
                 .diskCachePolicy(CachePolicy.DISABLED)
@@ -340,13 +483,13 @@ private fun rememberDecodedArtifactImage(
             .state
             .collectAsStateWithLifecycle()
     return when (val result = state) {
-        is AsyncImagePainter.State.Success -> result.takeIf { it.result.request.data === bytes }
-        is AsyncImagePainter.State.Error -> result.takeIf { it.result.request.data === bytes }
+        is AsyncImagePainter.State.Success -> result.takeIf { it.result.request.data == data }
+        is AsyncImagePainter.State.Error -> result.takeIf { it.result.request.data == data }
         else -> null
     }
 }
 
-private fun ZoomableState.viewpoint(): ArtifactImageViewpoint? {
+internal fun ZoomableState.viewpoint(): ArtifactImageViewpoint? {
     val size = contentSize
     val viewport = containerSize
     if (size == IntSize.Zero || viewport == IntSize.Zero || !isZoomed) return null
@@ -358,7 +501,7 @@ private fun ZoomableState.viewpoint(): ArtifactImageViewpoint? {
     )
 }
 
-private val ZoomableState.isZoomed: Boolean
+internal val ZoomableState.isZoomed: Boolean
     get() = transform.scaleX > minScale * 1.001f
 
 private suspend fun ZoomableState.restoreViewpoint(point: ArtifactImageViewpoint) {
@@ -397,10 +540,11 @@ private class InsetFitImageScales(private val inset: Int) :
 private fun ImageViewport(
     hasImage: Boolean,
     @StringRes problem: Int?,
-    loading: Boolean,
+    skeleton: Boolean,
+    loadingLabel: Boolean,
     previewOnly: Boolean,
     saveResult: ArtifactSaveResult?,
-    shareSnackbar: SnackbarHostState,
+    shareSnackbar: SnackbarHostState?,
     modifier: Modifier,
     content: @Composable BoxWithConstraintsScope.() -> Unit,
 ) {
@@ -411,7 +555,7 @@ private fun ImageViewport(
         content()
         if (!hasImage && problem != null) {
             ContentReadFailure(problem, Modifier.fillMaxSize())
-        } else if (!hasImage && loading) {
+        } else if (!hasImage && skeleton) {
             val skeletonWidth =
                 minOf(
                     260.dp,
@@ -433,7 +577,8 @@ private fun ImageViewport(
                 )
                 Text(
                     stringResource(R.string.artifact_image_loading),
-                    Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    if (loadingLabel) Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                    else Modifier.alpha(0f).clearAndSetSemantics {},
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -467,7 +612,8 @@ private fun ImageViewport(
                 )
             }
         }
-        SnackbarHost(shareSnackbar, Modifier.align(Alignment.BottomCenter))
+        if (shareSnackbar != null)
+            SnackbarHost(shareSnackbar, Modifier.align(Alignment.BottomCenter))
     }
 }
 
@@ -509,7 +655,7 @@ private fun ZoomableArtifactImage(
         viewer.pendingViewpoint = null
     }
     fun changeScale(target: Float) {
-        scope.launch { zoomable.scale(target, animated = true) }
+        scope.launch { zoomable.scale(target, animated = !reducedMotion) }
     }
     fun increase() =
         changeScale(

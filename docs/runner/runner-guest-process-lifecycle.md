@@ -36,6 +36,12 @@ Its mount child inherits the existing owned process group; timeouts, disconnects
 output bounds and quiesce accounting are unchanged. The helper is part of the
 guest binary inventory, so changing it invalidates the rootfs and snapshot hash.
 
+On a reused Home, the existing Instructions check may also observe the
+canonical Memory directory for a matching nonempty version. Runner can skip
+Storage Apply when that directory is present and the plan has no other Guest
+work. The observation is scoped to the current startup and attachment. An
+unavailable directory still goes through Storage Apply with the captured archive.
+
 | Process or operation                                                                                 | Class and selecting authority                                               | Input and trust boundary                                                                                                 | Placement and resource policy                                                                       | Completion and cleanup owner                                                                                                                                                        | Relationship to Agent start                                                                                                                 |
 | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `guest-init` (PID 1)                                                                                 | Sandbox service selected by the guest image entry point                     | Fixed image program and boot configuration                                                                               | Guest root; sandbox-lifetime VM policy                                                              | VM lifetime; PID 1 owns guest shutdown                                                                                                                                              | Required and serial before guest readiness                                                                                                  |
@@ -60,8 +66,8 @@ Fixed instruction check and application use `Sandbox::run_agent_instructions`
 and the existing storage worker. The Guest chooses the canonical storage helper
 and one of its two instruction flags, installs only the run/runtime environment,
 and launches directly as the sandbox user in an ordinary Workload cgroup.
-Instruction metadata remains bounded to 64 KiB for checks and 4 KiB for application;
-stdout/stderr retain independent 64 KiB bounds. This bypasses shell/profile/env-script
+Both actions bound instruction metadata to 4 KiB and each output stream to
+64 KiB. This bypasses shell/profile/env-script
 setup without changing file permission, symlink, repair or publication semantics.
 The same worker owns timeout/disconnect cleanup and releases admission and the
 operation guard at the terminal-response boundary. Staging success is still

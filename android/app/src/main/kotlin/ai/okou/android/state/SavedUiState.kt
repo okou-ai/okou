@@ -139,6 +139,11 @@ internal fun rememberDraftAttachmentPreview(): MutableState<String?> = rememberS
 }
 
 @Composable
+internal fun rememberDraftImageSaveTarget(): MutableState<String?> = rememberSaveable {
+    mutableStateOf(null)
+}
+
+@Composable
 internal fun rememberDraftAttachmentsOpen(): MutableState<Boolean> = rememberSaveable {
     mutableStateOf(false)
 }
@@ -732,6 +737,11 @@ internal fun rememberArtifactPageState(): ArtifactPageState =
 
 @Composable
 internal fun rememberArtifactPageHolder(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
+internal fun rememberImageViewerExpanded(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
 
 @Composable
 internal fun rememberArtifactImageViewerState(

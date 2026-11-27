@@ -3,7 +3,7 @@
 //! All cases run sequentially in one test because setup mutates process env and
 //! the current directory.
 
-use cli_test_support::json_fixture::parse_json_lines;
+use cli_test_support::json_fixture::read_json_lines;
 use guest_agent_tests as common;
 
 use guest_agent::error::AgentError;
@@ -218,8 +218,7 @@ async fn codex_app_server_classifies_supported_structured_errors()
                 serialized["failureReason"],
                 "codex_access_program_unavailable"
             );
-            let log = std::fs::read_to_string(runtime.paths.agent_log_file())?;
-            let events = parse_json_lines(&log)?;
+            let events = read_json_lines(runtime.paths.agent_log_file())?;
             let expected_type = if case.scenario == "runtime-access-program-error" {
                 "error"
             } else {
@@ -243,8 +242,7 @@ async fn codex_app_server_classifies_supported_structured_errors()
                 diagnostic.message,
                 "Incomplete response returned, reason: max_output_tokens"
             );
-            let log = std::fs::read_to_string(runtime.paths.agent_log_file())?;
-            let events = parse_json_lines(&log)?;
+            let events = read_json_lines(runtime.paths.agent_log_file())?;
             assert_eq!(
                 events
                     .iter()

@@ -72,6 +72,7 @@ data class ComposerMessagePreview(
     val sequence: Long? = null,
     val attachments: List<ChatAttachmentReference> = emptyList(),
     val attachmentFiles: Map<String, File> = emptyMap(),
+    internal val keepAcknowledgedBubble: Boolean = disposition == TextDisposition.Accepted,
 )
 
 @Serializable

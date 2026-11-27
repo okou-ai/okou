@@ -1,8 +1,4 @@
-import {
-  MODEL_PROVIDER_ENV_PLACEHOLDERS,
-  MODEL_PROVIDER_FIREWALL_CONFIGS,
-} from "../contracts/model-providers";
-import { MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS } from "../contracts/model-provider-firewalls";
+import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "../contracts/model-provider-firewalls";
 import {
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
@@ -102,37 +98,9 @@ export interface RustConstantModuleDoc {
   readonly rustDoc: readonly string[];
 }
 
-const codexOauthPlaceholderNames = [
-  "CHATGPT_ACCESS_TOKEN",
-  "CHATGPT_ACCOUNT_ID",
-  "CHATGPT_REFRESH_TOKEN",
-] as const;
-
-type CodexOauthPlaceholderName = (typeof codexOauthPlaceholderNames)[number];
-
-const modelProviderEnvPlaceholderNames = [
-  "CLAUDE_CODE_OAUTH_TOKEN",
-  "OPENAI_API_KEY",
-  "CHATGPT_ACCESS_TOKEN",
-  "CHATGPT_ACCOUNT_ID",
-  "CHATGPT_REFRESH_TOKEN",
-] as const;
-
-type ModelProviderEnvPlaceholderName =
-  (typeof modelProviderEnvPlaceholderNames)[number];
-
-const codexOauthPlaceholderModule = [
-  "codex_oauth_token",
-  "placeholders",
-] as const;
-
 const modelProviderEnvPlaceholderModule = [
   "model_provider_env",
   "placeholders",
-] as const;
-const modelProviderNamespacedEnvPlaceholderModule = [
-  "model_provider_env",
-  "namespaced_placeholders",
 ] as const;
 const clientHeadersModule = ["client", "headers"] as const;
 const clientTypesModule = ["client", "types"] as const;
@@ -153,19 +121,6 @@ export const rustConstantModuleDocs = [
     rustDoc: ["Data Router contract constants shared with the Runner addon."],
   },
   {
-    rustModulePath: ["codex_oauth_token"],
-    rustDoc: [
-      "Codex OAuth token contract constants shared by TypeScript and Rust.",
-    ],
-  },
-  {
-    rustModulePath: codexOauthPlaceholderModule,
-    rustDoc: [
-      "Fake Codex OAuth token placeholder marker values.",
-      "These values are not secrets and are not usable credentials.",
-    ],
-  },
-  {
     rustModulePath: ["model_provider_env"],
     rustDoc: [
       "Model-provider environment contract constants shared by TypeScript and Rust.",
@@ -177,10 +132,6 @@ export const rustConstantModuleDocs = [
       "Fake model-provider environment placeholder marker values.",
       "These values are not secrets and are not usable credentials.",
     ],
-  },
-  {
-    rustModulePath: modelProviderNamespacedEnvPlaceholderModule,
-    rustDoc: ["Namespaced synthetic values accepted by compatible Runners."],
   },
   {
     rustModulePath: ["client"],
@@ -223,30 +174,6 @@ export const rustConstantModuleDocs = [
     ],
   },
 ] satisfies readonly RustConstantModuleDoc[];
-
-function codexOauthPlaceholder(name: CodexOauthPlaceholderName): string {
-  const value =
-    MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"].placeholders?.[name];
-  if (value === undefined) {
-    throw new Error(
-      `codex-oauth-token firewall placeholder is missing ${name}`,
-    );
-  }
-  if (value.length === 0) {
-    throw new Error(`codex-oauth-token firewall placeholder ${name} is empty`);
-  }
-  return value;
-}
-
-function modelProviderEnvPlaceholder(
-  name: ModelProviderEnvPlaceholderName,
-): string {
-  const value = MODEL_PROVIDER_ENV_PLACEHOLDERS[name];
-  if (value.length === 0) {
-    throw new Error(`model provider env placeholder ${name} is empty`);
-  }
-  return value;
-}
 
 function placeholderRustDoc(name: string): readonly string[] {
   return [
@@ -715,27 +642,11 @@ export const rustConstantBindings = [
       "Guest artifact publication and TypeScript storage webhook validation use this shared limit.",
     ],
   },
-  ...codexOauthPlaceholderNames.map((name) => {
-    return {
-      rustModulePath: codexOauthPlaceholderModule,
-      rustConstName: name,
-      value: rustString(codexOauthPlaceholder(name)),
-      rustDoc: placeholderRustDoc(name),
-    };
-  }),
-  ...modelProviderEnvPlaceholderNames.map((name) => {
+  ...Object.entries(MODEL_PROVIDER_ENV_PLACEHOLDERS).map(([name, value]) => {
     return {
       rustModulePath: modelProviderEnvPlaceholderModule,
       rustConstName: name,
-      value: rustString(modelProviderEnvPlaceholder(name)),
-      rustDoc: placeholderRustDoc(name),
-    };
-  }),
-  ...modelProviderEnvPlaceholderNames.map((name) => {
-    return {
-      rustModulePath: modelProviderNamespacedEnvPlaceholderModule,
-      rustConstName: name,
-      value: rustString(MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS[name]),
+      value: rustString(value),
       rustDoc: placeholderRustDoc(name),
     };
   }),

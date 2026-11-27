@@ -323,8 +323,8 @@ private fun KeepSpaceWhenHidden(visible: Boolean, content: @Composable () -> Uni
 @Composable
 private fun ArtifactAction(
     @StringRes label: Int,
+    @DrawableRes icon: Int,
     modifier: Modifier = Modifier,
-    @DrawableRes icon: Int? = null,
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
@@ -335,13 +335,13 @@ private fun ArtifactAction(
                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                 .workspaceSearchFocusOutline(ButtonDefaults.outlinedShape),
         enabled = enabled,
+        contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
     ) {
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(ButtonDefaults.IconSpacing),
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
-            if (icon != null)
-                Icon(painterResource(icon), null, Modifier.size(ButtonDefaults.IconSize))
+            Icon(painterResource(icon), null, Modifier.size(ButtonDefaults.IconSize))
             Text(stringResource(label))
         }
     }

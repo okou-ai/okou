@@ -22,7 +22,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
@@ -85,7 +87,10 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
         assertEquals(216.dp, frame.height)
         compose.onNodeWithText("View original", useUnmergedTree = true).assertIsDisplayed()
         compose.onNode(fallback).performClick()
-        awaitText(fixture.filename)
+        compose.waitUntilExactlyOneExists(
+            hasTestTag("artifact_image_transform") and hasContentDescription(fixture.readyAlt),
+            8_000,
+        )
         compose.waitUntil(8_000) { fixture.originals.isNotEmpty() }
     }
 
@@ -153,7 +158,10 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
         assertTrue(fixture.originals.isEmpty())
 
         compose.onNode(image).assertIsDisplayed().performClick()
-        awaitText(fixture.filename)
+        compose.waitUntilExactlyOneExists(
+            hasTestTag("artifact_image_transform") and hasContentDescription(fixture.readyAlt),
+            8_000,
+        )
         compose.waitUntil(8_000) { fixture.originals.isNotEmpty() }
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(8_000) {
@@ -166,6 +174,48 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
             listOf(fixture.readyReference, fixture.readyReference),
             fixture.references.toList(),
         )
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun browsesReplyImagesInReadingOrderAndReturnsToTheTappedOccurrence() {
+        val fixture = InlineImageFixture(app.fixture)
+        val ready = "/artifacts/${fixture.readyReference}"
+        val second = "/artifacts/${fixture.earlierReference}"
+        fixture.install(
+            latest =
+                """
+                ![First chart]($ready)
+
+                - ![List chart]($second)
+                - [![Linked chart]($ready)](https://example.com/rollout)
+
+                | Chart |
+                | --- |
+                | ![Table chart]($ready) |
+            """
+                    .trimIndent(),
+            earlier = false,
+        )
+        openConversation()
+        val first = hasContentDescription("First chart") and hasClickAction()
+        compose.waitUntilExactlyOneExists(first, 8_000)
+        compose.onNode(first).performClick()
+        val pager = compose.onNodeWithTag("image_viewer_pager")
+        fun page(n: Int, name: String) {
+            compose.waitUntilExactlyOneExists(hasContentDescription("Image $n of 3"), 8_000)
+            compose.waitUntilExactlyOneExists(
+                hasTestTag("artifact_image_transform") and hasContentDescription(name),
+                8_000,
+            )
+        }
+        page(1, "First chart")
+        pager.performTouchInput { swipeLeft() }
+        page(2, "List chart")
+        pager.performTouchInput { swipeLeft() }
+        page(3, "Table chart")
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntilExactlyOneExists(first and isFocused(), 8_000)
     }
 
     @Test
@@ -287,7 +337,7 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
 
         fixture.readyReferenceDenied = true
         compose.onNode(image).performClick()
-        awaitText("You don’t have access to this artifact")
+        awaitText("Image unavailable")
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         val unavailable =
             image and
@@ -403,11 +453,12 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
                 SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
         compose.waitUntil(8_000) { compose.onAllNodes(loaded).fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(loaded).performClick()
-        awaitText(filename)
+        val viewerImage = hasTestTag("artifact_image_transform") and hasContentDescription(filename)
+        compose.waitUntilExactlyOneExists(viewerImage, 8_000)
         compose.waitUntil(8_000) { fixture.thumbnails.size >= 2 }
 
         compose.activityRule.scenario.recreate()
-        awaitText(filename)
+        compose.waitUntilExactlyOneExists(viewerImage, 8_000)
         compose.onNodeWithTag("artifact_preview").assertIsDisplayed()
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(8_000) {

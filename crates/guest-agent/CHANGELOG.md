@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.113.16](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.15...guest-agent-v0.113.16) (2026-11-27)
+
+## [0.113.15](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.14...guest-agent-v0.113.15) (2026-11-27)
+
+
+### Refactoring
+
+* activate namespaced model-provider placeholders ([#51511](https://github.com/okou-ai/okou/issues/51511)) ([2d9c601](https://github.com/okou-ai/okou/commit/2d9c60194fba31e02e76be1be085822bb9932648))
+
 ## [0.113.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.13...guest-agent-v0.113.14) (2026-11-27)
 
 ## [0.113.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.12...guest-agent-v0.113.13) (2026-11-27)

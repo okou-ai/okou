@@ -3006,6 +3006,7 @@ jobs:
             --ios-floor "$PWD/apps/api/src/lib/ios-client-compatibility.json"
             --ios-base-floor "$schema_dir/ios-base-floor.json"
             --ios-availability "$schema_dir/ios-availability.json"
+            --ios-submission "$PWD/packages/api-contracts/ios-submission/build.json"
             --android-floor "$PWD/apps/api/src/lib/android-client-compatibility.json"
             --android-base-floor "$schema_dir/android-base-floor.json"
           )

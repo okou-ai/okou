@@ -1,6 +1,6 @@
 //! Codex OAuth setup validates the selected workspace before publishing private files.
 
-use api_contracts::generated::constants::codex_oauth_token::placeholders::CHATGPT_ACCOUNT_ID;
+use api_contracts::generated::constants::model_provider_env::placeholders::CHATGPT_ACCOUNT_ID;
 use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
 use guest_agent::env::{GuestConfig, GuestConfigRaw};
 use guest_agent::masker::SecretMasker;

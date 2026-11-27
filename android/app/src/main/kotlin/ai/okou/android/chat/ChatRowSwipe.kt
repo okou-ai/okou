@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -171,7 +172,7 @@ internal fun ChatRowSwipe(
                 }
             }
     Box(
-        Modifier.clip(ChatListRowShape)
+        Modifier.clip(ListItemDefaults.shapes().shape)
             .onGloballyPositioned { windowX = it.positionInWindow().x }
             .then(input),
     ) {

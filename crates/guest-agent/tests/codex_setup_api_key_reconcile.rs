@@ -1,6 +1,8 @@
 //! Codex setup should reconcile managed auth without invoking external Codex.
 //!
-use api_contracts::generated::constants::codex_oauth_token::placeholders::CHATGPT_REFRESH_TOKEN;
+use api_contracts::generated::constants::model_provider_env::placeholders::{
+    CHATGPT_ACCESS_TOKEN, CHATGPT_REFRESH_TOKEN,
+};
 use base64::Engine as _;
 use guest_agent::masker::SecretMasker;
 use serde_json::Value;
@@ -141,20 +143,16 @@ async fn chatgpt_setup_writes_auth_outside_child_home() -> TestResult {
     assert_eq!(auth["auth_mode"], "chatgpt");
     assert_eq!(auth["tokens"]["account_id"], "ws-selected-test");
     assert_eq!(auth["tokens"]["refresh_token"], CHATGPT_REFRESH_TOKEN);
-    for field in ["access_token", "id_token"] {
-        let jwt = auth["tokens"][field]
-            .as_str()
-            .expect("OAuth auth must contain placeholder JWTs");
-        let payload = jwt.split('.').nth(1).expect("JWT must have a payload");
-        let claims: Value = serde_json::from_slice(
-            &base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload)?,
-        )?;
-        assert_eq!(
-            claims["https://api.openai.com/auth"]["chatgpt_account_id"],
-            "ws-selected-test",
-        );
-        assert!(jwt.ends_with("PLACEHOLDER_SIG_DO_NOT_TRUST"));
-    }
+    let access_jwt = auth["tokens"]["access_token"].as_str().unwrap();
+    assert_eq!(access_jwt.split('.').nth(2), Some(CHATGPT_ACCESS_TOKEN));
+    let id_jwt = auth["tokens"]["id_token"].as_str().unwrap();
+    let payload = id_jwt.split('.').nth(1).expect("JWT must have a payload");
+    let claims: Value =
+        serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload)?)?;
+    assert_eq!(
+        claims["https://api.openai.com/auth"]["chatgpt_account_id"],
+        "ws-selected-test",
+    );
     assert!(auth["OPENAI_API_KEY"].is_null());
     assert!(!child_home.join(".codex").exists());
 

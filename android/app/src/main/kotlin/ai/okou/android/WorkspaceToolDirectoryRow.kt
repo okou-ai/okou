@@ -26,6 +26,16 @@ private val mediaShape = RoundedCornerShape(12.dp)
 private val trailingSize = 18.dp
 
 @Composable
+internal fun workspaceToolListItemShapes(): androidx.compose.material3.ListItemShapes {
+    val activeShape = MaterialTheme.shapes.extraLarge
+    return ListItemDefaults.shapes(
+        selectedShape = activeShape,
+        pressedShape = activeShape,
+        focusedShape = activeShape,
+    )
+}
+
+@Composable
 internal fun WorkspaceToolDirectoryRow(
     title: String,
     selected: Boolean,
@@ -35,13 +45,7 @@ internal fun WorkspaceToolDirectoryRow(
     leading: @Composable () -> Unit,
     supportingContent: @Composable (() -> Unit)? = null,
 ) {
-    val activeShape = MaterialTheme.shapes.extraLarge
-    val shapes =
-        ListItemDefaults.shapes(
-            selectedShape = activeShape,
-            pressedShape = activeShape,
-            focusedShape = activeShape,
-        )
+    val shapes = workspaceToolListItemShapes()
     val colors = ListItemDefaults.colors()
     val foreground = if (selected) colors.selectedContentColor else colors.contentColor
     ListItem(

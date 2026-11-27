@@ -158,10 +158,10 @@ describe("/api/feature-switches", () => {
     await expect(effective(lark)).resolves.toBeFalsy();
   });
 
-  it("feature-switches-013 returns registered switches while merging known overrides for App 0.1162.3", async () => {
+  it("feature-switches-013 returns registered switches while merging known overrides for App 0.1180.0", async () => {
     const app = {
       [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-      [CLIENT_VERSION_HEADER]: "0.1162.3",
+      [CLIENT_VERSION_HEADER]: "0.1180.0",
     };
     signIn(newUser(), newOrg());
     await update({ [realAgent]: true, [dummy]: false }, app);

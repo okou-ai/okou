@@ -1,5 +1,7 @@
 package ai.okou.android.preferences
 
+import ai.okou.android.PaneFeedbackError
+import ai.okou.android.PaneFeedbackMessage
 import ai.okou.android.R
 import ai.okou.android.SettingsChoicePanel
 import ai.okou.android.SettingsChoiceRow
@@ -33,15 +35,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
@@ -54,12 +53,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.app.LocaleManagerCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import java.util.Locale
-import kotlinx.coroutines.flow.collectLatest
 
 // The preference initialization endpoint uses this value when the device has no valid zone.
 private const val defaultTimezone = "America/Los_Angeles"
@@ -212,36 +207,32 @@ internal fun TimezoneSelectionSheet(
 }
 
 @Composable
-internal fun MemberPreferenceSaveFeedback(
+internal fun memberPreferenceSaveError(
     model: MemberPreferencesModel,
     snackbar: SnackbarHostState,
-) {
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val timezone by rememberUpdatedState(stringResource(R.string.settings_timezone_save_rejected))
-    val rolledBack by
-        rememberUpdatedState(stringResource(R.string.settings_preferences_save_rolled_back))
-    val appearance by rememberUpdatedState(stringResource(R.string.settings_appearance_sync_failed))
-    val unconfirmed by
-        rememberUpdatedState(stringResource(R.string.settings_proactive_save_unconfirmed))
-    LaunchedEffect(model, snackbar, lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            model.notices.collectLatest { notice ->
-                val message =
-                    when (notice) {
-                        null -> return@collectLatest
-                        is PreferenceSaveNotice.Unconfirmed -> unconfirmed
-                        is PreferenceSaveNotice.Rejected ->
-                            buildList {
-                                    if (notice.rolledBack)
-                                        add(if (notice.timezoneOnly) timezone else rolledBack)
-                                    if (notice.keptAppearance) add(appearance)
-                                }
-                                .joinToString(" ")
-                    }
-                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-                model.dismissNotice(notice)
+): PaneFeedbackError? {
+    val notice = model.notices.collectAsStateWithLifecycle().value.firstOrNull() ?: return null
+    return PaneFeedbackError(notice.order) {
+        val message =
+            when (notice) {
+                is PreferenceSaveNotice.Unconfirmed ->
+                    stringResource(R.string.settings_proactive_save_unconfirmed)
+                is PreferenceSaveNotice.Rejected ->
+                    buildList {
+                            if (notice.rolledBack)
+                                add(
+                                    stringResource(
+                                        if (notice.timezoneOnly)
+                                            R.string.settings_timezone_save_rejected
+                                        else R.string.settings_preferences_save_rolled_back,
+                                    ),
+                                )
+                            if (notice.keptAppearance)
+                                add(stringResource(R.string.settings_appearance_sync_failed))
+                        }
+                        .joinToString(" ")
             }
-        }
+        PaneFeedbackMessage(snackbar, notice.order, message) { model.dismissNotice(notice.order) }
     }
 }
 

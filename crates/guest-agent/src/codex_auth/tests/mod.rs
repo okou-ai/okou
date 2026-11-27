@@ -1,12 +1,6 @@
 //! Integration tests against the single auth reconciliation entry point.
-//! We deliberately avoid testing the
-//! private builders (`make_placeholder_jwt`, `build_access_token_claims`,
-//! etc.) directly: every property they care about (3-segment JWTs,
-//! HS256 header, ChatGPT-namespace claims, far-future `exp`,
-//! plan_type ≠ free, id_token shape, no real-token shapes) is asserted
-//! against the reconciled file. This keeps the internal
-//! shape of the builders refactorable without churning tests, per the
-//! project's "Integration Tests Only" rule.
+//! Read the resulting auth file to verify the synthetic JWTs and the
+//! selected workspace that Codex consumes.
 use super::*;
 
 use std::os::unix::fs::{PermissionsExt, symlink};
@@ -58,12 +52,8 @@ fn read_auth_json(tmp: &TempDir) -> Value {
 }
 
 /// Asserts the three independent ChatGPT-mode signals, the placeholder
-/// account_id, both JWT shapes (3 segments + HS256 header), the
-/// ChatGPT-namespace claims (account id, plan type ≠ free, user id,
-/// fedramp flag), the far-future `exp`, the non-empty placeholder
-/// refresh token, and the RFC3339 `last_refresh` — i.e. everything
-/// the private builders previously asserted in isolation, asserted
-/// here against the fabricated file.
+/// account ID, both JWT shapes with far-future expiry, the ID token
+/// claims used by Codex, and the synthetic refresh token.
 #[test]
 fn reconcile_chatgpt_auth_writes_well_formed_chatgpt_auth_json() {
     let tmp = TempDir::new().unwrap();
@@ -100,8 +90,7 @@ fn reconcile_chatgpt_auth_writes_well_formed_chatgpt_auth_json() {
     let last_refresh = auth["last_refresh"].as_str().unwrap();
     DateTime::parse_from_rfc3339(last_refresh).expect("last_refresh must be RFC3339");
 
-    // Both JWTs: 3 non-empty segments, HS256 header, far-future exp,
-    // ChatGPT-namespace claims with non-free plan type.
+    // Both JWTs have three non-empty segments and a far-future expiry.
     let fifty_years_secs = 50 * 365 * 24 * 3600;
     for token_field in ["access_token", "id_token"] {
         let jwt = auth["tokens"][token_field]
@@ -124,19 +113,6 @@ fn reconcile_chatgpt_auth_writes_well_formed_chatgpt_auth_json() {
         assert_eq!(header["typ"], "JWT");
 
         let claims = decode_segment(segments[1]);
-        let auth_ns = &claims["https://api.openai.com/auth"];
-        assert_eq!(
-            auth_ns["chatgpt_account_id"], PLACEHOLDER_CHATGPT_ACCOUNT_ID,
-            "{token_field} must carry placeholder account id"
-        );
-        let plan_type = auth_ns["chatgpt_plan_type"]
-            .as_str()
-            .unwrap_or_else(|| panic!("{token_field} must declare chatgpt_plan_type"));
-        assert_ne!(
-            plan_type, "free",
-            "{token_field} plan type must not be 'free' (codex rejects)"
-        );
-        assert_eq!(claims["iat"].as_i64().unwrap(), now.timestamp());
         let exp = claims["exp"].as_i64().expect("exp must be i64");
         assert!(
             exp > now.timestamp() + fifty_years_secs,
@@ -144,12 +120,12 @@ fn reconcile_chatgpt_auth_writes_well_formed_chatgpt_auth_json() {
         );
     }
 
-    // id_token-only fields parsed by codex's IdTokenInfo struct
-    // (chatgpt_user_id, chatgpt_account_is_fedramp). Decode again
-    // for clarity rather than threading through the loop above.
     let id_jwt = auth["tokens"]["id_token"].as_str().unwrap();
     let id_claims = decode_segment(id_jwt.split('.').nth(1).unwrap());
     let id_ns = &id_claims["https://api.openai.com/auth"];
+    assert_eq!(id_claims["iat"], now.timestamp());
+    assert_eq!(id_ns["chatgpt_account_id"], PLACEHOLDER_CHATGPT_ACCOUNT_ID);
+    assert_eq!(id_ns["chatgpt_plan_type"], "plus");
     assert!(
         id_ns["chatgpt_user_id"].is_string(),
         "id_token must include chatgpt_user_id"
@@ -175,14 +151,15 @@ fn reconcile_chatgpt_auth_writes_no_real_token_shapes() {
 }
 
 #[test]
-fn reconcile_chatgpt_auth_uses_selected_workspace_id_without_real_tokens() {
+fn reconcile_chatgpt_auth_keeps_the_bearer_stable_across_workspaces_and_runs() {
     let tmp = TempDir::new().unwrap();
+    let (previous_auth, _) = run_setup_and_parse(&tmp, fixed_now());
     let account_id = "ws_selected_workspace";
     let codex_home = tmp.path().join(".codex");
     reconcile_codex_auth_state(
         &codex_home,
         DesiredCodexAuth::ChatGpt {
-            now: fixed_now(),
+            now: fixed_now() + chrono::Duration::hours(1),
             account_id,
         },
     )
@@ -194,15 +171,31 @@ fn reconcile_chatgpt_auth_uses_selected_workspace_id_without_real_tokens() {
         auth["tokens"]["refresh_token"],
         PLACEHOLDER_CHATGPT_REFRESH_TOKEN,
     );
-    for token_field in ["access_token", "id_token"] {
-        let jwt = auth["tokens"][token_field].as_str().unwrap();
-        let claims = decode_segment(jwt.split('.').nth(1).unwrap());
-        assert_eq!(
-            claims["https://api.openai.com/auth"]["chatgpt_account_id"],
-            account_id,
-        );
-        assert!(jwt.ends_with("PLACEHOLDER_SIG_DO_NOT_TRUST"));
-    }
+    let access_token = auth["tokens"]["access_token"].as_str().unwrap();
+    assert_eq!(
+        Some(access_token),
+        previous_auth["tokens"]["access_token"].as_str()
+    );
+    assert_eq!(
+        access_token.split('.').nth(2),
+        Some(PLACEHOLDER_CHATGPT_ACCESS_TOKEN),
+    );
+    let claims = decode_segment(access_token.split('.').nth(1).unwrap());
+    assert_eq!(
+        claims,
+        json!({ "exp": ACCESS_PLACEHOLDER_EXPIRY_TIMESTAMP })
+    );
+
+    let id_token = auth["tokens"]["id_token"].as_str().unwrap();
+    let claims = decode_segment(id_token.split('.').nth(1).unwrap());
+    assert_eq!(
+        claims["https://api.openai.com/auth"]["chatgpt_account_id"],
+        account_id,
+    );
+    assert_eq!(
+        id_token.split('.').nth(2),
+        Some("OkouModelProviderCodexOauthIdToken")
+    );
 }
 
 #[test]

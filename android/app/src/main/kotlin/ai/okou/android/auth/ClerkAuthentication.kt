@@ -2,6 +2,7 @@ package ai.okou.android.auth
 
 import ai.okou.android.BuildConfig
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.retryAfter
 import android.content.Context
 import com.clerk.api.Clerk
 import com.clerk.api.ClerkConfigurationOptions
@@ -11,6 +12,7 @@ import com.clerk.api.session.Session
 import com.clerk.api.session.SessionTaskKey
 import com.clerk.api.session.pendingTaskKey
 import com.clerk.api.user.getOrganizationMemberships
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import okhttp3.Response
 
 /** Application-lifetime SDK adapter. Its encrypted storage is the only credential owner. */
 class ClerkAuthentication(private val context: Context) : Authentication {
@@ -191,17 +194,23 @@ class ClerkAuthentication(private val context: Context) : Authentication {
     }
 }
 
-private fun <T : Any, E : Any> ClerkResult<T, E>.required(): T =
+internal fun <T : Any, E : Any> ClerkResult<T, E>.required(): T =
     when (this) {
         is ClerkResult.Success -> value
         is ClerkResult.Failure -> {
-            if (code == 401 || code == 403) throw ApiFailure.Unauthenticated()
-            val cause = throwable
-            if (cause is java.io.IOException) throw ApiFailure.Network(cause)
             val status = code
-            if (status == 408 || status == 429 || (status != null && status in 500..599)) {
-                throw ApiFailure.Http(checkNotNull(status), null, null, null)
+            if (status == 401 || status == 403) throw ApiFailure.Unauthenticated()
+            if (status != null && (status == 408 || status == 429 || status in 500..599)) {
+                val response = tags[Response::class] as? Response
+                throw ApiFailure.Http(
+                    status,
+                    null,
+                    null,
+                    retryAfter(response?.header("Retry-After")),
+                )
             }
+            val cause = throwable
+            if (cause is IOException) throw ApiFailure.Network(cause)
             // Provider diagnostics may contain identifiers; the UI uses localized generic recovery.
             throw IllegalStateException("Authentication request failed")
         }

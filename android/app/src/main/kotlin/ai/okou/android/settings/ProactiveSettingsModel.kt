@@ -1,5 +1,6 @@
 package ai.okou.android.settings
 
+import ai.okou.android.FeedbackReceipt
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.boundedApiRetryDelayMillis
 import ai.okou.android.api.boundedRetryDelayMillis
@@ -10,9 +11,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -44,8 +43,9 @@ internal class ProactiveSettingsModel(
     authorized: () -> Boolean,
     onSessionFailure: (Exception) -> Unit,
 ) {
-    private val mutableSaveFailures = MutableSharedFlow<ProactiveSetting>(extraBufferCapacity = 4)
-    val saveFailures = mutableSaveFailures.asSharedFlow()
+    private val mutableSaveFailures =
+        MutableStateFlow<List<FeedbackReceipt<ProactiveSetting>>>(emptyList())
+    val saveFailures = mutableSaveFailures.asStateFlow()
 
     private val settings =
         ProactiveSetting.entries.associateWith { setting ->
@@ -58,13 +58,20 @@ internal class ProactiveSettingsModel(
                 authorized,
                 onSessionFailure,
             ) {
-                mutableSaveFailures.tryEmit(setting)
+                mutableSaveFailures.value += FeedbackReceipt(setting)
             }
         }
     val morningBrief = settings.getValue(ProactiveSetting.MorningBrief)
     val suggestions = settings.getValue(ProactiveSetting.Suggestions)
 
-    fun visible(visible: Boolean) = settings.values.forEach { it.visible(visible) }
+    fun visible(visible: Boolean) {
+        settings.values.forEach { it.visible(visible) }
+        if (!visible) mutableSaveFailures.value = emptyList()
+    }
+
+    fun dismissSaveFailure(receipt: FeedbackReceipt<ProactiveSetting>) {
+        mutableSaveFailures.value -= receipt
+    }
 
     fun refresh() = settings.values.forEach { it.refresh() }
 }

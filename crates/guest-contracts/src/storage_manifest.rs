@@ -37,12 +37,41 @@
 //! normal runner producer supplies an identifier for writeback mounts, but that producer behavior
 //! is not an input requirement of this decoder.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, path::Path};
 
+use api_contracts::generated::constants::runners::paths::{
+    CANONICAL_CLAUDE_MEMORY_MOUNT_PATH, CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+    CANONICAL_PI_MEMORY_MOUNT_PATH,
+};
 use serde::{Deserialize, Serialize};
+
+use crate::env::CliFramework;
 
 /// Guest Storage helper exited after it could not use a local destination.
 pub const TARGET_UNAVAILABLE_EXIT_CODE: i32 = 3;
+
+/// Storage namespace for the single member Memory artifact.
+pub const MEMORY_STORAGE_NAME: &str = "memory";
+/// Storage namespace for named Workflow and Skill packages.
+pub const WORKFLOW_STORAGE_NAME: &str = "workflow";
+
+/// Canonical destination of the member Memory for the selected framework.
+pub const fn member_memory_mount(framework: CliFramework) -> &'static str {
+    match framework {
+        CliFramework::ClaudeCode | CliFramework::Antigravity => CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+        CliFramework::Codex => CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+        CliFramework::Pi => CANONICAL_PI_MEMORY_MOUNT_PATH,
+    }
+}
+
+/// Whether the legacy Workflow document normalizer must inspect this mount.
+pub fn needs_workflow_document(storage_name: &str, mount: &str) -> bool {
+    storage_name == WORKFLOW_STORAGE_NAME
+        && Path::new(mount)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_none_or(|name| name.contains("--wf-") || name.ends_with("--instruction"))
+}
 
 mod readiness;
 mod template_guidance;

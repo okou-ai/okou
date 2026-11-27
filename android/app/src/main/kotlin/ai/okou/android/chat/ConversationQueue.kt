@@ -1,9 +1,11 @@
 package ai.okou.android.chat
 
+import ai.okou.android.CompactPanelTopAppBar
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.settingsPanelContentPadding
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -144,7 +146,13 @@ internal fun conversationContent(
                 queueSequence = preview.sequence,
             )
         val entry = ConversationMessage(message, preview = preview)
-        if (message.queued) queue += entry else local += entry
+        if (message.queued) {
+            queue += entry
+            // Input status can update the queue before history can replace the accepted bubble.
+            if (preview.keepAcknowledgedBubble) {
+                local += entry.copy(message = message.copy(queued = false, queueSequence = null))
+            }
+        } else local += entry
     }
     val turns = conversationTurns(messages, liveRuns)
     return ConversationContent(
@@ -200,7 +208,7 @@ internal fun ConversationQueueModal(
     onDismiss: () -> Unit,
 ) {
     val window = currentWindowSizeDp()
-    val fullScreen = window.height < 480
+    val fullScreen = isShortSettingsPanelWindow()
     val density = LocalDensity.current
     val titleFocus = remember { FocusRequester() }
     // Restoration can show an empty queue before history loads. Hold the first populated height.
@@ -219,26 +227,28 @@ internal fun ConversationQueueModal(
                 Modifier.fillMaxWidth()
                     .padding(settingsPanelContentPadding(compactHeight = fullScreen)),
             ) {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onDismiss, Modifier.size(48.dp)) {
-                        Icon(
-                            painterResource(R.drawable.ic_arrow_back),
-                            stringResource(R.string.back),
+                val title = stringResource(R.string.conversation_queue_count, entries.size)
+                if (fullScreen) {
+                    CompactPanelTopAppBar(title, back = onDismiss, titleFocus = titleFocus)
+                } else
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(onDismiss, Modifier.size(48.dp)) {
+                            Icon(
+                                painterResource(R.drawable.ic_arrow_back),
+                                stringResource(R.string.back),
+                            )
+                        }
+                        Text(
+                            title,
+                            Modifier.weight(1f).focusRequester(titleFocus).focusable().semantics {
+                                heading()
+                            },
+                            style = MaterialTheme.typography.titleLarge,
                         )
                     }
-                    Text(
-                        stringResource(R.string.conversation_queue_count, entries.size),
-                        Modifier.weight(1f).focusRequester(titleFocus).focusable().semantics {
-                            heading()
-                        },
-                        style =
-                            if (fullScreen) MaterialTheme.typography.titleMedium
-                            else MaterialTheme.typography.titleLarge,
-                    )
-                }
                 if (entries.isEmpty()) {
                     Text(
                         stringResource(R.string.conversation_queue_empty),

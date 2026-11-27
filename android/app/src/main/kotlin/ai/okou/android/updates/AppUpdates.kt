@@ -265,32 +265,24 @@ class AppUpdates(
     }
 
     fun check(manual: Boolean = true) {
-        startCheck(manual) { snapshot ->
-            snapshot.needsRequiredRelease ||
-                checkedAt <= 0 ||
-                now() - checkedAt !in 0 until 10.minutes.inWholeMilliseconds
-        }
-    }
-
-    internal fun checkOnDetailsOpen() {
-        startCheck(manual = false) { snapshot ->
-            (snapshot.check == UpdateCheck.Checked || snapshot.check == UpdateCheck.Failed) &&
-                snapshot.displayedRelease?.let(snapshot::isEligible) != true
-        }
-    }
-
-    private fun startCheck(manual: Boolean, shouldCheck: (UpdateUiState) -> Boolean) {
-        if (checkJob?.isActive == true) {
-            if (manual) checkRetry.advance()
-            return
+        val pendingCheck = checkJob
+        if (pendingCheck?.isActive == true) {
+            if (!manual) return
+            if (initialized.isCompleted) {
+                checkRetry.advance()
+                return
+            }
+            // No request has started yet. Preserve the manual action through initialization.
+            pendingCheck.cancel()
         }
         checkJob = scope.launch {
             initialized.await()
-            if (
-                !manual &&
-                    (automaticCheckAfter?.hasNotPassedNow() == true || !shouldCheck(mutable.value))
-            )
-                return@launch
+            if (!manual) {
+                if (automaticCheckAfter?.hasNotPassedNow() == true) return@launch
+                val recentlyChecked =
+                    checkedAt > 0 && now() - checkedAt in 0 until 10.minutes.inWholeMilliseconds
+                if (recentlyChecked && !mutable.value.needsRequiredRelease) return@launch
+            }
             val info = readRelease() ?: return@launch
             val floor = higherMinimum(mutable.value.minimum, info.minimumSupportedVersion)
             val blocked =

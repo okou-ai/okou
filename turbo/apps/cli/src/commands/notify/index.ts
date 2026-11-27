@@ -145,9 +145,9 @@ Requires an active Okou run with notify:write.
 Uses Okou's sender and your account email; no Gmail or Outlook connector is needed.
 notification is the default and requires --idempotency-key. The key is scoped to your user and
 workspace and survives run/outbox deletion. Use a new key only for an intentional new notification.
-morning-brief requires a run from the official Morning Brief automation and uses its original
-artwork and Manage link. Okou keys it by the automation event, so each event sends at most one email.
-Reuse the exact content after a timeout. Different content for the same key or event returns a conflict.
+morning-brief is available to scheduled Morning Brief runs and includes the Morning Brief artwork
+and Manage link. Okou sends at most one email for each scheduled occurrence.
+Reuse the exact content after a timeout. Different content for the same key or scheduled occurrence returns a conflict.
 queued means awaiting delivery; sent means provider accepted, not inbox delivered.
 skipped means opt-out, suppression, or no account email stopped delivery.
 Provider requests already in flight cannot be recalled. --text/--file take precedence over stdin.`,

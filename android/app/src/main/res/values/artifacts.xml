@@ -103,4 +103,8 @@
     <string name="artifact_link_who_can_view">Who can view</string>
     <string name="artifact_workspace_link_hint">Members of %1$s can open this link.</string>
     <string name="artifact_public_link_hint">Anyone with this link can open it.</string>
+    <string name="artifact_image_page_number" translatable="false">%1$d / %2$d</string>
+    <string name="artifact_image_page_description">Image %1$d of %2$d</string>
+    <string name="artifact_image_previous_page">Previous image</string>
+    <string name="artifact_image_next_page">Next image</string>
 </resources>

@@ -1380,15 +1380,17 @@ internal class ChatComposerOwner(
                     report(op.connection, error)
                     return
                 }
+                val latest = checkNotNull(mutable.value.journal?.entries?.get(op.key)?.pending)
+                if (latest.awaitingConnectorSetup) {
+                    fail(op, error)
+                    return
+                }
                 if (
                     error is ApiFailure.Http &&
                         error.status < 500 &&
                         error.status !in setOf(408, 425, 429)
                 ) {
-                    val latest = checkNotNull(mutable.value.journal?.entries?.get(op.key)?.pending)
-                    if (latest.awaitingConnectorSetup) {
-                        fail(op, error)
-                    } else if (latest.stage == TextStage.Creating) {
+                    if (latest.stage == TextStage.Creating) {
                         val entry = checkNotNull(mutable.value.journal?.entries?.get(op.key))
                         val journal = checkNotNull(mutable.value.journal)
                         val choices = latest.connectorOverrides
@@ -1493,7 +1495,7 @@ internal class ChatComposerOwner(
         requireCurrent(op)
         if (memberAccess) return
         for (choice in pending.connectorOverrides) {
-            connectors.setChatOverride(pending.threadId, choice, canReadBack = { current(op) })
+            connectors.setChatOverride(pending.threadId, choice)
             requireCurrent(op)
         }
     }

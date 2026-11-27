@@ -130,6 +130,4 @@
     <string name="connector_access_allow_hour">1時間許可</string>
     <string name="connector_access_allow_day">24時間許可</string>
     <string name="connector_access_allow_week">7日間許可</string>
-    <string name="chat_connector_check_result">結果を確認</string>
-    <string name="chat_connector_check_before_send">送信する前に、チャットオプションでコネクタの選択を確認してください。</string>
 </resources>

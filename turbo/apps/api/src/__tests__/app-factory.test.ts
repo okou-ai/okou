@@ -187,9 +187,9 @@ describe("createApp", () => {
       expect(response.body).toStrictEqual({ error: "Client update required" });
     });
 
-    it("app-factory-039 allows the canonical web client floor 0.1162.3", async () => {
+    it("app-factory-039 allows the canonical web client floor 0.1180.0", async () => {
       await expect(
-        checkHealth({ "x-client-type": "App", "x-client-version": "0.1162.3" }),
+        checkHealth({ "x-client-type": "App", "x-client-version": "0.1180.0" }),
       ).resolves.toMatchObject({ status: 200 });
     });
 

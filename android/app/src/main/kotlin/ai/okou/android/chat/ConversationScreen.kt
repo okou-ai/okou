@@ -1,9 +1,9 @@
 package ai.okou.android.chat
 
 import ai.okou.android.ContentReadProgress
+import ai.okou.android.ControlFailureSnackbar
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
-import ai.okou.android.WorkspaceFeedbackTimeout
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.rememberContentReadSkeleton
@@ -33,9 +33,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -78,6 +76,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -107,13 +106,6 @@ private data class ConversationActivityRow(
     override val key = TimelineActivity
 }
 
-private class ControlFailureSnackbar(override val message: String, val kind: RunControlKind) :
-    SnackbarVisuals {
-    override val actionLabel: String? = null
-    override val withDismissAction = false
-    override val duration = SnackbarDuration.Indefinite
-}
-
 @Composable
 internal fun ConversationRoute(
     model: ConversationHistoryModel,
@@ -125,7 +117,9 @@ internal fun ConversationRoute(
     historyAvailable: Boolean = true,
     controls: ConversationRunControls? = null,
     stopPlacement: ConversationStopPlacement? = null,
-    paneFeedbackVisible: Boolean = false,
+    feedback: SnackbarHostState? = null,
+    feedbackBottomPadding: Dp = 8.dp,
+    restorePaneFocus: (() -> Unit)? = null,
     queueOpen: Boolean = false,
     queuePosition: LazyListState? = null,
     dismissQueue: () -> Unit = {},
@@ -349,49 +343,6 @@ internal fun ConversationRoute(
             if (execution == HistoryExecution.Running) setOf(TimelineActivity) else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
-        val controlSnackbar = remember { SnackbarHostState() }
-        // The notice can move with the queue panel. Its lifetime belongs to the conversation.
-        WorkspaceFeedbackTimeout(controlSnackbar)
-        val controlFeedback =
-            controlSnackbar.currentSnackbarData?.visuals as? ControlFailureSnackbar
-        val showQueueFeedback =
-            queueOpen && !missing && controlFeedback?.kind == RunControlKind.Revoke
-        val feedbackInConversation = controlFeedback != null && !showQueueFeedback
-        val stopFeedbackBounds =
-            if (stopPlacement != null && feedbackInConversation) {
-                DisposableEffect(stopPlacement) {
-                    onDispose { stopPlacement.reportFeedbackBounds(null) }
-                }
-                Modifier.onGloballyPositioned {
-                    stopPlacement.reportFeedbackBounds(it.boundsInRoot())
-                }
-            } else Modifier
-        val failure = controls?.state?.actionFailures?.firstOrNull { it.threadId == threadId }
-        if (visible && failure != null) {
-            val messageId =
-                when (failure.kind) {
-                    RunControlKind.Interrupt ->
-                        R.string.controls_stop_failed.takeIf {
-                            failure.targetId == controls.currentRunId
-                        }
-                    RunControlKind.Revoke ->
-                        queue
-                            .firstOrNull { it.message.id == failure.targetId }
-                            ?.let {
-                                if (it.message.queuedWorkflow == null)
-                                    R.string.conversation_withdraw_failed
-                                else R.string.conversation_skip_failed
-                            }
-                }
-            val message = messageId?.let { stringResource(it) }
-            LaunchedEffect(failure) {
-                if (controls.model.consumeActionFailure(failure) && message != null) {
-                    scope.launch {
-                        controlSnackbar.showSnackbar(ControlFailureSnackbar(message, failure.kind))
-                    }
-                }
-            }
-        }
         var initialReadingPosition by
             remember(linkPosition) {
                 mutableStateOf<ReadingPosition?>(null)
@@ -666,19 +617,28 @@ internal fun ConversationRoute(
         }
         val sourceFocus = artifactActions?.restoreKey ?: linkFocusKey
         val imageReply = imageFocusReply(sourceFocus)
-        if (imageReply != null && readingReady) {
-            LaunchedEffect(sourceFocus, timeline) {
-                if (
-                    timeline.none { it is ConversationMessage && it.includes(imageReply) } &&
-                        timelineFocus.requestFocus()
-                ) {
+        val attachmentMessage = attachmentFocusMessage(sourceFocus)
+        val returnMessage = imageReply ?: attachmentMessage
+        if (returnMessage != null && readingReady) {
+            LaunchedEffect(sourceFocus, visibleTimeline) {
+                val index = visibleTimeline.indexOfFirst {
+                    it is ConversationMessage && it.includes(returnMessage)
+                }
+                if (index < 0 && timelineFocus.requestFocus()) {
                     if (artifactActions?.restoreKey != null) artifactActions.restored()
                     else onLinkFocusRestored()
+                } else if (
+                    index >= 0 &&
+                        position.layoutInfo.visibleItemsInfo.none {
+                            it.key == visibleTimeline[index].key
+                        }
+                ) {
+                    position.scrollToItem(index + 1)
                 }
             }
         }
         val visibleArtifacts =
-            if (imageReply != null && !readingReady) artifactActions?.copy(restoreKey = null)
+            if (returnMessage != null && !readingReady) artifactActions?.copy(restoreKey = null)
             else artifactActions
         if (codeReading != null && returningCode != null && readingReady) {
             LaunchedEffect(returningCode, timeline) {
@@ -706,11 +666,18 @@ internal fun ConversationRoute(
                 },
                 returning = returningCode.takeIf { readingReady },
                 restored = reading::restored,
-                feedback = reading.previewFeedback,
+                feedback = { reading.reportFeedback(threadId, it) },
             )
         }
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
         val avatarViewport = remember { LayoutBoundsHolder() }
+        val currentFeedback = feedback?.currentSnackbarData
+        val queueFeedback = feedback?.takeIf {
+            queueOpen &&
+                !missing &&
+                (currentFeedback?.visuals as? ControlFailureSnackbar)?.kind == RunControlKind.Revoke
+        }
+        val paneFeedbackVisible = currentFeedback != null && queueFeedback == null
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(
@@ -857,6 +824,7 @@ internal fun ConversationRoute(
                             ),
                     )
                 }
+                // The jump and feedback float over the transcript to preserve its reading viewport.
                 Column(
                     contentWidth.align(Alignment.BottomCenter).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -875,9 +843,7 @@ internal fun ConversationRoute(
                         Box(
                             Modifier.fillMaxWidth()
                                 .padding(
-                                    bottom =
-                                        if (feedbackInConversation || paneFeedbackVisible) 8.dp
-                                        else 4.dp,
+                                    bottom = if (paneFeedbackVisible) 8.dp else 4.dp,
                                     end = if (compactJump) 12.dp else 0.dp,
                                 ),
                             contentAlignment =
@@ -907,14 +873,23 @@ internal fun ConversationRoute(
                             )
                         }
                     }
-                    if (!showQueueFeedback) {
-                        val composerTopInset =
-                            if (composer != null && !missing) ChatComposerTopInset else 0.dp
+                    if (feedback != null && queueFeedback == null) {
+                        val reportBounds =
+                            if (paneFeedbackVisible && stopPlacement != null) {
+                                DisposableEffect(stopPlacement) {
+                                    onDispose { stopPlacement.reportFeedbackBounds(null) }
+                                }
+                                Modifier.onGloballyPositioned {
+                                    stopPlacement.reportFeedbackBounds(it.boundsInRoot())
+                                }
+                            } else Modifier
                         WorkspaceFeedbackHost(
-                            controlSnackbar,
-                            Modifier.padding(bottom = 8.dp - composerTopInset),
+                            feedback,
+                            Modifier.padding(bottom = feedbackBottomPadding)
+                                .testTag("conversation_feedback"),
                             manageTimeout = false,
-                            surfaceModifier = stopFeedbackBounds,
+                            surfaceModifier = reportBounds,
+                            restorePaneFocus = restorePaneFocus,
                         )
                     }
                 }
@@ -929,10 +904,16 @@ internal fun ConversationRoute(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (showTimeline && showHistoryProgress) {
-                    if (visible && !historyProgressShown) SideEffect { historyProgressShown = true }
-                    Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
-                        ContentReadProgress(R.string.history_syncing)
+                if (showTimeline) {
+                    if (showHistoryProgress && visible && !historyProgressShown) {
+                        SideEffect { historyProgressShown = true }
+                    }
+                    key(model, threadId) {
+                        ContentReadProgress(
+                            R.string.history_syncing,
+                            visible = showHistoryProgress,
+                            modifier = Modifier.fillMaxWidth().testTag("history_sync_progress"),
+                        )
                     }
                 }
             }
@@ -941,7 +922,7 @@ internal fun ConversationRoute(
             ConversationQueueModal(
                 queue,
                 controls,
-                controlSnackbar.takeIf { showQueueFeedback },
+                queueFeedback,
                 queuePosition ?: rememberLazyListState(),
                 dismissQueue,
             )

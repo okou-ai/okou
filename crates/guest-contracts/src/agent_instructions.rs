@@ -3,10 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// Bound the small instruction-application control input independently of file bytes.
+/// Bound instruction control input independently of file bytes.
 pub const MAX_METADATA_BYTES: usize = 4 * 1024;
-/// Bound a path-aware reuse check by the existing Guest exec stdin envelope.
-pub const MAX_CHECK_METADATA_BYTES: usize = 64 * 1024;
 /// Canonical instruction package member, independent of the target framework.
 pub const SOURCE_FILENAME: &str = "instructions.md";
 
@@ -20,14 +18,6 @@ pub enum InstructionOperation {
 }
 
 impl InstructionOperation {
-    /// Maximum opaque metadata bytes for this action.
-    pub const fn metadata_limit(self) -> usize {
-        match self {
-            Self::Check => MAX_CHECK_METADATA_BYTES,
-            Self::Apply => MAX_METADATA_BYTES,
-        }
-    }
-
     /// Fixed argument selected by the Guest, never caller command text.
     pub const fn helper_argument(self) -> &'static str {
         match self {
@@ -69,13 +59,22 @@ pub struct InstructionApplication {
     pub framework: String,
 }
 
-/// Inspect the managed file and mutable mounts whose existing roots survive cleanup.
+/// Inspect the managed file and any startup roots needed for reuse.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstructionCheck {
     /// Framework discriminator.
     pub framework: String,
-    /// Downloads below cached mounts can retain symlinks to the managed target.
+    /// Observe the selected framework's canonical Memory root when Instructions can be reused.
     #[serde(default)]
-    pub preserved_download_mounts: Vec<String>,
+    pub check_memory_root: bool,
+}
+
+/// Reuse observations from the bounded Guest Instructions helper.
+#[derive(Serialize, Deserialize)]
+pub struct InstructionCheckResult {
+    /// The local Instructions file can be preserved.
+    pub instructions_current: bool,
+    /// A requested Memory directory was present during this check.
+    pub memory_root_present: bool,
 }

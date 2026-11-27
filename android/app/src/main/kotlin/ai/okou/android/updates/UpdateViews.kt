@@ -40,8 +40,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -73,7 +71,6 @@ import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.input.InputMode
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -241,7 +238,6 @@ internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
 @Composable
 internal fun UpdateHost(
     state: UpdateUiState,
-    checkOnOpen: () -> Unit,
     check: () -> Unit,
     download: (AndroidUpdatesRelease) -> Unit,
     install: (AndroidUpdatesRelease) -> Unit,
@@ -266,10 +262,7 @@ internal fun UpdateHost(
         ) {
             // Retain navigation metadata while the required screen owns the task.
             savedUi.SaveableStateProvider("workspace") {
-                content {
-                    details = true
-                    checkOnOpen()
-                }
+                content { details = true }
             }
         }
     }
@@ -301,7 +294,7 @@ internal fun AppUpdateSettings(
             UpdateCheck.Checking -> R.string.updates_check_in_progress
             UpdateCheck.Waiting,
             UpdateCheck.Failed -> R.string.updates_status_check_failed
-            UpdateCheck.Unknown,
+            UpdateCheck.Unknown -> R.string.updates_needed.takeIf { state.available }
             UpdateCheck.Checked ->
                 if (state.available) R.string.updates_needed else R.string.updates_not_needed
         }
@@ -325,7 +318,7 @@ internal fun AppUpdateSettings(
                         RoundedCornerShape(12.dp),
                         MaterialTheme.colorScheme.onSurface,
                     ),
-            value = stringResource(status),
+            value = status?.let { stringResource(it) },
             valueMaxLines = 1,
             reserveValueSpace = true,
             valueBelowTitle = maxWidth <= with(LocalDensity.current) { 16.sp.toDp() * 17 },
@@ -414,10 +407,6 @@ private fun UpdateSheet(
             val scrollHeading =
                 maxHeight <
                     actions.height + headingGap + contentSpacing + titleHeight + bodyLineHeight
-            val requiresNewerAndroid = state.requiresNewerAndroid
-            val problemMessage = state.updateProblemMessage(requiresNewerAndroid)
-            val revealCheckResult =
-                short && !scrollHeading && !requiresNewerAndroid && problemMessage == null
             val heading: @Composable () -> Unit = {
                 Text(
                     title,
@@ -443,7 +432,6 @@ private fun UpdateSheet(
                     ) {
                         if (release != null) {
                             FlowRow(
-                                modifier = Modifier.revealUpdateResult(release, revealCheckResult),
                                 horizontalArrangement =
                                     Arrangement.spacedBy(if (compact) 12.dp else 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -451,17 +439,15 @@ private fun UpdateSheet(
                                 UpdateMetadata(release, compact = compact)
                             }
                         } else if (state.check == UpdateCheck.Checked) {
-                            val current = stringResource(R.string.updates_current)
-                            UpdateCopy(
-                                current,
-                                modifier = Modifier.revealUpdateResult(current, revealCheckResult),
-                            )
+                            UpdateStatusText(R.string.updates_current)
                         }
-                        UpdateProblemText(
-                            R.string.updates_android_unsupported.takeIf { requiresNewerAndroid },
-                            problemMessage,
-                            revealResult = short || scrollHeading,
-                        )
+                        val requiresNewerAndroid = state.requiresNewerAndroid
+                        if (requiresNewerAndroid) {
+                            UpdateStatusText(R.string.updates_android_unsupported)
+                        }
+                        state.updateProblemMessage(requiresNewerAndroid)?.let {
+                            UpdateStatusText(it)
+                        }
                     }
                 }
                 Spacer(Modifier.height(contentSpacing))
@@ -603,13 +589,13 @@ private fun RequiredUpdateContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 val requiresNewerAndroid = state.requiresNewerAndroid
-                UpdateProblemText(
-                    R.string.updates_newer_android_required.takeIf { requiresNewerAndroid },
-                    state.updateProblemMessage(requiresNewerAndroid),
-                    Modifier.padding(bottom = 8.dp),
-                    revealResult = true,
-                    textAlign = TextAlign.Center,
-                )
+                if (requiresNewerAndroid) {
+                    UpdateStatusText(
+                        R.string.updates_newer_android_required,
+                        Modifier.padding(bottom = 8.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
                 Text(
                     stringResource(
                         if (requiresNewerAndroid) R.string.updates_required_incompatible_description
@@ -630,6 +616,10 @@ private fun RequiredUpdateContent(
                         muted = true,
                     )
                     state.offeredRelease?.let { UpdateMetadata(it) }
+                }
+                // New feedback follows the existing content so it cannot shift what is being read.
+                state.updateProblemMessage(requiresNewerAndroid)?.let {
+                    UpdateStatusText(it, Modifier.padding(top = 8.dp), textAlign = TextAlign.Center)
                 }
             }
         }
@@ -676,44 +666,28 @@ private fun UpdateUiState.updateProblemMessage(requiresNewerAndroid: Boolean): I
 }
 
 @Composable
-private fun UpdateProblemText(
-    @StringRes incompatibility: Int?,
-    @StringRes message: Int?,
+private fun UpdateStatusText(
+    @StringRes message: Int,
     modifier: Modifier = Modifier,
-    revealResult: Boolean,
     textAlign: TextAlign = TextAlign.Unspecified,
 ) {
-    if (incompatibility != null) {
-        Text(
-            stringResource(incompatibility),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = textAlign,
-            modifier =
-                modifier
-                    .revealUpdateResult(incompatibility, revealResult && message == null)
-                    .semantics {
-                        liveRegion = LiveRegionMode.Polite
-                    },
-        )
-    }
-    if (message == null) return
+    val colors = MaterialTheme.colorScheme
     Text(
         stringResource(message),
         color =
             when (message) {
+                R.string.updates_android_unsupported,
+                R.string.updates_newer_android_required,
                 R.string.updates_error_integrity,
                 R.string.updates_error_identity,
                 R.string.updates_error_storage,
-                R.string.updates_error_install -> MaterialTheme.colorScheme.error
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                R.string.updates_error_install -> colors.error
+                R.string.updates_current -> colors.onSurface
+                else -> colors.onSurfaceVariant
             },
         style = MaterialTheme.typography.bodyMedium,
         textAlign = textAlign,
-        modifier =
-            modifier.revealUpdateResult(message, revealResult).semantics {
-                liveRegion = LiveRegionMode.Polite
-            },
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
     )
 }
 
@@ -730,17 +704,6 @@ private fun UpdateCopy(label: String, modifier: Modifier = Modifier, muted: Bool
 }
 
 @Composable
-private fun Modifier.revealUpdateResult(result: Any, enabled: Boolean): Modifier {
-    if (!enabled) return this
-    val requester = remember(result) { BringIntoViewRequester() }
-    var positioned by remember(result) { mutableStateOf(false) }
-    LaunchedEffect(requester, positioned) {
-        if (positioned) requester.bringIntoView()
-    }
-    return bringIntoViewRequester(requester).onGloballyPositioned { positioned = true }
-}
-
-@Composable
 private fun UpdateAction(
     state: UpdateUiState,
     check: () -> Unit,
@@ -751,7 +714,7 @@ private fun UpdateAction(
 ) {
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
-    val shape = if (state.required) ButtonDefaults.shape else RoundedCornerShape(12.dp)
+    val shape = ButtonDefaults.shape
     val contentPadding =
         if (state.required)
             PaddingValues(requiredUpdateActionHorizontalPadding, updateActionVerticalPadding)
@@ -760,7 +723,6 @@ private fun UpdateAction(
     val checking =
         state.check == UpdateCheck.Checking &&
             transfer !is UpdateTransfer.Downloading &&
-            !state.preparing &&
             transfer !is UpdateTransfer.Waiting &&
             !state.canInstall &&
             !state.canDownload
@@ -768,7 +730,8 @@ private fun UpdateAction(
     val progress =
         when {
             transfer is UpdateTransfer.Downloading -> downloadLabel(downloadPercent)
-            state.preparing -> stringResource(R.string.updates_preparing)
+            transfer is UpdateTransfer.Recovering && transfer.release != null ->
+                stringResource(R.string.updates_preparing)
             state.canInstall && installProgress != null -> stringResource(installProgress)
             checking -> stringResource(R.string.updates_check_in_progress)
             else -> null
@@ -926,7 +889,7 @@ private val updateActionPadding =
 
 @Composable
 private fun updateProgressStyle() =
-    MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum")
+    MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")
 
 private data class UpdateActionSize(val dismissWidth: Dp, val height: Dp)
 

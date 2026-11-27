@@ -4,7 +4,7 @@
 #![cfg(target_os = "linux")]
 
 use crate::common;
-use cli_test_support::json_fixture::parse_json_lines;
+use cli_test_support::json_fixture::read_json_lines;
 
 use guest_agent::env::{GuestConfig, GuestConfigRaw};
 use guest_agent::http::HttpClient;
@@ -248,7 +248,7 @@ async fn codex_continues_a_first_turn_from_the_same_retained_home() -> TestResul
         user_env,
     )?;
     execute(&second).await?;
-    let messages = parse_json_lines(&std::fs::read_to_string(capture)?)?;
+    let messages = read_json_lines(capture)?;
     let resumed = messages
         .iter()
         .find(|message| message["method"] == "thread/resume")
@@ -348,7 +348,7 @@ async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history()
                 },
                 "an unrelated resume RPC failure must remain visible"
             );
-            let requests = parse_json_lines(&std::fs::read_to_string(&capture)?)?;
+            let requests = read_json_lines(&capture)?;
             assert!(
                 !requests
                     .iter()
@@ -357,7 +357,7 @@ async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history()
             continue;
         }
         execute(&run).await?;
-        let messages = parse_json_lines(&std::fs::read_to_string(capture)?)?;
+        let messages = read_json_lines(capture)?;
         let thread_request = messages
             .iter()
             .rev()

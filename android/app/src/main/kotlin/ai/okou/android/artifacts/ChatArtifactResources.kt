@@ -473,13 +473,15 @@ internal fun ChatArtifactResources(
                         }
                 }
             }
-            if (
-                reading == ArtifactCatalogRead.SyncingStale ||
-                    related?.syncingStale == true ||
-                    workflows?.syncingStale == true ||
-                    historyStale
-            ) {
-                ContentReadProgress(R.string.chat_resources_syncing)
+            key(model, threadId) {
+                ContentReadProgress(
+                    R.string.chat_resources_syncing,
+                    visible =
+                        reading == ArtifactCatalogRead.SyncingStale ||
+                            related?.syncingStale == true ||
+                            workflows?.syncingStale == true ||
+                            historyStale,
+                )
             }
             ArtifactRefreshFeedback(refreshSnackbar, Modifier.align(Alignment.BottomCenter))
         }

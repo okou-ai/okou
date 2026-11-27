@@ -1192,7 +1192,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             val title = compose.onNodeWithText("No matching artifacts", useUnmergedTree = true)
             val list = compose.onNodeWithTag("artifact_list").getUnclippedBoundsInRoot()
             assertEquals(28.dp, title.getUnclippedBoundsInRoot().left - list.left)
-            compose.onNodeWithText("Clear keyword").assertHeightIsAtLeast(48.dp).performClick()
+            clickCatalogEmptyAction("Clear keyword")
             awaitText(fixture.checklist.title)
             query.assertIsFocused()
             assertEquals(
@@ -1204,12 +1204,31 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 
             compose.onNodeWithText("Videos").performClick()
             awaitText("No artifacts of this type")
-            compose.onNodeWithText("Show all").assertHeightIsAtLeast(48.dp).performClick()
+            clickCatalogEmptyAction("Show all")
             awaitText(fixture.checklist.title)
             compose.onNodeWithText("All").assertIsSelected().assertIsFocused()
         } finally {
             instrumentation.resetInTouchMode()
         }
+    }
+
+    private fun clickCatalogEmptyAction(label: String) {
+        val action = compose.onNodeWithText(label).assertHeightIsAtLeast(48.dp)
+        val text = compose.onNodeWithText(label, useUnmergedTree = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val style = layouts.single().layoutInput.style
+        assertEquals(14.sp, style.fontSize)
+        assertEquals(20.sp, style.lineHeight)
+        assertEquals(FontWeight.Medium, style.fontWeight)
+        val bounds = action.getUnclippedBoundsInRoot()
+        val labelBounds = text.getUnclippedBoundsInRoot()
+        val startInset = labelBounds.left - bounds.left
+        val endInset = bounds.right - labelBounds.right
+        assertTrue(startInset >= 12.dp)
+        assertTrue(endInset >= 12.dp)
+        assertTrue(abs((startInset - endInset).value) <= 1f)
+        action.performClick()
     }
 
     @Test
@@ -1365,9 +1384,14 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         assertEquals(14.sp, labelStyle.fontSize)
         assertEquals(20.sp, labelStyle.lineHeight)
         assertEquals(
-            50.dp,
+            42.dp,
             sourceLabel.getUnclippedBoundsInRoot().left -
                 sourceAction.getUnclippedBoundsInRoot().left,
+        )
+        assertEquals(
+            24.dp,
+            sourceAction.getUnclippedBoundsInRoot().right -
+                sourceLabel.getUnclippedBoundsInRoot().right,
         )
         sourceAction.performClick()
         compose.onNodeWithTag("conversation").assertIsDisplayed()

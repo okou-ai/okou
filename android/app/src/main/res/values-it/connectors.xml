@@ -138,6 +138,4 @@
     <string name="connector_access_allow_hour">Consenti per 1 ora</string>
     <string name="connector_access_allow_day">Consenti per 24 ore</string>
     <string name="connector_access_allow_week">Consenti per 7 giorni</string>
-    <string name="chat_connector_check_result">Verifica risultato</string>
-    <string name="chat_connector_check_before_send">Prima di inviare, verifica la scelta del connettore nelle opzioni della chat.</string>
 </resources>

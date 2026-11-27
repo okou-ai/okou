@@ -1,5 +1,6 @@
 package ai.okou.android.settings
 
+import ai.okou.android.FeedbackReceipt
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.boundedApiRetryDelayMillis
 import ai.okou.android.api.generated.RecoveryBillingCreditBreakdownItem
@@ -9,18 +10,17 @@ import ai.okou.android.api.generated.UsagePackCredits
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.contentReadStaleDelayMillis
+import ai.okou.android.nextPaneFeedbackOrder
 import ai.okou.android.state.SettingsDestination
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.KSerializer
@@ -44,7 +44,9 @@ internal val RecoverySubscriptionsSubscriptionsItem.provider: ModelAccountProvid
             RecoverySubscriptionsSubscriptionsItemType.BUILT_IN -> null
         }
 
-internal class SettingsRefreshFailure
+internal class SettingsRefreshFailure {
+    val order = nextPaneFeedbackOrder()
+}
 
 internal data class SettingsRead<T>(
     val value: T? = null,
@@ -84,6 +86,14 @@ internal enum class AccountSwitchPhase {
 
 internal data class AccountSwitch(val accountId: String, val phase: AccountSwitchPhase)
 
+internal enum class SettingsNotice {
+    ModelAccountSwitchFailed,
+    EmailSubscriptionFailed,
+    ImageModelSaveFailed,
+    ToolSaveFailed,
+    ToolSaveUnconfirmed,
+}
+
 internal data class WorkspaceSettingsState(
     val accounts: SettingsRead<List<RecoverySubscriptionsSubscriptionsItem>> = SettingsRead(),
     val usagePack: SettingsRead<UsagePackCredits> = SettingsRead(),
@@ -91,6 +101,7 @@ internal data class WorkspaceSettingsState(
     val creditRefreshFailure: SettingsRefreshFailure? = null,
     val showWorkspaceCredits: Boolean = false,
     val switching: Map<ModelAccountProvider, AccountSwitch> = emptyMap(),
+    val actionFailures: List<FeedbackReceipt<SettingsNotice>> = emptyList(),
 )
 
 /** Lives with the authorized workspace. Reading settings never participates in startup. */
@@ -109,8 +120,6 @@ internal constructor(
     private val mutable =
         MutableStateFlow(WorkspaceSettingsState(showWorkspaceCredits = initialWorkspaceAdmin))
     internal val uiState = mutable.asStateFlow()
-    private val messages = Channel<SettingsNotice>(Channel.CONFLATED)
-    internal val notices = messages.receiveAsFlow()
     internal val emailSubscription =
         EmailSubscriptionSettings(
             viewModelScope,
@@ -120,9 +129,8 @@ internal constructor(
             authorized,
             ::reportSessionFailure,
             nowMillis,
-        ) {
-            messages.trySend(it)
-        }
+            ::reportActionFailure,
+        )
     internal val proactive =
         service.proactivePreferences?.let {
             ProactiveSettingsModel(
@@ -147,9 +155,8 @@ internal constructor(
                 cache,
                 authorized,
                 ::reportSessionFailure,
-            ) {
-                messages.trySend(it)
-            }
+                notice = ::reportActionFailure,
+            )
         }
 
     private var visible: SettingsDestination? = null
@@ -158,11 +165,13 @@ internal constructor(
     private var accountsRead: Job? = null
     private var usagePackRead: Job? = null
     private var workspaceCreditsRead: Job? = null
+    private var creditFailureReported = false
     private val refreshTokens = mutableMapOf<WorkspaceSettingsResource, Any>()
 
     internal fun visible(destination: SettingsDestination?) {
         if (visible == destination) return
         visible = destination
+        if (destination == null) mutable.update { it.copy(actionFailures = emptyList()) }
         if (destination != SettingsDestination.ModelAccounts) clearAccountRefreshFailure()
         if (
             destination != SettingsDestination.ModelAccounts &&
@@ -170,6 +179,7 @@ internal constructor(
         )
             accountsRead?.cancel()
         if (destination != SettingsDestination.CreditBalance) {
+            creditFailureReported = false
             mutable.update { it.copy(creditRefreshFailure = null) }
             usagePackRead?.cancel()
             workspaceCreditsRead?.cancel()
@@ -200,6 +210,27 @@ internal constructor(
             }
         }
         refresh()
+    }
+
+    private fun reportActionFailure(notice: SettingsNotice) {
+        if (visible == null) return
+        val receipt = FeedbackReceipt(notice)
+        mutable.update { it.copy(actionFailures = it.actionFailures + receipt) }
+    }
+
+    internal fun dismissActionFailure(receipt: FeedbackReceipt<SettingsNotice>) {
+        mutable.update { it.copy(actionFailures = it.actionFailures - receipt) }
+    }
+
+    internal fun dismissRefreshFailure(failure: SettingsRefreshFailure) {
+        mutable.update {
+            when {
+                it.accounts.refreshFailure === failure ->
+                    it.copy(accounts = it.accounts.copy(refreshFailure = null))
+                it.creditRefreshFailure === failure -> it.copy(creditRefreshFailure = null)
+                else -> it
+            }
+        }
     }
 
     private suspend fun <T> restore(
@@ -308,13 +339,18 @@ internal constructor(
                 val state = mutable.value
                 val incoming = result.value
                 if (result.unavailable) {
+                    val confirming =
+                        state.switching.filterValues {
+                            it.phase == AccountSwitchPhase.Confirming
+                        }
                     mutable.value =
                         state.copy(
                             accounts =
                                 result.copy(
                                     refreshFailure =
                                         if (
-                                            incoming != null &&
+                                            confirming.isEmpty() &&
+                                                incoming != null &&
                                                 visible == SettingsDestination.ModelAccounts
                                         )
                                             SettingsRefreshFailure()
@@ -327,6 +363,9 @@ internal constructor(
                                     else intent
                                 },
                         )
+                    confirming.values.forEach { _ ->
+                        reportActionFailure(SettingsNotice.ModelAccountSwitchFailed)
+                    }
                 } else if (incoming == null) {
                     mutable.update { it.copy(accounts = result) }
                 } else {
@@ -335,9 +374,10 @@ internal constructor(
                     val rejected =
                         verifying
                             .filterValues { intent ->
-                                incoming.none {
-                                    it.id == intent.accountId && it.isActive == true
-                                }
+                                intent.phase == AccountSwitchPhase.Confirming &&
+                                    incoming.none {
+                                        it.id == intent.accountId && it.isActive == true
+                                    }
                             }
                             .keys
                     mutable.value =
@@ -345,8 +385,9 @@ internal constructor(
                             accounts = result,
                             switching = state.switching - verifying.keys,
                         )
-                    if (rejected.isNotEmpty())
-                        messages.trySend(SettingsNotice.ModelAccountSwitchFailed)
+                    rejected.forEach { _ ->
+                        reportActionFailure(SettingsNotice.ModelAccountSwitchFailed)
+                    }
                 }
             }
         }
@@ -422,7 +463,7 @@ internal constructor(
                         error.status !in setOf(404, 408, 409)
                 ) {
                     mutable.update { it.copy(switching = it.switching - provider) }
-                    messages.trySend(SettingsNotice.ModelAccountSwitchFailed)
+                    reportActionFailure(SettingsNotice.ModelAccountSwitchFailed)
                 } else {
                     confirmSwitchByReading(provider, accountId)
                 }
@@ -512,12 +553,9 @@ internal constructor(
     }
 
     private fun reportCreditRefreshFailure() {
-        if (visible != SettingsDestination.CreditBalance) return
-        mutable.update { state ->
-            if (state.creditRefreshFailure == null)
-                state.copy(creditRefreshFailure = SettingsRefreshFailure())
-            else state
-        }
+        if (visible != SettingsDestination.CreditBalance || creditFailureReported) return
+        creditFailureReported = true
+        mutable.update { it.copy(creditRefreshFailure = SettingsRefreshFailure()) }
     }
 
     private fun showProgress(resource: WorkspaceSettingsResource, refreshing: Boolean) {

@@ -3,6 +3,7 @@ package ai.okou.android.connectors
 import ai.okou.android.CONNECTOR_AUTHORIZATION_URL
 import ai.okou.android.CONNECTOR_CALENDAR
 import ai.okou.android.CONNECTOR_CALENDAR_PRIMARY
+import ai.okou.android.CONNECTOR_CALENDAR_SECONDARY
 import ai.okou.android.CONNECTOR_DEVICE_ACCOUNT
 import ai.okou.android.CONNECTOR_DEVICE_EXAMPLE
 import ai.okou.android.CONNECTOR_EXAMPLE_DEVICE_CODE
@@ -64,7 +65,8 @@ internal abstract class ConnectorModelTestFixture {
                                             ConnectorModel(
                                                 fixture.service,
                                                 { true },
-                                                clock,
+                                                clock = clock,
+                                                snapshotClock = clock,
                                             ) {
                                                 throw AssertionError(
                                                     "Unexpected session failure",
@@ -277,30 +279,37 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
     }
 
     @Test
-    fun delayedAccountReadbackRestartsTheDirectoryLoad() {
+    fun aFailedRenameLeavesAnInFlightDirectoryLoadRunning() {
         val releaseDiscovery = CountDownLatch(1)
         withModel(CONNECTOR_CALENDAR, configure = { it.discoveryGate = releaseDiscovery }) {
             fixture,
             model ->
+            model.await { it.connected.data != null }
             fixture.loseRenameReply = true
-            fixture.failAccountReads = true
             model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
-            model.await {
-                it.action?.busy == false &&
-                    it.action.problem == ConnectorProblem.VerificationPending
-            }
-
-            fixture.failAccountReads = false
-            model.resume()
-            model.await { it.action?.result == ConnectorResult.Renamed }
+            model.await { it.action?.busy == false && it.action.problem == ConnectorProblem.Failed }
             releaseDiscovery.countDown()
 
             val directory = model.await { it.browse.data != null }
-            val renamed =
+            val confirmed =
                 directory.accountsFor(CONNECTOR_CALENDAR).single {
                     it.id == CONNECTOR_CALENDAR_PRIMARY
                 }
+            assertEquals("工作日历", confirmed.displayName)
+
+            model.resume()
+            val refreshed = model.await {
+                it.accountsFor(CONNECTOR_CALENDAR).any { account ->
+                    account.id == CONNECTOR_CALENDAR_PRIMARY &&
+                        account.displayName == "Meeting calendar"
+                }
+            }
+            val renamed =
+                refreshed.accountsFor(CONNECTOR_CALENDAR).single {
+                    it.id == CONNECTOR_CALENDAR_PRIMARY
+                }
             assertEquals("Meeting calendar", renamed.displayName)
+            assertEquals(1, fixture.renameRequests.get())
         }
     }
 
@@ -759,34 +768,6 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
     }
 
     @Test
-    fun aPossiblyDeliveredRenameReconcilesWithoutRepeatingTheWrite() {
-        withModel(CONNECTOR_CALENDAR) { fixture, model ->
-            fixture.failAccountReads = true
-            fixture.loseRenameReply = true
-            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
-            val pending = model.await {
-                it.action?.problem == ConnectorProblem.VerificationPending && !it.action.busy
-            }
-            assertFalse(pending.canChangeAccounts)
-            assertEquals(1, fixture.renameRequests.get())
-            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Other name")
-            assertEquals(1, fixture.renameRequests.get())
-
-            fixture.failAccountReads = false
-            model.resume()
-            val confirmed = model.await { it.action?.result == ConnectorResult.Renamed }
-            assertEquals(
-                "Meeting calendar",
-                confirmed
-                    .accountsFor(CONNECTOR_CALENDAR)
-                    .single { it.id == CONNECTOR_CALENDAR_PRIMARY }
-                    .displayName,
-            )
-            assertEquals(1, fixture.renameRequests.get())
-        }
-    }
-
-    @Test
     fun aDirectAuthorizationWithoutAReceiptRequiresAFreshAccountReadBeforeAnotherAttempt() {
         withModel(CONNECTOR_MANUAL_EXAMPLE, includeGrantExamples = true) { fixture, model ->
             fixture.failAccountReads = true
@@ -817,68 +798,20 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
     }
 
     @Test
-    fun renameWithLostResponseSettlesThroughAccountReadback() =
+    fun aDelayedRenameUsesNormalSyncAfterFailure() =
         withModel(CONNECTOR_CALENDAR) { fixture, model ->
-            fixture.loseRenameReply = true
-            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
-            val renamed = model.await { it.action?.result == ConnectorResult.Renamed }
-            assertEquals(
-                "Meeting calendar",
-                renamed
-                    .accountsFor(CONNECTOR_CALENDAR)
-                    .first { it.id == CONNECTOR_CALENDAR_PRIMARY }
-                    .displayName,
-            )
-            assertEquals(2, renamed.accountsFor(CONNECTOR_CALENDAR).size)
-        }
-
-    @Test
-    fun renameRemainsUnconfirmedWhenReadbackPrecedesTheCommit() =
-        withModel(CONNECTOR_CALENDAR) { fixture, model ->
-            fixture.deferRenameCommit = true
-            val originalName =
-                model.uiState.value.accounts.data
-                    ?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }
-                    ?.displayName
-            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
-
-            val firstCheck = model.await { it.action?.problem != null && !it.action.busy }
-            assertEquals(ConnectorProblem.VerificationPending, firstCheck.action?.problem)
-            assertFalse(firstCheck.canChangeAccounts)
-            assertEquals(
-                originalName,
-                firstCheck.accounts.data
-                    ?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }
-                    ?.displayName,
-            )
-
-            fixture.commitDeferredRename()
-            val confirmed = model.await { it.action?.result == ConnectorResult.Renamed }
-            assertEquals(
-                "Meeting calendar",
-                confirmed.accounts.data
-                    ?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }
-                    ?.displayName,
-            )
-            assertEquals(1, fixture.renameRequests.get())
-        }
-
-    @Test
-    fun exhaustedUnmatchedReadbacksRestoreEditingAndUseLaterAccountData() =
-        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            val scopedRead = "/api/connector-accounts/connections" to CONNECTOR_CALENDAR
+            val initialReads = fixture.chatConnectorReads.count { it == scopedRead }
+            val initial = model.uiState.value.accounts.data
             fixture.deferRenameCommit = true
             model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
-            model.await { it.action?.reconciling == true && !it.action.busy }
-
-            repeat(2) {
-                model.resume()
-                model.await { it.action?.busy == false }
+            val failed = model.await {
+                it.action?.problem == ConnectorProblem.Failed && !it.action.busy
             }
-
-            val failed = model.uiState.value
             assertTrue(failed.canChangeAccounts)
-            assertEquals(ConnectorProblem.Failed, failed.action?.problem)
+            assertEquals(initial, failed.accounts.data)
             assertNull(failed.action?.result)
+            assertEquals(initialReads, fixture.chatConnectorReads.count { it == scopedRead })
             assertEquals(1, fixture.renameRequests.get())
 
             fixture.commitDeferredRename()
@@ -889,28 +822,37 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
                         account.displayName == "Meeting calendar"
                 } == true
             }
+            assertEquals(ConnectorProblem.Failed, refreshed.action?.problem)
             assertNull(refreshed.action?.result)
             assertEquals(1, fixture.renameRequests.get())
         }
 
     @Test
-    fun failedReadbacksUseTheSameRenameVerificationBudget() =
+    fun aLostDisconnectResponseKeepsTheAccountUntilNormalSync() =
         withModel(CONNECTOR_CALENDAR) { fixture, model ->
-            fixture.loseRenameReply = true
-            fixture.failAccountReads = true
-            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
-            model.await { it.action?.reconciling == true && !it.action.busy }
-
-            repeat(2) {
-                model.resume()
-                model.await { it.action?.busy == false }
+            val scopedRead = "/api/connector-accounts/connections" to CONNECTOR_CALENDAR
+            val initialReads = fixture.chatConnectorReads.count { it == scopedRead }
+            fixture.loseDisconnectReply = true
+            model.prepareDisconnect(CONNECTOR_CALENDAR_PRIMARY)
+            model.await { it.impact?.read?.data != null }
+            model.disconnect(CONNECTOR_CALENDAR_PRIMARY)
+            val failed = model.await {
+                it.action?.problem == ConnectorProblem.Failed && !it.action.busy
             }
-
-            val failed = model.uiState.value
             assertTrue(failed.canChangeAccounts)
-            assertEquals(ConnectorProblem.Failed, failed.action?.problem)
-            assertNull(failed.action?.result)
-            assertEquals(1, fixture.renameRequests.get())
+            assertTrue(
+                failed.accountsFor(CONNECTOR_CALENDAR).any { it.id == CONNECTOR_CALENDAR_PRIMARY },
+            )
+            assertEquals(initialReads, fixture.chatConnectorReads.count { it == scopedRead })
+
+            model.resume()
+            val refreshed = model.await {
+                it.accounts.data?.map { account -> account.id } ==
+                    listOf(CONNECTOR_CALENDAR_SECONDARY)
+            }
+            assertNull(refreshed.action?.result)
+            assertEquals(CONNECTOR_CALENDAR, refreshed.slug)
+            assertEquals(1, fixture.disconnectRequests.get())
         }
 
     @Test

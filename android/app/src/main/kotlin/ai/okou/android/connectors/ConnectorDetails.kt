@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.CompactPanelTopAppBar
 import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.OkouActionButton
@@ -26,7 +27,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,14 +41,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,7 +72,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -370,13 +367,14 @@ internal fun ConnectorDetails(
                 }
                 if (detail?.hasPermissions == true) {
                     ConnectorSectionDivider()
-                    ConnectorAccountAction(
-                        stringResource(R.string.connector_permissions),
+                    ConnectorNavigationRow(
+                        onClick = {
+                            panel = ConnectorPanel.Permissions
+                            model.showPermissions()
+                        },
                         modifier = Modifier.focusRequester(permissionsFocus),
-                        chevron = true,
                     ) {
-                        panel = ConnectorPanel.Permissions
-                        model.showPermissions()
+                        Text(stringResource(R.string.connector_permissions))
                     }
                 }
                 if (panel == null) ConnectorActionFeedback(action)
@@ -527,38 +525,25 @@ private fun ConnectorAccountRow(
     modifier: Modifier,
     open: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(8.dp)
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .updateFocusOutline(shape, MaterialTheme.colorScheme.onSurface, keyboardOnly = true)
-            .clip(shape)
-            .clickable(onClick = open, role = Role.Button)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .testTag("connector-account-${account.id}"),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                account.label(),
-                style = connectorBodyType().copy(fontWeight = FontWeight.SemiBold),
-            )
-            if (
-                account.displayName != null &&
-                    account.identity != null &&
-                    account.displayName != account.identity
-            ) {
-                Text(
-                    account.identity,
-                    style = connectorSmallType(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    val label = account.label()
+    val identity = account.identity?.takeIf { it != label }
+    ConnectorNavigationRow(
+        onClick = open,
+        modifier = modifier.testTag("connector-account-${account.id}"),
+        supportingContent = {
+            Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (identity != null) {
+                    Text(
+                        identity,
+                        style = connectorSmallType(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                ConnectorAccountStatusText(account)
             }
-            ConnectorAccountStatusText(account)
-        }
-        ConnectorChevron()
+        },
+    ) {
+        Text(label)
     }
 }
 
@@ -580,7 +565,6 @@ private fun ConnectorSectionDivider() {
     Spacer(Modifier.height(16.dp))
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ConnectorSheet(
     title: String,
@@ -591,6 +575,7 @@ internal fun ConnectorSheet(
     back: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
     feedback: SnackbarHostState? = null,
+    actionFeedback: SnackbarHostState? = null,
     inContentFeedbackMessage: String? = null,
     centerCompactContent: Boolean = false,
     retainedScroll: androidx.compose.foundation.ScrollState? = null,
@@ -598,18 +583,15 @@ internal fun ConnectorSheet(
 ) {
     val shortWindow = isShortSettingsPanelWindow()
     val fullScreen = (expandInShortWindow || compactForm) && shortWindow
-    val formTopBar = compactForm && fullScreen
-    val overlayFeedback = feedback.takeIf { fullScreen || inContentFeedbackMessage != null }
+    val overlayFeedback =
+        actionFeedback ?: feedback.takeIf { fullScreen || inContentFeedbackMessage != null }
     val scroll = retainedScroll ?: key(title) { rememberScrollState() }
-    val titleStyle =
-        if (fullScreen && !formTopBar)
-            MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 24.sp)
-        else MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp)
+    val titleStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp)
     SettingsModal(
         dismiss,
         dismissible,
         fullScreen,
-        fitContentInsets = formTopBar,
+        fitContentInsets = compactForm && fullScreen,
         snackbar = feedback.takeIf { overlayFeedback == null },
         onBack = back,
     ) { centered ->
@@ -624,7 +606,7 @@ internal fun ConnectorSheet(
             frame
                 .testTag("connector-sheet")
                 .padding(settingsPanelContentPadding(compactHeight = shortWindow))
-                .padding(top = if (centered && !formTopBar) 16.dp else 0.dp),
+                .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
             val minimumControlsHeight =
                 with(LocalDensity.current) {
@@ -647,29 +629,11 @@ internal fun ConnectorSheet(
                 },
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (formTopBar) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                title,
-                                Modifier.semantics { heading() },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                        navigationIcon = {
-                            IconButton(
-                                back ?: dismiss,
-                                Modifier.size(48.dp),
-                                enabled = dismissible,
-                            ) {
-                                Icon(
-                                    painterResource(R.drawable.ic_arrow_back),
-                                    stringResource(R.string.back),
-                                )
-                            }
-                        },
-                        windowInsets = WindowInsets(0),
+                if (fullScreen) {
+                    CompactPanelTopAppBar(
+                        title,
+                        back = back ?: dismiss.takeIf { compactForm },
+                        backEnabled = dismissible,
                     )
                 } else
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -715,7 +679,11 @@ internal fun ConnectorSheet(
                                 .padding(bottom = connectorFeedbackBottomInset),
                             contentAlignment = Alignment.BottomCenter,
                         ) {
-                            WorkspaceFeedbackHost(overlayFeedback, Modifier)
+                            WorkspaceFeedbackHost(
+                                overlayFeedback,
+                                Modifier,
+                                manageTimeout = actionFeedback == null,
+                            )
                         }
                     }
                 }
@@ -926,28 +894,25 @@ private fun ConnectorAccountAction(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     destructive: Boolean = false,
-    chevron: Boolean = false,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(if (chevron) 8.dp else 12.dp)
+    val shape = RoundedCornerShape(12.dp)
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = if (chevron) 52.dp else 56.dp)
+            .heightIn(min = 56.dp)
             .updateFocusOutline(shape, colors.onSurface, keyboardOnly = true)
             .clip(shape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = if (chevron) 12.dp else 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
             Modifier.weight(1f),
-            style =
-                connectorBodyType()
-                    .copy(fontWeight = if (chevron) FontWeight.SemiBold else FontWeight.Normal),
+            style = connectorBodyType(),
             color =
                 when {
                     !enabled -> colors.onSurfaceVariant
@@ -955,7 +920,6 @@ private fun ConnectorAccountAction(
                     else -> colors.onSurface
                 },
         )
-        if (chevron) ConnectorChevron()
     }
 }
 
@@ -977,6 +941,9 @@ private fun ConnectorDisconnectDialog(
         confirmEnabled = canModify && count != null,
         dismissEnabled = action?.busy != true,
         destructive = true,
+        pendingConfirmLabel = stringResource(R.string.connector_submitting),
+        confirmPending = action?.busy == true,
+        actionStatus = { ConnectorActionFeedback(action?.takeUnless { it.busy }) },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(account.label(), fontWeight = FontWeight.SemiBold)
@@ -1005,7 +972,6 @@ private fun ConnectorDisconnectDialog(
                     ConnectorStatusBanner(R.string.connector_impact_failed)
                 count == null -> ConnectorProgress(R.string.connector_loading_impact)
             }
-            ConnectorActionFeedback(action)
         }
     }
 }
@@ -1023,7 +989,12 @@ internal fun ConnectorActionFeedback(action: ConnectorAction?) {
             else R.string.connector_submitting,
         )
     else if (action?.problem != null)
-        ConnectorStatusBanner(connectorActionProblemMessage(action.problem))
+        ConnectorStatusBanner(
+            connectorActionProblemMessage(action.problem),
+            error =
+                action.problem == ConnectorProblem.Failed ||
+                    action.problem == ConnectorProblem.Network,
+        )
 }
 
 internal fun connectorActionProblemMessage(problem: ConnectorProblem) =
@@ -1073,4 +1044,4 @@ internal fun ConnectorButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     treatment: ConnectorButtonTreatment = ConnectorButtonTreatment.Primary,
-) = OkouActionButton(label, onClick, modifier, enabled, treatment)
+) = OkouActionButton(label, onClick, modifier, enabled, treatment, useMaterialButtonDefaults = true)

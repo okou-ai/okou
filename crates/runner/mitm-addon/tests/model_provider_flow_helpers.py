@@ -211,8 +211,8 @@ def make_model_provider_sse_flow(
     host: str,
     original_url: str,
     firewall_name: str,
+    model_usage_provider: str | None,
     cli_agent_type: str | None = None,
-    model_usage_provider: str | None = "claude-sonnet-4-6",
 ) -> http.HTTPFlow:
     flow = make_model_provider_flow(
         real_flow,

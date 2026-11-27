@@ -13,6 +13,39 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1196.3](https://github.com/okou-ai/okou/compare/app-v0.1196.2...app-v0.1196.3) (2026-11-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.141.2
+    * @okouai/core bumped to 8.887.10
+    * @okouai/ui bumped to 1.22.49
+
+## [0.1196.2](https://github.com/okou-ai/okou/compare/app-v0.1196.1...app-v0.1196.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **app:** remove chat list hover previews ([#51494](https://github.com/okou-ai/okou/issues/51494)) ([293676f](https://github.com/okou-ai/okou/commit/293676f9ca5cb441474efa709ca299179621c348))
+
+
+### Refactoring
+
+* remove markdown artifact quote feature switch ([#51490](https://github.com/okou-ai/okou/issues/51490)) ([cd97e8b](https://github.com/okou-ai/okou/commit/cd97e8bf30e977bf47f09c2ae2e1ee9cb36dd856))
+* remove markdown-first output feature switch ([#51492](https://github.com/okou-ai/okou/issues/51492)) ([50510b8](https://github.com/okou-ai/okou/commit/50510b8e1d508dadfd4048f6ec16733edacafebb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.141.1
+    * @okouai/core bumped to 8.887.9
+    * @okouai/ui bumped to 1.22.48
+
 ## [0.1196.1](https://github.com/okou-ai/okou/compare/app-v0.1196.0...app-v0.1196.1) (2026-11-27)
 
 

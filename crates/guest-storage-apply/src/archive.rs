@@ -1,16 +1,20 @@
 use crate::LOG_TAG;
 use crate::error::DownloadError;
-use crate::source::ArchiveSource;
+use crate::source::{ArchiveReader, ArchiveSource};
 use crate::tar_metadata::{MetadataBudget, MetadataReader};
 use guest_contracts::storage_paths::normalize_path;
 use guest_telemetry::log_warn;
-use std::io::{self, Read};
+use std::io::{self, BufReader, Read};
 use std::path::Path;
 
 #[cfg(target_os = "linux")]
 pub(crate) mod inflate;
 #[cfg(target_os = "linux")]
 pub(crate) mod rooted;
+
+// Batch the tar reader's small header, payload and padding reads. Inline
+// input already resides in memory, so only decoded output needs buffering.
+const INLINE_TAR_BUFFER_BYTES: usize = 16 * 1024;
 
 /// Extract a gzip-compressed tar archive into an existing target directory.
 ///
@@ -65,14 +69,27 @@ pub(crate) fn extract_tar_gz_checked(
     validate_entry: impl FnMut(&Path, tar::EntryType, u64, &tar::Header) -> Result<(), DownloadError>,
 ) -> Result<(), DownloadError> {
     let (reader, http_body_read_failure) = source.into_parts();
-    extract_tar(
-        flate2::read::GzDecoder::new(reader),
-        http_body_read_failure,
-        target,
-        concurrency,
-        max_unpacked_bytes,
-        validate_entry,
-    )
+    match reader {
+        ArchiveReader::Inline(bytes) => extract_tar(
+            BufReader::with_capacity(
+                INLINE_TAR_BUFFER_BYTES,
+                flate2::bufread::GzDecoder::new(bytes),
+            ),
+            http_body_read_failure,
+            target,
+            concurrency,
+            max_unpacked_bytes,
+            validate_entry,
+        ),
+        ArchiveReader::Stream(reader) => extract_tar(
+            flate2::read::GzDecoder::new(reader),
+            http_body_read_failure,
+            target,
+            concurrency,
+            max_unpacked_bytes,
+            validate_entry,
+        ),
+    }
 }
 
 fn extract_tar(

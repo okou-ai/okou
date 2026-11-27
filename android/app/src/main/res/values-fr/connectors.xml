@@ -138,6 +138,4 @@
     <string name="connector_access_allow_hour">Autoriser pendant 1\u00A0h</string>
     <string name="connector_access_allow_day">Autoriser pendant 24\u00A0h</string>
     <string name="connector_access_allow_week">Autoriser pendant 7\u00A0jours</string>
-    <string name="chat_connector_check_result">Vérifier le résultat</string>
-    <string name="chat_connector_check_before_send">Avant l’envoi, vérifiez le choix du connecteur dans les options du chat.</string>
 </resources>

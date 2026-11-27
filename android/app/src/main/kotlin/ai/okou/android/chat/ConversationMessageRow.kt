@@ -123,6 +123,13 @@ internal fun ConversationMessageRow(
                 Box(modifier = Modifier.fillMaxWidth(.85f).wrapContentWidth(Alignment.End)) {
                     val delivery = entry.preview?.pendingDelivery
                     val status = delivery?.let { stringResource(it.label()) }
+                    val returnKey = artifactActions?.restoreKey
+                    val missingAttachment =
+                        attachmentFocusMessage(returnKey) == message.id &&
+                            attachments.withIndex().none { (index, attachment) ->
+                                attachment.matchesAttachmentFocus(returnKey, message.id, index)
+                            }
+                    val messageFocus = remember { FocusRequester() }
                     Surface(
                         modifier =
                             (if (attachments.isEmpty()) Modifier
@@ -130,6 +137,16 @@ internal fun ConversationMessageRow(
                                 .then(
                                     if (status == null) Modifier
                                     else Modifier.semantics { stateDescription = status },
+                                )
+                                .then(
+                                    if (missingAttachment)
+                                        Modifier.focusRequester(messageFocus)
+                                            .focusable()
+                                            .onGloballyPositioned {
+                                                if (messageFocus.requestFocus())
+                                                    artifactActions?.restored?.invoke()
+                                            }
+                                    else Modifier,
                                 ),
                         shape = RoundedCornerShape(16.dp),
                         color = colors.surfaceVariant,
@@ -490,7 +507,7 @@ private fun MessageBody(
                 restoreCodeReply()
         }
     }
-    val replyArtifacts =
+    val returnActions =
         if (!imageRestore) artifactActions
         else
             artifactActions?.let { actions ->
@@ -503,7 +520,7 @@ private fun MessageBody(
                     },
                 )
             }
-    if (imageRestore && replyArtifacts != null) {
+    if (imageRestore && returnActions != null) {
         LaunchedEffect(sourceFocus, message.blocks) {
             val section =
                 sourceFocus
@@ -511,7 +528,39 @@ private fun MessageBody(
                     ?.substringBefore('/')
                     ?.toIntOrNull()
             if (section == null || message.blocks.getOrNull(section)?.kind != HistoryBlockKind.Text)
-                replyArtifacts.restoreReply()
+                returnActions.restoreReply()
+        }
+    }
+    var requestedImage by remember(message.id) { mutableStateOf<Pair<String, String>?>(null) }
+    val openImages = returnActions?.openImages
+    val images = returnActions?.images
+    val replyArtifacts =
+        if (openImages != null && images != null && message.role == HistoryRole.Assistant)
+            returnActions.copy(openInlineImage = { source, key -> requestedImage = source to key })
+        else returnActions
+    val imageRequest = requestedImage
+    if (imageRequest != null && openImages != null && images != null) {
+        val threadId = returnActions.threadId
+        val interactiveLinks = links != null
+        LaunchedEffect(message, imageRequest, images, threadId, interactiveLinks) {
+            val (source, key) = imageRequest
+            val candidates =
+                withContext(Dispatchers.Default) { message.replyImagePages(interactiveLinks) }
+            val unavailable = images.unavailableSources(threadId)
+            val pages = candidates.filter { (_, page) -> page.source !in unavailable }
+            val start = pages.indexOfFirst { (focus, page) ->
+                focus == key && page.source == source
+            }
+            requestedImage = null
+            if (start >= 0) {
+                val names = images.authorizedNames(threadId)
+                val gallery = pages.map { (_, page) ->
+                    page.copy(
+                        description = page.description.ifBlank { names[page.source].orEmpty() },
+                    )
+                }
+                openImages(ChatImageVisit(threadId, gallery, start), key)
+            }
         }
     }
     val foreground =

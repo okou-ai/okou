@@ -1,7 +1,6 @@
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 
-/// Business cache namespace for complete Workflow packages.
-pub const WORKFLOW_STORAGE_NAME: &str = "workflow";
+pub use guest_contracts::storage_manifest::WORKFLOW_STORAGE_NAME;
 /// Business cache namespace for complete Agent instruction packages.
 pub const INSTRUCTION_STORAGE_NAME: &str = "instruction";
 

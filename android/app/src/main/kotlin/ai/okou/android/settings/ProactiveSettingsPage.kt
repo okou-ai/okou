@@ -26,8 +26,6 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -36,14 +34,12 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -54,7 +50,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
-import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -64,7 +59,6 @@ internal fun ProactiveSettingsPage(
     workspace: String,
     model: ProactiveSettingsModel,
     preferences: MemberPreferencesModel,
-    snackbar: SnackbarHostState,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val lifecycleState by lifecycle.currentStateAsState()
@@ -72,23 +66,6 @@ internal fun ProactiveSettingsPage(
     DisposableEffect(model, active) {
         model.visible(active)
         onDispose { model.visible(false) }
-    }
-    val context by rememberUpdatedState(LocalContext.current)
-    LaunchedEffect(model, lifecycle, snackbar) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            model.saveFailures.collect { setting ->
-                val message =
-                    context.getString(
-                        when (setting) {
-                            ProactiveSetting.MorningBrief ->
-                                R.string.settings_morning_brief_save_failed
-                            ProactiveSetting.Suggestions ->
-                                R.string.settings_suggestions_save_failed
-                        },
-                    )
-                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-            }
-        }
     }
     LaunchedEffect(preferences, model) {
         preferences.uiState

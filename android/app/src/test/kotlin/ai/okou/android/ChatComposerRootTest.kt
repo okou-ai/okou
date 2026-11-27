@@ -6,6 +6,7 @@ import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ComposerPersistence
@@ -18,6 +19,7 @@ import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -129,19 +131,91 @@ class DraftModelRootApplication : ComposerRootApplication() {
     }
 }
 
+internal abstract class ChatComposerRootTestFixture {
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    protected var editorJob: Job? = null
+        private set
+
+    protected var listJob: Job? = null
+        private set
+
+    protected var editor: ChatComposerModel? = null
+        private set
+
+    protected var replacement: ActivityScenario<MainActivity>? = null
+    protected var cleanupApplication: ComposerRootApplication? = null
+
+    protected fun messageText(eventId: String, text: String) =
+        compose.onNode(
+            hasText(text) and hasAnyAncestor(hasTestTag("message_$eventId")),
+            useUnmergedTree = true,
+        )
+
+    protected fun messageDelivery(eventId: String, status: String) =
+        compose.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, status) and
+                hasAnyAncestor(hasTestTag("message_$eventId")),
+            useUnmergedTree = true,
+        )
+
+    protected fun awaitConversation(condition: () -> Boolean) {
+        compose.waitUntil(10_000) {
+            // Drive composition and Main-looper HTTP completions before reading the fixture.
+            compose.onAllNodesWithTag("conversation").fetchSemanticsNodes()
+            condition()
+        }
+    }
+
+    protected fun captureOwners(activity: MainActivity = compose.activity) {
+        compose.runOnIdle {
+            val state = ViewModelProvider(activity)[SessionModel::class.java].uiState.value
+            val opened = state.opening as? OpeningWorkspace.Authorized
+            val composer = checkNotNull(state.ready?.composer ?: opened?.composer)
+            val chats = checkNotNull(state.ready?.chats ?: opened?.chats)
+            editorJob = composer.viewModelScope.coroutineContext[Job]
+            editor = composer
+            listJob = chats.viewModelScope.coroutineContext[Job]
+        }
+    }
+
+    @After
+    fun close() {
+        val app = cleanupApplication ?: compose.activity.application as ComposerRootApplication
+        app.contextGate.countDown()
+        app.sendGate.countDown()
+        val failures = mutableListOf<Throwable>()
+        for (cleanup in
+            listOf<() -> Unit>(
+                { replacement?.close() },
+                { compose.activityRule.scenario.close() },
+                {
+                    compose.waitUntil(10_000) {
+                        // Finish cancellation callbacks on Robolectric's paused Main looper.
+                        shadowOf(Looper.getMainLooper()).idle()
+                        editorJob?.isCompleted != false && listJob?.isCompleted != false
+                    }
+                },
+                { runBlocking { checkNotNull(app.journalStore).close() } },
+                { app.fixture.close() },
+                { app.cacheSnapshot.restore() },
+            )) {
+            try {
+                cleanup()
+            } catch (error: Throwable) {
+                failures += error
+            }
+        }
+        MultipleFailureException.assertEmpty(failures)
+    }
+}
+
 @RunWith(RobolectricTestRunner::class)
 @Config(
     sdk = [35],
     qualifiers = "en-rUS-w400dp-h800dp",
     application = ComposerRootApplication::class,
 )
-class ChatComposerRootTest {
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
-    private var editorJob: Job? = null
-    private var listJob: Job? = null
-    private var editor: ai.okou.android.chat.ChatComposerModel? = null
-    private var replacement: ActivityScenario<MainActivity>? = null
-    private var cleanupApplication: ComposerRootApplication? = null
+internal class ChatComposerRootTest : ChatComposerRootTestFixture() {
 
     @Test
     @Config(application = DraftModelRootApplication::class)
@@ -167,7 +241,7 @@ class ChatComposerRootTest {
                 val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                 requests += body
                 val attempt = requests.size
-                if (attempt == 2) {
+                if (attempt == 2 || attempt == 6) {
                     jsonResponse("""{"code":"BAD_REQUEST","message":"Unavailable"}""")
                         .setResponseCode(400)
                 } else {
@@ -271,13 +345,15 @@ class ChatComposerRootTest {
             assertTrue(input.keys.none { it in setOf("inputModel", "model", "runOptions") })
             assertEquals(1, requests.size)
 
-            release.countDown()
+            val saveFailure = hasText("Couldn’t save the model for this chat.")
+            val conversationFeedback = hasTestTag("conversation_feedback")
             openModel()
+            release.countDown()
             compose.waitUntilExactlyOneExists(
-                hasText("Couldn’t save the model for this chat.") and
-                    hasAnyAncestor(hasTestTag("model-picker")),
+                saveFailure and hasAnyAncestor(hasTestTag("model-picker")),
                 8_000,
             )
+            compose.onAllNodes(saveFailure).assertCountEquals(1)
             compose.waitUntilExactlyOneExists(hasText("Fast mode") and isOff(), 8_000)
             gpt.assertIsSelected()
             compose.onNodeWithText("High").assertExists()
@@ -330,6 +406,39 @@ class ChatComposerRootTest {
             assertEquals(JsonNull, unsupportedTierWrite.getValue("codexServiceTier"))
             assertTrue(app.fixture.created.isEmpty())
             assertTrue(app.modelFixture.writes.isEmpty())
+
+            compose.waitUntilDoesNotExist(saveFailure, 8_000)
+            compose.onNodeWithText("Medium").performClick()
+            compose.onNodeWithText("High").performClick()
+            compose.waitUntilExactlyOneExists(
+                saveFailure and hasAnyAncestor(hasTestTag("model-picker")),
+                8_000,
+            )
+            compose.onNodeWithText("Medium").assertIsDisplayed()
+            // Drive each transition without consuming the notice's accessible timeout.
+            compose.mainClock.autoAdvance = false
+            try {
+                compose
+                    .onNode(
+                        hasContentDescription("Back") and
+                            hasAnyAncestor(hasTestTag("model-picker")),
+                    )
+                    .performClick()
+                compose.mainClock.advanceTimeBy(500)
+                compose
+                    .onNode(
+                        hasContentDescription("Drag handle") and
+                            SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss),
+                    )
+                    .performSemanticsAction(SemanticsActions.Dismiss)
+                compose.mainClock.advanceTimeBy(500)
+                compose
+                    .onNode(saveFailure and hasAnyAncestor(conversationFeedback))
+                    .assertIsDisplayed()
+                compose.onAllNodes(saveFailure).assertCountEquals(1)
+            } finally {
+                compose.mainClock.autoAdvance = true
+            }
         } finally {
             release.countDown()
             instrumentation.resetInTouchMode()
@@ -515,39 +624,6 @@ class ChatComposerRootTest {
         val request = app.fixture.created.single()
         assertEquals("gpt-test", request["model"]?.jsonPrimitive?.content)
         assertEquals("medium", request["reasoningEffort"]?.jsonPrimitive?.content)
-    }
-
-    private fun messageText(eventId: String, text: String) =
-        compose.onNode(
-            hasText(text) and hasAnyAncestor(hasTestTag("message_$eventId")),
-            useUnmergedTree = true,
-        )
-
-    private fun messageDelivery(eventId: String, status: String) =
-        compose.onNode(
-            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, status) and
-                hasAnyAncestor(hasTestTag("message_$eventId")),
-            useUnmergedTree = true,
-        )
-
-    private fun awaitConversation(condition: () -> Boolean) {
-        compose.waitUntil(10_000) {
-            // Drive composition and Main-looper HTTP completions before reading the fixture.
-            compose.onAllNodesWithTag("conversation").fetchSemanticsNodes()
-            condition()
-        }
-    }
-
-    private fun captureOwners(activity: MainActivity = compose.activity) {
-        compose.runOnIdle {
-            val state = ViewModelProvider(activity)[SessionModel::class.java].uiState.value
-            val opened = state.opening as? OpeningWorkspace.Authorized
-            val composer = checkNotNull(state.ready?.composer ?: opened?.composer)
-            val chats = checkNotNull(state.ready?.chats ?: opened?.chats)
-            editorJob = composer.viewModelScope.coroutineContext[Job]
-            editor = composer
-            listJob = chats.viewModelScope.coroutineContext[Job]
-        }
     }
 
     @Test
@@ -1366,7 +1442,7 @@ class ChatComposerRootTest {
     }
 
     @Test
-    fun recoveredHistoryRestoresAWithdrawalWhenItsOutcomeReadAlsoFailed() {
+    fun recoveredWithdrawalTakesPriorityAndMovesWithTheQueueSheet() {
         val app = compose.activity.application as ComposerRootApplication
         val api = app.fixture.chats
         val queuedId = UUID.randomUUID().toString()
@@ -1382,6 +1458,7 @@ class ChatComposerRootTest {
             )
         val readsUnavailable = AtomicBoolean(false)
         val withdrawals = AtomicInteger()
+        val listEvents = api.rowEventTail()
         val otherRows = api.historyRows
         api.historyRows = { request ->
             val url = checkNotNull(request.requestUrl)
@@ -1404,11 +1481,23 @@ class ChatComposerRootTest {
                 )
                     Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                 else null
-            if (body != null && "revokesEventId" in body) {
-                withdrawals.incrementAndGet()
-                readsUnavailable.set(true)
-                jsonResponse("{}").setResponseCode(201)
-            } else otherCommands(request)
+            when {
+                body != null && "revokesEventId" in body -> {
+                    withdrawals.incrementAndGet()
+                    readsUnavailable.set(true)
+                    jsonResponse("{}").setResponseCode(201)
+                }
+                request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
+                    listEvents.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                    MockResponse().setResponseCode(204)
+                }
+                request.requestUrl?.encodedPath in
+                    setOf(
+                        "/api/chat-threads/$CHAT_PERSONAL/mark-read",
+                        "/api/chat-threads/$CHAT_PERSONAL/mark-unread",
+                    ) -> MockResponse().setResponseCode(400)
+                else -> otherCommands(request)
+            }
         }
 
         app.contextGate.countDown()
@@ -1423,6 +1512,13 @@ class ChatComposerRootTest {
         awaitConversation {
             history.uiState.value.phase == HistoryPhase.Ready
         }
+        val transcript = compose.onNodeWithTag("conversation").assertIsDisplayed()
+        val readingBounds = transcript.getUnclippedBoundsInRoot()
+        val actions = compose.onNodeWithContentDescription("Chat actions")
+        actions.performClick()
+        compose.onNodeWithText("Archive chat").performClick()
+        val undo = hasText("Undo")
+        compose.waitUntilExactlyOneExists(undo, 10_000)
         compose.onNodeWithTag("open_conversation_queue").performClick()
         val withdraw =
             hasContentDescription(
@@ -1449,6 +1545,34 @@ class ChatComposerRootTest {
         messageText(queuedId, prompt).assertIsDisplayed()
         compose.onNode(withdraw).assertIsEnabled()
         assertEquals(1, withdrawals.get())
+
+        compose.mainClock.advanceTimeBy(2_500)
+        compose
+            .onNode(
+                hasContentDescription("Back") and
+                    hasAnyAncestor(hasAnyDescendant(hasTestTag("conversation_queue"))),
+            )
+            .performClick()
+        val conversationHost = hasAnyAncestor(hasTestTag("conversation_feedback"))
+        compose.onNode(failure and conversationHost).assertIsDisplayed()
+        assertEquals(readingBounds, transcript.getUnclippedBoundsInRoot())
+        compose.onNode(undo).assertDoesNotExist()
+
+        actions.performClick()
+        compose.onNode(hasText("Mark as read") or hasText("Mark as unread")).performClick()
+        awaitConversation { ready.chats.uiState.value.rowActionFailures.any { it.rejected } }
+        val secondError = hasText("Could not update the read status.") and conversationHost
+        compose.onNode(failure).assertIsDisplayed()
+        compose.onNode(secondError).assertDoesNotExist()
+
+        compose.mainClock.advanceTimeBy(2_500)
+        compose.onNode(failure).assertDoesNotExist()
+        compose.onNode(secondError).assertIsDisplayed()
+        compose.onNode(undo).assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(5_000)
+        compose.onNode(secondError).assertDoesNotExist()
+        compose.onNode(undo and conversationHost).assertIsDisplayed()
+        assertEquals(readingBounds, transcript.getUnclippedBoundsInRoot())
     }
 
     @Test
@@ -1496,35 +1620,5 @@ class ChatComposerRootTest {
         } finally {
             releaseList.countDown()
         }
-    }
-
-    @After
-    fun close() {
-        val app = cleanupApplication ?: compose.activity.application as ComposerRootApplication
-        app.contextGate.countDown()
-        app.sendGate.countDown()
-        val failures = mutableListOf<Throwable>()
-        for (cleanup in
-            listOf<() -> Unit>(
-                { replacement?.close() },
-                { compose.activityRule.scenario.close() },
-                {
-                    compose.waitUntil(10_000) {
-                        // Finish cancellation callbacks on Robolectric's paused Main looper.
-                        shadowOf(Looper.getMainLooper()).idle()
-                        editorJob?.isCompleted != false && listJob?.isCompleted != false
-                    }
-                },
-                { runBlocking { checkNotNull(app.journalStore).close() } },
-                { app.fixture.close() },
-                { app.cacheSnapshot.restore() },
-            )) {
-            try {
-                cleanup()
-            } catch (error: Throwable) {
-                failures += error
-            }
-        }
-        MultipleFailureException.assertEmpty(failures)
     }
 }

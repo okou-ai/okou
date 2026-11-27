@@ -7,8 +7,6 @@ enum class InstructionsPhase {
     Loading,
     Ready,
     Saving,
-    Checking,
-    Uncertain,
     Failed,
     Unavailable,
 }
@@ -19,7 +17,6 @@ enum class InstructionsRequest {
     Refreshing,
     Preparing,
     Sending,
-    CheckingSave,
 }
 
 enum class InstructionsRead {
@@ -42,6 +39,7 @@ data class PersonalInstructionsState(
     val read: InstructionsRead = InstructionsRead.Idle,
     val saved: PersonalInstructions? = null,
     val draft: InstructionsDraft? = null,
+    internal val draftRevision: Long = 0,
     val persistence: InstructionsPersistence = InstructionsPersistence.Durable,
     val saveRejected: Boolean = false,
     val saveConfirmed: Boolean = false,
@@ -64,9 +62,7 @@ data class PersonalInstructionsState(
                 request == InstructionsRequest.Reading -> InstructionsPhase.Loading
                 request == InstructionsRequest.Preparing ||
                     request == InstructionsRequest.Sending -> InstructionsPhase.Saving
-                request == InstructionsRequest.CheckingSave -> InstructionsPhase.Checking
                 read == InstructionsRead.Unavailable -> InstructionsPhase.Unavailable
-                draft?.attempted == true -> InstructionsPhase.Uncertain
                 read == InstructionsRead.Failed -> InstructionsPhase.Failed
                 read == InstructionsRead.Idle -> InstructionsPhase.Idle
                 else -> InstructionsPhase.Ready
@@ -76,8 +72,7 @@ data class PersonalInstructionsState(
         get() =
             (request == InstructionsRequest.None || request == InstructionsRequest.Refreshing) &&
                 read != InstructionsRead.Unavailable &&
-                (saved != null || draft != null) &&
-                draft?.attempted != true
+                (saved != null || draft != null)
 
     val canSave: Boolean
         get() =
@@ -89,5 +84,5 @@ data class PersonalInstructionsState(
                 !draft.content.contains('\u0000')
 
     val saveInProgress: Boolean
-        get() = phase == InstructionsPhase.Saving || phase == InstructionsPhase.Checking
+        get() = phase == InstructionsPhase.Saving
 }

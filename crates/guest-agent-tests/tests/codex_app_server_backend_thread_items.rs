@@ -3,7 +3,7 @@
 //! This test lives in its own binary to isolate process env, working directory,
 //! and guest runtime path overrides used during setup.
 
-use cli_test_support::json_fixture::parse_json_lines;
+use cli_test_support::json_fixture::read_json_lines;
 use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
@@ -46,7 +46,7 @@ async fn codex_app_server_backend_preserves_reachable_thread_items()
     assert_eq!(cli_result.exit_code, common::CLEAN_EXIT);
     assert!(cli_result.failure_diagnostic.is_none());
 
-    let events = read_jsonl(runtime.paths.agent_log_file())?;
+    let events = read_json_lines(runtime.paths.agent_log_file())?;
     assert_eq!(
         event_types(&events),
         [
@@ -127,10 +127,6 @@ async fn codex_app_server_backend_preserves_reachable_thread_items()
     assert_eq!(future_item["item"]["label"], "future item remains generic");
 
     Ok(())
-}
-
-fn read_jsonl(path: &str) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
-    parse_json_lines(&std::fs::read_to_string(path)?).map_err(Into::into)
 }
 
 fn event_types(events: &[Value]) -> Vec<&str> {

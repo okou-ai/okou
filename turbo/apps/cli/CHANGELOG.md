@@ -1,5 +1,32 @@
 # Changelog
 
+## [10.44.32](https://github.com/okou-ai/okou/compare/cli-v10.44.31...cli-v10.44.32) (2026-11-27)
+
+
+### Refactoring
+
+* **api:** remove retired official workflow paths ([#51547](https://github.com/okou-ai/okou/issues/51547)) ([8aeee6a](https://github.com/okou-ai/okou/commit/8aeee6ac04dd5b60c8b2e72cb859fb09ecce56c7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.141.2
+    * @okouai/core bumped to 8.887.10
+    * @okouai/pi-agent-runtime bumped to 1.52.105
+
+## [10.44.31](https://github.com/okou-ai/okou/compare/cli-v10.44.30...cli-v10.44.31) (2026-11-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.141.1
+    * @okouai/core bumped to 8.887.9
+    * @okouai/pi-agent-runtime bumped to 1.52.104
+
 ## [10.44.30](https://github.com/okou-ai/okou/compare/cli-v10.44.29...cli-v10.44.30) (2026-11-27)
 
 

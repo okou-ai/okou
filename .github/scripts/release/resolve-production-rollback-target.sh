@@ -19,6 +19,7 @@ readonly CHAT_INDICATORS_CHANGED_PUBLISHER_COMMIT=ac0609591b2a0a5f159afb50b7561d
 # Guests during the Runner-first rollback interval, even for an older API target.
 readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
 readonly DIRECT_DISPATCH_GZIP_READER_COMMIT=dcb3ce10bce5c4d9e8f7c27586b5ccb876fcf290
+readonly MODEL_PROVIDER_PLACEHOLDER_READER_PATH=.github/rollback-floors/model-provider-placeholder-reader
 # Project lifecycle events require the CLI reader installed by #44617.
 readonly PROJECT_READER_PREPARATION_COMMIT=428f46154beb1a11cdf09f150650c388826e539c
 readonly PROJECT_WIRE_CONTRACTS_PATH=.github/rollback-floors/project-wire-contracts
@@ -1409,6 +1410,22 @@ fi
 if ! git merge-base --is-ancestor "$DIRECT_DISPATCH_GZIP_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates gzip direct dispatch: ${DIRECT_DISPATCH_GZIP_READER_COMMIT}."
 fi
+
+# The active Runner requires namespaced placeholders from its API writer.
+# The resolved Runner tag must contain the cutover and be an ancestor of the API target.
+if ! model_provider_placeholder_reader_commit=$(git show "origin/main:${MODEL_PROVIDER_PLACEHOLDER_READER_PATH}"); then
+  fail "Cannot read the model-provider placeholder reader rollback floor from main."
+fi
+if [[ ! "$model_provider_placeholder_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid model-provider placeholder reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$model_provider_placeholder_reader_commit" origin/main; then
+  fail "Model-provider placeholder reader rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$model_provider_placeholder_reader_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates the model-provider placeholder cutover: ${model_provider_placeholder_reader_commit}."
+fi
+
 teams_upload_v2_cli_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
   origin/main -- "$TEAMS_UPLOAD_V2_CLI_PATH" | sed -n '1p')
 if [[ ! "$teams_upload_v2_cli_commit" =~ ^[0-9a-f]{40}$ ]]; then

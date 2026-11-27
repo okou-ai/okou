@@ -3,7 +3,6 @@ package ai.okou.android.chat
 import ai.okou.android.R
 import ai.okou.android.artifacts.InlineArtifactImages
 import ai.okou.android.connectors.ChatConnectorOptions
-import ai.okou.android.connectors.ChatConnectorSavePhase
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.currentWindowSizeDp
@@ -19,11 +18,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -36,6 +38,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -58,6 +62,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -81,6 +86,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // Keep original line breaks in the journal and preserve native selection offsets.
 private val CompactDraftDisplay = VisualTransformation { text ->
@@ -88,6 +95,13 @@ private val CompactDraftDisplay = VisualTransformation { text ->
     TransformedText(if (line == text.text) text else AnnotatedString(line), OffsetMapping.Identity)
 }
 
+private data class DraftImageRequest(
+    val attachment: DraftChatAttachment,
+    val restoreKeyboard: Boolean,
+    val unavailable: () -> Unit,
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ChatComposerField(
     model: ChatComposerModel,
@@ -100,6 +114,8 @@ internal fun ChatComposerField(
     manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
     defaultModel: DefaultModelSettings? = null,
     conversationModel: ConversationModelControls? = null,
+    conversationSnackbar: SnackbarHostState? = null,
+    onOptionsFeedbackInOverlay: (Boolean) -> Unit = {},
     attachmentPicker: ChatAttachmentPicker? = null,
     openUploadedAttachment: ((ChatAttachmentReference) -> Unit)? = null,
     attachmentImages: InlineArtifactImages? = null,
@@ -121,7 +137,8 @@ internal fun ChatComposerField(
     val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
     val window = currentWindowSizeDp()
     val shortWindow = window.height < 480
-    val wide = workspaceListPaneWidth(window.width, window.height) != null
+    val listPaneWidth = workspaceListPaneWidth(window.width, window.height)
+    val wide = listPaneWidth != null
     val horizontalInset = composerHorizontalInset(window)
     val bottomInset =
         when {
@@ -133,12 +150,7 @@ internal fun ChatComposerField(
     val cardShape = RoundedCornerShape(20.dp)
     val label = stringResource(R.string.composer_message)
     val sendLabel = stringResource(R.string.composer_send)
-    val connectorStatus = connectorSave?.let {
-        stringResource(
-            if (it == ChatConnectorSavePhase.Unconfirmed) R.string.chat_connector_check_before_send
-            else it.message(),
-        )
-    }
+    val connectorStatus = connectorSave?.let { stringResource(it.message()) }
     val textStyle =
         MaterialTheme.typography.bodyLarge.copy(
             color = colors.onSurface,
@@ -155,8 +167,56 @@ internal fun ChatComposerField(
     val restoreFocusOnResize = remember(shortWindow) { inputFocused }
     val currentShortWindow by rememberUpdatedState(shortWindow)
     val editorFocus = remember(target.key) { FocusRequester() }
+    val attachmentOptionsFocus = remember(target.key) { FocusRequester() }
     val latestInput by rememberUpdatedState(input)
     val hasDraft = state.journal != null
+    val keyboard = LocalSoftwareKeyboardController.current
+    val imeVisible = WindowInsets.isImeVisible
+    val latestAttachments by rememberUpdatedState(attachments)
+    var requestedImage by remember(target, draftKey) { mutableStateOf<DraftImageRequest?>(null) }
+    var returnImage by remember(target, draftKey) { mutableStateOf<String?>(null) }
+    var restoreKeyboard by remember(target, draftKey) { mutableStateOf(false) }
+    val imageVisit =
+        model.draftImageVisit?.takeIf {
+            it.targetKey == target.key && it.draftKey == draftKey
+        }
+    LaunchedEffect(requestedImage, target.key, draftKey) {
+        val request = requestedImage ?: return@LaunchedEffect
+        val tapped = request.attachment
+        val candidates = latestAttachments.filter { it.staged && it.contentType.isAttachmentImage }
+        val readable =
+            withContext(Dispatchers.IO) {
+                candidates.mapNotNull { image ->
+                    val file = model.attachmentFile(image.key)
+                    image.key.takeIf { file.isFile && file.canRead() }
+                }
+            }
+        requestedImage = null
+        if (latestAttachments.none { it.key == tapped.key }) return@LaunchedEffect
+        val start = readable.indexOf(tapped.key)
+        if (start >= 0) {
+            if (request.restoreKeyboard) keyboard?.hide()
+            model.showDraftImages(
+                ChatDraftImageVisit(target.key, draftKey, readable, start, request.restoreKeyboard),
+            )
+        } else if (tapped.reference != null && openUploadedAttachment != null) {
+            openUploadedAttachment(tapped.reference)
+        } else request.unavailable()
+    }
+    LaunchedEffect(returnImage, attachments.isEmpty()) {
+        if (returnImage != null && attachments.isEmpty()) {
+            attachmentOptionsFocus.requestFocus()
+            returnImage = null
+        }
+    }
+    LaunchedEffect(restoreKeyboard) {
+        if (restoreKeyboard) {
+            withFrameNanos {}
+            editorFocus.requestFocus()
+            keyboard?.show()
+            restoreKeyboard = false
+        }
+    }
     LaunchedEffect(target, followup, hasDraft) {
         if (followup == null || !hasDraft) return@LaunchedEffect
         val editor = latestInput
@@ -199,16 +259,6 @@ internal fun ChatComposerField(
             minOf(maximumTextHeight, textSpace).coerceAtLeast(minimumTextHeight)
         ComposerScroll(keepEditorAnchored = { inputFocused && textSpace >= minimumTextHeight }) {
             ComposerFeedback(model, target, state, entry)
-            if (connectorSave == ChatConnectorSavePhase.Unconfirmed) {
-                Text(
-                    stringResource(R.string.chat_connector_check_before_send),
-                    Modifier.fillMaxWidth().padding(bottom = 4.dp).semantics {
-                        liveRegion = LiveRegionMode.Polite
-                    },
-                    color = colors.onSurfaceVariant,
-                    style = connectorFeedbackType(),
-                )
-            }
             Column(
                 Modifier.fillMaxWidth()
                     .testTag("chat_input_card")
@@ -243,6 +293,16 @@ internal fun ChatComposerField(
                         openUploaded = openUploadedAttachment,
                         remoteImages = attachmentImages,
                         threadId = target.threadId.orEmpty(),
+                        openLocalImage = { attachment, unavailable ->
+                            requestedImage =
+                                DraftImageRequest(
+                                    attachment,
+                                    inputFocused && imeVisible,
+                                    unavailable,
+                                )
+                        },
+                        restoreImage = returnImage,
+                        onImageFocusRestored = { returnImage = null },
                     )
                 }
                 if (!shortWindow && attachments.isNotEmpty())
@@ -265,6 +325,9 @@ internal fun ChatComposerField(
                             manageConnectors,
                             defaultModel,
                             conversationModel,
+                            conversationSnackbar = conversationSnackbar,
+                            onOptionsFeedbackInOverlay = onOptionsFeedbackInOverlay,
+                            buttonFocus = attachmentOptionsFocus,
                             attachmentPickerActive = attachmentPicker?.active == true,
                             pickAttachment =
                                 attachmentPicker?.let { picker ->
@@ -356,6 +419,21 @@ internal fun ChatComposerField(
                         )
                     }
                 }
+            }
+        }
+    }
+    if (imageVisit != null) {
+        key(imageVisit) {
+            ChatDraftImageViewer(
+                model,
+                target,
+                imageVisit,
+                attachments,
+                listPaneWidth?.dp,
+            ) {
+                model.showDraftImages(null)
+                if (imageVisit.restoreKeyboard) restoreKeyboard = true
+                else returnImage = imageVisit.keys[imageVisit.start]
             }
         }
     }

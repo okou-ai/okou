@@ -486,6 +486,12 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         assertFalse(app.fixture.requests.any { it.requestUrl?.encodedPath == "/api/workflows" })
         compose.onNodeWithContentDescription("Workflows").performClick()
         compose.onNodeWithTag("workflow_query").assertIsDisplayed()
+        val newButton = compose.onNodeWithTag("workflow_create").getUnclippedBoundsInRoot()
+        val newLabel = compose.onNodeWithText("New", useUnmergedTree = true)
+        newLabel.assertLabelLarge()
+        val newTextBounds = newLabel.getUnclippedBoundsInRoot()
+        assertEquals(16.dp, newButton.right - newTextBounds.right)
+        assertEquals(38.dp, newTextBounds.left - newButton.left)
         app.gate.countDown()
         waitFor("Release checklist")
         val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").getUnclippedBoundsInRoot()
@@ -1132,6 +1138,38 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    @Config(qualifiers = "de-rDE-w360dp-h840dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun automationHeadingAndActionStayReadableInANarrowWindowAtLargeText() {
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            compose.activityRule.scenario.onActivity {
+                assertEquals(360, it.resources.configuration.screenWidthDp)
+                assertEquals(2f, it.resources.configuration.fontScale, 0f)
+            }
+            openWorkflowDetail()
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            val title = compose.onNodeWithText("Auslöseregeln", useUnmergedTree = true)
+            val add = compose.onNodeWithText("Automatisierung hinzufügen")
+            val layouts = mutableListOf<TextLayoutResult>()
+            title.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            assertEquals(
+                "Heading ${layout.size} and action ${add.getUnclippedBoundsInRoot()}",
+                1,
+                layout.lineCount,
+            )
+            title.assertIsDisplayed()
+            add.assertIsDisplayed().assertIsEnabled().performClick()
+            compose.onNodeWithTag("workflow_save").assertIsDisplayed()
+        } finally {
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
+    }
+
+    @Test
     fun pendingRuleKeepsTheConfirmedStatusAndFocusedActionUntilTheReceipt() = withHardwareKeyboard {
         val fixture = app.fixture
         fixture.active.set(true)
@@ -1263,6 +1301,11 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val add = compose.onNodeWithText("Add automation").assertIsEnabled()
         val addBounds = add.getUnclippedBoundsInRoot()
         assertTrue(addBounds.bottom - addBounds.top >= 48.dp)
+        val addLabel = compose.onNodeWithText("Add automation", useUnmergedTree = true)
+        addLabel.assertLabelLarge()
+        val addTextBounds = addLabel.getUnclippedBoundsInRoot()
+        assertEquals(24.dp, addTextBounds.left - addBounds.left)
+        assertEquals(24.dp, addBounds.right - addTextBounds.right)
         add.pressEnter()
 
         val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
@@ -1540,7 +1583,7 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
             compose.mainClock.autoAdvance = true
         }
         waitForTag(runTag)
-        compose.onNodeWithTag(runTag).assertTextContains("Running")
+        compose.onNodeWithTag(runTag).assertTextContains("Running", substring = true)
         compose.onNodeWithTag("workflow_history_loading").assertDoesNotExist()
     }
 
@@ -1577,7 +1620,7 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
             val tag = "workflow_run_$WORKFLOW_SOURCE_RUN"
             waitForTag(tag)
             loading.assertDoesNotExist()
-            val loaded = compose.onNodeWithTag(tag).assertTextContains("Running")
+            val loaded = compose.onNodeWithTag(tag).assertTextContains("Running", substring = true)
             val loadedBounds = loaded.getUnclippedBoundsInRoot()
             assertEquals(rowBounds.top, loadedBounds.top)
             assertEquals(rowBounds.left, loadedBounds.left)
@@ -1640,6 +1683,7 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun historyShowsConfirmedResultsAndOnlyLinksAvailableSourceChats() {
         val page = app.fixture.firstRunHistory
         val earlierRun =
@@ -1660,17 +1704,19 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
         val sourceTag = "workflow_run_$WORKFLOW_SOURCE_RUN"
         val missingTag = "workflow_run_$WORKFLOW_NO_SOURCE_RUN"
         waitForTag(sourceTag)
-        compose.onNodeWithTag(sourceTag).assertTextContains("Running")
-        compose.onNodeWithTag(missingTag).assertTextContains("Failed")
+        compose.onNodeWithTag(sourceTag).assertTextContains("Running", substring = true)
+        compose.onNodeWithTag(missingTag).assertTextContains("Failed", substring = true)
         compose.onNode(hasTestTag(missingTag) and hasClickAction()).assertDoesNotExist()
         val bounds = compose.onNodeWithTag(sourceTag).getUnclippedBoundsInRoot()
-        assertTrue(bounds.bottom - bounds.top >= 52.dp)
+        assertEquals(72.dp, bounds.bottom - bounds.top)
+        val staticBounds = compose.onNodeWithTag(missingTag).getUnclippedBoundsInRoot()
+        assertEquals(72.dp, staticBounds.bottom - staticBounds.top)
         compose.onNodeWithTag("workflow_use").assertIsDisplayed()
 
         compose.onNodeWithTag("workflow_earlier_runs").performClick()
         val earlierTag = "workflow_run_${earlierRun.id}"
         waitForTag(earlierTag)
-        compose.onNodeWithTag(earlierTag).assertTextContains("Timed out")
+        compose.onNodeWithTag(earlierTag).assertTextContains("Timed out", substring = true)
         compose.onNodeWithTag(sourceTag).assertIsDisplayed()
         assertTrue(
             app.fixture.requests.any { it.requestUrl?.queryParameter("cursor") == "earlier" },
@@ -2061,12 +2107,13 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
             assertEquals(rowTop, row.getUnclippedBoundsInRoot().top)
 
             query.performTextReplacement("unmatched query")
-            val empty = compose.onNodeWithText("No matching workflows").assertIsDisplayed()
+            val empty = compose.onNodeWithText("No matching workflows")
+            empty.assertDoesNotExist()
             compose.waitForIdle()
             compose.mainClock.advanceTimeBy(280)
-            compose.onNode(loading and !progressSemantics).assertDoesNotExist()
-            progress.assertIsDisplayed()
-            empty.assertIsDisplayed()
+            compose.onNode(loading and !progressSemantics).assertIsDisplayed()
+            progress.assertDoesNotExist()
+            empty.assertDoesNotExist()
 
             val updatedTitle = "Launch planning"
             app.fixture.releaseTitle = updatedTitle
@@ -2125,8 +2172,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
 
             query.assertTextContains(keyword)
             scope.assertIsSelected()
-            compose.onNodeWithText("No matching workflows").assertIsDisplayed()
-            // The cached empty result can appear while the catalog refresh is still running.
+            waitFor("No matching workflows")
             val focusedResults = hasTestTag("chat_search_results") and isFocused()
             compose.waitUntil(5_000) {
                 compose.onAllNodes(focusedResults).fetchSemanticsNodes().isNotEmpty()

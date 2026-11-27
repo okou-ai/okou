@@ -1,15 +1,16 @@
 //! Inspect or apply Storage-delivered instructions without replacing native homes.
 
 use crate::cleanup_directory::CleanupDirectory;
-use guest_contracts::agent_instructions::{
-    InstructionApplication, InstructionCheck, InstructionPaths, MAX_CHECK_METADATA_BYTES,
-    MAX_METADATA_BYTES, SOURCE_FILENAME, instruction_paths,
+use guest_contracts::{
+    agent_instructions::{
+        InstructionApplication, InstructionCheck, InstructionCheckResult, InstructionPaths,
+        MAX_METADATA_BYTES, SOURCE_FILENAME, instruction_paths,
+    },
+    env::CliAgentTypeSelection,
+    home_mount::HOME_DIR,
+    storage_manifest::member_memory_mount,
 };
-use guest_contracts::storage_paths::normalize_path;
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::Path};
 
 /// Consume instruction staging after Storage reconciliation and before Agent startup.
 pub fn apply_agent_instructions(home: &Path, metadata: &[u8]) -> bool {
@@ -49,17 +50,34 @@ fn input(home: &Path, metadata: &[u8]) -> io::Result<(InstructionApplication, In
 }
 
 /// Inspect the final file without reading content, creating paths or following symlinks.
-/// Missing or affected targets return `false`; unsafe targets and inspection failures are errors.
-pub fn check_agent_instructions(home: &Path, metadata: &[u8]) -> io::Result<bool> {
-    if metadata.len() > MAX_CHECK_METADATA_BYTES {
+/// After a successful Instructions check, optionally observe the framework's Memory root.
+pub fn check_agent_instructions(
+    home: &Path,
+    metadata: &[u8],
+) -> io::Result<InstructionCheckResult> {
+    if metadata.len() > MAX_METADATA_BYTES {
         return Err(io::Error::other("Instruction check metadata exceeds bound"));
     }
     let check: InstructionCheck = serde_json::from_slice(metadata)
         .map_err(|_| io::Error::other("Invalid instruction check"))?;
     let paths = instruction_paths(home, &check.framework)
         .ok_or_else(|| io::Error::other("Unsupported instruction framework"))?;
-    let parent = paths
-        .target
+    let instructions_current = check_instruction_target(&paths.target)?;
+    let memory_root_present = check.check_memory_root && instructions_current && {
+        let framework = CliAgentTypeSelection::parse(&check.framework).framework();
+        let mount = Path::new(member_memory_mount(framework));
+        let relative = mount.strip_prefix(HOME_DIR).map_err(io::Error::other)?;
+        // Match Storage Apply's directory check. On a miss, Runner still runs repair.
+        home.join(relative).is_dir()
+    };
+    Ok(InstructionCheckResult {
+        instructions_current,
+        memory_root_present,
+    })
+}
+
+fn check_instruction_target(target: &Path) -> io::Result<bool> {
+    let parent = target
         .parent()
         .ok_or_else(|| io::Error::other("Missing target parent"))?;
     let directory = match CleanupDirectory::open(parent) {
@@ -67,22 +85,11 @@ pub fn check_agent_instructions(home: &Path, metadata: &[u8]) -> io::Result<bool
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error),
     };
-    let filename = paths
-        .target
+    let filename = target
         .file_name()
         .ok_or_else(|| io::Error::other("Missing target name"))?;
     match fs::symlink_metadata(directory.proc_path().join(filename)) {
-        Ok(metadata) if metadata.is_file() => {
-            for mount in check.preserved_download_mounts {
-                if paths
-                    .target
-                    .starts_with(resolve_existing_root(&home.join(mount))?)
-                {
-                    return Ok(false);
-                }
-            }
-            Ok(true)
-        }
+        Ok(metadata) if metadata.is_file() => Ok(true),
         Ok(_) => Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "Instruction target is not a regular file",
@@ -90,24 +97,6 @@ pub fn check_agent_instructions(home: &Path, metadata: &[u8]) -> io::Result<bool
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }
-}
-
-// Target preparation creates missing directories, then canonicalizes the mount.
-// Resolve its existing prefix without creating anything during a reuse check.
-fn resolve_existing_root(path: &Path) -> io::Result<PathBuf> {
-    for ancestor in path.ancestors() {
-        match ancestor.canonicalize() {
-            Ok(resolved) => {
-                let suffix = path.strip_prefix(ancestor).map_err(io::Error::other)?;
-                return Ok(normalize_path(&resolved.join(suffix)));
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Err(io::Error::other(
-        "Instruction check mount has no existing ancestor",
-    ))
 }
 
 fn apply(home: &Path, input: InstructionApplication, paths: InstructionPaths) -> io::Result<()> {

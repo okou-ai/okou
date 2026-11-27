@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "2.72.1",
+  "version": "2.72.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -55,7 +55,6 @@
     "lint": "pnpm lint:jsonb-contracts && oxlint && oxlint --type-aware -c ../../.oxlintrc.typeaware.json && eslint . --max-warnings 0",
     "check-types": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:retire-proactive-installations": "tsx scripts/retire-proactive-installations.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:migrate:smoke": "tsx scripts/migrate-smoke.ts",
     "db:sync-proactive-model-key": "tsx scripts/sync-proactive-model-key.ts",

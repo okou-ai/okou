@@ -7,7 +7,7 @@
 //! Codex (`openai/codex`) decides between API-key mode and ChatGPT mode at
 //! load time from `auth.json` contents. By writing an `auth.json` with
 //! `auth_mode: "chatgpt"`, `OPENAI_API_KEY: null`, and a `tokens` object
-//! whose JWTs carry far-future `exp` claims, we put the codex CLI into
+//! whose access JWT has a far-future `exp` claim, we put the codex CLI into
 //! ChatGPT mode without ever holding real OAuth credentials inside the
 //! sandbox. Newer Codex versions compare the local account ID with workspace
 //! discovery, so the selected workspace ID is copied into auth.json. The
@@ -30,8 +30,11 @@
 use std::path::Path;
 
 #[cfg(test)]
-use api_contracts::generated::constants::codex_oauth_token::placeholders::CHATGPT_ACCOUNT_ID as PLACEHOLDER_CHATGPT_ACCOUNT_ID;
-use api_contracts::generated::constants::codex_oauth_token::placeholders::CHATGPT_REFRESH_TOKEN as PLACEHOLDER_CHATGPT_REFRESH_TOKEN;
+use api_contracts::generated::constants::model_provider_env::placeholders::CHATGPT_ACCOUNT_ID as PLACEHOLDER_CHATGPT_ACCOUNT_ID;
+use api_contracts::generated::constants::model_provider_env::placeholders::{
+    CHATGPT_ACCESS_TOKEN as PLACEHOLDER_CHATGPT_ACCESS_TOKEN,
+    CHATGPT_REFRESH_TOKEN as PLACEHOLDER_CHATGPT_REFRESH_TOKEN,
+};
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use guest_contracts::runtime_paths::{self, PrivateFileReplacementTarget};
@@ -42,9 +45,8 @@ use crate::error::AgentError;
 // ---------------------------------------------------------------------------
 // Placeholder constants
 //
-// The ChatGPT OAuth placeholder byte strings are generated from the
-// TypeScript model-provider contract. That keeps guest-agent's fabricated
-// auth.json aligned with the firewall's egress replacement map.
+// The shared model-provider contract supplies the access and refresh markers.
+// Pi uses the access marker directly and native Codex wraps it in a JWT.
 // ---------------------------------------------------------------------------
 
 /// Placeholder ChatGPT plan type. Must be a non-`free` plan name; codex
@@ -52,13 +54,10 @@ use crate::error::AgentError;
 /// creation; this string only needs to satisfy codex's local parser.
 pub(crate) const PLACEHOLDER_PLAN_TYPE: &str = "plus";
 
-/// Far-future JWT `exp` offset, in seconds. For a parseable access token,
-/// Codex's `AuthManager::should_refresh_proactively` returns true when
-/// its `exp` is no later than five minutes from now:
-/// <https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/auth/manager.rs#L2955-L2974>.
-/// An `exp` ~100 years from now therefore keeps the predicate false during
-/// runs.
-const FAR_FUTURE_EXP_SECS: i64 = 100 * 365 * 24 * 3600;
+/// 2200-01-01 UTC. A fixed far-future expiry keeps the synthetic Bearer
+/// value stable across runs and keeps Codex's proactive refresh inactive.
+const ACCESS_PLACEHOLDER_EXPIRY_TIMESTAMP: i64 = 7_258_118_400;
+const ID_PLACEHOLDER_EXPIRY_OFFSET_SECS: i64 = 100 * 365 * 24 * 3600;
 
 /// Localhost no-op URL for `CODEX_REFRESH_TOKEN_URL_OVERRIDE`. Defense
 /// in depth: if codex tries to refresh despite the far-future `exp`,
@@ -90,43 +89,23 @@ pub(crate) enum DesiredCodexAuth<'a> {
 // signatures locally, so no real HMAC computation is needed.
 // ---------------------------------------------------------------------------
 
-fn make_placeholder_jwt(payload: &Value) -> Result<String, AgentError> {
+fn make_placeholder_jwt(payload: &Value, signature: &str) -> Result<String, AgentError> {
     let header = json!({"alg": "HS256", "typ": "JWT"});
     let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
     let header_b64 = engine.encode(serde_json::to_string(&header)?.as_bytes());
     let payload_b64 = engine.encode(serde_json::to_string(payload)?.as_bytes());
-    // Fixed placeholder signature segment — codex doesn't validate it,
-    // and we don't have OpenAI's signing key. Non-empty satisfies the
-    // segment-presence check in `decode_jwt_payload`.
-    let sig = "PLACEHOLDER_SIG_DO_NOT_TRUST";
-    Ok(format!("{header_b64}.{payload_b64}.{sig}"))
+    Ok(format!("{header_b64}.{payload_b64}.{signature}"))
 }
 
 // ---------------------------------------------------------------------------
 // Claim builders
 // ---------------------------------------------------------------------------
 
-/// Build the JWT payload for the access_token. Codex parses this for
-/// `chatgpt_account_id` (under the `https://api.openai.com/auth`
-/// namespace) and `exp` (top-level). Far-future `exp` prevents
-/// proactive refresh.
-fn build_access_token_claims(now: DateTime<Utc>, account_id: &str) -> Value {
-    let exp = now.timestamp() + FAR_FUTURE_EXP_SECS;
-    json!({
-        "https://api.openai.com/auth": {
-            "chatgpt_account_id": account_id,
-            "chatgpt_plan_type": PLACEHOLDER_PLAN_TYPE,
-        },
-        "iat": now.timestamp(),
-        "exp": exp,
-    })
-}
-
 /// id_token claims include `chatgpt_account_id`, `chatgpt_plan_type`,
 /// `chatgpt_user_id`, and `chatgpt_account_is_fedramp` — parsed by
 /// codex's `IdTokenInfo` struct (`codex-rs/login/src/token_data.rs:28-42`).
 fn build_id_token_claims(now: DateTime<Utc>, account_id: &str) -> Value {
-    let exp = now.timestamp() + FAR_FUTURE_EXP_SECS;
+    let exp = now.timestamp() + ID_PLACEHOLDER_EXPIRY_OFFSET_SECS;
     json!({
         "https://api.openai.com/auth": {
             "chatgpt_account_id": account_id,
@@ -151,8 +130,16 @@ fn build_id_token_claims(now: DateTime<Utc>, account_id: &str) -> Value {
 // ---------------------------------------------------------------------------
 
 fn build_chatgpt_auth_json(now: DateTime<Utc>, account_id: &str) -> Result<Value, AgentError> {
-    let access_jwt = make_placeholder_jwt(&build_access_token_claims(now, account_id))?;
-    let id_jwt = make_placeholder_jwt(&build_id_token_claims(now, account_id))?;
+    // Codex sends the access JWT on the wire and obtains its selected
+    // workspace from tokens.account_id and the matching ID token.
+    let access_jwt = make_placeholder_jwt(
+        &json!({ "exp": ACCESS_PLACEHOLDER_EXPIRY_TIMESTAMP }),
+        PLACEHOLDER_CHATGPT_ACCESS_TOKEN,
+    )?;
+    let id_jwt = make_placeholder_jwt(
+        &build_id_token_claims(now, account_id),
+        "OkouModelProviderCodexOauthIdToken",
+    )?;
 
     Ok(json!({
         "auth_mode": "chatgpt",

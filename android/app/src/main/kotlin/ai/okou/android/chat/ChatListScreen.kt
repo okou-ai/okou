@@ -11,18 +11,13 @@ import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.rememberContentReadSkeleton
-import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -48,6 +43,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,7 +65,6 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -75,7 +72,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -101,7 +97,6 @@ import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -117,23 +112,19 @@ private const val ProjectMotionMillis = 250
 private val ChatListLeadingIconSize = 18.dp
 private val ChatListLeadingIconGap = 8.dp
 private val ChatListRowFocusInset = 3.dp
-private const val ChatListRowHoverAlpha = 0.08f
 internal val ChatListMotionEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private val projectPlacement = tween<IntOffset>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val immediatePlacement = snap<IntOffset>()
 
 @Composable
-private fun chatListRowBackground(
-    interactions: MutableInteractionSource,
-    selected: Boolean,
-): Color {
-    val colors = MaterialTheme.colorScheme
-    val hovered by interactions.collectIsHoveredAsState()
-    val background = if (selected) colors.secondaryContainer else colors.background
-    val foreground = if (selected) colors.onSecondaryContainer else colors.onBackground
-    return if (hovered) foreground.copy(alpha = ChatListRowHoverAlpha).compositeOver(background)
-    else background
+private fun chatRowShapes(): ListItemShapes {
+    val active = MaterialTheme.shapes.extraLarge
+    return ListItemDefaults.shapes(
+        selectedShape = active,
+        pressedShape = active,
+        focusedShape = active,
+    )
 }
 
 @Composable
@@ -362,6 +353,7 @@ internal fun ChatListScreen(
         listState,
         contentChangeKey = lastContentKey to knownProjects,
         syncing = syncVisible,
+        filter = state.filter,
         newChatEnabled = newChatEnabled,
         newChat = { newChat(null) },
         feedback = feedback,
@@ -381,7 +373,7 @@ internal fun ChatListScreen(
                     row("filter_heading") {
                         Text(
                             stringResource(state.filter.label()),
-                            Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 4.dp)
+                            Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
                                 .semantics { heading() }
                                 .testTag("chat_filter_heading"),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -958,7 +950,6 @@ private fun ProjectRow(
     val collapsed = activity != null
     val status = activity?.status ?: ChatRowStatus.None
     val colors = MaterialTheme.colorScheme
-    val interactions = remember { MutableInteractionSource() }
     val locale = LocalConfiguration.current.locales[0]
     val number = remember(locale) { NumberFormat.getIntegerInstance(locale) }
     val unread = stringResource(R.string.chat_unread)
@@ -994,82 +985,74 @@ private fun ProjectRow(
             rowFocus.requestFocus()
         }
     }
+    val shapes = chatRowShapes()
     Box(modifier) {
-        Row(
-            Modifier.fillMaxWidth()
-                .heightIn(min = ChatListRowHeight)
-                .clip(ChatListRowShape)
-                .background(chatListRowBackground(interactions, selected = false))
-                .contextMenuInput(openMenu)
-                .focusRequester(rowFocus)
-                .focusProperties { canFocus = true }
-                .onFocusChanged { rowFocused = it.isFocused }
-                .updateFocusOutline(
-                    ChatListRowShape,
-                    colors.onBackground,
-                    keyboardOnly = true,
-                    outlineInset = ChatListRowFocusInset,
-                )
-                .combinedClickable(
-                    interactionSource = interactions,
-                    indication = ChatPressRipple,
-                    role = Role.Button,
-                    onClick = toggle,
-                    onLongClick = openMenu,
-                    onLongClickLabel = stringResource(R.string.chat_more_actions),
-                )
-                .semantics {
-                    heading()
-                    if (label.isNotEmpty()) stateDescription = label
-                    if (collapsed) {
-                        expand {
-                            toggle()
-                            true
-                        }
-                    } else {
-                        collapse {
-                            toggle()
-                            true
-                        }
-                    }
-                }
-                .padding(ChatListRowPadding),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painterResource(if (collapsed) R.drawable.ic_folder else R.drawable.ic_folder_open),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(ChatListLeadingIconSize),
-            )
-            Spacer(Modifier.width(ChatListLeadingIconGap))
-            Row(
-                Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        WithButtonFocusOutline(colors.onSurface, inset = ChatListRowFocusInset) {
+            ListItem(
+                onClick = toggle,
+                onLongClick = openMenu,
+                onLongClickLabel = stringResource(R.string.chat_more_actions),
+                shapes = shapes,
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .contextMenuInput(openMenu)
+                        .focusRequester(rowFocus)
+                        .focusProperties { canFocus = true }
+                        .onFocusChanged { rowFocused = it.isFocused }
+                        .semantics {
+                            role = Role.Button
+                            heading()
+                            if (label.isNotEmpty()) stateDescription = label
+                            if (collapsed) {
+                                expand {
+                                    toggle()
+                                    true
+                                }
+                            } else {
+                                collapse {
+                                    toggle()
+                                    true
+                                }
+                            }
+                        },
             ) {
-                Text(
-                    name,
-                    Modifier.weight(1f, fill = false),
-                    color = colors.onBackground,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = chatListTitleStyle(),
-                    fontWeight =
-                        if (status == ChatRowStatus.Unread) FontWeight.SemiBold
-                        else FontWeight.Normal,
-                )
-                Icon(
-                    painterResource(
-                        if (collapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more,
-                    ),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painterResource(
+                            if (collapsed) R.drawable.ic_folder else R.drawable.ic_folder_open,
+                        ),
+                        contentDescription = null,
+                        tint = colors.onSurfaceVariant,
+                        modifier = Modifier.size(ChatListLeadingIconSize),
+                    )
+                    Spacer(Modifier.width(ChatListLeadingIconGap))
+                    Row(
+                        Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            name,
+                            Modifier.weight(1f, fill = false),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight =
+                                if (status == ChatRowStatus.Unread) FontWeight.SemiBold
+                                else FontWeight.Normal,
+                        )
+                        Icon(
+                            painterResource(
+                                if (collapsed) R.drawable.ic_chevron_right
+                                else R.drawable.ic_expand_more,
+                            ),
+                            contentDescription = null,
+                            tint = colors.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                    ChatStatusGlyph(status, runningFrame, row)
+                }
             }
-            Spacer(Modifier.width(8.dp))
-            ChatStatusGlyph(status, runningFrame, row)
         }
         if (menuOpen && openMenu != null) {
             val items = buildList {
@@ -1202,63 +1185,58 @@ private fun ChatRow(
     val archiveAction = actions.firstOrNull {
         it == ChatRowAction.Archive || it == ChatRowAction.Unarchive
     }
-    val interactions = remember { MutableInteractionSource() }
+    val shapes = chatRowShapes()
+    val itemColors = ListItemDefaults.colors()
+    val foreground = if (isSelected) itemColors.selectedContentColor else itemColors.contentColor
     ChatRowSwipe(
         readAction = readAction.takeIf { openMenu != null },
         archiveAction = archiveAction.takeIf { openMenu != null },
         performAction = performAction,
     ) { swipeModifier ->
-        Row(
-            swipeModifier
-                .fillMaxWidth()
-                .heightIn(min = ChatListRowHeight)
-                .clip(ChatListRowShape)
-                .background(chatListRowBackground(interactions, isSelected))
-                .contextMenuInput(openMenu)
-                .focusRequester(rowFocus)
-                .onFocusChanged { rowFocused = it.isFocused }
-                .updateFocusOutline(
-                    ChatListRowShape,
-                    colors.onBackground,
-                    keyboardOnly = true,
-                    outlineInset = ChatListRowFocusInset,
-                )
-                .combinedClickable(
-                    interactionSource = interactions,
-                    indication = ChatPressRipple,
-                    enabled = enabled,
-                    onClick = open,
-                    onLongClick = openMenu,
-                    onLongClickLabel = stringResource(R.string.chat_actions),
-                )
-                .testTag("chat_$threadId")
-                .semantics {
-                    if (isSelected) selected = true
-                    if (labels.isNotEmpty()) stateDescription = labels.joinToString()
+        WithButtonFocusOutline(foreground, inset = ChatListRowFocusInset) {
+            ListItem(
+                selected = isSelected,
+                onClick = open,
+                enabled = enabled,
+                onLongClick = openMenu,
+                onLongClickLabel = stringResource(R.string.chat_actions),
+                shapes = shapes,
+                colors = itemColors,
+                modifier =
+                    swipeModifier
+                        .fillMaxWidth()
+                        .contextMenuInput(openMenu)
+                        .focusRequester(rowFocus)
+                        .onFocusChanged { rowFocused = it.isFocused }
+                        .testTag("chat_$threadId")
+                        .semantics {
+                            // A selected chat can still be opened from the list.
+                            role = Role.Button
+                            if (labels.isNotEmpty()) stateDescription = labels.joinToString()
+                        },
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (hasDraft) {
+                        Icon(
+                            painterResource(R.drawable.ic_edit_note),
+                            contentDescription = null,
+                            tint = colors.onSurfaceVariant,
+                            modifier =
+                                Modifier.size(ChatListLeadingIconSize).testTag("chat_draft_icon"),
+                        )
+                        Spacer(Modifier.width(ChatListLeadingIconGap))
+                    }
+                    Text(
+                        title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
+                        Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight =
+                            if (status == ChatRowStatus.Unread) FontWeight.SemiBold else null,
+                    )
+                    ChatStatusGlyph(status, runningFrame, row)
                 }
-                .padding(ChatListRowPadding),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (hasDraft) {
-                Icon(
-                    painterResource(R.drawable.ic_edit_note),
-                    contentDescription = null,
-                    tint = colors.onSurfaceVariant,
-                    modifier = Modifier.size(ChatListLeadingIconSize).testTag("chat_draft_icon"),
-                )
-                Spacer(Modifier.width(ChatListLeadingIconGap))
             }
-            Text(
-                title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
-                Modifier.weight(1f),
-                color = if (isSelected) colors.onSecondaryContainer else colors.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = chatListTitleStyle(),
-                fontWeight = if (status == ChatRowStatus.Unread) FontWeight.SemiBold else null,
-            )
-            Spacer(Modifier.width(8.dp))
-            ChatStatusGlyph(status, runningFrame, row)
         }
         if (menuOpen && pendingAction == null) {
             WorkspaceMenu(
@@ -1340,7 +1318,7 @@ private fun ChatRowStatus.label(): String? =
 @Composable
 private fun ChatStatusGlyph(status: ChatRowStatus, runningFrame: LongState, row: Int) {
     val color = MaterialTheme.colorScheme.primary
-    Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.padding(start = 8.dp).size(16.dp), contentAlignment = Alignment.Center) {
         when (status) {
             ChatRowStatus.Unread -> Canvas(Modifier.size(8.dp)) { drawCircle(color) }
             ChatRowStatus.Running ->

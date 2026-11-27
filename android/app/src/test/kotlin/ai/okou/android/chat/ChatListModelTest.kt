@@ -1514,7 +1514,7 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun anUnconfirmedUnreadUndoKeepsItsProjectionUntilReadback() = runTest {
+    fun anUnconfirmedUnreadUndoRollsBackAndAcceptsLaterReadback() = runTest {
         val read = Indicators(emptyMap(), emptyMap())
         val unread =
             Indicators(
@@ -1546,13 +1546,13 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
 
             val pending = model.uiState.value
-            val unknown = checkNotNull(pending.rowUndo)
-            assertEquals(ChatUndoPhase.Unconfirmed, unknown.phase)
+            assertNull(pending.rowUndo)
+            assertTrue(pending.rowActionFailures.single().fromUndo)
             assertEquals(read, pending.indicators)
-            assertTrue(pending.isUnread(CHAT_PERSONAL))
+            assertFalse(pending.isUnread(CHAT_PERSONAL))
 
             source.statusRead = { unread }
-            model.checkRowUndo(unknown)
+            model.refreshIndicators()
             advanceUntilIdle()
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
             assertNull(model.uiState.value.rowUndo)
@@ -1603,8 +1603,9 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             assertTrue(model.undoRowAction(checkNotNull(model.uiState.value.rowUndo)))
             advanceUntilIdle()
             val awaitingReadback = model.uiState.value
-            assertTrue(awaitingReadback.isUnread(CHAT_PERSONAL))
-            assertEquals(ChatUndoPhase.Unconfirmed, awaitingReadback.rowUndo?.phase)
+            assertFalse(awaitingReadback.isUnread(CHAT_PERSONAL))
+            assertNull(awaitingReadback.rowUndo)
+            assertTrue(awaitingReadback.rowActionFailures.single().fromUndo)
 
             val history = model.history
             history.open(awaitingReadback.threads.single())
@@ -1799,7 +1800,7 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
             val settled = model.uiState.value
             assertEquals(setOf(CHAT_IN_PROJECT), settled.unreadChatIds())
-            assertEquals(ChatMarkAllReadResult(1, 2, rejected = 1), settled.markAllReadResult)
+            assertEquals(ChatMarkAllReadResult(1, 2), settled.markAllReadResult)
         }
     }
 
@@ -1890,7 +1891,7 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
                 val state = model.uiState.value
                 assertEquals(connectionFailed, state.isUnread(CHAT_PERSONAL))
                 assertEquals(
-                    ChatMarkAllReadResult(0, 1, rejected = if (connectionFailed) 1 else 0),
+                    ChatMarkAllReadResult(0, 1),
                     state.markAllReadResult,
                 )
             }
@@ -1961,7 +1962,7 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
             assertEquals(2, attempts)
             assertEquals(
-                ChatMarkAllReadResult(0, 1, rejected = 1),
+                ChatMarkAllReadResult(0, 1),
                 model.uiState.value.markAllReadResult,
             )
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
@@ -2145,12 +2146,9 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                 }
                 advanceUntilIdle()
                 val state = model.uiState.value
-                assertEquals(
-                    if (rejected) null else ChatUndoPhase.Unconfirmed,
-                    state.rowUndo?.phase,
-                )
-                assertEquals(rejected, state.threads.single { it.id == CHAT_PERSONAL }.archived)
-                assertEquals(rejected, state.rowActionFailures.singleOrNull()?.fromUndo == true)
+                assertNull(state.rowUndo)
+                assertTrue(state.threads.single { it.id == CHAT_PERSONAL }.archived)
+                assertTrue(state.rowActionFailures.single().fromUndo)
                 assertTrue(state.pendingRowActions.isEmpty())
                 assertEquals(1, inverseWrites)
             }
@@ -2194,32 +2192,47 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun undoChecksAnAmbiguousResultByReceipt() = runTest {
-        val source = ArchiveService()
-        var inverseWrites = 0
-        source.beforeUnarchive = { inverseWrites++ }
-        source.afterUnarchive = { throw ApiFailure.Network(IOException("Lost response")) }
-        withCatchUpModel(source) { model ->
-            model.refresh()
-            advanceUntilIdle()
-            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
-            advanceUntilIdle()
+    fun archiveAndUndoUseSuccessfulReceiptsWhenListVerificationFails() = runTest {
+        for (responseLost in listOf(false, true)) {
+            val source = ArchiveService()
+            var inverseWrites = 0
+            source.beforeUnarchive = { inverseWrites++ }
+            source.afterUnarchive = {
+                if (responseLost) throw ApiFailure.Network(IOException("Lost response"))
+            }
+            withCatchUpModel(source) { model ->
+                model.refresh()
+                advanceUntilIdle()
+                source.beforeEvents = { throw IOException("Readback unavailable") }
+                assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+                advanceUntilIdle()
 
-            val offer = checkNotNull(model.uiState.value.rowUndo)
-            source.beforeEvents = { throw IOException("Readback unavailable") }
-            model.undoRowAction(offer)
-            advanceUntilIdle()
-            val unconfirmed = checkNotNull(model.uiState.value.rowUndo)
-            assertEquals(ChatUndoPhase.Unconfirmed, unconfirmed.phase)
-            assertFalse(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
-            assertEquals(1, inverseWrites)
+                val offer =
+                    checkNotNull(model.uiState.value.rowUndo) {
+                        "An acknowledged archive can be undone while list verification is unavailable"
+                    }
+                assertEquals(ChatRowAction.Archive, offer.action)
+                model.undoRowAction(offer)
+                advanceUntilIdle()
+                val settled = model.uiState.value
+                assertNull(settled.rowUndo)
+                assertEquals(
+                    responseLost,
+                    settled.rowActionFailures.singleOrNull()?.fromUndo == true,
+                )
+                assertEquals(
+                    responseLost,
+                    settled.threads.first { it.id == CHAT_PERSONAL }.archived,
+                )
+                assertEquals(1, inverseWrites)
 
-            source.beforeEvents = {}
-            model.checkRowUndo(unconfirmed)
-            advanceUntilIdle()
-            assertNull(model.uiState.value.rowUndo)
-            assertFalse(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
-            assertEquals(1, inverseWrites)
+                source.beforeEvents = {}
+                model.refreshList()
+                advanceUntilIdle()
+                assertNull(model.uiState.value.rowUndo)
+                assertFalse(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
+                assertEquals(1, inverseWrites)
+            }
         }
     }
 
@@ -2673,7 +2686,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun aRejectedUnarchiveDoesNotSettleAnEarlierUnconfirmedArchive() = runTest {
+    fun anUnconfirmedArchiveRestoresTheConfirmedRowAndClearsThePendingAction() = runTest {
         val source =
             object : Service() {
                 override suspend fun chatEvents(since: Long?) =
@@ -2693,23 +2706,24 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
             model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive)
             advanceUntilIdle()
-            assertTrue(model.uiState.value.threads.single().archived)
+            assertFalse(model.uiState.value.threads.single().archived)
 
-            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unarchive)
+            assertFalse(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unarchive))
             advanceUntilIdle()
-            assertTrue(model.uiState.value.threads.single().archived)
-            assertEquals(ChatRowAction.Unarchive, model.uiState.value.failedRowAction?.action)
+            assertFalse(model.uiState.value.threads.single().archived)
+            assertEquals(ChatRowAction.Archive, model.uiState.value.failedRowAction?.action)
+            assertTrue(model.uiState.value.pendingRowActions.isEmpty())
             assertNull(model.uiState.value.rowUndo)
 
             model.reloadAfterRowActionFailure()
             advanceUntilIdle()
-            assertTrue(model.uiState.value.threads.single().archived)
+            assertFalse(model.uiState.value.threads.single().archived)
             assertFalse(model.uiState.value.confirmedThreads.single().archived)
         }
     }
 
     @Test
-    fun anUnconfirmedInverseNeedsEvidenceBeyondTheOriginalBaseline() = runTest {
+    fun uncertainArchiveAndUnarchiveEachRollBackUntilCanonicalEventsArrive() = runTest {
         val events = mutableListOf(chatEventWire())
         val requests = mutableListOf<String>()
         val source =
@@ -2730,21 +2744,24 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             runCurrent()
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
             runCurrent()
-            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unarchive))
-            runCurrent()
-            assertEquals(ChatRowAction.Unarchive, model.uiState.value.failedRowAction?.action)
+            assertFalse(model.uiState.value.threads.single().archived)
+            assertEquals(ChatRowAction.Archive, model.uiState.value.failedRowAction?.action)
 
             events.add(chatEventWire(id = requests.first(), seq = 18, kind = "archived"))
             model.refreshList()
             runCurrent()
             assertTrue(model.uiState.value.confirmedThreads.single().archived)
-            assertFalse(model.uiState.value.threads.single().archived)
+            assertTrue(model.uiState.value.threads.single().archived)
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unarchive))
+            runCurrent()
+            assertEquals(ChatRowAction.Unarchive, model.uiState.value.failedRowAction?.action)
+            assertTrue(model.uiState.value.threads.single().archived)
 
             events.add(chatEventWire(id = HISTORY_LAST_EVENT, seq = 19, kind = "unarchived"))
             model.refreshList()
             runCurrent()
             assertFalse(model.uiState.value.confirmedThreads.single().archived)
-            assertNull(model.uiState.value.failedRowAction)
+            assertFalse(model.uiState.value.threads.single().archived)
             assertNull(model.uiState.value.rowUndo)
             assertEquals(2, requests.size)
         }
@@ -3723,7 +3740,7 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
         }
 
     @Test
-    fun confirmedProjectDeletionReleasesAnUnconfirmedMoveIntoThatProject() = runTest {
+    fun confirmedProjectDeletionKeepsMembershipAfterAnUnconfirmedMoveRollsBack() = runTest {
         val source = ProjectOrganizationService()
         source.moveResponse = { _, _, _ ->
             throw ApiFailure.Network(IOException("Move response unavailable"))
@@ -3737,8 +3754,9 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
             runCurrent()
             val moving = model.uiState.value
-            assertEquals(CHAT_PROJECT, moving.threads.single { it.id == CHAT_PERSONAL }.projectId)
+            assertEquals(original, moving.threads.single { it.id == CHAT_PERSONAL })
             assertEquals(ChatRowAction.MoveProject, moving.failedRowAction?.action)
+            model.dismissRowActionFailure(checkNotNull(moving.failedRowAction))
 
             model.deleteProject(CHAT_PROJECT)
             runCurrent()
@@ -3772,7 +3790,7 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             runCurrent()
             val uncertainMove = model.uiState.value
             assertEquals(
-                destination,
+                CHAT_PROJECT,
                 uncertainMove.threads.single { it.id == CHAT_IN_PROJECT }.projectId,
             )
             val failure = checkNotNull(uncertainMove.failedRowAction)
@@ -3802,6 +3820,7 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             )
             assertSame(failure, regrouped.failedRowAction)
             assertNull(regrouped.chatMoveNotice)
+            model.dismissRowActionFailure(failure)
 
             val originalMove = source.moveIds.single()
             source.publishMembership(CHAT_IN_PROJECT, destination, originalMove)
@@ -3867,33 +3886,48 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
 
     @Test
     fun moveToProjectDeletedDuringTheRequestKeepsTheConfirmedMembership() = runTest {
-        val source = ProjectOrganizationService()
-        val response = CompletableDeferred<Unit>()
-        source.moveResponse = { _, _, _ ->
-            response.await()
-            throw ApiFailure.Network(IOException("Move response unavailable"))
-        }
-        withCatchUpModel(source) { model ->
-            model.refresh()
-            runCurrent()
-            val original = model.uiState.value.threads.single { it.id == CHAT_PERSONAL }
+        for (responseLost in listOf(false, true)) {
+            val source = ProjectOrganizationService()
+            val response = CompletableDeferred<Unit>()
+            source.moveResponse = { thread, project, event ->
+                if (!responseLost) source.publishMembership(thread, project, event)
+                response.await()
+                if (responseLost) throw ApiFailure.Network(IOException("Move response unavailable"))
+            }
+            withCatchUpModel(source) { model ->
+                model.refresh()
+                runCurrent()
+                val original = model.uiState.value.threads.single { it.id == CHAT_PERSONAL }
 
-            assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
-            runCurrent()
-            source.publishDeletion("00000022-0000-4000-8000-000000000000")
-            model.refreshMetadata()
-            runCurrent()
-            val pending = model.uiState.value
-            assertTrue(pending.projects.isEmpty())
-            assertEquals(ChatRowAction.MoveProject, pending.pendingRowActions[CHAT_PERSONAL])
+                assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
+                runCurrent()
+                source.publishDeletion("00000022-0000-4000-8000-000000000000")
+                if (!responseLost) {
+                    source.publishMembership(
+                        CHAT_PERSONAL,
+                        null,
+                        "00000023-0000-4000-8000-000000000000",
+                    )
+                    source.chatReadUnavailable = true
+                }
+                model.refreshMetadata()
+                runCurrent()
+                val pending = model.uiState.value
+                assertTrue(pending.projects.isEmpty())
+                assertEquals(ChatRowAction.MoveProject, pending.pendingRowActions[CHAT_PERSONAL])
 
-            response.complete(Unit)
-            runCurrent()
+                response.complete(Unit)
+                runCurrent()
 
-            val settled = model.uiState.value
-            assertEquals(original, settled.threads.single { it.id == CHAT_PERSONAL })
-            assertNull(settled.pendingRowActions[CHAT_PERSONAL])
-            assertNull(settled.failedRowAction)
+                val settled = model.uiState.value
+                assertEquals(original, settled.threads.single { it.id == CHAT_PERSONAL })
+                assertNull(settled.pendingRowActions[CHAT_PERSONAL])
+                assertNull(settled.chatMoveNotice)
+                assertEquals(
+                    if (responseLost) ChatRowAction.MoveProject else null,
+                    settled.rowActionFailures.singleOrNull()?.action,
+                )
+            }
         }
     }
 
@@ -4299,7 +4333,7 @@ internal class ChatListPinModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun aConfirmedNewerPinMoveSettlesTheEarlierUnconfirmedRank() = runTest {
+    fun aPinMoveRetryUsesTheConfirmedOrderAndAcceptsAnAuthoritativeRank() = runTest {
         val first = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
         val middle = CHAT_IN_PROJECT
         val last = CHAT_PERSONAL
@@ -4325,8 +4359,9 @@ internal class ChatListPinModelTest : ChatListModelTestFixture() {
             runCurrent()
             assertTrue(model.performRowAction(first, ChatRowAction.MovePinDown))
             runCurrent()
-            assertEquals(listOf(middle, first, last), model.uiState.value.threads.map { it.id })
+            assertEquals(listOf(first, middle, last), model.uiState.value.threads.map { it.id })
             assertEquals(ChatRowAction.MovePinDown, model.uiState.value.failedRowAction?.action)
+            model.dismissRowActionFailure(checkNotNull(model.uiState.value.failedRowAction))
 
             assertTrue(model.performRowAction(first, ChatRowAction.MovePinDown))
             runCurrent()
@@ -4336,7 +4371,7 @@ internal class ChatListPinModelTest : ChatListModelTestFixture() {
                     seq = 23,
                     thread = first,
                     kind = "sort_touched",
-                    extra = ""","pinOrder":"a3"""",
+                    extra = ""","pinOrder":"a1V"""",
                 ),
             )
             model.refreshList()
@@ -4345,8 +4380,8 @@ internal class ChatListPinModelTest : ChatListModelTestFixture() {
             runCurrent()
 
             val confirmed = model.uiState.value
-            assertEquals(listOf("a1V", "a3"), requested)
-            assertEquals(listOf(middle, last, first), confirmed.threads.map { it.id })
+            assertEquals(listOf("a1V", "a1V"), requested)
+            assertEquals(listOf(middle, first, last), confirmed.threads.map { it.id })
             assertNull(confirmed.failedRowAction)
         }
     }
@@ -4428,7 +4463,7 @@ internal class ChatListPinModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun aPartialPinMoveCanSettleItsSubmittedRankAfterAReadFailure() = runTest {
+    fun aPartialPinMoveRestoresItsUnknownRankAndAppliesTheLateEvent() = runTest {
         val moved = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
         val submitted = CHAT_PERSONAL
         val events = pinnedEvents(moved, CHAT_IN_PROJECT, submitted).toMutableList()
@@ -4461,7 +4496,7 @@ internal class ChatListPinModelTest : ChatListModelTestFixture() {
             assertEquals(ChatRowAction.MovePinDown, failure.action)
             assertTrue(failure.rejected)
             assertEquals("a0", partial.threads.single { it.id == moved }.pinOrder)
-            assertEquals("a2", partial.threads.single { it.id == submitted }.pinOrder)
+            assertEquals("a0", partial.threads.single { it.id == submitted }.pinOrder)
 
             readUnavailable = true
             model.refreshList()
@@ -4469,14 +4504,14 @@ internal class ChatListPinModelTest : ChatListModelTestFixture() {
             runCurrent()
             val retrying = model.uiState.value
             assertEquals(ChatListReadFailure.Retrying, retrying.listReadFailure)
-            assertEquals("a2", retrying.threads.single { it.id == submitted }.pinOrder)
+            assertEquals("a0", retrying.threads.single { it.id == submitted }.pinOrder)
 
             readUnavailable = false
             advanceTimeBy(3_000)
             runCurrent()
             val recovered = model.uiState.value
             assertEquals(ChatReadPhase.Ready, recovered.listPhase)
-            assertEquals("a2", recovered.threads.single { it.id == submitted }.pinOrder)
+            assertEquals("a0", recovered.threads.single { it.id == submitted }.pinOrder)
             assertEquals("a0", recovered.confirmedThreads.single { it.id == submitted }.pinOrder)
 
             events.add(
@@ -4589,7 +4624,7 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
     }
 
     @Test
-    fun lostReadResponseStaysPendingUntilAnAuthoritativeWatermarkCoversIt() = runTest {
+    fun lostReadResponseRollsBackAndLaterAcceptsAnAuthoritativeWatermark() = runTest {
         val realtime = TestRealtimeService()
         var confirmedAt: String? = null
         var writes = 0
@@ -4619,14 +4654,11 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
             advanceUntilIdle()
             val pending = model.uiState.value
-            assertFalse(pending.isUnread(CHAT_PERSONAL))
+            assertTrue(pending.isUnread(CHAT_PERSONAL))
+            assertTrue(pending.readIntents.isEmpty())
             assertEquals(ChatRowAction.MarkRead, pending.failedRowAction?.action)
             assertNull(pending.rowUndo)
-
-            model.checkRowActionFailure(checkNotNull(pending.failedRowAction))
-            advanceUntilIdle()
-            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
-            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            model.dismissRowActionFailure(checkNotNull(pending.failedRowAction))
 
             confirmedAt = CHAT_DATE
             realtime.invalidate(ChatChanges(readCursor = true))
@@ -4661,8 +4693,9 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
             runCurrent()
             val pending = model.uiState.value
-            assertTrue(pending.isUnread(CHAT_PERSONAL))
+            assertFalse(pending.isUnread(CHAT_PERSONAL))
             assertEquals(ChatRowAction.MarkUnread, pending.failedRowAction?.action)
+            model.dismissRowActionFailure(checkNotNull(pending.failedRowAction))
 
             lastReadAt = null
             model.refreshIndicators()
@@ -4678,6 +4711,7 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
     @Test
     fun anOldUnreadSnapshotCannotConfirmTheInverseOfAnUnconfirmedRead() = runTest {
         var lastReadAt: String? = null
+        val firstReadback = CompletableDeferred<Indicators>()
         val source =
             object : Service() {
                     override suspend fun markRead(threadId: String): ReadState =
@@ -4700,11 +4734,16 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
         withCatchUpModel(source) { model ->
             model.refresh()
             runCurrent()
+            val unreadSnapshot = source.statusRead
+            source.statusRead = { firstReadback.await() }
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
             runCurrent()
-            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
 
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
+            runCurrent()
+            source.statusRead = unreadSnapshot
+            firstReadback.complete(unreadSnapshot())
             runCurrent()
             val pending = checkNotNull(model.uiState.value.failedRowAction)
             assertEquals(ChatRowAction.MarkUnread, pending.action)
@@ -4712,13 +4751,14 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
 
             // The first write appears after the indicator snapshot was taken.
             lastReadAt = CHAT_DATE
-            model.checkRowActionFailure(pending)
+            model.refreshIndicators()
             runCurrent()
             assertSame(pending, model.uiState.value.failedRowAction)
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
 
             lastReadAt = null
-            model.checkRowActionFailure(pending)
+            model.dismissRowActionFailure(pending)
+            model.refreshIndicators()
             runCurrent()
             val confirmed = model.uiState.value
             assertTrue(confirmed.isUnread(CHAT_PERSONAL))
@@ -4729,7 +4769,8 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
     }
 
     @Test
-    fun aConfirmedUnreadWriteRetiresTheEarlierUnknownReadFeedback() = runTest {
+    fun aConfirmedUnreadWriteWinsOverAnEarlierPendingReadback() = runTest {
+        val firstReadback = CompletableDeferred<Indicators>()
         val source =
             object : Service() {
                     override suspend fun markRead(threadId: String): ReadState =
@@ -4750,12 +4791,16 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
         withCatchUpModel(source) { model ->
             model.refresh()
             runCurrent()
+            val unreadSnapshot = source.statusRead
+            source.statusRead = { firstReadback.await() }
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
             runCurrent()
             assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
-            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
 
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
+            runCurrent()
+            source.statusRead = unreadSnapshot
+            firstReadback.complete(Indicators(emptyMap(), emptyMap()))
             runCurrent()
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
             assertTrue(model.uiState.value.readIntents.isEmpty())
@@ -4766,6 +4811,7 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
     @Test
     fun anUnconfirmedReadCannotCancelAnUndeliveredUnreadWrite() = runTest {
         var unreadWrites = 0
+        val firstReadback = CompletableDeferred<Indicators>()
         val source =
             object : Service() {
                     override suspend fun markRead(threadId: String): ReadState =
@@ -4790,9 +4836,11 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
         withCatchUpModel(source) { model ->
             model.refresh()
             runCurrent()
+            val unreadSnapshot = source.statusRead
+            source.statusRead = { firstReadback.await() }
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
             runCurrent()
-            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
 
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
             runCurrent()
@@ -4800,6 +4848,9 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
             advanceTimeBy(3_000)
             runCurrent()
             assertEquals(2, unreadWrites)
+            source.statusRead = unreadSnapshot
+            firstReadback.complete(unreadSnapshot())
+            runCurrent()
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
             assertNull(model.uiState.value.failedRowAction)
         }
@@ -4854,7 +4905,7 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
     }
 
     @Test
-    fun ambiguousUnreadWriteKeepsTheProjectionOfflineAndReconcilesAfterReconnect() = runTest {
+    fun ambiguousUnreadWriteRollsBackOfflineAndReconcilesAfterReconnect() = runTest {
         val response = CompletableDeferred<ReadState>()
         val source =
             object : Service() {
@@ -4872,7 +4923,7 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
             advanceUntilIdle()
             assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
             assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction?.action)
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
 
             source.statusRead = {
                 Indicators(

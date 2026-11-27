@@ -7,6 +7,8 @@ import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.WorkspaceSearchGroupHeading
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
+import ai.okou.android.WorkspaceToolDirectoryRowSkeleton
+import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.hasPendingSearchText
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.restoreDirectoryFocus
@@ -15,6 +17,7 @@ import ai.okou.android.searchClearAction
 import ai.okou.android.state.ConnectorDirectoryState
 import ai.okou.android.state.rememberConnectorDirectory
 import ai.okou.android.updates.updateFocusOutline
+import ai.okou.android.workspaceToolListItemShapes
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,6 +49,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
@@ -66,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -81,8 +87,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -430,10 +438,7 @@ private fun ConnectorDirectory(
                             when {
                                 entries == null ->
                                     key(route.connected, filter) {
-                                        ConnectorSkeleton(
-                                            stringResource(R.string.connector_loading),
-                                            rows = 3,
-                                        )
+                                        ConnectorDirectorySkeleton(recommended)
                                     }
                                 query.isNotEmpty() ->
                                     ConnectorEmpty(
@@ -463,7 +468,7 @@ private fun ConnectorDirectory(
                             item(key = "recommendations") {
                                 WorkspaceSearchGroupHeading(
                                     stringResource(R.string.connector_recommended),
-                                    Modifier.padding(horizontal = 12.dp),
+                                    Modifier.padding(horizontal = 16.dp),
                                 )
                             }
                         }
@@ -472,6 +477,7 @@ private fun ConnectorDirectory(
                             ConnectorDirectoryRow(
                                 entry,
                                 directory.accountsFor(entry.slug),
+                                showDescription = !route.connected,
                                 selected == entry.slug,
                                 (if (restoring) Modifier.focusRequester(restoreFocus) else Modifier)
                                     .testTag("connector-${entry.slug}"),
@@ -639,11 +645,12 @@ private fun ConnectorFilters(
 private fun ConnectorDirectoryRow(
     entry: ConnectorEntry,
     accounts: List<ConnectorSavedAccount>,
+    showDescription: Boolean,
     selected: Boolean,
     modifier: Modifier,
     open: () -> Unit,
 ) {
-    val hasDescription = entry.description.isNotBlank()
+    val hasDescription = (showDescription || accounts.isEmpty()) && entry.description.isNotBlank()
     WorkspaceToolDirectoryRow(
         title = entry.name,
         selected = selected,
@@ -709,6 +716,71 @@ internal fun ConnectorChevron() {
 }
 
 @Composable
+internal fun ConnectorNavigationRow(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    leadingContent: @Composable (() -> Unit)? = null,
+    supportingContent: @Composable (() -> Unit)? = null,
+    trailingContent: @Composable () -> Unit = { ConnectorChevron() },
+    content: @Composable () -> Unit,
+) {
+    val shapes = workspaceToolListItemShapes()
+    val colors =
+        ListItemDefaults.colors(
+            containerColor = Color.Transparent,
+            disabledContainerColor = Color.Transparent,
+        )
+    ListItem(
+        onClick = onClick,
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .semantics { role = Role.Button }
+                .updateFocusOutline(shapes.focusedShape, colors.contentColor, keyboardOnly = true),
+        enabled = enabled,
+        leadingContent = leadingContent,
+        supportingContent = supportingContent,
+        trailingContent = trailingContent,
+        shapes = shapes,
+        colors = colors,
+        content = content,
+    )
+}
+
+@Composable
+private fun ConnectorDirectorySkeleton(recommended: Boolean) {
+    if (!rememberContentReadSkeleton()) return
+    val label = stringResource(R.string.connector_loading)
+    val (titleSlot, supportingSlot) =
+        with(LocalDensity.current) {
+            val type = MaterialTheme.typography
+            type.bodyLarge.lineHeight.toDp() to type.bodyMedium.lineHeight.toDp()
+        }
+    Column(Modifier.fillMaxWidth().semantics { contentDescription = label }) {
+        if (recommended)
+            WorkspaceSearchGroupHeading(
+                stringResource(R.string.connector_recommended),
+                Modifier.padding(horizontal = 16.dp),
+            )
+        repeat(3) {
+            WorkspaceToolDirectoryRowSkeleton(
+                modifier = Modifier.testTag("connector-directory-skeleton-row"),
+                supportingContent = {
+                    Box(Modifier.height(supportingSlot), contentAlignment = Alignment.CenterStart) {
+                        ChatSkeletonBlock(Modifier.width(144.dp).height(10.dp))
+                    }
+                },
+            ) {
+                Box(Modifier.height(titleSlot), contentAlignment = Alignment.CenterStart) {
+                    ChatSkeletonBlock(Modifier.width(96.dp).height(14.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 internal fun ConnectorSkeleton(label: String, rows: Int) {
     if (!rememberContentReadSkeleton()) return
     Column(Modifier.fillMaxWidth().semantics { contentDescription = label }) {
@@ -769,14 +841,16 @@ private fun ConnectorEmpty(title: Int, action: Int? = null, onAction: () -> Unit
 }
 
 @Composable
-internal fun ConnectorStatusBanner(message: Int) {
+internal fun ConnectorStatusBanner(message: Int, error: Boolean = false) {
     Text(
         stringResource(message),
         Modifier.padding(bottom = 8.dp, top = 4.dp)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .semantics { liveRegion = LiveRegionMode.Polite },
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color =
+            if (error) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurfaceVariant,
         style = connectorFeedbackType(),
     )
 }

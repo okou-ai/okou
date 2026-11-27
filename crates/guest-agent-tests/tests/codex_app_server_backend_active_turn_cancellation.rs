@@ -1,6 +1,6 @@
 //! User cancellation must interrupt an established Codex turn before shutdown.
 
-use cli_test_support::json_fixture::parse_json_lines;
+use cli_test_support::json_fixture::read_json_lines;
 use guest_agent_tests as common;
 
 use std::time::Duration;
@@ -97,6 +97,5 @@ async fn user_cancellation_interrupts_the_active_codex_turn()
 fn read_agent_log_events(
     paths: &guest_agent::paths::GuestPaths,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
-    let log = std::fs::read_to_string(paths.agent_log_file())?;
-    parse_json_lines(&log).map_err(Into::into)
+    read_json_lines(paths.agent_log_file())
 }

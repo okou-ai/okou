@@ -12,6 +12,8 @@ internal val ChatRowAction.recoversInBackground: Boolean
             ChatRowAction.Unpin,
             ChatRowAction.MovePinUp,
             ChatRowAction.MovePinDown,
+            ChatRowAction.Mute,
+            ChatRowAction.Unmute,
             ChatRowAction.MarkRead,
             ChatRowAction.MarkUnread,
             ChatRowAction.MoveProject -> true

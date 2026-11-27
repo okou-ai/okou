@@ -66,6 +66,17 @@ async function admission(n: number, selected: string) {
     expectAdmission(n, selected);
   });
 }
+function readyBrowserInput() {
+  const surface = document.querySelector<HTMLElement>("[data-browser-surface]");
+  if (!surface) {
+    throw new Error("Waiting for the browser viewer surface");
+  }
+  const input = within(surface).getByRole("textbox", {
+    name: "Remote browser input",
+  });
+  expect(input).toBeEnabled();
+  return input;
+}
 async function selectLast() {
   click(await findFastControl("button", "All tabs"));
   click(
@@ -125,21 +136,8 @@ test("chat-navigation-browser-016 Resizing during a disconnected viewer takes ef
     },
   });
   const resize = nativeGeometry(800);
-  const readyInput = () => {
-    const surface = document.querySelector<HTMLElement>(
-      "[data-browser-surface]",
-    );
-    if (!surface) {
-      throw new Error("Waiting for the browser viewer surface");
-    }
-    const input = within(surface).getByRole("textbox", {
-      name: "Remote browser input",
-    });
-    expect(input).toBeEnabled();
-    return input;
-  };
   click(open);
-  const field = await waitFor(readyInput);
+  const field = await waitFor(readyBrowserInput);
   await admission(12, "Example");
   disconnected = true;
   cdp.setAutoOpen(false);
@@ -156,7 +154,7 @@ test("chat-navigation-browser-016 Resizing during a disconnected viewer takes ef
   });
   await waitFor(() => {
     expect(cdp.requests).toContainEqual(resizedViewport);
-    readyInput();
+    readyBrowserInput();
     expectAdmission(3, "Example");
   });
   resize(800);
@@ -323,7 +321,7 @@ test("Native tab activation and a provider active-target report have different s
     many: true,
   });
   click(open);
-  await remoteBrowserInput();
+  await waitFor(readyBrowserInput);
   click(await findFastControl("tab", "Page 12"));
   await admission(12, "Page 12");
   click(await findFastControl("link", "Workflows"));
@@ -334,8 +332,10 @@ test("Native tab activation and a provider active-target report have different s
     return history.back();
   });
   click(await findFastControl("button", /Open .*browser/i));
-  await remoteBrowserInput();
-  await admission(12, "Example");
+  await waitFor(() => {
+    expectAdmission(12, "Example");
+    readyBrowserInput();
+  });
   const target = cdp.targets.find((row) => {
     return row.targetId === "page-12";
   });

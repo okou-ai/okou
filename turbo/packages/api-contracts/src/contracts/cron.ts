@@ -15,7 +15,6 @@ import {
 import { authHeadersSchema, initContract } from "./base";
 import { connectorCatalogSyncAttemptReportSchema } from "./connector-catalog-sync";
 import { apiErrorSchema } from "./errors";
-import { proactiveTasks } from "./proactive";
 
 const c = initContract();
 
@@ -579,89 +578,23 @@ export const cronConnectorCatalogContract = c.router({
   },
 });
 
-const proactiveShadowCounts = object({
-  bothDue: number().int().nonnegative(),
-  automationOnly: number().int().nonnegative(),
-  proactiveOnly: number().int().nonnegative(),
-  paused: number().int().nonnegative(),
-  awaitingAnchor: number().int().nonnegative(),
-  missingTimezone: number().int().nonnegative(),
-  invalidTimezone: number().int().nonnegative(),
-  deferred: number().int().nonnegative(),
-  overdue: number().int().nonnegative(),
-  expired: number().int().nonnegative(),
-});
-
 export const cronProactiveContract = c.router({
-  handoff: {
-    method: "POST",
-    path: "/api/cron/proactive/handoff",
-    headers: authHeadersSchema,
-    body: object({
-      action: zEnum(["drain", "activate"]),
-      apply: boolean().default(false),
-    }).strict(),
-    responses: {
-      200: object({
-        phase: zEnum(["automation", "draining", "standalone"]),
-        ready: boolean(),
-        changed: boolean(),
-        queued: number(),
-        running: number(),
-        claims: number(),
-        callbacks: number(),
-        missingCursors: number(),
-        copied: number(),
-        removed: number(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-    },
-    summary: "Inspect or apply the release-wide proactive dispatcher handoff",
-  },
-  compare: {
+  dispatch: {
     method: "GET",
     path: "/api/cron/proactive",
     headers: authHeadersSchema,
     responses: {
       200: object({
+        phase: literal("standalone"),
         minute: iso.datetime(),
-        copy: object({
-          added: number().int().nonnegative(),
-          removed: number().int().nonnegative(),
-          changedSettings: number().int().nonnegative(),
-          changedCursor: number().int().nonnegative(),
-        }),
-        differences: array(
-          object({
-            orgId: string(),
-            userId: string(),
-            task: zEnum(proactiveTasks),
-            source: zEnum(["automation", "proactive"]),
-            scheduledAt: iso.datetime(),
-          }),
-        ).max(20),
-        tasks: object({
-          "morning-brief": proactiveShadowCounts,
-          suggestions: proactiveShadowCounts,
-          learning: proactiveShadowCounts,
-        }),
-      })
-        .or(object({ phase: literal("draining"), minute: iso.datetime() }))
-        .or(
-          object({
-            phase: literal("standalone"),
-            minute: iso.datetime(),
-            enqueued: number().int(),
-            inactive: number().int(),
-            expired: number().int(),
-            contended: number().int(),
-          }),
-        ),
+        enqueued: number().int(),
+        inactive: number().int(),
+        expired: number().int(),
+        contended: number().int(),
+      }),
       401: apiErrorSchema,
     },
-    summary:
-      "Advance the proactive handoff and dispatch due built-in task slots",
+    summary: "Dispatch due proactive task slots",
   },
 });
 

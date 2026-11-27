@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.FeedbackReceipt
 import ai.okou.android.api.ApiFailure
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -26,6 +27,7 @@ internal class RunControlsOwner {
     ) {
         val sync = ConversationHistorySync(service, dispatcher)
         var retired = false
+        var feedbackThreadId: String? = null
 
         fun current() = !retired && scope.isActive && authorized()
     }
@@ -68,6 +70,7 @@ internal class RunControlsOwner {
             }
         markInterrupted(interrupted)
         connections -= connection
+        discardHiddenActionFailures()
         return connections.isEmpty()
     }
 
@@ -175,14 +178,38 @@ internal class RunControlsOwner {
         val state = mutable.value
         val intent = state.pending.singleOrNull { it.id == id } ?: return
         if (id in writes) return
-        mutable.value = state.copy(phases = state.phases + (id to RunControlPhase.Checking))
+        mutable.value =
+            state.copy(
+                phases = state.phases + (id to RunControlPhase.Checking),
+                actionFailures = state.actionFailures.filterNot { it.value.id == id },
+            )
         launch(connection, intent, true)
     }
 
-    fun consumeActionFailure(connection: Connection, intent: RunControlIntent): Boolean {
+    fun showActionFeedbackFor(connection: Connection, threadId: String?) {
+        if (!current(connection) || connection.feedbackThreadId == threadId) return
+        connection.feedbackThreadId = threadId
+        discardHiddenActionFailures()
+    }
+
+    private fun hasFeedbackPane(threadId: String): Boolean = connections.any {
+        it.current() && it.feedbackThreadId == threadId
+    }
+
+    private fun discardHiddenActionFailures() {
         val state = mutable.value
-        if (!current(connection) || state.actionFailures.none { it === intent }) return false
-        mutable.value = state.copy(actionFailures = state.actionFailures - intent)
+        val remaining = state.actionFailures.filter { hasFeedbackPane(it.value.threadId) }
+        if (remaining != state.actionFailures)
+            mutable.value = state.copy(actionFailures = remaining)
+    }
+
+    fun consumeActionFailure(
+        connection: Connection,
+        receipt: FeedbackReceipt<RunControlIntent>,
+    ): Boolean {
+        val state = mutable.value
+        if (!current(connection) || receipt !in state.actionFailures) return false
+        mutable.value = state.copy(actionFailures = state.actionFailures - receipt)
         return true
     }
 
@@ -339,13 +366,19 @@ internal class RunControlsOwner {
         }
         val ids = resolved.keys.mapTo(hashSetOf()) { it.id }
         var phases = state.phases - ids
-        var actionFailures = state.actionFailures.filterNot { it.id in ids }
+        var actionFailures = state.actionFailures.filterNot { it.value.id in ids }
         // Only commands captured by this read receive request phases; newer writes keep theirs.
         for ((intent, evidence) in results) {
             if (intent.id !in checkedIds || intent.id in ids) continue
             if (evidence == RunControlEvidence.Eligible) {
                 phases = phases + (intent.id to RunControlPhase.Retryable)
-                if (intent !in actionFailures) actionFailures = actionFailures + intent
+                if (
+                    hasFeedbackPane(threadId) &&
+                        state.phases[intent.id] != RunControlPhase.Retryable &&
+                        actionFailures.none { it.value.id == intent.id }
+                ) {
+                    actionFailures = actionFailures + FeedbackReceipt(intent)
+                }
             } else {
                 phases = phases + (intent.id to RunControlPhase.Unknown)
             }

@@ -3,7 +3,7 @@
 //! This test lives in its own binary to isolate process env, working directory,
 //! and guest runtime path overrides used during setup.
 
-use cli_test_support::json_fixture::parse_json_lines;
+use cli_test_support::json_fixture::read_json_lines;
 use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
@@ -49,7 +49,7 @@ async fn codex_app_server_backend_rejects_malformed_supported_thread_item()
         "execution: codex app-server notification item/completed has invalid field item.reasoningEffort"
     );
 
-    let events = read_jsonl(runtime.paths.agent_log_file())?;
+    let events = read_json_lines(runtime.paths.agent_log_file())?;
     assert_eq!(
         events
             .iter()
@@ -62,8 +62,4 @@ async fn codex_app_server_backend_rejects_malformed_supported_thread_item()
     }));
 
     Ok(())
-}
-
-fn read_jsonl(path: &str) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
-    parse_json_lines(&std::fs::read_to_string(path)?).map_err(Into::into)
 }

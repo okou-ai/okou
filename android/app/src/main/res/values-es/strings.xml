@@ -59,12 +59,11 @@
     <string name="instructions_title">Instrucciones personales</string>
     <string name="instructions_loading">Cargando instrucciones…</string>
     <string name="instructions_refresh_failed">No se pudieron actualizar las instrucciones. Se muestran las últimas instrucciones cargadas.</string>
-    <string name="instructions_uncertain">El resultado del guardado sigue sin confirmarse. Se conservaron los cambios.</string>
     <string name="instructions_load_failed">No se puede cargar en este momento</string>
     <string name="instructions_unavailable">Las instrucciones personales no están disponibles en este contexto.</string>
     <string name="instructions_unsaved">Tienes cambios sin guardar.</string>
     <string name="instructions_local_failed">No se pudo guardar el borrador local. Inténtalo de nuevo.</string>
-    <string name="instructions_save_rejected">Se rechazó el guardado. Tus cambios se conservan.</string>
+    <string name="instructions_save_rejected">No se pudo guardar. Tus cambios se conservan.</string>
     <string name="instructions_invalid">El texto contiene un carácter no compatible.</string>
     <string name="instructions_checking">Comprobando el resultado del guardado…</string>
     <string name="instructions_save">Guardar</string>

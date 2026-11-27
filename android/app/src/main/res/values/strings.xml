@@ -60,12 +60,11 @@
     <string name="instructions_title">Personal Instructions</string>
     <string name="instructions_loading">Loading Instructions…</string>
     <string name="instructions_refresh_failed">Could not refresh. Showing the last loaded Instructions.</string>
-    <string name="instructions_uncertain">Save result is still unconfirmed. Your changes are kept.</string>
     <string name="instructions_load_failed">Temporarily unable to load</string>
     <string name="instructions_unavailable">Personal Instructions are unavailable in this context.</string>
     <string name="instructions_unsaved">You have unsaved changes.</string>
     <string name="instructions_local_failed">Could not save the local draft. Try again.</string>
-    <string name="instructions_save_rejected">The save was rejected. Your changes are kept.</string>
+    <string name="instructions_save_rejected">Couldn’t save. Your changes are kept.</string>
     <string name="instructions_invalid">The text contains an unsupported character.</string>
     <string name="instructions_checking">Checking the save result…</string>
     <string name="instructions_save">Save</string>

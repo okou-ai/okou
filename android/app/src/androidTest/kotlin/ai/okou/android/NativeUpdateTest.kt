@@ -163,8 +163,9 @@ class NativeUpdateTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
+        val initialization = CompletableDeferred<Unit>()
         val gate = CompletableDeferred<Unit>()
-        val reopenedCheck = AtomicReference<CompletableDeferred<Unit>?>(null)
+        val heldCheck = AtomicReference<CompletableDeferred<Unit>?>(null)
         val firstProgress = CompletableDeferred<Unit>()
         val download = AtomicReference(CompletableDeferred<File>())
         val release = nativeUpdateRelease()
@@ -174,11 +175,13 @@ class NativeUpdateTest {
         val owner =
             AppUpdates(
                 object : UpdateService {
-                    override suspend fun initialize(retainedRelease: AndroidUpdatesRelease?) = Unit
+                    override suspend fun initialize(retainedRelease: AndroidUpdatesRelease?) {
+                        initialization.await()
+                    }
 
                     override suspend fun check(): AndroidUpdates {
                         gate.await()
-                        reopenedCheck.get()?.await()
+                        heldCheck.get()?.await()
                         if (failNextCheck.getAndSet(false))
                             throw IOException("fixture check failed")
                         return AndroidUpdates(null, candidate.get())
@@ -308,18 +311,34 @@ class NativeUpdateTest {
             val checking = app.getString(R.string.updates_check_in_progress)
             val checkFailed = app.getString(R.string.updates_status_check_failed)
             val settingsUpdate = By.pkg(app.packageName).text(app.getString(R.string.updates_title))
-            revealSettingsUpdate(checking)
-            captureState("settings-checking")
+            revealSettingsUpdate(app.getString(R.string.updates_title))
             val settingsUpdateBounds = button(settingsUpdate).visibleBounds
             fun assertSettingsRowSize() {
                 val bounds = button(settingsUpdate).visibleBounds
                 assertEquals(settingsUpdateBounds.width(), bounds.width())
                 assertEquals(settingsUpdateBounds.height(), bounds.height())
             }
+            assertFalse(device.hasObject(By.pkg(app.packageName).text(noUpdateNeeded)))
+            captureState("settings-unchecked")
             click(R.string.updates_title)
+            button(By.pkg(app.packageName).text(app.getString(R.string.updates_check)))
+            assertFalse(
+                device.hasObject(
+                    By.pkg(app.packageName).text(app.getString(R.string.updates_current)),
+                ),
+            )
+            captureState("details-unchecked")
+            val initialDetailsBounds = detailsBounds()
+            initialization.complete(Unit)
             exists(R.string.updates_check_in_progress)
             captureState("details-checking")
-            val initialDetailsBounds = detailsBounds()
+            assertEquals(initialDetailsBounds, detailsBounds())
+            closeDetails()
+            revealSettingsUpdate(checking)
+            assertSettingsRowSize()
+            captureState("settings-checking")
+            click(R.string.updates_title)
+            exists(R.string.updates_check_in_progress)
             gate.complete(Unit)
             exists(R.string.updates_error_check)
             button(By.pkg(app.packageName).text(app.getString(R.string.updates_retry_check)))
@@ -330,6 +349,10 @@ class NativeUpdateTest {
             assertSettingsRowSize()
             captureState("settings-check-failed")
             click(R.string.updates_title)
+            exists(R.string.updates_error_check)
+            assertEquals(initialDetailsBounds, detailsBounds())
+            captureState("details-reopened-check-failed")
+            click(R.string.updates_retry_check)
             exists(R.string.updates_current)
             captureState("details-up-to-date")
             assertEquals(initialDetailsBounds, detailsBounds())
@@ -339,11 +362,14 @@ class NativeUpdateTest {
             captureState("settings-current")
             candidate.set(release.copy(minimumSdk = 36))
             val recheck = CompletableDeferred<Unit>()
-            reopenedCheck.set(recheck)
+            heldCheck.set(recheck)
             click(R.string.updates_title)
+            exists(R.string.updates_current)
+            assertEquals(initialDetailsBounds, detailsBounds())
+            click(R.string.updates_check)
             exists(R.string.updates_check_in_progress)
             assertEquals(initialDetailsBounds, detailsBounds())
-            captureState("details-reopened-checking")
+            captureState("details-manual-checking")
             recheck.complete(Unit)
             exists(R.string.updates_android_unsupported)
             assertNotNull(text(updateTarget))
@@ -564,7 +590,13 @@ class NativeUpdateTest {
                 focusReadingRegion()
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_UP))
                 captureState("details-extreme-short")
-                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_DOWN))
+                // A page shows only about one line here. Read down to the error from the title.
+                repeat(6) {
+                    if (!device.hasObject(downloadError)) {
+                        assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_DOWN))
+                        device.wait(Until.hasObject(downloadError), 1_000)
+                    }
+                }
                 exists(R.string.updates_error_download)
                 assertEquals(footer, button(close).visibleBounds to button(retry).visibleBounds)
                 captureState("details-extreme-short-recovery")
@@ -706,8 +738,9 @@ class NativeUpdateTest {
                 error.addSuppressed(diagnostic)
             }
         } finally {
+            initialization.complete(Unit)
             gate.complete(Unit)
-            reopenedCheck.get()?.complete(Unit)
+            heldCheck.get()?.complete(Unit)
             firstProgress.complete(Unit)
             for (cleanup in
                 listOf<() -> Unit>(

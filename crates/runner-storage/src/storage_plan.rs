@@ -374,30 +374,6 @@ pub fn build_storage_plan(
 }
 
 impl StoragePlan {
-    /// Download roots retained by an unchanged cached ancestor during cleanup.
-    ///
-    /// Guest extraction resolves these roots after cleanup, so surviving symlinks
-    /// need a filesystem check before reusing a file outside their logical paths.
-    pub fn preserved_download_mounts(&self) -> Vec<String> {
-        let preserved = self.preserved_mounts().collect::<Vec<_>>();
-        self.storages
-            .iter()
-            .filter(|entry| matches!(&entry.action, StorageAction::Download { .. }))
-            .map(|entry| &entry.mount_path)
-            .chain(
-                self.artifacts
-                    .iter()
-                    .filter(|entry| matches!(&entry.action, ArtifactAction::Download { .. }))
-                    .map(|entry| &entry.mount_path),
-            )
-            .filter(|mount| {
-                let logical = normalize_path(Path::new(mount));
-                preserved.iter().any(|root| logical.starts_with(root))
-            })
-            .cloned()
-            .collect()
-    }
-
     fn preserved_mounts(&self) -> impl Iterator<Item = PathBuf> + '_ {
         self.storages
             .iter()
@@ -650,13 +626,30 @@ impl StoragePlan {
     /// `ReuseExisting`, and there are no artifacts. Artifact actions require the
     /// guest even when their fingerprints match.
     pub fn requires_guest_work(&self) -> bool {
+        self.has_storage_work() || !self.artifacts.is_empty()
+    }
+
+    /// The existing Instructions check can observe this root without another RPC.
+    /// Pending Workflow document normalization still needs the Storage helper.
+    pub fn needs_only_memory_root_check(&self, mount: &str) -> bool {
+        matches!(
+            self.artifacts.as_slice(),
+            [artifact] if artifact.mount_path == mount
+                && artifact.vas_storage_name == wire::MEMORY_STORAGE_NAME
+                && matches!(artifact.action, ArtifactAction::ReuseOrRepair { .. })
+        ) && !self.has_storage_work()
+            && !self.storages.iter().any(|entry| {
+                wire::needs_workflow_document(&entry.vas_storage_name, &entry.mount_path)
+            })
+    }
+
+    fn has_storage_work(&self) -> bool {
         !self.cleanup_paths.is_empty()
             || !self.instruction_cleanups.is_empty()
             || self
                 .storages
                 .iter()
                 .any(|entry| !matches!(entry.action, StorageAction::ReuseExisting))
-            || !self.artifacts.is_empty()
     }
 
     pub fn reused_entries(&self) -> usize {

@@ -57,6 +57,27 @@ internal class InlineArtifactImages(
 
     fun get(request: InlineImageRequest): InlineImageState? = entries.value[request]
 
+    fun observeThumbnail(threadId: String, source: String) =
+        entries.map { it.thumbnail(threadId, source) }.distinctUntilChanged()
+
+    fun thumbnail(threadId: String, source: String): Bitmap? =
+        entries.value.thumbnail(threadId, source)
+
+    fun unavailableSources(threadId: String): Set<String> =
+        entries.value.entries
+            .asSequence()
+            .filter { (request, state) ->
+                request.threadId == threadId && state.status == InlineImageStatus.Unavailable
+            }
+            .mapTo(mutableSetOf()) { it.key.source }
+
+    private fun Map<InlineImageRequest, InlineImageState>.thumbnail(
+        threadId: String,
+        source: String,
+    ): Bitmap? = entries.firstNotNullOfOrNull { (request, state) ->
+        state.bitmap.takeIf { request.threadId == threadId && request.source == source }
+    }
+
     fun retainVisible(request: InlineImageRequest) {
         visibleCounts[request] = (visibleCounts[request] ?: 0) + 1
         revalidateVisible(request)

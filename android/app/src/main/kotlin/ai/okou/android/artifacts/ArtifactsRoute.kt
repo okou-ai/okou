@@ -260,103 +260,49 @@ internal fun ArtifactSelectionPreview(
     showArtifactImageViewer: Boolean = true,
     toolbar: @Composable () -> Unit,
 ) {
-    var pickerFailed by remember(selectedId) { mutableStateOf(false) }
     key(selectedId) {
         val id = selectedId
         val preview = state.preview?.takeIf { it.id == id }
-        val context = LocalContext.current
-        val resources = LocalResources.current
-        val shareScope = rememberCoroutineScope()
-        val shareSnackbar = remember { SnackbarHostState() }
-        var sharing by remember { mutableStateOf(false) }
         val original = preview?.access?.save
         val generated = showArtifactImageViewer && isGeneratedArtifactPreview(id)
-        val canShareOriginal = generated || chatAttachment(id) != null
+        val export =
+            rememberArtifactExportControls(
+                model,
+                state,
+                page,
+                id,
+                saveLauncher,
+                original.takeIf { generated || chatAttachment(id) != null },
+            )
         val source =
             preview?.info?.sourceChatId?.let { sourceId ->
                 threads.firstOrNull { it.id == sourceId && it.hidden != true }
             }
-        val saveEnabled = !state.saving && page.pickerArtifactId == null && !sharing
-        val onShare: (() -> Unit)? =
-            original
-                ?.takeIf { canShareOriginal }
-                ?.let { file ->
-                    {
-                        if (
-                            !sharing && page.pickerArtifactId == null && !model.state.value.saving
-                        ) {
-                            sharing = true
-                            shareScope.launch {
-                                val result =
-                                    try {
-                                        shareArtifactOriginal(context, model, id, file)
-                                    } catch (cancelled: CancellationException) {
-                                        throw cancelled
-                                    } catch (_: Exception) {
-                                        ArtifactSaveResult.Failed
-                                    } finally {
-                                        sharing = false
-                                    }
-                                val message =
-                                    when (result) {
-                                        ArtifactSaveResult.Denied -> R.string.artifact_share_denied
-                                        ArtifactSaveResult.Failed -> R.string.artifact_share_failed
-                                        else -> null
-                                    }
-                                if (message != null)
-                                    shareSnackbar.showSnackbar(resources.getString(message))
-                            }
-                        }
-                    }
-                }
-        val saveResult =
-            if (pickerFailed) ArtifactSaveResult.Failed
-            else state.saveResult?.takeIf { it.first == id }?.second
         val openSource: (ConfirmedChat) -> Unit = {
-            shareScope.coroutineContext.cancelChildren()
+            export.cancelShare()
             page.restoreSource = true
             onSource(it)
         }
-        val saveArtifact: (ArtifactSave) -> Unit = { file ->
-            if (page.pickerArtifactId == null && !model.state.value.saving && !sharing) {
-                page.pickerArtifactId = id
-                pickerFailed = false
-                try {
-                    saveLauncher.launch(
-                        Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type =
-                                file.contentType.substringBefore(';').takeIf { '/' in it }
-                                    ?: "application/octet-stream"
-                            putExtra(Intent.EXTRA_TITLE, file.filename)
-                        },
-                    )
-                } catch (_: ActivityNotFoundException) {
-                    page.pickerArtifactId = null
-                    pickerFailed = true
-                }
-            }
-        }
+        val uploadedImage = showArtifactImageViewer && isChatAttachmentImage(id)
         ArtifactLinkControls(
             preview?.linkSource,
             preview?.item?.title.orEmpty(),
             model,
-            shareSnackbar,
+            export.snackbar,
         ) { links ->
-            if (generated && preview?.isImage == true) {
-                val save = preview.access?.save
+            if (uploadedImage || generated && preview?.isImage == true) {
                 ArtifactImageViewer(
-                    preview = preview,
+                    preview = preview ?: ArtifactPreviewState(id, null),
                     model = model,
                     wide = wide,
                     backLabel = backLabel,
                     onBack = onBack,
-                    saveEnabled = saveEnabled,
-                    onSave = save?.let { { saveArtifact(it) } },
-                    saveResult = saveResult,
-                    onShare = onShare,
-                    sharing = sharing,
-                    shareSnackbar = shareSnackbar,
+                    saveEnabled = export.enabled,
+                    onSave = original?.let { { export.save(it) } },
+                    saveResult = export.result,
+                    onShare = export.share,
+                    sharing = export.sharing,
+                    shareSnackbar = export.snackbar,
                     links = links,
                     onSource = source?.let { { openSource(it) } },
                     restoreSourceFocus = page.restoreSource,
@@ -372,15 +318,100 @@ internal fun ArtifactSelectionPreview(
                     restoreSourceFocus = page.restoreSource,
                     onSourceFocusRestored = { page.restoreSource = false },
                     onSource = openSource,
-                    saveEnabled = saveEnabled,
-                    onSave = saveArtifact,
-                    saveResult = saveResult,
-                    onShare = onShare,
-                    sharing = sharing,
-                    shareSnackbar = shareSnackbar,
+                    saveEnabled = export.enabled,
+                    onSave = export.save,
+                    saveResult = export.result,
+                    onShare = export.share,
+                    sharing = export.sharing,
+                    shareSnackbar = export.snackbar,
                     links = links,
                 )
             }
         }
     }
 }
+
+internal data class ArtifactExportControls(
+    val enabled: Boolean,
+    val sharing: Boolean,
+    val snackbar: SnackbarHostState,
+    val result: ArtifactSaveResult?,
+    val save: (ArtifactSave) -> Unit,
+    val share: (() -> Unit)?,
+    val cancelShare: () -> Unit,
+)
+
+@Composable
+internal fun rememberArtifactExportControls(
+    model: ArtifactCatalogModel,
+    state: ArtifactCatalogState,
+    page: ArtifactPageState,
+    id: String,
+    saveLauncher: ActivityResultLauncher<Intent>,
+    shareableOriginal: ArtifactSave?,
+): ArtifactExportControls =
+    key(id) {
+        val context = LocalContext.current
+        val resources = LocalResources.current
+        val scope = rememberCoroutineScope()
+        val snackbar = remember { SnackbarHostState() }
+        var sharing by remember { mutableStateOf(false) }
+        var pickerFailed by remember { mutableStateOf(false) }
+        fun canStart() = !sharing && page.pickerArtifactId == null && !model.state.value.saving
+        val share: (() -> Unit)? = shareableOriginal?.let { file ->
+            {
+                if (canStart()) {
+                    sharing = true
+                    scope.launch {
+                        val result =
+                            try {
+                                shareArtifactOriginal(context, model, id, file)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                ArtifactSaveResult.Failed
+                            } finally {
+                                sharing = false
+                            }
+                        val message =
+                            when (result) {
+                                ArtifactSaveResult.Denied -> R.string.artifact_share_denied
+                                ArtifactSaveResult.Failed -> R.string.artifact_share_failed
+                                else -> null
+                            }
+                        if (message != null) snackbar.showSnackbar(resources.getString(message))
+                    }
+                }
+            }
+        }
+        ArtifactExportControls(
+            enabled = !state.saving && page.pickerArtifactId == null && !sharing,
+            sharing = sharing,
+            snackbar = snackbar,
+            result =
+                if (pickerFailed) ArtifactSaveResult.Failed
+                else state.saveResult?.takeIf { it.first == id }?.second,
+            save = { file ->
+                if (canStart()) {
+                    page.pickerArtifactId = id
+                    pickerFailed = false
+                    try {
+                        saveLauncher.launch(
+                            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type =
+                                    file.contentType.substringBefore(';').takeIf { '/' in it }
+                                        ?: "application/octet-stream"
+                                putExtra(Intent.EXTRA_TITLE, file.filename)
+                            },
+                        )
+                    } catch (_: ActivityNotFoundException) {
+                        page.pickerArtifactId = null
+                        pickerFailed = true
+                    }
+                }
+            },
+            share = share,
+            cancelShare = { scope.coroutineContext.cancelChildren() },
+        )
+    }

@@ -30,6 +30,7 @@ import {
   firewallSchema,
   networkPoliciesSchema,
   networkPolicySchema,
+  runnerBuiltinFirewallSchema,
 } from "@okouai/connectors/firewall-contracts";
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
@@ -378,7 +379,10 @@ const runnerBuiltinFirewallsResolveBodySchema = object({
 const runnerBuiltinFirewallsResolveResponseSchema = object({
   catalogDigest: string().regex(/^sha256:[a-f0-9]{64}$/),
   catalogVersion: string().min(1),
-  firewalls: record(runnerBuiltinFirewallNameSchema, firewallSchema),
+  firewalls: record(
+    runnerBuiltinFirewallNameSchema,
+    runnerBuiltinFirewallSchema,
+  ),
 });
 
 /**

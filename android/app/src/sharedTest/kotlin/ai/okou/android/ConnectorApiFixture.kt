@@ -83,6 +83,11 @@ internal class ConnectorApiFixture(
     @Volatile var denyPermissionReads = false
     @Volatile var memberAccess = false
     @Volatile var denyPolicyReads = false
+    @Volatile var policyReadReplyGate: CountDownLatch? = null
+    val policyReadReplyStarted = CountDownLatch(1)
+    @Volatile var policyWriteReplyGate: CountDownLatch? = null
+    @Volatile var rejectPolicyWrite: Int? = null
+    val policyWriteReplyStarted = CountDownLatch(1)
     @Volatile var overviewReplyGate: CountDownLatch? = null
     @Volatile var failChatOverview = false
     val chatConnectorReads = CopyOnWriteArrayList<Pair<String, String?>>()
@@ -101,15 +106,14 @@ internal class ConnectorApiFixture(
     @Volatile var loseFirstExternalCodeReply = false
     @Volatile var externalCodeStillCompleting = false
     @Volatile var loseRenameReply = false
+    @Volatile var loseDisconnectReply = false
     @Volatile var deferRenameCommit = false
     @Volatile var renameReplyGate: CountDownLatch? = null
     val defaultReplyStarted = CountDownLatch(1)
     @Volatile var defaultReplyGate: CountDownLatch? = null
     @Volatile var chatOverrideReplyGate: CountDownLatch? = null
-    @Volatile var chatOverrideReadReplyGate: CountDownLatch? = null
     @Volatile var rejectChatOverride: Int? = null
     @Volatile var loseChatOverrideReply = false
-    @Volatile var failChatOverrideReads = false
     val chatOverrideRequests = CopyOnWriteArrayList<FixtureChatOverride>()
     val chatOverrideReads = CopyOnWriteArrayList<Pair<String, String>>()
     private val chatOverrides = mutableMapOf<Pair<String, String>, Boolean>()
@@ -119,6 +123,7 @@ internal class ConnectorApiFixture(
     @Volatile var rejectConnection = false
     @Volatile var loseManualReply = false
     val renameRequests = AtomicInteger()
+    val disconnectRequests = AtomicInteger()
     val manualRequests = AtomicInteger()
     private var pendingRename: Pair<String, String?>? = null
     private val entries = buildList {
@@ -225,6 +230,8 @@ internal class ConnectorApiFixture(
                                 url.encodedPath to url.queryParameter("connectorSlug"),
                             )
                     }
+                    if (url.encodedPath == "/api/chat-connector-overview")
+                        overviewReplyGate?.await()
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
                         discoveryRequested.countDown()
                         discoveryGate?.await()
@@ -274,6 +281,11 @@ internal class ConnectorApiFixture(
                         externalAccountReplyGate?.await()
                     }
                     val response = synchronized(accounts) { respond(request) }
+                    if (url.encodedPath == "/api/connector-account-access/policies") {
+                        val gate = policyReadReplyGate
+                        policyReadReplyStarted.countDown()
+                        gate?.await()
+                    }
                     if (url.pathSegments.size == 3 && url.pathSegments[1] == "connector-catalog")
                         detailReplyGate?.await()
                     if (request.method == "POST" && url.encodedPath == DEVICE_POLL_PATH) {
@@ -295,9 +307,18 @@ internal class ConnectorApiFixture(
                         defaultReplyStarted.countDown()
                         defaultReplyGate?.await()
                     }
-                    if (url.pathSegments.getOrNull(3) == "connector-access") {
-                        if (request.method == "PUT") chatOverrideReplyGate?.await()
-                        if (request.method == "GET") chatOverrideReadReplyGate?.await()
+                    if (
+                        request.method == "PUT" &&
+                            url.pathSegments.getOrNull(3) == "connector-access"
+                    )
+                        chatOverrideReplyGate?.await()
+                    if (
+                        request.method == "PUT" &&
+                            url.pathSegments.getOrNull(1) == "connector-account-access" &&
+                            url.pathSegments.last() == "policy"
+                    ) {
+                        policyWriteReplyStarted.countDown()
+                        policyWriteReplyGate?.await()
                     }
                     return response
                 }
@@ -329,18 +350,19 @@ internal class ConnectorApiFixture(
         }
     }
 
+    fun connectCalendarSecondary() {
+        synchronized(accounts) {
+            accounts[CONNECTOR_CALENDAR_SECONDARY] =
+                FixtureAccount(CONNECTOR_CALENDAR, "协作日历", "team@example.com")
+        }
+    }
+
     fun removeAccount(id: String) {
         synchronized(accounts) { accounts.remove(id) }
     }
 
     fun setAccountName(id: String, name: String) {
         synchronized(accounts) { accounts.getValue(id).name = name }
-    }
-
-    fun addCalendarAccount(id: String) {
-        synchronized(accounts) {
-            accounts[id] = FixtureAccount(CONNECTOR_CALENDAR, null, "replacement@example.com")
-        }
     }
 
     fun chatOverride(threadId: String, accountId: String): Boolean? =
@@ -384,7 +406,6 @@ internal class ConnectorApiFixture(
                     """{"effectiveSwitches":{"memberConnectorAccountAccess":$memberAccess}}""",
                 )
             path == "/api/chat-connector-overview" -> {
-                overviewReplyGate?.await()
                 if (failChatOverview) return rejected(503).setHeader("Retry-After", 0)
                 json(
                     JsonArray(
@@ -566,6 +587,9 @@ internal class ConnectorApiFixture(
                         requestBody["target"] != target(account.slug)
                 )
                     return rejected(403)
+                rejectPolicyWrite?.let {
+                    return rejected(it)
+                }
                 val choice = requestBody["policy"]?.jsonPrimitive?.contentOrNull
                 val hours =
                     when (choice) {
@@ -747,7 +771,9 @@ internal class ConnectorApiFixture(
                     }
                     "DELETE" -> {
                         if (body(request)["target"] != target(account.slug)) return rejected(400)
+                        disconnectRequests.incrementAndGet()
                         accounts.remove(id)
+                        if (loseDisconnectReply) return rejected(503)
                         jsonResponse(
                             """{"deletedConnectionId":"$id","resolvedSelectionCount":2,"promotedDefaultConnectionId":null}""",
                         )
@@ -770,7 +796,6 @@ internal class ConnectorApiFixture(
                 if (request.method != "GET") return rejected(400)
                 val slug = querySlug ?: return rejected(400)
                 chatOverrideReads += threadId to slug
-                if (failChatOverrideReads) return rejected(503)
                 slug
             } else {
                 if (request.method != "PUT") return rejected(400)
@@ -817,13 +842,15 @@ internal class ConnectorApiFixture(
     override fun close() {
         discoveryGate?.countDown()
         detailReplyGate?.countDown()
+        overviewReplyGate?.countDown()
+        policyReadReplyGate?.countDown()
+        policyWriteReplyGate?.countDown()
         devicePollReplyGate?.countDown()
         externalCodeReplyGate?.countDown()
         externalAccountReplyGate?.countDown()
         renameReplyGate?.countDown()
         defaultReplyGate?.countDown()
         chatOverrideReplyGate?.countDown()
-        chatOverrideReadReplyGate?.countDown()
         https.use { api.close() }
     }
 

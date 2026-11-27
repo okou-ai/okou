@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.37](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.36...runner-storage-v0.12.37) (2026-11-27)
+
+## [0.12.36](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.35...runner-storage-v0.12.36) (2026-11-27)
+
+
+### Performance Improvements
+
+* **runner:** reuse memory during the instructions check ([#51513](https://github.com/okou-ai/okou/issues/51513)) ([63edb54](https://github.com/okou-ai/okou/commit/63edb54e292ddc275688ac78ee7fb5158e563fa1))
+
 ## [0.12.35](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.34...runner-storage-v0.12.35) (2026-11-27)
 
 ## [0.12.34](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.33...runner-storage-v0.12.34) (2026-11-27)

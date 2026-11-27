@@ -3,7 +3,7 @@
 //! This test lives in its own binary to isolate process environment and current
 //! directory changes required by the mock Claude integration harness.
 
-use cli_test_support::json_fixture::parse_json_lines;
+use cli_test_support::json_fixture::read_json_lines;
 use guest_agent_tests as common;
 
 use std::time::Duration;
@@ -75,8 +75,7 @@ async fn claude_delivers_duplicate_follow_up_and_declares_steered_once()
         std::path::Path::new(&runtime.config.home_dir),
         session_id.trim(),
     );
-    let history = std::fs::read_to_string(history_path)?;
-    let delivered_user_frames = parse_json_lines(&history)?
+    let delivered_user_frames = read_json_lines(history_path)?
         .into_iter()
         .filter(|event| event.get("type").and_then(Value::as_str) == Some("user"))
         .filter(|event| event.get("uuid").and_then(Value::as_str) == Some(EVENT_ID))

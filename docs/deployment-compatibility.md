@@ -420,6 +420,20 @@ contract when available. A TestFlight check or floor increase never proves an AP
 public evidence, an unbounded response transform can still preserve compatibility.
 
 [Submit the tested build manually in App Store Connect](../ios/TESTFLIGHT.md#submit-an-existing-build-for-app-review).
+Pin that build in [the submitted iOS build manifest](../turbo/packages/api-contracts/ios-submission/build.json).
+CI compares candidate APIs directly with its frozen iOS contracts even after
+the production schema advances. A success-body transform must cover the pinned
+version and status. The App Store minimum must still admit this build.
+
+Match the submitted version and build to the commit recorded by the TestFlight
+publisher. Use that commit's `runtime-api-schema.json` release artifact to
+save the iOS routes alongside the manifest.
+
+```sh
+jq -c '.routes |= map(select(.owner == "ios"))' runtime-api-schema.json |
+  gzip -n -9 > "$commit.json.gz"
+```
+
 On public release,
 verify availability in every configured storefront before enabling or raising
 the App Store minimum in a separate policy PR. API deployment activates

@@ -1,12 +1,13 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockNow, now } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   createMessageExperienceHelpers,
   findFastControl,
@@ -171,6 +172,91 @@ test("creates an empty device and moves an existing channel from the directory",
   ).not.toBeInTheDocument();
 });
 
+test("renames a device from the detail header and retains the draft after a failed save", async () => {
+  enableRemoteDevices();
+  let device = {
+    id: deviceId,
+    displayName: "Build Mac",
+    accessAllowed: false,
+    accessExpiresAt: null,
+    channels: [],
+  };
+  context.mocks.api(remoteDevicesContract.list, ({ respond }) => {
+    return respond(200, { devices: [device] });
+  });
+  const rejectFirstSave = createDeferredPromise<void>(context.signal);
+  let attempts = 0;
+  context.mocks.api(
+    remoteDevicesContract.rename,
+    async ({ params, body, respond }) => {
+      expect(params.deviceId).toBe(deviceId);
+      expect(body.displayName).toBe("Studio Mac");
+      if (++attempts === 1) {
+        await rejectFirstSave.promise;
+        return respond(400, {
+          error: {
+            code: "BAD_REQUEST",
+            message: "Device name could not be saved",
+          },
+        });
+      }
+      device = { ...device, displayName: body.displayName };
+      return respond(200, device);
+    },
+  );
+  await setupPage({
+    context,
+    path: `/connectors?scope=remote-control&remoteDevice=${deviceId}`,
+  });
+  const user = userEvent.setup({ delay: null });
+  const trigger = await findFastControl("button", "Rename");
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  const dialog = await screen.findByRole("dialog", { name: "Rename device" });
+  const input = within(dialog).getByRole("textbox", { name: "Device name" });
+  const save = await findFastControl("button", "Save", dialog);
+  expect(input).toHaveValue("Build Mac");
+  await waitFor(() => {
+    expect(input).toHaveFocus();
+  });
+  expect(save).toBeDisabled();
+  await fill(input, "  ");
+  expect(save).toBeDisabled();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
+
+  await user.click(trigger);
+  const reopened = await screen.findByRole("dialog", { name: "Rename device" });
+  const draft = within(reopened).getByRole("textbox", { name: "Device name" });
+  const submit = await findFastControl("button", "Save", reopened);
+  expect(draft).toHaveValue("Build Mac");
+  await fill(draft, "  Studio Mac  ");
+  expect(
+    fireEvent.keyDown(draft, { key: "Enter", isComposing: true }),
+  ).toBeFalsy();
+  expect(fireEvent.keyDown(draft, { key: "Enter", keyCode: 229 })).toBeFalsy();
+  await user.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(submit).toHaveAttribute("aria-busy", "true");
+  });
+  await user.keyboard("{Escape}");
+  expect(reopened).toBeVisible();
+  rejectFirstSave.resolve();
+  await expect(within(reopened).findByRole("alert")).resolves.toHaveTextContent(
+    "Could not save the device change.",
+  );
+  expect(draft).toHaveValue("  Studio Mac  ");
+  await user.click(submit);
+  await screen.findByRole("heading", { name: "Studio Mac" });
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
+  click(await findFastControl("link", "Remote devices"));
+  await findFastControl("link", "Studio Mac");
+});
+
 test("deletes a device from the detail header only after confirming", async () => {
   enableRemoteDevices();
   let devices = [
@@ -207,7 +293,7 @@ test("deletes a device from the detail header only after confirming", async () =
   await expect(
     screen.findByRole("group", { name: "Access for Build Mac, Off" }),
   ).resolves.toBeVisible();
-  const trigger = await findFastControl("button", "Delete device");
+  const trigger = await findFastControl("button", "Delete");
   const user = userEvent.setup({ delay: null });
   await user.click(trigger);
   const confirmation = await screen.findByRole("dialog", {
@@ -228,7 +314,7 @@ test("deletes a device from the detail header only after confirming", async () =
   const reopened = await screen.findByRole("dialog", {
     name: "Delete Build Mac?",
   });
-  await user.click(await findFastControl("button", "Delete device", reopened));
+  await user.click(await findFastControl("button", "Delete", reopened));
   await waitFor(() => {
     return expect(deleted).toStrictEqual([deviceId]);
   });

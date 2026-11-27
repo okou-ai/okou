@@ -1,5 +1,35 @@
 # Changelog
 
+## [8.887.10](https://github.com/okou-ai/okou/compare/core-v8.887.9...core-v8.887.10) (2026-11-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.141.2
+
+## [8.887.9](https://github.com/okou-ai/okou/compare/core-v8.887.8...core-v8.887.9) (2026-11-27)
+
+
+### Bug Fixes
+
+* **app:** remove chat list hover previews ([#51494](https://github.com/okou-ai/okou/issues/51494)) ([293676f](https://github.com/okou-ai/okou/commit/293676f9ca5cb441474efa709ca299179621c348))
+* keep presentation conversion cli-only for staff ([#51491](https://github.com/okou-ai/okou/issues/51491)) ([01e91b1](https://github.com/okou-ai/okou/commit/01e91b16ebf389c63c2d59b5406154d30369be86))
+
+
+### Refactoring
+
+* remove markdown artifact quote feature switch ([#51490](https://github.com/okou-ai/okou/issues/51490)) ([cd97e8b](https://github.com/okou-ai/okou/commit/cd97e8bf30e977bf47f09c2ae2e1ee9cb36dd856))
+* remove markdown-first output feature switch ([#51492](https://github.com/okou-ai/okou/issues/51492)) ([50510b8](https://github.com/okou-ai/okou/commit/50510b8e1d508dadfd4048f6ec16733edacafebb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.141.1
+
 ## [8.887.8](https://github.com/okou-ai/okou/compare/core-v8.887.7...core-v8.887.8) (2026-11-27)
 
 

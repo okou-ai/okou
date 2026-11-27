@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS } from "../model-provider-firewalls";
 import {
   getModelProviderEnvBindings,
   getFrameworkForType,
@@ -26,7 +25,7 @@ import {
 } from "@okouai/connectors/firewall-rule-matcher";
 
 describe("model-first canonical catalog", () => {
-  it("exposes canonical model provider env placeholders", () => {
+  it("exposes unique namespaced placeholders with CLI-compatible shapes", () => {
     expect(Object.keys(MODEL_PROVIDER_ENV_PLACEHOLDERS).sort()).toEqual([
       "CHATGPT_ACCESS_TOKEN",
       "CHATGPT_ACCOUNT_ID",
@@ -34,21 +33,8 @@ describe("model-first canonical catalog", () => {
       "CLAUDE_CODE_OAUTH_TOKEN",
       "OPENAI_API_KEY",
     ]);
-    expect(MODEL_PROVIDER_ENV_PLACEHOLDERS.CLAUDE_CODE_OAUTH_TOKEN).toMatch(
-      /^sk-ant-oat01-/,
-    );
-    expect(MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY).toMatch(/^sk-proj-/);
-    expect(
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_ACCESS_TOKEN.split("."),
-    ).toHaveLength(1);
-  });
-
-  it("reserves unique namespaced placeholders with CLI-compatible shapes", () => {
-    const values = MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS;
-    const allValues = [
-      ...Object.values(MODEL_PROVIDER_ENV_PLACEHOLDERS),
-      ...Object.values(values),
-    ];
+    const values = MODEL_PROVIDER_ENV_PLACEHOLDERS;
+    const allValues = Object.values(values);
     expect(new Set(allValues).size).toBe(allValues.length);
     for (const value of Object.values(values)) {
       expect(value).toContain("OkouModelProvider");
@@ -451,19 +437,6 @@ describe("codex-oauth-token codex provider", () => {
       expect(findMatchingPermissions(method, path, fwConfig)).toEqual([]);
     },
   );
-
-  it("CHATGPT_ACCESS_TOKEN placeholder is an opaque marker (not a JWT)", () => {
-    // Codex doesn't read this environment name in ChatGPT mode — it reads the real
-    // JWT from ~/.codex/auth.json (written by guest-agent #11877). The
-    // firewall only needs a stable, non-empty marker to match-and-substitute
-    // at egress. A JWT-shaped placeholder triggers Semgrep's
-    // detected-jwt-token rule even though the contents are obvious dummies.
-    const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
-    const token = config.placeholders!.CHATGPT_ACCESS_TOKEN!;
-    expect(token.length).toBeGreaterThan(20);
-    // Not a 3-segment JWT — a single dotless string is fine.
-    expect(token.split(".")).toHaveLength(1);
-  });
 
   it("firewall placeholders expose the Codex OAuth fake marker bytes", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];

@@ -149,11 +149,15 @@ internal fun ConversationInlineImage(
                     { links.open(outer, focusKey) }
                 }
                 else -> {
-                    { artifacts.open(grant.previewId, focusKey) }
+                    { (artifacts.openInlineImage ?: artifacts.open)(grant.previewId, focusKey) }
                 }
             }
-        val opensLink = outerArtifact != null || outer != null
-        val externalBadge = outerArtifact == null && outer is ConversationLink.Web && action != null
+        val opensLink = outerArtifact != null || (outer != null && links != null)
+        val externalBadge =
+            outerArtifact == null &&
+                outer is ConversationLink.Web &&
+                links != null &&
+                action != null
         val statusLabel =
             when (status) {
                 InlineImageStatus.Loading -> stringResource(R.string.inline_image_loading)

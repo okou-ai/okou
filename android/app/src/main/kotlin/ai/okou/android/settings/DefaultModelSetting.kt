@@ -1,5 +1,7 @@
 package ai.okou.android.settings
 
+import ai.okou.android.CompactPanelTopAppBar
+import ai.okou.android.OkouOutlinedSelectionField
 import ai.okou.android.R
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsModal
@@ -8,11 +10,12 @@ import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFeedbackHost
-import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.WorkspaceMenu
+import ai.okou.android.WorkspaceMenuItem
+import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.settingsPanelContentPadding
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +23,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,13 +32,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,48 +43,34 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import java.text.NumberFormat
-
-@Composable
-internal fun DefaultModelFeedback(model: DefaultModelSettings, snackbar: SnackbarHostState) {
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val rolledBack by rememberUpdatedState(stringResource(R.string.settings_model_save_rolled_back))
-    LaunchedEffect(model, lifecycle, snackbar) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            model.notices.collect {
-                snackbar.showSnackbar(rolledBack, duration = SnackbarDuration.Indefinite)
-            }
-        }
-    }
-}
 
 @Composable
 internal fun DefaultModelSetting(
@@ -103,11 +88,6 @@ internal fun DefaultModelSetting(
     val state by model.state.collectAsStateWithLifecycle()
     val options = state.options
     val record = state.record
-    SettingsRefreshFeedback(
-        snackbar,
-        state.settingsCatalogRefreshFailure,
-        R.string.settings_model_catalog_refresh_failed,
-    )
     if (options == null || record == null) {
         val status =
             when {
@@ -223,21 +203,28 @@ internal fun ModelPickerSheet(
     dismiss: () -> Unit,
     catalogUnavailable: Boolean = false,
     snackbar: SnackbarHostState? = null,
+    footerHasAction: Boolean = false,
     footer: @Composable () -> Unit = {},
 ) {
-    val windowHeight = currentWindowSizeDp().height
-    val fullScreen = windowHeight < 480
+    val fullScreen = isShortSettingsPanelWindow()
     val scroll = rememberScrollState()
+    val contentPadding = settingsPanelContentPadding(compactHeight = fullScreen)
+    var footerHeight by remember { mutableIntStateOf(0) }
     val selected = choices?.firstOrNull { it.id == selectedId }
-    val fastMultiplier = selected?.takeIf { it.canSelect }?.fastMultiplier
+    val advancedModel = selected?.takeIf { it.canSelect }
+    val showEffort = advancedModel != null && advancedModel.efforts.isNotEmpty()
+    val fastMultiplier = advancedModel?.fastMultiplier
     val panel: @Composable (Boolean) -> Unit = { centered ->
         val selectedFocus = remember { FocusRequester() }
         val backFocus = remember { FocusRequester() }
+        var effortFocused by remember { mutableStateOf(false) }
         var fastFocused by remember { mutableStateOf(false) }
-        // Capture focus before Compose detaches the hidden switch.
-        val restoreFocus = fastMultiplier == null && fastFocused
-        LaunchedEffect(fastMultiplier != null) {
+        // Capture focus before Compose detaches a hidden control.
+        val restoreFocus = (!showEffort && effortFocused) || (fastMultiplier == null && fastFocused)
+        LaunchedEffect(showEffort, fastMultiplier != null) {
             if (restoreFocus) {
+                effortFocused = false
+                fastFocused = false
                 val selectedAvailable =
                     choices != null && (selectedId == null || selected?.canSelect == true)
                 if (!selectedAvailable || !selectedFocus.requestFocus()) backFocus.requestFocus()
@@ -251,31 +238,38 @@ internal fun ModelPickerSheet(
                 )
         Column(
             Modifier.fillMaxWidth()
-                .testTag("model-picker")
                 .then(size)
-                .padding(settingsPanelContentPadding(compactHeight = fullScreen))
+                .padding(contentPadding)
                 .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = dismiss,
-                    modifier = Modifier.size(48.dp).focusRequester(backFocus),
-                ) {
-                    androidx.compose.material3.Icon(
-                        androidx.compose.ui.res.painterResource(R.drawable.ic_arrow_back),
-                        stringResource(R.string.back),
+            if (fullScreen) {
+                CompactPanelTopAppBar(
+                    title,
+                    back = dismiss,
+                    backFocus = backFocus,
+                )
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = dismiss,
+                        modifier = Modifier.size(48.dp).focusRequester(backFocus),
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_arrow_back),
+                            stringResource(R.string.back),
+                        )
+                    }
+                    Text(
+                        title,
+                        Modifier.semantics { heading() },
+                        style =
+                            MaterialTheme.typography.titleLarge.copy(
+                                fontSize = 22.sp,
+                                lineHeight = 28.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
                     )
                 }
-                Text(
-                    title,
-                    Modifier.semantics { heading() },
-                    style =
-                        MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 22.sp,
-                            lineHeight = 28.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        ),
-                )
             }
             Column(
                 Modifier.weight(1f, fill = false).verticalScroll(scroll),
@@ -336,105 +330,99 @@ internal fun ModelPickerSheet(
                         }
                     }
                 }
-                selected
-                    ?.takeIf {
-                        it.canSelect && (it.efforts.isNotEmpty() || fastMultiplier != null)
-                    }
-                    ?.let { choice ->
-                        HorizontalDivider()
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            if (choice.efforts.isNotEmpty()) {
-                                EffortMenu(choice.efforts, effort, selectEffort)
-                            }
-                            fastMultiplier?.let { multiplier ->
-                                val usage = multiplier.toBigDecimal()
-                                val value =
-                                    NumberFormat.getNumberInstance(
-                                            LocalLocale.current.platformLocale,
-                                        )
-                                        .apply {
-                                            maximumFractionDigits = usage.scale().coerceAtLeast(0)
-                                        }
-                                        .format(usage)
-                                SettingsSwitchRow(
-                                    stringResource(R.string.settings_model_fast),
-                                    leading = {},
-                                    checked = fast,
-                                    onCheckedChange = selectFast,
-                                    modifier =
-                                        Modifier.onFocusChanged { fastFocused = it.isFocused },
-                                    supportingText =
-                                        stringResource(
-                                            R.string.settings_model_fast_usage,
-                                            value,
-                                        ),
-                                )
-                            }
+                if (advancedModel != null && (showEffort || fastMultiplier != null)) {
+                    HorizontalDivider()
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        if (showEffort) {
+                            EffortMenu(
+                                advancedModel,
+                                effort,
+                                selectEffort,
+                                Modifier.onFocusChanged { effortFocused = it.isFocused },
+                            )
+                        }
+                        fastMultiplier?.let { multiplier ->
+                            val usage = multiplier.toBigDecimal()
+                            val value =
+                                NumberFormat.getNumberInstance(
+                                        LocalLocale.current.platformLocale,
+                                    )
+                                    .apply {
+                                        maximumFractionDigits = usage.scale().coerceAtLeast(0)
+                                    }
+                                    .format(usage)
+                            SettingsSwitchRow(
+                                stringResource(R.string.settings_model_fast),
+                                leading = {},
+                                checked = fast,
+                                onCheckedChange = selectFast,
+                                modifier = Modifier.onFocusChanged { fastFocused = it.isFocused },
+                                supportingText =
+                                    stringResource(
+                                        R.string.settings_model_fast_usage,
+                                        value,
+                                    ),
+                            )
                         }
                     }
+                }
             }
-            footer()
+            if (footerHasAction) {
+                Column(Modifier.onSizeChanged { footerHeight = it.height }) { footer() }
+            } else footer()
         }
     }
-    SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
-        if (snackbar == null) panel(centered)
-        else
-            Box(propagateMinConstraints = true) {
-                panel(centered)
+    SettingsModal(dismiss, fullScreen = fullScreen, fitContentInsets = fullScreen) { centered ->
+        Box(Modifier.testTag("model-picker"), propagateMinConstraints = true) {
+            panel(centered)
+            if (snackbar != null) {
+                val footerInset =
+                    if (footerHasAction) {
+                        with(LocalDensity.current) { footerHeight.toDp() } +
+                            contentPadding.calculateBottomPadding()
+                    } else 0.dp
                 Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomCenter) {
                     WorkspaceFeedbackHost(
                         snackbar,
-                        Modifier.padding(bottom = 8.dp),
+                        Modifier.padding(bottom = 8.dp + footerInset),
                         manageTimeout = false,
                     )
                 }
             }
+        }
     }
 }
 
 @Composable
 private fun EffortMenu(
-    efforts: List<ModelEffort>,
+    model: DefaultModelChoice,
     current: ModelEffort?,
     select: (ModelEffort) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        val label = stringResource(R.string.settings_model_effort)
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-        Box {
-            OutlinedCard(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(
-                    role = Role.Button,
-                ) {
-                    expanded = true
-                },
-                shape = RoundedCornerShape(12.dp),
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        current?.let { stringResource(it.title) } ?: label,
-                        Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    SettingsIcon(R.drawable.ic_expand_more)
-                }
-            }
-            DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                for (effort in efforts) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(effort.title)) },
-                        onClick = {
+    var expanded by remember(model.id) { mutableStateOf(false) }
+    val label = stringResource(R.string.settings_model_effort)
+    Box {
+        OkouOutlinedSelectionField(
+            label,
+            current?.let { stringResource(it.title) } ?: label,
+            modifier = modifier,
+            onClick = { expanded = true },
+        )
+        if (expanded) {
+            WorkspaceMenu(
+                items =
+                    model.efforts.map { effort ->
+                        WorkspaceMenuItem(
+                            stringResource(effort.title),
+                            selected = effort == current,
+                        ) {
                             expanded = false
                             select(effort)
-                        },
-                    )
-                }
-            }
+                        }
+                    },
+                close = { expanded = false },
+            )
         }
     }
 }

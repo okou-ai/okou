@@ -1044,4 +1044,79 @@ describe("Native Computer Use session authentication", () => {
     expect(freshDevice).toBeDefined();
     expect(freshDevice?.id).not.toBe(originalDevice.id);
   });
+
+  it("pf-156 renames an owned remote device and rejects another member's rename", async () => {
+    const bdd = createBddApi(context);
+    const owner = bdd.user({ orgRole: "org:admin" });
+    const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    if (!owner.orgId) {
+      throw new Error("Expected an org admin");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: owner.userId, orgId: owner.orgId, orgRole: owner.orgRole },
+      { [FeatureSwitchKey.RemoteDevices]: true },
+    );
+    const remoteDevices = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+
+    const desktopSessionId = `sess_${randomUUID()}`;
+    signInDesktop(owner, desktopSessionId);
+    const registered = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody({ installationId: randomUUID() }),
+      }),
+      [200],
+    );
+
+    setAuthToken(owner, desktopSessionId);
+    const beforeDirectory = await accept(
+      remoteDevices.list({ headers: sessionHeaders }),
+      [200],
+    );
+    const ownedDevice = beforeDirectory.body.devices.find((device) => {
+      return device.channels.some((channel) => {
+        return (
+          channel.kind === "desktop" && channel.id === registered.body.hostId
+        );
+      });
+    });
+    expect(ownedDevice).toBeDefined();
+    if (!ownedDevice) {
+      throw new Error("Expected owned Desktop device in directory");
+    }
+
+    const renamed = await accept(
+      remoteDevices.rename({
+        headers: sessionHeaders,
+        params: { deviceId: ownedDevice.id },
+        body: { displayName: "Studio Mac" },
+      }),
+      [200],
+    );
+    expect(renamed.body.id).toBe(ownedDevice.id);
+    expect(renamed.body.displayName).toBe("Studio Mac");
+
+    setAuthToken(peer);
+    await accept(
+      remoteDevices.rename({
+        headers: sessionHeaders,
+        params: { deviceId: ownedDevice.id },
+        body: { displayName: "Unauthorized Name" },
+      }),
+      [404],
+    );
+
+    setAuthToken(owner, desktopSessionId);
+    const afterDirectory = await accept(
+      remoteDevices.list({ headers: sessionHeaders }),
+      [200],
+    );
+    const readBack = afterDirectory.body.devices.find((device) => {
+      return device.id === ownedDevice.id;
+    });
+    expect(readBack?.displayName).toBe("Studio Mac");
+  });
 });

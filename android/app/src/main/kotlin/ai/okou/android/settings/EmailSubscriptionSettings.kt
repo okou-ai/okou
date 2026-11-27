@@ -22,13 +22,6 @@ import kotlinx.coroutines.launch
 internal val EmailSubscription.canReceive: Boolean
     get() = deliveryStatus == EmailSubscriptionDeliveryStatus.AVAILABLE && !email.isNullOrBlank()
 
-internal enum class SettingsNotice {
-    ModelAccountSwitchFailed,
-    EmailSubscriptionFailed,
-    ToolSaveFailed,
-    ToolSaveUnconfirmed,
-}
-
 internal data class EmailSubscriptionState(
     val read: SettingsRead<EmailSubscription> = SettingsRead(),
     val desired: Boolean? = null,
@@ -69,6 +62,12 @@ internal class EmailSubscriptionSettings(
             mutable.value =
                 current.copy(updateFailed = false, read = current.read.copy(refreshFailure = null))
         }
+    }
+
+    fun dismissRefreshFailure(failure: SettingsRefreshFailure) {
+        val current = mutable.value
+        if (current.read.refreshFailure === failure)
+            mutable.value = current.copy(read = current.read.copy(refreshFailure = null))
     }
 
     fun visible(active: Boolean) {

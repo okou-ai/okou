@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/cron";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import { now, withMockNowForTest } from "../../../../lib/time";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { cronCleanupSandboxesRoutes } from "../../cron-cleanup-sandboxes";
 import { cronProactiveRoutes } from "../../cron-proactive";
@@ -17,17 +16,12 @@ export function createProactiveCronApi(context: TestContext) {
     routes: [...cronProactiveRoutes, ...cronCleanupSandboxesRoutes],
   });
   const headers = { authorization: "Bearer test-cron-secret" };
-  const tick = () => {
-    return accept(app(cronProactiveContract).compare({ headers }), [200]);
-  };
   return {
-    async activate() {
-      // A newly migrated database first drains the previous release's scheduler.
-      await withMockNowForTest(now() - 5 * 60_000, tick);
-      await tick();
-    },
     async dispatch() {
-      const result = await tick();
+      const result = await accept(
+        app(cronProactiveContract).dispatch({ headers }),
+        [200],
+      );
       await accept(
         app(cronCleanupSandboxesContract).cleanup({ headers }),
         [200],

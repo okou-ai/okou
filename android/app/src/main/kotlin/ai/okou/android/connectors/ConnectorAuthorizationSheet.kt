@@ -98,19 +98,16 @@ internal fun ConnectorRenameSheet(
                 stringResource(R.string.connector_rename_too_long, CONNECTOR_ACCOUNT_NAME_LIMIT)
             null -> null
         }
-    val saving = action?.busy == true && !action.reconciling
+    val saving = action?.busy == true
     val problem = action?.problem
     val saveFailureMessage = stringResource(R.string.chat_rename_save_failed)
     val supportingLineHeight = okouFormSupportingLineHeight(saveFailureMessage)
     val feedback =
         when {
-            action?.reconciling == true && action.busy ->
-                stringResource(R.string.chat_rename_checking_result)
             problem == ConnectorProblem.Failed -> saveFailureMessage
             problem != null -> stringResource(connectorActionProblemMessage(problem))
             else -> null
         }
-    val definiteFailure = problem == ConnectorProblem.Failed || problem == ConnectorProblem.Network
     val colors = MaterialTheme.colorScheme
     val saveLabel = stringResource(R.string.instructions_save)
     val savingLabel = stringResource(R.string.settings_saving)
@@ -130,6 +127,7 @@ internal fun ConnectorRenameSheet(
                 modifier = Modifier.padding(top = OkouFormLayout.ActionGap),
                 cancelEnabled = action?.busy != true,
                 confirmLayoutLabels = listOf(saveLabel, savingLabel),
+                useMaterialButtonDefaults = true,
             )
         },
     ) {
@@ -145,12 +143,12 @@ internal fun ConnectorRenameSheet(
             supportingText = {
                 OkouFormFieldSupport(
                     errorMessage ?: feedback,
-                    if (errorMessage != null || definiteFailure) colors.error
+                    if (errorMessage != null || feedback != null) colors.error
                     else colors.onSurfaceVariant,
                     Modifier.animateContentSize().heightIn(min = supportingLineHeight),
                 )
             },
-            errorMessage = errorMessage ?: feedback.takeIf { definiteFailure },
+            errorMessage = errorMessage ?: feedback,
         )
         LaunchedEffect(editor) {
             editor.focusedSelection?.let { selection ->
@@ -317,6 +315,7 @@ internal fun ConnectorAuthorizationSheet(
                             stringResource(R.string.connector_verify_authorization),
                         ),
                 keepConfirmFocusWhilePending = checkingCode,
+                useMaterialButtonDefaults = true,
             )
         },
     ) {

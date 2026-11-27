@@ -1,14 +1,13 @@
 //! Translate the API's publication protocol into normalized execution inputs.
 
 use api_contracts::generated::constants::runners::paths::{
-    CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_CLAUDE_MEMORY_MOUNT_PATH, CANONICAL_CODEX_HOME_DIR,
-    CANONICAL_CODEX_MEMORY_MOUNT_PATH, CANONICAL_GUEST_HOME_DIR, CANONICAL_PI_MEMORY_MOUNT_PATH,
-    PI_AGENT_DIR,
+    CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_CODEX_HOME_DIR, CANONICAL_GUEST_HOME_DIR, PI_AGENT_DIR,
 };
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use guest_contracts::{
     agent_instructions::instruction_paths,
     env::{CliAgentTypeSelection, CliFramework},
+    storage_manifest::{MEMORY_STORAGE_NAME, member_memory_mount},
 };
 use runner_types::{
     storage_manifest::{
@@ -79,7 +78,7 @@ impl MemoryInput {
         }
         Ok(ArtifactEntry {
             mount_path: mount_path.into(),
-            vas_storage_name: "memory".into(),
+            vas_storage_name: MEMORY_STORAGE_NAME.into(),
             vas_storage_id: self.storage_id,
             vas_version_id: self.version_id,
             archive_url: self.archive_url,
@@ -200,18 +199,15 @@ fn normalize(
     inputs: StartupInputs,
 ) -> Result<ExecutionContext, String> {
     let framework = CliAgentTypeSelection::parse(&context.cli_agent_type);
-    let (config_dir, memory_path) = match framework.framework() {
-        CliFramework::ClaudeCode | CliFramework::Antigravity => (
-            CANONICAL_CLAUDE_CONFIG_DIR,
-            CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-        ),
-        CliFramework::Codex => (CANONICAL_CODEX_HOME_DIR, CANONICAL_CODEX_MEMORY_MOUNT_PATH),
-        CliFramework::Pi => (PI_AGENT_DIR, CANONICAL_PI_MEMORY_MOUNT_PATH),
+    let config_dir = match framework.framework() {
+        CliFramework::ClaudeCode | CliFramework::Antigravity => CANONICAL_CLAUDE_CONFIG_DIR,
+        CliFramework::Codex => CANONICAL_CODEX_HOME_DIR,
+        CliFramework::Pi => PI_AGENT_DIR,
     };
     let packages = inputs.content_bundles;
     let memory = inputs
         .memory
-        .map(|memory| memory.bind(memory_path))
+        .map(|memory| memory.bind(member_memory_mount(framework.framework())))
         .transpose()?;
     let mut paths: HashSet<_> = memory
         .iter()

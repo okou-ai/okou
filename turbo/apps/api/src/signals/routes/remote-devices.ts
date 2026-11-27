@@ -151,6 +151,28 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
     : missing;
 });
 
+const renameDevice$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const owner = get(organizationAuthContext$);
+  const { deviceId } = get(pathParamsOf(remoteDevicesContract.rename));
+  const body = await get(bodyResultOf(remoteDevicesContract.rename));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const [row] = await set(writeDb$)
+    .update(remoteDevices)
+    .set({ displayName: body.data.displayName })
+    .where(ownedRemoteDevice(owner, deviceId))
+    .returning(remoteDeviceFields);
+  signal.throwIfAborted();
+  if (!row) {
+    return missing;
+  }
+  await publishRemoteDevicesChangedSafely(owner);
+  signal.throwIfAborted();
+  return { status: 200 as const, body: remoteDeviceView(row) };
+});
+
 const moveChannel$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = get(organizationAuthContext$);
   const { deviceId, kind, channelId } = get(
@@ -393,6 +415,10 @@ export const remoteDevicesRoutes: readonly RouteEntry[] = [
   {
     route: remoteDevicesContract.create,
     handler: authRoute(ownerAuth, create$),
+  },
+  {
+    route: remoteDevicesContract.rename,
+    handler: authRoute(ownerAuth, renameDevice$),
   },
   {
     route: remoteDevicesContract.moveChannel,

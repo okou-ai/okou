@@ -9,19 +9,21 @@ import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.ChatRowActionFailure
 import ai.okou.android.chat.ChatRowUndo
 import ai.okou.android.chat.ChatUndoPhase
+import ai.okou.android.chat.ConversationRunControls
 import ai.okou.android.chat.DeleteProjectDialog
 import ai.okou.android.chat.ProjectDeleteFeedback
 import ai.okou.android.chat.ProjectDeleteStatus
 import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RenameListItemSheet
 import ai.okou.android.chat.RenameStatus
+import ai.okou.android.chat.RunControlIntent
+import ai.okou.android.chat.RunControlKind
 import ai.okou.android.chat.WorkspaceRenameTarget
 import ai.okou.android.chat.canDeleteProject
 import ai.okou.android.chat.canRenameProject
 import ai.okou.android.chat.hasUsableList
 import ai.okou.android.chat.label
 import ai.okou.android.chat.needsProjectsToConfirmEmptyInbox
-import ai.okou.android.chat.nextChatFeedbackOrder
 import ai.okou.android.chat.recoversInBackground
 import ai.okou.android.chat.rowActions
 import ai.okou.android.updates.updateFocusOutline
@@ -129,13 +131,8 @@ private fun ChatUndoFeedback(
                         else -> R.string.chat_undo_marked_read
                     },
                 )
-            ChatUndoPhase.Checking -> stringResource(R.string.chat_undo_checking)
-            ChatUndoPhase.Unconfirmed -> stringResource(R.string.chat_undo_unconfirmed)
         }
-    val action =
-        stringResource(
-            if (undo.phase == ChatUndoPhase.Offered) R.string.chat_undo else R.string.chat_refresh,
-        )
+    val action = stringResource(R.string.chat_undo)
     key(chats, undo.sequence) {
         val currentUndo = rememberUpdatedState(undo)
         val returnFocus = rememberUpdatedState(onFocusedUndo)
@@ -144,17 +141,15 @@ private fun ChatUndoFeedback(
                 ChatFeedbackContent(
                     message,
                     action,
-                    undo.phase != ChatUndoPhase.Checking && !actionPending,
+                    !actionPending,
                     showDismiss = true,
                 ),
             )
         LaunchedEffect(snackbar) {
-            snackbar.currentSnackbarData?.dismiss()
             snackbar.showSnackbar(
                 ChatFeedbackSnackbar(content) { keyboardFocused ->
                     val current = currentUndo.value
-                    if (current.phase == ChatUndoPhase.Unconfirmed) chats.checkRowUndo(current)
-                    else if (chats.undoRowAction(current) && keyboardFocused)
+                    if (chats.undoRowAction(current) && keyboardFocused)
                         returnFocus.value(current.threadId)
                 },
             )
@@ -164,8 +159,28 @@ private fun ChatUndoFeedback(
 }
 
 internal class ConversationNavigationError(val threadId: String, val message: String) {
-    val feedbackOrder = nextChatFeedbackOrder()
+    val feedbackOrder = nextPaneFeedbackOrder()
 }
+
+internal class ControlFailureSnackbar(override val message: String, val kind: RunControlKind) :
+    SnackbarVisuals {
+    override val actionLabel: String? = null
+    override val withDismissAction = false
+    override val duration = SnackbarDuration.Indefinite
+}
+
+private fun ConversationRunControls.failureMessage(intent: RunControlIntent): Int? =
+    when (intent.kind) {
+        RunControlKind.Interrupt ->
+            R.string.controls_stop_failed.takeIf { intent.targetId == currentRunId }
+        RunControlKind.Revoke ->
+            presentation.queue
+                .firstOrNull { it.message.id == intent.targetId }
+                ?.let {
+                    if (it.message.queuedWorkflow == null) R.string.conversation_withdraw_failed
+                    else R.string.conversation_skip_failed
+                }
+    }
 
 @Composable
 internal fun WorkspaceChatFeedback(
@@ -174,12 +189,17 @@ internal fun WorkspaceChatFeedback(
     listSnackbar: SnackbarHostState,
     conversationSnackbar: SnackbarHostState,
     showChatList: Boolean,
+    listNavigationError: FeedbackReceipt<String>?,
+    dismissListNavigationError: (FeedbackReceipt<String>) -> Unit,
     onFocusedListUndo: (String) -> Unit,
     onFocusedConversationUndo: () -> Unit,
     provisionalChats: List<ProvisionalChat>,
     visibleConversationId: String?,
     navigationError: ConversationNavigationError?,
     dismissNavigationError: (ConversationNavigationError) -> Unit,
+    runControls: ConversationRunControls?,
+    codeFeedback: List<FeedbackReceipt<Int>>,
+    dismissCodeFeedback: (FeedbackReceipt<Int>) -> Unit,
     showWorkflowFeedback: Boolean,
     confirmingProjectDelete: String?,
     dismissProjectDelete: () -> Unit,
@@ -246,31 +266,126 @@ internal fun WorkspaceChatFeedback(
             (it.renameThreadId == null || it.renameThreadId != openRenameId)
     }
     val conversationError = conversationFailures.firstOrNull { it.rejected }
-    val conversationNotice = conversationFailures.firstOrNull()
-    when {
-        conversationError != null &&
-            conversationError.feedbackOrder < (navigationError?.feedbackOrder ?: Long.MAX_VALUE) ->
-            ChatRowFailureFeedback(chats, list, conversationError, conversationSnackbar)
-        navigationError != null ->
-            LaunchedEffect(conversationSnackbar, navigationError) {
-                conversationSnackbar.currentSnackbarData?.dismiss()
-                conversationSnackbar.showSnackbar(
-                    navigationError.message,
-                    duration = SnackbarDuration.Indefinite,
-                )
-                dismissNavigationError(navigationError)
+    val conversationNotice = conversationFailures.firstOrNull { !it.rejected }
+    val controlErrors =
+        if (runControls != null && visibleConversationId == runControls.threadId) {
+            runControls.state.actionFailures
+                .filter { it.value.threadId == visibleConversationId }
+                .map { it to runControls.failureMessage(it.value) }
+        } else emptyList()
+    val obsoleteControls = controlErrors.filter { it.second == null }
+    LaunchedEffect(runControls?.model, obsoleteControls) {
+        if (runControls != null)
+            obsoleteControls.forEach { (receipt, _) ->
+                runControls.model.consumeActionFailure(receipt)
             }
-        conversationUndo != null && conversationUndo.phase != ChatUndoPhase.Applying ->
-            ChatUndoFeedback(
-                chats,
-                conversationUndo,
-                conversationUndo.threadId in list.pendingRowActions,
-                conversationSnackbar,
-                onFocusedUndo = { onFocusedConversationUndo() },
-            )
-        conversationNotice != null ->
-            ChatRowFailureFeedback(chats, list, conversationNotice, conversationSnackbar)
     }
+    val controlError = controlErrors.firstNotNullOfOrNull { (receipt, message) ->
+        message?.let { receipt to it }
+    }
+    val modelError = visibleConversationId?.let { id ->
+        list.conversationModelEdits[id]?.failures?.firstOrNull()?.let { id to it }
+    }
+    val hiddenModelErrors =
+        list.conversationModelEdits.filter { (id, edits) ->
+            id != visibleConversationId && edits.failures.isNotEmpty()
+        }
+    LaunchedEffect(chats, hiddenModelErrors) {
+        hiddenModelErrors.forEach { (id, edits) ->
+            edits.failures.forEach { chats.dismissConversationModelFailure(id, it) }
+        }
+    }
+    val codeError = codeFeedback.firstOrNull { it.value == R.string.conversation_code_copy_failed }
+    val codeResult = codeFeedback.firstOrNull { it.value == R.string.conversation_code_copied }
+    val renameTarget = savedRename
+    val renameOrigin =
+        (renameTarget as? WorkspaceRenameTarget.Chat)?.takeIf { it.fromConversation }?.id
+    val renameVisible =
+        if (renameOrigin == null) showChatList else renameOrigin == visibleConversationId
+    LaunchedEffect(renameTarget, renameVisible) {
+        if (!renameVisible && savedRename == renameTarget) savedRename = null
+    }
+    PaneFeedback(
+        errors =
+            listOf(
+                conversationError?.let { error ->
+                    PaneFeedbackError(error.feedbackOrder) {
+                        ChatRowFailureFeedback(chats, list, error, conversationSnackbar)
+                    }
+                },
+                navigationError?.let { error ->
+                    PaneFeedbackError(error.feedbackOrder) {
+                        PaneFeedbackMessage(conversationSnackbar, error, error.message) {
+                            dismissNavigationError(error)
+                        }
+                    }
+                },
+                controlError?.let { (receipt, messageId) ->
+                    PaneFeedbackError(receipt.order) {
+                        val message = stringResource(messageId)
+                        val model = checkNotNull(runControls).model
+                        LaunchedEffect(model, conversationSnackbar, receipt, message) {
+                            conversationSnackbar.showSnackbar(
+                                ControlFailureSnackbar(message, receipt.value.kind),
+                            )
+                            model.consumeActionFailure(receipt)
+                        }
+                    }
+                },
+                modelError?.let { (id, receipt) ->
+                    PaneFeedbackError(receipt.order) {
+                        PaneFeedbackMessage(
+                            conversationSnackbar,
+                            receipt,
+                            stringResource(receipt.value),
+                        ) {
+                            chats.dismissConversationModelFailure(id, receipt)
+                        }
+                    }
+                },
+                codeError?.let { error ->
+                    PaneFeedbackError(error.order) {
+                        PaneFeedbackMessage(
+                            conversationSnackbar,
+                            error,
+                            stringResource(error.value),
+                        ) {
+                            dismissCodeFeedback(error)
+                        }
+                    }
+                },
+            ),
+        undo =
+            if (conversationUndo != null && conversationUndo.phase != ChatUndoPhase.Applying) {
+                {
+                    ChatUndoFeedback(
+                        chats,
+                        conversationUndo,
+                        conversationUndo.threadId in list.pendingRowActions,
+                        conversationSnackbar,
+                        onFocusedUndo = { onFocusedConversationUndo() },
+                    )
+                }
+            } else null,
+        result = {
+            when {
+                conversationNotice != null ->
+                    ChatRowFailureFeedback(chats, list, conversationNotice, conversationSnackbar)
+                codeResult != null ->
+                    PaneFeedbackMessage(
+                        conversationSnackbar,
+                        codeResult,
+                        stringResource(codeResult.value),
+                    ) {
+                        dismissCodeFeedback(codeResult)
+                    }
+                renameTarget != null && renameOrigin != null && renameVisible ->
+                    RenameSavedSnackbar(renameTarget, conversationSnackbar) {
+                        if (savedRename == renameTarget) savedRename = null
+                    }
+            }
+        },
+    )
 
     val batchResults = list.markAllReadResults
     LaunchedEffect(chats, showChatList, batchResults) {
@@ -288,7 +403,7 @@ internal fun WorkspaceChatFeedback(
     val projectNotice = deleteFeedback.lastOrNull {
         !it.rejected && it.projectId != deleteProject?.id
     }
-    val batchError = if (showChatList) batchResults.firstOrNull { it.rejected > 0 } else null
+    val batchError = if (showChatList) batchResults.firstOrNull { it.hasFailures } else null
     val refreshError =
         if (showChatList) {
             val hasUsableContent =
@@ -307,77 +422,100 @@ internal fun WorkspaceChatFeedback(
                 .minByOrNull { it.first }
         } else null
     val listUndo = list.rowUndo?.takeIf { showChatList && it.phase != ChatUndoPhase.Applying }
-    val firstError =
-        listOfNotNull(
-                rowError?.feedbackOrder,
-                projectError?.feedbackOrder,
-                batchError?.feedbackOrder,
-                refreshError?.first,
-            )
-            .minOrNull()
-    val rowNotice = listFailures.firstOrNull()
-    val batchNotice = batchResults.firstOrNull()?.takeIf { showChatList }
+    val rowNotice = listFailures.firstOrNull { !it.rejected }
+    val batchNotice = batchResults.firstOrNull { !it.hasFailures }?.takeIf { showChatList }
     val moveNotice = list.chatMoveNotice?.takeIf { showChatList }
-    when {
-        rowError != null && rowError.feedbackOrder == firstError ->
-            ChatRowFailureFeedback(chats, list, rowError, listSnackbar)
-        projectError != null && projectError.feedbackOrder == firstError ->
-            ProjectDeleteSnackbar(chats, projectError, list.canDeleteProject, listSnackbar)
-        batchError != null && batchError.feedbackOrder == firstError ->
-            MarkAllReadSnackbar(chats, batchError, listSnackbar)
-        refreshError != null && refreshError.first == firstError -> {
-            val (order, messageId) = refreshError
-            val message = stringResource(messageId)
-            LaunchedEffect(chats, listSnackbar, order, message) {
-                try {
-                    listSnackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-                } finally {
-                    chats.dismissListRefreshFailure(order)
-                }
-            }
-        }
-        listUndo != null ->
-            ChatUndoFeedback(
-                chats,
-                listUndo,
-                listUndo.threadId in list.pendingRowActions,
-                listSnackbar,
-                onFocusedUndo = onFocusedListUndo,
-            )
-        rowNotice != null -> ChatRowFailureFeedback(chats, list, rowNotice, listSnackbar)
-        projectNotice != null ->
-            ProjectDeleteSnackbar(chats, projectNotice, list.canDeleteProject, listSnackbar)
-        batchNotice != null -> MarkAllReadSnackbar(chats, batchNotice, listSnackbar)
-        moveNotice != null -> {
-            val message =
-                moveNotice.projectName?.let {
-                    stringResource(R.string.chat_project_moved_named, it)
-                } ?: stringResource(R.string.chat_project_moved_outside)
-            LaunchedEffect(chats, listSnackbar, moveNotice, message) {
-                listSnackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-                chats.dismissChatMoveNotice(moveNotice)
-            }
-        }
-    }
-
-    savedRename?.let { target ->
-        val origin = (target as? WorkspaceRenameTarget.Chat)?.takeIf { it.fromConversation }?.id
-        val visible = if (origin == null) showChatList else origin == visibleConversationId
-        val snackbar = if (origin == null) listSnackbar else conversationSnackbar
-        val pendingUndo = if (origin == null) listUndo else conversationUndo
-        val message =
-            stringResource(
-                when (target) {
-                    is WorkspaceRenameTarget.Chat -> R.string.chat_title_saved
-                    is WorkspaceRenameTarget.Project -> R.string.chat_project_name_saved
+    PaneFeedback(
+        errors =
+            listOf(
+                listNavigationError?.let { error ->
+                    PaneFeedbackError(error.order) {
+                        PaneFeedbackMessage(listSnackbar, error, error.value) {
+                            dismissListNavigationError(error)
+                        }
+                    }
                 },
-            )
-        LaunchedEffect(target, visible) {
-            if (visible && pendingUndo == null && snackbar.currentSnackbarData == null)
-                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-            if (savedRename == target) savedRename = null
-        }
-    }
+                rowError?.let { error ->
+                    PaneFeedbackError(error.feedbackOrder) {
+                        ChatRowFailureFeedback(chats, list, error, listSnackbar)
+                    }
+                },
+                projectError?.let { error ->
+                    PaneFeedbackError(error.feedbackOrder) {
+                        ProjectDeleteSnackbar(chats, error, list.canDeleteProject, listSnackbar)
+                    }
+                },
+                batchError?.let { error ->
+                    PaneFeedbackError(error.feedbackOrder) {
+                        MarkAllReadSnackbar(chats, error, listSnackbar)
+                    }
+                },
+                refreshError?.let { (order, messageId) ->
+                    PaneFeedbackError(order) {
+                        val message = stringResource(messageId)
+                        LaunchedEffect(chats, listSnackbar, order, message) {
+                            try {
+                                listSnackbar.showSnackbar(
+                                    message,
+                                    duration = SnackbarDuration.Indefinite,
+                                )
+                            } finally {
+                                chats.dismissListRefreshFailure(order)
+                            }
+                        }
+                    }
+                },
+            ),
+        undo =
+            if (listUndo != null) {
+                {
+                    ChatUndoFeedback(
+                        chats,
+                        listUndo,
+                        listUndo.threadId in list.pendingRowActions,
+                        listSnackbar,
+                        onFocusedUndo = onFocusedListUndo,
+                    )
+                }
+            } else null,
+        result = {
+            when {
+                rowNotice != null -> ChatRowFailureFeedback(chats, list, rowNotice, listSnackbar)
+                projectNotice != null ->
+                    ProjectDeleteSnackbar(chats, projectNotice, list.canDeleteProject, listSnackbar)
+                batchNotice != null -> MarkAllReadSnackbar(chats, batchNotice, listSnackbar)
+                moveNotice != null -> {
+                    val message =
+                        moveNotice.projectName?.let {
+                            stringResource(R.string.chat_project_moved_named, it)
+                        } ?: stringResource(R.string.chat_project_moved_outside)
+                    PaneFeedbackMessage(listSnackbar, moveNotice, message) {
+                        chats.dismissChatMoveNotice(moveNotice)
+                    }
+                }
+                renameTarget != null && renameOrigin == null && renameVisible ->
+                    RenameSavedSnackbar(renameTarget, listSnackbar) {
+                        if (savedRename == renameTarget) savedRename = null
+                    }
+            }
+        },
+    )
+}
+
+@Composable
+private fun RenameSavedSnackbar(
+    target: WorkspaceRenameTarget,
+    snackbar: SnackbarHostState,
+    onDismissed: () -> Unit,
+) {
+    val message =
+        stringResource(
+            when (target) {
+                is WorkspaceRenameTarget.Chat -> R.string.chat_title_saved
+                is WorkspaceRenameTarget.Project -> R.string.chat_project_name_saved
+            },
+        )
+    PaneFeedbackMessage(snackbar, target, message, onDismissed)
 }
 
 @Composable
@@ -399,7 +537,6 @@ private fun ProjectDeleteSnackbar(
         )
     val retry = if (unconfirmed && canDeleteProject) stringResource(R.string.retry) else null
     LaunchedEffect(chats, snackbar, feedback, message, retry) {
-        if (feedback.rejected) snackbar.currentSnackbarData?.dismiss()
         val result =
             try {
                 snackbar.showSnackbar(
@@ -424,38 +561,21 @@ private fun MarkAllReadSnackbar(
 ) {
     val message =
         when {
-            result.rejected == result.requested ->
-                stringResource(R.string.chat_mark_all_read_failed)
+            result.confirmed == 0 -> stringResource(R.string.chat_mark_all_read_failed)
             result.confirmed == result.requested ->
                 pluralStringResource(
                     R.plurals.chat_mark_all_read_success,
                     result.confirmed,
                     result.confirmed,
                 )
-            result.rejected > 0 && result.confirmed + result.rejected == result.requested ->
+            else ->
                 stringResource(
                     R.string.chat_mark_all_read_partial_failed,
                     result.confirmed,
-                    result.rejected,
+                    result.requested - result.confirmed,
                 )
-            result.rejected > 0 ->
-                stringResource(
-                    R.string.chat_mark_all_read_mixed,
-                    result.confirmed,
-                    result.rejected,
-                    result.requested - result.confirmed - result.rejected,
-                )
-            result.confirmed > 0 ->
-                pluralStringResource(
-                    R.plurals.chat_mark_all_read_partial,
-                    result.confirmed,
-                    result.confirmed,
-                    result.requested,
-                )
-            else -> stringResource(R.string.chat_mark_all_read_unconfirmed)
         }
     LaunchedEffect(chats, snackbar, result.feedbackOrder, message) {
-        if (result.rejected > 0) snackbar.currentSnackbarData?.dismiss()
         snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
         chats.dismissMarkAllReadResult(result)
     }
@@ -557,6 +677,8 @@ private fun ChatRowFailureFeedback(
     val message =
         when {
             failure.fromUndo -> stringResource(R.string.chat_undo_failed)
+            failure.rejected && !action.updatesChat && !failure.connectionFailed ->
+                stringResource(R.string.chat_read_action_failed)
             action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow ->
                 stringResource(R.string.chat_delete_rejected)
             failure.rejected && action.recoversInBackground ->
@@ -570,8 +692,7 @@ private fun ChatRowFailureFeedback(
                     when {
                         failure.connectionFailed -> R.string.chat_action_connection_failed
                         failure.rejected -> R.string.chat_row_action_rejected
-                        action.updatesChat || failure.readIntent != null ->
-                            R.string.chat_row_action_failed
+                        action.updatesChat -> R.string.chat_row_action_failed
                         else -> R.string.chat_read_action_failed
                     },
                 )
@@ -589,7 +710,6 @@ private fun ChatRowFailureFeedback(
             ),
         )
     LaunchedEffect(chats, snackbar, failure) {
-        if (failure.rejected) snackbar.currentSnackbarData?.dismiss()
         try {
             val check = { chats.checkRowActionFailure(failure) }
             val result =

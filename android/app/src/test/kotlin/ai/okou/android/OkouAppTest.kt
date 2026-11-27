@@ -12,11 +12,13 @@ import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.RunControlsModel
-import ai.okou.android.preferences.MemberPreferenceSaveFeedback
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
+import ai.okou.android.preferences.memberPreferenceSaveError
 import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.DefaultModelSettings
+import ai.okou.android.settings.settingsRefreshError
+import ai.okou.android.state.SettingsDestination
 import ai.okou.android.updates.UpdateTransfer
 import ai.okou.android.updates.UpdateUiState
 import ai.okou.android.updates.updateRelease
@@ -130,7 +132,7 @@ class OkouAppTest {
         chatService: ChatListService = TestChatService(),
         inputModeManager: InputModeManager? = null,
         defaultModel: DefaultModelSettings? = null,
-    ) {
+    ): MemberPreferencesModel {
         val models = compose.runOnIdle {
             val provider =
                 ViewModelProvider(
@@ -264,8 +266,27 @@ class OkouAppTest {
                                 defaultModel = defaultModel,
                                 snackbar = snackbar,
                                 feedbackInOverlay = feedbackInOverlay,
-                                settingsContent = { _, _, _ ->
-                                    MemberPreferenceSaveFeedback(models.second, snackbar)
+                                settingsContent = { destination, _, _ ->
+                                    val catalogError =
+                                        defaultModel
+                                            ?.takeIf { destination == SettingsDestination.Overview }
+                                            ?.let { model ->
+                                                settingsRefreshError(
+                                                    snackbar,
+                                                    model.state
+                                                        .collectAsStateWithLifecycle()
+                                                        .value
+                                                        .settingsCatalogRefreshFailure,
+                                                    R.string.settings_model_catalog_refresh_failed,
+                                                    model::dismissCatalogFailure,
+                                                )
+                                            }
+                                    PaneFeedback(
+                                        listOf(
+                                            catalogError,
+                                            memberPreferenceSaveError(models.second, snackbar),
+                                        ),
+                                    )
                                     SettingsScreen(
                                         models = {
                                             if (defaultModel != null)
@@ -300,6 +321,7 @@ class OkouAppTest {
                 }
             }
         }
+        return models.second
     }
 
     @After
@@ -496,6 +518,32 @@ class OkouAppTest {
             .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Light").assertIsDisplayed()
         notice.assertDoesNotExist()
+    }
+
+    @Test
+    fun separatePreferenceRejectionsAreShownInOrder() {
+        val preferences = render(failPreferenceSave = { true })
+        compose.openChatListSettings()
+        selectAppearance("Dark")
+        val appearanceFailure =
+            compose.onNodeWithText(
+                compose.activity.getString(R.string.settings_appearance_sync_failed),
+            )
+        val timezoneFailure =
+            compose.onNodeWithText(
+                compose.activity.getString(R.string.settings_timezone_save_rejected),
+            )
+        appearanceFailure.assertIsDisplayed()
+
+        compose.runOnIdle { preferences.selectTimezone("Asia/Kathmandu") }
+
+        appearanceFailure.assertIsDisplayed()
+        timezoneFailure.assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(5_000)
+        appearanceFailure.assertDoesNotExist()
+        timezoneFailure.assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(5_000)
+        timezoneFailure.assertDoesNotExist()
     }
 
     @Test

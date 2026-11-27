@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.19.18](https://github.com/okou-ai/okou/compare/runner-types-v0.19.17...runner-types-v0.19.18) (2026-11-27)
+
+## [0.19.17](https://github.com/okou-ai/okou/compare/runner-types-v0.19.16...runner-types-v0.19.17) (2026-11-27)
+
+
+### Performance Improvements
+
+* **runner:** reuse memory during the instructions check ([#51513](https://github.com/okou-ai/okou/issues/51513)) ([63edb54](https://github.com/okou-ai/okou/commit/63edb54e292ddc275688ac78ee7fb5158e563fa1))
+
 ## [0.19.16](https://github.com/okou-ai/okou/compare/runner-types-v0.19.15...runner-types-v0.19.16) (2026-11-27)
 
 ## [0.19.15](https://github.com/okou-ai/okou/compare/runner-types-v0.19.14...runner-types-v0.19.15) (2026-11-27)

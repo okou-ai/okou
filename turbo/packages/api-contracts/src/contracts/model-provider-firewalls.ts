@@ -46,39 +46,16 @@ interface SingleSecretFirewallProviderConfig {
 }
 
 export const MODEL_PROVIDER_ENV_PLACEHOLDERS = {
-  // Placeholder: sk-ant-oat01-{93 word/hyphen chars}AA (108 chars total)
-  // Source: Anthropic key shape (Semgrep regex \Bsk-ant-api03-[\w\-]{93}AA\B)
-  //   with the prefix from claude setup-token output
-  //   https://semgrep.dev/blog/2025/secrets-story-and-prefixed-secrets/
-  //   https://github.com/anthropics/claude-code/issues/18340
-  //   Example: sk-ant-oat01-xxxxx...xxxxx (1-year OAuth token)
-  CLAUDE_CODE_OAUTH_TOKEN:
-    "sk-ant-oat01-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCofAA",
-  // Placeholder: sk-proj-{chars}T3BlbkFJ{chars} (typical project key shape)
-  // Source: mirrors the OpenAI connector firewall placeholder shape.
-  OPENAI_API_KEY:
-    "sk-proj-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocaT3BlbkFJCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLoca",
-  // Opaque fake marker, not a JWT. Codex ChatGPT mode reads auth.json, while
-  // firewall auth substitutes this marker at egress.
-  CHATGPT_ACCESS_TOKEN:
-    "chatgpt-token-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocal",
-  CHATGPT_ACCOUNT_ID: "ws_VM0_PLACEHOLDER_DO_NOT_TRUST",
-  CHATGPT_REFRESH_TOKEN: "rt_VM0_PLACEHOLDER_DO_NOT_TRUST",
-} as const;
-
-// Roll out Runner support for these exact values before switching the firewall
-// catalog and sandbox environment over to them.
-export const MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS = {
+  // Claude's setup-token format uses 93 characters followed by AA.
   CLAUDE_CODE_OAUTH_TOKEN: `sk-ant-oat01-${"OkouModelProviderClaudeCodeOauthToken".padEnd(93, "0")}AA`,
   // The OpenRouter route uses an opaque API-key value in Codex and Pi.
   OPENAI_API_KEY: "OkouModelProviderOpenRouterCodexOpenaiApiKey",
+  // Pi forwards this opaque value. The native Codex Guest uses it as the
+  // signature of its synthetic access JWT.
   CHATGPT_ACCESS_TOKEN: "chatgpt-token-OkouModelProviderCodexOauthAccessToken",
   CHATGPT_ACCOUNT_ID: "ws_OkouModelProviderCodexOauthAccountId",
   CHATGPT_REFRESH_TOKEN: "rt_OkouModelProviderCodexOauthRefreshToken",
-} as const satisfies Record<
-  keyof typeof MODEL_PROVIDER_ENV_PLACEHOLDERS,
-  string
->;
+} as const;
 
 const MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS: Record<
   SingleSecretFirewallProvider,

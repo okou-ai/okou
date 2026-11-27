@@ -76,6 +76,59 @@ export const mountRemoteDeviceCreation$ = onRef(
   }),
 );
 
+const renameDraft$ = state<{
+  readonly deviceId: string;
+  readonly name: string | null;
+  readonly open: boolean;
+  readonly request: Promise<unknown> | null;
+} | null>(null);
+
+export const remoteDeviceRenameDraft$ = computed((get) => {
+  return get(renameDraft$);
+});
+
+export const remoteDeviceRenameRequest$ = computed((get) => {
+  return get(renameDraft$)?.request ?? null;
+});
+
+export const openRemoteDeviceRename$ = command(({ set }, deviceId: string) => {
+  set(renameDraft$, { deviceId, name: null, open: true, request: null });
+});
+
+export const updateRemoteDeviceRename$ = command(
+  ({ get, set }, name: string) => {
+    const draft = get(renameDraft$);
+    if (draft?.open) {
+      set(renameDraft$, { ...draft, name });
+    }
+  },
+);
+
+export const closeRemoteDeviceRename$ = command(({ get, set }) => {
+  const draft = get(renameDraft$);
+  if (draft?.open) {
+    set(renameDraft$, { ...draft, open: false });
+  }
+});
+
+export const finishRemoteDeviceRenameClose$ = command(({ get, set }) => {
+  if (!get(renameDraft$)?.open) {
+    set(renameDraft$, null);
+  }
+});
+
+export const mountRemoteDeviceRename$ = onRef(
+  command(({ set }, _element: HTMLButtonElement, signal: AbortSignal) => {
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(renameDraft$, null);
+      },
+      { once: true },
+    );
+  }),
+);
+
 export const remoteDevicesEnabled$ = computed(async (get) => {
   return (await get(featureSwitches$))[FeatureSwitchKey.RemoteDevices];
 });
@@ -146,6 +199,33 @@ export const createRemoteDevice$ = command(
       params.delete("setup");
       params.set("remoteDevice", draft.id);
       set(updateSearchParams$, params);
+    }
+  },
+);
+
+export const renameRemoteDevice$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const draft = get(renameDraft$);
+    if (!draft?.open || draft.name === null) {
+      return;
+    }
+    const request = accept(
+      get(apiClient$)(remoteDevicesContract).rename({
+        params: { deviceId: draft.deviceId },
+        body: { displayName: draft.name.trim() },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+      { showErrorToast: false },
+    );
+    const submittedDraft = { ...draft, request };
+    set(renameDraft$, submittedDraft);
+    await request;
+    signal.throwIfAborted();
+    set(invalidateRemoteDeviceDirectory$);
+    if (get(renameDraft$) === submittedDraft) {
+      set(closeRemoteDeviceRename$);
     }
   },
 );

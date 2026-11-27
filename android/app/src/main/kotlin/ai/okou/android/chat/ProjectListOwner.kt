@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.nextPaneFeedbackOrder
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -42,7 +43,7 @@ data class ProjectDeleteFeedback
 internal constructor(val projectId: String, val eventId: String, val status: ProjectDeleteStatus) {
     internal val rejected =
         status == ProjectDeleteStatus.Rejected || status == ProjectDeleteStatus.ConnectionFailed
-    internal val feedbackOrder = nextChatFeedbackOrder()
+    internal val feedbackOrder = nextPaneFeedbackOrder()
 }
 
 @ConsistentCopyVisibility
@@ -743,7 +744,7 @@ internal class ProjectListOwner(
                                             feedbackScope != null &&
                                                 feedbackScope === visibleListFeedbackScope()
                                         )
-                                            nextChatFeedbackOrder()
+                                            nextPaneFeedbackOrder()
                                         else
                                             snapshot.refreshFailureOrder.takeUnless {
                                                 collectionMissing

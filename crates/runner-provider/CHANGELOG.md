@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.21.29](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.28...runner-provider-v0.21.29) (2026-11-27)
+
+## [0.21.28](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.27...runner-provider-v0.21.28) (2026-11-27)
+
+
+### Performance Improvements
+
+* **runner:** reuse memory during the instructions check ([#51513](https://github.com/okou-ai/okou/issues/51513)) ([63edb54](https://github.com/okou-ai/okou/commit/63edb54e292ddc275688ac78ee7fb5158e563fa1))
+
 ## [0.21.27](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.26...runner-provider-v0.21.27) (2026-11-27)
 
 ## [0.21.26](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.25...runner-provider-v0.21.26) (2026-11-27)

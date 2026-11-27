@@ -134,6 +134,4 @@
     <string name="connector_device_denied">The provider denied authorization.</string>
     <string name="connector_device_expired">The device code expired. Start authorization again.</string>
     <string name="connector_device_failed">Could not complete device authorization.</string>
-    <string name="chat_connector_check_result">Check result</string>
-    <string name="chat_connector_check_before_send">Check the connector choice in Chat options before sending.</string>
 </resources>

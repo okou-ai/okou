@@ -45,9 +45,10 @@ const channel = object({
 });
 const directoryDevice = device.extend({ channels: array(channel) });
 const directory = object({ devices: array(directoryDevice) });
+const deviceName = string().trim().min(1).max(120);
 const createDevice = object({
   id: uuid(),
-  displayName: string().trim().min(1).max(120),
+  displayName: deviceName,
 }).strict();
 const devicePath = object({ deviceId: uuid() });
 const errors = {
@@ -77,6 +78,14 @@ export const remoteDevicesContract = c.router({
     headers: authHeadersSchema,
     body: createDevice,
     responses: { ...errors, 200: device, 201: device },
+  },
+  rename: {
+    method: "PATCH",
+    path: "/api/remote-devices/:deviceId",
+    pathParams: devicePath,
+    headers: authHeadersSchema,
+    body: object({ displayName: deviceName }).strict(),
+    responses: { ...errors, 200: device },
   },
   moveChannel: {
     method: "PUT",

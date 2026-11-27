@@ -8,9 +8,7 @@
     <string name="chat_undo_marked_read">Chat marcado como leído</string>
     <string name="chat_undo">Deshacer</string>
     <string name="chat_action_connection_failed">No se pudo conectar. Comprueba tu conexión y vuelve a intentarlo.</string>
-    <string name="chat_undo_checking">Comprobando el resultado…</string>
     <string name="chat_undo_failed">No se pudo deshacer el cambio.</string>
-    <string name="chat_undo_unconfirmed">No se pudo confirmar si se deshizo el cambio.</string>
     <string name="chat_feedback_dismiss">Cerrar</string>
     <string name="chat_list_first_load_failed">No se puede cargar temporalmente</string>
     <string name="chat_list_title">Chats</string>
@@ -21,15 +19,8 @@
     <string name="chat_metadata_unavailable">La información del proyecto no está disponible temporalmente.</string>
     <string name="chat_inbox">Bandeja de entrada</string>
     <string name="chat_mark_all_read">Marcar todo como leído</string>
-    <string name="chat_mark_all_read_unconfirmed">Es posible que algunos chats sigan sin leer.</string>
     <string name="chat_mark_all_read_failed">No se pudieron marcar los chats como leídos.</string>
     <string name="chat_mark_all_read_partial_failed">Marcados como leídos: %1$d. Fallidos: %2$d.</string>
-    <string name="chat_mark_all_read_mixed">Marcados como leídos: %1$d. Fallidos: %2$d. Sin confirmar: %3$d.</string>
-    <plurals name="chat_mark_all_read_partial">
-        <item quantity="one">Se marcó como leído %1$d de %2$d chats.</item>
-        <item quantity="many">Se marcaron como leídos %1$d de %2$d chats.</item>
-        <item quantity="other">Se marcaron como leídos %1$d de %2$d chats.</item>
-    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">Se marcó %1$d chat como leído.</item>
         <item quantity="many">Se marcaron %1$d chats como leídos.</item>

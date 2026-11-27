@@ -1,5 +1,6 @@
 package ai.okou.android.settings
 
+import ai.okou.android.FeedbackReceipt
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.boundedRetryDelayMillis
 import ai.okou.android.api.finiteReadRetryDelays
@@ -21,8 +22,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -30,7 +29,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -147,6 +145,7 @@ internal data class DefaultModelState(
     val options: DefaultModelOptions? = null,
     val catalogUnavailable: Boolean = false,
     val settingsCatalogRefreshFailure: SettingsRefreshFailure? = null,
+    val saveFeedback: FeedbackReceipt<DefaultModelNotice>? = null,
 ) {
     val pending: UpdateDefaultModelPreference?
         get() = save?.request
@@ -189,8 +188,6 @@ internal class DefaultModelSettings(
 ) {
     private val mutable = MutableStateFlow(DefaultModelState())
     val state = mutable.asStateFlow()
-    private val messages = Channel<DefaultModelNotice>(1, BufferOverflow.DROP_OLDEST)
-    val notices = messages.receiveAsFlow()
     private val preferenceRequests = Mutex()
     private var presented = false
     private var foreground = false
@@ -216,6 +213,9 @@ internal class DefaultModelSettings(
 
     fun showSettings(page: SettingsDestination?) {
         if (presented && destination == page) return
+        if ((destination == null) != (page == null)) {
+            mutable.value = mutable.value.copy(saveFeedback = null)
+        }
         presented = true
         destination = page
         synchronizeReads()
@@ -282,11 +282,11 @@ internal class DefaultModelSettings(
                 if (fast) UpdateDefaultModelPreferenceServiceTier.PRIORITY else null,
                 patch,
             )
-        messages.tryReceive()
         val verifying = current.save?.takeIf { unconfirmedWrite != null }
         mutable.value =
             current.copy(
                 save = verifying?.copy(request = request) ?: DefaultModelSave(request),
+                saveFeedback = null,
             )
         if (verifying == null) saveWait?.cancel()
         synchronizeSaves()
@@ -320,7 +320,12 @@ internal class DefaultModelSettings(
 
     private fun clearSettingsCatalogRefreshFailure() {
         val current = mutable.value
-        if (current.settingsCatalogRefreshFailure != null)
+        current.settingsCatalogRefreshFailure?.let(::dismissCatalogFailure)
+    }
+
+    fun dismissCatalogFailure(failure: SettingsRefreshFailure) {
+        val current = mutable.value
+        if (current.settingsCatalogRefreshFailure === failure)
             mutable.value = current.copy(settingsCatalogRefreshFailure = null)
     }
 
@@ -574,8 +579,16 @@ internal class DefaultModelSettings(
 
     private fun rollBackSave() {
         unconfirmedWrite = null
-        mutable.value = mutable.value.copy(save = null)
-        messages.trySend(DefaultModelNotice.SaveRolledBack)
+        mutable.value =
+            mutable.value.copy(
+                save = null,
+                saveFeedback = FeedbackReceipt(DefaultModelNotice.SaveRolledBack),
+            )
+    }
+
+    fun dismissSaveFailure(receipt: FeedbackReceipt<DefaultModelNotice>) {
+        val current = mutable.value
+        if (current.saveFeedback === receipt) mutable.value = current.copy(saveFeedback = null)
     }
 
     private fun publishConfirmed(

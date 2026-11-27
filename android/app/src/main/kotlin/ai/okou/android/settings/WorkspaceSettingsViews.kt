@@ -4,6 +4,9 @@ import ai.okou.android.BuildConfig
 import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.ContentReadProgress
+import ai.okou.android.PaneFeedback
+import ai.okou.android.PaneFeedbackError
+import ai.okou.android.PaneFeedbackMessage
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsSection
@@ -11,6 +14,8 @@ import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.RecoveryBillingCreditBreakdownItemCategory
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItem
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.preferences.MemberPreferencesModel
+import ai.okou.android.preferences.memberPreferenceSaveError
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.SettingsDestination
 import android.icu.util.Calendar
@@ -28,20 +33,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -70,14 +72,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
-import androidx.lifecycle.repeatOnLifecycle
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.time.Instant
-import kotlinx.coroutines.flow.collectLatest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Composable
@@ -97,69 +97,136 @@ internal fun WorkspaceSettingsProgress(
             SettingsDestination.ModelAccounts -> state.accounts.refreshing
             else -> state.usagePack.refreshing || state.workspaceCredits.refreshing
         }
-    if (refreshing) {
-        ContentReadProgress(label)
+    key(model, destination) {
+        ContentReadProgress(label, visible = refreshing)
     }
 }
 
 @Composable
 internal fun WorkspaceSettingsFeedback(
     model: WorkspaceSettingsModel,
+    preferences: MemberPreferencesModel,
     snackbar: SnackbarHostState,
     destination: SettingsDestination,
-    inOverlay: Boolean,
 ) {
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    when (destination) {
-        SettingsDestination.ModelAccounts -> {
-            val state by model.uiState.collectAsStateWithLifecycle()
-            SettingsRefreshFeedback(
-                snackbar,
-                state.accounts.refreshFailure,
-                R.string.settings_accounts_update_failed,
-            )
-        }
-        SettingsDestination.CreditBalance -> {
-            val state by model.uiState.collectAsStateWithLifecycle()
-            SettingsRefreshFeedback(
-                snackbar,
-                state.creditRefreshFailure,
-                R.string.settings_credit_unavailable,
-            )
-        }
-        else -> Unit
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    SideEffect { model.visible(destination.takeIf { active }) }
+    DisposableEffect(model) {
+        onDispose { model.visible(null) }
     }
-    val switchFailed by
-        rememberUpdatedState(stringResource(R.string.settings_account_switch_failed))
-    val emailFailed by rememberUpdatedState(stringResource(R.string.settings_email_save_failed))
-    val toolFailed by
-        rememberUpdatedState(stringResource(R.string.settings_preferences_save_rolled_back))
-    val toolUnconfirmed by rememberUpdatedState(stringResource(R.string.settings_tool_save_failed))
-    LaunchedEffect(model, snackbar, lifecycle, destination, inOverlay) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            model.notices.collectLatest { notice ->
-                val message =
-                    when (notice) {
-                        SettingsNotice.ModelAccountSwitchFailed -> switchFailed
-                        SettingsNotice.EmailSubscriptionFailed -> emailFailed
-                        SettingsNotice.ToolSaveFailed -> toolFailed
-                        SettingsNotice.ToolSaveUnconfirmed -> toolUnconfirmed
+    if (!active) return
+
+    val state by model.uiState.collectAsStateWithLifecycle()
+    val defaultModel by model.defaultModel.state.collectAsStateWithLifecycle()
+    val tools = model.builtInTools
+    val proactive = model.proactive
+    val refreshError =
+        when (destination) {
+            SettingsDestination.ModelAccounts ->
+                settingsRefreshError(
+                    snackbar,
+                    state.accounts.refreshFailure,
+                    R.string.settings_accounts_update_failed,
+                    model::dismissRefreshFailure,
+                )
+            SettingsDestination.CreditBalance ->
+                settingsRefreshError(
+                    snackbar,
+                    state.creditRefreshFailure,
+                    R.string.settings_credit_unavailable,
+                    model::dismissRefreshFailure,
+                )
+            SettingsDestination.Overview ->
+                settingsRefreshError(
+                    snackbar,
+                    defaultModel.settingsCatalogRefreshFailure,
+                    R.string.settings_model_catalog_refresh_failed,
+                    model.defaultModel::dismissCatalogFailure,
+                )
+            SettingsDestination.BuiltInTools ->
+                tools?.let {
+                    val toolsState by it.state.collectAsStateWithLifecycle()
+                    settingsRefreshError(
+                        snackbar,
+                        toolsState.catalog.refreshFailure,
+                        R.string.settings_tools_unavailable,
+                        it::dismissCatalogFailure,
+                    )
+                }
+            else -> null
+        }
+    val proactiveFailure =
+        if (destination == SettingsDestination.ProactiveServices && proactive != null)
+            proactive.saveFailures.collectAsStateWithLifecycle().value.firstOrNull()
+        else null
+    PaneFeedback(
+        errors =
+            listOf(
+                refreshError,
+                state.actionFailures.firstOrNull()?.let { receipt ->
+                    PaneFeedbackError(receipt.order) {
+                        PaneFeedbackMessage(
+                            snackbar,
+                            receipt,
+                            stringResource(receipt.value.message),
+                        ) {
+                            model.dismissActionFailure(receipt)
+                        }
                     }
-                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-            }
-        }
-    }
+                },
+                defaultModel.saveFeedback?.let { receipt ->
+                    PaneFeedbackError(receipt.order) {
+                        PaneFeedbackMessage(
+                            snackbar,
+                            receipt,
+                            stringResource(R.string.settings_model_save_rolled_back),
+                        ) {
+                            model.defaultModel.dismissSaveFailure(receipt)
+                        }
+                    }
+                },
+                proactiveFailure?.let { receipt ->
+                    PaneFeedbackError(receipt.order) {
+                        PaneFeedbackMessage(
+                            snackbar,
+                            receipt,
+                            stringResource(receipt.value.message),
+                        ) {
+                            proactive?.dismissSaveFailure(receipt)
+                        }
+                    }
+                },
+                memberPreferenceSaveError(preferences, snackbar),
+            ),
+    )
 }
 
-@Composable
-internal fun SettingsRefreshFeedback(
+private val SettingsNotice.message: Int
+    get() =
+        when (this) {
+            SettingsNotice.ModelAccountSwitchFailed -> R.string.settings_account_switch_failed
+            SettingsNotice.EmailSubscriptionFailed -> R.string.settings_email_save_failed
+            SettingsNotice.ImageModelSaveFailed -> R.string.settings_tool_image_save_failed
+            SettingsNotice.ToolSaveFailed -> R.string.settings_preferences_save_rolled_back
+            SettingsNotice.ToolSaveUnconfirmed -> R.string.settings_tool_save_failed
+        }
+
+private val ProactiveSetting.message: Int
+    get() =
+        when (this) {
+            ProactiveSetting.MorningBrief -> R.string.settings_morning_brief_save_failed
+            ProactiveSetting.Suggestions -> R.string.settings_suggestions_save_failed
+        }
+
+internal fun settingsRefreshError(
     snackbar: SnackbarHostState,
     failure: SettingsRefreshFailure?,
     @StringRes message: Int,
-) {
-    val text = stringResource(message)
-    LaunchedEffect(snackbar, failure, text) {
-        if (failure != null) snackbar.showSnackbar(text, duration = SnackbarDuration.Indefinite)
+    dismiss: (SettingsRefreshFailure) -> Unit,
+): PaneFeedbackError? = failure?.let {
+    PaneFeedbackError(it.order) {
+        PaneFeedbackMessage(snackbar, it, stringResource(message)) { dismiss(it) }
     }
 }
 
@@ -170,12 +237,6 @@ internal fun WorkspaceSettingsDataPage(
     model: WorkspaceSettingsModel,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
-    DisposableEffect(model, destination, active) {
-        model.visible(destination.takeIf { active })
-        onDispose { model.visible(null) }
-    }
     when (destination) {
         SettingsDestination.ModelAccounts -> ModelAccounts(workspace, state, model::activate)
         SettingsDestination.CreditBalance -> CreditBalance(workspace, state)
@@ -185,12 +246,8 @@ internal fun WorkspaceSettingsDataPage(
 
 @Composable
 internal fun SettingsWebAction(label: String, section: String) {
-    TextButton(
-        onClick = settingsWebClick(section),
-        colors =
-            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-    ) {
-        Text(label, fontWeight = FontWeight.SemiBold)
+    TextButton(onClick = settingsWebClick(section)) {
+        Text(label)
     }
 }
 
@@ -326,9 +383,12 @@ private fun ModelAccounts(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     SettingsDetailStatus(stringResource(R.string.settings_accounts_empty_help))
+                    SettingsWebAction(
+                        stringResource(R.string.settings_accounts_web_connect),
+                        "model",
+                    )
                 }
             }
-            SettingsWebAction(stringResource(R.string.settings_accounts_web_connect), "model")
         }
         else -> {
             for (provider in ModelAccountProvider.entries) {

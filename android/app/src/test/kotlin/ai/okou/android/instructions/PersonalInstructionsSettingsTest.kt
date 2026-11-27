@@ -303,51 +303,51 @@ class PersonalInstructionsSettingsTest {
         app.fixture.disconnectSave = true
         val markdown = "**Accepted** despite lost response"
         input.performScrollTo().performTextReplacement(markdown)
+        input.performTextInputSelection(TextRange(2, 9))
         val saveReply = CountDownLatch(1)
-        val checkReply = CountDownLatch(1)
         app.fixture.beforeSave = { saveReply.await() }
-        app.fixture.beforeRead = { checkReply.await() }
+        val cancel = compose.onNodeWithText("Cancel")
+        save.performScrollTo()
+        val idleSaveBounds = save.getUnclippedBoundsInRoot()
+        val idleCancelBounds = cancel.getUnclippedBoundsInRoot()
+        val idleEditorBounds = input.getUnclippedBoundsInRoot()
+        val readCount = app.fixture.requests.count { it.method == "GET" }
         try {
-            val cancel = compose.onNodeWithText("Cancel")
-            save.performScrollTo()
-            val idleSaveBounds = save.getUnclippedBoundsInRoot()
-            val idleCancelBounds = cancel.getUnclippedBoundsInRoot()
-            val idleEditorBounds = input.getUnclippedBoundsInRoot()
             save.performClick()
             val pending = compose.onNodeWithText(app.getString(R.string.settings_saving))
             pending.assertIsDisplayed().assertIsNotEnabled()
             assertEquals(idleSaveBounds, pending.getUnclippedBoundsInRoot())
             assertEquals(idleCancelBounds, cancel.getUnclippedBoundsInRoot())
-            saveReply.countDown()
-            awaitPhase(InstructionsPhase.Checking)
-            val checking =
-                compose.onNodeWithText(
-                    app.getString(R.string.instructions_checking),
-                    useUnmergedTree = true,
-                )
-            checking.assertIsDisplayed()
-            save.assertIsNotEnabled()
-            val checkingBounds = checking.getUnclippedBoundsInRoot()
-            val checkingSaveBounds = save.getUnclippedBoundsInRoot()
-            assertTrue(
-                "Readback feedback $checkingBounds is above Save $checkingSaveBounds",
-                checkingBounds.bottom <= checkingSaveBounds.top,
-            )
-            assertEquals(
-                "The readback message keeps the Save position",
-                idleSaveBounds,
-                save.getUnclippedBoundsInRoot(),
-            )
-            assertEquals(idleCancelBounds, cancel.getUnclippedBoundsInRoot())
             assertEquals(idleEditorBounds, input.getUnclippedBoundsInRoot())
-            assertEquals(
-                markdown,
-                input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
-            )
+            cancel.assertIsNotEnabled()
         } finally {
             saveReply.countDown()
-            checkReply.countDown()
         }
+        compose.waitUntil(10_000) { compose.runOnIdle { model.uiState.value.saveRejected } }
+        val failed =
+            compose.onNodeWithText(
+                app.getString(R.string.instructions_save_rejected),
+                useUnmergedTree = true,
+            )
+        failed.assertIsDisplayed()
+        save.assertIsEnabled()
+        cancel.assertIsEnabled()
+        assertTrue(failed.getUnclippedBoundsInRoot().bottom <= idleSaveBounds.top)
+        assertEquals(idleSaveBounds, save.getUnclippedBoundsInRoot())
+        assertEquals(idleCancelBounds, cancel.getUnclippedBoundsInRoot())
+        assertEquals(idleEditorBounds, input.getUnclippedBoundsInRoot())
+        assertEquals(
+            markdown,
+            input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+        )
+        assertEquals(
+            TextRange(2, 9),
+            input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+        )
+        assertEquals(readCount, app.fixture.requests.count { it.method == "GET" })
+        assertEquals(1, app.fixture.requests.count { it.method == "PUT" })
+        app.fixture.disconnectSave = false
+        save.performClick()
         compose.waitUntil(10_000) {
             compose.runOnIdle {
                 model.uiState.value.phase == InstructionsPhase.Ready &&
@@ -355,6 +355,7 @@ class PersonalInstructionsSettingsTest {
             }
         }
         assertEquals(markdown, app.fixture.saved.content)
+        assertEquals(readCount + 1, app.fixture.requests.count { it.method == "GET" })
         assertEquals(1, app.fixture.requests.count { it.method == "PUT" })
         input.assertDoesNotExist()
         compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
@@ -480,6 +481,23 @@ class PersonalInstructionsSettingsTest {
         save.assertIsEnabled()
         assertEquals(initialEditor, input.getUnclippedBoundsInRoot())
         assertEquals(initialSave, save.getUnclippedBoundsInRoot())
+
+        compose.mainClock.advanceTimeBy(5_500L)
+        feedback.assertDoesNotExist()
+        val reads = app.fixture.requests.count { it.method == "GET" }
+        app.fixture.rejectSave = true
+        val permitSave = CountDownLatch(1)
+        app.fixture.beforeSave = { permitSave.await() }
+        try {
+            save.performClick()
+            compose.onNodeWithText(app.getString(R.string.settings_saving)).assertExists()
+        } finally {
+            permitSave.countDown()
+        }
+        compose.waitUntil(10_000) { compose.runOnIdle { model.uiState.value.saveRejected } }
+        compose.onNodeWithText(app.getString(R.string.instructions_save_rejected)).assertExists()
+        feedback.assertDoesNotExist()
+        assertEquals(reads, app.fixture.requests.count { it.method == "GET" })
     }
 
     @After
