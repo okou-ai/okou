@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { Response } from "miniflare";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it as baseTest } from "vitest";
 import { number, object } from "zod";
 import {
   APPLICATION_ID,
@@ -15,84 +15,85 @@ import {
 import { createRelayPhases } from "./relay-phases";
 
 describe("Discord Gateway relay", () => {
-  describe("disabled at startup", () => {
-    const managementTest = it.extend(
-      "disabledRelay",
-      async ({ onTestFailed, signal }) => {
-        const { elapsedMs, phases, wait } = createRelayPhases(signal);
-        onTestFailed(() => {
-          console.error("Discord relay management failure", {
-            elapsedMs: elapsedMs(),
-            phases,
-          });
+  const it = baseTest
+    .extend("relayBindings", (): Record<string, string> => {
+      return {};
+    })
+    .extend("relayPhases", ({ onTestFailed, signal }) => {
+      const { elapsedMs, phases, wait } = createRelayPhases(signal);
+      onTestFailed(() => {
+        console.error("Discord relay test progress", {
+          elapsedMs: elapsedMs(),
+          phases,
         });
-        const relay = await wait("create disabled relay fixture", () => {
-          return createRelay({ DISCORD_GATEWAY_ENABLED: "false" });
-        });
-        return { relay, wait };
-      },
-    );
-
-    managementTest.beforeEach(async ({ disabledRelay: { relay, wait } }) => {
-      // The first dispatchFetch would otherwise await the cold workerd start
-      // inside the management requests' test deadline.
-      await wait("wait for workerd readiness", () => {
-        return relay.ready();
+      });
+      return { elapsedMs, wait };
+    })
+    .extend("relay", ({ relayBindings, relayPhases: { wait } }) => {
+      return wait("create relay fixture", () => {
+        return createRelay(relayBindings);
       });
     });
 
-    managementTest(
-      "authenticates management and keeps a disabled relay stopped",
-      async ({ disabledRelay: { relay, wait } }) => {
-        const unauthenticatedHealth = await wait(
-          "unauthenticated health",
-          () => {
-            return relay.request("/health", null);
-          },
-        );
-        expect(unauthenticatedHealth.status).toBe(401);
-        const wrongTokenStart = await wait("start with delivery secret", () => {
-          return relay.request("/start", GATEWAY_SECRET);
-        });
-        expect(wrongTokenStart.status).toBe(401);
-        const start = await wait("authenticated disabled start", () => {
-          return relay.request("/start");
-        });
-        expect(start.status).toBe(409);
-        const health = await wait("authenticated health", () => {
-          return relay.request("/health");
-        });
-        expect(health.headers.get("Cache-Control")).toBe("no-store");
-        const state = await wait("decode health response", () => {
-          return health.json();
-        });
-        expect(state).toEqual({
-          enabled: false,
-          running: false,
-          connected: false,
-          resumable: false,
-          connection: {
-            stage: "stopped",
-            stageStartedAt: expect.any(Number),
-            httpStatus: null,
-            lastFailure: null,
-            failures: 0,
-            reconnectAt: null,
-          },
-          pending: 0,
-          deadLettered: 0,
-          deliveryFailures: 0,
-          oldestPendingAgeMs: null,
-          fatal: null,
-        });
-        expect(relay.opened).toEqual([]);
-        expect(relay.forwarded).toEqual([]);
-      },
-    );
+  it.beforeEach(({ relay, relayPhases: { wait } }) => {
+    // Bound the cold process start with the setup deadline.
+    return wait("workerd readiness", () => {
+      return relay.ready();
+    });
   });
 
-  it("identifies with least-privileged intents and signs the unchanged event", async () => {
-    const relay = await createRelay();
+  describe("disabled at startup", () => {
+    it.override("relayBindings", { DISCORD_GATEWAY_ENABLED: "false" });
+    it("authenticates management and keeps a disabled relay stopped", async ({
+      relay,
+      relayPhases: { wait },
+    }) => {
+      const unauthenticatedHealth = await wait("unauthenticated health", () => {
+        return relay.request("/health", null);
+      });
+      expect(unauthenticatedHealth.status).toBe(401);
+      const wrongTokenStart = await wait("start with delivery secret", () => {
+        return relay.request("/start", GATEWAY_SECRET);
+      });
+      expect(wrongTokenStart.status).toBe(401);
+      const start = await wait("authenticated disabled start", () => {
+        return relay.request("/start");
+      });
+      expect(start.status).toBe(409);
+      const health = await wait("authenticated health", () => {
+        return relay.request("/health");
+      });
+      expect(health.headers.get("Cache-Control")).toBe("no-store");
+      const state = await wait("decode health response", () => {
+        return health.json();
+      });
+      expect(state).toEqual({
+        enabled: false,
+        running: false,
+        connected: false,
+        resumable: false,
+        connection: {
+          stage: "stopped",
+          stageStartedAt: expect.any(Number),
+          httpStatus: null,
+          lastFailure: null,
+          failures: 0,
+          reconnectAt: null,
+        },
+        pending: 0,
+        deadLettered: 0,
+        deliveryFailures: 0,
+        oldestPendingAgeMs: null,
+        fatal: null,
+      });
+      expect(relay.opened).toEqual([]);
+      expect(relay.forwarded).toEqual([]);
+    });
+  });
+
+  it("identifies with least-privileged intents and signs the unchanged event", async ({
+    relay,
+  }) => {
     const gateway = await relay.start();
     gateway.hello();
 
@@ -144,20 +145,10 @@ describe("Discord Gateway relay", () => {
 
   it("relays DMs, bot mentions and unparseable routing without forwarding other guild chatter", async ({
     onTestFailed,
-    signal,
+    relay,
+    relayPhases: { elapsedMs, wait },
   }) => {
-    const { elapsedMs, phases, wait } = createRelayPhases(signal);
-    // Capture only phase timing and opcodes, never packets or signed bodies.
-    // Do not issue another Worker request from a hook when one may be stalled.
-    onTestFailed(() => {
-      console.error("Discord relay filtering/checkpoint failure", {
-        elapsedMs: elapsedMs(),
-        phases,
-      });
-    });
-    const relay = await wait("create relay", () => {
-      return createRelay();
-    });
+    // Use existing fixture observations during teardown.
     onTestFailed(() => {
       console.error("Discord relay observations", {
         observedAtMs: elapsedMs(),
@@ -177,7 +168,11 @@ describe("Discord Gateway relay", () => {
       return gateway.next(2);
     });
     gateway.ready("filter-session");
-    const author = { id: "100000000000000005", username: "member", bot: false };
+    const author = {
+      id: "100000000000000005",
+      username: "member",
+      bot: false,
+    };
     const guildMessage = (id: string, mentions: object[]) => {
       return {
         id,
@@ -263,8 +258,9 @@ describe("Discord Gateway relay", () => {
     expect(relay.forwarded).toHaveLength(3);
   });
 
-  it("resumes past ignored guild chatter without forwarding it", async () => {
-    const relay = await createRelay();
+  it("resumes past ignored guild chatter without forwarding it", async ({
+    relay,
+  }) => {
     const gateway = await relay.start();
     gateway.hello();
     await gateway.next(2);
@@ -278,7 +274,11 @@ describe("Discord Gateway relay", () => {
           id: `10000000000000001${sequence}`,
           channel_id: CHANNEL_ID,
           guild_id: GUILD_ID,
-          author: { id: "100000000000000005", username: "member", bot: false },
+          author: {
+            id: "100000000000000005",
+            username: "member",
+            bot: false,
+          },
           content: "ordinary guild chatter",
           mentions: [],
           attachments: [],
@@ -305,8 +305,9 @@ describe("Discord Gateway relay", () => {
     expect(relay.forwarded).toStrictEqual([]);
   });
 
-  it("reports head-of-queue delivery failures and the oldest pending age", async () => {
-    const relay = await createRelay();
+  it("reports head-of-queue delivery failures and the oldest pending age", async ({
+    relay,
+  }) => {
     relay.reply = () => {
       return new Response(null, { status: 503 });
     };
@@ -349,8 +350,12 @@ describe("Discord Gateway relay", () => {
       });
   }, 15_000);
 
-  it("keeps GUILD_DELETE unavailable unchanged and uses a stable lifecycle identity", async (test) => {
-    const relay = await createRelay();
+  it("keeps GUILD_DELETE unavailable unchanged and uses a stable lifecycle identity", async ({
+    relay,
+    onTestFailed,
+    signal,
+    task,
+  }) => {
     const gateway = await relay.start();
     gateway.hello();
     await gateway.next(2);
@@ -370,26 +375,52 @@ describe("Discord Gateway relay", () => {
       eventId: "GUILD_DELETE:lifecycle-session:2",
       payload: { id: GUILD_ID, unavailable: true },
     });
-    await relay.waitForHealth(test, { running: true, pending: 0 });
+    await relay.waitForHealth(
+      { onTestFailed, signal, task },
+      { running: true, pending: 0 },
+    );
   });
 
-  it("waits for a refreshed Identify budget before opening a socket", async () => {
-    const relay = await createRelay();
-    relay.gatewayMetadata.session_start_limit.remaining = 0;
-    relay.gatewayMetadata.session_start_limit.reset_after = 200;
-    expect((await relay.request("/start")).status).toBe(200);
-    await relay.discoveries.next();
-    expect(relay.opened).toEqual([]);
-
-    relay.gatewayMetadata.session_start_limit.remaining = 1;
-    await relay.discoveries.next();
-    const gateway = await relay.connections.next();
+  it("waits for a refreshed Identify budget before opening a socket", async ({
+    relay,
+    relayPhases: { wait },
+  }) => {
+    const openSocketsAtDiscovery: number[] = [];
+    relay.gatewayReply = () => {
+      openSocketsAtDiscovery.push(relay.opened.length);
+      return Response.json({
+        ...relay.gatewayMetadata,
+        session_start_limit: {
+          ...relay.gatewayMetadata.session_start_limit,
+          remaining: openSocketsAtDiscovery.length === 1 ? 0 : 1,
+          reset_after: 200,
+        },
+      });
+    };
+    const start = await wait("/start", () => {
+      return relay.request("/start");
+    });
+    expect(start.status).toBe(200);
+    await wait("discovery with exhausted budget", () => {
+      return relay.discoveries.next();
+    });
+    await wait("discovery with refreshed budget", () => {
+      return relay.discoveries.next();
+    });
+    const gateway = await wait("open socket after budget refresh", () => {
+      return relay.connections.next();
+    });
+    expect(openSocketsAtDiscovery).toEqual([0, 0]);
     gateway.hello();
-    expect((await gateway.next(2)).d).toMatchObject({ token: BOT_TOKEN });
+    const identify = await wait("Identify (op 2)", () => {
+      return gateway.next(2);
+    });
+    expect(identify.d).toMatchObject({ token: BOT_TOKEN });
   });
 
-  it("retains a redirected delivery without sending its signature to another origin", async () => {
-    const relay = await createRelay();
+  it("retains a redirected delivery without sending its signature to another origin", async ({
+    relay,
+  }) => {
     relay.reply = () => {
       return new Response(null, {
         status: 302,
@@ -410,10 +441,10 @@ describe("Discord Gateway relay", () => {
     expect(relay.unhandled).toEqual([]);
   });
 
-  it.each([503, 302])(
+  it.for([503, 302])(
     "persists an unacknowledged %i delivery across process restart and resumes after its checkpoint",
-    async (status) => {
-      const relay = await createRelay();
+    { timeout: 15_000 },
+    async (status, { relay }) => {
       // An unavailable acknowledgement or an unsafe redirect leaves the genuine
       // durable envelope unacknowledged, including across process replacement.
       relay.reply = () => {
@@ -476,54 +507,99 @@ describe("Discord Gateway relay", () => {
       ).toBe(true);
       expect(relay.unhandled).toEqual([]);
     },
-    15_000,
   );
 
-  it("preserves the outbox through Invalid Session and ignores queued stale dispatch", async () => {
-    const relay = await createRelay();
-    relay.reply = () => {
-      return new Response(null, { status: 503 });
+  it("preserves the outbox through Invalid Session and ignores queued stale dispatch", async ({
+    relay,
+    relayPhases: { wait },
+    onTestFailed,
+    onTestFinished,
+    signal,
+    task,
+  }) => {
+    const allowReceipt = Promise.withResolvers<void>();
+    onTestFinished(() => {
+      allowReceipt.resolve();
+    });
+    let firstAttempt = true;
+    relay.reply = async () => {
+      if (firstAttempt) {
+        firstAttempt = false;
+        return new Response(null, { status: 503 });
+      }
+      // Keep the original event pending throughout the session reset. A held
+      // receipt avoids a timing-dependent series of 503s and longer backoffs.
+      await allowReceipt.promise;
+      return Response.json({ ok: true, outcome: "accepted" });
     };
-    const gateway = await relay.start();
+    const gateway = await wait("start and first connection", () => {
+      return relay.start();
+    });
     gateway.hello();
-    await gateway.next(2);
+    await wait("initial Identify (op 2)", () => {
+      return gateway.next(2);
+    });
     gateway.ready("expired-session");
     gateway.message(2);
-    const first = await relay.deliveries.next();
+    const first = await wait("first delivery", () => {
+      return relay.deliveries.next();
+    });
 
     gateway.send({ op: 9, d: false });
     gateway.message(3, "100000000000000006");
-    await gateway.closed.promise;
-    const replacement = await relay.connections.next();
+    await wait("old socket closed", () => {
+      return gateway.closed.promise;
+    });
+    const replacement = await wait("replacement socket", () => {
+      return relay.connections.next();
+    });
     replacement.hello();
-    expect((await replacement.next(2)).d).toMatchObject({ token: BOT_TOKEN });
+    const identify = await wait("replacement Identify (op 2)", () => {
+      return replacement.next(2);
+    });
+    expect(identify.d).toMatchObject({ token: BOT_TOKEN });
     replacement.ready("replacement-session");
-    relay.reply = () => {
-      return Response.json({ ok: true, outcome: "accepted" });
-    };
-    replacement.message(2, "100000000000000007");
+    const healthContext = { onTestFailed, signal, task };
+    await wait("retained outbox after replacement READY", () => {
+      return relay.waitForHealth(healthContext, {
+        running: true,
+        pending: 1,
+        connection: { stage: "ready" },
+      });
+    });
+    const retried = await wait("retry of retained delivery", () => {
+      return relay.deliveries.next();
+    });
+    expect(retried.rawBody).toBe(first.rawBody);
+    allowReceipt.resolve();
 
-    await expect
-      .poll(
-        () => {
-          return relay.health();
-        },
-        { timeout: 10_000 },
-      )
-      .toMatchObject({ running: true, pending: 0 });
-    expect(relay.forwarded[0]?.rawBody).toBe(first.rawBody);
+    replacement.message(2, "100000000000000007");
+    const delivered = await wait("replacement session delivery", async () => {
+      for (;;) {
+        const delivery = await relay.deliveries.next();
+        if (delivery.rawBody !== first.rawBody) return delivery;
+      }
+    });
+    expect(JSON.parse(delivered.rawBody).eventId).toBe(
+      "MESSAGE_CREATE:100000000000000007",
+    );
+    await wait("durable outbox drain", () => {
+      return relay.waitForHealth(healthContext, {
+        running: true,
+        pending: 0,
+      });
+    });
+
     expect(
       relay.forwarded.map((entry) => {
         return JSON.parse(entry.rawBody).eventId;
       }),
     ).not.toContain("MESSAGE_CREATE:100000000000000006");
-    expect(JSON.parse(relay.forwarded.at(-1)!.rawBody).eventId).toBe(
-      "MESSAGE_CREATE:100000000000000007",
-    );
   }, 20_000);
 
-  it("honors the disabled flag after restart while preserving an unacknowledged event", async () => {
-    const relay = await createRelay();
+  it("honors the disabled flag after restart while preserving an unacknowledged event", async ({
+    relay,
+  }) => {
     relay.reply = () => {
       return new Response(null, { status: 503 });
     };
@@ -546,8 +622,9 @@ describe("Discord Gateway relay", () => {
     expect(relay.opened).toHaveLength(1);
   });
 
-  it("serves heartbeat requests while an API acknowledgement is pending", async () => {
-    const relay = await createRelay();
+  it("serves heartbeat requests while an API acknowledgement is pending", async ({
+    relay,
+  }) => {
     const acknowledgement = Promise.withResolvers<Response>();
     relay.reply = () => {
       return acknowledgement.promise;
@@ -573,8 +650,9 @@ describe("Discord Gateway relay", () => {
       .toMatchObject({ pending: 0, connected: true });
   });
 
-  it("reconnects on a missing heartbeat ACK and resumes the last sequence", async () => {
-    const relay = await createRelay();
+  it("reconnects on a missing heartbeat ACK and resumes the last sequence", async ({
+    relay,
+  }) => {
     const gateway = await relay.start();
     gateway.hello(100);
     await gateway.next(2);
@@ -604,8 +682,9 @@ describe("Discord Gateway relay", () => {
     });
   }, 10_000);
 
-  it("keeps old application state stopped when deployment credentials change scope", async () => {
-    const relay = await createRelay();
+  it("keeps old application state stopped when deployment credentials change scope", async ({
+    relay,
+  }) => {
     relay.reply = () => {
       return new Response(null, { status: 503 });
     };
@@ -641,8 +720,9 @@ describe("Discord Gateway relay", () => {
     expect(relay.opened).toHaveLength(1);
   });
 
-  it("continues scheduled heartbeats after acknowledging a requested heartbeat", async () => {
-    const relay = await createRelay();
+  it("continues scheduled heartbeats after acknowledging a requested heartbeat", async ({
+    relay,
+  }) => {
     const gateway = await relay.start();
     gateway.hello(1_500);
     await gateway.next(2);
@@ -662,8 +742,9 @@ describe("Discord Gateway relay", () => {
     expect(relay.opened).toHaveLength(1);
   }, 10_000);
 
-  it("stops after a fatal Discord close without exposing credentials", async () => {
-    const relay = await createRelay();
+  it("stops after a fatal Discord close without exposing credentials", async ({
+    relay,
+  }) => {
     const gateway = await relay.start();
     gateway.hello();
     await gateway.next(2);

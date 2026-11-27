@@ -79,7 +79,7 @@ const notifyVncConnectionChange$ = command(
 );
 
 /** Owner-scoped reference metadata contains no other member's Host details. */
-async function publishVncNetworkReferenceChange(owner: VncOwner) {
+export async function publishVncNetworkReferenceChange(owner: VncOwner) {
   await Promise.all([
     bestEffort(publishCloudflareAccessClientInvalidation(owner)),
     bestEffort(publishTailscaleClientInvalidation(owner)),

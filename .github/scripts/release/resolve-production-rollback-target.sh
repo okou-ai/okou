@@ -792,7 +792,7 @@ fi
 # The first API release with archive readers only prepares storage. Physical
 # retirement requires a second distinct verified API release and a drained writer.
 proactive_history_reader=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- turbo/packages/db/src/migrations/1652_archive_proactive_workflow_history.sql | sed -n '1p')
+  origin/main -- turbo/packages/db/src/migrations/1653_archive_proactive_workflow_history.sql | sed -n '1p')
 if [[ ! "$proactive_history_reader" =~ ^[0-9a-f]{40}$ ]]; then
   fail "Cannot resolve the proactive history reader on main."
 fi

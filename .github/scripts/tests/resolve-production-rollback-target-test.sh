@@ -509,7 +509,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SSH_CANONICAL_TRANSPORT_COMMIT-4848484848484848484848484848484848484848}"
     elif [[ "$*" == *1382_retire_official_result_email_runtime.sql* ]]; then
       printf '%s\n' '4949494949494949494949494949494949494949'
-    elif [[ "$*" == *1652_archive_proactive_workflow_history.sql* ]]; then
+    elif [[ "$*" == *1653_archive_proactive_workflow_history.sql* ]]; then
       echo a149a149a149a149a149a149a149a149a149a149
     elif [[ "$*" == *1638_retire_official_workflow_installation_state.sql* ]]; then
       printf '%s\n' '1638163816381638163816381638163816381638'

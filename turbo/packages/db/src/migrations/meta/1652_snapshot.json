@@ -1,5 +1,5 @@
 {
-  "id": "15c92264-38ad-4124-8b20-5b84929f1e34",
+  "id": "b66a364e-b415-4a5e-88c9-695c5751994f",
   "prevId": "946ceb6f-742f-4cda-bcd6-3780ba879e28",
   "version": "7",
   "dialect": "postgresql",
@@ -2083,6 +2083,87 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.artifact_favorites": {
+      "name": "artifact_favorites",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_artifact_favorites_owner_created": {
+          "name": "idx_artifact_favorites_owner_created",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "artifact_id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "artifact_favorites_org_id_user_id_artifact_id_pk": {
+          "name": "artifact_favorites_org_id_user_id_artifact_id_pk",
+          "columns": [
+            "org_id",
+            "user_id",
+            "artifact_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -25687,18 +25768,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "archive_reader_release": {
-          "name": "archive_reader_release",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "archive_reader_verified_at": {
-          "name": "archive_reader_verified_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -37069,267 +37138,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.archived_proactive_workflow_runs": {
-      "name": "archived_proactive_workflow_runs",
-      "schema": "",
-      "columns": {
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "workflow_id": {
-          "name": "workflow_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "automation_id": {
-          "name": "automation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_archived_proactive_runs_workflow": {
-          "name": "idx_archived_proactive_runs_workflow",
-          "columns": [
-            {
-              "expression": "workflow_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "archived_proactive_workflow_runs_run_id_agent_runs_id_fk": {
-          "name": "archived_proactive_workflow_runs_run_id_agent_runs_id_fk",
-          "tableFrom": "archived_proactive_workflow_runs",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "archived_proactive_workflow_runs_workflow_id_archived_proactive_workflows_id_fk": {
-          "name": "archived_proactive_workflow_runs_workflow_id_archived_proactive_workflows_id_fk",
-          "tableFrom": "archived_proactive_workflow_runs",
-          "tableTo": "archived_proactive_workflows",
-          "columnsFrom": [
-            "workflow_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.archived_proactive_workflows": {
-      "name": "archived_proactive_workflows",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'private'"
-        },
-        "instruction": {
-          "name": "instruction",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attachments": {
-          "name": "attachments",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "content_bundle": {
-          "name": "content_bundle",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "display_name": {
-          "name": "display_name",
-          "type": "varchar(256)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "archived_official_snapshot": {
-          "name": "archived_official_snapshot",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "official_definition_name": {
-          "name": "official_definition_name",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "import_source": {
-          "name": "import_source",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "import_session_id": {
-          "name": "import_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "chat_thread_id": {
-          "name": "chat_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_archived_proactive_workflow_thread": {
-          "name": "idx_archived_proactive_workflow_thread",
-          "columns": [
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_archived_proactive_workflow_owner": {
-          "name": "idx_archived_proactive_workflow_owner",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "archived_proactive_workflows_chat_thread_id_chat_threads_id_fk": {
-          "name": "archived_proactive_workflows_chat_thread_id_chat_threads_id_fk",
-          "tableFrom": "archived_proactive_workflows",
-          "tableTo": "chat_threads",
-          "columnsFrom": [
-            "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_archived_proactive_workflow_private": {
-          "name": "chk_archived_proactive_workflow_private",
-          "value": "\"archived_proactive_workflows\".\"visibility\" = 'private' AND \"archived_proactive_workflows\".\"official_definition_name\" IS NOT NULL"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.workflow_automations": {
