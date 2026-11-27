@@ -96,7 +96,6 @@
     <string name="chat_delete_pending">Eliminando…</string>
     <string name="chat_project_deleted">Se eliminó el proyecto y sus chats se movieron fuera de los proyectos.</string>
     <string name="chat_project_delete_rejected">No se pudo eliminar el proyecto.</string>
-    <string name="chat_project_delete_unconfirmed">No se pudo confirmar la eliminación del proyecto.</string>
     <string name="chat_row_action_rejected_named">No se pudo completar «%1$s».</string>
     <string name="chat_row_action_offline_named">No se pudo completar «%1$s». Comprueba tu conexión y vuelve a intentarlo.</string>
     <string name="chat_rename_save_failed">No se pudo guardar. Tus cambios se conservaron.</string>
