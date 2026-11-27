@@ -33,6 +33,7 @@ import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -1984,7 +1985,11 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
             query.assertTextContains(keyword)
             scope.assertIsSelected()
             compose.onNodeWithText("No matching workflows").assertIsDisplayed()
-            compose.onNodeWithTag("chat_search_results").assertIsFocused()
+            // The cached empty result can appear while the catalog refresh is still running.
+            val focusedResults = hasTestTag("chat_search_results") and isFocused()
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(focusedResults).fetchSemanticsNodes().isNotEmpty()
+            }
         } finally {
             releaseCatalog.countDown()
         }
