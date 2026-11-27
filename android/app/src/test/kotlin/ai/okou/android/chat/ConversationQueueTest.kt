@@ -10,10 +10,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToIndex
@@ -27,6 +29,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -45,10 +48,34 @@ class ConversationQueueTest {
         listOf(IntSize(400, 440), IntSize(900, 800), IntSize(400, 800)).forEach { window ->
             compose.runOnIdle { size.value = window }
             item(16).assertIsDisplayed()
+            val header = compose.onNodeWithTag("compact-panel-top-app-bar")
+            if (window.height < 480) header.assertHeightIsEqualTo(64.dp)
+            else header.assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(16, position.firstVisibleItemIndex)
                 assertEquals(13, position.firstVisibleItemScrollOffset)
             }
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w480dp-h280dp")
+    fun shortQueueKeepsItsBackTargetAndCanScrollAtLargeTextSize() {
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            assertEquals(2f, compose.activity.resources.configuration.fontScale, 0f)
+            size.value = IntSize(480, 280)
+            show(mutableStateOf(entries(40)))
+            val back = compose.onNodeWithContentDescription("Back")
+            back.assertHeightIsEqualTo(48.dp)
+            queue().performScrollToIndex(16)
+            item(16).assertIsDisplayed()
+            compose.onNodeWithText("Queue (40)").assertIsDisplayed()
+            back.assertIsDisplayed()
+        } finally {
+            RuntimeEnvironment.setFontScale(originalScale)
         }
     }
 
