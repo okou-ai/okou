@@ -5,6 +5,7 @@ import ai.okou.android.WorkspaceToolDirectoryRowSkeleton
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.WorkflowTab
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +24,6 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,14 +46,25 @@ internal fun WorkflowDirectorySkeleton(modifier: Modifier) {
 internal fun WorkflowDetailSkeleton(modifier: Modifier) {
     if (!rememberContentReadSkeleton()) return
     Column(modifier.workflowLoading()) {
-        WorkflowSkeletonLine(.52f, 32.sp, barHeight = 24.dp)
-        Spacer(Modifier.height(8.dp))
-        WorkflowSkeletonLine(.8f, 24.sp, alignment = Alignment.TopStart)
+        val density = LocalDensity.current
+        val titleLineHeight = with(density) { 32.sp.toDp() }
+        val descriptionLineHeight = with(density) { 24.sp.toDp() }
+        val titleBarHeight = 24.dp
+        // Reserve the scaled text slots without changing the gap between the bars.
+        Column(
+            Modifier.fillMaxWidth()
+                .heightIn(min = titleLineHeight + 8.dp + descriptionLineHeight)
+                .padding(top = ((titleLineHeight - titleBarHeight) / 2f).coerceAtLeast(0.dp)),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ChatSkeletonBlock(Modifier.fillMaxWidth(.52f).height(titleBarHeight))
+            ChatSkeletonBlock(Modifier.fillMaxWidth(.8f).height(14.dp))
+        }
         Spacer(Modifier.height(12.dp))
         // Leave room for the padded command chip and the adjacent scope label.
         WorkflowSkeletonLine(.44f, 16.sp, modifier = Modifier.padding(vertical = 4.dp))
         Spacer(Modifier.height(20.dp))
-        val tabsHeight = with(LocalDensity.current) { 20.sp.toDp() + 16.dp }
+        val tabsHeight = with(density) { 20.sp.toDp() + 16.dp }
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = maxOf(48.dp, tabsHeight))
@@ -78,12 +89,10 @@ internal fun WorkflowSkeletonLine(
     width: Float,
     lineHeight: TextUnit,
     modifier: Modifier = Modifier,
-    barHeight: Dp = 14.dp,
-    alignment: Alignment = Alignment.CenterStart,
 ) {
     val height = with(LocalDensity.current) { lineHeight.toDp() }
-    Box(modifier.fillMaxWidth().heightIn(min = height), contentAlignment = alignment) {
-        ChatSkeletonBlock(Modifier.fillMaxWidth(width).height(barHeight))
+    Box(modifier.fillMaxWidth().heightIn(min = height), contentAlignment = Alignment.CenterStart) {
+        ChatSkeletonBlock(Modifier.fillMaxWidth(width).height(14.dp))
     }
 }
 

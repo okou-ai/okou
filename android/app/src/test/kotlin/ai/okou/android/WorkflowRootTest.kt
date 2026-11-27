@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
+import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -84,6 +85,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowSystemClock
 
 class WorkflowRootApplication : TestOkouApplication() {
     internal lateinit var fixture: WorkflowApiFixture
@@ -1454,6 +1456,58 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
     application = WorkflowRootApplication::class,
 )
 internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
+    @Test
+    fun returningToExpiredHistoryDoesNotRestartTheSkeletonDelayWhenDetailArrives() {
+        openWorkflowDetail()
+        val historyTab = compose.onNodeWithTag("workflow_tab_history")
+        historyTab.performClick()
+        val runTag = "workflow_run_$WORKFLOW_SOURCE_RUN"
+        val source = hasTestTag(runTag) and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(source).performClick()
+        waitForTag("conversation")
+
+        val detailRequested = CountDownLatch(1)
+        val historyRequested = CountDownLatch(1)
+        val releaseDetail = CountDownLatch(1)
+        val releaseHistory = CountDownLatch(1)
+        app.fixture.beforeReleaseDetailRead = {
+            detailRequested.countDown()
+            releaseDetail.await()
+        }
+        app.fixture.beforeHistoryRead = {
+            historyRequested.countDown()
+            releaseHistory.await()
+        }
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.runOnIdle { ShadowSystemClock.advanceBy(Duration.ofMinutes(10)) }
+            back()
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitUntil(10_000) {
+                detailRequested.count == 0L && historyRequested.count == 0L
+            }
+            compose.mainClock.advanceTimeBy(288)
+            compose.onNodeWithTag("workflow_loading").assertIsDisplayed()
+
+            releaseDetail.countDown()
+            val tabs = compose.onAllNodesWithTag("workflow_tab_history")
+            compose.waitUntil(10_000) {
+                compose.mainClock.advanceTimeByFrame()
+                tabs.fetchSemanticsNodes().isNotEmpty()
+            }
+            historyTab.assertIsSelected()
+            compose.onNodeWithTag("workflow_history_loading").assertIsDisplayed()
+        } finally {
+            releaseDetail.countDown()
+            releaseHistory.countDown()
+            compose.mainClock.autoAdvance = true
+        }
+        waitForTag(runTag)
+        compose.onNodeWithTag(runTag).assertTextContains("Running")
+        compose.onNodeWithTag("workflow_history_loading").assertDoesNotExist()
+    }
+
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun historyLoadingWaitsForTheSharedDelayAndReservesScaledRows() {
