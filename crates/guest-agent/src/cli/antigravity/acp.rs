@@ -30,6 +30,7 @@ use crate::error::AgentError;
 
 const METHOD_NOT_FOUND: i64 = -32601;
 const SHUTDOWN_SIGKILL_GRACE: Duration = Duration::from_secs(2);
+const EOF_EXIT_OBSERVATION_GRACE: Duration = Duration::from_secs(1);
 const MAX_METHOD_CHARS: usize = 120;
 const MAX_ERROR_MESSAGE_CHARS: usize = 240;
 
@@ -489,16 +490,7 @@ impl AntigravityAcpClient {
                     let line = match line {
                         Ok(Some(line)) => line,
                         Ok(None) => {
-                            if let Some(child_id) = child_id {
-                                match child_exited_without_reaping(child_id) {
-                                    Ok(true) => return Err(self.finish_observed_child_exit(pending_label).await),
-                                    Ok(false) => {}
-                                    Err(error) => return Err(self.poison_error(AntigravityAcpError::Io(error))),
-                                }
-                            }
-                            return Err(self.poison_error(AntigravityAcpError::Disconnected {
-                                label: pending_label.to_string(),
-                            }));
+                            return Err(self.finish_stdout_eof(pending_label).await);
                         }
                         Err(error) => return Err(self.poison_error(error)),
                     };
@@ -542,6 +534,67 @@ impl AntigravityAcpClient {
                 }
             }
         }
+    }
+
+    async fn finish_stdout_eof(&mut self, pending_label: &str) -> AntigravityAcpError {
+        // Stdout EOF can arrive before the exiting child finishes kernel teardown
+        // (or after a runtime closes stdout during exit). Wait briefly for the
+        // child to enter the exited state so we preserve its real exit status
+        // instead of racing ahead with SIGKILL and reporting Disconnected.
+        if let Some(child_id) = self.child.as_ref().and_then(Child::id) {
+            match child_exited_without_reaping(child_id) {
+                Ok(true) => return self.finish_observed_child_exit(pending_label).await,
+                Ok(false) => {}
+                Err(error) => return self.poison_error(AntigravityAcpError::Io(error)),
+            }
+
+            let exited = if let Some(notifier) = self.exit_notifier.as_ref() {
+                match tokio::time::timeout(EOF_EXIT_OBSERVATION_GRACE, notifier.wait_for_exit())
+                    .await
+                {
+                    Ok(Ok(())) => true,
+                    Ok(Err(error)) => {
+                        log_warn!(
+                            LOG_TAG,
+                            "Antigravity ACP pidfd exit notification failed after stdout EOF: {error}"
+                        );
+                        self.exit_notifier = None;
+                        match tokio::time::timeout(
+                            EOF_EXIT_OBSERVATION_GRACE,
+                            wait_for_child_exit_without_reaping(child_id),
+                        )
+                        .await
+                        {
+                            Ok(Ok(())) => true,
+                            Ok(Err(error)) => {
+                                return self.poison_error(AntigravityAcpError::Io(error));
+                            }
+                            Err(_) => false,
+                        }
+                    }
+                    Err(_) => false,
+                }
+            } else {
+                match tokio::time::timeout(
+                    EOF_EXIT_OBSERVATION_GRACE,
+                    wait_for_child_exit_without_reaping(child_id),
+                )
+                .await
+                {
+                    Ok(Ok(())) => true,
+                    Ok(Err(error)) => return self.poison_error(AntigravityAcpError::Io(error)),
+                    Err(_) => false,
+                }
+            };
+
+            if exited {
+                return self.finish_observed_child_exit(pending_label).await;
+            }
+        }
+
+        self.poison_error(AntigravityAcpError::Disconnected {
+            label: pending_label.to_string(),
+        })
     }
 
     async fn finish_observed_child_exit(&mut self, pending_label: &str) -> AntigravityAcpError {

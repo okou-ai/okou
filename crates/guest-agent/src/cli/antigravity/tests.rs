@@ -196,3 +196,32 @@ fn rpc_error_classification_maps_auth_and_rate_limit() {
         Some(FailureReason::ProviderRateLimited)
     );
 }
+
+#[tokio::test]
+async fn stdout_eof_before_process_exit_preserves_nonzero_exit_code() {
+    let mut client = super::acp::AntigravityAcpClient::spawn(super::acp::AntigravityAcpConfig {
+        binary: std::path::PathBuf::from("/bin/sh"),
+        args: vec![
+            "-c".into(),
+            // Close stdout before exiting to deterministically reproduce the
+            // EOF-before-zombie race on Linux.
+            "exec 1>&-; sleep 0.05; exit 23".into(),
+        ],
+        child_env_values: Vec::new(),
+        current_dir: std::env::temp_dir(),
+        workload_containment: None,
+    })
+    .expect("spawn sh child");
+
+    let err = client
+        .next_incoming("nonzero exit test")
+        .await
+        .expect_err("expected child exit error");
+    match err {
+        super::acp::AntigravityAcpError::ChildExited { status, .. } => {
+            assert_eq!(status.code(), Some(23));
+        }
+        other => panic!("expected ChildExited(23), got {other:?}"),
+    }
+    client.terminate().await.expect("terminate after exit");
+}
