@@ -816,14 +816,14 @@ chat	src/signals/routes/__tests__/chat-events-pi-handoff.test.ts	chat-events-pi-
 chat	src/signals/routes/__tests__/chat-events-pi-preparation.test.ts	chat-events-pi-preparation-001	rewritten	317.7	timeout=600 (DOUBLE_RUN); merged into chat-events-pi-lifecycle.test.ts; 2 Runs	src/signals/routes/__tests__/chat-events-pi-lifecycle.test.ts	R30	a-run
 chat	src/signals/routes/__tests__/chat-events-pi-responses.test.ts	chat-events-pi-responses-001	rewritten	780.3	split 1->2: (1/2) timeout=1000 (780.3ms cold 2 Runs), (2/2) timeout=600 (490.7ms warm 2 Runs)	src/signals/routes/__tests__/chat-events-pi-responses.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-pi-session.test.ts	chat-events-pi-session-002	skipped		slow-setup: Given+first When/Then 358 ms and 357 ms (warm lower bound up to the first Luna dispatch, before completing the turn: entitled Pro actor with personal Claude model 120/113 ms, ChatGPT device-auth connect for Luna 69/78 ms, Luna send dispatching the Run plus its execution input 169/166 ms)		B07	d-other
-chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-002	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-004	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-005	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-006	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-009	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-012	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-014	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-015	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-002	rewritten	185.9	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-004	rewritten	224.8	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-005	rewritten	231.7	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-006	rewritten	201.8	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-009	rewritten	189.6	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-012	rewritten	125.8		src/signals/routes/__tests__/chat-events-private-attachments.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-014	rewritten	74.7		src/signals/routes/__tests__/chat-events-private-attachments.test.ts	R31	a-run
+chat	src/signals/routes/__tests__/chat-events-private-attachments.test.ts	chat-events-private-attachments-015	rewritten	112.2		src/signals/routes/__tests__/chat-events-private-attachments.test.ts	R31	a-run
 chat	src/signals/routes/__tests__/chat-events-session-continuity.test.ts	chat-events-session-continuity-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-session-continuity.test.ts	chat-events-session-continuity-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-session-continuity.test.ts	chat-events-session-continuity-003	revisit		revisit: reclassify to a-run: dispatches and completes three Runs verifying Pi provider, session continuity, and generation Run			d-other

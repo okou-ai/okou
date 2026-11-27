@@ -91,3 +91,6 @@ chat-events-pi-failed-history-002	\[WARN\]\[webhook:complete\] Run failed	Given:
 run-uploaded-files-publication-001	Unhandled request error: Artifact delivery alias is already allocated	Given: BDD deliberately replays upload completion with mismatched contentType text/markdown and expects HTTP 500
 run-context-diagnostics-005	Unhandled request error: Diagnostic store unavailable	Given: BDD sets diagnostic store to fail and expects owner GET /api/runs/:id/context to return HTTP 500
 chat-input-status-004	\[WARN\]\[webhook:complete\] Run failed	Given: BDD deliberately reports the Run failed with exitCode 1 and error "private failure detail" via POST /api/webhooks/run/complete to verify retained failed status omits the error body
+chat-events-private-attachments-012	Unhandled request error: User-message attachment not found	Given: BDD deliberately deletes a private artifact before POST /api/chat/events and expects HTTP 500
+chat-events-private-attachments-014	Unhandled request error: User-message attachment not found	Given: BDD deliberately sends a prepared upload whose storage object was never written and expects HTTP 500
+chat-events-private-attachments-015	Unhandled request error: User-message attachment not found	Given: BDD deliberately sends a file set containing a foreign owner upload and expects HTTP 500
