@@ -13,6 +13,7 @@ import type {
   ResolvedModelProviderEnvironment,
   PermissionManifest,
 } from "./agent-run-contracts";
+import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 
 /** The provider-wide row settlement uses when a category has no exact row. */
 const USAGE_PRICING_FALLBACK_CATEGORY = "__fallback__";
@@ -111,6 +112,13 @@ export interface BuiltInRoutePricing {
   readonly serviceTier: RunServiceTier;
 }
 
+/** A route and the pricing inputs that passed validation during selection. */
+export interface PricedBuiltInRoute {
+  readonly runtimeRoute: BuiltInModelRuntimeRoute;
+  readonly catalog: ModelCatalog;
+  readonly pricing: BuiltInRoutePricing;
+}
+
 export function builtInRoutePricingFromSnapshot(
   args: {
     readonly serviceTier: RunServiceTier;
@@ -192,8 +200,22 @@ export function validateModelUsage(args: {
    * required for a Built-in run (null for every other run).
    */
   readonly routePricing: BuiltInRoutePricing | null;
+  readonly pricedRoute?: PricedBuiltInRoute;
 }): string | null {
   if (!isBuiltInModelProviderType(args.modelProvider.type)) {
+    return null;
+  }
+  const { pricedRoute, routePricing } = args;
+  if (
+    pricedRoute &&
+    routePricing &&
+    pricedRoute.runtimeRoute === args.modelProvider.builtInModelRuntimeRoute &&
+    pricedRoute.runtimeRoute.selectedModel ===
+      args.modelProvider.selectedModel &&
+    pricedRoute.catalog === args.catalog &&
+    pricedRoute.pricing.byKey === routePricing.byKey &&
+    pricedRoute.pricing.serviceTier === routePricing.serviceTier
+  ) {
     return null;
   }
   const route = builtInRouteForContext(args.catalog, args.modelProvider);
@@ -210,10 +232,10 @@ export function validateModelUsage(args: {
   if (!route?.pricingProvider) {
     return "Built-in model provider did not resolve a supported model for usage reporting";
   }
-  if (!args.routePricing) {
+  if (!routePricing) {
     throw new Error("A Built-in run requires its route pricing snapshot");
   }
-  const unpriced = unpricedBuiltInRouteCategories(args.routePricing, route);
+  const unpriced = unpricedBuiltInRouteCategories(routePricing, route);
   if (unpriced.length === 0) {
     return null;
   }
