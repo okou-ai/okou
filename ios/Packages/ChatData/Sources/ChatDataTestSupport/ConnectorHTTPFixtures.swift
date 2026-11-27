@@ -91,8 +91,9 @@ public enum ConnectorHTTPFixtures {
       "accounts":[],"currentConnectionId":null}]
     """
 
-  public static func managedInspection(kind: String = "available", slug: String = "slack") -> String
-  {
+  public static func managedInspection(
+    kind: String = "available", slug: String = "slack"
+  ) -> String {
     let status = kind == "available" ? #","connectionStatus":"reconnect-required""# : ""
     return """
       {"results":[
