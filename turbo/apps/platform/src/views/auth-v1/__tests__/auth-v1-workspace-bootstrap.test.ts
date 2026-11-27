@@ -1,5 +1,8 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
@@ -142,6 +145,144 @@ test("Changing the signed-in account in the same workspace reloads without chang
     return expect(reload).toHaveBeenCalledTimes(1);
   });
   expect(location.pathname).toBe("/workflows");
+});
+
+test("A chat database catch-up aborts before fetching when Clerk changes accounts during token retrieval", async () => {
+  const reload = vi.spyOn(window.location, "reload");
+  const sentry = context.mocks.sentry();
+  const sdk = context.mocks.clerk();
+  let armed = false;
+  let eventsRequestsAfterArm = 0;
+  let requestedOrganizationId: string | undefined;
+  const tokenRequested = context.mocks.deferred<void>();
+  const tokenDelivery = context.mocks.deferred<string>();
+
+  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
+    if (armed) {
+      eventsRequestsAfterArm += 1;
+    }
+    return respond(200, { events: [], hasMore: false });
+  });
+
+  await setupPage(workflows);
+  await expect(
+    screen.findByRole("heading", { name: "Workflows" }),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    return expect(context.mocks.ably.hasChannelSubscription()).toBeTruthy();
+  });
+
+  armed = true;
+  mockedClerk.sessionGetToken.mockImplementationOnce((options) => {
+    requestedOrganizationId = options?.organizationId;
+    if (!tokenRequested.settled()) {
+      tokenRequested.resolve();
+    }
+    return tokenDelivery.promise;
+  });
+
+  context.mocks.ably.trigger("threadListChanged");
+  await tokenRequested.promise;
+
+  // Clerk mutates the active user before emitting its state-change listener.
+  sdk.user(
+    { id: "next-member", fullName: "Next member" },
+    { id: "next-session", token: "next-session-token" },
+  );
+  tokenDelivery.resolve("stale-member-token");
+  sdk.stateChanged();
+
+  await waitFor(() => {
+    return expect(reload).toHaveBeenCalledTimes(1);
+  });
+  expect(requestedOrganizationId).toBe("org_default");
+  expect(eventsRequestsAfterArm).toBe(0);
+  expect(sentry.reports).toStrictEqual([]);
+});
+
+test("Switching accounts while Debug IndexedDB diagnostics are open reloads without runtime-uninitialized errors", async () => {
+  const reload = vi.spyOn(window.location, "reload");
+  const sentry = context.mocks.sentry();
+  const sdk = context.mocks.clerk();
+
+  await setupPage({
+    context,
+    path: "/?settings=debug",
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+  const settings = await screen.findByRole("dialog");
+  const details = await within(settings).findByText("IndexedDB storage", {
+    selector: "summary span",
+  });
+  click(details);
+  await expect(
+    within(settings).findByText("chat_thread_snapshot", { selector: "dt" }),
+  ).resolves.toBeInTheDocument();
+
+  sdk.user(
+    { id: "next-member", fullName: "Next member" },
+    { id: "next-session", token: "next-session-token" },
+  );
+  sdk.stateChanged();
+
+  await waitFor(() => {
+    return expect(reload).toHaveBeenCalledTimes(1);
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(sentry.reports).toStrictEqual([]);
+});
+
+test("A known member without an active Clerk session does not unblock chat database queries before runtime setup", async () => {
+  const sentry = context.mocks.sentry();
+  const preferencesChecked = context.mocks.deferred<void>();
+  let snapshotRequests = 0;
+
+  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+    snapshotRequests += 1;
+    return respond(401, {
+      error: { code: "UNAUTHORIZED", message: "Unauthorized" },
+    });
+  });
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    if (!preferencesChecked.settled()) {
+      preferencesChecked.resolve();
+    }
+    return respond(200, {
+      timezone: "UTC",
+      locale: "en-US",
+      supportedLocales: ["en-US"],
+      sendMode: "enter",
+      cloudBrowserEnabledByDefault: true,
+      chatResourcesEnabledByDefault: false,
+      forYouCoverId: null,
+      theme: "system",
+      colorTheme: null,
+      captureNetworkBodiesRemaining: 0,
+      memoryInitialized: true,
+    });
+  });
+
+  const opening = await startPage({
+    context,
+    path: "/workflows",
+    auth: {
+      user: { id: "sessionless-member", fullName: "Sessionless Member" },
+      session: null,
+    },
+  });
+  await preferencesChecked.promise;
+
+  await expect(
+    Promise.race([
+      opening.ready.then(() => {
+        return "resolved";
+      }),
+      Promise.resolve("pending"),
+    ]),
+  ).resolves.toBe("pending");
+  expect(snapshotRequests).toBe(0);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(sentry.reports).toStrictEqual([]);
 });
 
 test("A repeated signed-in member notification keeps Workflows and its account menu available", async () => {

@@ -242,16 +242,16 @@ const acquireChatDatabaseRealtime$ = command(
     initialization: Promise<boolean>,
     signal: AbortSignal,
   ): Promise<void> => {
-    const projectRealtimeReady = createDeferredPromise<void>(
-      { rejection: "owner" },
-      signal,
-    );
     const authenticated = await initialization;
     signal.throwIfAborted();
     if (!authenticated) {
       return;
     }
 
+    const projectRealtimeReady = createDeferredPromise<void>(
+      { rejection: "owner" },
+      signal,
+    );
     set(setupForegroundPresence$, signal);
     const onError = (error: unknown) => {
       L.warn("chat database realtime subscriptions failed", error);

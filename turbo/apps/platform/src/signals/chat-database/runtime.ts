@@ -262,6 +262,7 @@ export class ChatDatabaseRuntime {
       signal === this.rootSignal
         ? this.rootSignal
         : AbortSignal.any([this.rootSignal, signal]);
+    effectiveSignal.throwIfAborted();
     return await this.runIndexedDbOperation(
       createIdbDiagnosticsStore,
       (store) => {
@@ -275,6 +276,7 @@ export class ChatDatabaseRuntime {
     signal: AbortSignal,
   ): Promise<IndexedDbSnapshotMeasurement | null> {
     const effectiveSignal = AbortSignal.any([this.rootSignal, signal]);
+    effectiveSignal.throwIfAborted();
     return await this.runIndexedDbOperation(
       createIdbDiagnosticsStore,
       (store) => {

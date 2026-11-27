@@ -5,14 +5,19 @@ import {
   recordClientTelemetry,
   startClientTelemetryMeasurement,
 } from "../../lib/client-telemetry.ts";
-import { apiClient$ } from "../api-client.ts";
+import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { clerk$, clerkUser$ } from "../auth.ts";
 import { waitForClerkSession } from "../clerk-token.ts";
 import type {
   IndexedDbDiagnostics,
   IndexedDbSnapshotMeasurement,
 } from "../external/idb-diagnostics-store.ts";
-import { NEVER_RESOLVED_PROMISE, resetSignal } from "../utils.ts";
+import {
+  createDeferredPromise,
+  NEVER_RESOLVED_PROMISE,
+  resetSignal,
+  waitForToken,
+} from "../utils.ts";
 import { ChatDatabaseRuntime } from "./runtime.ts";
 import type {
   ChatDatabaseDataKey,
@@ -23,14 +28,26 @@ import type {
   ProjectEventDataKey,
 } from "./types.ts";
 
+interface ChatDatabaseSetup {
+  readonly setup: Promise<boolean>;
+  readonly aborted: Promise<never>;
+}
+
 const chatDatabaseRuntimeState$ = state<ChatDatabaseRuntime | null>(null);
-const internalChatDatabaseReady$ = state<Promise<void>>(NEVER_RESOLVED_PROMISE);
+const internalChatDatabaseSetup$ = state<ChatDatabaseSetup>({
+  setup: NEVER_RESOLVED_PROMISE,
+  aborted: NEVER_RESOLVED_PROMISE,
+});
 const projectRealtimeReadyState$ = state<Promise<void> | null>(null);
 const internalReloadIndexedDbDiagnostics$ = state(0);
 const resetChatDatabaseOwner$ = resetSignal();
 
-export const chatDatabaseReady$ = computed((get): Promise<void> => {
-  return get(internalChatDatabaseReady$);
+export const chatDatabaseReady$ = computed(async (get): Promise<void> => {
+  const { setup, aborted } = get(internalChatDatabaseSetup$);
+  const initialized = await setup;
+  if (!initialized) {
+    await aborted;
+  }
 });
 
 const installedChatDatabaseRuntime$ = computed((get): ChatDatabaseRuntime => {
@@ -48,9 +65,9 @@ export const setProjectRealtimeReady$ = command(
 );
 
 const initializeChatDatabase$ = command(
-  async ({ get, set }, parentSignal: AbortSignal): Promise<void> => {
+  async ({ get, set }, parentSignal: AbortSignal): Promise<boolean> => {
     if (get(chatDatabaseRuntimeState$) !== null) {
-      return;
+      return true;
     }
     const clerk = await get(clerk$);
     await Promise.all([
@@ -61,7 +78,7 @@ const initializeChatDatabase$ = command(
     // Read the member and session together after Clerk finishes activation.
     const { user, organization, session } = clerk;
     if (!session || !user || !organization) {
-      return;
+      return false;
     }
     const identity = { userId: user.id, orgId: organization.id };
     const signal = set(resetChatDatabaseOwner$, parentSignal);
@@ -79,6 +96,44 @@ const initializeChatDatabase$ = command(
       },
       { skipInitialEmit: true },
     );
+    signal.addEventListener("abort", unsubscribe, { once: true });
+
+    const baseCreateClient = get(apiClient$);
+    const getToken = async (
+      requestSignal?: AbortSignal,
+    ): Promise<string | null> => {
+      const effectiveSignal = requestSignal
+        ? AbortSignal.any([signal, requestSignal])
+        : signal;
+      const requireMemberSession = async () => {
+        await waitForClerkSession(clerk, effectiveSignal);
+        effectiveSignal.throwIfAborted();
+        const { session: activeSession, user: activeUser } = clerk;
+        if (
+          !activeSession ||
+          activeSession.user?.id !== identity.userId ||
+          activeUser?.id !== identity.userId
+        ) {
+          throw new DOMException("Chat database owner changed", "AbortError");
+        }
+        return activeSession;
+      };
+      const activeSession = await requireMemberSession();
+      // Clerk scopes this token explicitly, even while its active organization is changing.
+      const token = await waitForToken(
+        activeSession.getToken({ organizationId: identity.orgId }),
+        effectiveSignal,
+      );
+      await requireMemberSession();
+      return token;
+    };
+    const createContractClient: ApiClientFactory = (contract, options) => {
+      return baseCreateClient(contract, {
+        ...options,
+        getToken: options?.getToken ?? getToken,
+      });
+    };
+
     const runtime = new ChatDatabaseRuntime(
       {
         identity,
@@ -89,30 +144,26 @@ const initializeChatDatabase$ = command(
             "error",
           );
         },
-        createContractClient: get(apiClient$),
+        createContractClient,
       },
       signal,
     );
-    signal.addEventListener(
-      "abort",
-      () => {
-        unsubscribe();
-        if (get(chatDatabaseRuntimeState$) === runtime) {
-          set(chatDatabaseRuntimeState$, null);
-        }
-      },
-      { once: true },
-    );
     set(chatDatabaseRuntimeState$, runtime);
+    return true;
   },
 );
 
 export const setupChatDatabase$ = command(
-  ({ set }, signal: AbortSignal): Promise<void> => {
+  async ({ set }, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
-    const ready = set(initializeChatDatabase$, signal);
-    set(internalChatDatabaseReady$, ready);
-    return ready;
+    const aborted = createDeferredPromise<never>(
+      { rejection: "owner" },
+      signal,
+    );
+    const setup = set(initializeChatDatabase$, signal);
+    set(internalChatDatabaseSetup$, { setup, aborted: aborted.promise });
+    await setup;
+    signal.throwIfAborted();
   },
 );
 
