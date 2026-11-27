@@ -233,9 +233,9 @@ final class ComposerEditor {
     return input?.blockID
   }
 
-  func acceptFollowup(_ prompt: String) {
-    guard let view, view.followup == prompt else { return }
-    view.acceptFollowup()
+  @discardableResult func acceptFollowup(_ prompt: String) -> Bool {
+    guard let view, view.followup == prompt else { return false }
+    return view.acceptFollowup()
   }
 
   func selectOrAppendText(_ value: String) {
