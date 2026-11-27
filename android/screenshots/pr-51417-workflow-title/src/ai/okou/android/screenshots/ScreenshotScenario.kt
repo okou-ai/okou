@@ -76,11 +76,11 @@ class ScreenshotScenario {
         fun text(value: String) = By.pkg(app.packageName).text(value)
         fun bounds(selector: BySelector) =
             observe(selector) { nodes -> nodes.firstOrNull()?.visibleBounds }
-        fun clickableBounds(selector: BySelector) =
+        fun controlBounds(selector: BySelector, allowSelectedTab: Boolean = false) =
             observe(selector) { nodes ->
                 nodes.firstNotNullOfOrNull { node ->
                     generateSequence(node) { it.parent }
-                        .firstOrNull { it.isClickable && it.isEnabled }
+                        .firstOrNull { it.isEnabled && (it.isClickable || allowSelectedTab && it.isSelected) }
                         ?.visibleBounds
                 }
             }
@@ -115,16 +115,16 @@ class ScreenshotScenario {
                     val command = "release-review"
                     ActivityScenario.launch(MainActivity::class.java).use {
                         tap(bounds(By.pkg(app.packageName).desc(label(R.string.workspace_workflows))))
-                        assertTrue(clickableBounds(text(command)).height() >= 80)
+                        assertTrue(controlBounds(text(command)).height() >= 80)
                         val search = bounds(By.pkg(app.packageName).clazz("android.widget.EditText"))
                         assertEquals(48, search.height())
                         if (!wide) ScreenshotCapture.capture("workflow-directory-phone.png")
-                        tap(clickableBounds(text(command)))
+                        tap(controlBounds(text(command)))
 
                         bounds(text("/$command"))
                         val edit = text(label(R.string.workflow_edit_instructions))
-                        clickableBounds(edit)
-                        val footer = clickableBounds(text(label(R.string.workflow_use_in_chat)))
+                        controlBounds(edit)
+                        val footer = controlBounds(text(label(R.string.workflow_use_in_chat)))
                         assertTrue(footer.height() >= 48)
                         assertEquals(if (wide) 968 else 392, footer.right)
                         if (!wide) assertEquals(20, footer.left)
@@ -137,20 +137,20 @@ class ScreenshotScenario {
                             R.string.workflow_automations,
                             R.string.workflow_history,
                         )
-                        val tabs = tabIds.map { id -> clickableBounds(text(label(id))) }
+                        val tabs = tabIds.map { id -> controlBounds(text(label(id)), allowSelectedTab = true) }
                         val tabWidths = tabs.map { it.width() }
                         assertTrue(tabWidths.max() - tabWidths.min() <= 1)
                         assertTrue(tabs.all { it.height() >= 48 })
                         ScreenshotCapture.capture("workflow-detail-$layout.png")
                         if (wide) {
-                            tap(clickableBounds(text(label(R.string.workflow_automations))))
+                            tap(controlBounds(text(label(R.string.workflow_automations))))
                             bounds(text(label(R.string.workflow_trigger_rules)))
                             bounds(text(fixture.ruleTitle))
                             ScreenshotCapture.capture("workflow-automation-wide.png")
-                            tap(clickableBounds(text(label(R.string.workflow_instructions))))
+                            tap(controlBounds(text(label(R.string.workflow_instructions))))
                         }
 
-                        tap(clickableBounds(edit))
+                        tap(controlBounds(edit))
                         bounds(text(command).clazz("android.widget.EditText").enabled(true))
                         ScreenshotCapture.capture("workflow-editor-$layout.png")
                     }
