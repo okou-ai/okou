@@ -646,8 +646,8 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
       : respond(200, { restored: body.kind === "undo" });
   });
   await openDeck();
-  click(await findFastControl("button", "Dismiss", await activeCard(one)));
-  await screen.findByText("Suggestion dismissed");
+  click(await findFastControl("button", "Won't do", await activeCard(one)));
+  await screen.findByText("Noted — you won't do this");
   withdrawn = true;
   try {
     click(await findFastControl("button", "Done", await activeCard(two)));
@@ -793,7 +793,7 @@ test("agent-suggestions-037 sending a custom budget instruction leaves the next 
   await expect(activeCard(second)).resolves.toBeVisible();
   expect(location.pathname).toBe("/for-you");
 });
-test("agent-suggestions-041 dismissing a suggestion leaves the disabled automation until its own dismissal", async () => {
+test("agent-suggestions-041 declining a suggestion leaves the disabled automation until its own dismissal", async () => {
   const first = proposal("Reconcile vendor credit", 90),
     label = "Renew vendor archive";
   const event: PlatformEvent = {
@@ -824,7 +824,7 @@ test("agent-suggestions-041 dismissing a suggestion leaves the disabled automati
     });
   });
   context.mocks.api(feedContract.feedback, ({ body, params, respond }) => {
-    consumed = params.id === first.id && body.kind === "dismissed";
+    consumed = params.id === first.id && body.kind === "not_planned";
     return respond(200, { restored: false });
   });
   context.mocks.api(feedContract.dismiss, ({ params, respond }) => {
@@ -832,7 +832,7 @@ test("agent-suggestions-041 dismissing a suggestion leaves the disabled automati
     return respond(204);
   });
   await openDeck();
-  click(await findFastControl("button", "Dismiss", await activeCard(first)));
+  click(await findFastControl("button", "Won't do", await activeCard(first)));
   const title = await screen.findByText(label, { exact: false });
   expect(title).toBeVisible();
   await waitFor(() => {
@@ -1738,11 +1738,11 @@ test("Arrow keys page the deck without arrow controls, except while a direction 
   await appendDirection(edit, "Expedite shipping");
   await user.keyboard("{ArrowLeft}");
   // Focus on another control keeps the direction open, so the keys still wait.
-  const dismiss = await findFastControl("button", "Dismiss", card);
+  const done = await findFastControl("button", "Done", card);
   act(() => {
-    dismiss.focus();
+    done.focus();
   });
-  expect(dismiss).toHaveFocus();
+  expect(done).toHaveFocus();
   await user.keyboard("{ArrowRight}");
   await appendDirection(edit, " today");
 
@@ -1794,11 +1794,11 @@ test("Without the simplified deck, the arrows and progress steps page the deck",
   await appendDirection(edit, "Expedite shipping");
   await user.keyboard("{ArrowLeft}");
   // Focus on another control keeps the direction open, so the keys still wait.
-  const dismiss = await findFastControl("button", "Dismiss", card);
+  const done = await findFastControl("button", "Done", card);
   act(() => {
-    dismiss.focus();
+    done.focus();
   });
-  expect(dismiss).toHaveFocus();
+  expect(done).toHaveFocus();
   await user.keyboard("{ArrowRight}");
   await appendDirection(edit, " today");
 
