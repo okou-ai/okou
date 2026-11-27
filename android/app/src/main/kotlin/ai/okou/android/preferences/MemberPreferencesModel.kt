@@ -88,18 +88,19 @@ data class PreferenceChange(
         fun <T> T?.confirmedAfter(written: T?): T? = takeIf { written == null || it == written }
 
         val evidence = confirmed.asChoice()
-        val remaining =
-            after(
-                evidence.copy(
-                    colorTheme = evidence.colorTheme.confirmedAfter(attempted?.colorTheme),
-                    locale = evidence.locale.confirmedAfter(attempted?.locale),
-                    theme = evidence.theme.confirmedAfter(attempted?.theme),
-                    timezone = evidence.timezone.confirmedAfter(attempted?.timezoneToWrite),
-                    cloudBrowser = evidence.cloudBrowser.confirmedAfter(attempted?.cloudBrowser),
-                ),
+        val confirmedFields =
+            evidence.copy(
+                colorTheme = evidence.colorTheme.confirmedAfter(attempted?.colorTheme),
+                locale = evidence.locale.confirmedAfter(attempted?.locale),
+                theme = evidence.theme.confirmedAfter(attempted?.theme),
+                timezone = evidence.timezone.confirmedAfter(attempted?.timezoneToWrite),
+                cloudBrowser = evidence.cloudBrowser.confirmedAfter(attempted?.cloudBrowser),
             )
+        val remaining = copy(timezoneToReconcile = null).after(confirmedFields)
         // Reading preferences confirms the stored value, but only the write confirms its schedules.
-        val timezone = timezoneToReconcile?.takeIf { it == confirmed.timezone } ?: return remaining
+        val timezone =
+            timezoneToReconcile?.takeIf { confirmed.timezone == null || it == confirmed.timezone }
+                ?: return remaining
         return (remaining ?: PreferenceChange()).copy(timezoneToReconcile = timezone)
     }
 
