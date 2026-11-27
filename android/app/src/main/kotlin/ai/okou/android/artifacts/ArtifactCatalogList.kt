@@ -342,11 +342,14 @@ private fun ArtifactThumbnail(
     item: ArtifactItem,
     thumbnail: suspend (String) -> android.graphics.Bitmap?,
 ) {
-    val bitmap by
-        produceState<android.graphics.Bitmap?>(null, item.thumbnail) {
-            value = item.thumbnail?.let { thumbnail(it) }
+    val image =
+        item.thumbnail?.let { url ->
+            key(url) {
+                val bitmap by
+                    produceState<android.graphics.Bitmap?>(null) { value = thumbnail(url) }
+                bitmap
+            }
         }
-    val image = bitmap
     if (image != null) {
         Image(image.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
     } else {
