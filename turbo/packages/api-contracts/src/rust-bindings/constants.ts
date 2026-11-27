@@ -1,7 +1,4 @@
-import {
-  LEGACY_MODEL_PROVIDER_ENV_PLACEHOLDERS,
-  MODEL_PROVIDER_ENV_PLACEHOLDERS,
-} from "../contracts/model-provider-firewalls";
+import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "../contracts/model-provider-firewalls";
 import {
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
@@ -105,10 +102,6 @@ const modelProviderEnvPlaceholderModule = [
   "model_provider_env",
   "placeholders",
 ] as const;
-const legacyModelProviderEnvPlaceholderModule = [
-  "model_provider_env",
-  "legacy_placeholders",
-] as const;
 const clientHeadersModule = ["client", "headers"] as const;
 const clientTypesModule = ["client", "types"] as const;
 const paidToolsModule = ["paid_tools"] as const;
@@ -139,10 +132,6 @@ export const rustConstantModuleDocs = [
       "Fake model-provider environment placeholder marker values.",
       "These values are not secrets and are not usable credentials.",
     ],
-  },
-  {
-    rustModulePath: legacyModelProviderEnvPlaceholderModule,
-    rustDoc: ["Synthetic values emitted by pre-cutover API writers."],
   },
   {
     rustModulePath: ["client"],
@@ -661,14 +650,4 @@ export const rustConstantBindings = [
       rustDoc: placeholderRustDoc(name),
     };
   }),
-  ...Object.entries(LEGACY_MODEL_PROVIDER_ENV_PLACEHOLDERS).map(
-    ([name, value]) => {
-      return {
-        rustModulePath: legacyModelProviderEnvPlaceholderModule,
-        rustConstName: name,
-        value: rustString(value),
-        rustDoc: placeholderRustDoc(name),
-      };
-    },
-  ),
 ] satisfies readonly RustConstantBinding[];

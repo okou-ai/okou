@@ -1411,7 +1411,8 @@ if ! git merge-base --is-ancestor "$DIRECT_DISPATCH_GZIP_READER_COMMIT" "$runner
   fail "Runner release ${runner_tag} predates gzip direct dispatch: ${DIRECT_DISPATCH_GZIP_READER_COMMIT}."
 fi
 
-# The serving API can emit the namespaced placeholders while Runner rolls back.
+# The active Runner requires namespaced placeholders from its API writer.
+# The resolved Runner tag must contain the cutover and be an ancestor of the API target.
 if ! model_provider_placeholder_reader_commit=$(git show "origin/main:${MODEL_PROVIDER_PLACEHOLDER_READER_PATH}"); then
   fail "Cannot read the model-provider placeholder reader rollback floor from main."
 fi
@@ -1422,7 +1423,7 @@ if ! git merge-base --is-ancestor "$model_provider_placeholder_reader_commit" or
   fail "Model-provider placeholder reader rollback floor is not on main."
 fi
 if ! git merge-base --is-ancestor "$model_provider_placeholder_reader_commit" "$runner_tag_commit"; then
-  fail "Runner release ${runner_tag} predates namespaced model-provider placeholder support: ${model_provider_placeholder_reader_commit}."
+  fail "Runner release ${runner_tag} predates the model-provider placeholder cutover: ${model_provider_placeholder_reader_commit}."
 fi
 
 teams_upload_v2_cli_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \

@@ -9,10 +9,7 @@ import {
   type RustConstantValue,
   rustConstantBindings,
 } from "../constants";
-import {
-  LEGACY_MODEL_PROVIDER_ENV_PLACEHOLDERS,
-  MODEL_PROVIDER_ENV_PLACEHOLDERS,
-} from "../../contracts/model-provider-firewalls";
+import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "../../contracts/model-provider-firewalls";
 import {
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
@@ -635,16 +632,6 @@ const expectedBindings = [
     value: rustString(MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_REFRESH_TOKEN),
     rustDoc: placeholderRustDoc("CHATGPT_REFRESH_TOKEN"),
   },
-  ...Object.entries(LEGACY_MODEL_PROVIDER_ENV_PLACEHOLDERS).map(
-    ([name, value]) => {
-      return {
-        rustModulePath: ["model_provider_env", "legacy_placeholders"],
-        rustConstName: name,
-        value: rustString(value),
-        rustDoc: placeholderRustDoc(name),
-      };
-    },
-  ),
 ] as const;
 
 const exampleModuleDocs = [
@@ -711,7 +698,6 @@ describe("Rust constant bindings", () => {
 
     expect(secondRender).toBe(firstRender);
     expect(firstRender).toContain("pub mod model_provider_env {");
-    expect(firstRender).toContain("pub mod legacy_placeholders {");
     expect(firstRender).toContain("pub mod client {");
     expect(firstRender).toContain("pub mod paid_tools {");
     expect(firstRender).toContain("pub mod runners {");

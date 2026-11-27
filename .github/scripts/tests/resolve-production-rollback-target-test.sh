@@ -1912,7 +1912,7 @@ if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundarie
 fi
 
 : >"${tmp_dir}/boundaries.log"
-assert_failure "predates namespaced model-provider placeholder support" \
+assert_failure "predates the model-provider placeholder cutover" \
   run_resolver "${tmp_dir}/model-provider-placeholder-runner.output" MOCK_MODEL_PROVIDER_PLACEHOLDER_RUNNER_VALID=0
 [ ! -s "${tmp_dir}/model-provider-placeholder-runner.output" ] || fail "pre-cutover Runner must not publish rollback outputs"
 if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
