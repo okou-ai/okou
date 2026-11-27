@@ -9,12 +9,12 @@
     <string name="recovery_reset_retry">以前のリセットを確認</string>
     <string name="recovery_checking_reset">元のリクエストを確認しています…</string>
     <string name="recovery_working">続行の準備をしています…</string>
-    <string name="recovery_billing">ワークスペースのクレジット：%1$s。請求情報を確認してください。</string>
+    <string name="recovery_billing">Okou クレジット</string>
     <string name="recovery_no_credit">前回のリセット時に利用可能なクレジットはありませんでした。</string>
     <string name="recovery_submitted">続行を受け付けました。会話履歴の確認を待っています。</string>
     <string name="recovery_failed">復旧が完了しませんでした。再試行の前に元の操作を確認してください。</string>
-    <string name="recovery_credits">リセットクレジット：%1$d</string>
-    <string name="recovery_account">モデルのアカウント: %1$s</string>
-    <string name="recovery_reset_time">使用量のリセット時刻: %1$s</string>
+    <string name="recovery_credits">リセット可能回数</string>
+    <string name="recovery_account">モデルのアカウント</string>
+    <string name="recovery_reset_time">使用量のリセット時刻</string>
     <string name="recovery_reset_title">使用量をリセット</string>
 </resources>

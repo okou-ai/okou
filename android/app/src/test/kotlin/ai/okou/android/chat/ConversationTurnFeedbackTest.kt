@@ -1,11 +1,17 @@
 package ai.okou.android.chat
 
+import ai.okou.android.CHAT_DATE
+import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.WorkspaceFeedbackHost
+import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItem
+import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItemFramework
+import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItemType
 import android.content.res.Configuration
 import android.os.LocaleList
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +19,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -52,6 +59,54 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ConversationTurnFeedbackTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun recoveryDetailsStackWhenTheTextSizeOutgrowsTheAvailableWidth() {
+        val account = "fixture@example.test"
+        val data =
+            FailureRecoveryData(
+                RecoverySelection(CHAT_PERSONAL, "failed", "gpt-recovery", false),
+                AssistantFailure.Run("failed", "usage_limit"),
+                FailureClassification(FailureKind.Usage, RecoveryFramework.Codex),
+                account =
+                    RecoverySubscriptionsSubscriptionsItem(
+                        id = "account",
+                        type = RecoverySubscriptionsSubscriptionsItemType.CODEX_OAUTH_TOKEN,
+                        framework = RecoverySubscriptionsSubscriptionsItemFramework.CODEX,
+                        createdAt = CHAT_DATE,
+                        updatedAt = CHAT_DATE,
+                        accountEmail = account,
+                        subscriptionResetCredits = 2,
+                        needsReconnect = false,
+                        lastRefreshErrorCode = null,
+                    ),
+            )
+        val fontScale = mutableStateOf(1f)
+        compose.setContent {
+            val density = Density(LocalDensity.current.density, fontScale.value)
+            CompositionLocalProvider(LocalDensity provides density) {
+                OkouTheme {
+                    Box(Modifier.width(320.dp)) {
+                        RecoveryInformation(data)
+                    }
+                }
+            }
+        }
+        val label = compose.onNodeWithText("Model account")
+        val value = compose.onNodeWithText(account)
+        val regularLabel = label.getUnclippedBoundsInRoot()
+        val regularValue = value.getUnclippedBoundsInRoot()
+        assertEquals(8.dp, regularValue.left - regularLabel.right)
+        assertEquals(regularLabel.top, regularValue.top)
+        compose.onNodeWithText("Resets available").assertExists()
+
+        compose.runOnIdle { fontScale.value = 2f }
+        val stackedLabel = label.getUnclippedBoundsInRoot()
+        val stackedValue = value.getUnclippedBoundsInRoot()
+        assertEquals(4.dp, stackedValue.top - stackedLabel.bottom)
+        assertEquals(stackedLabel.left, stackedValue.left)
+    }
 
     @Test
     fun completedSummaryUsesTheAppLanguageAndKeepsMinuteAndSecondUnits() {

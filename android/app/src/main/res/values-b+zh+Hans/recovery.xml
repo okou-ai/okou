@@ -9,12 +9,12 @@
     <string name="recovery_reset_retry">核对原重置</string>
     <string name="recovery_checking_reset">正在核对原请求…</string>
     <string name="recovery_working">正在准备继续…</string>
-    <string name="recovery_billing">工作区积分：%1$s。请检查账单以恢复。</string>
+    <string name="recovery_billing">Okou 积分</string>
     <string name="recovery_no_credit">上次重置时没有可用额度。</string>
     <string name="recovery_submitted">继续请求已接受，等待会话历史确认。</string>
     <string name="recovery_failed">恢复未完成，请先核实原操作再重试。</string>
-    <string name="recovery_credits">重置额度：%1$d</string>
-    <string name="recovery_account">模型账号：%1$s</string>
-    <string name="recovery_reset_time">用量恢复时间：%1$s</string>
+    <string name="recovery_credits">可用重置次数</string>
+    <string name="recovery_account">模型账号</string>
+    <string name="recovery_reset_time">用量恢复时间</string>
     <string name="recovery_reset_title">重置用量</string>
 </resources>

@@ -9,12 +9,12 @@
     <string name="recovery_reset_retry">मूल रीसेट की जाँच करें</string>
     <string name="recovery_checking_reset">मूल अनुरोध की जाँच हो रही है…</string>
     <string name="recovery_working">जारी रखने की तैयारी हो रही है…</string>
-    <string name="recovery_billing">वर्कस्पेस क्रेडिट: %1$s। बिलिंग जाँचें।</string>
+    <string name="recovery_billing">Okou क्रेडिट</string>
     <string name="recovery_no_credit">पिछली रीसेट कोशिश में कोई क्रेडिट उपलब्ध नहीं था।</string>
     <string name="recovery_submitted">जारी रखने का अनुरोध स्वीकार हुआ। इतिहास की प्रतीक्षा है।</string>
     <string name="recovery_failed">रिकवरी पूरी नहीं हुई। दोबारा कोशिश से पहले मूल कार्रवाई जाँचें।</string>
-    <string name="recovery_credits">रीसेट क्रेडिट: %1$d</string>
-    <string name="recovery_account">मॉडल खाता: %1$s</string>
-    <string name="recovery_reset_time">उपयोग रीसेट का समय: %1$s</string>
+    <string name="recovery_credits">उपलब्ध रीसेट</string>
+    <string name="recovery_account">मॉडल खाता</string>
+    <string name="recovery_reset_time">उपयोग रीसेट का समय</string>
     <string name="recovery_reset_title">उपयोग रीसेट करें</string>
 </resources>

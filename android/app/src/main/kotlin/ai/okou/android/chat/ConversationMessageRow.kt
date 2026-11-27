@@ -577,8 +577,11 @@ private fun MessageBody(
         }
     }
     val foreground =
-        if (bodyHighlight?.target?.highlighted == true) colors.onSecondaryContainer
-        else colors.onSurface
+        when {
+            bodyHighlight?.target?.highlighted == true -> colors.onSecondaryContainer
+            compact -> colors.onSurfaceVariant
+            else -> colors.onSurface
+        }
     val style =
         when {
             earlierReply ->

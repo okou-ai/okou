@@ -7,14 +7,13 @@ import android.text.format.DateUtils
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -26,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -92,39 +92,7 @@ fun AssistantRecoveryPanel(
                     attempt?.reset != null &&
                     attempt.outcome != null &&
                     attempt.outcome != ResetSubscriptionResultOutcome.NOCREDIT
-            data.account?.let {
-                RecoveryNote(
-                    stringResource(
-                        R.string.recovery_account,
-                        it.accountEmail ?: it.workspaceName ?: it.id,
-                    ),
-                )
-            }
-            val context = LocalContext.current
-            data.resetTimes.forEach { value ->
-                val time =
-                    remember(value) {
-                        runCatching { chatTime(value) }.getOrNull()
-                    }
-                if (time != null) {
-                    RecoveryNote(
-                        stringResource(
-                            R.string.recovery_reset_time,
-                            DateUtils.formatDateTime(
-                                context,
-                                time,
-                                DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME,
-                            ),
-                        ),
-                    )
-                }
-            }
-            data.account?.subscriptionResetCredits?.let {
-                RecoveryNote(stringResource(R.string.recovery_credits, it))
-            }
-            data.billing?.let {
-                RecoveryNote(stringResource(R.string.recovery_billing, it.credits.toString()))
-            }
+            RecoveryInformation(data)
             when {
                 recoveryProgress != null ->
                     RecoveryNote(
@@ -159,14 +127,7 @@ fun AssistantRecoveryPanel(
                 ) {
                     Button(
                         onClick = { composer.recover(target, data.selection.failureId) },
-                        modifier = Modifier.heightIn(min = 48.dp),
                         enabled = !busy && !unknownReset && !unresolvedOther,
-                        shape = RoundedCornerShape(12.dp),
-                        colors =
-                            ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.onSurface,
-                                contentColor = MaterialTheme.colorScheme.surface,
-                            ),
                     ) {
                         Text(stringResource(R.string.recovery_continue))
                     }
@@ -185,13 +146,7 @@ fun AssistantRecoveryPanel(
                                     )
                                 else confirmReset = true
                             },
-                            modifier = Modifier.heightIn(min = 48.dp),
                             enabled = resetEnabled,
-                            shape = RoundedCornerShape(12.dp),
-                            border =
-                                if (resetEnabled)
-                                    BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                                else ButtonDefaults.outlinedButtonBorder(enabled = false),
                         ) {
                             Text(
                                 stringResource(
@@ -202,6 +157,67 @@ fun AssistantRecoveryPanel(
                         }
                     }
                 }
+        }
+    }
+}
+
+private data class RecoveryFact(@StringRes val label: Int, val value: String)
+
+@Composable
+internal fun RecoveryInformation(data: FailureRecoveryData) {
+    val context = LocalContext.current
+    val facts = buildList {
+        data.account?.let {
+            add(
+                RecoveryFact(
+                    R.string.recovery_account,
+                    it.accountEmail ?: it.workspaceName ?: it.id,
+                ),
+            )
+        }
+        for (value in data.resetTimes) {
+            val time = remember(value) { runCatching { chatTime(value) }.getOrNull() }
+            if (time != null) {
+                val formatted =
+                    DateUtils.formatDateTime(
+                        context,
+                        time,
+                        DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME,
+                    )
+                add(RecoveryFact(R.string.recovery_reset_time, formatted))
+            }
+        }
+        data.account?.subscriptionResetCredits?.let {
+            add(RecoveryFact(R.string.recovery_credits, it.toString()))
+        }
+        data.billing?.let { add(RecoveryFact(R.string.recovery_billing, it.credits.toString())) }
+    }
+    if (facts.isEmpty()) return
+    val style = MaterialTheme.typography.bodyMedium
+    val valueStyle = style.copy(fontFeatureSettings = "tnum")
+    val stackedWidth =
+        with(LocalDensity.current) { MaterialTheme.typography.bodyLarge.fontSize.toDp() * 16 }
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        val stacked = maxWidth < stackedWidth
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (fact in facts) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    maxItemsInEachRow = if (stacked) 1 else 2,
+                ) {
+                    Text(
+                        stringResource(fact.label),
+                        style = style,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        fact.value,
+                        style = valueStyle,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
         }
     }
 }
@@ -255,7 +271,7 @@ private fun RecoveryNote(text: String, error: Boolean = false, announced: Boolea
     Text(
         text,
         modifier =
-            Modifier.padding(top = 4.dp)
+            Modifier.padding(top = 8.dp)
                 .then(
                     if (announced) Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                     else Modifier,
