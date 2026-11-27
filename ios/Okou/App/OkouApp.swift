@@ -135,6 +135,20 @@ struct OkouApp: App {
 
   private var productRoot: some View {
     Group {
+      #if STAGING
+        if ProcessInfo.processInfo.arguments.contains("--row-style-repro") {
+          RowStyleReproduction()
+        } else {
+          liveProductRoot
+        }
+      #else
+        liveProductRoot
+      #endif
+    }
+  }
+
+  private var liveProductRoot: some View {
+    Group {
       if authentication != nil {
         switch configuration {
         case .success:
@@ -749,3 +763,74 @@ private struct RequiredUpdateView: View {
     }
   }
 }
+
+
+#if STAGING
+  /// A local fixture for comparing List row modifiers within one process.
+  private struct RowStyleReproduction: View {
+    var body: some View {
+      List {
+        Section {
+          style(row("Control"))
+            .swipeActions { Button("Action") {} }
+          style(row("Disappear outside"))
+            .onDisappear {}
+            .swipeActions { Button("Action") {} }
+          style(row("Visibility outside"))
+            .onScrollVisibilityChange { _ in }
+            .swipeActions { Button("Action") {} }
+          style(row("Both outside"))
+            .onScrollVisibilityChange { _ in }
+            .onDisappear {}
+            .swipeActions { Button("Action") {} }
+          style(
+            row("Visibility inside")
+              .onScrollVisibilityChange { _ in }
+          )
+          .swipeActions { Button("Action") {} }
+          style(
+            row("Both inside")
+              .onScrollVisibilityChange { _ in }
+              .onDisappear {}
+          )
+          .swipeActions { Button("Action") {} }
+          style(row("Visibility outside, no swipe"))
+            .onScrollVisibilityChange { _ in }
+          style(
+            Button {} label: {
+              label("Visibility on label")
+                .onScrollVisibilityChange { _ in }
+            }
+            .buttonStyle(.plain)
+          )
+          .swipeActions { Button("Action") {} }
+        } header: {
+          Text("SwiftUI List row styles")
+        }
+      }
+      .listStyle(.plain)
+      .listRowSpacing(0)
+      .environment(\.defaultMinListRowHeight, 0)
+      .scrollContentBackground(.hidden)
+      .background(OkouColor.sidebar)
+    }
+
+    private func row(_ title: String) -> some View {
+      Button {} label: { label(title) }
+        .buttonStyle(.plain)
+    }
+
+    private func label(_ title: String) -> some View {
+      Text(title)
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private func style(_ content: some View) -> some View {
+      content
+        .listRowInsets(EdgeInsets(top: 0, leading: 32, bottom: 0, trailing: 32))
+        .listRowSeparator(.hidden)
+        .listRowBackground(OkouColor.sidebar)
+    }
+  }
+#endif
