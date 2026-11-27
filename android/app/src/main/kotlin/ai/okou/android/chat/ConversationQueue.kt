@@ -144,7 +144,13 @@ internal fun conversationContent(
                 queueSequence = preview.sequence,
             )
         val entry = ConversationMessage(message, preview = preview)
-        if (message.queued) queue += entry else local += entry
+        if (message.queued) {
+            queue += entry
+            // Input status can update the queue before history can replace the accepted bubble.
+            if (preview.keepAcknowledgedBubble) {
+                local += entry.copy(message = message.copy(queued = false, queueSequence = null))
+            }
+        } else local += entry
     }
     val turns = conversationTurns(messages, liveRuns)
     return ConversationContent(
