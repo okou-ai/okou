@@ -12,10 +12,10 @@ struct OkouApp: App {
   private let configuration = Result { try AppConfiguration() }
 
   private static var isDesignPreview: Bool {
-    if isSSHAuthorizationPreview { return true }
+    if isSSHAuthorizationPreview || isForYouDeck { return true }
     #if DEBUG
       return ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
-        || isChatSyncStatus || isComputerAuthorizationPreview || isForYouDeck
+        || isChatSyncStatus || isComputerAuthorizationPreview
     #else
       return false
     #endif
@@ -48,7 +48,7 @@ struct OkouApp: App {
 
   /// The For you deck against a local fixture (`ForYouDeckGallery`), without signing in.
   private static var isForYouDeck: Bool {
-    #if DEBUG
+    #if DEBUG || STAGING
       ProcessInfo.processInfo.arguments.contains("--for-you-deck")
     #else
       false
@@ -93,12 +93,12 @@ struct OkouApp: App {
         #if DEBUG || STAGING
           if Self.isSSHAuthorizationPreview {
             NavigationStack { SSHAuthorizationGallery() }
+          } else if Self.isForYouDeck {
+            ForYouDeckGallery()
           } else {
             #if DEBUG
               if Self.isComputerAuthorizationPreview {
                 NavigationStack { ComputerAuthorizationGallery() }
-              } else if Self.isForYouDeck {
-                ForYouDeckGallery()
               } else if Self.isChatSyncStatus {
                 NavigationStack { ChatSyncStatusGallery() }
               } else if Self.isResultStyles {

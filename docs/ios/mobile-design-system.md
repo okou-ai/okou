@@ -1009,8 +1009,9 @@ feature; the catalog shows each one.
   edge, so as the input grows out of its pill and the keyboard rises only its foot moves, up and
   back down, while its top stays just under the header. Its heading scrolls and fades there like
   a dense card's, with its directions and source set aside so the draft is never left behind. The card already says what the direction answers, so the input
-  carries no quote of it. A tap around the card puts the input away; the card itself stays
-  readable.
+  carries no quote of it. Dismissing the keyboard or tapping around the card folds an empty
+  input back into its pill and restores the source and directions. A draft with content stays
+  open, as does the input beneath a model or attachment picker.
 
 ### Sign-in and account
 
@@ -1132,7 +1133,7 @@ which previews the production retry surfaces for realtime and chat-read failures
 Debug builds, `--chat-sync-status` opens this page directly without initializing
 authentication or product services.
 
-In Debug builds, `--for-you-deck` opens the production For you page (`ForYouDeckGallery`)
+In Debug and Staging builds, `--for-you-deck` opens the production For you page (`ForYouDeckGallery`)
 against an isolated `.invalid` HTTP fixture with suggestion and paused-automation cards, so
 the deck, the dock, dismissal and the caught-up panel can be checked without signing
 in or sending read receipts. Add `--for-you-deck-slow` to hold the first load (the skeleton)

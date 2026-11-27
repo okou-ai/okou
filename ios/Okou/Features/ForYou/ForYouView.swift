@@ -398,7 +398,10 @@ struct ForYouView: View {
         if let direction = visit.direction, direction.cardID == card.id {
           ForYouDirectionComposer(
             direction: direction, card: card, suggestion: suggestion, workspace: workspace
-          )
+          ) {
+            guard store.direction === direction, !direction.composer.hasContent else { return }
+            closeDirection()
+          }
           .transition(reduceMotion ? .opacity : .forYouInputGrowth)
           .accessibilityAction(.escape, collapseDirection)
         } else {
@@ -475,8 +478,12 @@ struct ForYouView: View {
     if direction.composer.hasContent {
       direction.composer.editor.dismissKeyboard()
     } else {
-      withAnimation(dockMotion) { store.closeDirection() }
+      closeDirection()
     }
+  }
+
+  private func closeDirection() {
+    withAnimation(dockMotion) { store.closeDirection() }
   }
 
   private func clearNotice() { withAnimation(dockMotion) { store.notice = nil } }
