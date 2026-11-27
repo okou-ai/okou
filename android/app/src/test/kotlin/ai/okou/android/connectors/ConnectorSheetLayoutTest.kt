@@ -442,6 +442,49 @@ class ConnectorSheetLayoutTest {
     @Test
     @OptIn(ExperimentalTestApi::class)
     @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun exhaustedVerificationKeepsTheDraftWithTerminalFieldFeedback() {
+        ConnectorApiFixture().use { fixture ->
+            fixture.deferRenameCommit = true
+            withConnectors(fixture) { model ->
+                openCalendarRename()
+                val input = compose.onNodeWithTag("connector-input").performClick()
+                val draft = "Meeting calendar"
+                val selection = TextRange(0, 7)
+                val save = compose.onNodeWithText("Save")
+                val checking = hasText("The outcome is still unconfirmed.")
+                val message = "Could not save. Your changes are still here."
+                input.performTextReplacement(draft)
+                input.performTextInputSelection(selection)
+                save.performClick()
+                compose.waitUntilAtLeastOneExists(checking, 10_000)
+                repeat(2) {
+                    compose.runOnIdle { model.resume() }
+                    compose.waitUntilAtLeastOneExists(
+                        checking or hasText(message),
+                        10_000,
+                    )
+                }
+
+                compose.waitUntilAtLeastOneExists(hasText(message), 10_000)
+                input
+                    .assertTextContains(draft)
+                    .assertIsFocused()
+                    .assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, message))
+                    .assert(
+                        SemanticsMatcher.expectValue(
+                            SemanticsProperties.TextSelectionRange,
+                            selection,
+                        ),
+                    )
+                save.assertIsEnabled()
+                assertEquals(1, fixture.renameRequests.get())
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
     fun accountRefreshFeedbackKeepsTheRenameDraftAndDoesNotReplayOnReturn() {
         ConnectorApiFixture().use { fixture ->
             withConnectors(fixture) { model ->

@@ -669,6 +669,7 @@ class ConnectorModel(
     }
 
     private suspend fun verifyChange(change: PendingChange) {
+        change.readbackAttempts++
         val accounts = service.accounts(change.target.slug)
         invalidateConnectionReads()
         publishAccounts(change.target.slug, accounts)
@@ -679,15 +680,17 @@ class ConnectorModel(
         }
 
         // The read can race a commit after a lost response. Keep checking the original account.
-        change.unmatchedReads++
-        val keepChecking = change.unmatchedReads < ACCOUNT_READBACK_LIMIT
-        if (!keepChecking) {
-            pendingChange = null
-            verificationFailures = 0
+        if (change.readbackAttempts < ACCOUNT_READBACK_LIMIT) {
+            updateAction { it.copy(problem = ConnectorProblem.VerificationPending) }
+        } else {
+            finishPendingChange()
+            updateAction { it.copy(reconciling = false, problem = ConnectorProblem.Failed) }
         }
-        updateAction {
-            it.copy(reconciling = keepChecking, problem = ConnectorProblem.VerificationPending)
-        }
+    }
+
+    private fun finishPendingChange() {
+        pendingChange = null
+        verificationFailures = 0
     }
 
     internal fun startAuthorization(id: String?, methodId: String, values: Map<String, String>) {
@@ -1138,22 +1141,29 @@ class ConnectorModel(
                 val connectionFailed = error.connectionFailed()
                 val uncertain = error.hasUncertainResponse()
                 val canRetryBrowserReceipt = uncertain && !authorizationExpired()
-                if (definitive) pendingChange = null
+                val currentChange = pendingChange
+                val readbackExhausted =
+                    currentChange != null &&
+                        currentChange.target == action.target &&
+                        currentChange.readbackAttempts >= ACCOUNT_READBACK_LIMIT
+                val verificationEnded = definitive || readbackExhausted
+                if (verificationEnded && currentChange != null) finishPendingChange()
                 updateAction {
                     val checkExternalSession =
                         it.authorization is ConnectorAuthorization.External &&
                             (action.awaitingExternalReceipt || uncertain && !connectionFailed)
                     val verifying =
-                        !definitive &&
+                        !verificationEnded &&
                             (it.reconciling ||
                                 it.awaitingBrowserReceipt && canRetryBrowserReceipt ||
                                 checkExternalSession)
                     it.copy(
-                        reconciling = it.reconciling && !definitive,
+                        reconciling = it.reconciling && !verificationEnded,
                         authorization =
                             if (definitive && it.reconciling) null else it.authorization,
                         problem =
                             when {
+                                readbackExhausted -> ConnectorProblem.Failed
                                 verifying && connectionFailed ->
                                     ConnectorProblem.VerificationNetwork
                                 verifying -> ConnectorProblem.VerificationPending
@@ -1277,7 +1287,7 @@ class ConnectorModel(
         val result: ConnectorResult?,
         val matches: (ConnectorSavedAccount?) -> Boolean,
     ) {
-        var unmatchedReads = 0
+        var readbackAttempts = 0
     }
 }
 
