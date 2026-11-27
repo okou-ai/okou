@@ -10,7 +10,10 @@ import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
+import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.Rect
+import android.os.Build
 import android.view.WindowInsets
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
@@ -25,6 +28,7 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.util.UUID
 import okhttp3.mockwebserver.MockResponse
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -83,8 +87,7 @@ class ScreenshotScenario {
                         notice.visibleBounds.bottom <= safeBottom(scenario),
                 )
                 assertEquals(saveBounds, checkNotNull(saveControl(node(save))).visibleBounds)
-                awaitSnackbarSurface(notice.visibleBounds)
-                ScreenshotCapture.capture("short-editor-feedback.png")
+                captureSnackbarSurface(notice.visibleBounds)
             }
         } catch (failure: Throwable) {
             failures += failure
@@ -263,23 +266,48 @@ class ScreenshotScenario {
         device.waitForIdle()
     }
 
-    private fun awaitSnackbarSurface(bounds: Rect) {
+    private fun captureSnackbarSurface(bounds: Rect) {
         val painted = object : Condition<UiDevice, Boolean> {
             override fun apply(device: UiDevice): Boolean {
                 val frame = instrumentation.uiAutomation.takeScreenshot() ?: return false
                 return try {
                     val inverseSurface = 0xff362f27.toInt()
-                    (bounds.top until bounds.bottom step 4).any { y ->
-                        (bounds.left until bounds.right step 4).any { x ->
+                    val surfaceSamples = (bounds.top until bounds.bottom step 4).sumOf { y ->
+                        (bounds.left until bounds.right step 4).count { x ->
                             frame.getPixel(x, y) == inverseSurface
                         }
                     }
+                    if (surfaceSamples < 80) return false
+                    writeSnackbarFrame(frame)
+                    true
                 } finally {
                     frame.recycle()
                 }
             }
         }
         assertTrue("The short editor Snackbar has drawn its inverse surface", device.wait(painted, 4_000))
+    }
+
+    private fun writeSnackbarFrame(frame: Bitmap) {
+        val name = "short-editor-feedback.png"
+        // Keep the actual frame that satisfied the paint condition before the Snackbar times out.
+        TestStorage().openOutputFile(name).use {
+            check(frame.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
+        val config = instrumentation.targetContext.resources.configuration
+        val metadata = JSONObject()
+            .put("runId", checkNotNull(InstrumentationRegistry.getArguments().getString("okouScreenshotRun")))
+            .put("api", Build.VERSION.SDK_INT)
+            .put("device", Build.MODEL)
+            .put("locale", config.locales.toLanguageTags())
+            .put("densityDpi", config.densityDpi)
+            .put("fontScale", config.fontScale)
+            .put("nightMode", config.uiMode and Configuration.UI_MODE_NIGHT_MASK)
+            .put("width", frame.width)
+            .put("height", frame.height)
+        TestStorage().openOutputFile("$name.json").use {
+            it.write(metadata.toString().toByteArray(Charsets.UTF_8))
+        }
     }
 
     private fun node(selector: BySelector): UiObject2 =
