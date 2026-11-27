@@ -27,6 +27,8 @@ existing files are never overwritten or recursively ownership-repaired. It
 launches only `/usr/bin/mount -t ext4` when mounting is needed. The typed operation
 requires `home-drive-v1` and rejects an empty request. Firecracker reports the
 successful startup mount to the fresh Executor preparation for the same attachment.
+The explicit mount step still handles recovery when Guest state restoration or
+optional catalog process startup reports a sandbox error.
 Blank, exact, and handoff reuse validate the Home at their own boundary.
 Snapshot construction waits for prewarm completion and bounded home detachment
 before pause/capture, so an old mounted home is not restored over a new image.
