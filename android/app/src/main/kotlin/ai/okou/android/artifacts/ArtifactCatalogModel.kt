@@ -6,7 +6,7 @@ import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.api.retryAfterDelayMillis
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatChanges
-import ai.okou.android.chat.ChatSentImageVisit
+import ai.okou.android.chat.ChatImageVisit
 import ai.okou.android.contentReadStaleDelayMillis
 import android.graphics.Bitmap
 import android.util.Log
@@ -127,10 +127,10 @@ internal constructor(
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ArtifactCatalogState())
     internal val state = mutable.asStateFlow()
-    internal var sentImageVisit by mutableStateOf<ChatSentImageVisit?>(null)
+    internal var chatImageVisit by mutableStateOf<ChatImageVisit?>(null)
         private set
 
-    private val unavailableSentImages = mutableStateMapOf<String, ArtifactProblem>()
+    private val unavailableChatImages = mutableStateMapOf<String, ArtifactProblem>()
     private val catalogs = LinkedHashMap<ArtifactQuery, ConfirmedArtifactCatalog>(8, 0.75f, true)
     private val previews = LinkedHashMap<String, ArtifactPreviewState>(3, 0.75f, true)
     private val thumbnails = LruCache<String, Bitmap>(40)
@@ -272,7 +272,9 @@ internal constructor(
         val useImageViewer =
             id != null &&
                 showImageViewer &&
-                (isGeneratedArtifactPreview(id) || isChatAttachmentImage(id))
+                (isGeneratedArtifactPreview(id) ||
+                    isChatAttachmentImage(id) ||
+                    id.startsWith(ExternalImagePreviewPrefix) && chatImageVisit != null)
         if (mutable.value.preview?.id == id && this.useImageViewer == useImageViewer) return
         previewJob?.cancel()
         this.useImageViewer = useImageViewer
@@ -292,12 +294,12 @@ internal constructor(
         if (id != null) readPreview(id)
     }
 
-    internal fun showSentImages(visit: ChatSentImageVisit?) {
-        unavailableSentImages.clear()
-        sentImageVisit = visit
+    internal fun showChatImages(visit: ChatImageVisit?) {
+        unavailableChatImages.clear()
+        chatImageVisit = visit
     }
 
-    internal fun sentImageProblem(id: String): ArtifactProblem? = unavailableSentImages[id]
+    internal fun chatImageProblem(id: String): ArtifactProblem? = unavailableChatImages[id]
 
     internal fun retainDecodedImage(
         id: String,
@@ -311,7 +313,9 @@ internal constructor(
     }
 
     internal fun retainedExternalImageId(): String? =
-        mutable.value.preview?.id?.takeIf { it.startsWith(ExternalImagePreviewPrefix) }
+        (chatImageVisit?.initialLink ?: mutable.value.preview?.id)?.takeIf {
+            it.startsWith(ExternalImagePreviewPrefix)
+        }
 
     internal suspend fun thumbnail(url: String, cacheOnly: Boolean = false): Bitmap? {
         thumbnails.get(url)?.let {
@@ -404,7 +408,7 @@ internal constructor(
         lostAccess: ArtifactProblem? = null,
     ) {
         if (lostAccess != null) {
-            revokeSentImage(id, lostAccess)
+            revokeChatImage(id, lostAccess)
             if (mutable.value.preview?.id == id) previewJob?.cancel()
         } else previews[id]?.let { previews[id] = it.withoutSave() }
         mutable.update { current ->
@@ -422,10 +426,10 @@ internal constructor(
         }
     }
 
-    private fun revokeSentImage(id: String, problem: ArtifactProblem) {
+    private fun revokeChatImage(id: String, problem: ArtifactProblem) {
         previews.remove(id)
         inlineImages.revoke(id)
-        if (sentImageVisit != null) unavailableSentImages[id] = problem
+        if (chatImageVisit != null) unavailableChatImages[id] = problem
     }
 
     private fun refreshRelatedChats() {
@@ -887,7 +891,7 @@ internal constructor(
                                 val access = info.resolvedAccess ?: service.fileAccess(resource)
                                 fileAccessAuthorized = !externalImage
                                 updatePreview(id) {
-                                    unavailableSentImages.remove(id)
+                                    unavailableChatImages.remove(id)
                                     copy(access = access)
                                 }
                                 service.fileContent(
@@ -966,8 +970,14 @@ internal constructor(
                     errorType == ArtifactProblem.Denied || errorType == ArtifactProblem.Missing
                 val discardContent = revoked || errorType == ArtifactProblem.Unsupported
                 updatePreview(id) {
+                    if (
+                        revoked &&
+                            !isChatAttachmentImage(id) &&
+                            chatImageVisit?.images?.any { it.source == id } == true
+                    )
+                        unavailableChatImages[id] = errorType
                     if (revoked && isChatAttachmentImage(id)) {
-                        revokeSentImage(id, errorType)
+                        revokeChatImage(id, errorType)
                     } else {
                         if (discardContent) previews.remove(id)
                         if (revoked && !detailAuthorized) {

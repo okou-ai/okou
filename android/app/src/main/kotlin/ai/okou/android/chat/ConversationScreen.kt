@@ -628,8 +628,7 @@ internal fun ConversationRoute(
                     if (artifactActions?.restoreKey != null) artifactActions.restored()
                     else onLinkFocusRestored()
                 } else if (
-                    attachmentMessage != null &&
-                        index >= 0 &&
+                    index >= 0 &&
                         position.layoutInfo.visibleItemsInfo.none {
                             it.key == visibleTimeline[index].key
                         }
