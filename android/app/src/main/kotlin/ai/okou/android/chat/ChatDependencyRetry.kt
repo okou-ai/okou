@@ -19,13 +19,14 @@ internal val chatReadRetryDelays =
         48_000L,
     )
 
-internal fun chatReadRetryAfterMillis(error: Exception): Long? {
+/** The parsed server delay, or the caller's default for a recoverable read. */
+internal fun chatReadRetryAfterMillis(error: Exception, defaultDelayMillis: Long = 0L): Long? {
     val seconds =
         when (error) {
             is ApiFailure.Network,
-            is ApiFailure.IncompatibleResponse -> 0L
+            is ApiFailure.IncompatibleResponse -> null
             is ApiFailure.Http ->
-                if (retryableChatReadStatus(error.status)) error.retryAfterSeconds ?: 0L else null
+                if (retryableChatReadStatus(error.status)) error.retryAfterSeconds else return null
             // A fresh descriptor can replace a signed URL that expired or was removed.
             is ChatSnapshotUnavailable ->
                 if (
@@ -33,18 +34,20 @@ internal fun chatReadRetryAfterMillis(error: Exception): Long? {
                         error.status == 404 ||
                         retryableChatReadStatus(error.status)
                 )
-                    error.retryAfterSeconds ?: 0L
-                else null
-            else -> null
+                    error.retryAfterSeconds
+                else return null
+            else -> return null
         }
-    return seconds?.coerceIn(0, Long.MAX_VALUE / 1_000)?.times(1_000)
+    return seconds?.takeIf { it >= 0L }?.coerceAtMost(Long.MAX_VALUE / 1_000)?.times(1_000)
+        ?: defaultDelayMillis
 }
 
 private fun retryableChatReadStatus(status: Int) =
     status == 408 || status == 410 || status == 429 || status in 500..599
 
-internal fun dependencyRetryAfterMillis(error: Exception): Long? =
-    if (error is ApiFailure.IncompatibleResponse) null else chatReadRetryAfterMillis(error)
+internal fun dependencyRetryAfterMillis(error: Exception, defaultDelayMillis: Long = 0L): Long? =
+    if (error is ApiFailure.IncompatibleResponse) null
+    else chatReadRetryAfterMillis(error, defaultDelayMillis)
 
 /** A post-write verification can take over without waiting for an older read's retry timer. */
 internal class ChatDependencyRetry {
@@ -72,8 +75,9 @@ internal class ChatDependencyRetry {
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 if (!canRetry()) throw error
-                val retryAfter = dependencyRetryAfterMillis(error) ?: throw error
-                val wait = maxOf(chatReadRetryDelays[retries], retryAfter)
+                val defaultDelay = chatReadRetryDelays[retries]
+                val retryDelay = dependencyRetryAfterMillis(error, defaultDelay) ?: throw error
+                val wait = if (continuous) retryDelay else maxOf(defaultDelay, retryDelay)
                 onRetry(retries + 1)
                 if (
                     withTimeoutOrNull(wait) { superseded.await() } != null || superseded.isCompleted

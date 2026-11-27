@@ -5190,6 +5190,76 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
     }
 
     @Test
+    fun serverDelaysOverrideOnlyTheCurrentListAndIndicatorRetrySlots() = runTest {
+        var fail = false
+        val startedAt = testScheduler.currentTime
+        val listAttempts = mutableListOf<Long>()
+        val indicatorAttempts = mutableListOf<Long>()
+        val service =
+            Service().apply {
+                listRead = {
+                    if (fail) {
+                        listAttempts.add(testScheduler.currentTime - startedAt)
+                        when (listAttempts.size) {
+                            1 -> throw ApiFailure.Http(503, null, null, 1)
+                            2 -> throw ApiFailure.Http(429, null, null, 0)
+                            3 -> throw ApiFailure.Http(503, null, null, null)
+                        }
+                    }
+                    page()
+                }
+                statusRead = {
+                    if (fail) {
+                        indicatorAttempts.add(testScheduler.currentTime - startedAt)
+                        when (indicatorAttempts.size) {
+                            1 -> throw ApiFailure.Http(503, null, null, 2)
+                            2 -> throw ApiFailure.Http(429, null, null, 0)
+                            3 -> throw ApiFailure.Http(503, null, null, -1)
+                        }
+                    }
+                    Indicators(emptyMap(), emptyMap())
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            fail = true
+            model.refresh()
+            runCurrent()
+            assertEquals(listOf(0L), listAttempts)
+            assertEquals(listOf(0L), indicatorAttempts)
+
+            advanceTimeBy(999)
+            runCurrent()
+            assertEquals(listOf(0L), listAttempts)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 1_000L, 1_000L), listAttempts)
+            assertEquals(listOf(0L), indicatorAttempts)
+            assertTrue(model.uiState.value.listRefreshProgressVisible)
+            assertFalse(model.uiState.value.indicatorsRefreshProgressVisible)
+
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertEquals(listOf(0L, 2_000L, 2_000L), indicatorAttempts)
+            assertTrue(model.uiState.value.indicatorsRefreshProgressVisible)
+            advanceTimeBy(4_999)
+            runCurrent()
+            assertEquals(3, listAttempts.size)
+            assertEquals(3, indicatorAttempts.size)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(0L, 1_000L, 1_000L, 7_000L), listAttempts)
+            assertFalse(model.uiState.value.listRefreshProgressVisible)
+            assertTrue(model.uiState.value.indicatorsRefreshProgressVisible)
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertEquals(listOf(0L, 2_000L, 2_000L, 8_000L), indicatorAttempts)
+            assertFalse(model.uiState.value.indicatorsRefreshProgressVisible)
+        }
+    }
+
+    @Test
     fun aStaleConfirmedEmptyListKeepsProgressAfterTheFirstFailure() = runTest {
         var now = 1_000L
         val firstAttempt = CompletableDeferred<ChatEvents>()
