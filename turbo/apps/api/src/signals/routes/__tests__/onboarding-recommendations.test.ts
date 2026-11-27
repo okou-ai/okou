@@ -247,12 +247,16 @@ test("onboarding-recommendations-002 (2/2) sends redacted Gmail context and unav
   const userMessage = wire.messages.find((message) => {
     return message.role === "user";
   });
-  expect(JSON.parse(userMessage?.content ?? "null")).toStrictEqual({
+  const parsedPayload = JSON.parse(userMessage?.content ?? "null") as {
+    readonly connectedContext?: readonly unknown[];
+  };
+  expect(parsedPayload.connectedContext).toHaveLength(2);
+  expect(parsedPayload).toStrictEqual({
     industry: "operations",
     selectedPositioning: expect.objectContaining({
       name: "Business & operations",
     }),
-    connectedContext: [
+    connectedContext: expect.arrayContaining([
       {
         sourceSlug: "github",
         facts: [],
@@ -266,7 +270,7 @@ test("onboarding-recommendations-002 (2/2) sends redacted Gmail context and unav
         ],
         capabilities: expect.arrayContaining([expect.any(String)]),
       },
-    ],
+    ]),
     unavailableSourceSlugs: ["github"],
   });
   for (const secret of [

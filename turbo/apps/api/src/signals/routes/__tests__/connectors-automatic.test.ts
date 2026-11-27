@@ -1351,6 +1351,6 @@ describe("builtin MCP automatic authentication", () => {
     );
 
     expect(secondId).not.toBe(firstId);
-    expect(await listAccounts(actor, fixture)).toHaveLength(2);
+    await expect(listAccounts(actor, fixture)).resolves.toHaveLength(2);
   });
 });
