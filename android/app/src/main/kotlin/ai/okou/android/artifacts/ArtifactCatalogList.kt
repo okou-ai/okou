@@ -207,7 +207,12 @@ internal fun ArtifactCatalogList(
             )
             return@Column
         }
-        val showSkeleton = rememberContentReadSkeleton(hasContent = page != null)
+        val showSkeleton =
+            rememberContentReadSkeleton(
+                hasContent = page != null,
+                awaitingRead = current?.initialReadRound != null,
+                readScope = current?.initialReadRound,
+            )
         Box(Modifier.fillMaxWidth().weight(1f)) {
             LazyColumn(
                 modifier =
@@ -233,17 +238,12 @@ internal fun ArtifactCatalogList(
                         )
                     }
                 }
-                groups.entries.forEachIndexed { index, (day, rows) ->
+                groups.forEach { (day, rows) ->
                     if (day != ArtifactDay.Search) {
                         item(key = day.name) {
                             Text(
                                 stringResource(day.label),
-                                Modifier.padding(
-                                        start = 12.dp,
-                                        top = if (index == 0) 8.dp else 16.dp,
-                                        bottom = 4.dp,
-                                    )
-                                    .semantics { heading() },
+                                Modifier.padding(top = 8.dp, bottom = 4.dp).semantics { heading() },
                                 style = artifactSmallText(),
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

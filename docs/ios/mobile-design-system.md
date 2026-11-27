@@ -332,7 +332,7 @@ Reusable views, grouped by what they do. Each group is a folder in
   their colours from the web directory's tokens (`connector-directory-dialog.tsx`,
   `connector-card.tsx`, `segment-control.tsx`): no black fills, since black is never a
   selection colour here, and a primary action is amber.
-  - `OkouSegmentControl` switches what a page lists (Discover / Custom): the large
+  - `OkouSegmentControl` switches what a page lists (Connected / Discover in Settings): the large
     segmented shape — a full-width 48 pt capsule with equal segments, the selected one
     inset 2 pt — in `segment-track`, with the selected segment raised in
     `segment-selected` and the web's soft shadow; 15 pt medium labels, supporting text
@@ -502,7 +502,11 @@ single floating line, and colour is a small accent for status only.
   near the bottom-edge system gestures. Finished-action feedback expires after six idle
   seconds while visible, restarting after touch interaction, presentation handoff, or
   foregrounding; it stays available while VoiceOver is enabled. Pending operations and errors
-  do not expire.
+  do not expire. A direct Archive or Unarchive offers one Undo on the originating
+  page, including the list shown automatically after archiving the open chat. Choosing a
+  different chat, list filter, or page ends that Undo. An immediate Undo from the automatic
+  return reopens the chat with its draft. A successful Undo shows one plain “Undone”
+  confirmation, which VoiceOver announces. A failed change offers Retry on its source page.
   The scroll-to-bottom control stays above the feedback. A finished action
   ("Chat archived · Undo") or a sync failure with Retry, one at a time. Liquid Glass at
   card radius, a 16 pt muted Lucide glyph (a small spinner while retrying), one 15 pt
@@ -1050,15 +1054,14 @@ feature; the catalog shows each one.
 ### Connectors
 
 - **Add connectors** is drawn in the web directory's colours on the same white page
-  (the web's greys are made for white): a Discover / Custom segment control, the web's
-  short category names as chips (the full name on the detail page), and one card per connector — logo tile, name,
+  (the web's greys are made for white). It opens directly to the built-in catalog,
+  with short category names as filter chips and one card per connector — logo tile, name,
   two lines of description, and "+" that connects at once while the rest of the card
   opens the detail. A connected card shows "Connected" in place of the description and
   a chevron in place of "+", as the web's card does. The detail is one card with the logo,
   name, description and compact Connect (or Add account) and Permissions buttons, then
   a facts card (status, category, how it signs in) and, only with several methods, a
-  card that explains them. Custom holds "Create custom connector", the workspace's
-  own connectors, and remote access (SSH, VNC).
+  card that explains them.
 - Connector rows show the partner's catalog logo through `ConnectorLogo` (24 pt
   slot; `pointSize` for a detail tile); the catalog serves PNG or SVG and `ConnectorIconLoader` rasterises SVG once
   with WebKit and caches it. The `plug`/`puzzle` glyph is only the loading and

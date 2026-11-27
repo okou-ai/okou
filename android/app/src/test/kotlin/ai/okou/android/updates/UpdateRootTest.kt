@@ -32,7 +32,9 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -285,6 +287,50 @@ class UpdateRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w360dp-h640dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun extremelyShortUpdateDetailsScrollTheHeadingWithoutMovingEitherAction() {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        val originalFontScale = RuntimeEnvironment.getFontScale()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            allowInstallAndDiscoverUpdate()
+            openUpdateSettings()
+            updateSettingsRow().performScrollTo().performClick()
+            updateDetailsHeading().assertIsDisplayed()
+            RuntimeEnvironment.setQualifiers("en-rUS-w360dp-h160dp")
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+
+            val close = updateDetailText(app.getString(R.string.updates_close))
+            val download = updateDetailText(app.getString(R.string.updates_download))
+            val closeBounds = close.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val downloadBounds = download.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val title = updateDetailsHeading()
+            val titleTop = title.getUnclippedBoundsInRoot().top
+            val installed = app.getString(R.string.updates_installed, BuildConfig.VERSION_NAME)
+            val reader = compose.onNode(hasScrollAction() and hasAnyDescendant(hasText(installed)))
+            reader.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            val scroll =
+                reader.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+            val initialOffset = scroll.value()
+            reader.performKeyInput { pressKey(Key.PageDown) }
+            compose.waitUntil(5_000) { scroll.value() > initialOffset }
+            assertTrue(title.getUnclippedBoundsInRoot().top < titleTop)
+            assertEquals(closeBounds, close.assertIsDisplayed().getUnclippedBoundsInRoot())
+            assertEquals(downloadBounds, download.assertIsDisplayed().getUnclippedBoundsInRoot())
+            close.performClick()
+            title.assertDoesNotExist()
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+            RuntimeEnvironment.setFontScale(originalFontScale)
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w360dp-h200dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun shortUpdateDetailsRevealNewFailureWithoutMovingTheActions() {
@@ -448,6 +494,66 @@ class UpdateRootTest {
             assertEquals(bounds, preparing.assertIsDisplayed().getUnclippedBoundsInRoot())
         } finally {
             RuntimeEnvironment.setFontScale(originalFontScale)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w380dp-h320dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aNewRequiredUpdateCheckFailureRevealsTheReasonAndKeepsReadingFocus() {
+        val originalFontScale = RuntimeEnvironment.getFontScale()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            val release = updateRelease("99.0.0").copy(minimumSdk = 36)
+            compose.runOnIdle {
+                app.fixture.response = AndroidUpdates(null, release)
+                app.updates.requireUpdate(RequiredUpdate("99.0.0"))
+                checkNotNull(app.fixture.heldCheck).complete(Unit)
+            }
+            compose.waitUntil(10_000) {
+                app.updates.state.value.let {
+                    it.required && it.check == UpdateCheck.Checked && it.candidate == release
+                }
+            }
+            val heading =
+                compose.onNodeWithText(app.getString(R.string.updates_required_incompatible_short))
+            val headingBounds = heading.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val action = compose.onNodeWithText(app.getString(R.string.updates_check_compatible))
+            val actionBounds = action.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val reader = compose.onNode(hasScrollAction())
+            fun outlinePixel() =
+                reader.captureToImage().toPixelMap().let {
+                    val inset = with(compose.density) { 2.dp.roundToPx() }
+                    it[inset, it.height / 2]
+                }
+            val unfocusedPixel = outlinePixel()
+            reader.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            assertNotEquals(unfocusedPixel, outlinePixel())
+            val scroll =
+                reader.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+            val initialOffset = scroll.value()
+            reader.performKeyInput { pressKey(Key.PageDown) }
+            compose.waitUntil(5_000) { scroll.value() > initialOffset }
+            compose
+                .onNodeWithText(app.getString(R.string.updates_installed, BuildConfig.VERSION_NAME))
+                .performScrollTo()
+                .assertIsDisplayed()
+
+            compose.runOnIdle {
+                app.fixture.failCheck = true
+                app.updates.check()
+            }
+            compose.onNodeWithText(app.getString(R.string.updates_error_check)).assertIsDisplayed()
+            reader.assertIsFocused()
+            assertEquals(headingBounds, heading.getUnclippedBoundsInRoot())
+            val retry = compose.onNodeWithText(app.getString(R.string.updates_retry_check))
+            assertEquals(actionBounds, retry.assertIsDisplayed().getUnclippedBoundsInRoot())
+        } finally {
+            RuntimeEnvironment.setFontScale(originalFontScale)
+            instrumentation.resetInTouchMode()
         }
     }
 

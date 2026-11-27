@@ -460,7 +460,15 @@ test("voice-draft-audio-015 sends the recorded worklet samples as a playable voi
   await setupPage({ context, path: RUN_PATH });
   await screen.findByText("Ready for the recording.");
   await screen.findByRole("textbox", { name: "Message" });
-  await record();
+  click(await findEnabledButton("Voice input"));
+  const voiceButton = await findEnabledButton("Voice");
+  const textButton = await findEnabledButton("Text");
+  expect(voiceButton).not.toHaveAttribute("aria-keyshortcuts");
+  expect(textButton).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+E Control+Shift+E",
+  );
+  click(voiceButton);
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const play = await findNamedButton("Play voice message", composer);
   const wav = await stored.promise;
@@ -502,6 +510,163 @@ test("voice-draft-audio-015 sends the recorded worklet samples as a playable voi
     ]);
   });
   expect(dictationRequests).toHaveLength(0);
+});
+
+test("voice-draft-audio-016 Text button and shortcut transcribe to text while Voice uploads without a secondary label", async () => {
+  const uploadReady = context.mocks.deferred<void>();
+  const uploadRequests: string[] = [];
+  createChatCapabilityHelpers(context).installCapabilityChat({
+    events: completedConversation("Ready for dual voice actions."),
+  });
+  context.mocks.browser.voiceInput({ rms: 0.2 });
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, {
+      switches: {},
+      effectiveSwitches: { composerVoiceMessages: true },
+    });
+  });
+  context.mocks.http.post("*" + voiceIoTranscribeContract.segment.path, () => {
+    return HttpResponse.json({
+      transcript: "transcribe via shortcut",
+      language: "en",
+    });
+  });
+  context.mocks.api(voiceIoPolishSegmentsContract.post, ({ respond }) => {
+    return respond(200, { text: "Transcribe via shortcut." });
+  });
+  context.mocks.api(uploadsContract.preparePrivate, ({ body, respond }) => {
+    uploadRequests.push(body.contentType);
+    return respond(200, {
+      id: "b0000000-0000-4000-a000-000000000619",
+      filename: "Voice recording.wav",
+      url: new URL(
+        artifactReferencePath(
+          "b0000000-0000-4000-a000-000000000619",
+          "Voice recording.wav",
+        ),
+        location.origin,
+      ).href,
+      contentType: body.contentType,
+      size: body.size,
+      uploadUrl: "https://storage.example.test/private-voice-016",
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.http.put(
+    "https://storage.example.test/private-voice-016",
+    async () => {
+      await uploadReady.promise;
+      return new HttpResponse(null, { status: 200 });
+    },
+  );
+  context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
+    return respond(200, {
+      id: body.id,
+      filename: "Voice recording.wav",
+      url: new URL(
+        artifactReferencePath(body.id, "Voice recording.wav"),
+        location.origin,
+      ).href,
+      contentType: "audio/wav",
+      size: 54,
+    });
+  });
+  mockPrivateUrlSequence(context, {
+    "b0000000-0000-4000-a000-000000000619": [
+      "https://private-files.example/recording-016.wav",
+    ],
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Ready for dual voice actions.");
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+
+  // Default shortcut finishes recording as Text, not Voice.
+  click(await findEnabledButton("Voice input"));
+  await findEnabledButton("Text");
+  fireEvent.keyDown(document, {
+    key: "E",
+    code: "KeyE",
+    ctrlKey: true,
+    shiftKey: true,
+  });
+  await waitFor(() => {
+    expect(editor.textContent).toBe("Transcribe via shortcut.");
+  });
+  expect(uploadRequests).toHaveLength(0);
+
+  // Voice button uploads and inserts into composer with only the uploading status text.
+  click(await findEnabledButton("Voice input"));
+  click(await findEnabledButton("Voice"));
+  const uploadingLabel = await screen.findByText("Uploading recording…");
+  expect(
+    uploadingLabel.closest("[data-composer-voice-tray]"),
+  ).toHaveTextContent(/^Uploading recording…$/u);
+  uploadReady.resolve();
+  await findNamedButton("Play voice message", editor);
+  expect(uploadRequests).toHaveLength(1);
+});
+
+test("voice-draft-audio-017 keeps Text enabled on the recovery tray after a Voice upload failure", async () => {
+  createChatCapabilityHelpers(context).installCapabilityChat({
+    events: completedConversation("Ready for upload recovery."),
+  });
+  context.mocks.browser.voiceInput({ rms: 0.2 });
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, {
+      switches: {},
+      effectiveSwitches: { composerVoiceMessages: true },
+    });
+  });
+  context.mocks.api(uploadsContract.preparePrivate, ({ body, respond }) => {
+    return respond(200, {
+      id: "b0000000-0000-4000-a000-000000000620",
+      filename: "Voice recording.wav",
+      url: new URL(
+        artifactReferencePath(
+          "b0000000-0000-4000-a000-000000000620",
+          "Voice recording.wav",
+        ),
+        location.origin,
+      ).href,
+      contentType: body.contentType,
+      size: body.size,
+      uploadUrl: "https://storage.example.test/private-voice-017",
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.http.put(
+    "https://storage.example.test/private-voice-017",
+    () => {
+      return new HttpResponse(null, { status: 500 });
+    },
+  );
+  context.mocks.http.post("*" + voiceIoTranscribeContract.segment.path, () => {
+    return HttpResponse.json({
+      transcript: "recovered as text",
+      language: "en",
+    });
+  });
+  context.mocks.api(voiceIoPolishSegmentsContract.post, ({ respond }) => {
+    return respond(200, { text: "Recovered as text." });
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Ready for upload recovery.");
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+
+  click(await findEnabledButton("Voice input"));
+  click(await findEnabledButton("Voice"));
+
+  await expect(
+    screen.findByText("Your recording is saved."),
+  ).resolves.toBeInTheDocument();
+  const textButton = await findEnabledButton("Text");
+  click(textButton);
+
+  await waitFor(() => {
+    expect(editor.textContent).toBe("Recovered as text.");
+  });
 });
 
 test.each(["Backspace", "Delete"] as const)(

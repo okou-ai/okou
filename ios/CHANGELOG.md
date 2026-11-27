@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.71.1](https://github.com/okou-ai/okou/compare/ios-v0.71.0...ios-v0.71.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **ios:** allow swiping back across an empty for you page ([#51308](https://github.com/okou-ai/okou/issues/51308)) ([dc770d5](https://github.com/okou-ai/okou/commit/dc770d5689bb1dd38ba597e5330e7dbe0c376d3c))
+* **ios:** keep archive undo on its originating page ([#51309](https://github.com/okou-ai/okou/issues/51309)) ([79877d3](https://github.com/okou-ai/okou/commit/79877d3c667aad5f39e61c278ce91bea88ede5da))
+* **ios:** load connected settings from the batch overview ([#51311](https://github.com/okou-ai/okou/issues/51311)) ([61c46a1](https://github.com/okou-ai/okou/commit/61c46a16f08270103ace5b3eeaa2058de7a4f4ce))
+
 ## [0.71.0](https://github.com/okou-ai/okou/compare/ios-v0.70.2...ios-v0.71.0) (2026-11-27)
 
 

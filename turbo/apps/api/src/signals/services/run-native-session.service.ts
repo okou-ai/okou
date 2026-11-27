@@ -26,6 +26,7 @@ export const captureRunNativeSession$ = command(
       .select({
         id: agentRuns.id,
         chatThreadId: agentRuns.chatThreadId,
+        triggerSource: agentRuns.triggerSource,
         launchSnapshot: agentRuns.launchSnapshot,
         officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
       })
@@ -60,9 +61,12 @@ export const captureRunNativeSession$ = command(
     if (sessionId === undefined) {
       return;
     }
+    // An earlier API launched standalone Pi with the thread ID. Remove that
+    // case after its callbacks drain and rollback cannot launch it (#50929).
     if (
       run.launchSnapshot?.schemaVersion === 5 &&
       framework === "pi" &&
+      !(run.triggerSource === "proactive" && sessionId === run.id) &&
       sessionId !==
         (run.officialWorkflowProvenance ? run.id : (run.chatThreadId ?? run.id))
     ) {

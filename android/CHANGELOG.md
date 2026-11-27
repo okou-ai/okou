@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.65.4](https://github.com/okou-ai/okou/compare/android-v0.65.3...android-v0.65.4) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** retain selected workflow through search refreshes ([#51357](https://github.com/okou-ai/okou/issues/51357)) ([956b75e](https://github.com/okou-ai/okou/commit/956b75e133cb232d1534bf223998deec90b25542))
+* **android:** stabilize chat image, model, and connector states ([#51350](https://github.com/okou-ai/okou/issues/51350)) ([3698deb](https://github.com/okou-ai/okou/commit/3698deb182c634aece5e3d1df41181f139170a43))
+
+## [0.65.3](https://github.com/okou-ai/okou/compare/android-v0.65.2...android-v0.65.3) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** align workflow loading states with the design ([#51338](https://github.com/okou-ai/okou/issues/51338)) ([3d3af39](https://github.com/okou-ai/okou/commit/3d3af392dae5856fccd3bdf7704d0b84b7199695))
+
+## [0.65.2](https://github.com/okou-ai/okou/compare/android-v0.65.1...android-v0.65.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **android:** align artifact image viewer with design ([#51236](https://github.com/okou-ai/okou/issues/51236)) ([ff1dd7d](https://github.com/okou-ai/okou/commit/ff1dd7d7415bb9e1f8a39e8572e711475a7f5428))
+* **android:** align update failure and install status feedback ([#51317](https://github.com/okou-ai/okou/issues/51317)) ([c0439eb](https://github.com/okou-ai/okou/commit/c0439eba58e3559a754cb53875124dd82fd0da7e))
+* **android:** show readable workspace message search excerpts ([#51280](https://github.com/okou-ai/okou/issues/51280)) ([fcc8c39](https://github.com/okou-ai/okou/commit/fcc8c3916b3dd2008bab48e22ba5ec8c9931e2c7))
+
 ## [0.65.1](https://github.com/okou-ai/okou/compare/android-v0.65.0...android-v0.65.1) (2026-11-27)
 
 

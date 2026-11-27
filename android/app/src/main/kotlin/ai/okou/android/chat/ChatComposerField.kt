@@ -42,12 +42,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -79,8 +81,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 
 // Keep original line breaks in the journal and preserve native selection offsets.
 private val CompactDraftDisplay = VisualTransformation { text ->
@@ -105,19 +105,15 @@ internal fun ChatComposerField(
     attachmentImages: InlineArtifactImages? = null,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    val connectorSave =
-        remember(connectorOptions, target.key) {
-                connectorOptions
-                    ?.state
-                    ?.map { state ->
-                        state.save?.phase?.takeIf {
-                            state.target == target.key && state.save.blocksSend
-                        }
-                    }
-                    ?.distinctUntilChanged()
+    val connectorSave = connectorOptions?.let { options ->
+        val optionsState = options.state.collectAsStateWithLifecycle()
+        remember(optionsState, target.key) {
+                derivedStateOf(structuralEqualityPolicy()) {
+                    optionsState.value.blockingPhase(target.key)
+                }
             }
-            ?.collectAsStateWithLifecycle(initialValue = null)
-            ?.value
+            .value
+    }
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
     val attachments = state.attachments(target)

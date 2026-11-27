@@ -23,6 +23,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
@@ -146,6 +147,7 @@ class ChatComposerRootTest {
     @Config(application = DraftModelRootApplication::class)
     fun conversationModelUpdatesImmediatelyAndSendUsesServerSettings() {
         val app = compose.activity.application as DraftModelRootApplication
+        app.modelFixture.gptFastMultiplier = 2.75
         cleanupApplication = app
         app.contextGate.countDown()
         app.sendGate.countDown()
@@ -235,6 +237,8 @@ class ChatComposerRootTest {
                 .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
                 .performSemanticsAction(SemanticsActions.Dismiss)
         }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
         try {
             compose.waitUntilExactlyOneExists(hasText("Personal chat"), 8_000)
             compose.onNodeWithText("Personal chat").performClick()
@@ -245,7 +249,10 @@ class ChatComposerRootTest {
             val gpt = compose.onNodeWithText("GPT 5.6 Sol")
             val fast = compose.onNodeWithText("Fast mode")
             auto.assertIsSelected()
+            fast.assertDoesNotExist()
             gpt.performClick().assertIsSelected()
+            fast.assertIsOff()
+            compose.onNodeWithText("2.75×", substring = true).assertExists()
             assertTrue(started.await(5, TimeUnit.SECONDS))
             fast.performClick().assertIsOn()
             compose.onNodeWithText("Medium").performClick()
@@ -285,17 +292,31 @@ class ChatComposerRootTest {
             val saving = hasText("Saving…") or hasText("Checking the save result…")
             compose.waitUntilDoesNotExist(saving, 8_000)
             fast.assertIsOn()
-            closeModel()
-
-            app.modelFixture.gptFastAvailable = false
-            openModel()
+            fast.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            fast.assertIsFocused()
+            compose.runOnIdle {
+                val defaultModel =
+                    checkNotNull(
+                            ViewModelProvider(compose.activity)[SessionModel::class.java]
+                                .uiState
+                                .value
+                                .ready,
+                        )
+                        .settings
+                        .defaultModel
+                defaultModel.foreground(false)
+                app.modelFixture.gptFastAvailable = false
+                defaultModel.foreground(true)
+            }
             compose.waitUntilDoesNotExist(hasText("Fast mode"), 8_000)
+            gpt.assertIsFocused()
             compose.onNodeWithText("High").performClick()
             compose.onNodeWithText("Medium").performClick()
             compose.waitUntilExactlyOneExists(hasText("Medium") and isEnabled(), 8_000)
             awaitConversation { requests.size == 5 }
             compose.waitUntilDoesNotExist(saving, 8_000)
             val tierWrite = requests.elementAt(1)
+            assertEquals(JsonNull, requests.first().getValue("codexServiceTier"))
             assertEquals("fast", tierWrite.getValue("codexServiceTier").jsonPrimitive.content)
             assertTrue("reasoningEffort" !in tierWrite)
             val effortWrite = requests.elementAt(2)
@@ -311,6 +332,7 @@ class ChatComposerRootTest {
             assertTrue(app.modelFixture.writes.isEmpty())
         } finally {
             release.countDown()
+            instrumentation.resetInTouchMode()
         }
     }
 
@@ -318,6 +340,7 @@ class ChatComposerRootTest {
     @Config(application = DraftModelRootApplication::class)
     fun newChatUsesItsDraftModelAndAdvancedOptionsOnFirstSend() {
         val app = compose.activity.application as DraftModelRootApplication
+        app.modelFixture.gptFastMultiplier = 2.75
         cleanupApplication = app
         app.contextGate.countDown()
         app.sendGate.countDown()
@@ -343,14 +366,18 @@ class ChatComposerRootTest {
             modelRow.assertIsFocused().performClick()
             val gpt = compose.onNodeWithText("GPT 5.6 Sol")
             val claude = compose.onNodeWithText("Claude Sonnet 5")
+            val fast = compose.onNodeWithText("Fast mode")
             gpt.assertIsSelected()
+            compose.onNodeWithText("2.75×", substring = true).assertExists()
+            fast.assertIsOff().performClick().assertIsOn()
             claude.performClick().assertIsSelected()
             compose.onNodeWithText("High").assertIsDisplayed()
-            compose.onNodeWithText("Fast mode").assertDoesNotExist()
+            fast.assertDoesNotExist()
             gpt.performClick().assertIsSelected()
+            fast.assertIsOff()
             compose.onNodeWithText("Medium").performClick()
             compose.onNodeWithText("High").performClick()
-            compose.onNodeWithText("Fast mode").performClick()
+            fast.performClick().assertIsOn()
             compose
                 .onNode(
                     hasContentDescription("Back") and hasAnyAncestor(hasTestTag("model-picker")),

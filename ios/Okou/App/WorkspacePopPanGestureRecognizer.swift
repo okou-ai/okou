@@ -4,7 +4,7 @@ import UIKit
 final class WorkspacePopPanGestureRecognizer: UIPanGestureRecognizer, UIGestureRecognizerDelegate {
   private weak var navigation: UINavigationController?
   private(set) var transition: WorkspacePopTransition?
-  /// A swipe on the For you deck pages its cards; only its leading edge navigates back.
+  /// A visible For you card reserves its content area; empty panels use the chat hit region.
   var requiresLeadingEdge = false
   private var origin: CGPoint?
 

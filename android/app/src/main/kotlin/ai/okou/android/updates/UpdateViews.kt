@@ -13,6 +13,7 @@ import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.entrySpacing
 import ai.okou.android.entryTitleStyle
 import ai.okou.android.entryTopPadding
+import ai.okou.android.keyboardReadingScroll
 import ai.okou.android.measureEntryBrandHeight
 import ai.okou.android.state.rememberUpdateWorkspaceState
 import android.text.format.Formatter
@@ -44,7 +45,6 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
@@ -68,7 +68,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -132,7 +131,7 @@ private val UpdateUiState.interrupted
     get() = transfer is UpdateTransfer.Failed || transfer is UpdateTransfer.Interrupted
 
 private val UpdateUiState.requiresNewerAndroid
-    get() = displayedRelease?.let { (available || required) && it.minimumSdk > sdk } == true
+    get() = offeredRelease?.let { it.minimumSdk > sdk } == true
 
 @Composable
 internal fun updateToolbarAction(
@@ -366,7 +365,7 @@ private fun UpdateSheet(
     val compact = windowHeight < base * 13
     val short = windowHeight < base * 9
     SettingsModal(close, showDragHandle = !compact) { centered ->
-        val release = state.displayedRelease?.takeIf { state.available }
+        val release = state.offeredRelease
         val inset = if (compact) 16.dp else 24.dp
         val verticalInset = if (short) 8.dp else if (compact) 12.dp else 24.dp
         BoxWithConstraints(
@@ -379,11 +378,28 @@ private fun UpdateSheet(
                 ),
         ) {
             val actions = measureUpdateActions(maxWidth, required = false)
+            val title = stringResource(R.string.updates_title)
             val headingStyle =
-                if (compact)
-                    MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
-                else MaterialTheme.typography.headlineSmall
-            val titleLineHeight = with(LocalDensity.current) { headingStyle.lineHeight.toDp() }
+                (if (compact)
+                        MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 20.sp,
+                            lineHeight = 28.sp,
+                        )
+                    else MaterialTheme.typography.headlineSmall)
+                    .copy(fontWeight = FontWeight.SemiBold)
+            val measurer = rememberTextMeasurer(cacheSize = 1)
+            val titleHeight =
+                with(LocalDensity.current) {
+                    measurer
+                        .measure(
+                            title,
+                            headingStyle,
+                            constraints = Constraints(maxWidth = maxWidth.roundToPx()),
+                        )
+                        .size
+                        .height
+                        .toDp()
+                }
             val bodyLineHeight =
                 with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() }
             val resultSpacing = 4.dp
@@ -395,31 +411,27 @@ private fun UpdateSheet(
             val scroll = rememberScrollState()
             val contentSpacing = if (short) 8.dp else if (compact) 12.dp else 16.dp
             val headingGap = if (short) 4.dp else 8.dp
-            val scrollWholePanel =
+            val scrollHeading =
                 maxHeight <
-                    actions.height + headingGap + contentSpacing + titleLineHeight + bodyLineHeight
-            val revealResult = short && !scrollWholePanel
+                    actions.height + headingGap + contentSpacing + titleHeight + bodyLineHeight
+            val revealResult = short && !scrollHeading
             val requiresNewerAndroid = state.requiresNewerAndroid
             val problemMessage = state.updateProblemMessage(requiresNewerAndroid)
             val revealCheckResult = revealResult && !requiresNewerAndroid && problemMessage == null
-            Column(
-                if (scrollWholePanel) Modifier.fillMaxWidth().verticalScroll(scroll)
-                else Modifier.fillMaxWidth(),
-            ) {
+            val heading: @Composable () -> Unit = {
                 Text(
-                    stringResource(R.string.updates_title),
-                    style = headingStyle.copy(fontWeight = FontWeight.SemiBold),
+                    title,
+                    style = headingStyle,
                     modifier = Modifier.semantics { heading() },
                 )
                 Spacer(Modifier.height(headingGap))
+            }
+            Column(Modifier.fillMaxWidth()) {
+                if (!scrollHeading) heading()
                 Column(
-                    if (scrollWholePanel) Modifier
-                    else
-                        Modifier.weight(1f, fill = false)
-                            .updateFocusOutline(RectangleShape, MaterialTheme.colorScheme.onSurface)
-                            .verticalScroll(scroll)
-                            .focusable(scroll.canScrollForward || scroll.canScrollBackward),
+                    Modifier.fillMaxWidth().weight(1f, fill = false).keyboardReadingScroll(scroll),
                 ) {
+                    if (scrollHeading) heading()
                     UpdateCopy(
                         stringResource(R.string.updates_installed, state.installedVersion),
                         muted = true,
@@ -446,7 +458,7 @@ private fun UpdateSheet(
                             )
                         }
                         UpdateProblemText(
-                            requiresNewerAndroid,
+                            R.string.updates_android_unsupported.takeIf { requiresNewerAndroid },
                             problemMessage,
                             revealResult = revealResult,
                         )
@@ -572,7 +584,7 @@ private fun RequiredUpdateContent(
             maxHeight < brandHeight + groupSpacing + titleHeight + titleGap + bodyLineHeight
         Column(
             Modifier.fillMaxWidth()
-                .then(if (scrollHeading) Modifier.verticalScroll(pageScroll) else Modifier),
+                .then(if (scrollHeading) Modifier.keyboardReadingScroll(pageScroll) else Modifier),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             EntryBrand(compact)
@@ -586,24 +598,27 @@ private fun RequiredUpdateContent(
             Spacer(Modifier.height(titleGap))
             val details = Modifier.fillMaxWidth()
             Column(
-                if (scrollHeading) details else details.weight(1f).verticalScroll(detailsScroll),
+                if (scrollHeading) details
+                else details.weight(1f).keyboardReadingScroll(detailsScroll),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 val requiresNewerAndroid = state.requiresNewerAndroid
                 UpdateProblemText(
-                    requiresNewerAndroid,
+                    R.string.updates_newer_android_required.takeIf { requiresNewerAndroid },
                     state.updateProblemMessage(requiresNewerAndroid),
                     Modifier.padding(bottom = 8.dp),
+                    revealResult = !scrollHeading,
                     textAlign = TextAlign.Center,
                 )
-                if (!requiresNewerAndroid) {
-                    Text(
-                        stringResource(R.string.updates_required_description),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = bodyStyle,
-                        textAlign = TextAlign.Center,
-                    )
-                }
+                Text(
+                    stringResource(
+                        if (requiresNewerAndroid) R.string.updates_required_incompatible_description
+                        else R.string.updates_required_description,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = bodyStyle,
+                    textAlign = TextAlign.Center,
+                )
                 Spacer(Modifier.height(if (shortTitle) 12.dp else 16.dp))
                 FlowRow(
                     horizontalArrangement =
@@ -614,7 +629,7 @@ private fun RequiredUpdateContent(
                         stringResource(R.string.updates_installed, state.installedVersion),
                         muted = true,
                     )
-                    state.displayedRelease?.let { UpdateMetadata(it) }
+                    state.offeredRelease?.let { UpdateMetadata(it) }
                 }
             }
         }
@@ -662,22 +677,21 @@ private fun UpdateUiState.updateProblemMessage(requiresNewerAndroid: Boolean): I
 
 @Composable
 private fun UpdateProblemText(
-    requiresNewerAndroid: Boolean,
+    @StringRes incompatibility: Int?,
     @StringRes message: Int?,
     modifier: Modifier = Modifier,
     revealResult: Boolean = false,
     textAlign: TextAlign = TextAlign.Unspecified,
 ) {
-    if (requiresNewerAndroid) {
-        val unsupported = R.string.updates_android_unsupported
+    if (incompatibility != null) {
         Text(
-            stringResource(unsupported),
+            stringResource(incompatibility),
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
             textAlign = textAlign,
             modifier =
                 modifier
-                    .revealUpdateResult(unsupported, revealResult && message == null)
+                    .revealUpdateResult(incompatibility, revealResult && message == null)
                     .semantics {
                         liveRegion = LiveRegionMode.Polite
                     },
@@ -997,10 +1011,14 @@ internal fun Modifier.updateFocusOutline(
     color: Color,
     keyboardOnly: Boolean = false,
     outlineInset: Dp = 2.dp,
+    includeDescendantFocus: Boolean = false,
 ): Modifier {
     val focused = remember { mutableStateOf(false) }
     val showOutline = !keyboardOnly || LocalInputModeManager.current.inputMode == InputMode.Keyboard
-    return onFocusChanged { focused.value = it.isFocused }
+    return onFocusChanged {
+        // The scroll container has a non-focusable target above its keyboard stop.
+        focused.value = if (includeDescendantFocus) it.hasFocus else it.isFocused
+    }
         .drawWithContent {
             drawContent()
             if (focused.value && showOutline) {

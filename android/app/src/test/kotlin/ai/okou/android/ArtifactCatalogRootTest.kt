@@ -236,38 +236,90 @@ class ArtifactWorkflowResourcesApplication : ChatListApplication() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     @Test
+    fun uncachedFiltersStartTheirOwnSkeletonDelay() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val release = CountDownLatch(1)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/artifacts/catalog") release.await()
+            respond(request)
+        }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        val skeletons = compose.onAllNodes(hasTestTag("artifact_row_skeleton"))
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            compose.mainClock.advanceTimeByFrame()
+            compose.mainClock.advanceTimeBy(144)
+            assertTrue(skeletons.fetchSemanticsNodes().isEmpty())
+
+            compose.onNodeWithText("Images").performClick()
+            compose.mainClock.advanceTimeByFrame()
+            compose.mainClock.advanceTimeBy(144)
+            assertTrue(skeletons.fetchSemanticsNodes().isEmpty())
+            compose.mainClock.advanceTimeBy(144)
+            assertTrue(skeletons.fetchSemanticsNodes().isNotEmpty())
+
+            compose.onNodeWithText("Videos").performClick()
+            compose.mainClock.advanceTimeByFrame()
+            assertTrue(skeletons.fetchSemanticsNodes().isEmpty())
+            compose.mainClock.advanceTimeBy(288)
+            assertTrue(skeletons.fetchSemanticsNodes().isNotEmpty())
+        } finally {
+            release.countDown()
+            compose.mainClock.autoAdvance = true
+        }
+        awaitText("No artifacts of this type")
+        assertTrue(skeletons.fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
     fun firstCatalogReadRespectsRetryAfterAndReportsExhaustedRetries() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         val release = CountDownLatch(1)
+        val releaseRetry = CountDownLatch(1)
         val attempts = CopyOnWriteArrayList<Long>()
         val respond = app.fixture.commandResponse
         app.fixture.commandResponse = { request ->
             if (request.requestUrl?.encodedPath == "/api/artifacts/catalog") {
                 attempts.add(SystemClock.uptimeMillis())
-                if (attempts.size == 1) {
-                    release.await()
-                    MockResponse().setResponseCode(503).setHeader("Retry-After", "4")
-                } else MockResponse().setResponseCode(503)
+                when (attempts.size) {
+                    1 -> {
+                        release.await()
+                        MockResponse().setResponseCode(503).setHeader("Retry-After", "4")
+                    }
+                    2 -> {
+                        releaseRetry.await()
+                        MockResponse().setResponseCode(503)
+                    }
+                    else -> MockResponse().setResponseCode(503)
+                }
             } else respond(request)
         }
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         val failureText = "Temporarily unable to load"
+        val mainLooper = shadowOf(Looper.getMainLooper())
+        val skeletons = compose.onAllNodes(hasTestTag("artifact_row_skeleton"))
         try {
             compose.onNodeWithContentDescription("Artifacts").performClick()
             compose.waitUntil(10_000) {
-                attempts.size == 1 &&
-                    compose
-                        .onAllNodes(hasTestTag("artifact_row_skeleton"))
-                        .fetchSemanticsNodes()
-                        .isNotEmpty()
+                attempts.size == 1 && skeletons.fetchSemanticsNodes().isNotEmpty()
             }
             compose.onNodeWithText(failureText).assertDoesNotExist()
+            release.countDown()
+            compose.waitUntil(10_000) {
+                mainLooper.idleFor(250, TimeUnit.MILLISECONDS)
+                assertTrue(skeletons.fetchSemanticsNodes().isNotEmpty())
+                attempts.size == 2
+            }
         } finally {
             release.countDown()
+            releaseRetry.countDown()
         }
-        val mainLooper = shadowOf(Looper.getMainLooper())
         compose.waitUntil(10_000) {
             mainLooper.idleFor(250, TimeUnit.MILLISECONDS)
             compose.onAllNodesWithText(failureText).fetchSemanticsNodes().isNotEmpty()
@@ -961,10 +1013,18 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             compose
                 .onNodeWithText(fixture.checklist.title, useUnmergedTree = true)
                 .getUnclippedBoundsInRoot()
-        val nextDay = compose.onNodeWithText("Yesterday").getUnclippedBoundsInRoot()
+        val today = compose.onNodeWithText("Today").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val nextDay =
+            compose.onNodeWithText("Yesterday").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val earlier =
+            compose.onNodeWithText("Earlier").assertIsDisplayed().getUnclippedBoundsInRoot()
         assertTrue(first.height >= 80.dp)
         assertEquals(8.dp, title.top - first.top)
-        assertEquals(16.dp, nextDay.top - first.bottom)
+        assertEquals(4.dp, first.top - today.bottom)
+        assertEquals(8.dp, nextDay.top - first.bottom)
+        assertEquals(first.left, today.left)
+        assertEquals(first.left, nextDay.left)
+        assertEquals(first.left, earlier.left)
     }
 
     @Test
@@ -1037,7 +1097,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         val titleStyle = previewTitleLayouts.single().layoutInput.style
         assertEquals(22.sp, titleStyle.fontSize)
         assertEquals(28.sp, titleStyle.lineHeight)
-        assertEquals(FontWeight.SemiBold, titleStyle.fontWeight)
+        assertEquals(FontWeight.Normal, titleStyle.fontWeight)
         compose.onNodeWithText("Save file").assertDoesNotExist()
         compose
             .onNodeWithText("View source conversation")
@@ -1626,15 +1686,35 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     @Test
-    fun uncachedDocumentResolvesItsAccessBeforeDisplayingContent() {
+    fun uncachedDocumentKeepsTheSharedDelayBeforeShowingItsPlaceholder() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
+        val releaseDocument = CountDownLatch(1)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/artifact-bytes/summary") {
+                check(releaseDocument.await(10, TimeUnit.SECONDS))
+            }
+            respond(request)
+        }
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         compose.onNodeWithContentDescription("Artifacts").performClick()
         awaitText(fixture.summary.title)
-        compose.onNodeWithText(fixture.summary.title).performClick()
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithText(fixture.summary.title).performClick()
+            val placeholder = compose.onNodeWithTag("artifact_preview_loading")
+            compose.mainClock.advanceTimeBy(160)
+            placeholder.assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(160)
+            placeholder.assertIsDisplayed()
+        } finally {
+            releaseDocument.countDown()
+            compose.mainClock.autoAdvance = true
+        }
         awaitText("Positioning: help teams move ongoing work forward", partial = true)
+        compose.onNodeWithTag("artifact_preview_loading").assertDoesNotExist()
         assertTrue(fixture.requestedReferences.isNotEmpty())
     }
 

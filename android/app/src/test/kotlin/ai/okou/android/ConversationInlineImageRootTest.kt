@@ -34,10 +34,61 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w1180dp-h1000dp", application = ChatListApplication::class)
 internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture() {
+    @Test
+    fun authorizedPlaceholderKeepsItsBoundsAndShowsNoFallbackBeforeDecoding() {
+        val fixture = InlineImageFixture(app.fixture)
+        val decode = CountDownLatch(1)
+        fixture.beforeReadyThumbnail = { check(decode.await(10, TimeUnit.SECONDS)) }
+        fixture.install(earlier = false)
+        val image = hasContentDescription(fixture.readyAlt)
+        val loading =
+            image and
+                hasClickAction() and
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Loading image…")
+        val followingText = compose.onNodeWithText("The release is ready for review.")
+        val (frame, textBounds) =
+            try {
+                openConversation()
+                compose.waitUntilExactlyOneExists(loading, 8_000)
+                compose.onNodeWithText("View original", useUnmergedTree = true).assertDoesNotExist()
+                compose.onNode(loading).getUnclippedBoundsInRoot() to
+                    followingText.getUnclippedBoundsInRoot()
+            } finally {
+                decode.countDown()
+            }
+        val loaded = image and SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
+        compose.waitUntilExactlyOneExists(loaded, 8_000)
+        assertEquals(frame, compose.onNode(loaded).getUnclippedBoundsInRoot())
+        assertEquals(textBounds, followingText.getUnclippedBoundsInRoot())
+        compose.onNodeWithText("View original", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun failedThumbnailDecodeShowsTheOriginalActionInsideTheSameFrame() {
+        val fixture = InlineImageFixture(app.fixture)
+        fixture.invalidReadyThumbnail = true
+        fixture.install(earlier = false)
+        openConversation()
+        val fallback =
+            hasContentDescription(fixture.readyAlt) and
+                hasClickAction() and
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "No thumbnail")
+        compose.waitUntilExactlyOneExists(fallback, 8_000)
+        val frame = compose.onNode(fallback).getUnclippedBoundsInRoot()
+        assertEquals(240.dp, frame.width)
+        assertEquals(216.dp, frame.height)
+        compose.onNodeWithText("View original", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNode(fallback).performClick()
+        awaitText(fixture.filename)
+        compose.waitUntil(8_000) { fixture.originals.isNotEmpty() }
+    }
+
     @Test
     fun copiesAuthorizedImagesAndTableCellsInReadingOrder() {
         val fixture = InlineImageFixture(app.fixture)

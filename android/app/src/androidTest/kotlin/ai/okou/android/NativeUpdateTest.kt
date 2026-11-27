@@ -226,7 +226,16 @@ class NativeUpdateTest {
                 )
             }
             fun captureState(name: String) = captureUpdate(device, name)
-            fun withShortWindowAndLargeText(width: Int, block: () -> Unit) {
+            fun focusReadingRegion() {
+                val reader = By.pkg(app.packageName).scrollable(true).focused(true)
+                repeat(3) {
+                    if (device.hasObject(reader)) return
+                    assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
+                    if (device.wait(Until.hasObject(reader), 1_000)) return
+                }
+                assertNotNull(find(reader))
+            }
+            fun withShortWindowAndLargeText(width: Int, height: Int = 850, block: () -> Unit) {
                 val originalSize =
                     device
                         .executeShellCommand("wm size")
@@ -234,13 +243,13 @@ class NativeUpdateTest {
                         .trim()
                 val fontScale = device.executeShellCommand("settings get system font_scale").trim()
                 try {
-                    device.executeShellCommand("wm size ${width}x850")
+                    device.executeShellCommand("wm size ${width}x${height}")
                     device.executeShellCommand("settings put system font_scale 2.0")
                     val resized =
                         object : Condition<UiDevice, Boolean> {
                             override fun apply(device: UiDevice) =
                                 device.displayWidth == width &&
-                                    device.displayHeight == 850 &&
+                                    device.displayHeight == height &&
                                     app.resources.configuration.fontScale >= 2f
                         }
                     assertTrue(device.wait(resized, 10_000) == true)
@@ -539,6 +548,19 @@ class NativeUpdateTest {
                 exists(R.string.updates_retry_download)
                 captureState("details-short-retry-waiting")
             }
+            withShortWindowAndLargeText(width = 1000, height = 620) {
+                val retry =
+                    By.pkg(app.packageName).text(app.getString(R.string.updates_retry_download))
+                val footer = button(close).visibleBounds to button(retry).visibleBounds
+                val minimumHeight = (48 * density).roundToInt() - 1
+                assertTrue(footer.first.height() >= minimumHeight)
+                assertTrue(footer.second.height() >= minimumHeight)
+                focusReadingRegion()
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_UP))
+                captureState("details-extreme-short")
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_PAGE_DOWN))
+                assertEquals(footer, button(close).visibleBounds to button(retry).visibleBounds)
+            }
             click(R.string.updates_retry_download)
             assertNotNull(text(progressLabel))
             click(R.string.updates_close)
@@ -553,7 +575,7 @@ class NativeUpdateTest {
             download.get().complete(file)
             exists(R.string.updates_open_settings)
             captureState("install-permission")
-            withShortWindowAndLargeText(width = 1000) {
+            withShortWindowAndLargeText(width = 1000, height = 900) {
                 exists(R.string.updates_allow_install)
                 val minTouchHeight = (48 * density).roundToInt() - 1
                 for (label in listOf(R.string.updates_later, R.string.updates_open_settings)) {
@@ -563,6 +585,7 @@ class NativeUpdateTest {
                         action.visibleBounds.height() >= minTouchHeight,
                     )
                 }
+                focusReadingRegion()
                 captureState("install-permission-short")
             }
             click(R.string.updates_later)
@@ -591,22 +614,50 @@ class NativeUpdateTest {
 
             val activeLocale = app.resources.configuration.locales.toLanguageTags()
             download.set(CompletableDeferred())
-            candidate.set(release.copy(version = "99.1.0", minimumSdk = 36))
+            val belowMinimum = release.copy(minimumSdk = 36)
+            candidate.set(belowMinimum)
             owner.requireUpdate(RequiredUpdate("99.1.0"))
+            val checkVersions =
+                By.pkg(app.packageName).text(app.getString(R.string.updates_check_compatible))
+            assertTrue(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice): Boolean =
+                            owner.state.value.let {
+                                it.required &&
+                                    it.check == UpdateCheck.Checked &&
+                                    it.candidate == belowMinimum
+                            }
+                    },
+                    10_000,
+                ) == true,
+            )
+            exists(R.string.updates_unavailable)
+            assertFalse(device.hasObject(By.pkg(app.packageName).text(updateTarget)))
+            assertFalse(
+                device.hasObject(
+                    By.pkg(app.packageName)
+                        .text(app.getString(R.string.updates_required_incompatible)),
+                ),
+            )
+            val checkVersionsBounds = button(checkVersions).visibleBounds
+            captureState("required-no-eligible-version")
+            candidate.set(release.copy(version = "99.1.0", minimumSdk = 36))
+            button(checkVersions).click()
             exists(R.string.updates_required_incompatible)
-            exists(R.string.updates_android_unsupported)
+            exists(R.string.updates_newer_android_required)
+            exists(R.string.updates_required_incompatible_description)
+            assertNotNull(text(app.getString(R.string.updates_version, "99.1.0")))
+            assertEquals(checkVersionsBounds, button(checkVersions).visibleBounds)
             captureState("required-incompatible")
             withShortWindowAndLargeText(width = 1000) {
                 exists(R.string.updates_required_incompatible_short)
-                val checkVersions =
-                    button(
-                        By.pkg(app.packageName)
-                            .text(app.getString(R.string.updates_check_compatible)),
-                    )
-                assertTrue(checkVersions.visibleBounds.height() >= (48 * density).roundToInt() - 1)
+                val action = button(checkVersions)
+                assertTrue(action.visibleBounds.height() >= (48 * density).roundToInt() - 1)
+                focusReadingRegion()
                 captureState("required-incompatible-short")
                 candidate.set(release.copy(version = "99.1.0"))
-                checkVersions.click()
+                action.click()
                 exists(R.string.updates_download)
             }
             exists(R.string.updates_required)

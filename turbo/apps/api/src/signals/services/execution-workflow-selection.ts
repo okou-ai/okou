@@ -17,20 +17,13 @@ import type {
   ExecutionPackageSources,
 } from "./execution-package-sources";
 import type { OfficialWorkflowObservation } from "./official-workflow-run.service";
-import {
-  resolveRunSkillVolumes,
-  type SkillVolume,
-} from "./run-prompt-and-skills";
-import { normalizeMountOverlay } from "./storage-mount-overlay";
+import type { NamedSkillBundle } from "./run-prompt-and-skills";
 import type { ThreadAutomationTarget } from "./thread-automation-context.service";
 
 const log = logger("api:execution-workflows");
 
 export interface CapturedExecutionPackages {
-  readonly workflows: readonly {
-    readonly name: string;
-    readonly contentBundle: ContentBundle;
-  }[];
+  readonly workflows: readonly NamedSkillBundle[];
   readonly instructionsBundle: ContentBundle;
 }
 
@@ -69,8 +62,7 @@ export function resolveOrdinaryAutomationWorkflowName(
 export function selectExecutionPackages(
   sources: ExecutionPackageSources | null,
   input: {
-    readonly skillRoot: string;
-    readonly protectedMountPaths: readonly string[];
+    readonly officialWorkflowNames: readonly string[];
     readonly ordinaryAutomation: Pick<
       ThreadAutomationTarget,
       "ordinaryWorkflowName"
@@ -80,10 +72,7 @@ export function selectExecutionPackages(
   if (!sources) {
     return { error: "Run package source authorization is unavailable" };
   }
-  const protectedPaths = new Set(input.protectedMountPaths);
-  const isProtected = (name: string) => {
-    return protectedPaths.has(`${input.skillRoot}/${name}`);
-  };
+  const officialNames = new Set(input.officialWorkflowNames);
   const requiredWorkflow = input.ordinaryAutomation?.ordinaryWorkflowName;
   const instructionsBundle = contentBundleSchema.safeParse(
     sources.memberInstructions,
@@ -94,7 +83,7 @@ export function selectExecutionPackages(
   const selectedWorkflows: CapturedExecutionPackages["workflows"][number][] =
     [];
   for (const workflow of sources.workflows) {
-    if (isProtected(workflow.name)) {
+    if (officialNames.has(workflow.name)) {
       continue;
     }
     const contentBundle = contentBundleSchema.safeParse(workflow.contentBundle);
@@ -123,8 +112,7 @@ export function selectExecutionPackages(
   };
 }
 
-// Workflow packages mount under the skills root. Each framework reserves a
-// separate Memory destination and applies it after the package mounts.
+// Workflow, Skill and Memory paths are recorded for Run diagnostics.
 const frameworkMountPaths = {
   "claude-code": {
     skillRoot: `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`,
@@ -148,53 +136,42 @@ const frameworkMountPaths = {
 
 export function prepareRunPackageMounts(args: {
   readonly framework: keyof typeof frameworkMountPaths;
-  readonly skillVolumes: readonly SkillVolume[];
+  readonly sources: {
+    readonly customConnectorSkills: readonly NamedSkillBundle[];
+    readonly systemSkills: readonly NamedSkillBundle[];
+    readonly builtinConnectorSkills: readonly NamedSkillBundle[];
+    readonly templateGuidanceBundles: ExecutionPackageMounts["templateGuidanceBundles"];
+  };
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
 }) {
   const { skillRoot, memoryMountPath } = frameworkMountPaths[args.framework];
-  const packageMounts = normalizeMountOverlay(
-    resolveRunSkillVolumes(args.skillVolumes, skillRoot),
-  ).filter(({ mountPath }) => {
-    return mountPath !== memoryMountPath;
-  });
+  const { sources } = args;
+  const seedSkills = new Map<string, NamedSkillBundle>();
+  // Built-in connector Skills win over system Skills, then custom connector
+  // Skills. Reinsert a winner to keep its position in the source order.
+  for (const group of [
+    sources.customConnectorSkills,
+    sources.systemSkills,
+    sources.builtinConnectorSkills,
+  ]) {
+    for (const bundle of group) {
+      seedSkills.delete(bundle.name);
+      seedSkills.set(bundle.name, bundle);
+    }
+  }
+  const describeMount = ({ name, contentBundle }: NamedSkillBundle) => {
+    return {
+      name,
+      mount: { ...contentBundle, mountPath: `${skillRoot}/${name}` },
+    };
+  };
   return {
-    skillRoot,
     memoryMountPath,
-    protectedMountPaths: packageMounts.flatMap((mount) => {
-      return "templateGuidanceBundle" in mount ? [mount.mountPath] : [];
-    }),
     mounts: {
       officialWorkflowBundles:
-        args.officialWorkflow?.definitions.map(({ name, contentBundle }) => {
-          return {
-            name,
-            mount: { ...contentBundle, mountPath: `${skillRoot}/${name}` },
-          };
-        }) ?? [],
-      seedSkillBundles: packageMounts.flatMap((mount) => {
-        return "contentBundle" in mount
-          ? [
-              {
-                name: mount.skillName,
-                mount: { ...mount.contentBundle, mountPath: mount.mountPath },
-              },
-            ]
-          : [];
-      }),
-      templateGuidanceBundles: packageMounts.flatMap((mount, index) => {
-        if (!("templateGuidanceBundle" in mount)) {
-          return [];
-        }
-        const laterPaths = packageMounts.slice(index + 1).map((later) => {
-          return later.mountPath;
-        });
-        return [
-          {
-            ...mount.templateGuidanceBundle,
-            beforeMountPaths: [...laterPaths, memoryMountPath],
-          },
-        ];
-      }),
+        args.officialWorkflow?.definitions.map(describeMount) ?? [],
+      seedSkillBundles: [...seedSkills.values()].map(describeMount),
+      templateGuidanceBundles: sources.templateGuidanceBundles,
     } satisfies ExecutionPackageMounts,
   };
 }

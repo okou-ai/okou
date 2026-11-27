@@ -18,22 +18,30 @@ internal fun contentReadStaleDelayMillis(confirmedAt: Long, nowMillis: Long): Lo
 internal fun rememberContentReadSkeleton(
     hasContent: Boolean = false,
     awaitingRead: Boolean = true,
+    readScope: Any? = null,
 ): Boolean =
     rememberContentReadFeedbackAfter(
         ContentReadFeedbackDelayMillis.takeIf { awaitingRead && !hasContent },
+        readScope,
     )
 
 /**
- * A null delay hides feedback, zero shows it immediately, and a positive delay can be cancelled.
+ * A null delay ends the round. Scheduled work can defer the timer while keeping visible feedback.
  */
 @Composable
-internal fun rememberContentReadFeedbackAfter(delayMillis: Long?): Boolean {
+internal fun rememberContentReadFeedbackAfter(
+    delayMillis: Long?,
+    readScope: Any? = null,
+    start: Boolean = true,
+): Boolean {
     if (delayMillis == null) return false
     if (delayMillis == 0L) return true
-    var visible by remember(delayMillis) { mutableStateOf(false) }
-    LaunchedEffect(delayMillis) {
-        delay(delayMillis)
-        visible = true
+    var visible by remember(readScope, delayMillis) { mutableStateOf(false) }
+    if (start && !visible) {
+        LaunchedEffect(readScope, delayMillis) {
+            delay(delayMillis)
+            visible = true
+        }
     }
     return visible
 }

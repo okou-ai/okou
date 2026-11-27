@@ -4,6 +4,12 @@ import { getModelRunOptions } from "../model-run-options";
 
 describe("model run options", () => {
   it("keeps each subscription model's Fast usage multiplier", () => {
+    expect(getModelRunOptions("gpt-6.2-astra").fast).toStrictEqual({
+      chatGptUsageMultiplier: 2.5,
+    });
+    expect(getModelRunOptions("gpt-6.2-sol").fast).toStrictEqual({
+      chatGptUsageMultiplier: 2.5,
+    });
     expect(getModelRunOptions("gpt-6-astra").fast).toStrictEqual({
       chatGptUsageMultiplier: 2.5,
     });

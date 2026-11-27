@@ -153,7 +153,7 @@ def signal_and_observe_exit(pid, signum):
     finally:
         os.close(pidfd)
 
-for outcome in ["interrupt", "worker-exit", "sentinel-exit", "victim-before-group"]:
+for outcome in ["interrupt", "interrupt-inherited-ignored", "worker-exit", "sentinel-exit", "victim-before-group"]:
     with tempfile.TemporaryDirectory() as directory:
         marker = pathlib.Path(directory) / "resident.cgroup"
         armed = pathlib.Path(directory) / "armed.cgroup"
@@ -175,6 +175,9 @@ if "VM0_TEST_SENTINEL_PID" in os.environ:
     pathlib.Path(os.environ["VM0_TEST_SENTINEL_PID"]).write_text(str(sentinel.pid))
 exec(os.environ['VM0_TEST_TOOL_OOM_PROGRAM'])
 '''
+        if outcome == "interrupt-inherited-ignored":
+            # Configure only this disposable child before entering the controller.
+            wrapper = "import signal\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\n" + wrapper
         controller = subprocess.Popen(["python3", "-u", "-c", wrapper], env=environment,
             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE, start_new_session=True)
@@ -203,7 +206,7 @@ exec(os.environ['VM0_TEST_TOOL_OOM_PROGRAM'])
                     if line.startswith("Private_Dirty:"))
                 assert private_dirty >= 1024 * 1024, private_dirty
             handoff = None
-            if outcome == "interrupt":
+            if outcome in ["interrupt", "interrupt-inherited-ignored"]:
                 signal_and_observe_exit(controller.pid, signal.SIGINT)
             elif outcome == "victim-before-group":
                 controller.stdin.write(b"I")

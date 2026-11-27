@@ -1,6 +1,5 @@
 import { command } from "ccstate";
 import type { Element, Root } from "hast";
-import { SKIP, visit } from "unist-util-visit";
 
 import type { AttachmentPreviewSignals } from "../attachment-resource-url.ts";
 import type {
@@ -47,32 +46,38 @@ export const embedMarkdownArtifacts$ = command(
     threadId: string,
     eventId: string,
   ) => {
-    visit(tree, "element", (node) => {
-      if (node.data?.card) {
-        return SKIP;
-      }
-      if (node.tagName === "video") {
-        const poster = artifactDescriptor(node.properties.poster);
-        if (poster) {
-          node.data = {
-            ...node.data,
-            videoPosterPreview: set(registry.register$, poster),
+    const visitNode = (node: Root | Element, insideLink: boolean): void => {
+      for (const child of node.children) {
+        if (child.type !== "element" || child.data?.card) {
+          continue;
+        }
+        if (child.tagName === "video") {
+          const poster = artifactDescriptor(child.properties.poster);
+          if (poster) {
+            child.data = {
+              ...child.data,
+              videoPosterPreview: set(registry.register$, poster),
+            };
+          }
+        }
+        const descriptor = markdownArtifact(child);
+        if (descriptor) {
+          child.data = {
+            ...child.data,
+            card: {
+              kind: "artifact",
+              signals: set(registry.register$, descriptor),
+              threadId,
+              eventId,
+            },
+            ...(child.tagName === "img" && insideLink
+              ? { imageInsideLink: true }
+              : undefined),
           };
         }
+        visitNode(child, insideLink || child.tagName === "a");
       }
-      const descriptor = markdownArtifact(node);
-      if (descriptor) {
-        node.data = {
-          ...node.data,
-          card: {
-            kind: "artifact",
-            signals: set(registry.register$, descriptor),
-            threadId,
-            eventId,
-          },
-        };
-      }
-      return undefined;
-    });
+    };
+    visitNode(tree, false);
   },
 );

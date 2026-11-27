@@ -231,13 +231,14 @@ test("The enabled Library defaults to the All category in grid view and supports
     "dateTime",
     "2026-01-01T00:00:00Z",
   );
+  expect(
+    getButtonByName("Preview launch-image.png", rowFor("launch-image.png")),
+  ).toHaveTextContent(/^launch-image\.png$/);
   const imageCells = queryAllByRoleFast("cell", rowFor("launch-image.png"));
-  for (const cell of [imageCells[0], imageCells[1]]) {
-    expect(cell?.querySelector("time")).toHaveAttribute(
-      "dateTime",
-      "2026-02-01T00:00:00Z",
-    );
-  }
+  expect(imageCells[1]?.querySelector("time")).toHaveAttribute(
+    "dateTime",
+    "2026-02-01T00:00:00Z",
+  );
 
   expect(
     screen.getByRole("navigation", { name: "Sidebar" }),

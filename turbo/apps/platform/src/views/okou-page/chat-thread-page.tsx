@@ -6556,11 +6556,7 @@ function PagedUserGroup({
             ? rendersUserBubble(previousEvent)
             : stackFirstOnPrevious);
         return (
-          <div
-            key={chatEventRenderKey(event)}
-            className="contents"
-            data-chat-group-id={group.beginEventId}
-          >
+          <div key={chatEventRenderKey(event)} className="contents">
             {dateDivider ? (
               <ChatThreadDateDivider divider={dateDivider} />
             ) : null}
@@ -8218,7 +8214,6 @@ function PagedAssistantGroup({
   return (
     <div
       id={groupElementId}
-      data-chat-group-id={group.beginEventId}
       ref={turnOnRef}
       data-role="assistant"
       data-chat-run-id={runId}

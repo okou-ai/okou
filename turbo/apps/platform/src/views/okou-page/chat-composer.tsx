@@ -16,6 +16,7 @@ import { DocumentTemplatePreviewPage } from "./document-template-preview-page.ts
 
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import {
+  composerVoiceMessagesEnabled$,
   composerVoiceQuota$,
   type ComposerVoiceInputStatus,
 } from "../../signals/okou-page/composer-voice-input.ts";
@@ -91,7 +92,9 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import {
   AlertTriangle,
   ArrowUp,
+  AudioLines,
   Bolt,
+  Check,
   Download,
   Globe,
   Image as ImageIcon,
@@ -2486,27 +2489,239 @@ function formatVoiceRecordingDuration(elapsedTime: number): string {
 const VOICE_DRAFT_TRAY_CLASS =
   "min-h-12 rounded-xl bg-neutral-50 px-3 py-2 dark:bg-neutral-900";
 
+function VoiceDraftActionButtons({
+  voiceDisabled,
+  textDisabled,
+  onVoice,
+  onText,
+}: {
+  voiceDisabled: boolean;
+  textDisabled: boolean;
+  onVoice: () => void;
+  onText: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <TooltipProvider delay={300}>
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-1.5 bg-background"
+                disabled={voiceDisabled}
+                onClick={onVoice}
+              >
+                <AudioLines size={14} aria-hidden="true" />
+                <span>
+                  {t(($) => {
+                    return $.chat.voice.voiceOption;
+                  })}
+                </span>
+              </Button>
+            }
+          />
+          <TooltipContent role="tooltip" side="top">
+            {t(($) => {
+              return $.chat.voice.insertVoiceRecording;
+            })}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                className="shrink-0 gap-1.5"
+                data-composer-voice-toggle
+                aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
+                disabled={textDisabled}
+                onClick={onText}
+              >
+                <Check size={14} aria-hidden="true" />
+                <span>
+                  {t(($) => {
+                    return $.chat.voice.textOption;
+                  })}
+                </span>
+              </Button>
+            }
+          />
+          <TooltipContent
+            role="tooltip"
+            side="top"
+            className="flex flex-col items-center gap-1 py-1.5"
+          >
+            <span>
+              {t(($) => {
+                return $.chat.voice.transcribeToText;
+              })}
+            </span>
+            <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
+              {getShortcutLabel(COMPOSER_VOICE_INPUT_SHORTCUT)}
+            </kbd>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    </TooltipProvider>
+  );
+}
+
+function VoiceDraftRecordedTray({
+  recordingAvailable,
+  voiceMessagesEnabled,
+  voiceMessage,
+  textActionFailed,
+  onDiscard,
+  onFinishVoice,
+  onFinishText,
+  onFinishDefault,
+}: {
+  recordingAvailable: boolean;
+  voiceMessagesEnabled: boolean;
+  voiceMessage: string | undefined;
+  textActionFailed: boolean;
+  onDiscard: () => void;
+  onFinishVoice: () => void;
+  onFinishText: () => void;
+  onFinishDefault: () => void;
+}) {
+  const { t } = useTranslation();
+  const textDisabled =
+    !recordingAvailable || textActionFailed || voiceMessage !== undefined;
+  return (
+    <div
+      className={cn("flex w-full items-center gap-3", VOICE_DRAFT_TRAY_CLASS)}
+      data-composer-voice-tray
+    >
+      <span
+        role="status"
+        className="min-w-0 flex-1 text-sm text-muted-foreground"
+      >
+        {voiceMessage ??
+          (recordingAvailable
+            ? t(($) => {
+                return $.chat.voice.recordingSaved;
+              })
+            : t(($) => {
+                return $.chat.voice.restoreFailed;
+              }))}
+      </span>
+      {recordingAvailable && (
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-sm"
+          aria-label={t(($) => {
+            return $.chat.voice.removeDraft;
+          })}
+          onClick={onDiscard}
+        >
+          <Trash2 size={16} />
+        </Button>
+      )}
+      {voiceMessagesEnabled ? (
+        <VoiceDraftActionButtons
+          voiceDisabled={!recordingAvailable}
+          textDisabled={textDisabled}
+          onVoice={onFinishVoice}
+          onText={onFinishText}
+        />
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="min-w-14 shrink-0 bg-background"
+          data-composer-voice-toggle
+          disabled={textDisabled}
+          onClick={onFinishDefault}
+        >
+          {t(($) => {
+            return $.chat.voice.useRecording;
+          })}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function VoiceDraftProcessingTray({
+  isDiscarding,
+  isUploading,
+}: {
+  isDiscarding: boolean;
+  isUploading: boolean;
+}) {
+  const { t } = useTranslation();
+  const statusText = isDiscarding
+    ? t(($) => {
+        return $.chat.voice.discarding;
+      })
+    : isUploading
+      ? t(($) => {
+          return $.chat.voice.uploadingRecording;
+        })
+      : t(($) => {
+          return $.chat.voice.transcribing;
+        });
+  const outcomeText =
+    isDiscarding || isUploading
+      ? null
+      : t(($) => {
+          return $.chat.voice.textTakingShape;
+        });
+  return (
+    <div
+      className={cn(
+        "flex w-full items-center justify-between gap-3 text-sm",
+        VOICE_DRAFT_TRAY_CLASS,
+      )}
+      role="status"
+      data-composer-voice-tray
+    >
+      <span className="flex min-w-0 items-center gap-2.5 font-medium text-foreground">
+        <Loader2
+          size={16}
+          className="shrink-0 animate-spin text-[#2E9E9F] motion-reduce:animate-none"
+        />
+        <span className="truncate">{statusText}</span>
+      </span>
+      {outcomeText ? (
+        <span className="min-w-0 shrink-0 truncate text-right text-xs text-muted-foreground">
+          {outcomeText}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function VoiceDraftFooter({
   signals,
   status: draftStatus,
   recordingAvailable,
-  asVoiceMessage,
   voiceMessage,
   children,
 }: {
   signals: ComposerSignals;
   status: ComposerVoiceInputStatus | undefined;
   recordingAvailable: boolean;
-  asVoiceMessage: boolean;
   voiceMessage: string | undefined;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   const capture = useGet(signals.voice.capture$);
+  const pendingAction = useGet(signals.voice.pendingAction$);
+  const voiceMessagesEnabled =
+    useLastResolved(composerVoiceMessagesEnabled$) ?? false;
   const recording = capture !== null;
   const [operation, runVoice] = useLoadableSet(signals.voice.run$);
   const status = operation.state === "loading" ? "transcribing" : draftStatus;
-  const starting = false;
   const recordingStartedAt = capture?.startedAt ?? null;
 
   const voiceLevelSamples = useGet(signals.voice.voiceLevelSamples$);
@@ -2517,102 +2732,35 @@ function VoiceDraftFooter({
   }
   if (status === "recorded" || status === "failed") {
     return (
-      <div
-        className={cn("flex w-full items-center gap-3", VOICE_DRAFT_TRAY_CLASS)}
-        data-composer-voice-tray
-      >
-        <span
-          role="status"
-          className="min-w-0 flex-1 text-sm text-muted-foreground"
-        >
-          {voiceMessage ??
-            (recordingAvailable
-              ? t(($) => {
-                  return $.chat.voice.recordingSaved;
-                })
-              : t(($) => {
-                  return $.chat.voice.restoreFailed;
-                }))}
-        </span>
-        {recordingAvailable && (
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            aria-label={t(($) => {
-              return $.chat.voice.removeDraft;
-            })}
-            onClick={() => {
-              detach(runVoice("discard", signal), Reason.DomCallback);
-            }}
-          >
-            <Trash2 size={16} />
-          </Button>
-        )}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="min-w-14 shrink-0 bg-background"
-          data-composer-voice-toggle
-          disabled={
-            !recordingAvailable ||
-            (!asVoiceMessage && operation.state === "hasError") ||
-            voiceMessage !== undefined
-          }
-          onClick={() => {
-            detach(runVoice("finish", signal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return $.chat.voice.useRecording;
-          })}
-        </Button>
-      </div>
+      <VoiceDraftRecordedTray
+        recordingAvailable={recordingAvailable}
+        voiceMessagesEnabled={voiceMessagesEnabled}
+        voiceMessage={voiceMessage}
+        textActionFailed={
+          operation.state === "hasError" && pendingAction === "transcribing"
+        }
+        onDiscard={() => {
+          detach(runVoice("discard", signal), Reason.DomCallback);
+        }}
+        onFinishVoice={() => {
+          detach(runVoice("finish-voice", signal), Reason.DomCallback);
+        }}
+        onFinishText={() => {
+          detach(runVoice("finish-text", signal), Reason.DomCallback);
+        }}
+        onFinishDefault={() => {
+          detach(runVoice("finish", signal), Reason.DomCallback);
+        }}
+      />
     );
   }
 
   if (status !== "recording") {
-    const statusText =
-      status === "discarding"
-        ? t(($) => {
-            return $.chat.voice.discarding;
-          })
-        : t(($) => {
-            return asVoiceMessage
-              ? $.chat.voice.uploadingRecording
-              : $.chat.voice.transcribing;
-          });
-    const outcomeText =
-      status === "discarding"
-        ? t(($) => {
-            return $.chat.voice.returningToComposer;
-          })
-        : t(($) => {
-            return asVoiceMessage
-              ? $.chat.voice.returningToComposer
-              : $.chat.voice.textTakingShape;
-          });
     return (
-      <div
-        className={cn(
-          "grid w-full grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 text-sm",
-          VOICE_DRAFT_TRAY_CLASS,
-        )}
-        role="status"
-        data-composer-voice-tray
-      >
-        <span className="flex min-w-0 items-center gap-2.5 font-medium text-foreground">
-          <Loader2
-            size={16}
-            className="shrink-0 animate-spin text-[#2E9E9F] motion-reduce:animate-none"
-          />
-          <span className="truncate">{statusText}</span>
-        </span>
-        <span className="min-w-0 max-w-full justify-self-end truncate text-right text-xs text-muted-foreground">
-          {outcomeText}
-        </span>
-      </div>
+      <VoiceDraftProcessingTray
+        isDiscarding={status === "discarding" || pendingAction === "discarding"}
+        isUploading={pendingAction === "uploading"}
+      />
     );
   }
 
@@ -2641,23 +2789,36 @@ function VoiceDraftFooter({
         </ElapsedTime>
       )}
       <VoiceLevelWaveform samples={voiceLevelSamples} />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="ml-auto min-w-14 shrink-0 bg-background"
-        aria-label={stopRecordingLabel}
-        data-composer-voice-toggle
-        aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
-        disabled={starting || !recording}
-        onClick={() => {
-          detach(runVoice("toggle", signal), Reason.DomCallback);
-        }}
-      >
-        {t(($) => {
-          return $.chat.voice.confirmRecording;
-        })}
-      </Button>
+      {voiceMessagesEnabled ? (
+        <VoiceDraftActionButtons
+          voiceDisabled={!recording}
+          textDisabled={!recording}
+          onVoice={() => {
+            detach(runVoice("finish-voice", signal), Reason.DomCallback);
+          }}
+          onText={() => {
+            detach(runVoice("finish-text", signal), Reason.DomCallback);
+          }}
+        />
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="ml-auto min-w-14 shrink-0 bg-background"
+          aria-label={stopRecordingLabel}
+          data-composer-voice-toggle
+          aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
+          disabled={!recording}
+          onClick={() => {
+            detach(runVoice("toggle", signal), Reason.DomCallback);
+          }}
+        >
+          {t(($) => {
+            return $.chat.voice.confirmRecording;
+          })}
+        </Button>
+      )}
     </div>
   );
 }
@@ -3926,7 +4087,6 @@ function ComposerFooter({
         signals={signals}
         status={status}
         recordingAvailable={Boolean(voiceDraft?.recording)}
-        asVoiceMessage={Boolean(voiceDraft?.recording?.asVoiceMessage)}
         voiceMessage={
           voiceDraftLoadable.state === "hasError"
             ? t(($) => {

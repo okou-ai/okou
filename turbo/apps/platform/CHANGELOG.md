@@ -13,6 +13,49 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1194.1](https://github.com/okou-ai/okou/compare/app-v0.1194.0...app-v0.1194.1) (2026-11-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.137.2
+    * @okouai/core bumped to 8.887.3
+    * @okouai/ui bumped to 1.22.42
+
+## [0.1194.0](https://github.com/okou-ai/okou/compare/app-v0.1193.3...app-v0.1194.0) (2026-11-27)
+
+
+### Features
+
+* **platform:** split composer voice finish into voice and text actions ([#51351](https://github.com/okou-ai/okou/issues/51351)) ([1ba0283](https://github.com/okou-ai/okou/commit/1ba02834e42d072d7385d97d57cb1c3a8fc780ec))
+
+
+### Bug Fixes
+
+* **platform:** align artifact library file metadata ([#51302](https://github.com/okou-ai/okou/issues/51302)) ([5115bac](https://github.com/okou-ai/okou/commit/5115baceb47b01c2448c092c1228d96ca3fb63de))
+* **platform:** tint share header select-all and cancel with brand color ([#51337](https://github.com/okou-ai/okou/issues/51337)) ([733f343](https://github.com/okou-ai/okou/commit/733f3432e6a104d6e5b5d440bbfafb233eb97644))
+
+## [0.1193.3](https://github.com/okou-ai/okou/compare/app-v0.1193.2...app-v0.1193.3) (2026-11-27)
+
+
+### Bug Fixes
+
+* **app:** balance for you card and feedback button corners ([#51287](https://github.com/okou-ai/okou/issues/51287)) ([5025add](https://github.com/okou-ai/okou/commit/5025add30cdbec4f0b46840086daa543273bb5d1))
+* **platform:** constrain the chat remote device menu ([#51304](https://github.com/okou-ai/okou/issues/51304)) ([68433fc](https://github.com/okou-ai/okou/commit/68433fcfd5ca85af3dc6f34d1ac7403762abb01e))
+* **platform:** hide for you card dismiss behind the simplified deck switch ([#51326](https://github.com/okou-ai/okou/issues/51326)) ([2a6ea55](https://github.com/okou-ai/okou/commit/2a6ea55e65fd027a425ddcdee4c1843cbe91779f))
+* **ui:** hide native search clear button and use styled clear on workflows ([#51295](https://github.com/okou-ai/okou/issues/51295)) ([377e1d8](https://github.com/okou-ai/okou/commit/377e1d8dbac509ec4b582fa867ed1d9f7eaffc17))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.137.1
+    * @okouai/core bumped to 8.887.2
+    * @okouai/ui bumped to 1.22.41
+
 ## [0.1193.2](https://github.com/okou-ai/okou/compare/app-v0.1193.1...app-v0.1193.2) (2026-11-27)
 
 

@@ -1,7 +1,10 @@
+import type { ReactNode } from "react";
+import { Collapsible } from "@base-ui/react/collapsible";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import {
   Check,
   Loader2,
+  ChevronDown,
   ExternalLink,
   Circle,
   CircleAlert,
@@ -22,7 +25,11 @@ import {
 import { useTranslation } from "react-i18next";
 import type { HostedSiteShareSession } from "../../signals/hosted-site-sharing.ts";
 import { DomainRecords } from "./hosted-site-domain-records.tsx";
-import type { DomainSetupStage } from "../../lib/hosted-site-domains.ts";
+import {
+  domainVerificationDeadline,
+  domainVerificationTimedOut,
+  hostedDomainProgress,
+} from "../../lib/hosted-site-domains.ts";
 
 import type { infer as zInfer } from "zod";
 import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
@@ -208,462 +215,435 @@ function DomainSetup({
     </div>
   );
 }
-function DomainRecordIssues({
-  domain,
-  name,
-}: {
-  readonly domain: Domain;
-  readonly name: "ownership" | "dns" | "provider" | "certificate" | "route";
-}) {
-  return domain.verification?.recordChecks
-    .filter((record) => {
-      const certificate = domain.verification?.validationRecords.some(
-        (item) => {
-          return (
-            item.type === record.type &&
-            item.name === record.name &&
-            item.value === record.value
-          );
-        },
-      );
-      const category = certificate
-        ? "certificate"
-        : record.type === "CNAME"
-          ? "dns"
-          : "ownership";
-      return (
-        category === name &&
-        domain.records.some((required) => {
-          return (
-            required.type === record.type &&
-            required.name === record.name &&
-            required.value === record.value
-          );
-        }) &&
-        record.status !== "passed" &&
-        record.status !== "not_checked"
-      );
-    })
-    .map((record) => {
-      return (
-        <p
-          key={`${record.type}-${record.name}-${record.value}`}
-          className="mt-2 break-words pl-5 leading-5"
-        >
-          <code className="break-all">{record.name}</code>
-          <span className="block">{record.message}</span>
-        </p>
-      );
-    });
+type IndicatorState = "active" | "complete" | "waiting" | "attention";
+
+function DomainIndicator({ state }: { readonly state: IndicatorState }) {
+  const { t } = useTranslation();
+  const label = {
+    active: t(($) => {
+      return $.artifacts.customDomain.checking;
+    }),
+    complete: t(($) => {
+      return $.artifacts.customDomain.checkPassed;
+    }),
+    waiting: t(($) => {
+      return $.artifacts.customDomain.checkPending;
+    }),
+    attention: t(($) => {
+      return $.artifacts.customDomain.checkFailed;
+    }),
+  }[state];
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      className="flex size-5 shrink-0 items-center justify-center"
+    >
+      {state === "active" ? (
+        <Loader2 size={15} className="motion-safe:animate-spin" aria-hidden />
+      ) : state === "complete" ? (
+        <Check size={15} className="text-green-600" aria-hidden />
+      ) : state === "attention" ? (
+        <CircleAlert size={15} className="text-destructive" aria-hidden />
+      ) : (
+        <Circle size={10} className="text-muted-foreground" aria-hidden />
+      )}
+    </span>
+  );
 }
-function DomainChecks({
-  domain,
-  verifying = false,
+
+function TimelineStep({
+  state,
+  children,
+  last,
 }: {
+  readonly state: IndicatorState;
+  readonly children: ReactNode;
+  readonly last?: boolean;
+}) {
+  return (
+    <li className="flex gap-2">
+      <div className="flex w-5 shrink-0 flex-col items-center">
+        <DomainIndicator state={state} />
+        {!last && <span aria-hidden className="my-1 w-px flex-1 bg-border" />}
+      </div>
+      <div className={cn("min-w-0 flex-1", !last && "pb-4")}>{children}</div>
+    </li>
+  );
+}
+
+function DomainDisclosure({
+  label,
+  children,
+  initiallyOpen = false,
+}: {
+  readonly label: string;
+  readonly children: ReactNode;
+  readonly initiallyOpen?: boolean;
+}) {
+  return (
+    <Collapsible.Root defaultOpen={initiallyOpen}>
+      <Collapsible.Trigger
+        render={<Button variant="quiet" size="sm" />}
+        className="group -my-1 -ml-2 flex w-full justify-between gap-2 text-left font-medium"
+      >
+        {label}
+        <ChevronDown
+          size={14}
+          aria-hidden
+          className="shrink-0 text-muted-foreground group-aria-expanded:rotate-180"
+        />
+      </Collapsible.Trigger>
+      <Collapsible.Panel className="pt-3">{children}</Collapsible.Panel>
+    </Collapsible.Root>
+  );
+}
+
+interface DomainStepProps {
+  readonly session: HostedSiteShareSession;
   readonly domain: Domain;
-  readonly verifying?: boolean;
+}
+type TimelineProps = DomainPanelProps &
+  DomainStepProps & { readonly configuration: DomainSettings };
+function DnsStep({
+  session,
+  domain,
+  verifying,
+  dnsConfigured,
+  certificateOnly,
+}: DomainStepProps & {
+  readonly verifying: boolean;
+  readonly dnsConfigured: boolean;
+  readonly certificateOnly: boolean;
 }) {
   const { t } = useTranslation();
+  const dnsState: IndicatorState = dnsConfigured
+    ? "complete"
+    : verifying
+      ? "active"
+      : domain.verification
+        ? "attention"
+        : "waiting";
+  const records = (
+    <DomainRecords session={session} domain={domain} records={domain.records} />
+  );
+  return (
+    <TimelineStep state={dnsState}>
+      {dnsConfigured ? (
+        <DomainDisclosure
+          label={t(($) => {
+            return $.artifacts.customDomain.dnsConfigured;
+          })}
+        >
+          {records}
+        </DomainDisclosure>
+      ) : (
+        <>
+          <h4 className="font-medium">
+            {t(($) => {
+              return $.artifacts.customDomain.setUpDns;
+            })}
+          </h4>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.customDomain.dnsHelp;
+            })}
+          </p>
+          <div className="mt-3 space-y-3">
+            <DomainSetup session={session} certificateOnly={certificateOnly} />
+            {records}
+          </div>
+        </>
+      )}
+    </TimelineStep>
+  );
+}
+function ConnectionChecks({
+  domain,
+  background,
+}: {
+  readonly domain: Domain;
+  readonly background: boolean;
+}) {
+  const { t } = useTranslation();
+  const checks = domain.verification?.checks;
   const labels = {
-    ownership: t(($) => {
-      return $.artifacts.customDomain.checks.ownership;
-    }),
-    dns: t(($) => {
-      return $.artifacts.customDomain.checks.dns;
-    }),
     provider: t(($) => {
       return $.artifacts.customDomain.checks.provider;
-    }),
-    route: t(($) => {
-      return $.artifacts.customDomain.checks.route;
     }),
     certificate: t(($) => {
       return $.artifacts.customDomain.checks.certificate;
     }),
+    route: t(($) => {
+      return $.artifacts.customDomain.checks.route;
+    }),
   };
   return (
-    <>
-      <ul
-        className="space-y-4 text-xs text-muted-foreground"
-        aria-busy={verifying}
-        aria-live="polite"
-        aria-label={t(($) => {
-          return $.artifacts.customDomain.verificationChecks;
-        })}
-      >
-        {(
-          ["ownership", "dns", "provider", "certificate", "route"] as const
-        ).map((name) => {
-          const check = verifying
-            ? undefined
-            : domain.verification?.checks[name];
-          const checkStatus = check?.status;
-          return (
-            <li key={name}>
-              <div className="flex items-start gap-2">
-                {verifying ? (
-                  <Loader2
-                    size={14}
-                    className="mt-0.5 shrink-0 motion-safe:animate-spin"
-                    aria-hidden
-                  />
-                ) : checkStatus === "passed" ? (
-                  <Check
-                    size={14}
-                    className="mt-0.5 shrink-0 text-green-600"
-                    aria-hidden
-                  />
-                ) : checkStatus === "failed" ? (
-                  <CircleAlert
-                    size={14}
-                    className="mt-0.5 shrink-0 text-destructive"
-                    aria-hidden
-                  />
-                ) : (
-                  <Circle size={14} className="mt-0.5 shrink-0" aria-hidden />
-                )}
-                <span className="min-w-0 flex-1 text-foreground">
-                  {labels[name]}
-                </span>
-                <span className="shrink-0">
-                  {verifying
-                    ? t(($) => {
-                        return $.artifacts.customDomain.checking;
-                      })
-                    : checkStatus === "passed"
-                      ? t(($) => {
-                          return $.artifacts.customDomain.checkPassed;
-                        })
-                      : checkStatus === "unavailable"
-                        ? t(($) => {
-                            return $.artifacts.customDomain.checkUnavailable;
-                          })
-                        : checkStatus === "failed"
-                          ? t(($) => {
-                              return $.artifacts.customDomain.checkFailed;
-                            })
-                          : checkStatus === "pending"
-                            ? t(($) => {
-                                return $.artifacts.customDomain.checkPending;
-                              })
-                            : t(($) => {
-                                return $.artifacts.customDomain.checkNotChecked;
-                              })}
-                </span>
-              </div>
-              {check &&
-                check.status !== "passed" &&
-                check.status !== "not_checked" && (
-                  <p className="mt-1 pl-5 leading-5">{check.message}</p>
-                )}
-              {!verifying && <DomainRecordIssues domain={domain} name={name} />}
-            </li>
-          );
-        })}
-      </ul>
-      <p className="mt-3 text-xs text-muted-foreground">
-        {!verifying && domain.verification
-          ? t(
-              ($) => {
-                return $.artifacts.customDomain.lastChecked;
-              },
-              {
-                time: new Date(
-                  domain.verification.checkedAt,
-                ).toLocaleTimeString(),
-              },
-            )
-          : null}
-      </p>
-    </>
-  );
-}
-function DomainSteps({
-  session,
-  stage,
-  currentStage,
-  dnsMatched,
-  busy,
-}: {
-  readonly session: HostedSiteShareSession;
-  readonly stage: DomainSetupStage;
-  readonly currentStage: DomainSetupStage;
-  readonly dnsMatched: boolean;
-  readonly busy: boolean;
-}) {
-  const { t } = useTranslation();
-  const review = useSet(session.domains.reviewStage$);
-  const signal = useGet(session.signal$);
-  const labels = [
-    t(($) => {
-      return $.artifacts.customDomain.steps.dns;
-    }),
-    t(($) => {
-      return $.artifacts.customDomain.steps.verify;
-    }),
-    t(($) => {
-      return $.artifacts.customDomain.steps.enable;
-    }),
-  ];
-  if (!signal) {
-    return null;
-  }
-  return (
-    <ol
-      className="grid grid-cols-3 gap-2"
+    <ul
+      className="ml-0.5 text-xs"
       aria-label={t(($) => {
-        return $.artifacts.customDomain.setupStages;
+        return $.artifacts.customDomain.verificationChecks;
       })}
     >
-      {([0, 1, 2] as const).map((step) => {
-        const completed =
-          step === 0 ? dnsMatched || currentStage === 2 : step < currentStage;
+      {(["provider", "certificate", "route"] as const).map((name) => {
+        const status = checks?.[name].status;
+        const eligible =
+          name !== "route" ||
+          (checks?.provider.status === "passed" &&
+            checks.certificate.status === "passed");
+        const state: IndicatorState =
+          domain.ready || status === "passed"
+            ? "complete"
+            : status === "failed" || status === "unavailable"
+              ? "attention"
+              : background && eligible && status === "pending"
+                ? "active"
+                : "waiting";
         return (
-          <li key={step} className="min-w-0">
-            <Button
-              variant="quiet"
-              className={cn(
-                "h-auto min-h-10 w-full justify-start gap-2 whitespace-normal px-2 py-2 text-left text-xs",
-                stage === step && "bg-gray-50 font-medium text-foreground",
-              )}
-              aria-label={labels[step]}
-              aria-description={
-                completed
-                  ? t(($) => {
-                      return $.artifacts.customDomain.checkPassed;
-                    })
-                  : undefined
-              }
-              aria-current={stage === step ? "step" : undefined}
-              disabled={busy || step > currentStage}
-              onClick={() => {
-                review(step, signal);
-              }}
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "flex size-5 shrink-0 items-center justify-center rounded-full border border-border",
-                  completed && "border-green-600 text-green-600",
-                )}
-              >
-                {completed ? <Check size={12} /> : step + 1}
-              </span>
-              {labels[step]}
-            </Button>
+          <li
+            key={name}
+            className="relative flex min-h-7 items-center gap-2 pl-3 before:absolute before:inset-y-0 before:left-0 before:border-l before:border-border after:absolute after:top-1/2 after:left-0 after:w-2 after:border-t after:border-border last:before:bottom-1/2"
+          >
+            <DomainIndicator state={state} />
+            {labels[name]}
           </li>
         );
       })}
-    </ol>
+    </ul>
   );
 }
-function DomainEnable({
-  domain,
-  session,
-}: {
-  readonly domain: Domain;
-  readonly session: HostedSiteShareSession;
-}) {
+function ReadyStep({ session, domain }: DomainStepProps) {
   const { t } = useTranslation();
   const copy = useSet(session.domains.copy$);
   const signal = useGet(session.signal$);
   const url = `https://${domain.hostname}`;
   return (
-    <>
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium">
-          {t(($) => {
-            return $.artifacts.customDomain.verified;
-          })}
-        </h4>
-      </div>
-      <div className="rounded-xl bg-gray-50 p-4">
-        <p className="mb-3 text-xs text-muted-foreground">
-          {t(($) => {
-            return $.artifacts.customDomain.sharingAddress;
-          })}
-        </p>
-        <div className="flex items-center gap-2">
-          <code className="min-w-0 flex-1 break-all text-sm">{url}</code>
-          {signal && (
-            <CopyButton
-              showTooltip={false}
-              copyAction={() => {
-                return copy(url, signal);
-              }}
-            />
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-function DomainWizard({
-  session,
-  operations,
-  domain,
-}: DomainPanelProps & { readonly domain: Domain }) {
-  const { t } = useTranslation();
-  const wizard = useLastResolved(session.domains.wizard$);
-  if (!wizard) {
-    return null;
-  }
-  const { stage, currentStage, dnsMatched, certificateOnly } = wizard;
-  const activationPending =
-    dnsMatched &&
-    !Object.values(domain.verification?.checks ?? {}).some((check) => {
-      return check.status === "failed" || check.status === "unavailable";
-    });
-  return (
-    <div className="space-y-5">
-      <DomainSteps
-        session={session}
-        stage={stage}
-        currentStage={currentStage}
-        dnsMatched={dnsMatched}
-        busy={domainBusy(operations)}
-      />
-      {stage === 0 ? (
-        <>
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">
-              {dnsMatched
-                ? t(($) => {
-                    return $.artifacts.customDomain.dnsConfigured;
-                  })
-                : t(($) => {
-                    return $.artifacts.customDomain.setUpDns;
-                  })}
-            </h4>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {dnsMatched
-                ? t(($) => {
-                    return $.artifacts.customDomain.noDnsChanges;
-                  })
-                : t(($) => {
-                    return $.artifacts.customDomain.dnsHelp;
-                  })}
-            </p>
-          </div>
-          {!dnsMatched && (
-            <DomainSetup session={session} certificateOnly={certificateOnly} />
-          )}
-          <DomainRecords
-            session={session}
-            domain={domain}
-            records={domain.records}
+    <TimelineStep state={domain.ready ? "complete" : "waiting"} last>
+      <h4
+        className={cn("font-medium", !domain.ready && "text-muted-foreground")}
+      >
+        {t(($) => {
+          return $.artifacts.customDomain.ready;
+        })}
+      </h4>
+      {domain.ready && signal && (
+        <div className="mt-2 flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
+          <code className="min-w-0 flex-1 break-all text-xs">{url}</code>
+          <CopyButton
+            showTooltip={false}
+            copyAction={() => {
+              return copy(url, signal);
+            }}
           />
-        </>
-      ) : stage === 1 ? (
-        <>
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">
-              {t(($) => {
-                return $.artifacts.customDomain.verifyDomain;
-              })}
-            </h4>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {operations.verifying
-                ? t(($) => {
-                    return $.artifacts.customDomain.verifyingHint;
-                  })
-                : currentStage === 2
-                  ? t(($) => {
-                      return $.artifacts.customDomain.verificationComplete;
-                    })
-                  : activationPending
-                    ? t(($) => {
-                        return $.artifacts.customDomain.certificateWaiting;
-                      })
-                    : t(($) => {
-                        return $.artifacts.customDomain.retryVerification;
-                      })}
-            </p>
-          </div>
-          <div className="rounded-xl bg-gray-50 p-4">
-            <DomainChecks domain={domain} verifying={operations.verifying} />
-          </div>
-        </>
-      ) : (
-        <DomainEnable domain={domain} session={session} />
+        </div>
       )}
-    </div>
+    </TimelineStep>
   );
 }
-function DomainActions({
+function DomainTimelineActions({
   session,
   operations,
   domain,
   configuration,
-}: DomainPanelProps & {
-  readonly domain: Domain;
-  readonly configuration: DomainSettings;
-}) {
+  background,
+}: TimelineProps & { readonly background: boolean }) {
   const { t } = useTranslation();
   const busy = domainBusy(operations);
-  const cancel = useSet(session.domains.back$);
   const choose = useSet(session.domains.choose$);
-  const review = useSet(session.domains.reviewStage$);
-  const wizard = useLastResolved(session.domains.wizard$);
-  const signal = useGet(session.signal$);
-  if (!wizard || !signal) {
-    return null;
-  }
-  const { stage } = wizard;
-  const reviewing = domain.ready && stage < 2;
+  const cancel = useSet(session.domains.back$);
+  const close = useSet(session.setOpen$);
   return (
-    <div className="mt-4 flex items-center justify-between gap-2">
-      <Button
-        variant="quiet"
-        disabled={busy}
-        onClick={() => {
-          if (stage === 1) {
-            review(0, signal);
-          } else {
-            cancel();
-          }
-        }}
-      >
-        {stage === 1
-          ? t(($) => {
-              return $.artifacts.customDomain.backToDns;
-            })
-          : t(($) => {
+    <div className="mt-4 flex justify-end gap-2">
+      {background ? (
+        <Button
+          variant="outline"
+          onClick={() => {
+            return close(false);
+          }}
+        >
+          {t(($) => {
+            return $.actions.close;
+          })}
+        </Button>
+      ) : (
+        <>
+          <Button
+            variant="quiet"
+            disabled={busy}
+            onClick={() => {
+              return cancel();
+            }}
+          >
+            {t(($) => {
               return $.artifacts.siteUrl.cancel;
             })}
-      </Button>
-      <Button
-        className="min-w-24"
-        disabled={busy || domain.removing || !configuration.allowed}
-        pending={operations.verifying || operations.saving}
-        onClick={() => {
-          if (reviewing) {
-            review(stage === 0 ? 1 : 2, signal);
-          } else if (domain.ready) {
-            choose(domain.id);
-            operations.save();
-          } else {
-            operations.verify();
-          }
-        }}
-      >
-        {reviewing
-          ? t(($) => {
-              return $.artifacts.customDomain.continue;
-            })
-          : domain.ready
-            ? t(($) => {
-                return $.artifacts.siteUrl.save;
-              })
-            : stage === 1 && domain.verification
+          </Button>
+          <Button
+            disabled={busy || domain.removing || !configuration.allowed}
+            pending={operations.verifying || operations.saving}
+            onClick={() => {
+              if (domain.ready) {
+                choose(domain.id);
+                operations.save();
+              } else {
+                operations.verify();
+              }
+            }}
+          >
+            {domain.ready
               ? t(($) => {
-                  return $.artifacts.customDomain.verifyAgain;
+                  return $.artifacts.siteUrl.save;
                 })
-              : t(($) => {
-                  return $.artifacts.customDomain.verify;
-                })}
-      </Button>
+              : domain.verification
+                ? t(($) => {
+                    return $.artifacts.customDomain.verifyAgain;
+                  })
+                : t(($) => {
+                    return $.artifacts.customDomain.verify;
+                  })}
+          </Button>
+        </>
+      )}
     </div>
+  );
+}
+function connectionProgress(
+  domain: Domain,
+  dnsConfigured: boolean,
+  verifying: boolean,
+  expiredThrough: number,
+) {
+  const checks = domain.verification?.checks;
+  const automatic = domain.verification?.automatic;
+  const timedOut = domainVerificationTimedOut(domain, expiredThrough);
+  const background =
+    automatic?.status === "checking" && !timedOut && !domain.removing;
+  const problem = (
+    ["ownership", "dns", "provider", "certificate", "route"] as const
+  )
+    .map((name) => {
+      return checks?.[name];
+    })
+    .find((check) => {
+      return (
+        check && (check.status === "failed" || check.status === "unavailable")
+      );
+    });
+  const connectionState: IndicatorState = domain.ready
+    ? "complete"
+    : background || (verifying && dnsConfigured)
+      ? "active"
+      : dnsConfigured && (timedOut || problem)
+        ? "attention"
+        : "waiting";
+  return { connectionState, timedOut, background, problem };
+}
+function DomainTimeline({
+  session,
+  operations,
+  domain,
+  configuration,
+}: TimelineProps) {
+  const { t } = useTranslation();
+  const { dnsConfigured, certificateOnly } = hostedDomainProgress(domain);
+  const expiredThrough = useGet(session.domains.expiredThrough$);
+  const deadline = domainVerificationDeadline(domain);
+  const mountDeadline = useSet(session.domains.mountDeadline$);
+  const notice = useGet(session.domains.notice$);
+  const { connectionState, timedOut, background, problem } = connectionProgress(
+    domain,
+    dnsConfigured,
+    operations.verifying,
+    expiredThrough,
+  );
+  const connectionLabel = timedOut
+    ? t(($) => {
+        return $.artifacts.customDomain.timedOut;
+      })
+    : background
+      ? t(($) => {
+          return $.artifacts.customDomain.connecting;
+        })
+      : t(($) => {
+          return $.artifacts.customDomain.connection;
+        });
+  const feedback =
+    notice ??
+    (operations.saveFailed
+      ? t(($) => {
+          return $.artifacts.siteUrl.saveFailed;
+        })
+      : operations.verifyFailed
+        ? t(($) => {
+            return $.artifacts.customDomain.verifyFailed;
+          })
+        : domain.removing
+          ? t(($) => {
+              return $.artifacts.customDomain.removing;
+            })
+          : problem?.message);
+  return (
+    <>
+      <ol
+        className="mt-1 text-sm"
+        aria-label={t(($) => {
+          return $.artifacts.customDomain.setupStages;
+        })}
+      >
+        <DnsStep
+          session={session}
+          domain={domain}
+          verifying={operations.verifying}
+          dnsConfigured={dnsConfigured}
+          certificateOnly={certificateOnly}
+        />
+        <TimelineStep state={connectionState}>
+          {dnsConfigured ? (
+            <DomainDisclosure
+              key={domain.ready ? "ready" : "connecting"}
+              label={connectionLabel}
+              initiallyOpen={!domain.ready}
+            >
+              <ConnectionChecks domain={domain} background={background} />
+            </DomainDisclosure>
+          ) : (
+            <h4 className="text-muted-foreground">{connectionLabel}</h4>
+          )}
+          {background && (
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              {t(($) => {
+                return $.artifacts.customDomain.backgroundHint;
+              })}
+            </p>
+          )}
+        </TimelineStep>
+        <ReadyStep session={session} domain={domain} />
+      </ol>
+      <div
+        key={deadline}
+        ref={mountDeadline}
+        data-verification-expires-at={deadline}
+        role="status"
+        aria-live="polite"
+        className="text-xs text-muted-foreground"
+      >
+        <span className="sr-only">
+          {domain.ready
+            ? t(($) => {
+                return $.artifacts.customDomain.ready;
+              })
+            : connectionLabel}
+        </span>
+        {feedback && <p className="mt-3">{feedback}</p>}
+      </div>
+      <DomainTimelineActions
+        session={session}
+        operations={operations}
+        domain={domain}
+        configuration={configuration}
+        background={background}
+      />
+    </>
   );
 }
 export function HostedSiteDomainRemoveDialog({
@@ -737,7 +717,6 @@ export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
   const { t } = useTranslation();
   const configuration = useLastResolved(session.domains.settings$);
   const id = useGet(session.domains.managedDomainId$);
-  const notice = useGet(session.domains.notice$);
   const signal = useGet(session.signal$);
   if (!signal || !configuration) {
     return null;
@@ -761,40 +740,13 @@ export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
       </div>
 
       {domain ? (
-        <>
-          <DomainWizard
-            key={`${domain.id}-wizard`}
-            session={session}
-            operations={operations}
-            domain={domain}
-          />
-          <p
-            className="mt-3 min-h-5 text-xs text-muted-foreground"
-            role="status"
-          >
-            {operations.saveFailed
-              ? t(($) => {
-                  return $.artifacts.siteUrl.saveFailed;
-                })
-              : (notice ??
-                (operations.verifyFailed
-                  ? t(($) => {
-                      return $.artifacts.customDomain.verifyFailed;
-                    })
-                  : domain.removing
-                    ? t(($) => {
-                        return $.artifacts.customDomain.removing;
-                      })
-                    : null))}
-          </p>
-          <DomainActions
-            key={`${domain.id}-actions`}
-            session={session}
-            operations={operations}
-            domain={domain}
-            configuration={configuration}
-          />
-        </>
+        <DomainTimeline
+          key={domain.id}
+          session={session}
+          operations={operations}
+          domain={domain}
+          configuration={configuration}
+        />
       ) : (
         <NewDomainForm session={session} operations={operations} />
       )}

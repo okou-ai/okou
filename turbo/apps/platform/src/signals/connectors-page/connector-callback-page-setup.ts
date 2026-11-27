@@ -19,7 +19,6 @@ import { ConnectorCallbackPage } from "../../views/okou-page/connector-callback-
 import { apiClient$ } from "../api-client.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { loadConnectorCatalogItem$ } from "../external/connectors.ts";
 import { updatePage$ } from "../react-router.ts";
 import {
   pathParams$,
@@ -29,7 +28,6 @@ import {
   setupAuthPageWrapper,
 } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { settle } from "../utils.ts";
 import { i18n } from "../../i18n/index.ts";
 import { connectorIconFromSearchParams } from "./connector-redirecting-page-setup.ts";
 import { githubAppSetupCallbackContract } from "@okouai/api-contracts/client/github-oauth-callback";
@@ -173,25 +171,6 @@ function nativeBrowserReturnUrl(
   });
 }
 
-const loadConnectorCallbackIcon$ = command(
-  async (
-    { set },
-    connectorSlug: ConnectorSlug,
-    signal: AbortSignal,
-  ): Promise<PublicConnectorCatalogIcon | undefined> => {
-    // Link is a native wallet and has no connector catalog entry.
-    if (connectorSlug === "link") {
-      return undefined;
-    }
-    // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-    const catalogItem = await settle(
-      set(loadConnectorCatalogItem$, connectorSlug, signal),
-      signal,
-    );
-    return catalogItem.ok ? catalogItem.value?.icon : undefined;
-  },
-);
-
 const completeConnectorCallback$ = command(
   async (
     { get },
@@ -274,7 +253,7 @@ const setupIntegrationOAuthCallbackPage$ = setupAuthPageWrapper(
 );
 
 const showConnectorCallbackResult$ = command(
-  async (
+  (
     { set },
     args: {
       readonly connectorIcon: PublicConnectorCatalogIcon | undefined;
@@ -283,17 +262,14 @@ const showConnectorCallbackResult$ = command(
       readonly label: string;
       readonly result: ConnectorOauthCallbackResult;
     },
-    signal: AbortSignal,
   ) => {
-    let { connectorIcon } = args;
-    const { connectorSlug, callbackConnectorSlug, label, result } = args;
-    if (!connectorIcon && connectorSlug && !result.nativeAppReturn) {
-      connectorIcon = await set(
-        loadConnectorCallbackIcon$,
-        connectorSlug,
-        signal,
-      );
-    }
+    const {
+      connectorIcon,
+      connectorSlug,
+      callbackConnectorSlug,
+      label,
+      result,
+    } = args;
     set(
       updatePage$,
       callbackPageElement(connectorIcon, connectorSlug, label, result),
@@ -347,7 +323,7 @@ export const setupConnectorCallbackPage$ = command(
       callbackConnectorSlug === "custom" ? null : callbackConnectorSlug;
     const label = connectorLabel(callbackConnectorSlug);
     const searchParams = get(searchParams$);
-    let connectorIcon = connectorIconFromSearchParams(searchParams);
+    const connectorIcon = connectorIconFromSearchParams(searchParams);
     const pathResult = resultFromPath(
       typeof params?.status === "string" ? params.status : undefined,
       searchParams,
@@ -375,17 +351,6 @@ export const setupConnectorCallbackPage$ = command(
           nativeBrowserReturnUrl(pathResult.nativeAppReturn),
         );
       }
-      if (!connectorIcon && connectorSlug) {
-        connectorIcon = await set(
-          loadConnectorCallbackIcon$,
-          connectorSlug,
-          signal,
-        );
-        set(
-          updatePage$,
-          callbackPageElement(connectorIcon, connectorSlug, label, pathResult),
-        );
-      }
       return;
     }
     if (!callbackConnectorSlug) {
@@ -406,16 +371,12 @@ export const setupConnectorCallbackPage$ = command(
             query,
             signal,
           );
-    await set(
-      showConnectorCallbackResult$,
-      {
-        connectorIcon,
-        connectorSlug,
-        callbackConnectorSlug,
-        label,
-        result,
-      },
-      signal,
-    );
+    set(showConnectorCallbackResult$, {
+      connectorIcon,
+      connectorSlug,
+      callbackConnectorSlug,
+      label,
+      result,
+    });
   },
 );

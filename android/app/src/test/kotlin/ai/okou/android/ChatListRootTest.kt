@@ -1076,6 +1076,12 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
                 .isNotEmpty()
         }
         awaitListAndNames()
+        compose
+            .onNode(
+                hasText("Project information is temporarily unavailable.") and
+                    hasAnyAncestor(hasTestTag("chat_list_feedback")),
+            )
+            .assertIsDisplayed()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
         compose.onNodeWithText("Personal chat").assertExists()
         compose.openChatListSettings()
@@ -2110,6 +2116,11 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun workspaceMessageSearchRestoresItsTypeAndOpensTheExactEvent() {
         val app = compose.activity.application as ChatListApplication
+        val body =
+            "See the [documentation](https://example.org/history).\n\n**Native history** reply"
+        val linkMatch = body.indexOf("history")
+        val replyMatch = body.lastIndexOf("history")
+        app.fixture.historyReply = body
         app.fixture.searchMessages = { request ->
             assertEquals("history", request.requestUrl?.queryParameter("keyword"))
             assertEquals("Bearer fixture-token", request.getHeader("Authorization"))
@@ -2117,8 +2128,10 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
                 """
                 {"results":[{"chatThreadId":"$CHAT_PERSONAL","agentName":"Okou",
                   "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
-                    "content":"Native history reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
-                  "matchedRanges":[{"start":7,"end":14}]}]}
+                    "content":${JsonPrimitive(body)},"createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[
+                    {"start":$linkMatch,"end":${linkMatch + "history".length}},
+                    {"start":$replyMatch,"end":${replyMatch + "history".length}}]}]}
                 """,
             )
         }
@@ -2135,7 +2148,10 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         compose.waitUntilExactlyOneExists(hasTestTag("message_output"), 5_000)
         compose.onNodeWithTag("message_output").assertIsDisplayed()
         compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 5_000)
-        compose.onNodeWithTag("conversation_find_hit").assertIsFocused()
+        compose
+            .onNodeWithTag("conversation_find_hit")
+            .assertIsFocused()
+            .assertTextEquals("Native history reply")
         compose.onNodeWithContentDescription("Chat actions").performClick()
         compose.onNodeWithText("Find messages").performClick()
         compose.onNodeWithTag("conversation_find").assertIsDisplayed()
@@ -2150,6 +2166,33 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         field.assertIsFocused()
         compose.onNode(hasText("Messages") and isSelectable()).assertIsSelected()
         compose.onNodeWithText("Enter a keyword to search").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun workspaceMessageSearchKeepsUserDisplayTextLiteral() {
+        val app = compose.activity.application as ChatListApplication
+        val prompt = "Please find **release** notes."
+        val start = prompt.indexOf("release")
+        app.fixture.searchMessages = { request ->
+            assertEquals("release", request.requestUrl?.queryParameter("keyword"))
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_PERSONAL",
+                  "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"user",
+                    "content":${JsonPrimitive(prompt)},"createdAt":"$CHAT_DATE","seqId":22,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":$start,"end":${start + "release".length}}]}]}
+                """,
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("release")
+        val result = hasText(prompt) and hasAnyAncestor(hasTestTag("chat_search_results"))
+        compose.waitUntilExactlyOneExists(result, 5_000)
+        compose.onNode(result).assertIsDisplayed()
     }
 
     @Test
@@ -2188,7 +2231,10 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         compose.onNode(hasText(fixture.otherHit) and results).assertIsDisplayed()
         val row = compose.onNode(result)
         val preview = row.fetchSemanticsNode().config[SemanticsProperties.Text]
-        assertTrue(preview.any { fixture.hit in it.text && '\n' !in it.text })
+        val snippet = preview.single { it.text == fixture.hit }
+        val expectedMatches =
+            Regex.fromLiteral(fixture.keyword).findAll(fixture.hit).map { it.range }
+        assertEquals(expectedMatches.toList(), snippet.spanStyles.map { it.start until it.end })
         row.performClick()
 
         val focused = hasTestTag("conversation_find_hit") and isFocused()

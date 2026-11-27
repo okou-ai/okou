@@ -32,6 +32,7 @@ export function ConnectorRedirectingPage({
 
   return (
     <ConnectorFlowCard
+      connectorSlug={connectorSlug}
       connectorIcon={connectorIcon}
       title={
         hasError

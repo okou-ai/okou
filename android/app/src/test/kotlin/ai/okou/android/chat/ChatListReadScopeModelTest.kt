@@ -7,6 +7,7 @@ import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.Indicators
+import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.ReadState
 import ai.okou.android.chatEventWire
 import kotlinx.coroutines.CompletableDeferred
@@ -27,6 +28,31 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListReadScopeModelTest : ChatListModelTestFixture() {
+    @Test
+    fun theFirstProjectReadStartsInTheForegroundListScope() = runTest {
+        var projectReads = 0
+        val service =
+            object : Service() {
+                override suspend fun projectSnapshot(): ProjectSnapshot {
+                    projectReads++
+                    throw ApiFailure.Http(400, null, null, null)
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.activityForegroundChanged(false)
+            model.refresh()
+            runCurrent()
+            assertEquals(0, projectReads)
+
+            model.activityForegroundChanged(true)
+            runCurrent()
+            val state = model.uiState.value
+            assertEquals(1, projectReads)
+            assertEquals(ChatReadPhase.Failed, state.projectsPhase)
+            assertTrue(state.projectList.refreshFailureOrder != null)
+        }
+    }
+
     @Test
     fun backgroundingCancelsBothInFlightRequestsAndResumesWithConfirmedContent() = runTest {
         val service = Service()

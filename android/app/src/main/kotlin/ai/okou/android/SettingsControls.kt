@@ -11,8 +11,10 @@ import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -711,6 +713,16 @@ internal fun WithButtonFocusOutline(color: Color, content: @Composable () -> Uni
 }
 
 @Composable
+internal fun Modifier.keyboardReadingScroll(scroll: ScrollState): Modifier =
+    updateFocusOutline(
+            RectangleShape,
+            MaterialTheme.colorScheme.onSurface,
+            includeDescendantFocus = true,
+        )
+        .verticalScroll(scroll)
+        .focusable(scroll.canScrollForward || scroll.canScrollBackward)
+
+@Composable
 internal fun OkouConfirmationDialog(
     title: String,
     confirm: String,
@@ -765,7 +777,7 @@ internal fun OkouConfirmationDialog(
                             style = titleStyle,
                         )
                         Surface(
-                            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                            Modifier.fillMaxWidth().keyboardReadingScroll(rememberScrollState()),
                             color = Color.Transparent,
                             contentColor = colors.onSurfaceVariant,
                         ) {

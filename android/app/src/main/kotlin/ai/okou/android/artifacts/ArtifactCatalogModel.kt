@@ -95,6 +95,7 @@ internal data class ArtifactCatalogState(
     val failedRead: ArtifactCatalogFailure? = null,
     val refreshFailure: ArtifactRefreshFailure? = null,
     val reading: ArtifactCatalogRead? = null,
+    val initialReadRound: Any? = null,
     val relatedChats: RelatedChatResourcesState = RelatedChatResourcesState(),
     val workflows: WorkflowResourcesState = WorkflowResourcesState(),
     val preview: ArtifactPreviewState? = null,
@@ -194,6 +195,7 @@ internal constructor(
             mutable.update {
                 it.copy(
                     reading = null,
+                    initialReadRound = null,
                     refreshFailure = null,
                     relatedChats = it.relatedChats.copy(syncingStale = false),
                     workflows = it.workflows.copy(checking = false, syncingStale = false),
@@ -214,6 +216,7 @@ internal constructor(
                 failedRead = null,
                 refreshFailure = null,
                 reading = null,
+                initialReadRound = null,
                 relatedChats = RelatedChatResourcesState(),
                 workflows = WorkflowResourcesState(),
             )
@@ -566,10 +569,12 @@ internal constructor(
             return
         }
         catalogJob?.cancel()
+        val initialReadRound = if (current.catalog == null) Any() else null
         mutable.update {
             it.copy(
                 failedRead = null,
                 reading = catalogRead(append, threadId, current.catalog),
+                initialReadRound = initialReadRound,
             )
         }
         catalogJob = viewModelScope.launch {
@@ -623,6 +628,7 @@ internal constructor(
                         failedRead = null,
                         refreshFailure = null,
                         reading = null,
+                        initialReadRound = null,
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -679,6 +685,7 @@ internal constructor(
                     if (failure == ArtifactCatalogFailure.Refresh) ArtifactRefreshFailure()
                     else null,
                 reading = null,
+                initialReadRound = null,
             )
         }
     }
@@ -717,6 +724,7 @@ internal constructor(
                         }
                     else it.preview,
                 reading = null,
+                initialReadRound = null,
                 failedRead = failure,
                 refreshFailure = null,
             )
@@ -750,6 +758,7 @@ internal constructor(
                 failedRead = ArtifactCatalogFailure.Denied,
                 refreshFailure = null,
                 reading = null,
+                initialReadRound = null,
             )
         }
     }

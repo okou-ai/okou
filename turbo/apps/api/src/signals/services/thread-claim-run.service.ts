@@ -38,6 +38,7 @@ import {
 import { createConnectorAdmissionSignals } from "./thread-connector-environment.signals";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import { createOfficialWorkflowSignal } from "./thread-official-workflow.signals";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
@@ -51,10 +52,10 @@ import { feishuDeliveryFromContext } from "./feishu-queued-launch-context.servic
 import type { SlackThreadContext } from "./slack-queued-launch-context.service";
 import type { TelegramThreadContext } from "./telegram-queued-launch-context.service";
 import {
-  createPromptAndSkillVolumesSignals,
+  createPromptAndPackageSignals,
   type PreparedRunPrompt,
   RunPromptError,
-} from "./thread-run-prompt/prompt-and-skill-volumes";
+} from "./thread-run-prompt/prompt-and-packages";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import { createChatRunPreparationSnapshot } from "./chat-run-preparation-snapshot.signals";
 
@@ -1699,10 +1700,11 @@ export function createThreadClaimRunObjects(
         args,
         officialWorkflow: assembly.officialWorkflow,
         runPrompt: assembly.runPrompt,
+        pricedBuiltInRoute: model.pricedBuiltInRoute,
       }
     );
   });
-  const promptResources = createPromptAndSkillVolumesSignals(
+  const promptResources = createPromptAndPackageSignals(
     bootstrap,
     pickedEvent$,
     threadContext,
@@ -1832,7 +1834,10 @@ export function createThreadClaimRunObjects(
       const { args, officialWorkflow: officialWorkflowRun, runPrompt } = input;
       const usage = (async () => {
         const runtime = await get(runModelInputs$);
-        if (isRouteError(runtime)) {
+        if (
+          isRouteError(runtime) ||
+          !isBuiltInModelProviderType(runtime.modelProvider.type)
+        ) {
           return runtime;
         }
         const [catalog, modelPricing] = await Promise.all([
@@ -1843,6 +1848,7 @@ export function createThreadClaimRunObjects(
           catalog,
           modelProvider: runtime.modelProvider,
           providerPermissions: runtime.providerPermissions,
+          pricedRoute: input.pricedBuiltInRoute,
           routePricing: runRoutePricingFromSnapshot(
             {
               modelProvider: runtime.modelProvider,
@@ -2152,9 +2158,9 @@ export function createThreadClaimRunObjects(
       return officialWorkflow;
     }
     const timing = get(threadContext.dispatchTiming$);
-    const [skillVolumes, packageSources, ordinaryAutomation] =
+    const [startupSources, packageSources, ordinaryAutomation] =
       await Promise.all([
-        get(promptResources.skillVolumes$),
+        get(promptResources.packageSources$),
         timing.measure(
           "api_dispatch_prepare_execution_package_wait",
           "nested",
@@ -2166,20 +2172,15 @@ export function createThreadClaimRunObjects(
           ? get(threadContext.automationTarget$)
           : null,
       ]);
-    const { skillRoot, protectedMountPaths, mounts, memoryMountPath } =
-      prepareRunPackageMounts({
-        framework: route.framework,
-        skillVolumes,
-        officialWorkflow,
-      });
-    const officialMountPaths = mounts.officialWorkflowBundles.map(
-      ({ mount }) => {
-        return mount.mountPath;
-      },
-    );
+    const { mounts, memoryMountPath } = prepareRunPackageMounts({
+      framework: route.framework,
+      sources: startupSources,
+      officialWorkflow,
+    });
     const selected = selectExecutionPackages(packageSources?.sources ?? null, {
-      skillRoot,
-      protectedMountPaths: [...protectedMountPaths, ...officialMountPaths],
+      officialWorkflowNames: mounts.officialWorkflowBundles.map(({ name }) => {
+        return name;
+      }),
       ordinaryAutomation,
     });
     if ("error" in selected) {

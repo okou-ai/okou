@@ -68,6 +68,17 @@ export const connectorCatalogContract: ClientDescriptor<
       503: true,
     },
   },
+  icon: {
+    method: "GET",
+    path: "/api/connector-catalog/:connectorSlug/icon",
+    statuses: {
+      200: true,
+      302: true,
+      400: true,
+      404: true,
+      503: true,
+    },
+  },
   permissions: {
     method: "GET",
     path: "/api/connector-catalog/:connectorSlug/permissions",

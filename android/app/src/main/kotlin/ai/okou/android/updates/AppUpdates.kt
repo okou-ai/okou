@@ -112,10 +112,15 @@ data class UpdateUiState(
                 checkNotNull(compareAndroidVersions(it.version, installedVersion)) > 0
             } == true
 
-    fun isEligible(release: AndroidUpdatesRelease) =
+    internal val offeredRelease
+        get() = displayedRelease?.takeIf(::meetsVersionRequirement)
+
+    private fun meetsVersionRequirement(release: AndroidUpdatesRelease) =
         checkNotNull(compareAndroidVersions(release.version, installedVersion)) > 0 &&
-            release.minimumSdk <= sdk &&
             (minimum == null || checkNotNull(compareAndroidVersions(release.version, minimum)) >= 0)
+
+    fun isEligible(release: AndroidUpdatesRelease) =
+        meetsVersionRequirement(release) && release.minimumSdk <= sdk
 
     val canDownload
         get() =

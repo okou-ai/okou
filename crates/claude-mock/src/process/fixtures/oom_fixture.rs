@@ -94,6 +94,8 @@ task_stage("controller completed")
 
 pub(super) const INJECTED_TOOL_PROGRAM: &str = r#"
 import os, pathlib, signal, traceback
+# The launcher may inherit SIG_IGN; this owner uses SIGINT to unwind cleanup.
+signal.signal(signal.SIGINT, signal.default_int_handler)
 exec(os.environ["VM0_TEST_TASK_SUPPORT"])
 task_remaining("tool controller start")
 assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"

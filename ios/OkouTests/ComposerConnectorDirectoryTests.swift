@@ -40,47 +40,6 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
     XCTAssertEqual(reads.withLock { $0 }, 1)
   }
 
-  func testCustomSearchSharesItsReadAndDoesNotWaitForDiscovery() async throws {
-    let gate = ModelResponseGate()
-    let catalogStarted = expectation(description: "Slow discovery reached HTTP")
-    let reads = Mutex(0)
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/connector-catalog/discovery":
-        catalogStarted.fulfill()
-        await gate.wait()
-        return Self.discovery("Slack")
-      case "/api/custom-connectors":
-        reads.withLock { $0 += 1 }
-        return Self.custom
-      default:
-        XCTFail(
-          "Unhandled request: \(request.httpMethod ?? "") \(request.url?.absoluteString ?? "")")
-        throw URLError(.unsupportedURL)
-      }
-    }
-    let resources = makeResources(fixture)
-    defer {
-      resources.close()
-      gate.open()
-    }
-    _ = try own(resources.store.get(resources.catalog))
-    await fulfillment(of: [catalogStarted], timeout: 3)
-    let custom = try own(resources.store.get(resources.customMatches))
-    let all = try await custom.value
-    XCTAssertEqual(all.map(\.displayName), ["Team API", "Build tools"])
-    resources.update(tab: .custom, search: "TEAM")
-    let filtered = try own(resources.store.get(resources.customMatches))
-    let matches = try await filtered.value
-    XCTAssertEqual(matches.map(\.displayName), ["Team API"])
-    resources.update(tab: .custom, search: "nothing")
-    let empty = try own(resources.store.get(resources.customMatches))
-    let emptyValues = try await empty.value
-    XCTAssertTrue(emptyValues.isEmpty)
-    XCTAssertEqual(reads.withLock { $0 }, 1)
-    gate.open()
-  }
-
   func testSupersededSearchCancelsOriginalHTTPAndRejectsItsLateResult() async throws {
     let gate = ModelResponseGate()
     let started = expectation(description: "Old search reached HTTP")
@@ -158,46 +117,33 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
     XCTAssertEqual(reads.withLock { $0 }, 2)
   }
 
-  func testRetryRefreshesOnlyTheSelectedEndpointAndKeepsFailuresUntilRetry() async throws {
-    let catalogReads = Mutex(0)
-    let customReads = Mutex(0)
+  func testRetryRefreshesTheFilteredCatalogAndKeepsFailuresUntilRetry() async throws {
+    let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/connector-catalog/discovery":
-        let count = catalogReads.withLock {
-          $0 += 1
-          return $0
-        }
-        if count == 1 {
-          return ChatHTTPResponse(
-            status: 503, body: #"{"error":{"message":"Catalog unavailable"}}"#)
-        }
-        return Self.discovery("Recovered catalog")
-      case "/api/custom-connectors":
-        customReads.withLock { $0 += 1 }
-        return Self.custom
-      default:
-        XCTFail(
-          "Unhandled request: \(request.httpMethod ?? "") \(request.url?.absoluteString ?? "")")
-        throw URLError(.unsupportedURL)
+      XCTAssertEqual(request.httpMethod, "GET")
+      XCTAssertEqual(request.url?.path, "/api/connector-catalog/discovery")
+      let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+      XCTAssertEqual(query, [URLQueryItem(name: "category", value: "communication-collaboration")])
+      let count = reads.withLock {
+        $0 += 1
+        return $0
       }
+      if count == 1 {
+        return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Catalog unavailable"}}"#)
+      }
+      return Self.discovery("Recovered catalog")
     }
     let resources = makeResources(fixture)
     defer { resources.close() }
+    resources.update(category: "communication-collaboration")
     let first = try own(resources.store.get(resources.catalog))
     if case .success = await first.result { XCTFail("A failed read must remain an error") }
     let repeated = try own(resources.store.get(resources.catalog))
     if case .success = await repeated.result { XCTFail("Observing again is not a retry") }
-    resources.update(tab: .custom)
-    let custom = try own(resources.store.get(resources.customMatches))
-    let customValues = try await custom.value
-    XCTAssertEqual(customValues.count, 2)
-    resources.update(tab: .discover)
     await resources.refresh()
     let recovered = try await resources.store.get(resources.catalog).value
     XCTAssertEqual(recovered.connectors.first?.label, "Recovered catalog")
-    XCTAssertEqual(catalogReads.withLock { $0 }, 2)
-    XCTAssertEqual(customReads.withLock { $0 }, 1)
+    XCTAssertEqual(reads.withLock { $0 }, 2)
   }
 
   func testReplacingTheComposerCancelsItsDirectoryAndIsolatesTheNewWorkspace() async throws {
@@ -285,12 +231,5 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
       body: """
         {"connectors":[{"slug":"slack","label":"\(label)","description":"Team communication","category":"communication-collaboration","authMethods":[],"permissionSummary":{"hasPermissions":false}}],"totalConnectorCount":1,"categoryConnectorCounts":{"communication-collaboration":1}}
         """)
-  }
-
-  nonisolated private static var custom: ChatHTTPResponse {
-    ChatHTTPResponse(
-      body:
-        #"{"connectors":[{"id":"a","slug":"team-api","displayName":"Team API","fields":[],"authMode":"secret"},{"id":"b","slug":"build-tools","displayName":"Build tools","fields":[],"authMode":"secret"}]}"#
-    )
   }
 }
