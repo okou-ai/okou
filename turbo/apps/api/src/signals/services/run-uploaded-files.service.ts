@@ -39,6 +39,8 @@ interface RecordWebUploadedFileArgs {
   readonly layout: LinkLayout;
   readonly metadata: Record<string, unknown>;
   readonly origin?: FileOrigin;
+  /** Skip `files` dual-write for run-association shadow rows whose real private file row already exists in `files`. */
+  readonly skipFilesDualWrite?: boolean;
 }
 
 interface RecordHostedSiteArtifactArgs {
@@ -107,6 +109,7 @@ interface RecordRunUploadedFileArgs {
   readonly source: RunUploadedFileSource;
   readonly externalId: string;
   readonly origin?: FileOrigin;
+  readonly skipFilesDualWrite?: boolean;
   readonly file: Pick<
     typeof runUploadedFiles.$inferInsert,
     | "userId"
@@ -215,7 +218,7 @@ const recordRunUploadedFile$ = command(
     );
     if (result.ok) {
       const [row] = result.value;
-      if (row) {
+      if (row && !args.skipFilesDualWrite) {
         const meta = args.file.metadata as Record<string, unknown> | undefined;
         if (
           !meta ||
@@ -348,6 +351,7 @@ export const recordWebUploadedFile$ = command(
         source,
         externalId: args.externalId,
         origin: args.origin ?? (args.runId ? "agent" : "user"),
+        skipFilesDualWrite: args.skipFilesDualWrite,
         file: {
           userId: args.userId,
           orgId: args.orgId ?? null,

@@ -49,6 +49,10 @@ function createBackfillIds() {
     explicitPrivateDeploymentId: highUuid(30),
     explicitPrivateArtifactId: highUuid(31),
     sharedThreadArtifactId: highUuid(32),
+    privateShadowFileId: highUuid(33),
+    legacyS3KeyFileId: highUuid(34),
+    legacyS3KeyExternalId: highUuid(35),
+    nonUuidExternalFileId: highUuid(36),
   };
 }
 
@@ -103,7 +107,10 @@ async function seedBackfillFixtures(sql: postgres.Sql, ids: BackfillIds) {
       (${ids.emptyOrgFileId}::uuid, 'web', ${ids.emptyOrgFileId}, ${ids.ownerUserId}, '', 'orphan.txt', 'text/plain', 60, 'private-artifacts/' || ${ids.emptyOrgFileId} || '/file', 'input', '{}'::jsonb),
       (${ids.pseudoSiteFileId}::uuid, 'web', ${ids.pseudoSiteFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'site.html', 'text/html', 70, NULL, NULL, jsonb_build_object('siteId', ${ids.siteId}::text)),
       (${ids.pseudoWebsiteFileId}::uuid, 'web', ${ids.pseudoWebsiteFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'official.html', 'text/html', 80, NULL, NULL, '{"generatedBy":"zero-official-website"}'::jsonb),
-      (${ids.imageFileId}::uuid, 'agent', ${ids.imageFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'hero.png', 'image/png', 90, 'private-artifacts/' || ${ids.imageFileId} || '/file', 'published-output', '{}'::jsonb)
+      (${ids.imageFileId}::uuid, 'agent', ${ids.imageFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'hero.png', 'image/png', 90, 'private-artifacts/' || ${ids.imageFileId} || '/file', 'published-output', '{}'::jsonb),
+      (${ids.privateShadowFileId}::uuid, 'web', ${ids.agentFileId}, ${ids.ownerUserId}, ${ids.orgId}, 'report.pdf', 'application/pdf', 20, NULL, 'published-output', jsonb_build_object('s3Key', 'private-artifacts/' || ${ids.agentFileId} || '/file')),
+      (${ids.legacyS3KeyFileId}::uuid, 'web', ${ids.legacyS3KeyExternalId}, ${ids.ownerUserId}, ${ids.orgId}, 'export.csv', 'text/csv', 35, NULL, 'published-output', '{"s3Key":"user-artifacts/legacy/export.csv"}'::jsonb),
+      (${ids.nonUuidExternalFileId}::uuid, 'slack', 'F01234567', ${ids.ownerUserId}, ${ids.orgId}, 'slack.txt', 'text/plain', 15, NULL, 'published-output', '{"s3Key":"user-artifacts/slack/file.txt"}'::jsonb)
   `;
 
   await sql`
@@ -179,9 +186,14 @@ async function verifyFilesBackfill(sql: postgres.Sql, ids: BackfillIds) {
     ids.pseudoSiteFileId,
     ids.pseudoWebsiteFileId,
     ids.imageFileId,
+    ids.privateShadowFileId,
+    ids.legacyS3KeyFileId,
+    ids.nonUuidExternalFileId,
   ];
-  const fileRows = await sql<{ id: string; org_id: string; origin: string }[]>`
-    SELECT id, org_id, origin FROM files
+  const fileRows = await sql<
+    { id: string; org_id: string; origin: string; storage_key: string | null }[]
+  >`
+    SELECT id, org_id, origin, storage_key FROM files
     WHERE id = ANY(${trackedFileIds}::uuid[])
   `;
   const byId = new Map(
@@ -193,8 +205,13 @@ async function verifyFilesBackfill(sql: postgres.Sql, ids: BackfillIds) {
     id: ids.userFileId,
     org_id: ids.orgId,
     origin: "user",
+    storage_key: `private-artifacts/${ids.userFileId}/file`,
   });
   assert.equal(byId.get(ids.agentFileId)?.origin, "agent");
+  assert.equal(
+    byId.get(ids.agentFileId)?.storage_key,
+    `private-artifacts/${ids.agentFileId}/file`,
+  );
   assert.equal(byId.get(ids.imageFileId)?.origin, "agent");
   assert.equal(byId.get(ids.previewSystemFileId)?.origin, "system");
   assert.equal(byId.get(ids.screenshotSystemFileId)?.origin, "system");
@@ -202,6 +219,21 @@ async function verifyFilesBackfill(sql: postgres.Sql, ids: BackfillIds) {
   assert.equal(byId.has(ids.emptyOrgFileId), false);
   assert.equal(byId.has(ids.pseudoSiteFileId), false);
   assert.equal(byId.has(ids.pseudoWebsiteFileId), false);
+  // Private-file run-association shadow row must be skipped so files has only the real private file row.
+  assert.equal(byId.has(ids.privateShadowFileId), false);
+  // Non-private legacy uploads storing their key only in metadata.s3Key must backfill storage_key.
+  assert.deepEqual(byId.get(ids.legacyS3KeyFileId), {
+    id: ids.legacyS3KeyFileId,
+    org_id: ids.orgId,
+    origin: "agent",
+    storage_key: "user-artifacts/legacy/export.csv",
+  });
+  assert.deepEqual(byId.get(ids.nonUuidExternalFileId), {
+    id: ids.nonUuidExternalFileId,
+    org_id: ids.orgId,
+    origin: "agent",
+    storage_key: "user-artifacts/slack/file.txt",
+  });
 }
 
 async function verifyArtifactsAndSharesBackfill(

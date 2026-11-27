@@ -15,8 +15,16 @@ import {
   type ArtifactVisibility,
 } from "@okouai/db/schema/artifact";
 import { artifactUserShares } from "@okouai/db/schema/artifact-user-share";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import { canonicalOkouArtifactCatalogUrl } from "../../lib/file-url";
 import { writeDb$ } from "../external/db";
+import { safeUrlParse } from "../utils";
 import { nowDate } from "../../lib/time";
+
+function fileArtifactLogicalKey(url: string): string {
+  const parsed = safeUrlParse(url);
+  return `file:${parsed ? (canonicalOkouArtifactCatalogUrl(parsed) ?? url) : url}`;
+}
 
 /**
  * Resolve active `artifacts` rows associated with a hosted site (covers both
@@ -59,11 +67,22 @@ const findActiveArtifactsBySiteId$ = command(
 const findActiveArtifactsByFileId$ = command(
   async ({ set }, fileId: string, signal: AbortSignal) => {
     const database = set(writeDb$);
-    const [image] = await database
-      .select({ id: imageArtifacts.id })
-      .from(imageArtifacts)
-      .where(eq(imageArtifacts.fileId, fileId))
-      .limit(1);
+    const [[image], [sourceFile]] = await Promise.all([
+      database
+        .select({ id: imageArtifacts.id })
+        .from(imageArtifacts)
+        .where(eq(imageArtifacts.fileId, fileId))
+        .limit(1),
+      database
+        .select({
+          orgId: runUploadedFiles.orgId,
+          userId: runUploadedFiles.userId,
+          url: runUploadedFiles.url,
+        })
+        .from(runUploadedFiles)
+        .where(eq(runUploadedFiles.id, fileId))
+        .limit(1),
+    ]);
     signal.throwIfAborted();
     const matchers = [
       eq(artifacts.projectionFileId, fileId),
@@ -72,6 +91,15 @@ const findActiveArtifactsByFileId$ = command(
     if (image) {
       matchers.push(
         and(eq(artifacts.kind, "image"), eq(artifacts.entityId, image.id)),
+      );
+    }
+    if (sourceFile?.orgId && sourceFile.url) {
+      matchers.push(
+        and(
+          eq(artifacts.orgId, sourceFile.orgId),
+          eq(artifacts.authorUserId, sourceFile.userId),
+          eq(artifacts.logicalKey, fileArtifactLogicalKey(sourceFile.url)),
+        ),
       );
     }
     const rows = await database

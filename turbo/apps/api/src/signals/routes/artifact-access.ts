@@ -163,7 +163,7 @@ const searchShareAccounts$ = command(
       { artifactId, userId: auth.userId, orgId: auth.orgId },
       signal,
     );
-    if (!target) {
+    if (!target || target.targetKind === "legacy-html-deployment") {
       return notFound("Artifact not found");
     }
     const limited = await set(
@@ -203,7 +203,7 @@ const addShare$ = command(async ({ get, set }, signal: AbortSignal) => {
     { artifactId, userId: auth.userId, orgId: auth.orgId },
     signal,
   );
-  if (!target) {
+  if (!target || target.targetKind === "legacy-html-deployment") {
     return notFound("Artifact not found");
   }
   if ("userId" in input.data && input.data.userId === auth.userId) {

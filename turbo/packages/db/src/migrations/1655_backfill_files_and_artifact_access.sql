@@ -12,6 +12,7 @@ SET statement_timeout = '30s';
 WITH batch AS MATERIALIZED (
 	SELECT
 		ruf."id",
+		ruf."external_id",
 		ruf."org_id",
 		ruf."chat_thread_id",
 		ruf."run_id",
@@ -41,7 +42,10 @@ resolved AS (
 			NULLIF(art."org_id", '')
 		) AS "resolved_org_id",
 		ruf."user_id",
-		ruf."storage_key",
+		COALESCE(
+			NULLIF(ruf."storage_key", ''),
+			NULLIF(ruf."metadata"->>'s3Key', '')
+		) AS "storage_key",
 		ruf."filename",
 		ruf."content_type",
 		ruf."size_bytes",
@@ -75,6 +79,20 @@ resolved AS (
 	) art ON true
 	WHERE NOT (ruf."metadata" ? 'siteId')
 		AND COALESCE(ruf."metadata"->>'generatedBy', '') <> 'zero-official-website'
+		AND NOT (
+			NULLIF(ruf."storage_key", '') IS NULL
+			AND EXISTS (
+				SELECT 1
+				FROM "run_uploaded_files" real_file
+				WHERE real_file."id" = CASE
+						WHEN ruf."external_id" ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+						THEN ruf."external_id"::uuid
+						ELSE NULL
+					END
+					AND real_file."id" <> ruf."id"
+					AND NULLIF(real_file."storage_key", '') IS NOT NULL
+			)
+		)
 ),
 inserted AS (
 	INSERT INTO "files" (

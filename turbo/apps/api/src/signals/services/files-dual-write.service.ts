@@ -173,13 +173,20 @@ export const syncFileFromRunUploadedFileRow$ = command(
     if (!row) {
       return;
     }
+    const metadataS3Key =
+      typeof row.metadata?.s3Key === "string" && row.metadata.s3Key.length > 0
+        ? row.metadata.s3Key
+        : null;
     await set(
       dualWriteFileRecord$,
       {
         id: row.id,
         orgId: row.orgId,
         ownerUserId: row.userId,
-        storageKey: row.storageKey,
+        storageKey:
+          row.storageKey && row.storageKey.length > 0
+            ? row.storageKey
+            : metadataS3Key,
         filename: row.filename,
         contentType: row.contentType,
         sizeBytes: row.sizeBytes,

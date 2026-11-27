@@ -1045,3 +1045,102 @@ test("composer user uploads and library artifact deletion succeed cleanly with f
     }),
   ).toBeFalsy();
 });
+
+test("run-scoped private artifact upload completes cleanly and exposes unified visibility without duplicate catalog entries", async () => {
+  const owner = createBddApi(context).user();
+
+  const bdd = createBddApi(context);
+  const runs = createRunsApi(context);
+  bdd.acceptStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  const runnerGroup = await runs.configureRunnerGroup();
+  await runs.grantProEntitlement(owner);
+  await runs.ensurePersonalSubscriptionModel(owner);
+  await runs.heartbeatRunner(runnerGroup);
+  const run = await runs.createThreadRun(owner, {
+    prompt: "upload run-scoped private deliverable",
+  });
+  const execution = await runs.executionInput(run.runId);
+  const bearerToken = execution.platformEnvironment.OKOU_TOKEN;
+  if (!bearerToken) {
+    throw new Error("Expected OKOU_TOKEN in run execution platformEnvironment");
+  }
+  const runHeaders = { authorization: `Bearer ${bearerToken}` } as const;
+
+  directory([profile(owner)], [owner]);
+  installFileStorageMock("application/pdf");
+  const prepared = await accept(
+    app(owner)(uploadsContract).prepare({
+      headers: runHeaders,
+      body: {
+        filename: "run-report.pdf",
+        contentType: "application/pdf",
+        size: 13,
+        purpose: "artifact",
+      },
+    }),
+    [200],
+  );
+  await accept(
+    app(owner)(uploadsContract).complete({
+      headers: runHeaders,
+      body: { id: prepared.body.id },
+    }),
+    [200],
+  );
+
+  const catalog = await accept(
+    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
+    [200],
+  );
+  const matching = catalog.body.artifacts.filter((item) => {
+    return item.title === "run-report.pdf";
+  });
+  expect(matching).toHaveLength(1);
+  const artifactId = matching[0]!.id;
+
+  const visibility = await accept(
+    app(owner)(artifactAccessContract).getVisibility({
+      headers,
+      params: { artifactId },
+    }),
+    [200],
+  );
+  expect(visibility.body.artifactId).toBe(artifactId);
+  expect(visibility.body.visibility).toBe("private");
+
+  // Addressing the run-scoped private file by its canonical fileId (e.g. from a
+  // chat link) must resolve to the same artifact even after the shadow row updated
+  // projection_file_id.
+  const byFileId = await accept(
+    app(owner)(artifactAccessContract).getVisibility({
+      headers,
+      params: { artifactId: prepared.body.id },
+    }),
+    [200],
+  );
+  expect(byFileId.body.artifactId).toBe(artifactId);
+  expect(byFileId.body.visibility).toBe("private");
+
+  // Legacy PUT /api/artifact-shares must still dual-write artifacts.visibility for
+  // run-scoped private files whose projection_file_id points at the shadow row.
+  await accept(
+    app(owner)(artifactSharesContract).update({
+      headers,
+      body: {
+        target: { kind: "file", id: prepared.body.id },
+        audience: "public",
+      },
+    }),
+    [200],
+  );
+  const updatedCatalog = await accept(
+    app(owner)(artifactCatalogContract).list({ headers, query: {} }),
+    [200],
+  );
+  const updatedItem = updatedCatalog.body.artifacts.find((item) => {
+    return item.id === artifactId;
+  });
+  expect(updatedItem?.visibility).toBe("public");
+});

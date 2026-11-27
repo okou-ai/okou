@@ -49,10 +49,7 @@ import {
   privateArtifactUrl,
   artifactStorageBucket,
 } from "./private-artifact-storage.service";
-import {
-  syncArtifactVisibilityByFileId$,
-  syncArtifactVisibilityBySiteId$,
-} from "./artifact-access-dual-write.service";
+import { syncArtifactVisibilityByFileId$ } from "./artifact-access-dual-write.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import { checkHostedSiteAccess$ } from "./hosted-site-access.service";
@@ -690,12 +687,6 @@ export const updateArtifactShare$ = command(
       await set(
         syncArtifactVisibilityByFileId$,
         { fileId: targetId, visibility: args.audience },
-        signal,
-      );
-    } else {
-      await set(
-        syncArtifactVisibilityBySiteId$,
-        { siteId: target.siteId, visibility: args.audience },
         signal,
       );
     }

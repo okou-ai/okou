@@ -106,6 +106,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       layout: s3Object.layout,
       metadata: lastModified ? { lastModified } : {},
       origin: runId ? "agent" : "user",
+      skipFilesDualWrite: s3Object.isPrivate,
     },
     signal,
   );

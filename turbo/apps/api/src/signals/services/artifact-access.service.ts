@@ -23,11 +23,12 @@ import {
 import { hostedSiteShares } from "@okouai/db/schema/hosted-site-share";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { env } from "../../lib/env";
+import { canonicalOkouArtifactCatalogUrl } from "../../lib/file-url";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
-import { settle } from "../utils";
+import { safeUrlParse, settle } from "../utils";
 import {
   getHostedSiteVisibility$,
   updateHostedSiteVisibility$,
@@ -81,9 +82,12 @@ type ResolvedArtifactAccessTarget =
       readonly targetKind: "legacy-html-deployment";
       readonly deploymentId: string;
       readonly siteId: string;
-      readonly hasArtifactRow: boolean;
-      readonly currentVisibility: ArtifactVisibilityValue;
     };
+
+function fileArtifactLogicalKey(url: string): string {
+  const parsed = safeUrlParse(url);
+  return `file:${parsed ? (canonicalOkouArtifactCatalogUrl(parsed) ?? url) : url}`;
+}
 
 /** Map historical DB `video` rows onto `file` so retired kinds stay out of the unified contract. */
 function effectiveArtifactAccessKind(row: {
@@ -196,21 +200,59 @@ const resolveFileAccessTarget$ = command(
     if (row.logicalKey.startsWith("shared-thread:")) {
       return null;
     }
-    let fileId: string | null =
-      row.kind === "file"
-        ? (row.projectionFileId ?? row.entityId)
-        : row.projectionFileId;
-    if (!fileId && row.kind === "image") {
-      const [image] = await get(db$)
+    const database = get(db$);
+    let fileId: string | null = null;
+    if (row.kind === "image") {
+      const [image] = await database
         .select({ fileId: imageArtifacts.fileId })
         .from(imageArtifacts)
         .where(eq(imageArtifacts.id, row.entityId))
         .limit(1);
       signal.throwIfAborted();
-      fileId = image?.fileId ?? null;
+      fileId = image?.fileId ?? row.projectionFileId;
+    } else if (row.kind === "file") {
+      // Prefer entityId (the canonical private artifact row) over
+      // projectionFileId, which can point to a newer run-association shadow row.
+      fileId = row.entityId ?? row.projectionFileId;
+    } else {
+      fileId = row.projectionFileId;
     }
     if (!fileId) {
       return null;
+    }
+    // If the resolved run_uploaded_files row is a run-association shadow row
+    // (storage_key IS NULL, external_id = canonical private file UUID), resolve
+    // through to the canonical private file row.
+    const [candidate] = await database
+      .select({
+        id: runUploadedFiles.id,
+        storageKey: runUploadedFiles.storageKey,
+        externalId: runUploadedFiles.externalId,
+      })
+      .from(runUploadedFiles)
+      .where(eq(runUploadedFiles.id, fileId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      candidate &&
+      !candidate.storageKey &&
+      candidate.externalId !== candidate.id &&
+      UUID_PATTERN.test(candidate.externalId)
+    ) {
+      const [canonical] = await database
+        .select({ id: runUploadedFiles.id })
+        .from(runUploadedFiles)
+        .where(
+          and(
+            eq(runUploadedFiles.id, candidate.externalId),
+            isNotNull(runUploadedFiles.storageKey),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (canonical) {
+        fileId = canonical.id;
+      }
     }
     return {
       artifactId: row.id,
@@ -303,6 +345,38 @@ const findOwnedArtifactByRelatedId$ = command(
       signal.throwIfAborted();
       if (row) {
         return row;
+      }
+    }
+
+    const [sourceFile] = await database
+      .select({ url: runUploadedFiles.url })
+      .from(runUploadedFiles)
+      .where(
+        and(
+          eq(runUploadedFiles.id, args.artifactId),
+          eq(runUploadedFiles.orgId, args.orgId),
+          eq(runUploadedFiles.userId, args.userId),
+          isNotNull(runUploadedFiles.url),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (sourceFile?.url) {
+      const [byLogicalKey] = await database
+        .select(OWNED_ARTIFACT_SELECTION)
+        .from(artifacts)
+        .where(
+          and(
+            eq(artifacts.orgId, args.orgId),
+            eq(artifacts.authorUserId, args.userId),
+            eq(artifacts.logicalKey, fileArtifactLogicalKey(sourceFile.url)),
+            isNull(artifacts.deletedAt),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (byLogicalKey) {
+        return byLogicalKey;
       }
     }
 
@@ -451,15 +525,16 @@ const resolveLegacyHtmlDeploymentTarget$ = command(
       signal,
     );
     return {
-      artifactId: artifact?.id ?? row.id,
+      // Keep the legacy deployment's own UUID as artifactId so follow-up PATCH
+      // requests stay scoped to the immutable R2 share and never cross-talk
+      // onto the live site's artifacts row.
+      artifactId: row.id,
       kind: artifact ? effectiveArtifactAccessKind(artifact) : "hosted-site",
       orgId: args.orgId,
       userId: args.userId,
       targetKind: "legacy-html-deployment",
       deploymentId: row.id,
       siteId: row.siteId,
-      hasArtifactRow: artifact !== null,
-      currentVisibility: artifact?.visibility ?? "private",
     };
   },
 );
@@ -873,7 +948,7 @@ export const listArtifactShares$ = command(
     signal: AbortSignal,
   ): Promise<ArtifactUserShareEntry[] | null> => {
     const resolved = await set(resolveOwnedArtifactAccessTarget$, args, signal);
-    if (!resolved) {
+    if (!resolved || resolved.targetKind === "legacy-html-deployment") {
       return null;
     }
     const database = get(db$);
@@ -894,7 +969,7 @@ export const listArtifactShares$ = command(
           asc(artifactUserShares.createdAt),
           asc(artifactUserShares.userId),
         ),
-      resolved.targetKind !== "file"
+      resolved.targetKind === "site"
         ? database
             .select({
               userId: hostedSiteShares.userId,
@@ -973,11 +1048,11 @@ export const addArtifactShare$ = command(
       return { status: "self" };
     }
     const resolved = await set(resolveOwnedArtifactAccessTarget$, args, signal);
-    if (!resolved) {
+    if (!resolved || resolved.targetKind === "legacy-html-deployment") {
       return { status: "not_found" };
     }
 
-    if (resolved.targetKind !== "file") {
+    if (resolved.targetKind === "site") {
       const result = await set(
         shareHostedSite$,
         {
@@ -1083,13 +1158,13 @@ export const removeArtifactShare$ = command(
     signal: AbortSignal,
   ): Promise<{ readonly removed: string } | null> => {
     const resolved = await set(resolveOwnedArtifactAccessTarget$, args, signal);
-    if (!resolved) {
+    if (!resolved || resolved.targetKind === "legacy-html-deployment") {
       return null;
     }
     const database = set(writeDb$);
 
     const legacyRemoved =
-      resolved.targetKind !== "file"
+      resolved.targetKind === "site"
         ? await database
             .delete(hostedSiteShares)
             .where(
