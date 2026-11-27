@@ -51,7 +51,7 @@ fn session_id_hash(framework: env::Framework, session_id: &str) -> Option<String
         env::Framework::ClaudeCode => session_id.to_owned(),
         env::Framework::Codex => canonical_codex_thread_id(session_id)?,
         env::Framework::Pi => session_id.to_owned(),
-        env::Framework::Antigravity => return None,
+        env::Framework::Antigravity => session_id.to_owned(),
     };
     Some(hex::encode(Sha256::digest(normalized.as_bytes())))
 }
@@ -216,12 +216,17 @@ fn validated_history_source(
         (SessionHistoryFramework::Pi, SessionHistorySourceRef::Pi { session_id, .. }) => {
             session_id.as_str()
         }
+        (
+            SessionHistoryFramework::Antigravity,
+            SessionHistorySourceRef::Antigravity { session_id, .. },
+        ) => session_id.as_str(),
         _ => return Err(SessionHistoryIdentityVerifyError::FrameworkMismatch),
     };
     let framework = match identity.framework {
         SessionHistoryFramework::ClaudeCode => env::Framework::ClaudeCode,
         SessionHistoryFramework::Codex => env::Framework::Codex,
         SessionHistoryFramework::Pi => env::Framework::Pi,
+        SessionHistoryFramework::Antigravity => env::Framework::Antigravity,
     };
     if session_id_hash(framework, source_session_id).as_deref() != Some(&identity.session_id_hash) {
         return Err(SessionHistoryIdentityVerifyError::FrameworkMismatch);

@@ -41,6 +41,8 @@ pub enum SessionHistoryFramework {
     Codex,
     /// Pi official JSONL session history.
     Pi,
+    /// Google Antigravity CLI conversation database.
+    Antigravity,
 }
 
 impl TryFrom<crate::env::CliFramework> for SessionHistoryFramework {
@@ -51,9 +53,7 @@ impl TryFrom<crate::env::CliFramework> for SessionHistoryFramework {
             crate::env::CliFramework::ClaudeCode => Ok(Self::ClaudeCode),
             crate::env::CliFramework::Codex => Ok(Self::Codex),
             crate::env::CliFramework::Pi => Ok(Self::Pi),
-            crate::env::CliFramework::Antigravity => {
-                Err(SessionHistoryIdentityError::InvalidFramework)
-            }
+            crate::env::CliFramework::Antigravity => Ok(Self::Antigravity),
         }
     }
 }
@@ -102,6 +102,15 @@ pub enum SessionHistorySourceRef {
         #[serde(rename = "sessionId")]
         session_id: String,
     },
+    /// Antigravity conversation SQLite database below its conversations directory.
+    Antigravity {
+        /// Final guest-agent-controlled Antigravity conversations directory.
+        #[serde(rename = "conversationsDir")]
+        conversations_dir: String,
+        /// Validated Antigravity conversation identifier captured from the event stream.
+        #[serde(rename = "sessionId")]
+        session_id: String,
+    },
 }
 
 impl SessionHistorySourceRef {
@@ -120,6 +129,10 @@ impl SessionHistorySourceRef {
                 session_path,
                 session_id,
             } => !session_path.is_empty() && !session_id.is_empty(),
+            Self::Antigravity {
+                conversations_dir,
+                session_id,
+            } => !conversations_dir.is_empty() && !session_id.is_empty(),
         };
         if valid {
             Ok(())
@@ -210,6 +223,9 @@ impl SessionHistoryIdentity {
             ) | (
                 SessionHistoryFramework::Pi,
                 SessionHistorySourceRef::Pi { .. }
+            ) | (
+                SessionHistoryFramework::Antigravity,
+                SessionHistorySourceRef::Antigravity { .. }
             )
         ) {
             return Err(SessionHistoryIdentityError::InvalidHistorySource);
@@ -225,6 +241,7 @@ impl SessionHistoryFramework {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
             Self::Pi => "pi",
+            Self::Antigravity => "antigravity",
         }
     }
 
@@ -234,6 +251,7 @@ impl SessionHistoryFramework {
             "claude-code" => Ok(Self::ClaudeCode),
             "codex" => Ok(Self::Codex),
             "pi" => Ok(Self::Pi),
+            "antigravity" => Ok(Self::Antigravity),
             _ => Err(SessionHistoryIdentityError::InvalidFramework),
         }
     }

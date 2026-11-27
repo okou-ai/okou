@@ -138,7 +138,17 @@ pub(super) fn finalization_session_metadata(
                 session_id: session_id.clone(),
             },
         ),
-        guest_agent::env::Framework::Antigravity => None,
+        guest_agent::env::Framework::Antigravity => Some(
+            guest_contracts::session_history_identity::SessionHistorySourceRef::Antigravity {
+                conversations_dir: std::path::Path::new(&runtime.config.home_dir)
+                    .join(".gemini")
+                    .join("antigravity-cli")
+                    .join("conversations")
+                    .to_string_lossy()
+                    .into_owned(),
+                session_id: session_id.clone(),
+            },
+        ),
     };
     guest_agent::session_metadata::CapturedSessionMetadata::for_test(session_id, source)
 }

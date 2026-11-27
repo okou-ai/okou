@@ -981,19 +981,12 @@ pub async fn execute_cli_with_controls_for_config_started_at(
                 "native continuation provenance is incomplete".into(),
             ));
         }
-        if runtime.framework == env::Framework::Antigravity
-            && native.session_id.is_some()
-            && native.recovery_prompt.as_deref().is_none_or(str::is_empty)
-        {
-            return Err(AgentError::Execution(
-                "Antigravity continuation requires chat recovery context".into(),
-            ));
-        }
         let requested = native.session_id.clone();
         let framework = runtime.framework;
         let pi_session_id = runtime.pi_session_id.to_string();
         let claude_dir = runtime.claude_config_dir.to_string();
         let codex_home = runtime.codex_home_dir.to_string();
+        let home_dir = runtime.home_dir.to_string();
         let retained = tokio::task::spawn_blocking(move || {
             let Some(id) = requested else { return Ok(None) };
             if framework == env::Framework::Pi && id != pi_session_id {
@@ -1004,6 +997,7 @@ pub async fn execute_cli_with_controls_for_config_started_at(
                 &id,
                 &claude_dir,
                 &codex_home,
+                &home_dir,
             )
             .map(|usable| usable.then_some(id))
         })

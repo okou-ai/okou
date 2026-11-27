@@ -41,12 +41,6 @@ impl Launch {
             .get("OKOU_REASONING_EFFORT")
             .map(String::as_str);
         let model = model_spec(family, effort)?;
-        if !runtime.resume_session_id.is_empty() {
-            return Err(AgentError::Execution(
-                "Antigravity requires an independently verified account and conversation to resume"
-                    .into(),
-            ));
-        }
         let rules = tempfile::Builder::new()
             .prefix("okou-antigravity-")
             .tempdir_in("/tmp")?;

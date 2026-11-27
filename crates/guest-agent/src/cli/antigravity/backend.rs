@@ -255,14 +255,15 @@ async fn run_antigravity_acp(
             return handle_acp_transport_or_rpc_error(error, &mut projector, &mut sink).await;
         }
 
-        let session_new_res = race_with_heartbeat(
-            client.request_value("session/new", build_session_new_params(runtime)),
+        let (session_response, resumed) = match start_or_resume_session(
+            &mut client,
+            runtime,
             heartbeat_monitor,
             &mut heartbeat_done,
         )
-        .await?;
-        let session_response = match session_new_res {
-            Ok(value) => value,
+        .await?
+        {
+            Ok(outcome) => outcome,
             Err(error) => {
                 return handle_acp_transport_or_rpc_error(error, &mut projector, &mut sink).await;
             }
@@ -271,6 +272,7 @@ async fn run_antigravity_acp(
         let session_id = session_response
             .get("sessionId")
             .and_then(Value::as_str)
+            .or_else(|| resumed.then_some(runtime.resume_session_id.as_ref()))
             .filter(|id| uuid::Uuid::try_parse(id).is_ok())
             .ok_or_else(|| AgentError::Execution("Invalid Antigravity session ID".into()))?
             .to_owned();
@@ -859,6 +861,61 @@ fn build_acp_config(
     })
 }
 
+async fn start_or_resume_session(
+    client: &mut AntigravityAcpClient,
+    runtime: &CliRuntimeConfig<'_>,
+    heartbeat_monitor: &mut HeartbeatMonitor,
+    heartbeat_done: &mut bool,
+) -> Result<Result<(Value, bool), AntigravityAcpError>, AcpRunError> {
+    let resume_session_id = runtime.resume_session_id.as_ref();
+    if resume_session_id.is_empty() {
+        return Ok(race_with_heartbeat(
+            client.request_value("session/new", build_session_new_params(runtime)),
+            heartbeat_monitor,
+            heartbeat_done,
+        )
+        .await?
+        .map(|value| (value, false)));
+    }
+    let resumed = race_with_heartbeat(
+        client.request_value(
+            "session/resume",
+            build_session_resume_params(runtime, resume_session_id),
+        ),
+        heartbeat_monitor,
+        heartbeat_done,
+    )
+    .await?;
+    match resumed {
+        Ok(value) => Ok(Ok((value, true))),
+        Err(AntigravityAcpError::Rpc { method, error })
+            if runtime.native_continuation.is_some()
+                && method == "session/resume"
+                && is_missing_or_unreadable_session_error(&error) =>
+        {
+            log_warn!(
+                LOG_TAG,
+                "Antigravity ACP session/resume could not read retained session; starting fresh session with recovery context"
+            );
+            let mut fresh = runtime.clone();
+            fresh.enable_native_recovery();
+            Ok(race_with_heartbeat(
+                client.request_value("session/new", build_session_new_params(&fresh)),
+                heartbeat_monitor,
+                heartbeat_done,
+            )
+            .await?
+            .map(|value| (value, false)))
+        }
+        Err(error) => Ok(Err(error)),
+    }
+}
+
+fn is_missing_or_unreadable_session_error(error: &JsonRpcError) -> bool {
+    (error.code == -32603 && error.message.starts_with("Failed to read session "))
+        || (error.code == -32002 && error.message.starts_with("Session not found"))
+}
+
 fn build_session_new_params(runtime: &CliRuntimeConfig<'_>) -> Value {
     if runtime.append_system_prompt.is_empty() {
         json!({
@@ -867,6 +924,29 @@ fn build_session_new_params(runtime: &CliRuntimeConfig<'_>) -> Value {
         })
     } else {
         json!({
+            "cwd": paths::CANONICAL_WORKING_DIR,
+            "mcpServers": [],
+            "_meta": {
+                "antigravity": {
+                    "systemPrompt": {
+                        "append": runtime.append_system_prompt.as_ref(),
+                    }
+                }
+            }
+        })
+    }
+}
+
+fn build_session_resume_params(runtime: &CliRuntimeConfig<'_>, session_id: &str) -> Value {
+    if runtime.append_system_prompt.is_empty() {
+        json!({
+            "sessionId": session_id,
+            "cwd": paths::CANONICAL_WORKING_DIR,
+            "mcpServers": [],
+        })
+    } else {
+        json!({
+            "sessionId": session_id,
             "cwd": paths::CANONICAL_WORKING_DIR,
             "mcpServers": [],
             "_meta": {

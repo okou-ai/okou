@@ -76,26 +76,62 @@ send_result(
     },
 )
 
-# 2. session/new
-new_req = read_msg()
-assert new_req["method"] == "session/new"
-append_prompt = (
-    new_req["params"]
-    .get("_meta", {})
-    .get("antigravity", {})
-    .get("systemPrompt", {})
-    .get("append", "")
-)
-assert append_prompt.startswith("Use the run-specific system rule.")
-if mode == "recovery":
-    assert "Previous chat messages go here." in append_prompt
+# 2. session/new or session/resume
+session_req = read_msg()
+if mode == "resume":
+    assert session_req["method"] == "session/resume"
+    assert session_req["params"]["sessionId"] == session
+    append_prompt = (
+        session_req["params"]
+        .get("_meta", {})
+        .get("antigravity", {})
+        .get("systemPrompt", {})
+        .get("append", "")
+    )
+    assert append_prompt == "Use the run-specific system rule."
+    assert "Previous chat messages go here." not in append_prompt
+    send_result(session_req["id"], {"sessionId": session})
     mode = "success"
+elif mode == "resume-missing":
+    assert session_req["method"] == "session/resume"
+    assert session_req["params"]["sessionId"] == session
+    send_error(
+        session_req["id"],
+        -32603,
+        f"Failed to read session {session}; retry, or load it with session/load",
+    )
+    fallback_req = read_msg()
+    assert fallback_req["method"] == "session/new"
+    append_prompt = (
+        fallback_req["params"]
+        .get("_meta", {})
+        .get("antigravity", {})
+        .get("systemPrompt", {})
+        .get("append", "")
+    )
+    assert append_prompt.startswith("Use the run-specific system rule.")
+    assert "Previous chat messages go here." in append_prompt
+    send_result(fallback_req["id"], {"sessionId": session})
+    mode = "success"
+else:
+    assert session_req["method"] == "session/new"
+    append_prompt = (
+        session_req["params"]
+        .get("_meta", {})
+        .get("antigravity", {})
+        .get("systemPrompt", {})
+        .get("append", "")
+    )
+    assert append_prompt.startswith("Use the run-specific system rule.")
+    if mode == "recovery":
+        assert "Previous chat messages go here." in append_prompt
+        mode = "success"
 
-if mode == "auth":
-    send_error(new_req["id"], -32000, "Authentication required")
-    sys.exit(0)
+    if mode == "auth":
+        send_error(session_req["id"], -32000, "Authentication required")
+        sys.exit(0)
 
-send_result(new_req["id"], {"sessionId": session})
+    send_result(session_req["id"], {"sessionId": session})
 
 # 3. session/set_mode & session/set_config_option
 mode_req = read_msg()

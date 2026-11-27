@@ -62,7 +62,24 @@ pub(crate) struct ResolvedSessionHistory {
     location: SessionHistoryLocation,
 }
 
+const SQLITE_HEADER_MAGIC: &[u8; 16] = b"SQLite format 3\0";
+const SQLITE_MIN_DATABASE_BYTES: u64 = 100;
+
 impl ResolvedSessionHistory {
+    pub(crate) fn is_valid_sqlite_database(&mut self) -> bool {
+        let Ok(metadata) = self.file.metadata() else {
+            return false;
+        };
+        if metadata.len() < SQLITE_MIN_DATABASE_BYTES {
+            return false;
+        }
+        if self.file.rewind().is_err() {
+            return false;
+        }
+        let mut header = [0u8; 16];
+        self.file.read_exact(&mut header).is_ok() && &header == SQLITE_HEADER_MAGIC
+    }
+
     pub(crate) fn into_content_bounded(
         self,
         max_bytes: u64,
@@ -225,6 +242,19 @@ pub(crate) fn resolve_session_history_from_source(
                 AgentError::Finalization("Invalid Pi session history source".to_string())
             })?;
             open_exact_session_history(parent, &[], leaf)
+        }
+        SessionHistorySourceRef::Antigravity {
+            conversations_dir,
+            session_id,
+        } => {
+            if !is_valid_cli_agent_session_id(session_id) {
+                return Err(AgentError::Finalization(
+                    "Invalid Antigravity session history source".to_string(),
+                ));
+            }
+            let conversations_dir = validated_absolute_source_path(conversations_dir)?;
+            let leaf = format!("{session_id}.db");
+            open_exact_session_history(&conversations_dir, &[], OsStr::new(&leaf))
         }
     }
 }
