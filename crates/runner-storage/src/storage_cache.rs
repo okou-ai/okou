@@ -331,9 +331,9 @@ impl FreshDeliveryScanSummary {
 ///
 /// Clones share one semaphore, so concurrent executor attempts draw from the
 /// same `FRESH_DELIVERY_RUNNER_LIMIT`. For an admitted archive, the owned
-/// permit follows the downloaded body through atomic cache publication and
-/// remains held until the guest staging attempt completes. This bounds
-/// retained runner-owned archive bodies across runs, not only active fetches.
+/// permit follows the downloaded body through atomic cache publication.
+/// Staging completion or inline input encoding releases the original body and
+/// its permit. This bounds retained runner-owned archive bodies across runs.
 /// Clones also share one lazy same-origin HTTP pool with at most eight idle
 /// sockets and a 30-second idle timeout. Origin replacement releases the cached
 /// client; admitted fetches can retain its old pool until their owned tasks end.
@@ -1808,8 +1808,8 @@ async fn populate_cache_inner(
         };
 
         let mut outcomes = if let Some(delivery) = fresh_delivery.as_deref_mut() {
-            // Keep the existing four-body envelope: cold bodies retain their
-            // admission until staging, including bodies already downloaded.
+            // Count every admitted cold body against the four-body envelope,
+            // including those already downloaded and waiting for Guest delivery.
             let ordinary_concurrency = CONCURRENCY.saturating_sub(owned_keys.len());
             // Decoded inputs make an early handoff useful at saturation. Any
             // ordinary cache reads must wait for fresh staging to free slots.
