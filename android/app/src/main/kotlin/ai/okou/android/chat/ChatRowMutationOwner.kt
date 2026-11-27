@@ -209,9 +209,18 @@ internal class ChatRowMutationOwner(
                 false,
             )
         // Successful write responses remain valid when the canonical list read is late.
-        else if (settled || rollback != null || submission.action != ChatRowAction.Rename)
-            Confirmation(null, settled && canOfferUndo && !confirmedElsewhere && !rolledBackUnknown)
-        else
+        else if (settled || rollback != null || submission.action != ChatRowAction.Rename) {
+            val archiveAcknowledged =
+                submission.uncertainEdit == null &&
+                    (submission.action == ChatRowAction.Archive ||
+                        submission.action == ChatRowAction.Unarchive)
+            Confirmation(
+                null,
+                canOfferUndo &&
+                    !rolledBackUnknown &&
+                    (archiveAcknowledged || settled && !confirmedElsewhere),
+            )
+        } else
             Confirmation(
                 ChatRowActionFailure(
                     submission.action,

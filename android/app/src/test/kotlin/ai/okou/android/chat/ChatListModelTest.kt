@@ -2192,7 +2192,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun undoOnlyRollsBackAMissingReceiptWhenListVerificationFails() = runTest {
+    fun archiveAndUndoUseSuccessfulReceiptsWhenListVerificationFails() = runTest {
         for (responseLost in listOf(false, true)) {
             val source = ArchiveService()
             var inverseWrites = 0
@@ -2203,11 +2203,15 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             withCatchUpModel(source) { model ->
                 model.refresh()
                 advanceUntilIdle()
+                source.beforeEvents = { throw IOException("Readback unavailable") }
                 assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
                 advanceUntilIdle()
 
-                val offer = checkNotNull(model.uiState.value.rowUndo)
-                source.beforeEvents = { throw IOException("Readback unavailable") }
+                val offer =
+                    checkNotNull(model.uiState.value.rowUndo) {
+                        "An acknowledged archive can be undone while list verification is unavailable"
+                    }
+                assertEquals(ChatRowAction.Archive, offer.action)
                 model.undoRowAction(offer)
                 advanceUntilIdle()
                 val settled = model.uiState.value
