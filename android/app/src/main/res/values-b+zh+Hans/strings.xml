@@ -59,7 +59,6 @@
     <string name="instructions_title">个人指令</string>
     <string name="instructions_loading">正在加载个人指令…</string>
     <string name="instructions_refresh_failed">暂时无法更新，显示上次读取的个人指令。</string>
-    <string name="instructions_uncertain">保存结果尚未确认，修改已保留。</string>
     <string name="instructions_load_failed">暂时无法加载</string>
     <string name="instructions_unavailable">当前无法使用个人指令。</string>
     <string name="instructions_unsaved">你有未保存的更改。</string>

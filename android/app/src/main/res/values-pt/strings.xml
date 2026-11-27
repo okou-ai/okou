@@ -59,7 +59,6 @@
     <string name="instructions_title">Instruções pessoais</string>
     <string name="instructions_loading">Carregando instruções…</string>
     <string name="instructions_refresh_failed">Não foi possível atualizar as instruções. As últimas instruções carregadas são exibidas.</string>
-    <string name="instructions_uncertain">O resultado do salvamento ainda não foi confirmado. Suas alterações foram mantidas.</string>
     <string name="instructions_load_failed">Não é possível carregar no momento</string>
     <string name="instructions_unavailable">As instruções pessoais não estão disponíveis neste contexto.</string>
     <string name="instructions_unsaved">Você tem alterações não salvas.</string>
