@@ -85,6 +85,7 @@ internal data class ConversationCodeVisit(
     val threadId: String,
     val target: ConversationCodeTarget,
     val anchor: ConversationAnchor?,
+    val previewOffsetPx: Int,
     val expanded: Boolean = false,
 )
 
@@ -96,8 +97,13 @@ internal class ConversationCodeReading(
     var returning by mutableStateOf<ConversationCodeVisit?>(null)
         private set
 
-    fun open(threadId: String, target: ConversationCodeTarget, anchor: ConversationAnchor?) {
-        saved.value = ConversationCodeVisit(threadId, target, anchor)
+    fun open(
+        threadId: String,
+        target: ConversationCodeTarget,
+        anchor: ConversationAnchor?,
+        previewOffsetPx: Int,
+    ) {
+        saved.value = ConversationCodeVisit(threadId, target, anchor, previewOffsetPx)
         returning = null
     }
 
@@ -121,7 +127,7 @@ internal class ConversationCodeReading(
 }
 
 internal data class ConversationCodeActions(
-    val open: (ConversationCodeTarget) -> Unit,
+    val open: (ConversationCodeTarget, previewOffsetPx: Int) -> Unit,
     val returning: ConversationCodeVisit?,
     val restored: (ConversationCodeVisit) -> Unit,
     val feedback: SnackbarHostState,
@@ -148,10 +154,14 @@ internal fun ConversationCodeCard(
             ?: stringResource(R.string.conversation_code_generic)
     val copy = copyConversationCode(source.text, reader.feedback)
     val focus = remember { FocusRequester() }
+    val horizontal = rememberScrollState()
     val returning = reader.returning?.takeIf { it.target == target }
     val long = source.lineCount > ConversationCodePreviewLines
     LaunchedEffect(returning, long) {
-        if (returning != null && long && focus.requestFocus()) reader.restored(returning)
+        if (returning != null && long) {
+            horizontal.scrollTo(returning.previewOffsetPx)
+            if (focus.requestFocus()) reader.restored(returning)
+        }
     }
     Surface(
         modifier.fillMaxWidth().testTag("conversation_code_card"),
@@ -184,9 +194,11 @@ internal fun ConversationCodeCard(
                 background,
                 Modifier.fillMaxWidth()
                     .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
-                    .horizontalScroll(rememberScrollState()),
+                    .horizontalScroll(horizontal),
             )
-            if (long) CodePreviewFooter(source.lineCount, focus) { reader.open(target) }
+            if (long) {
+                CodePreviewFooter(source.lineCount, focus) { reader.open(target, horizontal.value) }
+            }
         }
     }
 }

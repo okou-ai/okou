@@ -8,6 +8,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
@@ -121,30 +122,24 @@ internal class ConversationCodeRootTest : ArtifactCatalogRootTestFixture() {
             compose.onNodeWithTag("workspace_search_entry").performClick()
             val query = compose.onNodeWithTag("chat_search_query")
             query.performTextReplacement("release")
+            val preview = horizontalCodeScroll("conversation_code_card")
+            val previewOffset = scrollCodeHorizontally(preview)
             compose.onNodeWithText("View full code").performClick()
             awaitText("Full code")
             query.assertIsDisplayed()
-            val scrolling =
-                compose.onNode(
-                    SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange) and
-                        hasAnyAncestor(hasTestTag("conversation_full_code")),
-                )
-            fun axis() =
-                scrolling.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange]
-            scrolling.performSemanticsAction(SemanticsActions.ScrollBy) { it(180f, 0f) }
-            compose.waitUntil(10_000) { axis().value() > 0f }
-            compose.waitForIdle()
-            val offset = axis().value()
+            val fullSource = horizontalCodeScroll("conversation_full_code")
+            val offset = scrollCodeHorizontally(fullSource)
 
             RuntimeEnvironment.setQualifiers("en-rUS-w412dp-h780dp")
             compose.activityRule.scenario.recreate()
             awaitText("Full code")
             query.assertDoesNotExist()
-            assertEquals(offset, axis().value(), 1f)
+            assertEquals(offset, fullSource.horizontalOffset(), 1f)
 
             compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
             awaitText("Showing 12 / 18 lines")
             query.assertDoesNotExist()
+            compose.waitUntil(10_000) { preview.horizontalOffset() == previewOffset }
             compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
             query.assertTextContains("release")
         } finally {
@@ -172,13 +167,13 @@ internal class ConversationCodeRootTest : ArtifactCatalogRootTestFixture() {
         }
         val subscription = realtime.target.value
         val at = Instant.now().toString()
-        fun emit(index: Long, chunk: String) {
+        fun emit(index: Long, chunk: String, replyId: String = ReplyId) {
             realtime.output(
                 RunOutputSignal.Delta(
                     SessionOutputDelta(
                         CHAT_PERSONAL,
                         HISTORY_RUN,
-                        ReplyId,
+                        replyId,
                         "reply-code",
                         at,
                         index,
@@ -187,12 +182,18 @@ internal class ConversationCodeRootTest : ArtifactCatalogRootTestFixture() {
                 ),
             )
         }
-        val lines = (1..12).joinToString("\n", postfix = "\n") { "val item$it = $it" }
+        val lines =
+            "val item1 = 1 // " +
+                "original checkpoint ".repeat(10) +
+                "\n" +
+                (2..12).joinToString("\n", postfix = "\n") { "val item$it = $it" }
         emit(0, "```kt\n$lines")
         awaitText("val item12 = 12", partial = true)
         compose.onNodeWithText("View full code").assertDoesNotExist()
         emit(1, "val item13 = 13\n")
         awaitText("Showing 12 / 13 lines")
+        val preview = horizontalCodeScroll("conversation_code_card")
+        val previewOffset = scrollCodeHorizontally(preview)
         compose.onNodeWithText("View full code").performClick()
         awaitText("Full code")
         assertEquals(subscription, realtime.target.value)
@@ -233,9 +234,28 @@ internal class ConversationCodeRootTest : ArtifactCatalogRootTestFixture() {
         awaitText("val item81 = 81", partial = true)
         compose.waitForIdle()
         assertEquals(offset, axis().value(), 1f)
+        emit(0, "The next reply is ready.", "51385000-0000-4000-8000-000000000004")
         compose.onNodeWithContentDescription("Back").performClick()
+        awaitText("The next reply is ready.")
         awaitText("Showing 12 / 81 lines")
+        compose.waitUntil(10_000) { preview.horizontalOffset() == previewOffset }
     }
+
+    private fun horizontalCodeScroll(containerTag: String) =
+        compose.onNode(
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange) and
+                hasAnyAncestor(hasTestTag(containerTag)),
+        )
+
+    private fun scrollCodeHorizontally(scroller: SemanticsNodeInteraction): Float {
+        scroller.performSemanticsAction(SemanticsActions.ScrollBy) { it(180f, 0f) }
+        compose.waitUntil(10_000) { scroller.horizontalOffset() > 0f }
+        compose.waitForIdle()
+        return scroller.horizontalOffset()
+    }
+
+    private fun SemanticsNodeInteraction.horizontalOffset() =
+        fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value()
 
     private fun input() =
         historyEventWire(

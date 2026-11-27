@@ -625,6 +625,7 @@ internal fun rememberConversationCodeVisit(): MutableState<ConversationCodeVisit
                             target.path,
                             visit.anchor?.eventId.orEmpty(),
                             visit.anchor?.offsetDp ?: 0f,
+                            visit.previewOffsetPx,
                             visit.expanded,
                         )
                 },
@@ -639,7 +640,8 @@ internal fun rememberConversationCodeVisit(): MutableState<ConversationCodeVisit
                         (fields[4] as String).takeIf(String::isNotEmpty)?.let {
                             ConversationAnchor(it, fields[5] as Float)
                         },
-                        fields[6] as Boolean,
+                        fields[6] as Int,
+                        fields[7] as Boolean,
                     )
                 },
             ),

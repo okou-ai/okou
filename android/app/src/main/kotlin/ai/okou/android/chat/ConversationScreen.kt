@@ -690,11 +690,11 @@ internal fun ConversationRoute(
         val codeKeyboard = LocalSoftwareKeyboardController.current
         val code = codeReading?.let { reading ->
             ConversationCodeActions(
-                open = { target ->
+                open = { target, previewOffsetPx ->
                     val anchor = position.firstVisibleMessage()?.readingAnchor(density)
                     codeFocus.clearFocus()
                     codeKeyboard?.hide()
-                    reading.open(threadId, target, anchor)
+                    reading.open(threadId, target, anchor, previewOffsetPx)
                 },
                 returning = returningCode.takeIf { readingReady },
                 restored = reading::restored,
