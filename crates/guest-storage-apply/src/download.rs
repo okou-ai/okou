@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-mod decoded;
+mod direct;
 
 const LOCAL_CONCURRENT: usize = 4;
 const LARGE_LOCAL_ARTIFACT_BYTES: u64 = 256 * 1024;
@@ -608,14 +608,11 @@ fn download_with_readiness(
     // Two ready writers help an isolated dense Artifact on a two-CPU Guest.
     // Other substantial writes in the batch benefit from the existing budget.
     #[cfg(target_os = "linux")]
-    let concurrency = if allow_artifact_priority
+    let inline_two_workers = allow_artifact_priority
         && (MIN_INLINE_ARTIFACT_BATCH_TASKS..WIDE_LOCAL_INFLATE_TASKS).contains(&tasks.len())
-        && inline_batch_prefers_two_workers(&tasks)
-    {
-        2
-    } else {
-        concurrency
-    };
+        && inline_batch_prefers_two_workers(&tasks);
+    #[cfg(target_os = "linux")]
+    let concurrency = if inline_two_workers { 2 } else { concurrency };
     // Local archives compete for CPU. Prefer longer ready work while active
     // reservations protect logical and resolved targets.
     let pending = tasks
@@ -659,8 +656,17 @@ fn download_with_readiness(
         concurrency
     );
 
-    if readiness.is_none() && decoded::can_dispatch(&pending) {
-        let result = decoded::download(pending, concurrency, attempt_runner);
+    if readiness.is_none() && direct::can_dispatch_decoded(&pending) {
+        let result = direct::download(pending, concurrency, attempt_runner);
+        telemetry.finish();
+        return result;
+    }
+
+    #[cfg(target_os = "linux")]
+    if inline_two_workers && direct::targets_are_independent(&pending) {
+        let mut pending = pending;
+        direct::prioritize_inline_archives(&mut pending);
+        let result = direct::download(pending, concurrency, attempt_runner);
         telemetry.finish();
         return result;
     }
