@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use api_contracts::generated::constants::model_provider_env::placeholders as model_provider_placeholders;
+use api_contracts::generated::constants::model_provider_env::{
+    namespaced_placeholders, placeholders as model_provider_placeholders,
+};
 use api_contracts::generated::constants::runners::{
     PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION, PI_MODEL_CONFIG_CURRENT_GENERATION,
     PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
@@ -23,44 +25,59 @@ use runner_types::types::{ConnectorRuntimeTargetRegistration, ExecutionContext};
 
 pub(super) struct ProtectedModelProviderEnvKey {
     name: &'static str,
-    placeholder: Option<&'static str>,
+    placeholders: &'static [&'static str],
 }
 
 pub(super) const CLAUDE_MODEL_PROVIDER_PLACEHOLDER_ENV_KEYS: &[ProtectedModelProviderEnvKey] = &[
     ProtectedModelProviderEnvKey {
         name: "ANTHROPIC_API_KEY",
-        placeholder: None,
+        placeholders: &[],
     },
     ProtectedModelProviderEnvKey {
         name: "ANTHROPIC_AUTH_TOKEN",
-        placeholder: None,
+        placeholders: &[],
     },
     ProtectedModelProviderEnvKey {
         name: "CLAUDE_CODE_OAUTH_TOKEN",
-        placeholder: Some(model_provider_placeholders::CLAUDE_CODE_OAUTH_TOKEN),
+        placeholders: &[
+            model_provider_placeholders::CLAUDE_CODE_OAUTH_TOKEN,
+            namespaced_placeholders::CLAUDE_CODE_OAUTH_TOKEN,
+        ],
     },
 ];
 
 pub(super) const CODEX_MODEL_PROVIDER_PLACEHOLDER_ENV_KEYS: &[ProtectedModelProviderEnvKey] = &[
     ProtectedModelProviderEnvKey {
         name: "OPENAI_API_KEY",
-        placeholder: Some(model_provider_placeholders::OPENAI_API_KEY),
+        placeholders: &[
+            model_provider_placeholders::OPENAI_API_KEY,
+            namespaced_placeholders::OPENAI_API_KEY,
+        ],
     },
     ProtectedModelProviderEnvKey {
         name: "CHATGPT_ACCESS_TOKEN",
-        placeholder: Some(model_provider_placeholders::CHATGPT_ACCESS_TOKEN),
+        placeholders: &[
+            model_provider_placeholders::CHATGPT_ACCESS_TOKEN,
+            namespaced_placeholders::CHATGPT_ACCESS_TOKEN,
+        ],
     },
     ProtectedModelProviderEnvKey {
         name: "CHATGPT_ACCOUNT_ID",
-        placeholder: Some(model_provider_placeholders::CHATGPT_ACCOUNT_ID),
+        placeholders: &[
+            model_provider_placeholders::CHATGPT_ACCOUNT_ID,
+            namespaced_placeholders::CHATGPT_ACCOUNT_ID,
+        ],
     },
     ProtectedModelProviderEnvKey {
         name: "CHATGPT_REFRESH_TOKEN",
-        placeholder: Some(model_provider_placeholders::CHATGPT_REFRESH_TOKEN),
+        placeholders: &[
+            model_provider_placeholders::CHATGPT_REFRESH_TOKEN,
+            namespaced_placeholders::CHATGPT_REFRESH_TOKEN,
+        ],
     },
     ProtectedModelProviderEnvKey {
         name: "CHATGPT_ID_TOKEN",
-        placeholder: None,
+        placeholders: &[],
     },
 ];
 
@@ -82,9 +99,7 @@ pub(super) fn validate_model_provider_env_placeholders(
         .filter_map(|protected_key| {
             let value = environment.get(protected_key.name)?;
             if value.is_empty()
-                || protected_key
-                    .placeholder
-                    .is_some_and(|placeholder| value == placeholder)
+                || protected_key.placeholders.contains(&value.as_str())
                 || context
                     .local_secret_env_keys
                     .as_ref()

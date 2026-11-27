@@ -2,6 +2,7 @@ import {
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
 } from "../contracts/model-providers";
+import { MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS } from "../contracts/model-provider-firewalls";
 import {
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
@@ -129,6 +130,10 @@ const modelProviderEnvPlaceholderModule = [
   "model_provider_env",
   "placeholders",
 ] as const;
+const modelProviderNamespacedEnvPlaceholderModule = [
+  "model_provider_env",
+  "namespaced_placeholders",
+] as const;
 const clientHeadersModule = ["client", "headers"] as const;
 const clientTypesModule = ["client", "types"] as const;
 const paidToolsModule = ["paid_tools"] as const;
@@ -172,6 +177,10 @@ export const rustConstantModuleDocs = [
       "Fake model-provider environment placeholder marker values.",
       "These values are not secrets and are not usable credentials.",
     ],
+  },
+  {
+    rustModulePath: modelProviderNamespacedEnvPlaceholderModule,
+    rustDoc: ["Namespaced synthetic values accepted by compatible Runners."],
   },
   {
     rustModulePath: ["client"],
@@ -719,6 +728,14 @@ export const rustConstantBindings = [
       rustModulePath: modelProviderEnvPlaceholderModule,
       rustConstName: name,
       value: rustString(modelProviderEnvPlaceholder(name)),
+      rustDoc: placeholderRustDoc(name),
+    };
+  }),
+  ...modelProviderEnvPlaceholderNames.map((name) => {
+    return {
+      rustModulePath: modelProviderNamespacedEnvPlaceholderModule,
+      rustConstName: name,
+      value: rustString(MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS[name]),
       rustDoc: placeholderRustDoc(name),
     };
   }),

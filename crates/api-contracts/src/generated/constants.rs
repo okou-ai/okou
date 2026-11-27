@@ -70,6 +70,30 @@ pub mod data_router {
 
 /// Model-provider environment contract constants shared by TypeScript and Rust.
 pub mod model_provider_env {
+    /// Namespaced synthetic values accepted by compatible Runners.
+    pub mod namespaced_placeholders {
+        /// Fake marker bytes for the `CHATGPT_ACCESS_TOKEN` placeholder.
+        /// This value is not a secret and must not be treated as a usable credential.
+        pub const CHATGPT_ACCESS_TOKEN: &str =
+            "chatgpt-token-OkouModelProviderCodexOauthAccessToken";
+
+        /// Fake marker bytes for the `CHATGPT_ACCOUNT_ID` placeholder.
+        /// This value is not a secret and must not be treated as a usable credential.
+        pub const CHATGPT_ACCOUNT_ID: &str = "ws_OkouModelProviderCodexOauthAccountId";
+
+        /// Fake marker bytes for the `CHATGPT_REFRESH_TOKEN` placeholder.
+        /// This value is not a secret and must not be treated as a usable credential.
+        pub const CHATGPT_REFRESH_TOKEN: &str = "rt_OkouModelProviderCodexOauthRefreshToken";
+
+        /// Fake marker bytes for the `CLAUDE_CODE_OAUTH_TOKEN` placeholder.
+        /// This value is not a secret and must not be treated as a usable credential.
+        pub const CLAUDE_CODE_OAUTH_TOKEN: &str = "sk-ant-oat01-OkouModelProviderClaudeCodeOauthToken00000000000000000000000000000000000000000000000000000000AA";
+
+        /// Fake marker bytes for the `OPENAI_API_KEY` placeholder.
+        /// This value is not a secret and must not be treated as a usable credential.
+        pub const OPENAI_API_KEY: &str = "OkouModelProviderOpenRouterCodexOpenaiApiKey";
+    }
+
     /// Fake model-provider environment placeholder marker values.
     /// These values are not secrets and are not usable credentials.
     pub mod placeholders {
