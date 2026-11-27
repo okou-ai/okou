@@ -91,6 +91,7 @@ export {
   PopoverTrigger,
   PopoverContent,
   PopoverClose,
+  usePopoverActionsRef,
 } from "./components/ui/popover";
 export {
   Select,

@@ -159,6 +159,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatListHoverPreview]: {
+    maintainer: "bingjie@okou.ai",
+    description: "Preview the hidden chat list in a popover on hover.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"],
+    enabledEmailHashes: ["6490c77f"],
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatListAllFilter]: {
     maintainer: "ethan@okou.ai",
     description:

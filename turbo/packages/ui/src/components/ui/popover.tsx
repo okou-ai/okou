@@ -7,6 +7,10 @@ import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
 import { SafeAreaCollisionPadding } from "../../lib/safe-area";
 
+function usePopoverActionsRef() {
+  return React.useRef<PopoverPrimitive.Root.Actions>(null);
+}
+
 function Popover(props: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }
@@ -117,4 +121,10 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
 );
 PopoverContent.displayName = "PopoverContent";
 
-export { Popover, PopoverTrigger, PopoverContent, PopoverClose };
+export {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverClose,
+  usePopoverActionsRef,
+};
