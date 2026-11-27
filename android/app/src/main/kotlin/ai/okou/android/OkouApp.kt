@@ -408,6 +408,7 @@ internal fun OkouApp(
             listWidth == null && !searchActive && target != WorkspaceTarget.List
     val listPositions =
         ChatListFilter.entries.map { filter -> key(filter) { rememberLazyListState() } }
+    val listUndoFocus = remember(chats, showChatList) { DirectoryReturnFocus() }
     val settingsPosition = rememberScrollState()
     val subpagePosition =
         if (
@@ -1188,8 +1189,10 @@ internal fun OkouApp(
             snackbar,
             conversationSnackbar,
             showChatList,
-            provisionalChats,
-            visibleConversationId,
+            onFocusedListUndo = { listUndoFocus.returningFrom(it, InputMode.Keyboard) },
+            onFocusedConversationUndo = { resourcesFocus.requestFocus() },
+            provisionalChats = provisionalChats,
+            visibleConversationId = visibleConversationId,
             navigationError =
                 conversationNavigationErrors.firstOrNull { it.threadId == visibleConversationId },
             dismissNavigationError = { conversationNavigationErrors.remove(it) },
@@ -1891,7 +1894,8 @@ internal fun OkouApp(
                                     confirmingProjectDelete,
                                     projectExpansion,
                                     listPositions[list.filter.ordinal],
-                                    ::startNewChat,
+                                    undoReturnFocus = listUndoFocus,
+                                    newChat = ::startNewChat,
                                     showInbox = { listOwner?.selectFilter(ChatListFilter.Inbox) },
                                     selectedChatId =
                                         if (listWidth != null)

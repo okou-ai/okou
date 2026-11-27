@@ -3,10 +3,6 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { clerk$ } from "../external/clerk";
 import { db$ } from "../external/db";
 import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
-import {
-  androidChatUltrafastTransforms,
-  iosChatUltrafastTransforms,
-} from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { settle } from "../utils";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { projectById } from "../services/project.service";
@@ -354,10 +350,6 @@ const createWithProject$ = command(
 export const chatThreadCreateRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadsContract.create,
-    responseTransforms: [
-      iosChatUltrafastTransforms.create,
-      androidChatUltrafastTransforms.create,
-    ],
     handler: authRoute(
       {
         requiredCapability: "chat-thread:write",

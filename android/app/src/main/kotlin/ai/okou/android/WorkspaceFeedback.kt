@@ -66,10 +66,14 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalAccessibilityManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
@@ -77,6 +81,11 @@ import kotlinx.coroutines.delay
 
 private val feedbackActionGap = 4.dp
 private val feedbackTouchTarget = 48.dp
+private val feedbackSideInset = 12.dp
+private val feedbackMaxWidth = 480.dp
+private val feedbackStartPadding = 16.dp
+private val feedbackEndPadding = 8.dp
+private val feedbackVerticalPadding = 14.dp
 
 private data class ChatFeedbackContent(
     val message: String,
@@ -87,7 +96,7 @@ private data class ChatFeedbackContent(
 
 private class ChatFeedbackSnackbar(
     val content: State<ChatFeedbackContent>,
-    val onAction: (() -> Unit)? = null,
+    val onAction: ((keyboardFocused: Boolean) -> Unit)? = null,
 ) : SnackbarVisuals {
     override val duration = SnackbarDuration.Indefinite
 
@@ -107,9 +116,11 @@ private fun ChatUndoFeedback(
     undo: ChatRowUndo,
     actionPending: Boolean,
     snackbar: SnackbarHostState,
+    onFocusedUndo: (String) -> Unit,
 ) {
     val message =
         when (undo.phase) {
+            ChatUndoPhase.Applying -> return
             ChatUndoPhase.Offered ->
                 stringResource(
                     when (undo.action) {
@@ -122,12 +133,12 @@ private fun ChatUndoFeedback(
             ChatUndoPhase.Unconfirmed -> stringResource(R.string.chat_undo_unconfirmed)
         }
     val action =
-        when {
-            undo.phase == ChatUndoPhase.Unconfirmed -> stringResource(R.string.chat_refresh)
-            else -> stringResource(R.string.chat_undo)
-        }
+        stringResource(
+            if (undo.phase == ChatUndoPhase.Offered) R.string.chat_undo else R.string.chat_refresh,
+        )
     key(chats, undo.sequence) {
         val currentUndo = rememberUpdatedState(undo)
+        val returnFocus = rememberUpdatedState(onFocusedUndo)
         val content =
             rememberUpdatedState(
                 ChatFeedbackContent(
@@ -140,10 +151,11 @@ private fun ChatUndoFeedback(
         LaunchedEffect(snackbar) {
             snackbar.currentSnackbarData?.dismiss()
             snackbar.showSnackbar(
-                ChatFeedbackSnackbar(content) {
+                ChatFeedbackSnackbar(content) { keyboardFocused ->
                     val current = currentUndo.value
                     if (current.phase == ChatUndoPhase.Unconfirmed) chats.checkRowUndo(current)
-                    else chats.undoRowAction(current)
+                    else if (chats.undoRowAction(current) && keyboardFocused)
+                        returnFocus.value(current.threadId)
                 },
             )
             chats.dismissRowUndo(undo)
@@ -162,6 +174,8 @@ internal fun WorkspaceChatFeedback(
     listSnackbar: SnackbarHostState,
     conversationSnackbar: SnackbarHostState,
     showChatList: Boolean,
+    onFocusedListUndo: (String) -> Unit,
+    onFocusedConversationUndo: () -> Unit,
     provisionalChats: List<ProvisionalChat>,
     visibleConversationId: String?,
     navigationError: ConversationNavigationError?,
@@ -246,12 +260,13 @@ internal fun WorkspaceChatFeedback(
                 )
                 dismissNavigationError(navigationError)
             }
-        conversationUndo != null ->
+        conversationUndo != null && conversationUndo.phase != ChatUndoPhase.Applying ->
             ChatUndoFeedback(
                 chats,
                 conversationUndo,
                 conversationUndo.threadId in list.pendingRowActions,
                 conversationSnackbar,
+                onFocusedUndo = { onFocusedConversationUndo() },
             )
         conversationNotice != null ->
             ChatRowFailureFeedback(chats, list, conversationNotice, conversationSnackbar)
@@ -291,7 +306,7 @@ internal fun WorkspaceChatFeedback(
                 )
                 .minByOrNull { it.first }
         } else null
-    val listUndo = list.rowUndo?.takeIf { showChatList }
+    val listUndo = list.rowUndo?.takeIf { showChatList && it.phase != ChatUndoPhase.Applying }
     val firstError =
         listOfNotNull(
                 rowError?.feedbackOrder,
@@ -327,6 +342,7 @@ internal fun WorkspaceChatFeedback(
                 listUndo,
                 listUndo.threadId in list.pendingRowActions,
                 listSnackbar,
+                onFocusedUndo = onFocusedListUndo,
             )
         rowNotice != null -> ChatRowFailureFeedback(chats, list, rowNotice, listSnackbar)
         projectNotice != null ->
@@ -580,7 +596,7 @@ private fun ChatRowFailureFeedback(
                 snackbar.showSnackbar(
                     ChatFeedbackSnackbar(
                         content,
-                        onAction = check.takeIf { retainOnRefresh },
+                        onAction = if (retainOnRefresh) ({ check() }) else null,
                     ),
                 )
             if (result == SnackbarResult.ActionPerformed) check()
@@ -607,6 +623,32 @@ internal fun WorkspaceFeedbackTimeout(state: SnackbarHostState) {
             delay(duration)
             current.dismiss()
         }
+    }
+}
+
+@Composable
+internal fun workspaceFeedbackMessageHeight(message: String, availableWidth: Dp): Dp {
+    val measurer = rememberTextMeasurer()
+    val style = MaterialTheme.typography.bodyMedium
+    return with(LocalDensity.current) {
+        val surfaceWidth =
+            minOf(
+                availableWidth.roundToPx() - 2 * feedbackSideInset.roundToPx(),
+                feedbackMaxWidth.roundToPx(),
+            )
+        val textWidth =
+            (surfaceWidth - feedbackStartPadding.roundToPx() - feedbackEndPadding.roundToPx())
+                .coerceAtLeast(0)
+        val textHeight =
+            measurer
+                .measure(
+                    message,
+                    style,
+                    constraints = Constraints(maxWidth = textWidth),
+                )
+                .size
+                .height
+        maxOf(feedbackTouchTarget, (textHeight + 2 * feedbackVerticalPadding.roundToPx()).toDp())
     }
 }
 
@@ -638,8 +680,8 @@ internal fun WorkspaceFeedbackHost(
         Surface(
             modifier =
                 modifier
-                    .padding(horizontal = 12.dp)
-                    .widthIn(max = 480.dp)
+                    .padding(horizontal = feedbackSideInset)
+                    .widthIn(max = feedbackMaxWidth)
                     .fillMaxWidth()
                     .then(surfaceModifier),
             shape = SnackbarDefaults.shape,
@@ -651,12 +693,16 @@ internal fun WorkspaceFeedbackHost(
                 modifier =
                     Modifier.animateContentSize(alignment = Alignment.BottomCenter)
                         .padding(
-                            start = 16.dp,
-                            end = if (visuals.withDismissAction) 0.dp else 8.dp,
+                            start = feedbackStartPadding,
+                            end = if (visuals.withDismissAction) 0.dp else feedbackEndPadding,
                         ),
                 textSize = style.fontSize,
                 message = {
-                    Text(visuals.message, Modifier.padding(vertical = 14.dp), style = style)
+                    Text(
+                        visuals.message,
+                        Modifier.padding(vertical = feedbackVerticalPadding),
+                        style = style,
+                    )
                 },
                 actions = {
                     FeedbackActions(
@@ -665,7 +711,9 @@ internal fun WorkspaceFeedbackHost(
                             if (it.hasFocus) focused.value = data
                             else if (focused.value === data) focused.value = null
                         },
-                    )
+                    ) {
+                        focused.value === data && input.inputMode == InputMode.Keyboard
+                    }
                 },
             )
         }
@@ -673,7 +721,11 @@ internal fun WorkspaceFeedbackHost(
 }
 
 @Composable
-private fun FeedbackActions(data: SnackbarData, modifier: Modifier) {
+private fun FeedbackActions(
+    data: SnackbarData,
+    modifier: Modifier,
+    keyboardFocused: () -> Boolean,
+) {
     val visuals = data.visuals
     val action = visuals as? ChatFeedbackSnackbar
     val label = visuals.actionLabel
@@ -687,7 +739,7 @@ private fun FeedbackActions(data: SnackbarData, modifier: Modifier) {
     ) {
         if (label != null) {
             TextButton(
-                onClick = { action?.onAction?.invoke() ?: data.performAction() },
+                onClick = { action?.onAction?.invoke(keyboardFocused()) ?: data.performAction() },
                 modifier =
                     Modifier.weight(1f, fill = false)
                         .sizeIn(minWidth = feedbackTouchTarget, minHeight = feedbackTouchTarget)
@@ -732,7 +784,7 @@ private fun FeedbackLayout(
             message()
             actions()
         },
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier = modifier.heightIn(min = feedbackTouchTarget),
     ) { children, bounds ->
         val loose = bounds.copy(minWidth = 0, minHeight = 0)
         val buttons = children.getOrNull(1)?.measure(loose)

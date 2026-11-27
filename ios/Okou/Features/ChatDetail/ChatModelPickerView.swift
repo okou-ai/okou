@@ -91,6 +91,7 @@ private struct ChatModelPickerButtonContent: View {
       catalog.routes.filter { $0.enabled && $0.model == model }.map(\.concreteProviderType))
     if providers.contains("claude-code-oauth-token") { return .company("AnthropicMark") }
     if providers.contains("codex-oauth-token") { return .company("OpenAIMark") }
+    if providers.contains("antigravity") { return .company("AuthProvider-google") }
     return .okou
   }
 
@@ -370,7 +371,9 @@ private struct ChatModelPickerContent: View {
       if row.memberEffective.availability == "reconnect_required" {
         Section {
           Text("Reconnect your subscription to use this model.")
-          if let type = PersonalSubscriptionType(rawValue: row.memberEffective.providerType) {
+          if let type = PersonalSubscriptionType(rawValue: row.memberEffective.providerType),
+            type.supportsDeviceAuth
+          {
             Button("Reconnect") {
               Task { showsAuth = await subscriptions.reconnect(type: type) }
             }
@@ -453,7 +456,7 @@ private struct ChatModelPickerContent: View {
 
   private func subscriptionsSection(_ configuration: ChatModelConfiguration) -> some View {
     Section {
-      ForEach(PersonalSubscriptionType.allCases) { type in
+      ForEach(PersonalSubscriptionType.deviceAuthCases) { type in
         if !configuration.models.contains(where: {
           $0.selectedModel != nil && $0.memberEffective.providerType == type.rawValue
         }) {
@@ -561,12 +564,23 @@ func effortLabel(_ effort: String) -> String {
   effort == "xhigh" ? "xHigh" : effort.prefix(1).uppercased() + effort.dropFirst()
 }
 func providerTitle(_ type: PersonalSubscriptionType) -> String {
-  type == .codex ? "ChatGPT / Codex" : "Claude Code"
+  switch type {
+  case .codex: "ChatGPT / Codex"
+  case .claude: "Claude Code"
+  case .antigravity: "Google AI"
+  }
 }
 struct SubscriptionBrandIcon: View {
   let type: PersonalSubscriptionType
+  private var assetName: String {
+    switch type {
+    case .codex: "OpenAIMark"
+    case .claude: "AnthropicMark"
+    case .antigravity: "AuthProvider-google"
+    }
+  }
   var body: some View {
-    Image(type == .codex ? "OpenAIMark" : "AnthropicMark")
+    Image(assetName)
       .renderingMode(.template).resizable().scaledToFit()
       .frame(width: 20, height: 20).accessibilityHidden(true)
   }

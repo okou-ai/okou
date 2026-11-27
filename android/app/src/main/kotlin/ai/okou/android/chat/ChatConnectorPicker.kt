@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouActionTreatment
 import ai.okou.android.R
@@ -15,7 +16,9 @@ import ai.okou.android.connectors.ConnectorButton
 import ai.okou.android.connectors.ConnectorButtonTreatment
 import ai.okou.android.connectors.ConnectorChevron
 import ai.okou.android.connectors.ConnectorMark
-import ai.okou.android.connectors.ConnectorReadError
+import ai.okou.android.connectors.ConnectorReadAnnouncements
+import ai.okou.android.connectors.ConnectorReadFailure
+import ai.okou.android.connectors.ConnectorReadFailureContent
 import ai.okou.android.connectors.ConnectorSavedAccount
 import ai.okou.android.connectors.ConnectorSheet
 import ai.okou.android.connectors.ConnectorSkeleton
@@ -24,16 +27,20 @@ import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.connectors.connectorSmallType
 import ai.okou.android.connectors.label
 import ai.okou.android.connectors.needsAttention
+import ai.okou.android.connectors.notice
+import ai.okou.android.connectors.rememberConnectorReadFeedback
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.settings.ModelPickerSheet
 import ai.okou.android.state.ComposerOptionsPage
 import ai.okou.android.state.ComposerOptionsPresentation
 import ai.okou.android.state.rememberComposerOptions
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
@@ -116,6 +123,7 @@ internal fun ChatConnectorOptionsButton(
     var restoredAccount by remember { mutableStateOf<String?>(null) }
     var sheetGeneration by remember { mutableIntStateOf(0) }
     val overviewScroll = rememberScrollState()
+    val readAnnouncements = remember(options, target.key) { ConnectorReadAnnouncements() }
     val page = presentation.page
     val open = page != ComposerOptionsPage.Closed
     DisposableEffect(defaultModel, open) {
@@ -193,6 +201,23 @@ internal fun ChatConnectorOptionsButton(
     val detail = state?.details?.get(slug)
     val reading = detail?.accounts
     val rows = reading?.data?.accounts
+    val hasReadContent =
+        showingOverview && overviewData != null ||
+            showingAccounts && summary != null && rows != null
+    val coldFailure =
+        when {
+            showingOverview && overviewData == null -> overview?.failure
+            showingAccounts && (rows == null || summary == null) ->
+                reading?.failure ?: overview?.failure.takeUnless { overviewConfirmed }
+            else -> null
+        }
+    val readNotice =
+        when {
+            showingOverview && overviewData != null -> overview.notice()
+            showingAccounts && summary != null && rows != null -> reading.notice()
+            else -> null
+        }
+    val readFeedback = rememberConnectorReadFeedback(readNotice, readAnnouncements)
     val save = state?.save
     val saving = save?.saving == true
     val checking = save?.phase == ChatConnectorSavePhase.Checking
@@ -406,6 +431,13 @@ internal fun ChatConnectorOptionsButton(
             expandInShortWindow = true,
             back = if (showingConnectors || currentWindowSizeDp().height < 480) ::back else null,
             actions = footer,
+            feedback = readFeedback.takeIf { hasReadContent },
+            inContentFeedbackMessage =
+                if (hasReadContent) stringResource(R.string.connector_refresh_failed) else null,
+            centerCompactContent =
+                inlineSave == null &&
+                    (coldFailure == ConnectorReadFailure.Network ||
+                        coldFailure == ConnectorReadFailure.Sustained),
             retainedScroll = overviewScroll.takeIf { showingOverview },
         ) {
             if (!showingConnectors) {
@@ -490,10 +522,12 @@ internal fun ChatConnectorOptionsButton(
             } else if (showingOverview) {
                 if (inlineSave != null) ChatConnectorSaveFeedback(inlineSave.phase)
                 when {
-                    overviewData == null && overview?.failure != null ->
-                        ConnectorReadError(R.string.connector_load_failed)
                     overviewData == null ->
-                        ConnectorSkeleton(stringResource(R.string.connector_loading), rows = 2)
+                        ChatConnectorReadPlaceholder(
+                            coldFailure,
+                            R.string.connector_loading,
+                            R.string.connector_load_failed,
+                        )
                     overviewData.isEmpty() -> ConnectorOptionFeedback(R.string.chat_connector_empty)
                     else ->
                         Column {
@@ -522,14 +556,13 @@ internal fun ChatConnectorOptionsButton(
                             }
                         }
                 }
-                if (overviewData != null && overview.failure != null)
-                    ConnectorOptionFeedback(R.string.connector_refresh_failed)
             } else if (rows == null || summary == null) {
                 if (inlineSave != null) ChatConnectorSaveFeedback(inlineSave.phase)
-                if (reading?.failure != null || (!overviewConfirmed && overview?.failure != null))
-                    ConnectorReadError(R.string.connector_accounts_failed)
-                else
-                    ConnectorSkeleton(stringResource(R.string.connector_loading_accounts), rows = 2)
+                ChatConnectorReadPlaceholder(
+                    coldFailure,
+                    R.string.connector_loading_accounts,
+                    R.string.connector_accounts_failed,
+                )
             } else {
                 val serviceSlug = summary.entry.slug
                 val newChat = target.threadId == null
@@ -590,8 +623,6 @@ internal fun ChatConnectorOptionsButton(
                         inlineSave.phase,
                         Modifier.padding(horizontal = 12.dp),
                     )
-                if (reading.failure != null)
-                    ConnectorOptionFeedback(R.string.connector_refresh_failed)
                 if (policies.failure != null)
                     ConnectorOptionFeedback(R.string.chat_connector_policies_failed)
                 val resets = overviewData.flatMap { it.overrides() }
@@ -612,6 +643,24 @@ internal fun ChatConnectorOptionsButton(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ChatConnectorReadPlaceholder(
+    failure: ConnectorReadFailure?,
+    @StringRes loading: Int,
+    @StringRes unavailable: Int,
+) {
+    Box(Modifier.fillMaxWidth().heightIn(min = 160.dp), propagateMinConstraints = true) {
+        if (failure == null) ConnectorSkeleton(stringResource(loading), rows = 2)
+        else
+            ConnectorReadFailureContent(
+                failure,
+                unavailable,
+                Modifier,
+                ContentReadFailureLayout.Panel,
+            )
     }
 }
 

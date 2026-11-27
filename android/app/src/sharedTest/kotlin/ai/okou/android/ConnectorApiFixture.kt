@@ -84,6 +84,7 @@ internal class ConnectorApiFixture(
     @Volatile var memberAccess = false
     @Volatile var denyPolicyReads = false
     @Volatile var overviewReplyGate: CountDownLatch? = null
+    @Volatile var failChatOverview = false
     val chatConnectorReads = CopyOnWriteArrayList<Pair<String, String?>>()
     @Volatile var devicePollStatus = "pending"
     @Volatile var devicePollInterval = 5
@@ -380,6 +381,7 @@ internal class ConnectorApiFixture(
                 )
             path == "/api/chat-connector-overview" -> {
                 overviewReplyGate?.await()
+                if (failChatOverview) return rejected(503).setHeader("Retry-After", 0)
                 json(
                     JsonArray(
                         accounts.entries
