@@ -80,6 +80,12 @@ internal class ProactiveSettingOwner(
     private val onSessionFailure: (Exception) -> Unit,
     private val reportSaveFailure: () -> Unit,
 ) {
+    private enum class WriteOutcome {
+        Observed,
+        NotApplied,
+        Unresolved,
+    }
+
     private val mutable = MutableStateFlow(ProactiveSettingState())
     val state = mutable.asStateFlow()
     private var visit = 0L
@@ -182,10 +188,21 @@ internal class ProactiveSettingOwner(
         if (writing?.isActive == true) return
         writing = scope.launch {
             try {
+                var hasUnresolvedWrite = false
                 while (true) {
-                    val sent = mutable.value.choice ?: break
+                    val current = mutable.value
+                    val sent = current.choice ?: break
                     requireCurrent()
-                    write(sent)
+                    if (!hasUnresolvedWrite && current.confirmed?.matches(sent.enabled) == true) {
+                        resolve(sent, current.confirmed)
+                        continue
+                    }
+                    hasUnresolvedWrite =
+                        when (write(sent)) {
+                            WriteOutcome.Observed -> false
+                            WriteOutcome.NotApplied -> hasUnresolvedWrite
+                            WriteOutcome.Unresolved -> true
+                        }
                 }
             } finally {
                 writing = null
@@ -194,10 +211,10 @@ internal class ProactiveSettingOwner(
         }
     }
 
-    private suspend fun write(sent: ProactiveChoice) {
+    private suspend fun write(sent: ProactiveChoice): WriteOutcome {
         val value =
             try {
-                send(sent) ?: return
+                send(sent) ?: return WriteOutcome.NotApplied
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -206,7 +223,7 @@ internal class ProactiveSettingOwner(
                 requireCurrent()
                 if (error is ApiFailure.Network && error.connectionFailed) {
                     resolve(sent, mutable.value.confirmed, rejected = true)
-                    return
+                    return WriteOutcome.NotApplied
                 }
                 if (
                     error is ApiFailure.Http &&
@@ -216,13 +233,13 @@ internal class ProactiveSettingOwner(
                     if (error.status == 403) discardConfirmation()
                     resolve(sent, mutable.value.confirmed, rejected = true)
                     if (error.code == "MORNING_BRIEF_MISSING_TIMEZONE") readRequested = true
-                    return
+                    return WriteOutcome.NotApplied
                 }
-                reconcile(sent)
-                return
+                return reconcile(sent)
             }
         publish(value)
         resolve(sent, value)
+        return WriteOutcome.Observed
     }
 
     private suspend fun send(sent: ProactiveChoice): ProactivePreference? {
@@ -240,7 +257,7 @@ internal class ProactiveSettingOwner(
         }
     }
 
-    private suspend fun reconcile(sent: ProactiveChoice) {
+    private suspend fun reconcile(sent: ProactiveChoice): WriteOutcome {
         mutable.value = mutable.value.copy(checking = true)
         try {
             if (
@@ -255,7 +272,7 @@ internal class ProactiveSettingOwner(
                     }
                 }
             )
-                return
+                return WriteOutcome.Observed
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -265,6 +282,7 @@ internal class ProactiveSettingOwner(
             if (error is ApiFailure.Http && error.status == 403) discardConfirmation()
         }
         resolve(sent, mutable.value.confirmed, rejected = true)
+        return WriteOutcome.Unresolved
     }
 
     private fun publish(value: ProactivePreference?) {

@@ -13,6 +13,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -127,6 +128,41 @@ class ProactiveSettingsModelTest {
             assertEquals(ProactiveSetting.MorningBrief, feedback.await())
             assertEquals(true, model.morningBrief.state.value.enabled)
             assertEquals(listOf(true, false), fixture.writes.map { it.second })
+        }
+    }
+
+    @Test
+    fun revertingAQueuedToggleSkipsTheWriteWhenTheEarlierChoiceIsRejected() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = ProactiveSettingsApiFixture(api).apply { morningWriteStatus = 400 }
+            val writeStarted = CountDownLatch(1)
+            val releaseWrite = CountDownLatch(1)
+            fixture.beforeMorningWrite = {
+                writeStarted.countDown()
+                check(releaseWrite.await(10, TimeUnit.SECONDS))
+            }
+            val model = model(api)
+            val failures = mutableListOf<ProactiveSetting>()
+            backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                model.saveFailures.collect { failures += it }
+            }
+            try {
+                model.visible(true)
+                model.morningBrief.state.first { it.confirmed?.matches(false) == true }
+                model.morningBrief.choose(true)
+                withContext(Dispatchers.IO) { assertTrue(writeStarted.await(10, TimeUnit.SECONDS)) }
+                model.morningBrief.choose(false)
+                assertEquals(false, model.morningBrief.state.value.enabled)
+                releaseWrite.countDown()
+
+                val settled = model.morningBrief.state.first { it.choice == null }
+                assertEquals(false, settled.enabled)
+                assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)
+                runCurrent()
+                assertTrue(failures.isEmpty())
+            } finally {
+                releaseWrite.countDown()
+            }
         }
     }
 

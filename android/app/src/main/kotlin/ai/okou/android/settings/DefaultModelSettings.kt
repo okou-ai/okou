@@ -531,8 +531,6 @@ internal class DefaultModelSettings(
                     else null
                 deferReadback(latest, wait)
             }
-            // An ambiguous PUT turns the remaining attempts into reads. Even if the last
-            // safe attempt loses its response, check once before reporting an unknown outcome.
             else -> deferSave(latest, boundedRetryDelayMillis(latest.failedAttempts, error))
         }
     }
