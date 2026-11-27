@@ -163,6 +163,12 @@ describe("Antigravity execution", () => {
         client_secret: "agy-client-secret",
       });
 
+      const deniedGuest = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        { authHeaders },
+        [401],
+      );
+      expect(deniedGuest.status).toBe(401);
       const denied = await firewall.requestFirewallAuth(
         headers,
         { authHeaders, authBase: secretTemplate("ANTIGRAVITY_ACCESS_TOKEN") },
