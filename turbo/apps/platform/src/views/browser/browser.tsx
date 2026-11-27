@@ -7,7 +7,6 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
   ChevronDown,
   Globe,
   Loader2,
@@ -35,6 +34,7 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuTrigger,
   DropdownMenuSub,
   DropdownMenuSubTrigger,
@@ -244,7 +244,12 @@ function CaptureSettingsMenu({
           })}
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent>
-          <DropdownMenuRadioGroup value={capture.format ?? "webp"}>
+          <DropdownMenuRadioGroup
+            value={capture.format ?? "webp"}
+            onValueChange={(format: "webp" | "jpeg" | "png") => {
+              detach(onChange({ ...capture, format }), Reason.DomCallback);
+            }}
+          >
             {(["webp", "jpeg", "png"] as const).map((format) => {
               return (
                 <DropdownMenuRadioItem
@@ -252,12 +257,6 @@ function CaptureSettingsMenu({
                   key={format}
                   value={format}
                   disabled={pending}
-                  onClick={() => {
-                    detach(
-                      onChange({ ...capture, format }),
-                      Reason.DomCallback,
-                    );
-                  }}
                 >
                   <span className="flex-1">
                     {format === "webp"
@@ -272,7 +271,7 @@ function CaptureSettingsMenu({
                             return $.browserViewer.formatPng;
                           })}
                   </span>
-                  {(capture.format ?? "webp") === format && <Check size={14} />}
+                  <DropdownMenuRadioItemIndicator />
                 </DropdownMenuRadioItem>
               );
             })}
@@ -563,7 +562,12 @@ function WindowSettingsMenu({
         })}
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent>
-        <DropdownMenuRadioGroup value={mode}>
+        <DropdownMenuRadioGroup
+          value={mode}
+          onValueChange={(value: "off" | "initial" | "live") => {
+            detach(onChange(value), Reason.DomCallback);
+          }}
+        >
           {(["off", "initial", "live"] as const).map((value) => {
             return (
               <DropdownMenuRadioItem
@@ -571,9 +575,6 @@ function WindowSettingsMenu({
                 key={value}
                 value={value}
                 disabled={pending || syncing}
-                onClick={() => {
-                  detach(onChange(value), Reason.DomCallback);
-                }}
               >
                 <span className="flex-1">
                   {value === "off"
@@ -588,7 +589,7 @@ function WindowSettingsMenu({
                           return $.browserViewer.sizeLive;
                         })}
                 </span>
-                {value === mode && <Check size={14} />}
+                <DropdownMenuRadioItemIndicator />
               </DropdownMenuRadioItem>
             );
           })}
@@ -628,7 +629,12 @@ function TransportSettingsMenu({
         })}
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent>
-        <DropdownMenuRadioGroup value={transport}>
+        <DropdownMenuRadioGroup
+          value={transport}
+          onValueChange={(value: ViewerTransport) => {
+            detach(onChange(value), Reason.DomCallback);
+          }}
+        >
           {(["shared", "split"] as const).map((value) => {
             return (
               <DropdownMenuRadioItem
@@ -636,9 +642,6 @@ function TransportSettingsMenu({
                 key={value}
                 value={value}
                 disabled={pending}
-                onClick={() => {
-                  detach(onChange(value), Reason.DomCallback);
-                }}
               >
                 <span className="flex-1">
                   {value === "shared"
@@ -649,7 +652,7 @@ function TransportSettingsMenu({
                         return $.browserViewer.splitTransport;
                       })}
                 </span>
-                {value === transport && <Check size={14} />}
+                <DropdownMenuRadioItemIndicator />
               </DropdownMenuRadioItem>
             );
           })}
@@ -1158,23 +1161,29 @@ function BrowserTabPicker({
         align="end"
         className="w-72 max-w-[calc(100vw-1.5rem)]"
       >
-        {tabs.map((target) => {
-          return (
-            <DropdownMenuItem
-              key={target.id}
-              disabled={tabsDisabled || selecting}
-              onClick={() => {
-                detach(onSelect(target.id), Reason.DomCallback);
-              }}
-            >
-              <BrowserTabIcon signals={signals} target={target} />
-              <span className="min-w-0 flex-1 truncate">
-                {title(target.id, target.title)}
-              </span>
-              {selectedTabId === target.id && <Check size={14} />}
-            </DropdownMenuItem>
-          );
-        })}
+        <DropdownMenuRadioGroup
+          value={selectedTabId ?? null}
+          onValueChange={(targetId: string) => {
+            detach(onSelect(targetId), Reason.DomCallback);
+          }}
+        >
+          {tabs.map((target) => {
+            return (
+              <DropdownMenuRadioItem
+                key={target.id}
+                value={target.id}
+                closeOnClick
+                disabled={tabsDisabled || selecting}
+              >
+                <BrowserTabIcon signals={signals} target={target} />
+                <span className="min-w-0 flex-1 truncate">
+                  {title(target.id, target.title)}
+                </span>
+                <DropdownMenuRadioItemIndicator />
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

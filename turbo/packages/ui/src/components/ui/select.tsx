@@ -197,7 +197,10 @@ const SelectLabel = React.forwardRef<
     <SelectPrimitive.GroupLabel
       ref={ref}
       data-slot="select-label"
-      className={cn("px-3 py-1.5 text-sm text-muted-foreground", className)}
+      className={cn(
+        "px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground/80",
+        className,
+      )}
       {...props}
     />
   );

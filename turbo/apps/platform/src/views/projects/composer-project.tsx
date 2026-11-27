@@ -2,8 +2,14 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Check, Folder, FolderPlus, X } from "lucide-react";
-import { DropdownMenuItem, DropdownMenuSeparator } from "@okouai/ui";
+import { Folder, FolderPlus, X } from "lucide-react";
+import {
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
+  DropdownMenuSeparator,
+} from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
   composerProjectAvailable,
@@ -47,28 +53,40 @@ function ComposerProjectMenuItems({
           return $.projects.new;
         })}
       </DropdownMenuItem>
-      {projects.length > 0 && <DropdownMenuSeparator />}
-      {projects.map((item) => {
-        const current = item.id === project.projectId;
-        return (
-          <DropdownMenuItem
-            key={item.id}
-            disabled={current}
-            onClick={() => {
-              detach(select(item.id, pageSignal), Reason.DomCallback);
+      {projects.length > 0 && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuRadioGroup
+            value={project.projectId ?? null}
+            onValueChange={(next: string) => {
+              if (next !== project.projectId) {
+                detach(select(next, pageSignal), Reason.DomCallback);
+              }
             }}
           >
-            <ProjectFolderIcon
-              name={item.name}
-              folderClassName="text-muted-foreground"
-            />
-            <span className="min-w-0 flex-1 truncate">
-              {projectNameParts(item.name).text}
-            </span>
-            {current && <Check aria-hidden="true" />}
-          </DropdownMenuItem>
-        );
-      })}
+            {projects.map((item) => {
+              const current = item.id === project.projectId;
+              return (
+                <DropdownMenuRadioItem
+                  key={item.id}
+                  value={item.id}
+                  disabled={current}
+                  closeOnClick
+                >
+                  <ProjectFolderIcon
+                    name={item.name}
+                    folderClassName="text-muted-foreground"
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {projectNameParts(item.name).text}
+                  </span>
+                  <DropdownMenuRadioItemIndicator />
+                </DropdownMenuRadioItem>
+              );
+            })}
+          </DropdownMenuRadioGroup>
+        </>
+      )}
       {project.projectId && (
         <>
           <DropdownMenuSeparator />

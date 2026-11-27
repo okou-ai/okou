@@ -2595,6 +2595,7 @@
       "deleteTitle": "删除聊天？",
       "draft": "草稿",
       "empty": "发起对话后，会显示在这里",
+      "filter": "筛选",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "收件箱",
       "inboxEmpty": "收件箱是空的",
