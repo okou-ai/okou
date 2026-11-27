@@ -3,12 +3,19 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::io::{self, Write};
+use std::path::Path;
 
 /// Parse a complete, ordered JSONL snapshot without skipping invalid records.
 /// Empty text yields an empty snapshot; blank or malformed lines return the
 /// first Serde error. Line endings follow [`str::lines`].
 pub fn parse_json_lines(text: &str) -> Result<Vec<Value>, serde_json::Error> {
     text.lines().map(serde_json::from_str).collect()
+}
+
+/// Read a complete UTF-8 JSONL snapshot and preserve the underlying IO or parse error.
+pub fn read_json_lines(path: impl AsRef<Path>) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+    let text = std::fs::read_to_string(path)?;
+    Ok(parse_json_lines(&text)?)
 }
 
 pub struct JsonFieldTemplate {
