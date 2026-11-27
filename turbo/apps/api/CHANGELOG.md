@@ -10,6 +10,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.140.0](https://github.com/okou-ai/okou/compare/api-v2.139.1...api-v2.140.0) (2026-11-27)
+
+
+### Features
+
+* **platform:** add remote device deletion with confirmation ([#51428](https://github.com/okou-ai/okou/issues/51428)) ([b09fbb2](https://github.com/okou-ai/okou/commit/b09fbb279a729ee9f57878dfcb798b7cfa930170))
+
+
+### Refactoring
+
+* **api:** retire official workflow admission for proactive runs ([#51409](https://github.com/okou-ai/okou/issues/51409)) ([7a23914](https://github.com/okou-ai/okou/commit/7a239141cfc683da184e8f42ff2456b294025b7d))
+* **api:** retire template startup ordering anchors ([#51368](https://github.com/okou-ai/okou/issues/51368)) ([b31aeaa](https://github.com/okou-ai/okou/commit/b31aeaaa18d1d578c8fd506560371d7a46d0debf))
+
+
+### Performance Improvements
+
+* **api:** bound artifact library list and search queries ([#51460](https://github.com/okou-ai/okou/issues/51460)) ([d443ccc](https://github.com/okou-ai/okou/commit/d443ccc7f45264f8bde975c8a30f54ae9755f882))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.140.0
+    * @okouai/core bumped to 8.887.7
+    * @okouai/db bumped to 2.72.0
+    * @okouai/pi-agent-runtime bumped to 1.52.102
+
 ## [2.139.1](https://github.com/okou-ai/okou/compare/api-v2.139.0...api-v2.139.1) (2026-11-27)
 
 

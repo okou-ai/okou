@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.155](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.154...sandbox-firecracker-v0.53.155) (2026-11-27)
+
+
+### Performance Improvements
+
+* **runner:** skip duplicate home mount on fresh startup ([#51452](https://github.com/okou-ai/okou/issues/51452)) ([1cb591e](https://github.com/okou-ai/okou/commit/1cb591e43d54c3fe8f1158b8731a170bff79ab51))
+
 ## [0.53.154](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.153...sandbox-firecracker-v0.53.154) (2026-11-27)
 
 ## [0.53.153](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.152...sandbox-firecracker-v0.53.153) (2026-11-26)

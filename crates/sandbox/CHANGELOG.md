@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.62](https://github.com/okou-ai/okou/compare/sandbox-v0.28.61...sandbox-v0.28.62) (2026-11-27)
+
+
+### Performance Improvements
+
+* **runner:** skip duplicate home mount on fresh startup ([#51452](https://github.com/okou-ai/okou/issues/51452)) ([1cb591e](https://github.com/okou-ai/okou/commit/1cb591e43d54c3fe8f1158b8731a170bff79ab51))
+
 ## [0.28.61](https://github.com/okou-ai/okou/compare/sandbox-v0.28.60...sandbox-v0.28.61) (2026-11-27)
 
 ## [0.28.60](https://github.com/okou-ai/okou/compare/sandbox-v0.28.59...sandbox-v0.28.60) (2026-11-26)
