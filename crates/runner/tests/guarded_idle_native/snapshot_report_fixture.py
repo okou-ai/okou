@@ -7,7 +7,7 @@ import report_test
 
 
 def prepare(self):
-    report_test.NativeReportTests.setUp(self)
+    report_test.prepare_native_report_fixture(self)
     self.events = self.events[:24]
     self.samples = self.samples[:24]
     self.policy = report_test.pressure_policy_fixture()

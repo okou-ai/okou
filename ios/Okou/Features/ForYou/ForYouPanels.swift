@@ -98,8 +98,8 @@ struct ForYouLoadingCard: View {
   }
 }
 
-/// The layers of the deck under the card in front: solid cards on the scene, each a little
-/// narrower, lower and more shaded than the one above it.
+/// The layers of the deck under the card in front: the card's own fill and hairline, each a little
+/// narrower, lower and fainter than the one above it, under one soft shadow.
 struct ForYouDeckLayers: View {
   let count: Int
   let ground: Color
@@ -107,25 +107,30 @@ struct ForYouDeckLayers: View {
   let drop: CGFloat
   /// How much narrower each layer is than the one above it.
   let inset: CGFloat
-  /// How much more each deeper layer is shaded.
-  let shade: Double
+  /// How much less of each deeper layer shows.
+  let fade: Double
+
+  /// The one soft shadow the stack casts on the ground, as a stack of paper does.
+  private static let shadowRadius: CGFloat = 10
+  private static let shadowY: CGFloat = 4
+  private static let shadowOpacity: Double = 0.06
 
   var body: some View {
     ZStack(alignment: .bottom) {
       ForEach(Array((1...count).reversed()), id: \.self) { layer in
-        RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
-          .fill(ground)
-          .overlay {
-            RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
-              .fill(OkouMediaColor.scrim.opacity(Double(layer) * shade))
-          }
-          .overlay {
-            RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
-              .strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline)
-          }
+        let shape = RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
+        // The card's own fill and hairline, never shaded darker: each layer behind is a little
+        // narrower and fainter, so its edge reads as the next card and not as a shadow.
+        shape.fill(ground)
+          .overlay { shape.strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline) }
+          .opacity(1 - Double(layer) * fade)
           .scaleEffect(x: 1 - CGFloat(layer) * inset, y: 1, anchor: .bottom)
           .offset(y: CGFloat(layer) * drop)
       }
     }
+    // One shadow under the whole stack instead of a band under each layer.
+    .compositingGroup()
+    .shadow(
+      color: .black.opacity(Self.shadowOpacity), radius: Self.shadowRadius, y: Self.shadowY)
   }
 }

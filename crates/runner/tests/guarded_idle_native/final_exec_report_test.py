@@ -11,9 +11,7 @@ import unittest
 import uuid
 
 import final_exec_report as final
-import fixed_restore_report_test as original
-import report
-import report_test
+import guest_preparation_report_fixture as fixture
 
 
 def frame(kind, payload):
@@ -23,9 +21,7 @@ def frame(kind, payload):
 
 class FinalExecReportTests(unittest.TestCase):
     def setUp(self):
-        # Reuse the real complete ext4/session/clock/progress fixture, not an
-        # inherited suite whose tests could accidentally call the old reader.
-        original.FixedRestoreReportTests.setUp(self)
+        fixture.prepare(self)
         raw = self.collector["metadata"].pop("native_fixed_restore_policy_json")
         self.collector["metadata"]["native_final_exec_policy_json"] = raw
         self.request = self.make_request()
@@ -63,25 +59,10 @@ class FinalExecReportTests(unittest.TestCase):
         return frame(0x0e,data+b"\x01\0"+bytes(4)+bytes(2))
 
     def select(self, case):
-        if case.startswith("FixedRestore-"):
-            return original.FixedRestoreReportTests.select(self,case)
-        for event in [*self.events,*self.witnesses,self.continuation]:
-            event["case"] = case
-        terminal = case.startswith("FinalExec-terminal-")
-        self.values[3].update(boundary="terminal" if terminal else "capture",response=self.response if terminal else None)
-        self.values[4]["observer_unwound"] = "-observer-unwind-" in case
-        unwind = "-producer-unwind-" in case
-        self.values[6].update(exchange_joined=not unwind,transport_producer_unwound=unwind,connection_retained_pending=not unwind)
+        fixture.select_case(self, case, terminal=case.startswith("FinalExec-terminal-"))
 
     def write(self):
-        report_test.write_report_fixture(self.root, self.collector, self.samples, [
-            (report.PREFIX, [self.events[0]]),
-            ("NATIVE_CONTINUATION_WITNESS ", [self.continuation]),
-            (final.PREFIX, self.witnesses[:2]),
-            (report.PREFIX, [self.events[1]]),
-            (final.PREFIX, self.witnesses[2:]),
-        ], stdout_suffix="\ntest result: FAILED\n")
-        (self.root/"stderr.log").write_text("Error: FinalExecUncertain\n")
+        fixture.write_report(self, prefix=final.PREFIX, uncertainty="FinalExecUncertain")
 
     def validate(self):
         self.write()
