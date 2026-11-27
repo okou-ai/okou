@@ -1,12 +1,4 @@
-import { OfficialWorkflowRunAdmissionError } from "./official-workflow-run.service";
-import {
-  isMorningBriefDefinitionName,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
-} from "@okouai/api-contracts/contracts/morning-brief-preference";
-import {
-  userLocaleSchema,
-  type UserLocale,
-} from "@okouai/api-contracts/contracts/user-preferences";
+import { RETIRED_WORKFLOW_RUN_MESSAGE } from "./official-workflow-constants";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import {
   workflowUserAutomationThreads,
@@ -30,63 +22,15 @@ import {
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import {
-  autoSelectionPin,
   resolveDefaultModelFirstPin$,
   type DefaultModelFirstPin,
 } from "./model-selection.service";
-import { installedOfficialWorkflow } from "./builtin-workflows";
-import type { OfficialWorkflowArchivedSnapshot } from "@okouai/db/jsonb-contracts/workflow";
-
-const OFFICIAL_WORKFLOW_THREAD_TITLES: Readonly<
-  Partial<Record<string, Readonly<Record<UserLocale, string>>>>
-> = {
-  "morning-brief": {
-    "en-US": "Okou Morning Brief",
-    "pt-BR": "Okou Resumo da manhã",
-    "ja-JP": "Okou モーニングブリーフ",
-    "ko-KR": "Okou 모닝 브리핑",
-    "id-ID": "Okou Ringkasan pagi",
-    "de-DE": "Okou Morgenbriefing",
-    "es-ES": "Okou Resumen matinal",
-    "it-IT": "Okou Brief del mattino",
-    "fr-FR": "Okou Brief du matin",
-    "hi-IN": "Okou सुबह की ब्रीफ़",
-    "zh-Hans": "Okou 晨间简报",
-    "zh-Hant": "Okou 晨間簡報",
-  },
-};
-
 export interface WorkflowThreadPreparation {
   readonly hidden: boolean;
   readonly initialModel: DefaultModelFirstPin;
   readonly title: string;
   readonly modelSettings: ModelSettings;
   readonly cloudBrowserEnabled: boolean;
-}
-
-function officialWorkflowThreadPresentation(args: {
-  readonly definitionName: string;
-  readonly archivedOfficialSnapshot: OfficialWorkflowArchivedSnapshot | null;
-  readonly locale?: string | null;
-}) {
-  const definition = installedOfficialWorkflow({
-    officialDefinitionName: args.definitionName,
-    archivedOfficialSnapshot: args.archivedOfficialSnapshot,
-  });
-  if (!definition) {
-    throw new OfficialWorkflowRunAdmissionError();
-  }
-  const locale = userLocaleSchema.parse(args.locale ?? "en-US");
-  const localized =
-    OFFICIAL_WORKFLOW_THREAD_TITLES[
-      isMorningBriefDefinitionName(args.definitionName)
-        ? MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
-        : args.definitionName
-    ]?.[locale];
-  return {
-    title: localized ?? definition.workflow.displayName,
-    hidden: true,
-  };
 }
 
 export const prepareWorkflowUserAutomationThread$ = command(
@@ -105,7 +49,6 @@ export const prepareWorkflowUserAutomationThread$ = command(
       db
         .select({
           officialDefinitionName: workflows.officialDefinitionName,
-          archivedOfficialSnapshot: workflows.archivedOfficialSnapshot,
         })
         .from(workflows)
         .where(
@@ -117,7 +60,6 @@ export const prepareWorkflowUserAutomationThread$ = command(
         .limit(1),
       db
         .select({
-          locale: orgMembersMetadata.locale,
           modelSettings: orgMembersMetadata.modelSettings,
           cloudBrowserEnabled: orgMembersMetadata.cloudBrowserEnabledByDefault,
         })
@@ -131,28 +73,22 @@ export const prepareWorkflowUserAutomationThread$ = command(
         .limit(1),
     ]);
     signal.throwIfAborted();
-    const definitionName = context?.officialDefinitionName;
-    const presentation = definitionName
-      ? officialWorkflowThreadPresentation({
-          definitionName,
-          archivedOfficialSnapshot: context.archivedOfficialSnapshot,
-          locale: member?.locale,
-        })
-      : { title: args.workflowTitle, hidden: false };
-    const initialModel = definitionName
-      ? { ...autoSelectionPin(), serviceTier: null }
-      : await set(
-          resolveDefaultModelFirstPin$,
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            orgPlanCapabilities: undefined,
-          },
-          signal,
-        );
+    if (context && context.officialDefinitionName !== null) {
+      throw new Error(RETIRED_WORKFLOW_RUN_MESSAGE);
+    }
+    const initialModel = await set(
+      resolveDefaultModelFirstPin$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        orgPlanCapabilities: undefined,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return {
-      ...presentation,
+      title: args.workflowTitle,
+      hidden: false,
       initialModel,
       modelSettings: modelSettingsSchema.parse(member?.modelSettings ?? {}),
       cloudBrowserEnabled: member?.cloudBrowserEnabled ?? true,

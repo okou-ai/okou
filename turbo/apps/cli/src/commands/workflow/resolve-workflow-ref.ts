@@ -21,12 +21,10 @@ export async function resolveWorkflowRef(ref: string): Promise<string> {
 
   const workflows = await listWorkflows();
   const matches = workflows.filter((workflow) => {
-    return workflow.name === ref && !workflow.official;
+    return workflow.name === ref;
   });
   if (matches.length === 0) {
-    throw new Error(
-      `Workflow not found: "${ref}" in the current workspace. Use a Workflow ID to view or manage an Official Workflow`,
-    );
+    throw new Error(`Workflow not found: "${ref}" in the current workspace`);
   }
 
   // Private records visible to this caller are their own. Select within the

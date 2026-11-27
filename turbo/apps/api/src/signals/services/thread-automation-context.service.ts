@@ -1,8 +1,3 @@
-import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
-import {
-  INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
-} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
@@ -38,9 +33,6 @@ const launchAutomationColumns = Object.freeze({
   enabled: workflowAutomations.enabled,
   autonomyBudget: workflowAutomations.autonomyBudget,
   officialBlueprintKey: workflowAutomations.officialBlueprintKey,
-  officialAppliedFingerprint: workflowAutomations.officialAppliedFingerprint,
-  officialReconciliationStatus:
-    workflowAutomations.officialReconciliationStatus,
 });
 
 export interface ThreadAutomationTarget {
@@ -51,9 +43,6 @@ export interface ThreadAutomationTarget {
   readonly packageSources: ExecutionPackageSources;
   /** Authorized ordinary package winner for this picked Automation. */
   readonly ordinaryWorkflowName: string | null;
-  readonly proactivePreferences: {
-    readonly suggestionsEnabled: boolean | null;
-  } | null;
   readonly workflow: Pick<
     typeof workflows.$inferSelect,
     | "id"
@@ -81,21 +70,6 @@ interface ThreadAutomationSnapshot {
   readonly sourceAutonomyBudget: number | null;
 }
 
-function officialOwnerPreferencesCondition(bootstrap: AgentRunContextSignals) {
-  return and(
-    isNotNull(workflows.officialDefinitionName),
-    isNotNull(workflowAutomations.officialBlueprintKey),
-    eq(workflows.visibility, "private"),
-    eq(workflowAutomations.orgId, bootstrap.orgId),
-    eq(workflowAutomations.ownerUserId, bootstrap.userId),
-    eq(workflows.orgId, bootstrap.orgId),
-    eq(workflows.ownerUserId, bootstrap.userId),
-    eq(orgMembersMetadata.orgId, bootstrap.orgId),
-    eq(orgMembersMetadata.userId, bootstrap.userId),
-  );
-}
-
-/** Observe the queued event and its still-live launch dependencies together. */
 export function createThreadAutomationSnapshot(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   bootstrap: AgentRunContextSignals,
@@ -128,10 +102,6 @@ export function createThreadAutomationSnapshot(
           workflowName: chatAutomationContext.workflowName,
           eventType: chatAutomationContext.eventType,
           eventPayload: chatAutomationContext.eventPayload,
-        },
-        proactivePreferences: {
-          memberUserId: orgMembersMetadata.userId,
-          suggestionsEnabled: orgMembersMetadata.proactiveSuggestionsEnabled,
         },
         sourceRunIdType,
         sourceAutonomyBudget: agentRuns.autonomyBudget,
@@ -169,10 +139,6 @@ export function createThreadAutomationSnapshot(
           isNotNull(agentRuns.triggerSource),
         ),
       )
-      .leftJoin(
-        orgMembersMetadata,
-        officialOwnerPreferencesCondition(bootstrap),
-      )
       .where(
         and(
           eq(chatAutomationContext.id, pickedEvent.contextId),
@@ -189,28 +155,12 @@ export function createThreadAutomationSnapshot(
     if (!row) {
       return null;
     }
-    const {
-      event,
-      automation,
-      workflow,
-      packageSources,
-      proactivePreferences,
-    } = row;
-    // A queued input carries the installation's name at enqueue time. Follow
-    // this Official rename for launch and its mounted skill, without rewriting
-    // the stored event or the provenance of a Run that already started.
-    const launchEvent =
-      event.workflowName === INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME &&
-      workflow?.officialDefinitionName ===
-        MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
-        ? { ...event, workflowName: MORNING_BRIEF_OFFICIAL_DEFINITION_NAME }
-        : event;
+    const { event, automation, workflow, packageSources } = row;
     return {
-      event: launchEvent,
+      event,
       target:
         automation && workflow && packageSources
           ? {
-              proactivePreferences,
               automation,
               workflow,
               packageSources,
