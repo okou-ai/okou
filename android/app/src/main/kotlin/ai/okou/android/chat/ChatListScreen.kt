@@ -313,11 +313,16 @@ internal fun ChatListScreen(
     val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
     val outline = MaterialTheme.colorScheme.outlineVariant
     val missingUnread = state.confirmedAt != null && state.waitingForUnreadIndicators
+    val needsInboxProjects =
+        state.hasUsableList && state.needsProjectsToConfirmEmptyInbox(provisionalChats)
     val firstLoadFailed =
-        !state.hasUsableList &&
-            if (missingUnread) state.indicatorsNonRetryableFailure
-            else state.listReadFailure == ChatListReadFailure.NeedsRetry
-    val hasUsableList = state.hasUsableList
+        when {
+            needsInboxProjects -> state.projectsPhase == ChatReadPhase.Failed
+            state.hasUsableList -> false
+            missingUnread -> state.indicatorsNonRetryableFailure
+            else -> state.listReadFailure == ChatListReadFailure.NeedsRetry
+        }
+    val hasUsableList = state.hasUsableList && !needsInboxProjects
     val skeletonVisible =
         rememberContentReadSkeleton(
             hasContent = hasUsableList || pendingByProject.isNotEmpty(),
@@ -414,14 +419,6 @@ internal fun ChatListScreen(
                 }
                 if (state.cacheUnavailable || state.projectCacheUnavailable)
                     row("list_cache_unavailable") { ChatNotice(R.string.chat_cache_unavailable) }
-                if (
-                    state.confirmedAt != null &&
-                        !metadataUsable &&
-                        state.projectsPhase == ChatReadPhase.Failed
-                )
-                    row("list_metadata_unavailable") {
-                        ChatListDependencyNotice(R.string.chat_metadata_unavailable)
-                    }
             }
         KeepChatListProjectAnchor(listState, knownProjects) { key, offset ->
             sections.findScrollAnchor(key, offset, leadingItems.size, projectNoticeIds)
@@ -704,7 +701,7 @@ internal fun ChatListScreen(
                     hasConfirmedChatList &&
                         groups.all { it.project == null && it.threads.isEmpty() } &&
                         pendingByProject.isEmpty() &&
-                        metadataUsable &&
+                        (state.filter != ChatListFilter.Inbox || metadataUsable) &&
                         (state.filter != ChatListFilter.Unread || unreadAt != null)
                 ) {
                     item { ChatListEmptyState(state.filter, showInbox) }
@@ -1388,11 +1385,6 @@ internal fun ChatListTextAction(
                 ),
         )
     }
-}
-
-@Composable
-private fun ChatListDependencyNotice(@StringRes message: Int) {
-    ContentReadFeedback(message, Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
 }
 
 @Composable

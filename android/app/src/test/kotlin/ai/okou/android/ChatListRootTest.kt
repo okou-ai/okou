@@ -1076,6 +1076,12 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
                 .isNotEmpty()
         }
         awaitListAndNames()
+        compose
+            .onNode(
+                hasText("Project information is temporarily unavailable.") and
+                    hasAnyAncestor(hasTestTag("chat_list_feedback")),
+            )
+            .assertIsDisplayed()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
         compose.onNodeWithText("Personal chat").assertExists()
         compose.openChatListSettings()

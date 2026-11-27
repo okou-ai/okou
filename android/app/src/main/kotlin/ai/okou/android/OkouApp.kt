@@ -1182,6 +1182,7 @@ internal fun OkouApp(
             snackbar,
             conversationSnackbar,
             showChatList,
+            provisionalChats,
             visibleConversationId,
             navigationError =
                 conversationNavigationErrors.firstOrNull { it.threadId == visibleConversationId },

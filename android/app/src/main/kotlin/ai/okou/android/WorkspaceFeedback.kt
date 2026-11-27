@@ -12,6 +12,7 @@ import ai.okou.android.chat.ChatUndoPhase
 import ai.okou.android.chat.DeleteProjectDialog
 import ai.okou.android.chat.ProjectDeleteFeedback
 import ai.okou.android.chat.ProjectDeleteStatus
+import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RenameListItemSheet
 import ai.okou.android.chat.RenameStatus
 import ai.okou.android.chat.WorkspaceRenameTarget
@@ -19,6 +20,7 @@ import ai.okou.android.chat.canDeleteProject
 import ai.okou.android.chat.canRenameProject
 import ai.okou.android.chat.hasUsableList
 import ai.okou.android.chat.label
+import ai.okou.android.chat.needsProjectsToConfirmEmptyInbox
 import ai.okou.android.chat.nextChatFeedbackOrder
 import ai.okou.android.chat.recoversInBackground
 import ai.okou.android.chat.rowActions
@@ -160,6 +162,7 @@ internal fun WorkspaceChatFeedback(
     listSnackbar: SnackbarHostState,
     conversationSnackbar: SnackbarHostState,
     showChatList: Boolean,
+    provisionalChats: List<ProvisionalChat>,
     visibleConversationId: String?,
     navigationError: ConversationNavigationError?,
     dismissNavigationError: (ConversationNavigationError) -> Unit,
@@ -273,14 +276,18 @@ internal fun WorkspaceChatFeedback(
     val batchError = if (showChatList) batchResults.firstOrNull { it.rejected > 0 } else null
     val refreshError =
         if (showChatList) {
+            val hasUsableContent =
+                list.hasUsableList && !list.needsProjectsToConfirmEmptyInbox(provisionalChats)
             listOfNotNull(
-                    list.listRefreshFailureOrder?.let { it to R.string.chat_list_sync_failed },
+                    list.listRefreshFailureOrder
+                        ?.takeIf { hasUsableContent }
+                        ?.let { it to R.string.chat_list_sync_failed },
                     list.indicatorsRefreshFailureOrder
-                        ?.takeIf { list.hasUsableList }
+                        ?.takeIf { hasUsableContent }
                         ?.let { it to R.string.chat_refresh_failed },
-                    list.projectList.refreshFailureOrder?.let {
-                        it to R.string.chat_metadata_unavailable
-                    },
+                    list.projectList.refreshFailureOrder
+                        ?.takeIf { hasUsableContent || list.projectsSource != null }
+                        ?.let { it to R.string.chat_metadata_unavailable },
                 )
                 .minByOrNull { it.first }
         } else null

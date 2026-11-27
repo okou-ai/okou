@@ -729,34 +729,33 @@ internal class ProjectListOwner(
                     throw cancelled
                 } catch (error: Exception) {
                     // A missing Projects collection does not revoke the workspace session.
-                    if (error is ApiFailure.Http && error.status == 404) {
-                        if (current()) {
-                            unresolvedProjectRenames.clear()
-                            // Keep the confirmed checkpoint for catch-up and rename receipts.
-                            publishProjects(
-                                state.copy(
-                                    source = null,
-                                    phase = ChatReadPhase.Failed,
-                                    refreshFailureOrder = null,
-                                ),
-                            )
-                        }
-                    } else if (current()) {
-                        onFailure(error)
+                    val collectionMissing = error is ApiFailure.Http && error.status == 404
+                    if (current()) {
+                        if (!collectionMissing) onFailure(error)
                         if (current()) {
                             val snapshot = state
-                            state =
+                            val failed =
                                 snapshot.copy(
+                                    source = snapshot.source.takeUnless { collectionMissing },
                                     phase = ChatReadPhase.Failed,
                                     refreshFailureOrder =
                                         if (
-                                            snapshot.source != null &&
-                                                feedbackScope != null &&
+                                            feedbackScope != null &&
                                                 feedbackScope === visibleListFeedbackScope()
                                         )
                                             nextChatFeedbackOrder()
-                                        else snapshot.refreshFailureOrder,
+                                        else
+                                            snapshot.refreshFailureOrder.takeUnless {
+                                                collectionMissing
+                                            },
                                 )
+                            if (collectionMissing) {
+                                unresolvedProjectRenames.clear()
+                                // Keep the confirmed checkpoint for catch-up and rename receipts.
+                                publishProjects(failed)
+                            } else {
+                                state = failed
+                            }
                         }
                     }
                 } finally {
