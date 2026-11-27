@@ -186,7 +186,7 @@ pub enum FirewallEntry {
     /// Run-scoped firewall body for org custom connectors.
     #[serde(rename = "inline", rename_all = "camelCase")]
     Inline {
-        firewall: Firewall,
+        firewall: Box<Firewall>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         custom_connector_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -202,6 +202,9 @@ pub enum FirewallEntry {
 pub struct Firewall {
     pub name: String,
     pub apis: Vec<FirewallApi>,
+    /// Declared synthetic markers for inline credential aliases.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholders: Option<BTreeMap<String, String>>,
 }
 
 /// An unresolved builtin firewall exchanged by the API and Runner catalog cache.

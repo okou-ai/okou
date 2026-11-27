@@ -548,6 +548,7 @@ class TestRegistryBuiltinCatalogResolution:
     def test_inline_custom_connector_id_is_preserved_on_firewall_and_apis(self):
         custom_connector_id = "550e8400-e29b-41d4-a716-446655440000"
         source_id = "550e8400-e29b-41d4-a716-446655440001"
+        placeholders = {"CUSTOM_TEST_TOKEN": "fixture-custom-token"}
         resolved = registry_firewalls.resolve_firewall_entries(
             {
                 "runId": "run-custom-id",
@@ -558,6 +559,7 @@ class TestRegistryBuiltinCatalogResolution:
                         "sourceId": source_id,
                         "firewall": {
                             "name": "custom_connector_test",
+                            "placeholders": placeholders,
                             "apis": [
                                 {
                                     "id": "custom-api:0",
@@ -577,6 +579,7 @@ class TestRegistryBuiltinCatalogResolution:
         assert resolved.entries[0].firewall["apis"][0]["customConnectorId"] == custom_connector_id
         assert resolved.entries[0].firewall["sourceId"] == source_id
         assert resolved.entries[0].firewall["apis"][0]["sourceId"] == source_id
+        assert resolved.entries[0].firewall["placeholders"] == placeholders
 
     def test_inline_custom_connector_id_rejects_invalid_identity(self):
         with pytest.raises(registry_firewalls.FirewallEntryResolutionError):

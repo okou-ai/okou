@@ -161,7 +161,8 @@ fn test_firewalls(connector_slugs: &[&str]) -> Vec<FirewallEntry> {
     connector_slugs
         .iter()
         .map(|connector_slug| FirewallEntry::Inline {
-            firewall: Firewall {
+            firewall: Box::new(Firewall {
+                placeholders: None,
                 name: (*connector_slug).to_string(),
                 apis: vec![FirewallApi {
                     network_intent: None,
@@ -187,7 +188,7 @@ fn test_firewalls(connector_slugs: &[&str]) -> Vec<FirewallEntry> {
                         },
                     ]),
                 }],
-            },
+            }),
             custom_connector_id: None,
             source_id: None,
         })
@@ -218,7 +219,8 @@ fn policy(allow: &[&str], deny: &[&str], ask: &[&str], unknown_policy: &str) -> 
 
 fn custom_runtime_firewall(custom_connector_id: &str, name: &str) -> FirewallEntry {
     FirewallEntry::Inline {
-        firewall: Firewall {
+        firewall: Box::new(Firewall {
+            placeholders: None,
             name: name.to_string(),
             apis: vec![FirewallApi {
                 network_intent: None,
@@ -236,7 +238,7 @@ fn custom_runtime_firewall(custom_connector_id: &str, name: &str) -> FirewallEnt
                 host_policy: None,
                 permissions: None,
             }],
-        },
+        }),
         custom_connector_id: Some(custom_connector_id.to_string()),
         source_id: None,
     }
@@ -1846,7 +1848,8 @@ async fn registry_with_firewalls() {
     let source_id = "550e8400-e29b-41d4-a716-446655440000";
 
     let firewall_entries = vec![FirewallEntry::Inline {
-        firewall: Firewall {
+        firewall: Box::new(Firewall {
+            placeholders: None,
             name: "gmail".to_string(),
             apis: vec![FirewallApi {
                 network_intent: None,
@@ -1871,7 +1874,7 @@ async fn registry_with_firewalls() {
                     ],
                 }]),
             }],
-        },
+        }),
         custom_connector_id: None,
         source_id: Some(source_id.to_string()),
     }];
@@ -2011,7 +2014,8 @@ async fn registry_firewall_auth_base_serialized() {
     let harness = RegistryHarness::new().await;
 
     let firewall_entries = vec![FirewallEntry::Inline {
-        firewall: Firewall {
+        firewall: Box::new(Firewall {
+            placeholders: None,
             name: "discord-webhook".to_string(),
             apis: vec![FirewallApi {
                 network_intent: None,
@@ -2026,7 +2030,7 @@ async fn registry_firewall_auth_base_serialized() {
                 host_policy: None,
                 permissions: None,
             }],
-        },
+        }),
         custom_connector_id: None,
         source_id: None,
     }];
@@ -2057,7 +2061,8 @@ async fn registry_firewall_auth_query_serialized() {
     let harness = RegistryHarness::new().await;
 
     let firewall_entries = vec![FirewallEntry::Inline {
-        firewall: Firewall {
+        firewall: Box::new(Firewall {
+            placeholders: None,
             name: "serpapi".to_string(),
             apis: vec![FirewallApi {
                 network_intent: None,
@@ -2079,7 +2084,7 @@ async fn registry_firewall_auth_query_serialized() {
                 host_policy: None,
                 permissions: None,
             }],
-        },
+        }),
         custom_connector_id: None,
         source_id: None,
     }];

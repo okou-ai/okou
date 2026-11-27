@@ -670,10 +670,11 @@ async fn codex_catalog_prefetch_skips_ineligible_runs() {
 
     let mut matching_inline_firewall = codex_oauth_context();
     matching_inline_firewall.firewalls = Some(vec![FirewallEntry::Inline {
-        firewall: Firewall {
+        firewall: Box::new(Firewall {
+            placeholders: None,
             name: "model-provider:codex-oauth-token".into(),
             apis: Vec::new(),
-        },
+        }),
         custom_connector_id: None,
         source_id: None,
     }]);

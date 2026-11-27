@@ -314,6 +314,8 @@ export const firewallSchema = object({
 
 export const firewallsSchema = array(firewallSchema);
 
+const firewallPlaceholdersSchema = record(string(), string()).optional();
+
 export const executionFirewallBuiltinEntrySchema = object({
   kind: literal("builtin"),
   name: string().min(1),
@@ -327,6 +329,7 @@ const executionFirewallSchema = firewallSchema.extend({
       id: string().min(1).optional(),
     }),
   ),
+  placeholders: firewallPlaceholdersSchema,
 });
 
 export const executionFirewallInlineEntrySchema = object({
@@ -352,11 +355,11 @@ export const firewallConfigSchema = object({
     1,
     "Firewall must have at least one API entry",
   ),
-  placeholders: record(string(), string()).optional(),
+  placeholders: firewallPlaceholdersSchema,
 });
 
 export const runnerBuiltinFirewallSchema = firewallSchema.extend({
-  placeholders: firewallConfigSchema.shape.placeholders,
+  placeholders: firewallPlaceholdersSchema,
 });
 export type RunnerBuiltinFirewall = zInfer<typeof runnerBuiltinFirewallSchema>;
 
