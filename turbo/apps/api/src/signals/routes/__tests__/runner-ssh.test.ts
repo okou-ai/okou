@@ -114,6 +114,20 @@ interface DispatchedRun {
   readonly agentToken: string;
 }
 
+function asCliAgentType(
+  value: string,
+): "claude-code" | "codex" | "pi" | "antigravity" {
+  if (
+    value === "claude-code" ||
+    value === "codex" ||
+    value === "pi" ||
+    value === "antigravity"
+  ) {
+    return value;
+  }
+  throw new Error(`Unexpected cliAgentType: ${value}`);
+}
+
 function requireOrgOwner(actor: ApiTestUser) {
   if (!actor.orgId) {
     throw new Error("Expected an organization member");
@@ -165,7 +179,7 @@ function sortedRealtimePublications(
         payload: call[1],
       };
     })
-    .toSorted((left, right) => {
+    .sort((left, right) => {
       const leftKey = `${left.channel}|${left.topic}|${JSON.stringify(left.payload)}`;
       const rightKey = `${right.channel}|${right.topic}|${JSON.stringify(right.payload)}`;
       return leftKey.localeCompare(rightKey);
@@ -175,7 +189,7 @@ function sortedRealtimePublications(
 function sortPublications(
   items: readonly RealtimePublication[],
 ): readonly RealtimePublication[] {
-  return [...items].toSorted((left, right) => {
+  return [...items].sort((left, right) => {
     const leftKey = `${left.channel}|${left.topic}|${JSON.stringify(left.payload)}`;
     const rightKey = `${right.channel}|${right.topic}|${JSON.stringify(right.payload)}`;
     return leftKey.localeCompare(rightKey);
@@ -519,7 +533,7 @@ describe("runner-ssh authority, invalidation and observations", () => {
     return {
       runId,
       threadId: sent.body.threadId,
-      cliAgentType: dispatch.executionContext.cliAgentType,
+      cliAgentType: asCliAgentType(dispatch.executionContext.cliAgentType),
       runnerIdentity: {
         runnerId: dispatch.runnerId,
         heartbeatGeneration: dispatch.heartbeatGeneration,
@@ -555,7 +569,7 @@ describe("runner-ssh authority, invalidation and observations", () => {
     await flushWaitUntilForTest();
     const dispatches = runs.receivedDispatches(runnerGroup);
     const findFor = (prompt: string, threadId: string): DispatchedRun => {
-      const dispatch = dispatches.findLast((candidate) => {
+      const dispatch = [...dispatches].reverse().find((candidate) => {
         return candidate.executionContext.prompt === prompt;
       });
       const agentToken =
@@ -569,7 +583,7 @@ describe("runner-ssh authority, invalidation and observations", () => {
       return {
         runId,
         threadId,
-        cliAgentType: dispatch.executionContext.cliAgentType,
+        cliAgentType: asCliAgentType(dispatch.executionContext.cliAgentType),
         runnerIdentity: {
           runnerId: dispatch.runnerId,
           heartbeatGeneration: dispatch.heartbeatGeneration,
@@ -617,6 +631,9 @@ describe("runner-ssh authority, invalidation and observations", () => {
       sandboxHeaders,
       [200],
     );
+    if (!("status" in completed.body)) {
+      throw new Error("Expected completion response to include status");
+    }
     expect(completed.body.status).toBe("completed");
     tracker.markDone(run.runId);
     await flushWaitUntilForTest();

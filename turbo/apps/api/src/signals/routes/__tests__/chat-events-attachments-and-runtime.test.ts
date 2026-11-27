@@ -1155,15 +1155,15 @@ describe("chat attachment lookup ownership", () => {
       configureBaseChatEnvironment();
       fixture.mockPiObjectStore();
 
-      const [privateFile] = await Promise.all([
-        prepareAndCompletePrivateUpload(ownerActor, {
-          filename: "private-note.txt",
-          contentType: "text/plain",
-          size: 32,
-        }),
+      await Promise.all([
         fixture.api.configureRunnerGroup(),
         bdd.bootstrapLimitedFreeOnboarding(ownerActor),
       ]);
+      const privateFile = await prepareAndCompletePrivateUpload(ownerActor, {
+        filename: "private-note.txt",
+        contentType: "text/plain",
+        size: 32,
+      });
 
       const ownerRun = await sendAndLaunchRun(ownerActor, {
         model: null,
@@ -1239,15 +1239,15 @@ describe("chat attachment lookup ownership", () => {
       configureBaseChatEnvironment();
       fixture.mockPiObjectStore();
 
-      const [privateFile] = await Promise.all([
-        prepareAndCompletePrivateUpload(ownerActor, {
-          filename: "org-only.txt",
-          contentType: "text/plain",
-          size: 40,
-        }),
+      await Promise.all([
         fixture.api.configureRunnerGroup(),
         bdd.bootstrapLimitedFreeOnboarding(ownerActor),
       ]);
+      const privateFile = await prepareAndCompletePrivateUpload(ownerActor, {
+        filename: "org-only.txt",
+        contentType: "text/plain",
+        size: 40,
+      });
 
       const ownerRun = await sendAndLaunchRun(ownerActor, {
         model: null,
