@@ -858,11 +858,11 @@ chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-004	rewr
 chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-009	rewritten	43.4	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/chat-files.bdd.test.ts	B09	d-other
 chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-010	rewritten	82.6	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/chat-files.bdd.test.ts	B09	d-other
 chat	src/signals/routes/__tests__/chat-indicators-realtime.test.ts	chat-indicators-realtime-001	rewritten	256.0	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-threads-state-and-files.test.ts	R29	a-run
-chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-003	planned					a-run
-chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-004	planned					a-run
-chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-007	planned					a-run
+chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-003	rewritten	348.1	timeout=800 (TRIPLE_RUN)	src/signals/routes/__tests__/chat-input-status.test.ts	R29	a-run
+chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-004	rewritten	171.6	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-input-status.test.ts	R29	a-run
+chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-007	rewritten	270.1	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-input-status.test.ts	R29	a-run
 chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-009	rewritten	156.4		src/signals/routes/__tests__/chat-events-admission.test.ts		d-other
-chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-010	planned					a-run
+chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-010	rewritten	211.7	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-input-status.test.ts	R29	a-run
 chat	src/signals/routes/__tests__/chat-relations.test.ts	chat-relations-001	rewritten	495.2	timeout=800 (TRIPLE_RUN)	src/signals/routes/__tests__/chat-relations-and-notifications.test.ts	R29	a-run
 chat	src/signals/routes/__tests__/chat-relations.test.ts	chat-relations-002	rewritten	501.4	timeout=800 (TRIPLE_RUN)	src/signals/routes/__tests__/chat-relations-and-notifications.test.ts	R29	a-run
 chat	src/signals/routes/__tests__/chat-relations.test.ts	chat-relations-005	rewritten	271.1	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-relations-and-notifications.test.ts	R29	a-run
@@ -2529,10 +2529,10 @@ runs	src/signals/routes/__tests__/run-lifecycle-chain.bdd.test.ts	run-lifecycle-
 runs	src/signals/routes/__tests__/run-lifecycle-chain.bdd.test.ts	run-lifecycle-chain.bdd-022	planned					a-run
 runs	src/signals/routes/__tests__/run-lifecycle-chain.bdd.test.ts	run-lifecycle-chain.bdd-023	planned					a-run
 runs	src/signals/routes/__tests__/run-lifecycle-chain.bdd.test.ts	run-lifecycle-chain.bdd-024	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	run-lifecycle-chat-events.bdd-002	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	run-lifecycle-chat-events.bdd-003	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	run-lifecycle-chat-events.bdd-004	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	run-lifecycle-chat-events.bdd-006	planned					a-run
+runs	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	run-lifecycle-chat-events.bdd-002	rewritten	218.0	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	R29	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	run-lifecycle-chat-events.bdd-003	rewritten	223.3	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	R29	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	run-lifecycle-chat-events.bdd-004	rewritten	266.1	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	R29	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	run-lifecycle-chat-events.bdd-006	rewritten	241.4	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/run-lifecycle-chat-events.bdd.test.ts	R29	a-run
 runs	src/signals/routes/__tests__/run-lifecycle-completion.bdd.test.ts	run-lifecycle-completion.bdd-001	planned					a-run
 runs	src/signals/routes/__tests__/run-lifecycle-completion.bdd.test.ts	run-lifecycle-completion.bdd-004	planned					a-run
 runs	src/signals/routes/__tests__/run-lifecycle-completion.bdd.test.ts	run-lifecycle-completion.bdd-005	planned					a-run
