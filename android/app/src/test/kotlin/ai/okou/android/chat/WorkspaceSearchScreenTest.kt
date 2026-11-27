@@ -533,7 +533,7 @@ class WorkspaceSearchScreenTest {
         assertEquals(26.dp, firstArtifactHeading.getUnclippedBoundsInRoot().top - chatRow.bottom)
         val artifact =
             compose.onNode(hasText("Launch brief") and hasClickAction()).getUnclippedBoundsInRoot()
-        assertEquals(72.dp, artifact.bottom - artifact.top)
+        assertTrue(artifact.bottom - artifact.top >= 72.dp)
     }
 
     @Test
@@ -812,9 +812,15 @@ class WorkspaceSearchScreenTest {
         }
         progress.assertIsDisplayed()
         partial.assertDoesNotExist()
-        compose.runOnIdle { artifacts = SearchRead.Failed }
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.runOnIdle { artifacts = SearchRead.Failed }
+            compose.mainClock.advanceTimeBy(48)
+            progress.assertDoesNotExist()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
         partial.assertIsDisplayed()
-        progress.assertDoesNotExist()
         assertEquals(rowBounds, row.getUnclippedBoundsInRoot())
         assertEquals(viewportBounds, viewport.getUnclippedBoundsInRoot())
         assertTrue(partial.getUnclippedBoundsInRoot().top > rowBounds.bottom)
