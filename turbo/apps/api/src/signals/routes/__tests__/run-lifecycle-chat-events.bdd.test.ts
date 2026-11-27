@@ -8,51 +8,76 @@ import {
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import {
+  runRunnerContract,
   runsByIdContract,
   runsCancelContract,
 } from "@okouai/api-contracts/contracts/run-routes";
+import type {
+  HomeReuseResult,
+  SandboxReuseResult,
+  SandboxStartupPath,
+} from "@okouai/api-contracts/contracts/runner-primitives";
+import { runnersRunStartupContract } from "@okouai/api-contracts/contracts/runner-startup";
 import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runners";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
   webhookClerkContract,
   webhookCompleteContract,
   webhookEventsContract,
+  webhookTelemetryContract,
 } from "@okouai/api-contracts/contracts/webhooks";
 import { HttpResponse } from "msw";
 import { v5 as uuidv5 } from "uuid";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { setupRawAppRequest } from "../../../__tests__/test-helpers";
 import {
   TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
   TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
 } from "../../../__tests__/test-timeouts";
 import { mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { runnersRoutes } from "../runners";
+import { runnersStartupRoutes } from "../runners-startup";
 import { runsRoutes } from "../runs";
 import { runsCancelRoutes } from "../runs-cancel";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "../webhooks-agent-events";
+import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { deliverOrganizationCreated } from "./helpers/api-bdd-webhooks";
 import { projectChatEventRows } from "./helpers/chat-event-test-reader";
 import {
   createChatEventsFixture,
   eventBackedContents,
   userMessages,
 } from "./helpers/chat-events-fixture";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRouteMocks } from "./helpers/route-test";
+
+const STARTUP_OPTIONAL_ENVS = Object.freeze(["OPENROUTER_API_KEY"] as const);
+
+interface DispatchedStartupRun {
+  readonly actor: ApiTestUser;
+  readonly runId: string;
+  readonly threadId: string;
+  readonly sandboxToken: string;
+  readonly cliAgentType: string;
+  readonly markCompleted: () => void;
+}
 
 const WARMUP_UUID = "00000000-0000-4000-8000-000000000001";
 const ASSISTANT_EVENT_ID_NAMESPACE = "bfec4fb6-d5b8-43e4-a72a-9f58f87d7e01";
@@ -119,10 +144,226 @@ describe("run-lifecycle-chat-events.bdd", () => {
     context,
     routes: webhooksAgentCompleteRoutes,
   })(webhookCompleteContract);
+  const startupApi = setupAppWithRoutes({
+    context,
+    routes: runnersStartupRoutes,
+  })(runnersRunStartupContract);
+  const runRunnerApi = setupAppWithRoutes({
+    context,
+    routes: runsRoutes,
+  })(runRunnerContract);
+  const rawCompleteRequest = setupRawAppRequest({
+    context,
+    routes: webhooksAgentCompleteRoutes,
+  });
+  const webhookTelemetryApi = setupAppWithRoutes({
+    context,
+    routes: webhooksAgentHealthUsageTelemetryRoutes,
+  })(webhookTelemetryContract);
 
   function sessionHeaders(actor: ApiTestUser) {
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     return SESSION_HEADERS;
+  }
+
+  function sessionHeadersOrUnauth(actor: ApiTestUser | null): {
+    readonly authorization?: string;
+  } {
+    if (!actor) {
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+      return {};
+    }
+    return sessionHeaders(actor);
+  }
+
+  async function reportStartup<TStatus extends 204 | 400 | 401 | 404 | 409>(
+    runId: string,
+    sandboxStartupPath: SandboxStartupPath,
+    headers: { readonly authorization?: string },
+    statuses: readonly TStatus[],
+  ) {
+    return await accept(
+      startupApi.setStartup({
+        headers,
+        params: { runId },
+        body: { sandboxStartupPath },
+      }),
+      statuses,
+    );
+  }
+
+  async function readRunner<TStatus extends 200 | 400 | 401 | 403 | 404>(
+    actor: ApiTestUser | null,
+    runId: string,
+    statuses: readonly TStatus[],
+  ) {
+    return await accept(
+      runRunnerApi.getRunner({
+        headers: sessionHeadersOrUnauth(actor),
+        params: { id: runId },
+      }),
+      statuses,
+    );
+  }
+
+  async function completeStartupRunWithLegacyReuseFields(
+    run: DispatchedStartupRun,
+    legacyFields: {
+      readonly sandboxReuseResult: SandboxReuseResult;
+      readonly homeReuseResult: HomeReuseResult;
+    },
+  ) {
+    const response = await rawCompleteRequest("/api/webhooks/run/complete", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${run.sandboxToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        runId: run.runId,
+        exitCode: 0,
+        sandboxReuseResult: legacyFields.sandboxReuseResult,
+        homeReuseResult: legacyFields.homeReuseResult,
+        completion: {
+          cliAgentType: run.cliAgentType,
+          cliAgentSessionId: run.threadId,
+          cliAgentSessionHistoryDisposition: "native_only",
+        },
+      }),
+    });
+    if (response.status === 200) {
+      run.markCompleted();
+    }
+    return response;
+  }
+
+  async function completeStartupRun(run: DispatchedStartupRun) {
+    const response = await accept(
+      webhookCompleteClient.complete({
+        headers: { authorization: `Bearer ${run.sandboxToken}` },
+        body: {
+          runId: run.runId,
+          exitCode: 0,
+          completion: {
+            cliAgentType: run.cliAgentType,
+            cliAgentSessionId: run.threadId,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
+        },
+      }),
+      [200],
+    );
+    run.markCompleted();
+    return response;
+  }
+
+  async function startDispatchedChatRun(): Promise<DispatchedStartupRun> {
+    const actor = bdd.user();
+    const clockTime = now();
+    let activeRun:
+      { readonly runId: string; readonly sandboxToken: string } | undefined;
+    let completed = false;
+
+    const restoreBefore = captureConnectorExternalState(
+      context,
+      STARTUP_OPTIONAL_ENVS,
+    );
+    let restoreAccepted = restoreBefore;
+
+    onTestFinished(async () => {
+      restoreAccepted();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      const result = await settleIncludingAbort(() => {
+        return withMockNowForTest(clockTime, async () => {
+          await flushWaitUntilForTest();
+          if (activeRun && !completed) {
+            const target = activeRun;
+            const current = await readRun(actor, target.runId);
+            if (["queued", "pending", "running"].includes(current.status)) {
+              await accept(
+                runsCancelClient.cancel({
+                  headers: sessionHeaders(actor),
+                  params: { id: target.runId },
+                }),
+                [200],
+              );
+              await accept(
+                webhookCompleteClient.complete({
+                  headers: { authorization: `Bearer ${target.sandboxToken}` },
+                  body: {
+                    runId: target.runId,
+                    exitCode: 1,
+                    error: "Run cancelled",
+                  },
+                }),
+                [200],
+              );
+              await flushWaitUntilForTest();
+            }
+          }
+        });
+      });
+      restoreBefore();
+      if (!result.ok) {
+        throw result.error;
+      }
+    });
+
+    fixture.chatCallbacks.acceptChatObjectStorage();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    fixture.chatCallbacks.disableVapid();
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-startup-openrouter-key");
+    restoreAccepted = captureConnectorExternalState(
+      context,
+      STARTUP_OPTIONAL_ENVS,
+    );
+
+    const launched = await withMockNowForTest(clockTime, async () => {
+      const [runnerGroup] = await Promise.all([
+        runs.configureRunnerGroup(),
+        deliverOrganizationCreated(context, actor),
+      ]);
+      const sent = await accept(
+        chatEventsClient.send({
+          headers: sessionHeaders(actor),
+          body: {
+            prompt: "Check runner startup persistence.",
+            hasTextContent: true,
+            clientEventId: randomUUID(),
+            model: null,
+            userMessage: {
+              version: 1,
+              parts: [
+                { type: "text", text: "Check runner startup persistence." },
+              ],
+            },
+          },
+        }),
+        [201],
+      );
+      const dispatched = await runs.nextReceivedExecution(runnerGroup);
+      activeRun = {
+        runId: dispatched.runId,
+        sandboxToken: dispatched.sandboxToken,
+      };
+      return {
+        threadId: sent.body.threadId,
+        runId: dispatched.runId,
+        sandboxToken: dispatched.sandboxToken,
+        cliAgentType: dispatched.cliAgentType,
+      };
+    });
+
+    return {
+      actor,
+      ...launched,
+      markCompleted: () => {
+        completed = true;
+      },
+    };
   }
 
   async function listThreadEvents(actor: ApiTestUser, threadId: string) {
@@ -380,6 +621,45 @@ describe("run-lifecycle-chat-events.bdd", () => {
         webhookCompleteClient.complete({
           headers: {},
           body: { runId: WARMUP_UUID, exitCode: 0 },
+        }),
+        [401],
+      ),
+      accept(
+        startupApi.setStartup({
+          headers: {},
+          params: { runId: WARMUP_UUID },
+          body: { sandboxStartupPath: "blank" },
+        }),
+        [401],
+      ),
+      accept(
+        runRunnerApi.getRunner({
+          headers: {},
+          params: { id: WARMUP_UUID },
+        }),
+        [401],
+      ),
+      accept(
+        webhookTelemetryApi.send({
+          headers: {},
+          body: {
+            sandboxOperations: [
+              {
+                ts: nowDate().toISOString(),
+                action_type: "sandbox_ready",
+                duration_ms: 1,
+                success: true,
+              },
+            ],
+          },
+        }),
+        [401],
+      ),
+      accept(
+        rawCompleteRequest("/api/webhooks/run/complete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runId: WARMUP_UUID, exitCode: 0 }),
         }),
         [401],
       ),
@@ -898,6 +1178,214 @@ describe("run-lifecycle-chat-events.bdd", () => {
             }),
           ).toBeFalsy();
         });
+      },
+    );
+  });
+
+  describe("run runner startup", () => {
+    it(
+      "run-runner-startup.bdd-001 dedicated startup API persists sandbox through a pre-cleanup completion",
+      { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+      async () => {
+        const run = await startDispatchedChatRun();
+        const sandboxHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+
+        const beforeReport = await readRunner(run.actor, run.runId, [200]);
+        expect(beforeReport.body.sandboxStartupPath).toBeNull();
+
+        const reported = await reportStartup(
+          run.runId,
+          "sandbox",
+          sandboxHeaders,
+          [204],
+        );
+        expect(reported.status).toBe(204);
+
+        const afterReport = await readRunner(run.actor, run.runId, [200]);
+        expect(afterReport.body.sandboxStartupPath).toBe("sandbox");
+
+        const completed = await completeStartupRunWithLegacyReuseFields(run, {
+          sandboxReuseResult: "reused",
+          homeReuseResult: "sandboxReused",
+        });
+        expect(completed.status).toBe(200);
+        expect(completed.body).toStrictEqual({
+          success: true,
+          status: "completed",
+        });
+
+        const afterCompletion = await readRunner(run.actor, run.runId, [200]);
+        expect(afterCompletion.body.sandboxStartupPath).toBe("sandbox");
+      },
+    );
+
+    it(
+      "run-runner-startup.bdd-002 dedicated startup API persists home through a pre-cleanup completion",
+      { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+      async () => {
+        const run = await startDispatchedChatRun();
+        const sandboxHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+
+        const beforeReport = await readRunner(run.actor, run.runId, [200]);
+        expect(beforeReport.body.sandboxStartupPath).toBeNull();
+
+        const reported = await reportStartup(
+          run.runId,
+          "home",
+          sandboxHeaders,
+          [204],
+        );
+        expect(reported.status).toBe(204);
+
+        const afterReport = await readRunner(run.actor, run.runId, [200]);
+        expect(afterReport.body.sandboxStartupPath).toBe("home");
+
+        const completed = await completeStartupRunWithLegacyReuseFields(run, {
+          sandboxReuseResult: "poolMiss",
+          homeReuseResult: "reused",
+        });
+        expect(completed.status).toBe(200);
+        expect(completed.body).toStrictEqual({
+          success: true,
+          status: "completed",
+        });
+
+        const afterCompletion = await readRunner(run.actor, run.runId, [200]);
+        expect(afterCompletion.body.sandboxStartupPath).toBe("home");
+      },
+    );
+
+    it(
+      "run-runner-startup.bdd-006 same-value retries succeed and conflicting or telemetry reports cannot overwrite startup",
+      { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+      async () => {
+        const run = await startDispatchedChatRun();
+        const sandboxHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+
+        const firstBlank = await reportStartup(
+          run.runId,
+          "blank",
+          sandboxHeaders,
+          [204],
+        );
+        expect(firstBlank.status).toBe(204);
+
+        const secondBlank = await reportStartup(
+          run.runId,
+          "blank",
+          sandboxHeaders,
+          [204],
+        );
+        expect(secondBlank.status).toBe(204);
+
+        const conflictingCold = await reportStartup(
+          run.runId,
+          "cold",
+          sandboxHeaders,
+          [409],
+        );
+        expect(conflictingCold.status).toBe(409);
+
+        const completed = await completeStartupRun(run);
+        expect(completed.body).toStrictEqual({
+          success: true,
+          status: "completed",
+        });
+
+        const postCompletionBlank = await reportStartup(
+          run.runId,
+          "blank",
+          sandboxHeaders,
+          [204],
+        );
+        expect(postCompletionBlank.status).toBe(204);
+
+        const postCompletionHome = await reportStartup(
+          run.runId,
+          "home",
+          sandboxHeaders,
+          [409],
+        );
+        expect(postCompletionHome.status).toBe(409);
+
+        const telemetry = await accept(
+          webhookTelemetryApi.send({
+            headers: sandboxHeaders,
+            body: {
+              runId: run.runId,
+              sandboxOperations: [
+                {
+                  ts: nowDate().toISOString(),
+                  action_type: "sandbox_ready",
+                  duration_ms: 42,
+                  success: true,
+                  runner_startup_path: "cold",
+                },
+              ],
+            },
+          }),
+          [200],
+        );
+        expect(telemetry.status).toBe(200);
+
+        const finalRunner = await readRunner(run.actor, run.runId, [200]);
+        expect(finalRunner.body.sandboxStartupPath).toBe("blank");
+      },
+    );
+
+    it(
+      "run-runner-startup.bdd-008 startup writes and reads preserve Run token, user and organization boundaries",
+      { timeout: TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+      async () => {
+        const run = await startDispatchedChatRun();
+        const sandboxHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+        const sameOrgMember = bdd.user({
+          orgId: run.actor.orgId,
+          orgRole: "org:member",
+        });
+        const sameUserOtherOrg = bdd.user({ userId: run.actor.userId });
+
+        const ownerSessionHeaders = sessionHeaders(run.actor);
+        const [wrongRunReport, missingAuthReport, clerkSessionReport] =
+          await Promise.all([
+            reportStartup(randomUUID(), "blank", sandboxHeaders, [401]),
+            reportStartup(run.runId, "blank", {}, [401]),
+            reportStartup(run.runId, "blank", ownerSessionHeaders, [401]),
+          ]);
+        expect(wrongRunReport.status).toBe(401);
+        expect(missingAuthReport.status).toBe(401);
+        expect(clerkSessionReport.status).toBe(401);
+
+        const stillNull = await readRunner(run.actor, run.runId, [200]);
+        expect(stillNull.body.sandboxStartupPath).toBeNull();
+
+        const validReport = await reportStartup(
+          run.runId,
+          "blank",
+          sandboxHeaders,
+          [204],
+        );
+        expect(validReport.status).toBe(204);
+
+        const otherMemberRead = await readRunner(
+          sameOrgMember,
+          run.runId,
+          [404],
+        );
+        expect(otherMemberRead.status).toBe(404);
+
+        const otherOrgRead = await readRunner(
+          sameUserOtherOrg,
+          run.runId,
+          [404],
+        );
+        expect(otherOrgRead.status).toBe(404);
+
+        const unauthRead = await readRunner(null, run.runId, [401]);
+        expect(unauthRead.status).toBe(401);
+
+        const ownerRead = await readRunner(run.actor, run.runId, [200]);
+        expect(ownerRead.body.sandboxStartupPath).toBe("blank");
       },
     );
   });

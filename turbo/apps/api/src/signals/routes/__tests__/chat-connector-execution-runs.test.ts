@@ -2,17 +2,24 @@ import { randomUUID } from "node:crypto";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import {
   chatEventsContract,
+  chatThreadConnectorSelectionContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
-import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
+import {
+  runsByIdContract,
+  runsCancelContract,
+} from "@okouai/api-contracts/contracts/run-routes";
 import {
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
 } from "@okouai/api-contracts/contracts/runners";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
   runWebhookContract,
   webhookClerkContract,
@@ -24,6 +31,7 @@ import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import {
+  TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
   TEST_WITH_SINGLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
   TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE,
 } from "../../../__tests__/test-timeouts";
@@ -33,17 +41,23 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { chatEventsRoutes } from "../chat-events";
+import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { connectorPermissionsRoutes } from "../connector-permissions";
 import { builtinConnectorsRoutes } from "../connectors";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
+import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { runConnectorAccountRoutes } from "../run-connector-accounts";
 import { runnersRoutes } from "../runners";
+import { runsRoutes } from "../runs";
 import { runsCancelRoutes } from "../runs-cancel";
+import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -74,29 +88,39 @@ const app = setupApp({
   context,
   routes: [
     ...chatThreadCreateRoutes,
+    ...chatThreadConnectorSelectionRoutes,
     ...chatEventsRoutes,
     ...chatConnectorAccessRoutes,
     ...builtinConnectorsRoutes,
     ...connectorPermissionsRoutes,
     ...mcpConnectorsRoutes,
+    ...meModelProvidersUpsertRoutes,
+    ...onboardingCompleteRoutes,
     ...runConnectorAccountRoutes,
     ...runnersRoutes,
+    ...runsRoutes,
     ...runsCancelRoutes,
+    ...userModelPreferenceRoutes,
     ...webhooksAgentCompleteRoutes,
     ...webhooksAgentFirewallAuthRoutes,
     ...webhooksClerkRoutes,
   ],
 });
 const threadsApi = app(chatThreadsContract);
+const threadConnectorSelectionApi = app(chatThreadConnectorSelectionContract);
 const chatEventsApi = app(chatEventsContract);
 const accessApi = app(chatConnectorAccessContract);
 const builtinManualGrantApi = app(builtinConnectorManualGrantContract);
 const permissionsApi = app(connectorPermissionsContract);
+const personalModelProvidersApi = app(personalModelProvidersMainContract);
+const onboardingCompleteApi = app(onboardingCompleteContract);
 const runConnectorAccountsApi = app(runConnectorAccountsContract);
 const mcpConnectorsApi = app(mcpConnectorsContract);
 const runnerHeartbeatApi = app(runnersHeartbeatContract);
 const runnerSyncApi = app(runnersConnectorRuntimeSyncContract);
+const runsByIdApi = app(runsByIdContract);
 const runsCancelApi = app(runsCancelContract);
+const userModelPreferenceApi = app(userModelPreferenceContract);
 const agentCompleteApi = app(webhookCompleteContract);
 const firewallAuthApi = app(runWebhookContract);
 const clerkWebhookApi = app(webhookClerkContract);
@@ -105,9 +129,18 @@ beforeAll(async () => {
   context.mocks.clerk.authenticateRequest.mockResolvedValue({
     isAuthenticated: false,
   });
+  context.mocks.clerk.verifyWebhook.mockRejectedValueOnce(new Error("warmup"));
+  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "whsec_warmup");
   const missingId = randomUUID();
   await Promise.all([
     accept(threadsApi.create({ headers: {}, body: { model: null } }), [401]),
+    accept(
+      threadConnectorSelectionApi.get({
+        headers: {},
+        params: { id: missingId },
+      }),
+      [401],
+    ),
     accept(
       chatEventsApi.send({
         headers: {},
@@ -153,6 +186,23 @@ beforeAll(async () => {
       }),
       [401],
     ),
+    accept(
+      personalModelProvidersApi.upsert({
+        headers: {},
+        body: {
+          type: "claude-code-oauth-token",
+          secret: "warmup-token",
+        },
+      }),
+      [401],
+    ),
+    accept(
+      onboardingCompleteApi.complete({
+        headers: {},
+        body: {},
+      }),
+      [401],
+    ),
     accept(runConnectorAccountsApi.list({ headers: {}, query: {} }), [401]),
     accept(mcpConnectorsApi.list({ headers: {} }), [401]),
     accept(
@@ -187,7 +237,18 @@ beforeAll(async () => {
       [401],
     ),
     accept(
+      runsByIdApi.getById({ headers: {}, params: { id: missingId } }),
+      [401],
+    ),
+    accept(
       runsCancelApi.cancel({ headers: {}, params: { id: missingId } }),
+      [401],
+    ),
+    accept(
+      userModelPreferenceApi.update({
+        headers: {},
+        body: { selectedModel: "claude-fable-5-1", serviceTier: null },
+      }),
       [401],
     ),
     accept(
@@ -201,6 +262,13 @@ beforeAll(async () => {
       firewallAuthApi.firewallAuth({
         headers: {},
         body: { authHeaders: {} },
+      }),
+      [401],
+    ),
+    accept(
+      clerkWebhookApi.post({
+        body: "{}",
+        extraHeaders: {},
       }),
       [401],
     ),
@@ -228,7 +296,7 @@ function officialRunnerHeaders() {
 
 async function connectManualBuiltinAccount(
   actor: ApiTestUser,
-  connectorSlug: "manual-mcp" | "runtime",
+  connectorSlug: "manual-mcp" | "openai" | "runtime",
   displayName: string,
   apiKey: string,
 ): Promise<string> {
@@ -295,14 +363,25 @@ function prepareRunEnvironment() {
       if (activeRuns.length > 0) {
         const ownerHeaders = signIn(actor);
         await Promise.all(
-          activeRuns.map((tracked) => {
-            return accept(
-              runsCancelApi.cancel({
+          activeRuns.map(async (tracked) => {
+            const current = await accept(
+              runsByIdApi.getById({
                 headers: ownerHeaders,
                 params: { id: tracked.runId },
               }),
               [200],
             );
+            if (
+              ["queued", "pending", "running"].includes(current.body.status)
+            ) {
+              await accept(
+                runsCancelApi.cancel({
+                  headers: ownerHeaders,
+                  params: { id: tracked.runId },
+                }),
+                [200],
+              );
+            }
           }),
         );
       }
@@ -323,7 +402,11 @@ function prepareRunEnvironment() {
     return runnerGroup;
   }
 
-  async function startRun(threadId: string, prompt: string) {
+  async function startRun(
+    threadId: string,
+    prompt: string,
+    model: string | null = null,
+  ) {
     const runnerGroup = resolvedRunnerGroup ?? (await awaitBootstrap());
     await accept(
       chatEventsApi.send({
@@ -331,7 +414,7 @@ function prepareRunEnvironment() {
         body: {
           threadId,
           prompt,
-          model: null,
+          model,
           clientEventId: randomUUID(),
           userMessage: {
             version: 1,
@@ -351,7 +434,13 @@ function prepareRunEnvironment() {
     return { runId: execution.runId, execution, tracked };
   }
 
-  return { actor, awaitBootstrap, startRun };
+  function trackRun(runId: string): TrackedRun {
+    const tracked: TrackedRun = { runId, completed: false };
+    trackedRuns.push(tracked);
+    return tracked;
+  }
+
+  return { actor, awaitBootstrap, startRun, trackRun };
 }
 
 describe("Chat connector execution runs", () => {
@@ -868,4 +957,416 @@ describe("Chat connector execution runs", () => {
       expect(otherThreadAccess.body.currentConnectionId).toBe(accountA);
     },
   );
+
+  describe("thread connector selection", () => {
+    async function prepareSelectedOpenAiAndRuntimeThread() {
+      mockClaudeCodeTokenEndpoint();
+      const envState = prepareRunEnvironment();
+      const { actor, awaitBootstrap } = envState;
+      const ownerHeaders = signIn(actor);
+
+      const openAiDefaultSecret = "sk-openai-default-secret";
+      const openAiSelectedSecret = "sk-openai-selected-secret";
+      const runtimeInitialSecret = "runtime-initial-secret";
+
+      const [runnerGroup, openAiDefaultId, runtimeAccountId] =
+        await Promise.all([
+          awaitBootstrap(),
+          connectManualBuiltinAccount(
+            actor,
+            "openai",
+            "Default OpenAI",
+            openAiDefaultSecret,
+          ),
+          connectManualBuiltinAccount(
+            actor,
+            "runtime",
+            "Selected Runtime",
+            runtimeInitialSecret,
+          ),
+          accept(
+            onboardingCompleteApi.complete({
+              headers: ownerHeaders,
+              body: {},
+            }),
+            [200],
+          ),
+          accept(
+            personalModelProvidersApi.upsert({
+              headers: ownerHeaders,
+              body: {
+                type: "claude-code-oauth-token",
+                secret: "bdd-personal-claude-token",
+              },
+            }),
+            [200, 201],
+          ),
+        ]);
+
+      const [, openAiSelectedId, thread] = await Promise.all([
+        accept(
+          userModelPreferenceApi.update({
+            headers: ownerHeaders,
+            body: { selectedModel: "claude-fable-5-1", serviceTier: null },
+          }),
+          [200],
+        ),
+        connectManualBuiltinAccount(
+          actor,
+          "openai",
+          "Selected OpenAI",
+          openAiSelectedSecret,
+        ),
+        accept(
+          threadsApi.create({
+            headers: ownerHeaders,
+            body: { model: "claude-fable-5-1" },
+          }),
+          [201],
+        ),
+      ]);
+      const threadId = thread.body.id;
+
+      await Promise.all([
+        accept(
+          threadConnectorSelectionApi.update({
+            headers: ownerHeaders,
+            params: { id: threadId },
+            body: {
+              target: { kind: "builtin", connectorSlug: "openai" },
+              connectionId: openAiSelectedId,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          threadConnectorSelectionApi.update({
+            headers: ownerHeaders,
+            params: { id: threadId },
+            body: {
+              target: { kind: "builtin", connectorSlug: "runtime" },
+              connectionId: runtimeAccountId,
+            },
+          }),
+          [200],
+        ),
+      ]);
+
+      return {
+        ...envState,
+        runnerGroup,
+        ownerHeaders,
+        threadId,
+        openAiDefaultId,
+        openAiSelectedId,
+        runtimeAccountId,
+        openAiDefaultSecret,
+        openAiSelectedSecret,
+        runtimeInitialSecret,
+      };
+    }
+
+    it(
+      "chat-events-connector-selection-001 (1/2) binds selected OpenAI and Runtime accounts on the active Run and omits raw secrets",
+      { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+      async () => {
+        const {
+          ownerHeaders,
+          threadId,
+          openAiDefaultId,
+          openAiSelectedId,
+          runtimeAccountId,
+          openAiDefaultSecret,
+          openAiSelectedSecret,
+          runtimeInitialSecret,
+          startRun,
+        } = await prepareSelectedOpenAiAndRuntimeThread();
+
+        const initialSelections = await accept(
+          threadConnectorSelectionApi.get({
+            headers: ownerHeaders,
+            params: { id: threadId },
+          }),
+          [200],
+        );
+        expect(initialSelections.body.selections).toStrictEqual(
+          expect.arrayContaining([
+            {
+              target: { kind: "builtin", connectorSlug: "openai" },
+              connectionId: openAiSelectedId,
+            },
+            {
+              target: { kind: "builtin", connectorSlug: "runtime" },
+              connectionId: runtimeAccountId,
+            },
+          ]),
+        );
+
+        const firstRun = await startRun(
+          threadId,
+          "First run with selected OpenAI and Runtime accounts",
+          "claude-fable-5-1",
+        );
+
+        const firstEnv = firstRun.execution.environment ?? {};
+        expect(firstEnv.OPENAI_TOKEN).toBeTruthy();
+        expect(firstEnv.RUNTIME_API_KEY).toBeTruthy();
+        expect(firstRun.execution.secretConnectorMetadataMap).toMatchObject({
+          OPENAI_TOKEN: {
+            sourceType: "connector",
+            sourceId: openAiSelectedId,
+          },
+          RUNTIME_API_KEY: {
+            sourceType: "connector",
+            sourceId: runtimeAccountId,
+          },
+        });
+        const firstSerialized = JSON.stringify(firstRun.execution);
+        expect(firstSerialized).not.toContain(openAiDefaultSecret);
+        expect(firstSerialized).not.toContain(openAiSelectedSecret);
+        expect(firstSerialized).not.toContain(runtimeInitialSecret);
+
+        const [firstResolved, disabledOpenAi] = await Promise.all([
+          accept(
+            firewallAuthApi.firewallAuth({
+              headers: bearerHeaders(firstRun.execution.firewallToken),
+              body: {
+                authHeaders: {
+                  "x-openai": `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
+                  "x-runtime": `Bearer ${secretTemplate("RUNTIME_API_KEY")}`,
+                },
+                secretConnectorMap:
+                  firstRun.execution.secretConnectorMap ?? undefined,
+                secretConnectorMetadataMap:
+                  firstRun.execution.secretConnectorMetadataMap ?? undefined,
+              },
+            }),
+            [200],
+          ),
+          accept(
+            accessApi.setThreadOverride({
+              headers: ownerHeaders,
+              params: { threadId, connectionId: openAiSelectedId },
+              body: {
+                target: { kind: "builtin", connectorSlug: "openai" },
+                enabled: false,
+              },
+            }),
+            [200],
+          ),
+        ]);
+        expect(firstResolved.body.headers).toStrictEqual({
+          "x-openai": `Bearer ${openAiSelectedSecret}`,
+          "x-runtime": `Bearer ${runtimeInitialSecret}`,
+        });
+        expect(disabledOpenAi.body.currentConnectionId).toBe(openAiDefaultId);
+
+        const [updatedSelections, activeRunAfterDisable] = await Promise.all([
+          accept(
+            threadConnectorSelectionApi.get({
+              headers: ownerHeaders,
+              params: { id: threadId },
+            }),
+            [200],
+          ),
+          accept(
+            firewallAuthApi.firewallAuth({
+              headers: bearerHeaders(firstRun.execution.firewallToken),
+              body: {
+                authHeaders: {
+                  "x-openai": `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
+                  "x-runtime": `Bearer ${secretTemplate("RUNTIME_API_KEY")}`,
+                },
+                secretConnectorMap:
+                  firstRun.execution.secretConnectorMap ?? undefined,
+                secretConnectorMetadataMap:
+                  firstRun.execution.secretConnectorMetadataMap ?? undefined,
+              },
+            }),
+            [200],
+          ),
+        ]);
+        expect(updatedSelections.body.selections).not.toContainEqual({
+          target: { kind: "builtin", connectorSlug: "openai" },
+          connectionId: openAiSelectedId,
+        });
+        expect(updatedSelections.body.selections).toStrictEqual(
+          expect.arrayContaining([
+            {
+              target: { kind: "builtin", connectorSlug: "runtime" },
+              connectionId: runtimeAccountId,
+            },
+          ]),
+        );
+        expect(activeRunAfterDisable.body.headers).toStrictEqual({
+          "x-openai": `Bearer ${openAiSelectedSecret}`,
+          "x-runtime": `Bearer ${runtimeInitialSecret}`,
+        });
+      },
+    );
+
+    it(
+      "chat-events-connector-selection-001 (2/2) promotes queued input onto the fallback OpenAI and reconnected Runtime accounts",
+      { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+      async () => {
+        const {
+          runnerGroup,
+          ownerHeaders,
+          threadId,
+          openAiDefaultId,
+          openAiSelectedId,
+          runtimeAccountId,
+          openAiDefaultSecret,
+          openAiSelectedSecret,
+          runtimeInitialSecret,
+          startRun,
+          trackRun,
+        } = await prepareSelectedOpenAiAndRuntimeThread();
+
+        const runtimeReconnectedSecret = "runtime-reconnected-secret";
+        const firstRun = await startRun(
+          threadId,
+          "First run occupying the thread slot",
+          "claude-fable-5-1",
+        );
+
+        const queuedPrompt =
+          "Queued run using fallback OpenAI and reconnected Runtime";
+        const [, disabledOpenAi] = await Promise.all([
+          accept(
+            chatEventsApi.send({
+              headers: ownerHeaders,
+              body: {
+                threadId,
+                prompt: queuedPrompt,
+                model: "claude-fable-5-1",
+                clientEventId: randomUUID(),
+                userMessage: {
+                  version: 1,
+                  parts: [{ type: "text", text: queuedPrompt }],
+                },
+                hasTextContent: true,
+              },
+            }),
+            [201],
+          ),
+          accept(
+            accessApi.setThreadOverride({
+              headers: ownerHeaders,
+              params: { threadId, connectionId: openAiSelectedId },
+              body: {
+                target: { kind: "builtin", connectorSlug: "openai" },
+                enabled: false,
+              },
+            }),
+            [200],
+          ),
+          accept(
+            builtinManualGrantApi.connect({
+              headers: ownerHeaders,
+              params: { connectorSlug: "runtime" },
+              body: {
+                authMethod: "api-token",
+                values: { apiKey: runtimeReconnectedSecret },
+                account: {
+                  intent: "reconnect",
+                  connectionId: runtimeAccountId,
+                },
+              },
+            }),
+            [200],
+          ),
+        ]);
+        expect(disabledOpenAi.body.currentConnectionId).toBe(openAiDefaultId);
+
+        const [updatedSelections] = await Promise.all([
+          accept(
+            threadConnectorSelectionApi.get({
+              headers: ownerHeaders,
+              params: { id: threadId },
+            }),
+            [200],
+          ),
+          accept(
+            runsCancelApi.cancel({
+              headers: ownerHeaders,
+              params: { id: firstRun.runId },
+            }),
+            [200],
+          ),
+        ]);
+        expect(updatedSelections.body.selections).not.toContainEqual({
+          target: { kind: "builtin", connectorSlug: "openai" },
+          connectionId: openAiSelectedId,
+        });
+        expect(updatedSelections.body.selections).toStrictEqual(
+          expect.arrayContaining([
+            {
+              target: { kind: "builtin", connectorSlug: "runtime" },
+              connectionId: runtimeAccountId,
+            },
+          ]),
+        );
+
+        await accept(
+          agentCompleteApi.complete({
+            headers: bearerHeaders(firstRun.execution.sandboxToken),
+            body: {
+              runId: firstRun.runId,
+              exitCode: 1,
+              error: "Run cancelled",
+            },
+          }),
+          [200],
+        );
+        firstRun.tracked.completed = true;
+        await flushWaitUntilForTest();
+
+        const secondExecution = await runs.nextReceivedExecution(runnerGroup);
+        trackRun(secondExecution.runId);
+        expect(secondExecution.runId).not.toBe(firstRun.runId);
+        expect(secondExecution.prompt).toBe(queuedPrompt);
+
+        const secondEnv = secondExecution.environment ?? {};
+        expect(secondEnv.OPENAI_TOKEN).toBeTruthy();
+        expect(secondEnv.RUNTIME_API_KEY).toBeTruthy();
+        expect(secondExecution.secretConnectorMetadataMap).toMatchObject({
+          OPENAI_TOKEN: {
+            sourceType: "connector",
+            sourceId: openAiDefaultId,
+          },
+          RUNTIME_API_KEY: {
+            sourceType: "connector",
+            sourceId: runtimeAccountId,
+          },
+        });
+        const secondSerialized = JSON.stringify(secondExecution);
+        expect(secondSerialized).not.toContain(openAiDefaultSecret);
+        expect(secondSerialized).not.toContain(openAiSelectedSecret);
+        expect(secondSerialized).not.toContain(runtimeInitialSecret);
+        expect(secondSerialized).not.toContain(runtimeReconnectedSecret);
+
+        const secondResolved = await accept(
+          firewallAuthApi.firewallAuth({
+            headers: bearerHeaders(secondExecution.firewallToken),
+            body: {
+              authHeaders: {
+                "x-openai": `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
+                "x-runtime": `Bearer ${secretTemplate("RUNTIME_API_KEY")}`,
+              },
+              secretConnectorMap:
+                secondExecution.secretConnectorMap ?? undefined,
+              secretConnectorMetadataMap:
+                secondExecution.secretConnectorMetadataMap ?? undefined,
+            },
+          }),
+          [200],
+        );
+        expect(secondResolved.body.headers).toStrictEqual({
+          "x-openai": `Bearer ${openAiDefaultSecret}`,
+          "x-runtime": `Bearer ${runtimeReconnectedSecret}`,
+        });
+      },
+    );
+  });
 });

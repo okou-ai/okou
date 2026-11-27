@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync, zstdDecompressSync } from "node:zlib";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
   chatEventsContract,
   chatThreadMetadataContract,
@@ -78,6 +79,7 @@ import {
   executionEnvironment,
   modelProviderSecretPlaceholder,
   okouTokenFromExecution,
+  userMessages,
   type RunnerExecutionInput,
 } from "./helpers/chat-events-fixture";
 import {
@@ -89,7 +91,10 @@ import {
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
-import { readThreadModelUsage } from "./helpers/public-thread-usage";
+import {
+  readThreadModelCredits,
+  readThreadModelUsage,
+} from "./helpers/public-thread-usage";
 
 const CHAT_RECOVERY_COMMAND_SNIPPET =
   "okou chat messages --output-dir /tmp/okou-chat-history";
@@ -2489,6 +2494,258 @@ describe("chat-events-pi-lifecycle", () => {
             );
           }),
         ).toHaveLength(1);
+      },
+    );
+  });
+
+  describe("chat-events-pi-failures and preparation", () => {
+    it(
+      "chat-events-pi-failures-002 preserves native subscription continuity and active steering input without history upload",
+      { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+      async () => {
+        const actor = fixture.bdd.user();
+        const owned = createOwnedActorRunner(context, actor);
+        installBaseChatMocks();
+        await Promise.all([
+          fixture.api.configureRunnerGroup(),
+          owned.run(() => {
+            return bddApi.bootstrapLimitedFreeOnboarding(actor);
+          }),
+          owned.run(() => {
+            return fixture.connectSubscriptionPiModel(actor);
+          }),
+        ]);
+        const historyObjects = fixture.mockPiObjectStore();
+
+        const firstPrompt = "Draft the initial migration plan";
+        const firstAnswer =
+          "Initial migration plan token-7f4e91c2 ready for review.";
+        const run1 = await owned.run(() => {
+          return fixture.sendChatRun(actor, {
+            model: "gpt-6-luna",
+            prompt: firstPrompt,
+          });
+        });
+        const exec1 = await owned.run(async () => {
+          const execution = await fixture.runExecution(run1.runId);
+          owned.rememberExecution(run1.runId, execution.execution.sandboxToken);
+          return execution;
+        });
+        await owned.run(async () => {
+          await fixture.webhooks.requestAgentEvents(
+            {
+              runId: run1.runId,
+              events: [
+                {
+                  type: "assistant",
+                  sequenceNumber: 1,
+                  message: { content: [{ type: "text", text: firstAnswer }] },
+                },
+                { type: "result", sequenceNumber: 2, result: firstAnswer },
+              ],
+            },
+            exec1.sandboxHeaders,
+            [200],
+          );
+          await fixture.webhooks.requestAgentComplete(
+            {
+              runId: run1.runId,
+              exitCode: 0,
+              lastEventSequence: 2,
+              completion: {
+                cliAgentType: "pi",
+                cliAgentSessionId: run1.threadId,
+                cliAgentSessionHistoryDisposition: "native_only",
+              },
+            },
+            exec1.sandboxHeaders,
+            [200],
+          );
+          await flushWaitUntilForTest();
+        });
+
+        const secondPrompt = "Refine the rollback verification steps";
+        const run2 = await owned.run(() => {
+          return fixture.sendChatRun(actor, {
+            threadId: run1.threadId,
+            model: "gpt-6-luna",
+            prompt: secondPrompt,
+          });
+        });
+        const exec2 = await owned.run(async () => {
+          const execution = await fixture.runExecution(run2.runId);
+          owned.rememberExecution(run2.runId, execution.execution.sandboxToken);
+          return execution;
+        });
+
+        expect(exec2.execution.prompt).toBe(secondPrompt);
+        expect(exec2.execution.cliAgentType).toBe("pi");
+        expect(exec2.execution.piSessionId).toBe(run1.threadId);
+        expect(exec2.execution.nativeContinuation).toMatchObject({
+          sessionId: run1.threadId,
+          generationRunId: run1.runId,
+        });
+        expect(exec2.execution.appendSystemPrompt ?? "").not.toContain(
+          firstAnswer,
+        );
+        expect(historyObjects.size).toBe(0);
+
+        const steeringEventId = randomUUID();
+        const steeringPrompt = "Also include the staging smoke check";
+        await owned.run(() => {
+          return fixture.chat.requestSendEvent(
+            actor,
+            {
+              threadId: run1.threadId,
+              prompt: steeringPrompt,
+              clientEventId: steeringEventId,
+            },
+            [201],
+          );
+        });
+        await flushWaitUntilForTest();
+
+        const firstPoll = await owned.run(() => {
+          return fixture.api.nextSteerableInput(
+            exec2.execution.sandboxToken,
+            run2.runId,
+          );
+        });
+        const secondPoll = await owned.run(() => {
+          return fixture.api.nextSteerableInput(
+            exec2.execution.sandboxToken,
+            run2.runId,
+          );
+        });
+        expect(firstPoll).toStrictEqual({
+          input: {
+            eventId: steeringEventId,
+            prompt: steeringPrompt,
+          },
+        });
+        expect(secondPoll).toStrictEqual({
+          input: {
+            eventId: steeringEventId,
+            prompt: steeringPrompt,
+          },
+        });
+
+        const steered = await owned.run(() => {
+          return fixture.api.declareSteeredInput(
+            exec2.execution.sandboxToken,
+            run2.runId,
+            steeringEventId,
+          );
+        });
+        expect(steered).toStrictEqual({ outcome: "steered" });
+        await flushWaitUntilForTest();
+
+        const [threadEvents, modelCredits] = await Promise.all([
+          fixture.chat.listThreadEvents(actor, run1.threadId),
+          readThreadModelCredits(context, actor, run1.threadId),
+        ]);
+        const revokingSteering = userMessages(threadEvents.events).filter(
+          (event) => {
+            return event.revokesEventId === steeringEventId;
+          },
+        );
+        expect(revokingSteering).toHaveLength(1);
+        expect(revokingSteering[0]).toMatchObject({
+          eventType: "input.prompt",
+          runId: run2.runId,
+          revokesEventId: steeringEventId,
+        });
+        expect(chatEventDisplayText(revokingSteering[0]!)).toBe(steeringPrompt);
+
+        const activeRunTerminalEvents = threadEvents.events.filter((event) => {
+          return (
+            event.runId === run2.runId &&
+            isChatRunTerminalEventType(event.eventType)
+          );
+        });
+        expect(activeRunTerminalEvents).toStrictEqual([]);
+        expect(historyObjects.size).toBe(0);
+        expect(modelCredits).toBe(0);
+      },
+    );
+
+    it(
+      "chat-events-pi-preparation-001 launches an at-capacity Pi send on a fresh session once a slot frees",
+      { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+      async () => {
+        mockEnv("CONCURRENT_RUN_LIMIT_CAP", 1);
+        const actor = fixture.bdd.user();
+        const owned = createOwnedActorRunner(context, actor);
+        installBaseChatMocks();
+        mockClaudeCodeTokenEndpoint();
+        await Promise.all([
+          fixture.api.configureRunnerGroup(),
+          owned.run(() => {
+            return bddApi.bootstrapLimitedFreeOnboarding(actor);
+          }),
+          owned.run(() => {
+            return fixture.api.createPersonalModelProvider(actor, {
+              type: "claude-code-oauth-token",
+              secret: "bdd-personal-claude-token",
+            });
+          }),
+          owned.run(() => {
+            return fixture.connectSubscriptionPiModel(actor);
+          }),
+        ]);
+
+        const blocker = await owned.run(() => {
+          return fixture.sendChatRun(actor, {
+            model: "claude-fable-5-1",
+            prompt: "Occupy the single workspace run slot",
+          });
+        });
+        const blockerExecution = await owned.run(async () => {
+          const execution = await fixture.runExecution(blocker.runId);
+          owned.rememberExecution(
+            blocker.runId,
+            execution.execution.sandboxToken,
+          );
+          return execution;
+        });
+
+        const queuedPrompt = "Launch personal gpt-6-luna once a slot frees";
+        const waiting = await owned.run(() => {
+          return fixture.sendWaitingChatInput(actor, {
+            model: "gpt-6-luna",
+            prompt: queuedPrompt,
+          });
+        });
+
+        await owned.run(() => {
+          return fixture.cancelChatRun(
+            actor,
+            blocker.runId,
+            blockerExecution.sandboxHeaders,
+          );
+        });
+
+        const launched = await owned.run(() => {
+          return waiting.launchedRun();
+        });
+        const { execution } = await owned.run(async () => {
+          const result = await fixture.runExecution(launched.runId);
+          owned.rememberExecution(
+            launched.runId,
+            result.execution.sandboxToken,
+          );
+          return result;
+        });
+
+        expect(launched.threadId).toBe(waiting.threadId);
+        expect(execution.prompt).toBe(queuedPrompt);
+        expect(execution.cliAgentType).toBe("pi");
+        expect(execution.piSessionId).toBe(waiting.threadId);
+        expect(execution.piLaunchConfig).toStrictEqual({ schemaVersion: 2 });
+        expect(execution.piModelConfig).toMatchObject({
+          provider: "openai-codex",
+          model: "gpt-6-luna",
+        });
       },
     );
   });
