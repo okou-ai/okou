@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,6 +55,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -76,6 +78,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -149,6 +152,8 @@ internal fun ArtifactCatalogList(
     val clearQuery = searchClearAction(searchFocus) { input.clearText() }
     val allFilterFocus = remember { FocusRequester() }
     val rowFocus = remember { FocusRequester() }
+    val rowStartPadding =
+        ListItemDefaults.ContentPadding.calculateStartPadding(LocalLayoutDirection.current)
     val hasReturnRow = restoreRow != null && page?.items?.any { it.id == restoreRow } == true
     val canChooseAlternative =
         restoreRow != null && !hasReturnRow && page?.items?.isNotEmpty() == true
@@ -257,7 +262,8 @@ internal fun ArtifactCatalogList(
                         item(key = day.name) {
                             Text(
                                 stringResource(day.label),
-                                Modifier.padding(top = 8.dp, bottom = 4.dp).semantics { heading() },
+                                Modifier.padding(start = rowStartPadding, top = 8.dp, bottom = 4.dp)
+                                    .semantics { heading() },
                                 style = artifactSmallText(),
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -353,12 +359,8 @@ private fun ArtifactRow(
         onClick = onClick,
         modifier = modifier.testTag("artifact_row"),
         leading = { ArtifactThumbnail(item, thumbnail) },
-    ) { supportingColor ->
-        Text(
-            stringResource(R.string.artifact_metadata, stringResource(item.kind.label()), date),
-            style = artifactSmallText(),
-            color = supportingColor,
-        )
+    ) {
+        Text(stringResource(R.string.artifact_metadata, stringResource(item.kind.label()), date))
     }
 }
 
@@ -393,17 +395,16 @@ internal fun ArtifactRowPlaceholder(
     hasSubtitle: Boolean = true,
     pageFailed: Boolean = false,
 ) {
-    val minimumHeight =
-        when {
-            !chatResources -> 80.dp
-            hasSubtitle -> 72.dp
-            else -> 56.dp
-        }
+    val minimumHeight = if (hasSubtitle) 72.dp else 56.dp
     val (titleSlot, subtitleSlot) =
         with(LocalDensity.current) { maxOf(14.dp, 24.sp.toDp()) to maxOf(14.dp, 20.sp.toDp()) }
-    val textGap = if (chatResources) 0.dp else 4.dp
-    val textHeight = titleSlot + if (hasSubtitle) textGap + subtitleSlot else 0.dp
-    val bounds = Modifier.fillMaxWidth().heightIn(min = maxOf(minimumHeight, 16.dp + textHeight))
+    val verticalPadding =
+        if (chatResources) 16.dp
+        else
+            ListItemDefaults.ContentPadding.run { calculateTopPadding() + calculateBottomPadding() }
+    val textHeight = titleSlot + if (hasSubtitle) subtitleSlot else 0.dp
+    val bounds =
+        Modifier.fillMaxWidth().heightIn(min = maxOf(minimumHeight, verticalPadding + textHeight))
     if (pageFailed) {
         // Reserve the same space after a failed page so the lower scroll bound stays stable.
         Box(bounds) {
@@ -415,14 +416,14 @@ internal fun ArtifactRowPlaceholder(
         }
         return
     }
-    val text: @Composable () -> Unit = {
+    val title: @Composable () -> Unit = {
         Box(Modifier.height(titleSlot), contentAlignment = Alignment.CenterStart) {
             ChatSkeletonBlock(Modifier.width(144.dp).height(14.dp))
         }
-        if (hasSubtitle) {
-            Box(Modifier.height(subtitleSlot), contentAlignment = Alignment.CenterStart) {
-                ChatSkeletonBlock(Modifier.width(80.dp).height(14.dp))
-            }
+    }
+    val subtitle: @Composable () -> Unit = {
+        Box(Modifier.height(subtitleSlot), contentAlignment = Alignment.CenterStart) {
+            ChatSkeletonBlock(Modifier.width(80.dp).height(14.dp))
         }
     }
     val skeleton = Modifier.testTag("artifact_row_skeleton")
@@ -433,10 +434,13 @@ internal fun ArtifactRowPlaceholder(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ChatSkeletonBlock(Modifier.size(40.dp), cornerRadius = 12.dp)
-            Column(content = { text() })
+            Column {
+                title()
+                if (hasSubtitle) subtitle()
+            }
         }
     } else {
-        WorkspaceToolDirectoryRowSkeleton(skeleton, content = text)
+        WorkspaceToolDirectoryRowSkeleton(skeleton, supportingContent = subtitle, content = title)
     }
 }
 

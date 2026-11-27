@@ -65,7 +65,7 @@ internal fun Modifier.observeReturnFocus(
         .focusGroup()
 }
 
-/** Restores focus after placement while the directory has no focused control. */
+/** Restores focus after placement, yielding to manual focus moves while waiting for content. */
 @Composable
 internal fun Modifier.restoreDirectoryFocus(
     returnFocus: DirectoryReturnFocus,
@@ -76,11 +76,15 @@ internal fun Modifier.restoreDirectoryFocus(
     rowEnabled: Boolean,
     requestMissingRowAlternative: (DirectoryReturnFocus.Request) -> Boolean = { false },
 ): Modifier {
+    if (!ready) return observeReturnFocus(returnFocus)
     val request = returnFocus.pending ?: return this
     val input = LocalInputModeManager.current
-    val directoryFocus = observeReturnFocus(returnFocus)
-    if (!ready) return directoryFocus
-    return directoryFocus.onGloballyPositioned {
+    if (input.inputMode != request.inputMode) {
+        SideEffect { returnFocus.finish(request) }
+        return this
+    }
+    // Attaching a focus group here could immediately report existing focus in a retained list.
+    return onGloballyPositioned {
         if (returnFocus.isCurrent(request, input.inputMode)) {
             val rowVisible =
                 rowEnabled && position.layoutInfo.visibleItemsInfo.any { it.key == request.rowKey }

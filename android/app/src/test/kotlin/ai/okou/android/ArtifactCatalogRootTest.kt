@@ -238,7 +238,14 @@ class ArtifactWorkflowResourcesApplication : ChatListApplication() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     @Test
-    fun catalogReturnsFocusToTheNearestVisibleResultWhenTheOpenedImageIsRemoved() {
+    fun catalogReturnsFocusToTheNearestVisibleResultWhenTheOpenedImageIsRemoved() =
+        verifyReturnAfterImageRemoval()
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun wideCatalogRestoresFocusWithoutReplacingTheVisibleList() = verifyReturnAfterImageRemoval()
+
+    private fun verifyReturnAfterImageRemoval() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.setInTouchMode(false)
         try {
@@ -253,8 +260,14 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
             awaitText(fixture.image.title)
             val opened = compose.onNodeWithText(fixture.image.title)
             opened.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
-            opened.performKeyInput { pressKey(Key.Enter) }
-            compose.waitUntilExactlyOneExists(hasTestTag("artifact_image_toolbar"), 10_000)
+            fun openImage() {
+                opened.performKeyInput { pressKey(Key.Enter) }
+                compose.waitUntilExactlyOneExists(hasTestTag("artifact_image_toolbar"), 10_000)
+            }
+            openImage()
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+            opened.assertIsFocused()
+            openImage()
 
             fixture.removedCatalogIds = setOf(fixture.image.id)
             resumeArtifactRoute()
@@ -265,7 +278,7 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
 
             val nearest = hasText(fixture.slides.title) and isFocused()
             compose.waitUntilExactlyOneExists(nearest, 10_000)
-            compose.onNode(nearest).assertIsDisplayed().assertHeightIsAtLeast(80.dp)
+            compose.onNode(nearest).assertIsDisplayed().assertHeightIsAtLeast(72.dp)
             query.assertTextContains("launch").assertIsNotFocused()
             opened.assertDoesNotExist()
         } finally {
@@ -295,7 +308,7 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         val bounds = row.getUnclippedBoundsInRoot()
         fun thumbnailColor(): Int {
             val image = row.captureToImage().toPixelMap()
-            return with(compose.density) { image[32.dp.roundToPx(), 28.dp.roundToPx()].toArgb() }
+            return with(compose.density) { image[36.dp.roundToPx(), 36.dp.roundToPx()].toArgb() }
         }
         try {
             compose.waitUntil(5_000) { thumbnailColor() == original }
@@ -1124,6 +1137,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun catalogUsesTheDesignedDateSpacingAndRowAlignment() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
@@ -1142,13 +1156,14 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             compose.onNodeWithText("Yesterday").assertIsDisplayed().getUnclippedBoundsInRoot()
         val earlier =
             compose.onNodeWithText("Earlier").assertIsDisplayed().getUnclippedBoundsInRoot()
-        assertTrue(first.height >= 80.dp)
-        assertEquals(8.dp, title.top - first.top)
+        assertEquals("Title bounds $title in row $first", 72.dp, first.height)
+        assertTrue(title.top - first.top >= 10.dp)
+        assertEquals(68.dp, title.left - first.left)
         assertEquals(4.dp, first.top - today.bottom)
         assertEquals(8.dp, nextDay.top - first.bottom)
-        assertEquals(first.left, today.left)
-        assertEquals(first.left, nextDay.left)
-        assertEquals(first.left, earlier.left)
+        assertEquals(first.left + 16.dp, today.left)
+        assertEquals(today.left, nextDay.left)
+        assertEquals(today.left, earlier.left)
     }
 
     @Test
@@ -1186,6 +1201,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun firstDisplayAndSourceReturnUseTheNativeCatalogAndReferenceAuthority() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
@@ -1206,7 +1222,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithText("Today").assertIsDisplayed()
         compose.onNodeWithText("Yesterday").assertIsDisplayed()
         compose.onNodeWithText("Earlier").assertIsDisplayed()
-        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(80.dp)
+        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(72.dp)
         compose.onNodeWithTag("artifact_query").performTextReplacement("Product launch")
         awaitText(fixture.summary.title)
         compose.onNodeWithText("Yesterday").assertDoesNotExist()
@@ -1223,10 +1239,22 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         assertEquals(28.sp, titleStyle.lineHeight)
         assertEquals(FontWeight.Normal, titleStyle.fontWeight)
         compose.onNodeWithText("Save file").assertDoesNotExist()
-        compose
-            .onNodeWithText("View source conversation")
-            .assertHeightIsAtLeast(48.dp)
-            .performClick()
+        val sourceAction =
+            compose.onNodeWithText("View source conversation").assertHeightIsAtLeast(48.dp)
+        val sourceLabel = compose.onNodeWithText("View source conversation", useUnmergedTree = true)
+        val labelLayouts = mutableListOf<TextLayoutResult>()
+        sourceLabel.performSemanticsAction(SemanticsActions.GetTextLayoutResult) {
+            it(labelLayouts)
+        }
+        val labelStyle = labelLayouts.single().layoutInput.style
+        assertEquals(14.sp, labelStyle.fontSize)
+        assertEquals(20.sp, labelStyle.lineHeight)
+        assertEquals(
+            50.dp,
+            sourceLabel.getUnclippedBoundsInRoot().left -
+                sourceAction.getUnclippedBoundsInRoot().left,
+        )
+        sourceAction.performClick()
         compose.onNodeWithTag("conversation").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to artifact preview").performClick()
         awaitText("View source conversation")

@@ -716,43 +716,33 @@ private fun WorkflowRow(
         onClick = onSelect,
         modifier = modifier.testTag("workflow_row_${item.id}"),
         enabled = enabled,
-        leading = {
-            Icon(painterResource(glyph), null, Modifier.size(20.dp), tint = colors.onBackground)
-        },
-    ) { supportingColor ->
-        item.description
-            ?.takeIf { it.isNotBlank() }
-            ?.let {
-                Text(
-                    it,
-                    color = supportingColor,
-                    style = workflowSmallStyle(),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        leading = { Icon(painterResource(glyph), null, Modifier.size(20.dp)) },
+    ) {
+        Column {
+            item.description
+                ?.takeIf { it.isNotBlank() }
+                ?.let {
+                    Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            val enabledCount = rules.orEmpty().count { it.enabled }
+            val status =
+                when {
+                    rules.orEmpty().any { it.needsConnection(connections) } ->
+                        stringResource(R.string.workflow_needs_connection) to colors.error
+                    enabledCount > 0 ->
+                        pluralStringResource(
+                            R.plurals.workflow_enabled_count,
+                            enabledCount,
+                            enabledCount,
+                        ) to colors.primary
+                    !rules.isNullOrEmpty() ->
+                        stringResource(R.string.workflow_paused) to colors.onSurfaceVariant
+                    else -> null
+                }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(listOfNotNull(scope, trigger).joinToString(" · "))
+                status?.let { WorkflowStatus(it.first, it.second, LocalContentColor.current) }
             }
-        val enabledCount = rules.orEmpty().count { it.enabled }
-        val status =
-            when {
-                rules.orEmpty().any { it.needsConnection(connections) } ->
-                    stringResource(R.string.workflow_needs_connection) to colors.error
-                enabledCount > 0 ->
-                    pluralStringResource(
-                        R.plurals.workflow_enabled_count,
-                        enabledCount,
-                        enabledCount,
-                    ) to MaterialTheme.colorScheme.primary
-                !rules.isNullOrEmpty() ->
-                    stringResource(R.string.workflow_paused) to colors.onSurfaceVariant
-                else -> null
-            }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                listOfNotNull(scope, trigger).joinToString(" · "),
-                color = supportingColor,
-                style = workflowSmallStyle(),
-            )
-            status?.let { WorkflowStatus(it.first, it.second, supportingColor) }
         }
     }
 }
