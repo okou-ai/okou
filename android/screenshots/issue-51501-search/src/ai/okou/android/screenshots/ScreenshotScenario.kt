@@ -118,7 +118,7 @@ class ScreenshotScenario {
                     chats.searchMessages = { request ->
                         when (request.requestUrl?.queryParameter("keyword")) {
                             "发布" -> jsonResponse(
-                                """{"results":[{"chatThreadId":"$CHAT_PERSONAL","agentName":"Okou","matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant","content":"$message","createdAt":"$CHAT_DATE","seqId":37},"matchedRanges":[{"start":0,"end":2}]}]}""",
+                                """{"results":[{"chatThreadId":"$CHAT_PERSONAL","matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant","content":"$message","createdAt":"$CHAT_DATE","seqId":37,"runId":null},"matchedRanges":[{"start":0,"end":2}]}]}""",
                             )
                             waitingKeyword -> {
                                 check(releaseReads.await(15, TimeUnit.SECONDS))
