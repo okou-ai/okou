@@ -2234,7 +2234,8 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun cachedDocumentAndImageStayReadableWhileTheirRefreshIsPending() {
-        val fixture = ArtifactApiFixture(app.fixture)
+        // Viewing a thumbnail alone does not populate the decoded preview cache.
+        val fixture = ArtifactApiFixture(app.fixture).apply { imageThumbnailUrl = null }
         fixture.install()
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
@@ -2253,22 +2254,30 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         backToCatalog.performClick()
 
         val release = CountDownLatch(1)
+        val imageRefresh = CountDownLatch(1)
+        val documentRefresh = CountDownLatch(1)
         val respond = app.fixture.commandResponse
         app.fixture.commandResponse = { request ->
-            if (
-                request.requestUrl?.encodedPath in
-                    setOf("/artifact-bytes/image", "/artifact-bytes/summary")
-            ) {
+            val refresh =
+                when (request.requestUrl?.encodedPath) {
+                    "/api/artifacts/catalog/${fixture.image.id}" -> imageRefresh
+                    "/api/artifacts/catalog/${fixture.summary.id}" -> documentRefresh
+                    else -> null
+                }
+            if (refresh != null) {
+                refresh.countDown()
                 release.await()
             }
             respond(request)
         }
         try {
             compose.onNodeWithText(fixture.image.title).performClick()
+            compose.waitUntil("image refresh requested", 10_000) { imageRefresh.count == 0L }
             compose.onNodeWithContentDescription(fixture.image.title).assertIsDisplayed()
             backToCatalog.performClick()
 
             compose.onNodeWithText(fixture.summary.title).performClick()
+            compose.waitUntil("document refresh requested", 10_000) { documentRefresh.count == 0L }
             compose.onNodeWithText(documentText, substring = true).assertIsDisplayed()
         } finally {
             release.countDown()
