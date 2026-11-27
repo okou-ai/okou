@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.138.7](https://github.com/okou-ai/okou/compare/api-v2.138.6...api-v2.138.7) (2026-11-27)
+
+
+### Performance Improvements
+
+* **api:** reuse selected bundle urls without speculative sql ([#51387](https://github.com/okou-ai/okou/issues/51387)) ([44115ce](https://github.com/okou-ai/okou/commit/44115ceb75ad719e92b10008748250d86b800a55))
+
 ## [2.138.6](https://github.com/okou-ai/okou/compare/api-v2.138.5...api-v2.138.6) (2026-11-27)
 
 
