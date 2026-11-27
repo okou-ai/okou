@@ -22,6 +22,8 @@ const CODEX_FAST_RUN_OPTIONS: ModelRunOptions = Object.freeze({
 
 const MODEL_RUN_OPTIONS: Readonly<Record<string, ModelRunOptions>> =
   Object.freeze({
+    "gpt-6.2-astra": CODEX_FAST_RUN_OPTIONS,
+    "gpt-6.2-sol": CODEX_FAST_RUN_OPTIONS,
     "gpt-6-astra": CODEX_FAST_RUN_OPTIONS,
     "gpt-6.1-sol": CODEX_FAST_RUN_OPTIONS,
     "gpt-6.1-terra": CODEX_FAST_RUN_OPTIONS,

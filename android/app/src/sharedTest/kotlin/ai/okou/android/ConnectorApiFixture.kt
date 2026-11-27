@@ -332,6 +332,12 @@ internal class ConnectorApiFixture(
         synchronized(accounts) { accounts.remove(id) }
     }
 
+    fun addCalendarAccount(id: String) {
+        synchronized(accounts) {
+            accounts[id] = FixtureAccount(CONNECTOR_CALENDAR, null, "replacement@example.com")
+        }
+    }
+
     fun chatOverride(threadId: String, accountId: String): Boolean? =
         synchronized(accounts) { chatOverrides[threadId to accountId] }
 

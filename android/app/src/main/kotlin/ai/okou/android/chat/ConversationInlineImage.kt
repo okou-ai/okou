@@ -165,6 +165,7 @@ internal fun ConversationInlineImage(
         val actionLabel =
             if (opensLink) stringResource(R.string.inline_image_open_link)
             else stringResource(R.string.inline_image_view_original)
+        val showFallbackAction = status == InlineImageStatus.MissingThumbnail && action != null
         val focus = remember { FocusRequester() }
         val keyboardMode = LocalInputModeManager.current.inputMode == InputMode.Keyboard
         var focused by remember { mutableStateOf(false) }
@@ -205,7 +206,7 @@ internal fun ConversationInlineImage(
                     interactionSource = null,
                     indication = ChatPressRipple,
                     role = if (opensLink) null else Role.Button,
-                    onClickLabel = actionLabel,
+                    onClickLabel = actionLabel.takeIf { opensLink || showFallbackAction },
                     onClick = action,
                 )
             else if (find != null) Modifier.focusable() else Modifier
@@ -281,7 +282,7 @@ internal fun ConversationInlineImage(
                             textAlign = TextAlign.Center,
                         )
                     if (statusLabel != null) InlineImageCaption(statusLabel)
-                    if (action != null) InlineImageCaption(actionLabel, isAction = true)
+                    if (showFallbackAction) InlineImageCaption(actionLabel, isAction = true)
                 }
             }
             if (externalBadge) {

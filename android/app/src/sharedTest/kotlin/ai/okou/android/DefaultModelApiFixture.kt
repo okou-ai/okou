@@ -15,6 +15,7 @@ internal class DefaultModelApiFixture(
     @Volatile var codexExecution = false
     @Volatile var gptSortOrder = 1
     @Volatile var gptFastAvailable = true
+    @Volatile var gptFastMultiplier = 2.5
     @Volatile var planRestricted = false
     @Volatile var onlyAuto = false
     @Volatile var beforeCatalogReturn: (() -> Unit)? = null
@@ -91,7 +92,7 @@ internal class DefaultModelApiFixture(
 
     private val catalog
         get() =
-            """{"models":[{"model":"gpt-test","displayName":"GPT 5.6 Sol","sortOrder":$gptSortOrder,"replacedBy":null,"resolvedModel":"gpt-test","builtInOnRestrictedPlans":false,"piRouteClass":null,"runOptions":{"fast":{"chatGptUsageMultiplier":2.5}}},{"model":"claude-test","displayName":"Claude Sonnet 5","sortOrder":2,"replacedBy":null,"resolvedModel":"claude-test","builtInOnRestrictedPlans":false,"piRouteClass":null}],"routes":[{"model":"gpt-test","providerType":"codex-oauth-token","concreteProviderType":"codex-oauth-token","subscriptionType":"codex-oauth-token","upstreamModel":"gpt-test","enabled":true,"priority":1,"serviceTiers":["priority"],"defaultServiceTier":null,"efforts":$gptEfforts,"defaultEffort":"medium","piRuntimeCapable":$piUltra},{"model":"claude-test","providerType":"claude-code-oauth-token","concreteProviderType":"claude-code-oauth-token","subscriptionType":"claude-code-oauth-token","upstreamModel":"claude-test","enabled":true,"priority":1,"serviceTiers":[],"defaultServiceTier":null,"efforts":["medium","high"],"defaultEffort":"medium"}],"systemDefaultModel":"gpt-test"}"""
+            """{"models":[{"model":"gpt-test","displayName":"GPT 5.6 Sol","sortOrder":$gptSortOrder,"replacedBy":null,"resolvedModel":"gpt-test","builtInOnRestrictedPlans":false,"piRouteClass":null,"runOptions":{"fast":{"chatGptUsageMultiplier":$gptFastMultiplier}}},{"model":"claude-test","displayName":"Claude Sonnet 5","sortOrder":2,"replacedBy":null,"resolvedModel":"claude-test","builtInOnRestrictedPlans":false,"piRouteClass":null}],"routes":[{"model":"gpt-test","providerType":"codex-oauth-token","concreteProviderType":"codex-oauth-token","subscriptionType":"codex-oauth-token","upstreamModel":"gpt-test","enabled":true,"priority":1,"serviceTiers":["priority"],"defaultServiceTier":null,"efforts":$gptEfforts,"defaultEffort":"medium","piRuntimeCapable":$piUltra},{"model":"claude-test","providerType":"claude-code-oauth-token","concreteProviderType":"claude-code-oauth-token","subscriptionType":"claude-code-oauth-token","upstreamModel":"claude-test","enabled":true,"priority":1,"serviceTiers":[],"defaultServiceTier":null,"efforts":["medium","high"],"defaultEffort":"medium"}],"systemDefaultModel":"gpt-test"}"""
 
     private val models
         get(): String {

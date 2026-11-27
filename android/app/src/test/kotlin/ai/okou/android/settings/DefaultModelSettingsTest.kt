@@ -1043,6 +1043,29 @@ class DefaultModelSettingsTest {
     }
 
     @Test
+    fun anInvalidFastMultiplierKeepsASelectableModelOnStandard() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = DefaultModelApiFixture(api).apply { gptFastMultiplier = 0.0 }
+            val model = model(api)
+            val state = model.openAfterSync()
+            assertEquals("gpt-test", state.selected?.id)
+            assertNull(state.selected?.fastMultiplier)
+            model.fast(true)
+            assertFalse(model.state.value.fast)
+            assertTrue(fixture.writes.isEmpty())
+
+            fixture.gptFastMultiplier = 2.75
+            model.foreground(false)
+            model.foreground(true)
+            val refreshed = model.state.first { it.selected?.fastMultiplier == 2.75 }
+            assertFalse(refreshed.fast)
+            model.fast(true)
+            assertTrue(model.state.first { it.pending == null }.fast)
+            assertEquals(JsonPrimitive("priority"), fixture.writes.single()["serviceTier"])
+        }
+    }
+
+    @Test
     fun restoredEffortTracksTheMemberExecutionRouteWithoutOverwritingTheSavedChoice() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api, piUltra = true)
