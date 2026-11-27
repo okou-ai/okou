@@ -95,3 +95,7 @@ chat-events-private-attachments-012	Unhandled request error: User-message attach
 chat-events-private-attachments-014	Unhandled request error: User-message attachment not found	Given: BDD deliberately sends a prepared upload whose storage object was never written and expects HTTP 500
 chat-events-private-attachments-015	Unhandled request error: User-message attachment not found	Given: BDD deliberately sends a file set containing a foreign owner upload and expects HTTP 500
 runner-ssh-011	\[WARN\]\[RunnerAuth\] Invalid official runner secret	Given: BDD deliberately sends a wrong official Runner secret to POST /api/runners/runs/:runId/ssh/observations and expects HTTP 401
+runner-finalizing-source-001	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed predecessor thread Run (exitCode 1 without native init) on Runner A before continuing on Runner B
+runner-finalizing-source-006	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed initialized Claude Code thread Run (exitCode 1) on Runner A before switching to Codex
+runner-finalizing-source-007	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed predecessor thread Run (exitCode 1 without native init) on Runner A before continuing on the active failed producer
+runner-finalizing-source-016	\[WARN\]\[webhook:complete\] Run failed	Given: BDD starts with a failed predecessor thread Run (exitCode 1 without native init) on Runner A before starting a first Run in a separate thread
