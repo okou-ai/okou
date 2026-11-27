@@ -1213,6 +1213,7 @@ internal class ConversationHistoryReadStateTest : ConversationHistoryTestFixture
                 {},
                 {},
                 { preceding },
+                markRead = { service.markRead(it) },
             )
         try {
             visit.confirmDisplayed(expected)
@@ -1253,6 +1254,7 @@ internal class ConversationHistoryReadStateTest : ConversationHistoryTestFixture
                 {},
                 {},
                 { preceding },
+                markRead = { service.markRead(it) },
             )
         try {
             visit.confirmDisplayed(expected)
