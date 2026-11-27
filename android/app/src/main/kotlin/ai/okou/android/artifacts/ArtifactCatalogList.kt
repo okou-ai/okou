@@ -58,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -93,6 +94,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.TimeZone
+import kotlin.math.abs
 
 private data class ArtifactCatalogListState(
     val page: ArtifactPage?,
@@ -147,6 +149,10 @@ internal fun ArtifactCatalogList(
     val clearQuery = searchClearAction(searchFocus) { input.clearText() }
     val allFilterFocus = remember { FocusRequester() }
     val rowFocus = remember { FocusRequester() }
+    val hasReturnRow = restoreRow != null && page?.items?.any { it.id == restoreRow } == true
+    val canChooseAlternative =
+        restoreRow != null && !hasReturnRow && page?.items?.isNotEmpty() == true
+    val alternativeRows = remember { mutableMapOf<Any, FocusRequester>() }
 
     LaunchedEffect(model, page, failure, reading) {
         if (page?.nextCursor != null && failure == null && reading == null) {
@@ -167,7 +173,15 @@ internal fun ArtifactCatalogList(
                 position,
                 rowFocus,
                 searchFocus,
-                rowEnabled = restoreRow != null && page?.items?.any { it.id == restoreRow } == true,
+                rowEnabled = hasReturnRow,
+                requestMissingRowAlternative = { request ->
+                    val anchor = request.previousIndex ?: position.firstVisibleItemIndex
+                    val nearest =
+                        position.layoutInfo.visibleItemsInfo
+                            .filter { it.key in alternativeRows }
+                            .minByOrNull { abs(it.index - anchor) }
+                    nearest?.let { alternativeRows[it.key]?.requestFocus() } == true
+                },
             )
             .testTag("artifact_catalog"),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -251,6 +265,19 @@ internal fun ArtifactCatalogList(
                         }
                     }
                     items(rows, key = { it.id }) { item ->
+                        val focusModifier =
+                            when {
+                                item.id == restoreRow -> Modifier.focusRequester(rowFocus)
+                                canChooseAlternative -> {
+                                    val requester = remember { FocusRequester() }
+                                    DisposableEffect(item.id, requester) {
+                                        alternativeRows[item.id] = requester
+                                        onDispose { alternativeRows.remove(item.id) }
+                                    }
+                                    Modifier.focusRequester(requester)
+                                }
+                                else -> Modifier
+                            }
                         ArtifactRow(
                             item = item,
                             date =
@@ -260,9 +287,7 @@ internal fun ArtifactCatalogList(
                                 ),
                             selected = item.id == selectedId,
                             thumbnail = model::thumbnail,
-                            modifier =
-                                if (item.id == restoreRow) Modifier.focusRequester(rowFocus)
-                                else Modifier,
+                            modifier = focusModifier,
                         ) {
                             onSelect(item)
                         }

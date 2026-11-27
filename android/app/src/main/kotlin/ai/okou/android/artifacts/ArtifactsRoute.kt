@@ -75,6 +75,7 @@ internal fun ArtifactsRoute(
     val input = rememberTextFieldState()
     val page = rememberArtifactPageState()
     val returnFocus = remember(model, searchArtifactId) { DirectoryReturnFocus() }
+    var openedRowIndex by remember(returnFocus) { mutableStateOf<Int?>(null) }
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val selectedId = searchArtifactId ?: page.selectedId
 
@@ -121,7 +122,7 @@ internal fun ArtifactsRoute(
         if (current == null || searchArtifactId != null) {
             onClose()
         } else {
-            returnFocus.returningFrom(current, inputMode.inputMode)
+            returnFocus.returningFrom(current, inputMode.inputMode, previousIndex = openedRowIndex)
             page.selectedId = null
             model.select(null)
         }
@@ -153,6 +154,10 @@ internal fun ArtifactsRoute(
                 returnFocus = returnFocus,
                 onSelect = { item ->
                     returnFocus.cancel()
+                    openedRowIndex =
+                        position.layoutInfo.visibleItemsInfo
+                            .firstOrNull { it.key == item.id }
+                            ?.index
                     if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     page.selectedId = item.id

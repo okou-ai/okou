@@ -238,6 +238,42 @@ class ArtifactWorkflowResourcesApplication : ChatListApplication() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     @Test
+    fun catalogReturnsFocusToTheNearestVisibleResultWhenTheOpenedImageIsRemoved() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            val query = compose.onNodeWithTag("artifact_query")
+            query.performTextReplacement("launch")
+            awaitText(fixture.image.title)
+            val opened = compose.onNodeWithText(fixture.image.title)
+            opened.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            opened.performKeyInput { pressKey(Key.Enter) }
+            compose.waitUntilExactlyOneExists(hasTestTag("artifact_image_toolbar"), 10_000)
+
+            fixture.removedCatalogIds = setOf(fixture.image.id)
+            resumeArtifactRoute()
+            compose.waitUntil("refreshed catalog omits the original row", 10_000) {
+                artifactModel.state.value.page?.items?.none { it.id == fixture.image.id } == true
+            }
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+
+            val nearest = hasText(fixture.slides.title) and isFocused()
+            compose.waitUntilExactlyOneExists(nearest, 10_000)
+            compose.onNode(nearest).assertIsDisplayed().assertHeightIsAtLeast(80.dp)
+            query.assertTextContains("launch").assertIsNotFocused()
+            opened.assertDoesNotExist()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun refreshedCatalogReplacesTheThumbnailWithoutMovingTheRow() {
         val fixture = ArtifactApiFixture(app.fixture)
