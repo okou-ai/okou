@@ -1053,6 +1053,7 @@ struct GuestStageBatch {
 pub struct PendingGuestArchives {
     batch: GuestStageBatch,
     fresh_permit: Option<FreshArchivePermit>,
+    stage_metrics: StorageCacheStageMetrics,
 }
 
 impl PendingGuestArchives {
@@ -1077,24 +1078,31 @@ impl PendingGuestArchives {
         guest_contracts::storage_files::inline_archives::encode_input(manifest, &sources)
     }
 
+    /// Release the pending archive and report any staging writes already completed.
+    pub fn finish_without_staging(self, telemetry: &mut JobTelemetry) {
+        let metrics = self.stage_metrics;
+        drop(self.batch);
+        drop(self.fresh_permit);
+        metrics.record_total(telemetry);
+    }
+
     /// Write the original staging inputs before applying an ineligible request.
     pub async fn stage(
         mut self,
         sandbox: &dyn Sandbox,
         telemetry: &mut JobTelemetry,
     ) -> RunnerResult<()> {
-        let mut metrics = StorageCacheStageMetrics::start();
         let result = flush_guest_stage_batch(
             &mut self.batch,
             &mut GuestStageRecorder {
                 sandbox,
                 guest_writes: &GuestWriteLocks::default(),
                 telemetry,
-                metrics: &mut metrics,
+                metrics: &mut self.stage_metrics,
             },
         )
         .await;
-        metrics.record_total(telemetry);
+        self.stage_metrics.record_total(telemetry);
         if result.is_ok() && self.is_fresh() {
             telemetry.record(
                 STORAGE_CACHE_FRESH_DELIVERY_STAGED,
@@ -1120,6 +1128,7 @@ struct FreshGuestStageBatch {
 }
 
 /// Aggregates actual guest write time, excluding cache probe/download work.
+#[derive(Default)]
 struct StorageCacheStageMetrics {
     total_duration: Duration,
     attempted: bool,
@@ -1450,14 +1459,6 @@ impl FreshGuestStageBatch {
 }
 
 impl StorageCacheStageMetrics {
-    fn start() -> Self {
-        Self {
-            total_duration: Duration::ZERO,
-            attempted: false,
-            failed: false,
-        }
-    }
-
     fn record_write_result(
         &mut self,
         telemetry: &mut JobTelemetry,
@@ -1775,7 +1776,7 @@ async fn populate_cache_inner(
     }
 
     let guest_writes = GuestWriteLocks::default();
-    let mut stage_metrics = StorageCacheStageMetrics::start();
+    let mut stage_metrics = StorageCacheStageMetrics::default();
     let owned_keys = fresh_delivery
         .as_ref()
         .map(|delivery| delivery.owned_keys.clone())

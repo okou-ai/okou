@@ -228,9 +228,16 @@ async fn download_storages_with_files_inner(
             .err()
             .map(|_| "storage_batch_prepare_failed"),
     );
-    let mut inputs = inputs?;
+    let mut inputs = match inputs {
+        Ok(inputs) => inputs,
+        Err(error) => {
+            pending_archives.finish_without_staging(telemetry);
+            return Err(error);
+        }
+    };
     if !pending_archives.is_empty() {
         if cancel.is_some_and(tokio_util::sync::CancellationToken::is_cancelled) {
+            pending_archives.finish_without_staging(telemetry);
             return Err(RunnerError::Cancelled);
         }
         if allow_inline
@@ -242,7 +249,7 @@ async fn download_storages_with_files_inner(
             } else {
                 "storage_cache_warm_archives_inlined"
             };
-            drop(pending_archives);
+            pending_archives.finish_without_staging(telemetry);
             telemetry.record(action, Duration::ZERO, true, None);
         } else {
             pending_archives.stage(sandbox, telemetry).await?;

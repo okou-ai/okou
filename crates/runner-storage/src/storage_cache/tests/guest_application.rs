@@ -18,10 +18,11 @@ async fn late_blank_handoff_carries_only_a_small_fresh_artifact_and_its_permit()
     assert!(oversized.len() > 64 * 1024);
     let small = tarball_bytes();
 
-    for (blank, archive, retain) in [
-        (true, &small, true),
-        (false, &small, false),
-        (true, &oversized, false),
+    for (blank, archive, retain, fail_staging) in [
+        (true, &small, true, false),
+        (true, &small, true, true),
+        (false, &small, false, false),
+        (true, &oversized, false, false),
     ] {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
@@ -126,15 +127,29 @@ async fn late_blank_handoff_carries_only_a_small_fresh_artifact_and_its_permit()
             let sources = guest_contracts::storage_files::inline_archives::decode(payload).unwrap();
             assert_eq!(sources.get(fresh_path.as_str()), Some(&archive.as_slice()));
             // Exercise the same owner when the executor needs the staged path.
-            input
-                .pending_archives
-                .stage(&sandbox, &mut telemetry)
-                .await
-                .unwrap();
+            if fail_staging {
+                sandbox.push_write_file_result(Err(sandbox_write_file_error("late stage failed")));
+            }
+            let stage_result = input.pending_archives.stage(&sandbox, &mut telemetry).await;
+            if fail_staging {
+                let error = stage_result.expect_err("the late stage failure must be returned");
+                assert!(error.to_string().contains("late stage failed"));
+            } else {
+                stage_result.unwrap();
+            }
         } else {
             assert!(input.pending_archives.is_empty());
         }
         assert_eq!(paths(&sandbox), [ordinary_path, fresh_path]);
+        let ops = telemetry.pending_ops_snapshot();
+        assert_op_count(&ops, STORAGE_CACHE_STAGE_BATCH_WRITE, 2);
+        assert_op_count(&ops, STORAGE_CACHE_STAGE_TOTAL, 1);
+        assert_op(&ops, STORAGE_CACHE_STAGE_TOTAL, !fail_staging);
+        assert_op_count(
+            &ops,
+            STORAGE_CACHE_FRESH_DELIVERY_STAGED,
+            usize::from(!fail_staging),
+        );
         assert_eq!(
             admission.permits.available_permits(),
             FRESH_DELIVERY_RUNNER_LIMIT

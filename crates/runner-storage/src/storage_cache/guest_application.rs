@@ -169,6 +169,7 @@ impl GuestApplication {
     pub(super) fn retain_small_fresh_artifact(
         &mut self,
         ready: &mut Vec<FreshArchiveResolved>,
+        stage_metrics: &mut StorageCacheStageMetrics,
     ) -> Option<(CacheTargetGroup, TargetOutcome)> {
         let [entry] = ready.as_slice() else {
             return None;
@@ -192,14 +193,20 @@ impl GuestApplication {
             bytes,
         });
         self.pending_archives.fresh_permit = Some(permit);
+        // Include any late staging attempt in the same total as the ordinary writes.
+        self.pending_archives.stage_metrics = std::mem::take(stage_metrics);
         Some((group, TargetOutcome::Hit))
     }
 
-    fn send(&mut self, input: GuestStorageInput) -> RunnerResult<()> {
+    fn send(&mut self, mut input: GuestStorageInput) -> RunnerResult<()> {
         let sender = self.input.take().ok_or_else(|| {
             RunnerError::Internal("Guest storage input already handed off".into())
         })?;
-        sender.send(input).map_err(|_| RunnerError::Cancelled)
+        input.pending_archives = std::mem::take(&mut self.pending_archives);
+        sender.send(input).map_err(|input| {
+            self.pending_archives = input.pending_archives;
+            RunnerError::Cancelled
+        })
     }
 
     pub(super) async fn start_if_useful(
@@ -408,9 +415,7 @@ pub async fn populate_cache_for_guest(
                         Err(error) => Err(error.into()),
                     }
                 } else {
-                    let mut input = GuestStorageInput::from_plan(prepared.plan.clone());
-                    input.pending_archives = std::mem::take(&mut application.pending_archives);
-                    application.send(input)?;
+                    application.send(GuestStorageInput::from_plan(prepared.plan.clone()))?;
                     Ok(deferred)
                 }
             }
@@ -419,6 +424,7 @@ pub async fn populate_cache_for_guest(
     }
     .await;
     if result.is_err() {
+        std::mem::take(&mut application.pending_archives).finish_without_staging(telemetry);
         application.host_failed.store(true, Ordering::Release);
         prepared.delivery.cancel_and_drain(telemetry).await;
         if let Some(readiness) = &application.pending {

@@ -184,8 +184,9 @@ pub(super) async fn prepare_mixed(
                         && fresh.is_empty()
                         && matches!(&ordinary, OrdinaryPreparation::Staged(_))
                         && let Some(early) = early.as_mut()
-                        && let Some(outcome) =
-                            early.application.retain_small_fresh_artifact(&mut ready)
+                        && let Some(outcome) = early
+                            .application
+                            .retain_small_fresh_artifact(&mut ready, stage.metrics)
                     {
                         fresh.push(outcome);
                     } else {
