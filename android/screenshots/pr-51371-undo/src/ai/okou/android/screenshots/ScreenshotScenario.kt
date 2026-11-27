@@ -218,7 +218,8 @@ class ScreenshotScenario {
                             releaseInverse.countDown()
                             if (wide) {
                                 check(inverseReplied.await(10, TimeUnit.SECONDS))
-                                find(By.copy(text(personal)).longClickable(true))
+                                find(By.pkg(app.packageName).longClickable(true).hasDescendant(text(personal)))
+                                device.awaitKeyboardFocus(text(personal))
                                 find(text(reply))
                             } else {
                                 find(text(R.string.chat_undo_failed))
