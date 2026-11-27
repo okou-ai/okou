@@ -69,13 +69,71 @@ function viewerDetail(detail: ArtifactFavoriteDetail): ArtifactFavoriteDetail {
   if (detail.isOwner) {
     return detail;
   }
-  const safe = { ...detail };
-  // These describe the owner's private conversation/account, not this target.
-  delete safe.sourceChatThreadId;
-  delete safe.googleDriveConnectionId;
-  delete safe.googleDriveSync;
-  delete safe.aliasUrl;
-  return safe;
+  const common = {
+    id: detail.id,
+    title: detail.title,
+    thumbnail: detail.thumbnail ? { url: detail.thumbnail.url } : null,
+    sourceUrl: detail.sourceUrl,
+    videoSourceUrl: detail.videoSourceUrl,
+    createdAt: detail.createdAt,
+    updatedAt: detail.updatedAt,
+    isOwner: false,
+  };
+  if ("file" in detail) {
+    const file = {
+      id: detail.file.id,
+      filename: detail.file.filename,
+      contentType: detail.file.contentType,
+      size: detail.file.size,
+      url: detail.file.url,
+      previewImageUrl: detail.file.previewImageUrl,
+    };
+    switch (detail.kind) {
+      case "file": {
+        return { ...common, kind: detail.kind, file };
+      }
+      case "image": {
+        return {
+          ...common,
+          kind: detail.kind,
+          file,
+          model: detail.model,
+          provider: detail.provider,
+        };
+      }
+      case "video":
+      case "avatar": {
+        return {
+          ...common,
+          kind: detail.kind,
+          file,
+          model: detail.model,
+          durationSeconds: detail.durationSeconds,
+        };
+      }
+    }
+  }
+  if ("site" in detail) {
+    return {
+      ...common,
+      kind: detail.kind,
+      site: {
+        id: detail.site.id,
+        slug: detail.site.slug,
+        publicSlug: detail.site.publicSlug,
+        url: detail.site.url,
+        deploymentVersion: detail.site.deploymentVersion,
+        entrypoint: detail.site.entrypoint,
+        spaFallback: detail.site.spaFallback,
+      },
+    };
+  }
+  return {
+    ...common,
+    kind: detail.kind,
+    sharedThreadId: detail.sharedThreadId,
+    sharedThread: { id: detail.sharedThread.id },
+  };
 }
 
 const readSharedThreadFavorite$ = command(

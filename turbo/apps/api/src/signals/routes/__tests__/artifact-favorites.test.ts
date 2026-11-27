@@ -608,6 +608,27 @@ describe("artifact favorites", () => {
       title: "confidential-acquisition.pdf",
       isOwner: false,
     });
+    expect(Object.keys(detail.body).sort()).toStrictEqual([
+      "createdAt",
+      "file",
+      "id",
+      "isOwner",
+      "kind",
+      "sourceUrl",
+      "thumbnail",
+      "title",
+      "updatedAt",
+    ]);
+    expect(
+      "file" in detail.body && Object.keys(detail.body.file).sort(),
+    ).toStrictEqual([
+      "contentType",
+      "filename",
+      "id",
+      "previewImageUrl",
+      "size",
+      "url",
+    ]);
     await accept(
       api(owner)(artifactSharingContract).remove({
         headers,
@@ -922,8 +943,28 @@ describe("artifact favorites", () => {
       site: { deploymentVersion: 2 },
       isOwner: false,
     });
-    expect(sharedDetail.body).not.toHaveProperty("aliasUrl");
-    expect(sharedDetail.body).not.toHaveProperty("sourceChatThreadId");
+    expect(Object.keys(sharedDetail.body).sort()).toStrictEqual([
+      "createdAt",
+      "id",
+      "isOwner",
+      "kind",
+      "site",
+      "sourceUrl",
+      "thumbnail",
+      "title",
+      "updatedAt",
+    ]);
+    expect(
+      "site" in sharedDetail.body && Object.keys(sharedDetail.body.site).sort(),
+    ).toStrictEqual([
+      "deploymentVersion",
+      "entrypoint",
+      "id",
+      "publicSlug",
+      "slug",
+      "spaFallback",
+      "url",
+    ]);
   });
 
   it("supports the entire shared conversation while rejecting its nested artifact snapshots", async () => {
@@ -998,7 +1039,17 @@ describe("artifact favorites", () => {
       sharedThreadId: shared.body.id,
       isOwner: false,
     });
-    expect(viewerDetail.body).not.toHaveProperty("sourceChatThreadId");
+    expect(Object.keys(viewerDetail.body).sort()).toStrictEqual([
+      "createdAt",
+      "id",
+      "isOwner",
+      "kind",
+      "sharedThread",
+      "sharedThreadId",
+      "thumbnail",
+      "title",
+      "updatedAt",
+    ]);
     await chat.requestReadThread(viewer, sent.threadId, [404]);
     await accept(
       api(viewer)(artifactCatalogContract).delete({
