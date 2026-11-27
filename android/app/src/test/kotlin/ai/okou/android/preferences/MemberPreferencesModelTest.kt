@@ -896,6 +896,54 @@ class MemberPreferencesRefreshTest {
         }
 
     @Test
+    fun automaticRefreshKeepsItsRetryTimingAndBudgetAcrossPauses() = check { model, service, _ ->
+        val attempts = mutableListOf<Long>()
+        service.load = {
+            attempts += currentTime
+            when (attempts.size) {
+                1 -> throw ApiFailure.Http(429, null, null, retryAfterSeconds = 30)
+                2,
+                3 -> throw IOException("offline")
+                else -> service.stored
+            }
+        }
+        model.foreground(true)
+        advanceTimeBy(600_000)
+        runCurrent()
+        assertEquals(listOf(600_000L), attempts)
+
+        model.showSettings(true)
+        advanceTimeBy(1_000)
+        model.showSettings(false)
+        runCurrent()
+        advanceTimeBy(28_999)
+        runCurrent()
+        assertEquals(listOf(600_000L), attempts)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(listOf(600_000L, 630_000L), attempts)
+
+        model.foreground(false)
+        advanceTimeBy(1_000)
+        model.foreground(true)
+        runCurrent()
+        advanceTimeBy(1_999)
+        runCurrent()
+        assertEquals(listOf(600_000L, 630_000L), attempts)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(PreferenceStatus.RefreshFailed, model.uiState.value.status)
+
+        advanceTimeBy(599_999)
+        runCurrent()
+        assertEquals(listOf(600_000L, 630_000L, 633_000L), attempts)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(listOf(600_000L, 630_000L, 633_000L, 1_233_000L), attempts)
+        assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+    }
+
+    @Test
     fun dueForegroundRefreshVerifiesAnUnconfirmedWriteWithoutResubmittingIt() =
         check { model, service, _ ->
             val save = service.write
