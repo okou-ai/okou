@@ -190,12 +190,13 @@ fn wide_manifest_retains_siblings_and_isolates_the_changed_artifact() {
     let retained_inode = fs::metadata(&retained).unwrap().ino();
     let mut input = manifest(&fixture).unwrap();
     let mounts = input["storageMounts"].as_array_mut().unwrap();
-    mounts.push(json!({ "mountPath": retained, "cached": true }));
     for index in 0..70 {
         mounts.push(json!({
             "mountPath": skills.join(format!("absent-{index}")), "cached": true
         }));
     }
+    // Check the existing sibling with the shared parent after the timing sample.
+    mounts.push(json!({ "mountPath": retained, "cached": true }));
     let absent_parent = fixture.dir.path().join("absent-parent");
     for name in ["a", "b"] {
         mounts.push(json!({ "mountPath": absent_parent.join(name), "cached": true }));
