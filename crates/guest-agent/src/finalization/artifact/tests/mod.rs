@@ -664,7 +664,7 @@ async fn artifact_snapshot_pipelines_overlap_and_preserve_result_order() {
 }
 
 #[tokio::test]
-async fn artifact_snapshot_preserve_policy_missing_mount_preserves_parent_version() {
+async fn artifact_snapshot_preserve_policy_unavailable_root_preserves_parent_version() {
     let _system_log_state_guard = crate::lock_system_log_test_state_async().await;
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
     let server = MockServer::start();
@@ -684,37 +684,42 @@ async fn artifact_snapshot_preserve_policy_missing_mount_preserves_parent_versio
     )
     .unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let missing_mount = dir.path().join("memory");
-    let entries = vec![env::ArtifactEnv {
-        name: "memory".to_string(),
-        mount_path: missing_mount.to_string_lossy().into_owned(),
-        storage_id: "memory-storage-id".to_string(),
-        version_id: "old-memory-version".to_string(),
-        missing_root_policy: Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion),
-    }];
+    let missing_mount = dir.path().join("missing");
+    let file_mount = dir.path().join("file");
+    std::fs::write(&file_mount, "not a directory").unwrap();
+    let nested_mount = file_mount.join("memory");
+    for mount in [missing_mount, file_mount, nested_mount] {
+        let entries = vec![env::ArtifactEnv {
+            name: "memory".to_string(),
+            mount_path: mount.to_string_lossy().into_owned(),
+            storage_id: "memory-storage-id".to_string(),
+            version_id: "old-memory-version".to_string(),
+            missing_root_policy: Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion),
+        }];
 
-    let snapshots = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
-        .await
-        .unwrap()
-        .unwrap();
+        let snapshots = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
+            .await
+            .unwrap()
+            .unwrap();
 
-    assert_eq!(
-        serde_json::to_value(snapshots).unwrap(),
-        json!([
-            {
-                "name": "memory",
-                "version": "old-memory-version",
-                "mountPath": missing_mount.to_string_lossy(),
-                "missingRootPolicy": "preserveParentVersion",
-            }
-        ])
-    );
+        assert_eq!(
+            serde_json::to_value(snapshots).unwrap(),
+            json!([
+                {
+                    "name": "memory",
+                    "version": "old-memory-version",
+                    "mountPath": mount.to_string_lossy(),
+                    "missingRootPolicy": "preserveParentVersion",
+                }
+            ])
+        );
+    }
     prepare.assert_calls(0);
     commit.assert_calls(0);
 }
 
 #[tokio::test]
-async fn artifact_snapshot_policy_still_fails_on_non_not_found_root_error() {
+async fn artifact_snapshot_fail_policy_rejects_file_mount() {
     let _system_log_state_guard = crate::lock_system_log_test_state_async().await;
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
     let server = MockServer::start();
@@ -741,7 +746,7 @@ async fn artifact_snapshot_policy_still_fails_on_non_not_found_root_error() {
         mount_path: file_mount.to_string_lossy().into_owned(),
         storage_id: "memory-storage-id".to_string(),
         version_id: "old-memory-version".to_string(),
-        missing_root_policy: Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion),
+        missing_root_policy: Some(ArtifactEntryMissingRootPolicy::Fail),
     }];
 
     let err = snapshot_artifact_entries_for_test(&http, "test-run", &entries)
