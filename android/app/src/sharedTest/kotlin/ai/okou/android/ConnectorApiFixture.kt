@@ -377,6 +377,13 @@ internal class ConnectorApiFixture(
         }
     }
 
+    fun setPolicyForScreenshot(id: String, expiresAt: kotlin.time.Instant) {
+        synchronized(accounts) {
+            check(id in accounts)
+            memberPolicies[id] = true to expiresAt.toString()
+        }
+    }
+
     private fun policy(id: String): JsonObject {
         val (allowed, expiresAt) = memberPolicies[id] ?: (accounts.getValue(id).enabled to null)
         return buildJsonObject {
