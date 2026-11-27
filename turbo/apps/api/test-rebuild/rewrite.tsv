@@ -2579,16 +2579,16 @@ runs	src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	ru
 runs	src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	run-lifecycle-custom-connectors.bdd-032	planned					a-run
 runs	src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	run-lifecycle-custom-connectors.bdd-033	planned					a-run
 runs	src/signals/routes/__tests__/run-lifecycle-custom-connectors.bdd.test.ts	run-lifecycle-custom-connectors.bdd-034	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-001	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-004	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-006	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-008	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-009	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-010	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-012	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-013	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-018	planned					a-run
-runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-020	planned					a-run
+runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-001	rewritten	348.0	timeout=600 (DOUBLE_RUN); #51189/#51339 startupInputs.contentBundles.skills	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	R33	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-004	rewritten	140.0	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	R33	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-006	rewritten	279.3	split n=2: 1/2=229.2 (timeout=600); 2/2=279.3 (timeout=600)	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	R33	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-008	rewritten	160.7	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	R33	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-009	rewritten	212.8	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	R33	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-010	rewritten	134.2	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	R33	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-012	rewritten	196.9	timeout=400 (SINGLE_RUN); current prod after #51462/#51491 (legacy delivery guidance + CLI-only presentation-convert:write capability)	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	R33	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-013	rewritten	242.8	timeout=400 (SINGLE_RUN); current prod after #51462/#51491 (legacy delivery guidance + presentation-convert:write absent)	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	R33	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-018	rewritten	169.5	timeout=400 (SINGLE_RUN); #51189/#51339 startupInputs.contentBundles.skills	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	R33	a-run
+runs	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	run-lifecycle-runner-context.bdd-020	rewritten	152.5	timeout=400 (SINGLE_RUN); #51189/#51339 startupInputs.contentBundles.skills	src/signals/routes/__tests__/run-lifecycle-runner-context.bdd.test.ts	R33	a-run
 runs	src/signals/routes/__tests__/run-model-invalidation.test.ts	run-model-invalidation-001	rewritten	92.2		src/signals/routes/__tests__/run-model-invalidation.test.ts	B03	
 runs	src/signals/routes/__tests__/run-models.test.ts	run-models-001	rewritten	6.3		src/signals/routes/__tests__/run-models.test.ts	pilot	
 runs	src/signals/routes/__tests__/run-models.test.ts	run-models-002	rewritten	34.8		src/signals/routes/__tests__/run-models.test.ts	pilot	
