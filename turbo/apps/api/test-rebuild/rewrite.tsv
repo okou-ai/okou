@@ -2404,7 +2404,7 @@ billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-001	rewritten
 billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-002	rewritten	18.2		src/signals/routes/__tests__/paid-tools.test.ts	B04	
 billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-008	rewritten	25.5		src/signals/routes/__tests__/paid-tools.test.ts	B04	
 billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-010	rewritten	11.4		src/signals/routes/__tests__/paid-tools.test.ts	B04	
-billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-011	revisit		revisit: reclassify to a-run: Given/When require real run-scoped Okou and sandbox tokens calling GET/PATCH /api/paid-tools; those tokens are only issued by a dispatched Run (src/signals/services/run-execution-publication.service.ts:130 and thread-okou-token.signals.ts:92)		B04	
+billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-011	rewritten	315.6	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/paid-tools.test.ts	R32	
 billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-012	rewritten	90.6		src/signals/routes/__tests__/paid-tools.test.ts	B04	
 account-org	src/signals/routes/__tests__/personal-subscription-run-identity.test.ts	personal-subscription-run-identity-002	planned					a-run
 account-org	src/signals/routes/__tests__/personal-subscription-run-identity.test.ts	personal-subscription-run-identity-004	planned					a-run
