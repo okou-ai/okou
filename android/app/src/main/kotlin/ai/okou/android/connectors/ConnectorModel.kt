@@ -145,7 +145,7 @@ class ConnectorModel(
         private set
 
     internal val chatOptions =
-        ChatConnectorOptions(service, viewModelScope, authorized, ::reportSessionFailure)
+        ChatConnectorOptions(service, viewModelScope, authorized, clock, ::reportSessionFailure)
     private val recentMatches =
         LinkedHashMap<ConnectorBrowseFilter, ConnectorRead<ConnectorBrowse>>(
             RECENT_READ_LIMIT,

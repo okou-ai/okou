@@ -1,19 +1,99 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.CONNECTOR_CALENDAR
+import ai.okou.android.ConnectorApiFixture
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.chat.ComposerTarget
+import java.util.concurrent.CountDownLatch
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TestTimeSource
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectorReadTest {
+    @Test
+    fun openingAServiceChecksAccountAndPolicyExpiryIndependently() = runBlocking {
+        ConnectorApiFixture().use { fixture ->
+            fixture.memberAccess = true
+            val clock = TestTimeSource()
+            val owner = SupervisorJob(coroutineContext.job)
+            val options =
+                ChatConnectorOptions(
+                    fixture.service,
+                    CoroutineScope(coroutineContext + owner),
+                    { true },
+                    clock,
+                ) {
+                    throw AssertionError(it)
+                }
+            val target = ComposerTarget()
+            val slug = CONNECTOR_CALENDAR
+            val gate = CountDownLatch(1)
+            fixture.policyReadReplyGate = gate
+            val accountRead = "/api/connector-accounts/connections" to slug
+            val policyRead = "/api/connector-account-access/policies" to slug
+
+            suspend fun awaitDetails(predicate: (ChatConnectorDetails) -> Boolean) =
+                withTimeout(10.seconds) {
+                    options.state
+                        .first { it.details[slug]?.let(predicate) == true }
+                        .details
+                        .getValue(slug)
+                }
+
+            try {
+                options.activate(target.key)
+                options.showOverview(target, opening = true)
+                withTimeout(10.seconds) { options.state.first { it.overview.data != null } }
+                options.showAccounts(target, slug, opening = true)
+                val accountSnapshot = awaitDetails { it.accounts.data != null }.accounts
+                clock += 1.minutes
+                gate.countDown()
+                val policySnapshot = awaitDetails { it.policies.data != null }.policies
+
+                clock += 9.minutes
+                assertEquals(accountSnapshot, options.state.value.details[slug]?.accounts)
+                options.showAccounts(target, slug, opening = true)
+                val refreshingAccounts = awaitDetails { it.accounts.data == null }
+                assertEquals(policySnapshot, refreshingAccounts.policies)
+                val renewed = awaitDetails { it.accounts.data != null }
+                assertEquals(2, fixture.chatConnectorReads.count { it == accountRead })
+                assertEquals(1, fixture.chatConnectorReads.count { it == policyRead })
+
+                clock += 1.minutes
+                options.showAccounts(target, slug, opening = true)
+                val refreshingPolicies = awaitDetails { it.policies.data == null }
+                assertEquals(renewed.accounts, refreshingPolicies.accounts)
+                val final = awaitDetails { it.policies.data != null }
+                assertNotNull(final.policies.confirmedAt)
+                assertTrue(final.policies != policySnapshot)
+                assertEquals(2, fixture.chatConnectorReads.count { it == accountRead })
+                assertEquals(2, fixture.chatConnectorReads.count { it == policyRead })
+            } finally {
+                gate.countDown()
+                owner.cancelAndJoin()
+            }
+        }
+    }
+
     @Test
     fun theThirdFailureEndsTheReadAndKeepsConfirmedEmptyContent() = runTest {
         var attempts = 0

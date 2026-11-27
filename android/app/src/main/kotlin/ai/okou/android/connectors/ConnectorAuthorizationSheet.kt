@@ -130,6 +130,7 @@ internal fun ConnectorRenameSheet(
                 modifier = Modifier.padding(top = OkouFormLayout.ActionGap),
                 cancelEnabled = action?.busy != true,
                 confirmLayoutLabels = listOf(saveLabel, savingLabel),
+                useMaterialButtonDefaults = true,
             )
         },
     ) {
@@ -317,6 +318,7 @@ internal fun ConnectorAuthorizationSheet(
                             stringResource(R.string.connector_verify_authorization),
                         ),
                 keepConfirmFocusWhilePending = checkingCode,
+                useMaterialButtonDefaults = true,
             )
         },
     ) {

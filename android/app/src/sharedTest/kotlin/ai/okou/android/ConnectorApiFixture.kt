@@ -49,6 +49,7 @@ internal data class FixtureConnectorIcon(
     val asset: String,
     val invertInDarkMode: Boolean = false,
     val scale: Double? = null,
+    val svg: String? = null,
 )
 
 internal data class FixtureChatOverride(
@@ -83,6 +84,7 @@ internal class ConnectorApiFixture(
     @Volatile var denyPermissionReads = false
     @Volatile var memberAccess = false
     @Volatile var denyPolicyReads = false
+    @Volatile var policyReadReplyGate: CountDownLatch? = null
     @Volatile var overviewReplyGate: CountDownLatch? = null
     @Volatile var failChatOverview = false
     val chatConnectorReads = CopyOnWriteArrayList<Pair<String, String?>>()
@@ -109,7 +111,7 @@ internal class ConnectorApiFixture(
     @Volatile var chatOverrideReadReplyGate: CountDownLatch? = null
     @Volatile var rejectChatOverride: Int? = null
     @Volatile var loseChatOverrideReply = false
-    @Volatile var failChatOverrideReads = false
+    val chatOverrideReadFailures = AtomicInteger()
     val chatOverrideRequests = CopyOnWriteArrayList<FixtureChatOverride>()
     val chatOverrideReads = CopyOnWriteArrayList<Pair<String, String>>()
     private val chatOverrides = mutableMapOf<Pair<String, String>, Boolean>()
@@ -210,7 +212,11 @@ internal class ConnectorApiFixture(
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val url = checkNotNull(request.requestUrl)
-                    if (url.encodedPath.startsWith("/fixture-icons/")) return rejected(404)
+                    if (url.encodedPath.startsWith("/fixture-icons/")) {
+                        val asset = url.pathSegments.last().removeSuffix(".svg")
+                        val svg = icons.values.firstOrNull { it.asset == asset }?.svg ?: return rejected(404)
+                        return MockResponse().setHeader("Content-Type", "image/svg+xml").setBody(svg)
+                    }
                     if (request.getHeader("Authorization") != "Bearer connector-test")
                         return rejected(401)
                     when (url.encodedPath) {
@@ -225,6 +231,10 @@ internal class ConnectorApiFixture(
                                 url.encodedPath to url.queryParameter("connectorSlug"),
                             )
                     }
+                    if (url.encodedPath == "/api/chat-connector-overview")
+                        overviewReplyGate?.await()
+                    if (url.encodedPath == "/api/connector-account-access/policies")
+                        policyReadReplyGate?.await()
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
                         discoveryRequested.countDown()
                         discoveryGate?.await()
@@ -384,7 +394,6 @@ internal class ConnectorApiFixture(
                     """{"effectiveSwitches":{"memberConnectorAccountAccess":$memberAccess}}""",
                 )
             path == "/api/chat-connector-overview" -> {
-                overviewReplyGate?.await()
                 if (failChatOverview) return rejected(503).setHeader("Retry-After", 0)
                 json(
                     JsonArray(
@@ -770,7 +779,8 @@ internal class ConnectorApiFixture(
                 if (request.method != "GET") return rejected(400)
                 val slug = querySlug ?: return rejected(400)
                 chatOverrideReads += threadId to slug
-                if (failChatOverrideReads) return rejected(503)
+                if (chatOverrideReadFailures.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0)
+                    return rejected(503).setHeader("Retry-After", 0)
                 slug
             } else {
                 if (request.method != "PUT") return rejected(400)
@@ -817,6 +827,8 @@ internal class ConnectorApiFixture(
     override fun close() {
         discoveryGate?.countDown()
         detailReplyGate?.countDown()
+        overviewReplyGate?.countDown()
+        policyReadReplyGate?.countDown()
         devicePollReplyGate?.countDown()
         externalCodeReplyGate?.countDown()
         externalAccountReplyGate?.countDown()
