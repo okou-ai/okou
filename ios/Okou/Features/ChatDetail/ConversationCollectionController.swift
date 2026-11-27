@@ -271,7 +271,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     let measuresImmediately =
       source.sendTransition?.hidesBubbleID != nil
       && missing.allSatisfy { row in
-        switch row {
+        switch row.content {
         case .message(let message, _, _, let pendingRetry, _, _, _):
           message.id == source.sendTransition?.messageID
             && pendingRetry != true && message.role == .user && message.attachments.isEmpty

@@ -11249,6 +11249,302 @@
         }
       }
     },
+    "All done — %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Alles erledigt – %@" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Todo hecho — %@" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Tout est fait — %@" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "सब हो गया - %@" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Selesai — %@" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Tutto fatto: %@" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "すべて完了 — %@" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "모두 완료 — %@" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Tudo pronto — %@" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "全部搞定 — %@" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "全部搞定 — %@" }
+        }
+      }
+    },
+    "Delivered at %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Geliefert am %@" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Entregado a %@" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Livré à %@" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "%@ पर वितरित किया गया" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Dikirim pada %@" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Consegnato a %@" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "%@ に配信" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "%@에 전달됨" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Entregue em %@" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "%@交付完成" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "%@交付完成" }
+        }
+      }
+    },
+    "Done and dusted — %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Vollständig erledigt – %@" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Hecho y listo — %@" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Terminé et bouclé — %@" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "हो गया और झाड़ दिया गया - %@" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Selesai tuntas — %@" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Tutto fatto — %@" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "完了し、埃を払いました — %@" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "완료 — %@" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Tudo resolvido — %@" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "大功告成 — %@" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "大功告成 — %@" }
+        }
+      }
+    },
+    "Finished at %@, at your service": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Fertiggestellt um %@" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Terminado a %@, a tu servicio" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Terminé à %@, à votre service" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आपकी सेवा में, %@ पर समाप्त" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Selesai pada %@, siap melayani" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Terminato alle %@, al tuo servizio" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "%@ に終了しました。ご対応ください" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "%@에 완료되었습니다, 도와드리겠습니다" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Finalizado em %@, ao seu dispor" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "%@已完工，随时待命" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "%@已完工，隨時待命" }
+        }
+      }
+    },
+    "Mission complete, %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Mission abgeschlossen, %@" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Misión cumplida, %@" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Mission accomplie, %@" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "मिशन पूरा, %@" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Misi selesai, %@" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Missione completata, %@" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "ミッション完了、%@" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "임무 완료, %@" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Missão cumprida, %@" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "任务完成，%@" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "任務完成，%@" }
+        }
+      }
+    },
+    "Signed off at %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Abgemeldet um %@" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Firmado a %@" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Signé à %@" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "%@ पर हस्ताक्षर किया गया" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Ditutup pada %@" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Concluso alle %@" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "%@ でサインオフされました" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "%@에 서명 완료" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Encerrado em %@" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "%@收工" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "%@收工" }
+        }
+      }
+    },
+    "That was a wrap — %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Abgeschlossen – %@" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Eso fue todo — %@" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "C'était dans la boîte — %@" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "वह एक आवरण था - %@" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tuntas — %@" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Concluso — %@" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "これで終わりです — %@" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "마무리 — %@" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Por hoje é só — %@" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "顺利收官 — %@" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "順利收官 — %@" }
+        }
+      }
+    },
+    "Wrapped up at %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Abgeschlossen um %@" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Terminado en %@" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Terminé à %@" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "%@ पर समाप्त हुआ" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Diselesaikan pada %@" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Concluso alle %@" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "%@ で終了" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "%@에 마무리됨" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Concluído em %@" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "%@已收尾" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "%@已收尾" }
+        }
+      }
+    },
     "Keep going": {
       "localizations": {
         "de": {

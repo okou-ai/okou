@@ -169,12 +169,16 @@ public struct ChatHistory: Equatable, Sendable {
   public let workSections: [ChatWorkSection]
   public private(set) var executionState: ChatExecutionState
   public private(set) var activeRunIDs: [String]
+  public let latestRunID: String?
   public private(set) var activityRunID: String?
   public let queuedEventIDs: [String]
   public var persistedEventIDs: Set<String> = []
   public let latestRunFinishAt: Date?
   public let latestFailureID: String?
-  public private(set) var recommendedFollowups: ChatRecommendedFollowupSource?
+  public private(set) var completion: ChatRunCompletion?
+  public var recommendedFollowups: ChatRecommendedFollowupSource? {
+    completion?.recommendedFollowups
+  }
   public let usageEventIDs: [String: String]
   public let runUsageAnchors: [String: String]
 
@@ -183,12 +187,13 @@ public struct ChatHistory: Equatable, Sendable {
     executionState: ChatExecutionState,
     activeRunIDs: [String],
     activityRunID: String? = nil,
+    latestRunID: String? = nil,
     queuedEventIDs: [String],
     persistedEventIDs: Set<String> = [],
     workSections: [ChatWorkSection] = [],
     latestRunFinishAt: Date? = nil,
     latestFailureID: String? = nil,
-    recommendedFollowups: ChatRecommendedFollowupSource? = nil,
+    completion: ChatRunCompletion? = nil,
     usageEventIDs: [String: String] = [:],
     runUsageAnchors: [String: String] = [:]
   ) {
@@ -196,12 +201,13 @@ public struct ChatHistory: Equatable, Sendable {
     self.workSections = workSections
     self.latestRunFinishAt = latestRunFinishAt
     self.latestFailureID = latestFailureID
-    self.recommendedFollowups = recommendedFollowups
+    self.completion = completion
     self.usageEventIDs = usageEventIDs
     self.runUsageAnchors = runUsageAnchors
     self.executionState = executionState
     self.activeRunIDs = activeRunIDs
     self.activityRunID = activityRunID
+    self.latestRunID = latestRunID
     self.queuedEventIDs = queuedEventIDs
     self.persistedEventIDs = persistedEventIDs
   }
@@ -224,7 +230,7 @@ public struct ChatHistory: Equatable, Sendable {
     var history = self
     history.executionState = .recovering
     history.activityRunID = nil
-    history.recommendedFollowups = nil
+    history.completion = nil
     return history
   }
 

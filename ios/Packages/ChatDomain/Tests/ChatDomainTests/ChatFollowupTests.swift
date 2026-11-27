@@ -150,6 +150,23 @@ final class ChatFollowupTests: XCTestCase {
       try project(completed + [followups(4), completion]).recommendedFollowups?.eventID, "4")
   }
 
+  func testCompletionUsesTheLatestTurnAndRetiresWhenNewWorkOrAnErrorTakesOver() throws {
+    let newer = [
+      event(5, .inputPrompt, run: "next"), event(6, .outputMessage, content: "Answer", run: "next"),
+      event(7, .runCompleted, run: "next")
+    ]
+    let rows = completed + newer + [event(8, .runFailed), event(9, .usageRecorded, run: "next")]
+    let history = try project(rows)
+    XCTAssertEqual(history.completion?.phraseSeed, "7".utf16.last)
+    XCTAssertEqual(history.completion?.createdAt, Date(timeIntervalSince1970: 7))
+    XCTAssertNil(history.completion?.recommendedFollowups)
+    XCTAssertNil(history.withCancellationRecoveryPending(true).completion)
+    XCTAssertNil(try project(rows + [event(10, .inputPrompt, run: "new")]).completion)
+    let error = ChatEvent(
+      id: "11", runId: "next", createdAt: .now, eventType: .outputError, outputError: "Failed")
+    XCTAssertNil(try project(rows + [error]).completion)
+  }
+
   private var completed: [ChatEvent] {
     [event(1, .inputPrompt), event(2, .outputMessage, content: "Answer"), event(3, .runCompleted)]
   }
