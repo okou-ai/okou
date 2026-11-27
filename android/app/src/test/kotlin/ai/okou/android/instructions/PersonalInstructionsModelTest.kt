@@ -129,7 +129,7 @@ class PersonalInstructionsModelTest {
             assertEquals("Edit while refreshing", model.uiState.value.content)
             assertEquals("v2", model.uiState.value.saved?.version)
             assertTrue(model.uiState.value.canSave)
-            assertTrue(model.discardEdits(checkNotNull(model.uiState.value.draft)))
+            assertTrue(model.discardEdits(model.uiState.value.draftRevision))
             assertEquals("Updated elsewhere", model.uiState.value.content)
 
             other.closePanel()
@@ -186,7 +186,7 @@ class PersonalInstructionsModelTest {
         assertEquals("Original", model.uiState.value.content)
         model.edit("Edit from the confirmed value")
         assertTrue(model.uiState.value.canSave)
-        assertTrue(model.discardEdits(checkNotNull(model.uiState.value.draft)))
+        assertTrue(model.discardEdits(model.uiState.value.draftRevision))
 
         service.read = { throw ApiFailure.Http(403, null, null, null) }
         model.refresh()
@@ -336,18 +336,50 @@ class PersonalInstructionsModelTest {
             first.open()
             runCurrent()
             first.edit("Original draft")
-            val originalDraft = checkNotNull(first.uiState.value.draft)
+            val originalRevision = first.uiState.value.draftRevision
             second.edit("New draft")
-            assertFalse(first.discardEdits(originalDraft))
+            assertFalse(first.discardEdits(originalRevision))
             assertEquals("New draft", first.uiState.value.content)
-            val confirmedDraft = checkNotNull(second.uiState.value.draft)
+            second.edit("Original draft")
+            assertFalse(first.discardEdits(originalRevision))
+            second.edit("New draft")
+            val confirmedRevision = second.uiState.value.draftRevision
             service.saved = service.saved.copy(content = "Changed on Web", version = "v2")
             second.refresh()
             runCurrent()
             assertEquals("New draft", first.uiState.value.content)
             assertTrue(second.uiState.value.canSave)
-            assertTrue(first.discardEdits(confirmedDraft))
+            assertTrue(first.discardEdits(confirmedRevision))
             assertEquals("Changed on Web", second.uiState.value.content)
+            assertNull(store.load(identity).draft)
+        }
+
+    @Test
+    fun discardConfirmationSurvivesResolvingAnInterruptedSave() =
+        check { service, store, create, _ ->
+            create(false).open()
+            runCurrent()
+            store
+                .persist(
+                    identity,
+                    InstructionsDraft("Interrupted draft", service.saved, attempted = true),
+                )
+                .await()
+
+            val read = CompletableDeferred<PersonalInstructions>()
+            service.read = { read.await() }
+            val model = create(true)
+            model.open()
+            runCurrent()
+            assertTrue(model.uiState.value.canEdit)
+            val confirmedRevision = model.uiState.value.draftRevision
+
+            service.saved = service.saved.copy(content = "Changed on Web", version = "v2")
+            read.complete(service.saved)
+            runCurrent()
+            assertEquals("Interrupted draft", model.uiState.value.content)
+            assertTrue(model.discardEdits(confirmedRevision))
+            assertEquals("Changed on Web", model.uiState.value.content)
             assertNull(store.load(identity).draft)
         }
 
@@ -433,7 +465,7 @@ class PersonalInstructionsModelTest {
         runCurrent()
         assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
         assertTrue(model.uiState.value.canSave)
-        assertTrue(model.discardEdits(checkNotNull(model.uiState.value.draft)))
+        assertTrue(model.discardEdits(model.uiState.value.draftRevision))
         runCurrent()
         assertEquals("Original", model.uiState.value.content)
         assertNull(store.load(identity).draft)

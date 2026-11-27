@@ -39,6 +39,7 @@ data class PersonalInstructionsState(
     val read: InstructionsRead = InstructionsRead.Idle,
     val saved: PersonalInstructions? = null,
     val draft: InstructionsDraft? = null,
+    internal val draftRevision: Long = 0,
     val persistence: InstructionsPersistence = InstructionsPersistence.Durable,
     val saveRejected: Boolean = false,
     val saveConfirmed: Boolean = false,

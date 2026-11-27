@@ -481,6 +481,23 @@ class PersonalInstructionsSettingsTest {
         save.assertIsEnabled()
         assertEquals(initialEditor, input.getUnclippedBoundsInRoot())
         assertEquals(initialSave, save.getUnclippedBoundsInRoot())
+
+        compose.mainClock.advanceTimeBy(5_500L)
+        feedback.assertDoesNotExist()
+        val reads = app.fixture.requests.count { it.method == "GET" }
+        app.fixture.rejectSave = true
+        val permitSave = CountDownLatch(1)
+        app.fixture.beforeSave = { permitSave.await() }
+        try {
+            save.performClick()
+            compose.onNodeWithText(app.getString(R.string.settings_saving)).assertExists()
+        } finally {
+            permitSave.countDown()
+        }
+        compose.waitUntil(10_000) { compose.runOnIdle { model.uiState.value.saveRejected } }
+        compose.onNodeWithText(app.getString(R.string.instructions_save_rejected)).assertExists()
+        feedback.assertDoesNotExist()
+        assertEquals(reads, app.fixture.requests.count { it.method == "GET" })
     }
 
     @After

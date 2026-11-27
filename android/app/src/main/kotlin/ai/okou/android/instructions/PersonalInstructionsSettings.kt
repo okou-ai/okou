@@ -149,7 +149,7 @@ internal fun PersonalInstructionsSettings(
         }
     }
     var closeAfterSave by rememberSettingsFlag()
-    var discardDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }
+    var discardRevision by remember(model) { mutableStateOf<Long?>(null) }
     var editorFocused by rememberSettingsFlag()
     var editorKeyboardVisible by rememberSettingsFlag()
     LaunchedEffect(closeAfterSave, state.phase, state.saveConfirmed) {
@@ -161,7 +161,7 @@ internal fun PersonalInstructionsSettings(
     val title = stringResource(R.string.instructions_title)
     val snackbar = remember { SnackbarHostState() }
     val refreshFailure =
-        if (state.read == InstructionsRead.RefreshFailed && state.phase == InstructionsPhase.Ready)
+        if (state.read == InstructionsRead.RefreshFailed)
             stringResource(R.string.instructions_refresh_failed)
         else null
     LaunchedEffect(refreshFailure) {
@@ -213,9 +213,8 @@ internal fun PersonalInstructionsSettings(
         acceptNativeInput()
         val current = model.uiState.value
         if (current.saveInProgress) return false
-        val draft = current.draft
-        if (draft != null) {
-            if (discardDraft == null) discardDraft = draft
+        if (current.draft != null) {
+            if (discardRevision == null) discardRevision = current.draftRevision
             return false
         }
         return true
@@ -224,7 +223,7 @@ internal fun PersonalInstructionsSettings(
         if (confirmDismiss()) dismiss()
     }
     BackHandler {
-        if (discardDraft != null) discardDraft = null else requestDismiss()
+        if (discardRevision != null) discardRevision = null else requestDismiss()
     }
     fun save() {
         acceptNativeInput()
@@ -346,14 +345,14 @@ internal fun PersonalInstructionsSettings(
             }
         }
     }
-    discardDraft?.let { draft ->
+    discardRevision?.let { revision ->
         OkouConfirmationDialog(
-            onDismiss = { discardDraft = null },
+            onDismiss = { discardRevision = null },
             title = stringResource(R.string.instructions_discard),
             confirm = stringResource(R.string.instructions_discard),
             onConfirm = {
-                discardDraft = null
-                if (model.discardEdits(draft)) {
+                discardRevision = null
+                if (model.discardEdits(revision)) {
                     closeAfterSave = false
                     dismiss()
                 }

@@ -122,7 +122,12 @@ internal class PersonalInstructionsOwner(
         val state = mutable.value
         if (!connection.current() || !state.canEdit || content == state.content) return
         val base = state.saved ?: return
-        val next = state.copy(saveRejected = false, saveConfirmed = false)
+        val next =
+            state.copy(
+                draftRevision = state.draftRevision + 1,
+                saveRejected = false,
+                saveConfirmed = false,
+            )
         if (content == base.content && state.read != InstructionsRead.Failed)
             replaceDraft(null, next)
         else if (state.draft?.attempted == true)
@@ -135,11 +140,12 @@ internal class PersonalInstructionsOwner(
             replaceDraft(mutable.value.draft)
     }
 
-    fun discardEdits(connection: Connection, draft: InstructionsDraft): Boolean {
+    fun discardEdits(connection: Connection, draftRevision: Long): Boolean {
         val state = mutable.value
         if (!connection.current() || state.saveInProgress) return false
         if (state.draft == null) return true
-        if (state.draft !== draft) return false
+        // The read may settle a journal entry without replacing the user's edit.
+        if (state.draftRevision != draftRevision) return false
         replaceDraft(null, state.copy(saveRejected = false))
         return true
     }
