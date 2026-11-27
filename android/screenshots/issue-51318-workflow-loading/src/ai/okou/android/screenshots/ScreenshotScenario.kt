@@ -70,7 +70,7 @@ class ScreenshotScenario {
             bounds
         }
         text("工作流说明")
-        val tabs = listOf("说明", "自动化", "运行记录").map { action(it).visibleBounds }
+        val tabs = listOf("说明", "自动化", "运行记录").map { tab(it).visibleBounds }
         assertTrue(tabs.all { it.height() >= 48 })
         assertTrue(tabs.maxOf { it.width() } - tabs.minOf { it.width() } <= 1)
         assertEquals(pendingButton, action("在聊天中使用").visibleBounds)
@@ -94,7 +94,7 @@ class ScreenshotScenario {
     private fun captureHistory(fixture: WorkflowApiFixture, prefix: String) {
         val useBounds = action("在聊天中使用").visibleBounds
         withReadHeld({ fixture.beforeHistoryRead = it }) {
-            action("运行记录").click()
+            tab("运行记录").click()
             node(By.desc("正在加载运行记录…"))
             assertEquals(useBounds, action("在聊天中使用").visibleBounds)
             ScreenshotCapture.capture("$prefix-history-loading.png")
@@ -200,4 +200,6 @@ class ScreenshotScenario {
         }
 
     private fun action(label: String): UiObject2 = ancestor(text(label)) { it.isClickable }
+
+    private fun tab(label: String): UiObject2 = ancestor(text(label)) { it.isFocusable }
 }
