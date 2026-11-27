@@ -607,16 +607,21 @@ async fn saturated_cold_failure_cancels_delivery_during_a_cached_write() {
 }
 
 #[tokio::test]
+async fn blank_handoff_inlines_warm_archives_and_keeps_the_decoded_tail_ordered() {
+    assert_ready_input_lifecycle(true, true).await;
+}
+
+#[tokio::test]
 async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_failures() {
-    assert_ready_input_lifecycle(false).await;
+    assert_ready_input_lifecycle(false, false).await;
 }
 
 #[tokio::test]
 async fn split_ready_inputs_preserve_order_and_join_publication_failures() {
-    assert_ready_input_lifecycle(true).await;
+    assert_ready_input_lifecycle(true, false).await;
 }
 
-async fn assert_ready_input_lifecycle(split: bool) {
+async fn assert_ready_input_lifecycle(split: bool, inline: bool) {
     // Every case reaches the same causal handoff before releasing the HTTP
     // body. Failure cases keep the original accepted population owner.
     for failure in [
@@ -633,23 +638,31 @@ async fn assert_ready_input_lifecycle(split: bool) {
         if failure == "ordinary-over-limit" && !split {
             continue;
         }
+        if inline && !matches!(failure, "none" | "publication" | "ineligible") {
+            continue;
+        }
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let cache = decoded::DecodedCache::new(home.clone());
         let bytes = tarball_with_contents(b"complete cold bytes\n");
-        let warm = tarball_with_contents(b"complete ready bytes\n");
+        let warm = if inline {
+            vec![42; 1024 * 1024]
+        } else {
+            tarball_with_contents(b"complete ready bytes\n")
+        };
         write_cached_archive(&home, "ready", "v1", &warm);
+        let root = if inline { "/home/user" } else { "/mnt" };
         let server = GatedResponse::start(bytes.clone()).await;
         let mut storages = vec![
             storage_entry_with_archive_size(
-                "/mnt/pending".into(),
+                format!("{root}/pending"),
                 server.url.clone(),
                 "pending",
                 "v1",
                 Some(bytes.len() as u64),
             ),
             storage_entry(
-                "/mnt/ready".into(),
+                format!("{root}/ready"),
                 "https://example.test/ready".into(),
                 "ready",
                 "v1",
@@ -663,7 +676,7 @@ async fn assert_ready_input_lifecycle(split: bool) {
             assert!(cache.get_ready("decoded", "v1").await.unwrap().is_some());
             storages.extend((0..3).map(|index| {
                 storage_entry(
-                    format!("/mnt/decoded-{index}"),
+                    format!("{root}/decoded-{index}"),
                     format!("https://example.test/decoded?{}", "q".repeat(35_000)),
                     "decoded",
                     "v1",
@@ -683,7 +696,7 @@ async fn assert_ready_input_lifecycle(split: bool) {
         let mut plan = plan_from_entries(
             storages,
             vec![artifact_entry(
-                "/mnt/alias".into(),
+                format!("{root}/alias"),
                 server.url.clone(),
                 "pending",
                 "v1",
@@ -759,6 +772,11 @@ async fn assert_ready_input_lifecycle(split: bool) {
             host_failed.clone(),
         )
         .unwrap();
+        let application = if inline {
+            application.with_blank_startup()
+        } else {
+            application
+        };
         let task = tokio::spawn({
             let home = home.clone();
             let sandbox = sandbox.clone();
@@ -808,6 +826,7 @@ async fn assert_ready_input_lifecycle(split: bool) {
                     .unwrap();
                 assert!(input.initial.manifest.archive_readiness.is_none());
                 assert!(input.decoded_tail.is_none());
+                assert!(input.pending_archives.is_empty());
             } else {
                 assert!(
                     tokio::time::timeout(Duration::from_secs(5), receive)
@@ -821,6 +840,12 @@ async fn assert_ready_input_lifecycle(split: bool) {
                 .unwrap()
                 .unwrap();
             assert_eq!(result.is_ok(), failure == "ineligible");
+            if failure == "ineligible" {
+                let calls = sandbox.write_files_calls();
+                assert_eq!(calls.len(), 2);
+                assert_eq!(calls[0].files[0].content, warm);
+                assert_eq!(calls[1].files[0].content, bytes);
+            }
             assert!(sandbox.private_write_files_calls().is_empty());
             assert!(sandbox.private_write_file_calls().is_empty());
             assert_eq!(
@@ -864,8 +889,20 @@ async fn assert_ready_input_lifecycle(split: bool) {
         );
         assert_eq!(readiness.wait_timeout(), Duration::from_secs(300));
         let staged = sandbox.write_files_calls();
-        assert_eq!(staged.len(), 1);
-        assert_eq!(staged[0].files[0].content, warm);
+        if inline {
+            assert!(staged.is_empty());
+            let manifest = serde_json::to_vec(&input.initial.manifest).unwrap();
+            let encoded = input.pending_archives.inline_input(&manifest).unwrap();
+            let (_, payload) = guest_contracts::storage_files::split_input(&encoded).unwrap();
+            let sources = guest_contracts::storage_files::inline_archives::decode(payload).unwrap();
+            assert_eq!(
+                sources,
+                HashMap::from([(guest_archive_path("ready", "v1").as_str(), warm.as_slice())])
+            );
+        } else {
+            assert_eq!(staged.len(), 1);
+            assert_eq!(staged[0].files[0].content, warm);
+        }
         assert!(
             !task.is_finished(),
             "handoff must not finish the pending owner"
@@ -911,7 +948,10 @@ async fn assert_ready_input_lifecycle(split: bool) {
                 readiness.ready_path(&runtime, 0).to_str().unwrap()
             );
             assert!(published[0].files[0].content.is_empty());
-            assert_eq!(sandbox.write_files_calls()[1].files[0].content, bytes);
+            assert_eq!(
+                sandbox.write_files_calls()[usize::from(!inline)].files[0].content,
+                bytes
+            );
             assert_eq!(
                 fs::read(
                     home.storage_cache_dir("pending", "v1")
