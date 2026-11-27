@@ -323,7 +323,8 @@ fn local_scheduler_starts_one_ready_artifact_alongside_the_largest_archive() {
         ("/artifact", 512 * 1024, true, [3, 5, 0, 1]),
         ("/artifact", 2 * 1024 * 1024, true, [5, 0, 1, 2]),
         ("/artifact", 512 * 1024, false, [3, 0, 1, 2]),
-        ("/ordinary-0/child", 512 * 1024, true, [3, 0, 1, 2]),
+        ("/ordinary-3/child", 512 * 1024, true, [3, 0, 1, 2]),
+        ("/ordinary-0/child", 512 * 1024, true, [3, 5, 1, 2]),
     ] {
         let mut pending = (0..5)
             .map(|id| pending_at(id, &format!("/ordinary-{id}")))
@@ -429,11 +430,11 @@ fn large_archive_priority_respects_logical_and_physical_reservations() {
 }
 
 #[test]
-fn unpublished_predecessor_blocks_conflicting_ready_work_but_not_independent_work() {
+fn ready_work_can_pass_an_unpublished_conflicting_mount() {
     for physical_alias in [false, true] {
         let gate = Arc::new(AtomicBool::new(false));
         let mut first = pending_at(0, "/data/parent");
-        first.task.source_ready = Some(gate.clone());
+        first.task.source_ready = Some(gate);
         let mut child = pending_at(
             1,
             if physical_alias {
@@ -454,17 +455,7 @@ fn unpublished_predecessor_blocks_conflicting_ready_work_but_not_independent_wor
                 DownloadSelection::Largest,
                 &mut |_, _, _, _| {}
             ),
-            Some((2, 2))
-        );
-        gate.store(true, Ordering::Release);
-        assert_eq!(
-            find_startable_download(
-                &pending,
-                &[],
-                DownloadSelection::Largest,
-                &mut |_, _, _, _| {}
-            ),
-            Some((0, 0))
+            Some((1, 1))
         );
     }
 }

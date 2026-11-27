@@ -162,8 +162,22 @@ impl LocalArchive {
     }
 }
 
+pub(crate) enum ArchiveReader<'input> {
+    Stream(Box<dyn Read + 'input>),
+    Inline(&'input [u8]),
+}
+
+impl Read for ArchiveReader<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Stream(reader) => reader.read(buffer),
+            Self::Inline(bytes) => bytes.read(buffer),
+        }
+    }
+}
+
 pub(crate) struct ArchiveSource<'input> {
-    reader: Box<dyn Read + 'input>,
+    reader: ArchiveReader<'input>,
     http_body_read_failure: HttpBodyReadFailure,
     compressed_bytes: Option<u64>,
 }
@@ -171,9 +185,17 @@ pub(crate) struct ArchiveSource<'input> {
 impl<'input> ArchiveSource<'input> {
     pub(crate) fn local(reader: impl Read + 'input, compressed_bytes: Option<u64>) -> Self {
         Self {
-            reader: Box::new(reader),
+            reader: ArchiveReader::Stream(Box::new(reader)),
             http_body_read_failure: HttpBodyReadFailure::disabled(),
             compressed_bytes,
+        }
+    }
+
+    pub(crate) fn inline(archive: &'input [u8]) -> Self {
+        Self {
+            reader: ArchiveReader::Inline(archive),
+            http_body_read_failure: HttpBodyReadFailure::disabled(),
+            compressed_bytes: Some(archive.len() as u64),
         }
     }
 
@@ -184,12 +206,12 @@ impl<'input> ArchiveSource<'input> {
     ) -> Self {
         let http_body_read_failure = HttpBodyReadFailure::enabled();
         Self {
-            reader: Box::new(HttpBodyReader {
+            reader: ArchiveReader::Stream(Box::new(HttpBodyReader {
                 reader,
                 failure: http_body_read_failure.clone(),
                 remaining_content_length: content_length,
                 metrics,
-            }),
+            })),
             http_body_read_failure,
             compressed_bytes: None,
         }
@@ -199,7 +221,7 @@ impl<'input> ArchiveSource<'input> {
         self.compressed_bytes
     }
 
-    pub(crate) fn into_parts(self) -> (Box<dyn Read + 'input>, HttpBodyReadFailure) {
+    pub(crate) fn into_parts(self) -> (ArchiveReader<'input>, HttpBodyReadFailure) {
         (self.reader, self.http_body_read_failure)
     }
 }

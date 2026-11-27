@@ -359,6 +359,8 @@ private fun SessionEntryProgress() {
     LaunchedEffect(Unit) {
         delay(250)
         val motion = coroutineContext[MotionDurationScale]
+        // Android starts its scale observer on first access, before snapshotFlow can read it.
+        animate = motion?.scaleFactor != 0f
         snapshotFlow { motion?.scaleFactor != 0f }.collect { animate = it }
     }
     Box(Modifier.size(20.dp).clearAndSetSemantics {}) {

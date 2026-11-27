@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.32.63](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.62...guest-storage-apply-v0.32.63) (2026-11-27)
+
+
+### Refactoring
+
+* **guest-storage:** remove pending mount overlay order ([#51538](https://github.com/okou-ai/okou/issues/51538)) ([91cde0d](https://github.com/okou-ai/okou/commit/91cde0dae17860a183e4472082c81986a47b8459))
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** buffer decoded inline archive reads ([#51543](https://github.com/okou-ai/okou/issues/51543)) ([7a1ba32](https://github.com/okou-ai/okou/commit/7a1ba323e59624006ba5496581de7ac7aa5ecbdf))
+
 ## [0.32.62](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.61...guest-storage-apply-v0.32.62) (2026-11-27)
 
 

@@ -1,5 +1,6 @@
 package ai.okou.android.settings
 
+import ai.okou.android.CompactPanelTopAppBar
 import ai.okou.android.OkouOutlinedSelectionField
 import ai.okou.android.R
 import ai.okou.android.SettingsIcon
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,14 +32,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -192,7 +190,6 @@ private fun DefaultModelSheet(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ModelPickerSheet(
     title: String,
@@ -245,26 +242,23 @@ internal fun ModelPickerSheet(
                 .padding(contentPadding)
                 .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
-            val back: @Composable () -> Unit = {
-                IconButton(
-                    onClick = dismiss,
-                    modifier = Modifier.size(48.dp).focusRequester(backFocus),
-                ) {
-                    Icon(
-                        painterResource(R.drawable.ic_arrow_back),
-                        stringResource(R.string.back),
-                    )
-                }
-            }
             if (fullScreen) {
-                TopAppBar(
-                    title = { Text(title, Modifier.semantics { heading() }) },
-                    navigationIcon = back,
-                    windowInsets = WindowInsets(0),
+                CompactPanelTopAppBar(
+                    title,
+                    back = dismiss,
+                    backFocus = backFocus,
                 )
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    back()
+                    IconButton(
+                        onClick = dismiss,
+                        modifier = Modifier.size(48.dp).focusRequester(backFocus),
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_arrow_back),
+                            stringResource(R.string.back),
+                        )
+                    }
                     Text(
                         title,
                         Modifier.semantics { heading() },

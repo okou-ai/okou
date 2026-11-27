@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.CompactPanelTopAppBar
 import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.OkouActionButton
@@ -26,7 +27,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,14 +41,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,7 +72,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -568,7 +565,6 @@ private fun ConnectorSectionDivider() {
     Spacer(Modifier.height(16.dp))
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ConnectorSheet(
     title: String,
@@ -587,19 +583,15 @@ internal fun ConnectorSheet(
 ) {
     val shortWindow = isShortSettingsPanelWindow()
     val fullScreen = (expandInShortWindow || compactForm) && shortWindow
-    val formTopBar = compactForm && fullScreen
     val overlayFeedback =
         actionFeedback ?: feedback.takeIf { fullScreen || inContentFeedbackMessage != null }
     val scroll = retainedScroll ?: key(title) { rememberScrollState() }
-    val titleStyle =
-        if (fullScreen && !formTopBar)
-            MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 24.sp)
-        else MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp)
+    val titleStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp)
     SettingsModal(
         dismiss,
         dismissible,
         fullScreen,
-        fitContentInsets = formTopBar,
+        fitContentInsets = compactForm && fullScreen,
         snackbar = feedback.takeIf { overlayFeedback == null },
         onBack = back,
     ) { centered ->
@@ -614,7 +606,7 @@ internal fun ConnectorSheet(
             frame
                 .testTag("connector-sheet")
                 .padding(settingsPanelContentPadding(compactHeight = shortWindow))
-                .padding(top = if (centered && !formTopBar) 16.dp else 0.dp),
+                .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
             val minimumControlsHeight =
                 with(LocalDensity.current) {
@@ -637,29 +629,11 @@ internal fun ConnectorSheet(
                 },
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (formTopBar) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                title,
-                                Modifier.semantics { heading() },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                        navigationIcon = {
-                            IconButton(
-                                back ?: dismiss,
-                                Modifier.size(48.dp),
-                                enabled = dismissible,
-                            ) {
-                                Icon(
-                                    painterResource(R.drawable.ic_arrow_back),
-                                    stringResource(R.string.back),
-                                )
-                            }
-                        },
-                        windowInsets = WindowInsets(0),
+                if (fullScreen) {
+                    CompactPanelTopAppBar(
+                        title,
+                        back = back ?: dismiss.takeIf { compactForm },
+                        backEnabled = dismissible,
                     )
                 } else
                     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -2,9 +2,7 @@ mod memory;
 
 use std::collections::{HashMap, HashSet};
 
-use api_contracts::generated::constants::model_provider_env::{
-    legacy_placeholders, placeholders as model_provider_placeholders,
-};
+use api_contracts::generated::constants::model_provider_env::placeholders as model_provider_placeholders;
 use api_contracts::generated::types::runners::{
     runs::CodexRuntimeConfig, storage::ArtifactEntryMissingRootPolicy,
 };
@@ -432,46 +430,6 @@ fn execution_context_validation_rejects_invalid_codex_resume_before_sandbox() {
     let error = validate_context_for_test(&ctx).unwrap_err();
 
     assert!(error.contains("invalid codex session_id"));
-}
-
-#[test]
-fn model_provider_env_placeholder_validation_accepts_claude_oauth_placeholder() {
-    let ctx = context_with_env(HashMap::from([(
-        "CLAUDE_CODE_OAUTH_TOKEN".into(),
-        legacy_placeholders::CLAUDE_CODE_OAUTH_TOKEN.into(),
-    )]));
-
-    assert!(validate_model_provider_env_placeholders(&ctx).is_ok());
-}
-
-#[test]
-fn model_provider_env_placeholder_validation_accepts_openai_api_key_placeholder() {
-    let ctx = context_with_env(HashMap::from([(
-        "OPENAI_API_KEY".into(),
-        legacy_placeholders::OPENAI_API_KEY.into(),
-    )]));
-
-    assert!(validate_model_provider_env_placeholders(&ctx).is_ok());
-}
-
-#[test]
-fn model_provider_env_placeholder_validation_accepts_codex_oauth_placeholders() {
-    let ctx = context_with_env(HashMap::from([
-        (
-            "CHATGPT_ACCESS_TOKEN".into(),
-            legacy_placeholders::CHATGPT_ACCESS_TOKEN.into(),
-        ),
-        (
-            "CHATGPT_ACCOUNT_ID".into(),
-            legacy_placeholders::CHATGPT_ACCOUNT_ID.into(),
-        ),
-        (
-            "CHATGPT_REFRESH_TOKEN".into(),
-            legacy_placeholders::CHATGPT_REFRESH_TOKEN.into(),
-        ),
-    ]));
-
-    assert!(validate_model_provider_env_placeholders(&ctx).is_ok());
 }
 
 #[test]

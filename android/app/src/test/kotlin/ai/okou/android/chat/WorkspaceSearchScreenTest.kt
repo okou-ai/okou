@@ -400,19 +400,23 @@ class WorkspaceSearchScreenTest {
         val actionBounds = viewAll.getUnclippedBoundsInRoot()
         assertTrue(actionBounds.bottom - actionBounds.top >= 48.dp)
         assertTrue(actionBounds.right - actionBounds.left >= 48.dp)
-        val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("View all", useUnmergedTree = true).performSemanticsAction(
-            SemanticsActions.GetTextLayoutResult,
-        ) {
-            it(layouts)
+        fun assertDefaultActionTypography(label: String) {
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText(label, useUnmergedTree = true).performSemanticsAction(
+                SemanticsActions.GetTextLayoutResult,
+            ) {
+                it(layouts)
+            }
+            val style = layouts.single().layoutInput.style
+            assertEquals(
+                resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false).primary,
+                style.color,
+            )
+            assertEquals(14.sp, style.fontSize)
+            assertEquals(20.sp, style.lineHeight)
+            assertEquals(FontWeight.Medium, style.fontWeight)
         }
-        val style = layouts.single().layoutInput.style
-        assertEquals(
-            resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false).primary,
-            style.color,
-        )
-        assertEquals(13.sp, style.fontSize)
-        assertEquals(20.sp, style.lineHeight)
+        assertDefaultActionTypography("View all")
         viewAll.performClick()
         query.assertTextContains("Launch")
         artifactTab.assertIsSelected().assertIsFocused()
@@ -421,7 +425,12 @@ class WorkspaceSearchScreenTest {
 
         compose.runOnIdle { search.edit(TextFieldValue("Missing")) }
         compose.onNodeWithText("No matching artifacts").assertIsDisplayed()
-        compose.onNodeWithText("Search all types").performClick()
+        assertDefaultActionTypography("Search all types")
+        val recover = compose.onNode(hasText("Search all types") and hasClickAction())
+        val recoveryBounds = recover.getUnclippedBoundsInRoot()
+        assertTrue(recoveryBounds.bottom - recoveryBounds.top >= 48.dp)
+        assertTrue(recoveryBounds.right - recoveryBounds.left >= 48.dp)
+        recover.performClick()
         query.assertTextContains("Missing")
         all.assertIsSelected().assertIsFocused()
         assertEquals(16.dp, all.getUnclippedBoundsInRoot().left)

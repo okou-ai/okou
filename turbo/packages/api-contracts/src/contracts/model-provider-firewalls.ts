@@ -57,23 +57,6 @@ export const MODEL_PROVIDER_ENV_PLACEHOLDERS = {
   CHATGPT_REFRESH_TOKEN: "rt_OkouModelProviderCodexOauthRefreshToken",
 } as const;
 
-// Runner accepts these exact markers from pre-cutover API writers and captured
-// execution contexts. Remove the legacy acceptance and bindings under #51414
-// after those inputs have drained and rollback can no longer restore them.
-export const LEGACY_MODEL_PROVIDER_ENV_PLACEHOLDERS = {
-  CLAUDE_CODE_OAUTH_TOKEN:
-    "sk-ant-oat01-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCofAA",
-  OPENAI_API_KEY:
-    "sk-proj-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocaT3BlbkFJCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLoca",
-  CHATGPT_ACCESS_TOKEN:
-    "chatgpt-token-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocal",
-  CHATGPT_ACCOUNT_ID: "ws_VM0_PLACEHOLDER_DO_NOT_TRUST",
-  CHATGPT_REFRESH_TOKEN: "rt_VM0_PLACEHOLDER_DO_NOT_TRUST",
-} as const satisfies Record<
-  keyof typeof MODEL_PROVIDER_ENV_PLACEHOLDERS,
-  string
->;
-
 const MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS: Record<
   SingleSecretFirewallProvider,
   SingleSecretFirewallProviderConfig

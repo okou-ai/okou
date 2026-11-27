@@ -37,6 +37,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicReference
@@ -54,6 +55,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowSystemClock
 
 class ChatConnectorRootApplication : TestOkouApplication() {
     internal lateinit var connectors: ConnectorApiFixture
@@ -375,6 +377,17 @@ class ChatConnectorOptionsTest {
         compose.onNodeWithTag(calendarTag).assertIsFocused().performClick()
         waitTag(primaryTag)
         assertEquals(expected.size, app.connectors.chatConnectorReads.size)
+
+        compose.runOnIdle { ShadowSystemClock.simulateDeepSleep(Duration.ofMinutes(10)) }
+        compose.onNodeWithTag(primaryTag).assertIsDisplayed()
+        inSheet(hasContentDescription("Back")).performClick()
+        waitTag(calendarTag)
+        compose.onNodeWithTag(calendarTag).performClick()
+        val accounts = "/api/connector-accounts/connections" to CONNECTOR_CALENDAR
+        compose.waitUntil(10_000) {
+            app.connectors.chatConnectorReads.count { it == accounts } == 2
+        }
+        waitTag(primaryTag)
     }
 
     @Test

@@ -5,6 +5,7 @@ import {
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, asc, count, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import { userWorkflowCondition } from "../services/workflow-visibility";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import type { WorkflowCopyPublicationArgs } from "./workflow-copy-publication-plans";
 
@@ -13,8 +14,6 @@ function after(name: string): SQL {
 }
 
 function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
-  const definitionName = args.sourceWorkflow.officialDefinitionName;
-  const official = definitionName !== null;
   const query = new QueryBuilder();
   const source = query
     .select({
@@ -24,13 +23,10 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
     .from(workflows)
     .where(
       and(
-        eq(workflows.id, args.sourceWorkflow.id),
+        eq(workflows.id, args.source.sourceWorkflow.id),
         eq(workflows.orgId, args.orgId),
         eq(sql`${workflows}.xmin::text`, args.source.observation.workflowXmin),
-        official ? eq(workflows.ownerUserId, args.userId) : undefined,
-        definitionName === null
-          ? undefined
-          : eq(workflows.officialDefinitionName, definitionName),
+        userWorkflowCondition(args.userId),
       ),
     )
     .for("update");
@@ -46,17 +42,11 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
       and(
         eq(workflowAutomations.orgId, args.orgId),
         eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.workflowId, args.sourceWorkflow.id),
+        eq(workflowAutomations.workflowId, args.source.sourceWorkflow.id),
         after("copy_source_locked"),
       ),
     )
-    .orderBy(
-      asc(
-        official
-          ? workflowAutomations.officialBlueprintKey
-          : workflowAutomations.id,
-      ),
-    )
+    .orderBy(asc(workflowAutomations.id))
     .for("update");
   const hooks = query
     .select({

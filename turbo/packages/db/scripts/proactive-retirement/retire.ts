@@ -11,7 +11,7 @@ const definitions = [
   "proactive-jobs",
 ];
 
-export async function remainingInstallations(db: postgres.Sql) {
+async function remainingInstallations(db: postgres.Sql) {
   const [source] = await db<{ workflows: number; enrollments: number }[]>`
     SELECT (SELECT count(*)::int FROM workflows WHERE visibility='private'
       AND official_definition_name IN ${db(definitions)}) AS workflows,
@@ -32,7 +32,7 @@ interface RetirementReceipt {
   runs: number;
 }
 
-/** Only the release job calls this after verifying both serving API targets. */
+/** Replay the completed two-release handoff on migration test fixtures. */
 export async function retireProactiveInstallations(
   db: postgres.Sql,
   verifiedRelease: string,

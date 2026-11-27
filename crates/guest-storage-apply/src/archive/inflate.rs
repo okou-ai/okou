@@ -130,7 +130,7 @@ pub(crate) fn extract_inline(
         return result;
     }
     super::extract_tar_gz(
-        crate::source::ArchiveSource::local(bytes, compressed_bytes),
+        crate::source::ArchiveSource::inline(bytes),
         target,
         concurrency,
     )

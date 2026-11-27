@@ -28,7 +28,7 @@ import ai.okou.android.connectors.label
 import ai.okou.android.connectors.needsAttention
 import ai.okou.android.connectors.notice
 import ai.okou.android.connectors.rememberConnectorReadFeedback
-import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.settings.ModelPickerSheet
@@ -440,7 +440,7 @@ internal fun ChatConnectorOptionsButton(
             },
             dismissible = !saving,
             expandInShortWindow = true,
-            back = if (showingConnectors || currentWindowSizeDp().height < 480) ::back else null,
+            back = if (showingConnectors || isShortSettingsPanelWindow()) ::back else null,
             actions = footer,
             feedback = readFeedback.takeIf { hasReadContent },
             actionFeedback = conversationSnackbar.takeIf { feedbackInOptions },

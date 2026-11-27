@@ -65,7 +65,8 @@ internal abstract class ConnectorModelTestFixture {
                                             ConnectorModel(
                                                 fixture.service,
                                                 { true },
-                                                clock,
+                                                clock = clock,
+                                                snapshotClock = clock,
                                             ) {
                                                 throw AssertionError(
                                                     "Unexpected session failure",

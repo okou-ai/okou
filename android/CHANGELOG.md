@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.68.0](https://github.com/okou-ai/okou/compare/android-v0.67.0...android-v0.68.0) (2026-11-27)
+
+
+### Features
+
+* **android:** browse inline images within an assistant reply ([#51529](https://github.com/okou-ai/okou/issues/51529)) ([a60ec17](https://github.com/okou-ai/okou/commit/a60ec17e3fb343ffc63d63d5c256104309994b1e))
+
+
+### Bug Fixes
+
+* **android:** align app update states and controls with current design ([#51526](https://github.com/okou-ai/okou/issues/51526)) ([b48c60e](https://github.com/okou-ai/okou/commit/b48c60ec6f9ed27a0cc7e92b002d0faed5bdab23))
+* **android:** align artifact catalog headings and empty actions ([#51523](https://github.com/okou-ai/okou/issues/51523)) ([3941398](https://github.com/okou-ai/okou/commit/394139890ce2de8dfb888ac0cf0d623a39b5c0c1))
+* **android:** align connector directory and chat picker ([#51519](https://github.com/okou-ai/okou/issues/51519)) ([d917871](https://github.com/okou-ai/okou/commit/d917871391338812685659d46d80e09b1ec81e20))
+* **android:** align personal instructions saving and form geometry ([#51506](https://github.com/okou-ai/okou/issues/51506)) ([0ee1fe4](https://github.com/okou-ai/okou/commit/0ee1fe43634b775317c0a1ed38ad0eaaf9654c90))
+* **android:** align workflow tool buttons with material defaults ([#51528](https://github.com/okou-ai/okou/issues/51528)) ([65beed4](https://github.com/okou-ai/okou/commit/65beed4c4883e61d41b5e8f89b9349c297a2b0ee))
+* **android:** animate shared content read progress ([#51530](https://github.com/okou-ai/okou/issues/51530)) ([9590392](https://github.com/okou-ai/okou/commit/9590392813c3571bd03ac285b978f34b614aa148))
+* **android:** keep workspace search capsules at the same height ([#51525](https://github.com/okou-ai/okou/issues/51525)) ([b6ea517](https://github.com/okou-ai/okou/commit/b6ea517ebbbcf8c331404dda618e66ea169ed8fa))
+* **android:** order snackbar feedback within each pane ([#51493](https://github.com/okou-ai/okou/issues/51493)) ([2d23f54](https://github.com/okou-ai/okou/commit/2d23f54922a04a8ce6be8ad76544b0c2c3e6c8c5))
+* **android:** prevent workspace entry crashes and preserve retries ([#51531](https://github.com/okou-ai/okou/issues/51531)) ([70ca6ed](https://github.com/okou-ai/okou/commit/70ca6ed694686f4900032c092609e312b3271841))
+* **android:** share the elapsed clock for memory snapshots ([#51540](https://github.com/okou-ai/okou/issues/51540)) ([3fe97fa](https://github.com/okou-ai/okou/commit/3fe97faa94130a376a1485e36edcd78b5e2590f4))
+
+
+### Refactoring
+
+* **android:** use material 3 chat and project rows ([#51504](https://github.com/okou-ai/okou/issues/51504)) ([e012aa6](https://github.com/okou-ai/okou/commit/e012aa692e9b2fc4a7efbeb5f1e97a92e7da9e30))
+
 ## [0.67.0](https://github.com/okou-ai/okou/compare/android-v0.66.4...android-v0.67.0) (2026-11-27)
 
 

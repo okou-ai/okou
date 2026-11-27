@@ -353,6 +353,7 @@ internal fun ChatListScreen(
         listState,
         contentChangeKey = lastContentKey to knownProjects,
         syncing = syncVisible,
+        filter = state.filter,
         newChatEnabled = newChatEnabled,
         newChat = { newChat(null) },
         feedback = feedback,

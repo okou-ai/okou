@@ -10,6 +10,10 @@ from mitmproxy import http
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import usage
+from tests.deferred_callback_helpers import (
+    ScheduledCallback,
+    capture_deferred_callbacks,
+)
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import (
     make_openai_responses_websocket_flow,
@@ -17,8 +21,6 @@ from tests.model_provider_flow_helpers import (
     model_usage_source_entries,
 )
 from tests.model_provider_websocket_helpers import (
-    ScheduledWebSocketTrim,
-    capture_deferred_websocket_trims,
     feed_websocket_server_message,
     openai_websocket_usage_frame,
 )
@@ -28,8 +30,8 @@ from tests.usage_helpers import assert_usage_event_rows
 @pytest.fixture(autouse=True)
 def deferred_websocket_trim_scheduler(
     monkeypatch: pytest.MonkeyPatch,
-) -> list[ScheduledWebSocketTrim]:
-    return capture_deferred_websocket_trims(monkeypatch)
+) -> list[ScheduledCallback]:
+    return capture_deferred_callbacks(monkeypatch)
 
 
 def _openai_websocket_zero_usage_frame(response_id: str, *, model: str | None = "gpt-5.5") -> bytes:

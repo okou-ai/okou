@@ -88,23 +88,13 @@ async fn wait_for_file_contains_event(
     // Large backlog tests wait on multi-MiB logs. Compile the existing byte
     // matcher once instead of comparing every byte window after each write.
     let matcher = aho_corasick::AhoCorasick::new([needle]).map_err(io::Error::other)?;
-    let dir = path.parent().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("path has no parent directory: {}", path.display()),
-        )
-    })?;
-    let inotify = Inotify::init(InitFlags::IN_NONBLOCK)
-        .map_err(|error| io::Error::other(format!("inotify init: {error}")))?;
-    inotify
-        .add_watch(
-            dir,
-            AddWatchFlags::IN_CREATE
-                | AddWatchFlags::IN_MODIFY
-                | AddWatchFlags::IN_MOVED_TO
-                | AddWatchFlags::IN_CLOSE_WRITE,
-        )
-        .map_err(|error| io::Error::other(format!("inotify watch: {error}")))?;
+    let inotify = watch_parent_directory(
+        path,
+        AddWatchFlags::IN_CREATE
+            | AddWatchFlags::IN_MODIFY
+            | AddWatchFlags::IN_MOVED_TO
+            | AddWatchFlags::IN_CLOSE_WRITE,
+    )?;
     let async_fd = async_inotify_fd(inotify)?;
 
     let overlap = append_only.then_some((needle.len() - 1) as u64);
@@ -207,17 +197,8 @@ pub async fn wait_for_path_event(path: &Path) -> io::Result<()> {
         return Ok(());
     }
 
-    let dir = path.parent().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("path has no parent directory: {}", path.display()),
-        )
-    })?;
-    let inotify = Inotify::init(InitFlags::IN_NONBLOCK)
-        .map_err(|error| io::Error::other(format!("inotify init: {error}")))?;
-    inotify
-        .add_watch(dir, AddWatchFlags::IN_CREATE | AddWatchFlags::IN_MOVED_TO)
-        .map_err(|error| io::Error::other(format!("inotify watch: {error}")))?;
+    let inotify =
+        watch_parent_directory(path, AddWatchFlags::IN_CREATE | AddWatchFlags::IN_MOVED_TO)?;
 
     if tokio::fs::try_exists(path).await? {
         return Ok(());
@@ -233,6 +214,21 @@ pub async fn wait_for_path_event(path: &Path) -> io::Result<()> {
             return Ok(());
         }
     }
+}
+
+fn watch_parent_directory(path: &Path, flags: AddWatchFlags) -> io::Result<Inotify> {
+    let dir = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("path has no parent directory: {}", path.display()),
+        )
+    })?;
+    let inotify = Inotify::init(InitFlags::IN_NONBLOCK)
+        .map_err(|error| io::Error::other(format!("inotify init: {error}")))?;
+    inotify
+        .add_watch(dir, flags)
+        .map_err(|error| io::Error::other(format!("inotify watch: {error}")))?;
+    Ok(inotify)
 }
 
 fn async_inotify_fd(inotify: Inotify) -> io::Result<AsyncFd<OwnedFd>> {

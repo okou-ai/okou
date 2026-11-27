@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.25.1...runner-executor-v0.25.2) (2026-11-27)
+
+
+### Refactoring
+
+* remove legacy model-provider firewall placeholders ([#51539](https://github.com/okou-ai/okou/issues/51539)) ([b7866b2](https://github.com/okou-ai/okou/commit/b7866b2a60d33a6a8d48ad2be6aa0d2764889539))
+
 ## [0.25.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.25.0...runner-executor-v0.25.1) (2026-11-27)
 
 

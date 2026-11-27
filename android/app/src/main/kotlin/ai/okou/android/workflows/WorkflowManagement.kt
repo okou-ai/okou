@@ -519,6 +519,7 @@ internal fun WorkflowEditor(
                     Modifier.focusRequester(cancelFocus),
                     enabled = !state.writing,
                     treatment = OkouActionTreatment.Text,
+                    useMaterialButtonDefaults = true,
                 )
                 if (showConnectionAction) {
                     OkouActionButton(
@@ -529,6 +530,7 @@ internal fun WorkflowEditor(
                         },
                         enabled = !state.writing && onViewConnection != null,
                         treatment = OkouActionTreatment.Outline,
+                        useMaterialButtonDefaults = true,
                     )
                 }
                 val saveLabel = stringResource(R.string.workflow_save)
@@ -553,12 +555,14 @@ internal fun WorkflowEditor(
                     },
                     enabled = saveEnabled,
                     layoutLabels = listOf(saveLabel, savingLabel),
+                    useMaterialButtonDefaults = true,
                     modifier =
                         Modifier.focusRequester(saveFocus)
                             .onFocusChanged { saveFocused = it.isFocused }
                             .updateFocusOutline(
                                 ButtonDefaults.shape,
                                 MaterialTheme.colorScheme.onPrimary,
+                                outlineInset = WorkflowFilledActionFocusInset,
                             )
                             .testTag("workflow_save")
                             .then(pendingSemantics),

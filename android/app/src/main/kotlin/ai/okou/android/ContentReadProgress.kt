@@ -1,6 +1,13 @@
 package ai.okou.android
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -27,8 +34,28 @@ import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
+private const val ReadProgressFadeMillis = 150
+
 @Composable
-internal fun ContentReadProgress(@StringRes label: Int, announce: Boolean = true) {
+internal fun ContentReadProgress(
+    @StringRes label: Int,
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val visibility = remember { MutableTransitionState(false) }
+    visibility.targetState = visible
+    AnimatedVisibility(
+        visibleState = visibility,
+        modifier = modifier,
+        enter = fadeIn(tween(ReadProgressFadeMillis, easing = LinearOutSlowInEasing)),
+        exit = fadeOut(tween(ReadProgressFadeMillis, easing = FastOutLinearInEasing)),
+    ) {
+        ReadProgressIndicator(label, announce = visible)
+    }
+}
+
+@Composable
+private fun ReadProgressIndicator(@StringRes label: Int, announce: Boolean) {
     val bounds = Modifier.fillMaxWidth().height(4.dp)
     val modifier =
         if (announce) {

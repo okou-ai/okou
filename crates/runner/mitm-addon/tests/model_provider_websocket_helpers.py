@@ -9,20 +9,7 @@ from wsproto.frame_protocol import Opcode
 
 import mitm_addon
 import model_websocket_usage
-from tests.deferred_callback_helpers import (
-    ScheduledCallback,
-    capture_deferred_callbacks,
-    run_deferred_callbacks,
-)
 from usage.json_selective import JsonSelectiveExtractor
-
-type ScheduledWebSocketTrim = ScheduledCallback
-
-
-def capture_deferred_websocket_trims(
-    monkeypatch: pytest.MonkeyPatch,
-) -> list[ScheduledWebSocketTrim]:
-    return capture_deferred_callbacks(monkeypatch)
 
 
 def capture_openai_responses_extractor_feeds(
@@ -38,10 +25,6 @@ def capture_openai_responses_extractor_feeds(
 
     monkeypatch.setattr(JsonSelectiveExtractor, "feed", record_feed)
     return observed
-
-
-def run_deferred_websocket_trims(scheduled: list[ScheduledWebSocketTrim]) -> None:
-    run_deferred_callbacks(scheduled)
 
 
 def _make_websocket_message(

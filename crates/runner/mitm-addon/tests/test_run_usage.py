@@ -14,16 +14,18 @@ import registry
 import run_usage
 import usage
 from tests.control_helpers import control_connection, exchange, status_request
+from tests.deferred_callback_helpers import (
+    capture_deferred_callbacks,
+    run_deferred_callbacks,
+)
 from tests.flow_helpers import header_map, response_stream
 from tests.model_provider_flow_helpers import (
     make_openai_responses_websocket_request_flow,
     make_openai_responses_websocket_response_headers,
 )
 from tests.model_provider_websocket_helpers import (
-    capture_deferred_websocket_trims,
     feed_websocket_server_message,
     openai_websocket_usage_frame,
-    run_deferred_websocket_trims,
     set_websocket_message,
 )
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
@@ -190,7 +192,7 @@ async def test_websocket_idle_prewarm_multiple_responses_and_flush(
     fake_firewall_headers,
     monkeypatch,
 ):
-    capture_deferred_websocket_trims(monkeypatch)
+    capture_deferred_callbacks(monkeypatch)
     path = write_registration(tmp_path)
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
         flow = make_openai_responses_websocket_request_flow(real_flow)
@@ -267,7 +269,7 @@ async def test_duplicate_prewarm_terminal_does_not_finish_active_inference(
     monkeypatch,
     prewarm_usage,
 ):
-    capture_deferred_websocket_trims(monkeypatch)
+    capture_deferred_callbacks(monkeypatch)
     path = write_registration(tmp_path)
     warm = payload("warm") if prewarm_usage else {"id": "warm"}
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
@@ -520,7 +522,7 @@ async def test_repeated_websocket_snapshots_keep_disjoint_input_when_details_dis
     fake_firewall_headers,
     monkeypatch,
 ):
-    capture_deferred_websocket_trims(monkeypatch)
+    capture_deferred_callbacks(monkeypatch)
     path = write_registration(tmp_path)
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
         flow = make_openai_responses_websocket_request_flow(real_flow)
@@ -562,7 +564,7 @@ async def test_ambiguous_websocket_recovers_observable_idle_and_pending_boundari
     fake_firewall_headers,
     monkeypatch,
 ):
-    capture_deferred_websocket_trims(monkeypatch)
+    capture_deferred_callbacks(monkeypatch)
     path = write_registration(tmp_path)
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
         flow = make_openai_responses_websocket_request_flow(real_flow)
@@ -600,7 +602,7 @@ async def test_websocket_diagnostic_exhaustion_preserves_accounting_and_recovery
     fake_firewall_headers,
     monkeypatch,
 ):
-    scheduled = capture_deferred_websocket_trims(monkeypatch)
+    scheduled = capture_deferred_callbacks(monkeypatch)
     path = write_registration(tmp_path)
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
         flow = make_openai_responses_websocket_request_flow(real_flow)
@@ -611,7 +613,7 @@ async def test_websocket_diagnostic_exhaustion_preserves_accounting_and_recovery
         mitm_addon.responseheaders(flow)
         for _ in range(10):
             feed_websocket_server_message(flow, b'{"usage":{"input_tokens":9007199254740992}}')
-        run_deferred_websocket_trims(scheduled)
+        run_deferred_callbacks(scheduled)
         after_integer_errors = read_usage(control)
         assert "parse_error" in after_integer_errors["reasons"]
         assert "ambiguous_response" not in after_integer_errors["reasons"]
@@ -624,12 +626,12 @@ async def test_websocket_diagnostic_exhaustion_preserves_accounting_and_recovery
         )
         assert completion is not None
         await completion
-        run_deferred_websocket_trims(scheduled)
+        run_deferred_callbacks(scheduled)
         assert "ambiguous_response" in read_usage(control)["reasons"]
         feed_websocket_server_message(
             flow, openai_websocket_usage_frame("after-errors", input_tokens=7, output_tokens=2)
         )
-        run_deferred_websocket_trims(scheduled)
+        run_deferred_callbacks(scheduled)
         mitm_addon.websocket_end(flow)
 
     result = read_usage(control)
@@ -752,7 +754,7 @@ async def test_websocket_close_keeps_known_usage_and_marks_unfinished_inference(
     fake_firewall_headers,
     monkeypatch,
 ):
-    capture_deferred_websocket_trims(monkeypatch)
+    capture_deferred_callbacks(monkeypatch)
     path = write_registration(tmp_path)
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
         flow = make_openai_responses_websocket_request_flow(real_flow)
@@ -791,7 +793,7 @@ async def test_websocket_usage_without_lifecycle_cannot_claim_complete_coverage(
     monkeypatch,
     zero_usage,
 ):
-    capture_deferred_websocket_trims(monkeypatch)
+    capture_deferred_callbacks(monkeypatch)
     path = write_registration(tmp_path)
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
         flow = make_openai_responses_websocket_request_flow(real_flow)

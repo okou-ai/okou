@@ -130,6 +130,29 @@ fn binary_storage_applies_one_inline_archive_to_storage_and_artifact() {
 }
 
 #[test]
+fn binary_storage_rejects_an_inline_archive_with_a_corrupt_crc() {
+    use guest_contracts::storage_files::{STAGED_ARCHIVE_DIR, inline_archives};
+
+    let root = tempfile::tempdir().unwrap();
+    let fixture = shared_workflow_archive(root.path(), &[("file", b"archive data")]);
+    let mut content = std::fs::read(fixture).unwrap();
+    let crc_offset = content.len() - 8;
+    content[crc_offset] ^= 1;
+    let source = format!("{STAGED_ARCHIVE_DIR}/test-inline-crc.tar.gz");
+    let manifest = json!({"storageMounts": [{
+        "mountPath": root.path().join("mount"),
+        "archiveUrl": format!("file://{source}")
+    }]});
+    let input = inline_archives::encode_input(
+        &serde_json::to_vec(&manifest).unwrap(),
+        &[(&source, &content)],
+    )
+    .unwrap();
+
+    assert!(!super::run_storage_files_bytes(&input));
+}
+
+#[test]
 fn binary_storage_rejects_an_unbound_inline_source_before_cleanup() {
     use guest_contracts::storage_files::{STAGED_ARCHIVE_DIR, inline_archives};
 

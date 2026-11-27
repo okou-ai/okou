@@ -1548,12 +1548,12 @@ describe("workflows", () => {
     });
   });
 
-  it("copies schedule-only workflows without binding a chat thread", async () => {
+  it("copies a user-created morning-brief workflow and its schedule without binding a chat thread", async () => {
     const actor = user();
 
     const workflow = await createWorkflow(actor, {
       visibility: "public",
-      name: `schedule-copy-${randomUUID().slice(0, 8)}`,
+      name: "morning-brief",
       instruction: "# schedule copy source",
     });
     const automation = await accept(
@@ -1585,9 +1585,16 @@ describe("workflows", () => {
       [200],
     );
 
+    expect(copied.body).toMatchObject({
+      name: "morning-brief",
+      visibility: "private",
+      official: null,
+    });
     expect(copiedAutomations.body).toHaveLength(1);
     expect(copiedAutomations.body[0]).toMatchObject({
       kind: "schedule",
+      enabled: automation.body.enabled,
+      schedule: automation.body.schedule,
       chatThreadId: null,
     });
   });

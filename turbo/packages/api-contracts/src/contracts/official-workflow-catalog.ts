@@ -65,17 +65,11 @@ const officialWorkflowBooleanParameterSchema = object({
   default: boolean().optional(),
 }).strict();
 
-export const officialWorkflowInstallationParameterSchema = discriminatedUnion(
-  "type",
-  [
-    officialWorkflowStringParameterSchema,
-    officialWorkflowIntegerParameterSchema,
-    officialWorkflowBooleanParameterSchema,
-  ],
-);
-export type OfficialWorkflowInstallationParameter = zInfer<
-  typeof officialWorkflowInstallationParameterSchema
->;
+const officialWorkflowInstallationParameterSchema = discriminatedUnion("type", [
+  officialWorkflowStringParameterSchema,
+  officialWorkflowIntegerParameterSchema,
+  officialWorkflowBooleanParameterSchema,
+]);
 
 export const officialWorkflowParameterReferenceSchema = object({
   parameter: officialWorkflowParameterKeySchema,
@@ -199,15 +193,6 @@ const officialWorkflowAcceptedBlueprintV3Schema = object({
   ...officialWorkflowBlueprintShape,
   fingerprint: fingerprintSchema,
 }).strict();
-
-/** An accepted Blueprint read from either supported schema version. */
-export const officialWorkflowAcceptedBlueprintSchema = union([
-  officialWorkflowAcceptedBlueprintV2Schema,
-  officialWorkflowAcceptedBlueprintV3Schema,
-]);
-export type OfficialWorkflowAcceptedBlueprint = zInfer<
-  typeof officialWorkflowAcceptedBlueprintSchema
->;
 
 const officialWorkflowDefinitionRevisionPayloadShape = {
   name: workflowNameSchema,

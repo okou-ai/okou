@@ -67,6 +67,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -98,6 +99,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -547,6 +549,45 @@ internal fun settingsPanelContentPadding(compactHeight: Boolean) =
 
 @Composable internal fun isShortSettingsPanelWindow() = currentWindowSizeDp().height < 480
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CompactPanelTopAppBar(
+    title: String,
+    back: (() -> Unit)? = null,
+    backEnabled: Boolean = true,
+    backFocus: FocusRequester? = null,
+    titleFocus: FocusRequester? = null,
+) {
+    TopAppBar(
+        modifier = Modifier.testTag("compact-panel-top-app-bar"),
+        title = {
+            Text(
+                title,
+                Modifier.then(
+                        if (titleFocus != null) Modifier.focusRequester(titleFocus).focusable()
+                        else Modifier,
+                    )
+                    .semantics { heading() },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        navigationIcon = {
+            if (back != null) {
+                val focus = if (backFocus == null) Modifier else Modifier.focusRequester(backFocus)
+                IconButton(back, focus.size(48.dp), enabled = backEnabled) {
+                    Icon(
+                        painterResource(R.drawable.ic_arrow_back),
+                        stringResource(R.string.back),
+                    )
+                }
+            }
+        },
+        // The modal already applies the window insets to the panel.
+        windowInsets = WindowInsets(0),
+    )
+}
+
 internal enum class SettingsSheetScroll {
     Panel,
     Body,
@@ -572,14 +613,16 @@ internal fun SettingsSheet(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compactHeight = isShortSettingsPanelWindow()
+    val fullScreen = compactHeight && fullScreenInShortWindow
+    val scrollWholePanel = scroll == SettingsSheetScroll.Panel && !fullScreen
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
     SettingsModal(
         onDismiss,
         dismissible = dismissible,
-        fullScreen = compactHeight && fullScreenInShortWindow,
-        fitContentInsets = compactHeight && fullScreenInShortWindow,
+        fullScreen = fullScreen,
+        fitContentInsets = fullScreen,
         confirmDismiss = confirmDismiss,
         // Give native scroll bodies stable height as the sheet opens and consumes the top inset.
         reserveTopInset = scroll == SettingsSheetScroll.None,
@@ -592,19 +635,26 @@ internal fun SettingsSheet(
                     .fillMaxWidth()
                     .padding(settingsPanelContentPadding(compactHeight))
                     .padding(
-                        top = if (centered && !(compactHeight && showBack)) 16.dp else 0.dp,
+                        top =
+                            if (centered && !fullScreen && !(compactHeight && showBack)) 16.dp
+                            else 0.dp,
                     )
-                    .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
+                    .then(if (scrollWholePanel) scrollModifier else Modifier),
             ) {
                 Box(Modifier.fillMaxWidth()) {
-                    val compactTitle = compactHeight && fullScreenInShortWindow
                     val titleStyle =
                         MaterialTheme.typography.titleLarge.copy(
-                            fontSize = if (compactTitle) 16.sp else 22.sp,
-                            lineHeight = if (compactTitle) 24.sp else 28.sp,
+                            fontSize = 22.sp,
+                            lineHeight = 28.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
-                    if (showBack) {
+                    if (fullScreen) {
+                        CompactPanelTopAppBar(
+                            title,
+                            back = onDismiss.takeIf { showBack },
+                            backEnabled = dismissible,
+                        )
+                    } else if (showBack) {
                         Row(
                             Modifier.heightIn(min = 64.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -629,12 +679,8 @@ internal fun SettingsSheet(
                 }
                 val body = Modifier.fillMaxWidth()
                 val bodyModifier =
-                    when (scroll) {
-                        SettingsSheetScroll.Panel -> body
-                        SettingsSheetScroll.Body ->
-                            body.weight(1f, fill = false).then(scrollModifier)
-                        SettingsSheetScroll.None -> body.weight(1f, fill = false)
-                    }
+                    if (scrollWholePanel) body
+                    else body.weight(1f, fill = false).then(scrollModifier)
                 Column(bodyModifier) {
                     Column(
                         Modifier.fillMaxWidth(),

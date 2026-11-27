@@ -8,17 +8,19 @@ import mitm_addon
 import model_websocket_usage
 import usage
 import websocket_retention
+from tests.deferred_callback_helpers import (
+    ScheduledCallback,
+    capture_deferred_callbacks,
+    run_deferred_callbacks,
+)
 from tests.model_provider_flow_helpers import (
     make_openai_responses_websocket_flow,
     model_provider_usage_sources,
 )
 from tests.model_provider_websocket_helpers import (
-    ScheduledWebSocketTrim,
     append_websocket_message,
-    capture_deferred_websocket_trims,
     capture_openai_responses_extractor_feeds,
     openai_websocket_usage_frame,
-    run_deferred_websocket_trims,
 )
 from tests.usage_helpers import assert_usage_event_rows
 
@@ -26,8 +28,8 @@ from tests.usage_helpers import assert_usage_event_rows
 @pytest.fixture
 def deferred_websocket_trim_scheduler(
     monkeypatch: pytest.MonkeyPatch,
-) -> list[ScheduledWebSocketTrim]:
-    return capture_deferred_websocket_trims(monkeypatch)
+) -> list[ScheduledCallback]:
+    return capture_deferred_callbacks(monkeypatch)
 
 
 class TestModelProviderWebSocketRetentionWithUsageDelivery:
@@ -41,7 +43,7 @@ class TestModelProviderWebSocketRetentionWithUsageDelivery:
         self,
         tmp_path,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
         mitm_addon.responseheaders(flow)
@@ -72,7 +74,7 @@ class TestModelProviderWebSocketRetentionWithUsageDelivery:
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] == {}
         assert len(deferred_websocket_trim_scheduler) == 1
 
-        run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
+        run_deferred_callbacks(deferred_websocket_trim_scheduler)
 
         assert flow.websocket.messages is messages
         assert flow.websocket.messages == [latest_server]
@@ -81,7 +83,7 @@ class TestModelProviderWebSocketRetentionWithUsageDelivery:
         self,
         tmp_path,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
         mitm_addon.responseheaders(flow)
@@ -110,7 +112,7 @@ class TestModelProviderWebSocketRetentionWithUsageDelivery:
         assert flow.websocket is not None
         assert flow.websocket.messages == [first_server, latest_server]
 
-        run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
+        run_deferred_callbacks(deferred_websocket_trim_scheduler)
 
         assert flow.websocket.messages == [latest_server]
         assert model_provider_usage_sources(flow) == {}
@@ -130,7 +132,7 @@ class TestModelProviderWebSocketRetentionWithUsageDelivery:
         self,
         tmp_path,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
         mitm_addon.responseheaders(flow)
@@ -157,14 +159,14 @@ class TestModelProviderWebSocketRetentionWithUsageDelivery:
         assert flow.websocket.messages == []
         assert not model_websocket_usage.is_enabled(flow)
 
-        run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
+        run_deferred_callbacks(deferred_websocket_trim_scheduler)
         assert flow.websocket.messages == []
 
     def test_model_websocket_error_clears_final_retained_message(
         self,
         tmp_path,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
         mitm_addon.responseheaders(flow)
@@ -192,7 +194,7 @@ class TestModelProviderWebSocketRetentionWithUsageDelivery:
         assert flow.websocket.messages == []
         assert not model_websocket_usage.is_enabled(flow)
 
-        run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
+        run_deferred_callbacks(deferred_websocket_trim_scheduler)
         assert flow.websocket.messages == []
 
 
@@ -203,7 +205,7 @@ class TestModelProviderWebSocketRetention:
         self,
         tmp_path,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
         mitm_addon.responseheaders(flow)
@@ -220,7 +222,7 @@ class TestModelProviderWebSocketRetention:
         assert model_provider_usage_sources(flow) == {}
         assert len(deferred_websocket_trim_scheduler) == 1
 
-        run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
+        run_deferred_callbacks(deferred_websocket_trim_scheduler)
 
         assert flow.websocket is not None
         assert flow.websocket.messages == [latest_client]
@@ -230,7 +232,7 @@ class TestModelProviderWebSocketRetention:
         self,
         tmp_path,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
         monkeypatch: pytest.MonkeyPatch,
     ):
         monkeypatch.setattr(websocket_retention, "MAX_RETAINED_MESSAGE_BYTES", 4)
@@ -248,7 +250,7 @@ class TestModelProviderWebSocketRetention:
         assert flow.websocket.messages == [large_client]
         assert len(deferred_websocket_trim_scheduler) == 1
 
-        run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
+        run_deferred_callbacks(deferred_websocket_trim_scheduler)
 
         assert flow.websocket.messages == []
 
@@ -258,7 +260,7 @@ class TestRegisteredWebSocketRetention:
     def test_non_model_websocket_retention_is_bounded_during_sustained_traffic(
         self,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
         monkeypatch: pytest.MonkeyPatch,
         from_client: bool,
     ):
@@ -287,7 +289,7 @@ class TestRegisteredWebSocketRetention:
             assert len(deferred_websocket_trim_scheduler) == 1
             assert full_body_feeds == []
 
-            run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
+            run_deferred_callbacks(deferred_websocket_trim_scheduler)
 
             assert flow.websocket.messages == [latest]
             retained_bytes = sum(len(message.content) for message in flow.websocket.messages)
@@ -298,7 +300,7 @@ class TestRegisteredWebSocketRetention:
     def test_unregistered_websocket_retention_is_unchanged(
         self,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
     ):
         flow = real_flow(with_response=False, host="example.com")
         first = append_websocket_message(flow, from_client=True, content=b"client")
@@ -313,7 +315,7 @@ class TestRegisteredWebSocketRetention:
     def test_unregistered_websocket_releases_only_large_messages(
         self,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
         monkeypatch: pytest.MonkeyPatch,
     ):
         monkeypatch.setattr(websocket_retention, "MAX_RETAINED_MESSAGE_BYTES", 4)
@@ -329,14 +331,14 @@ class TestRegisteredWebSocketRetention:
         assert flow.websocket is not None
         assert flow.websocket.messages == [first, large, latest]
 
-        run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
+        run_deferred_callbacks(deferred_websocket_trim_scheduler)
 
         assert flow.websocket.messages == [first, latest]
 
     def test_non_model_websocket_end_clears_final_retained_message(
         self,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
     ):
         flow = real_flow(with_response=False, host="example.com")
         flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-abc-123"
@@ -350,13 +352,13 @@ class TestRegisteredWebSocketRetention:
         assert flow.websocket is not None
         assert flow.websocket.messages == []
 
-        run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
+        run_deferred_callbacks(deferred_websocket_trim_scheduler)
         assert flow.websocket.messages == []
 
     def test_non_model_websocket_error_clears_final_retained_message(
         self,
         real_flow,
-        deferred_websocket_trim_scheduler: list[ScheduledWebSocketTrim],
+        deferred_websocket_trim_scheduler: list[ScheduledCallback],
     ):
         flow = real_flow(with_response=False, host="example.com")
         flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-abc-123"
@@ -373,5 +375,5 @@ class TestRegisteredWebSocketRetention:
         assert flow.websocket is not None
         assert flow.websocket.messages == []
 
-        run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
+        run_deferred_callbacks(deferred_websocket_trim_scheduler)
         assert flow.websocket.messages == []

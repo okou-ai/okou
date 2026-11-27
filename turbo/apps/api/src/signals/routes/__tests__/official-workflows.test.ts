@@ -842,6 +842,14 @@ describe("Standalone proactive dispatch", () => {
       notificationId: sent.body.notificationId,
       deduplicated: true,
     });
+    const changed = await accept(
+      app(notificationsContract).mail({
+        headers: agentHeaders,
+        body: { ...body, text: "A different brief for the same occurrence." },
+      }),
+      [409],
+    );
+    expect(changed.body.error.code).toBe("CONFLICT");
     await webhooks.requestAgentComplete(
       { runId: second, exitCode: 0 },
       sandboxHeaders,

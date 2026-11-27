@@ -11,14 +11,16 @@ import logging_utils
 import mitm_addon
 import model_websocket_usage
 import usage
+from tests.deferred_callback_helpers import (
+    ScheduledCallback,
+    capture_deferred_callbacks,
+    run_deferred_callbacks,
+)
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import make_openai_responses_websocket_flow
 from tests.model_provider_websocket_helpers import (
-    ScheduledWebSocketTrim,
-    capture_deferred_websocket_trims,
     feed_websocket_server_message,
     openai_websocket_usage_frame,
-    run_deferred_websocket_trims,
     set_websocket_message,
 )
 from tests.usage_helpers import assert_usage_event_rows
@@ -29,8 +31,8 @@ _PARSE_WARNING_MESSAGE = "Model provider WebSocket usage extraction failed"
 
 
 @pytest.fixture
-def deferred_websocket_trims(monkeypatch: pytest.MonkeyPatch) -> list[ScheduledWebSocketTrim]:
-    return capture_deferred_websocket_trims(monkeypatch)
+def deferred_websocket_trims(monkeypatch: pytest.MonkeyPatch) -> list[ScheduledCallback]:
+    return capture_deferred_callbacks(monkeypatch)
 
 
 async def test_websocket_usage_diagnostics_bound_encoding_and_output_before_recovery(
@@ -64,7 +66,7 @@ async def test_websocket_usage_diagnostics_bound_encoding_and_output_before_reco
                 feed_websocket_server_message(flow, _INTEGER_LIMIT_FRAME)
             # A writer that keeps pace must not turn a queue bound into a
             # misleading lifetime-output bound. Also release deferred history.
-            run_deferred_websocket_trims(deferred_websocket_trims)
+            run_deferred_callbacks(deferred_websocket_trims)
             assert logging_utils.flush_log_path(str(proxy_log))
             assert encoded_warnings == 4
             if batch == 0:
@@ -83,7 +85,7 @@ async def test_websocket_usage_diagnostics_bound_encoding_and_output_before_reco
             assert flow.websocket is not None
             assert flow.websocket.messages[-1].content == _WORK_LIMIT_FRAME
             assert not flow.websocket.messages[-1].dropped
-            run_deferred_websocket_trims(deferred_websocket_trims)
+            run_deferred_callbacks(deferred_websocket_trims)
             assert logging_utils.flush_log_path(str(proxy_log))
 
         entries = read_jsonl_entries_after_flush(proxy_log)
@@ -100,7 +102,7 @@ async def test_websocket_usage_diagnostics_bound_encoding_and_output_before_reco
             flow, openai_websocket_usage_frame("after-errors", input_tokens=7, output_tokens=2)
         )
         feed_websocket_server_message(flow, _INTEGER_LIMIT_FRAME)
-        run_deferred_websocket_trims(deferred_websocket_trims)
+        run_deferred_callbacks(deferred_websocket_trims)
         mitm_addon.websocket_end(flow)
         usage.flush_usage_events(trigger="test")
 
@@ -135,7 +137,7 @@ async def test_websocket_usage_diagnostic_budget_isolated_and_released(
         completion = feed_websocket_server_message(second, _WORK_LIMIT_FRAME)
         assert completion is not None
         await completion
-    run_deferred_websocket_trims(deferred_websocket_trims)
+    run_deferred_callbacks(deferred_websocket_trims)
 
     for log, expected_error in (
         (first_log, "integer value limit exceeded"),
@@ -160,7 +162,7 @@ async def test_websocket_usage_diagnostic_budget_isolated_and_released(
     before_late_message = read_jsonl_entries_after_flush(first_log)
     set_websocket_message(first, from_client=False, content=_INTEGER_LIMIT_FRAME)
     mitm_addon.websocket_message(first)
-    run_deferred_websocket_trims(deferred_websocket_trims)
+    run_deferred_callbacks(deferred_websocket_trims)
     assert read_jsonl_entries_after_flush(first_log) == before_late_message
 
     # A new upgraded flow gets its own prefix even after the old one terminates.
@@ -170,7 +172,7 @@ async def test_websocket_usage_diagnostic_budget_isolated_and_released(
     mitm_addon.responseheaders(fresh)
     for _ in range(10):
         feed_websocket_server_message(fresh, _INTEGER_LIMIT_FRAME)
-    run_deferred_websocket_trims(deferred_websocket_trims)
+    run_deferred_callbacks(deferred_websocket_trims)
     assert len(read_jsonl_entries_after_flush(fresh_log)) == 4
     mitm_addon.websocket_end(second)
     mitm_addon.websocket_end(fresh)

@@ -120,7 +120,11 @@ internal class ChatSentImageViewerRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithContentDescription(fixture.first).performClick()
         awaitImage(fixture.first)
         val image = compose.onNodeWithTag("artifact_image_transform")
-        image.performKeyInput { pressKey(Key.Plus) }
+        val zoom =
+            image.fetchSemanticsNode().config[SemanticsActions.CustomActions].single {
+                it.label == "Zoom in"
+            }
+        compose.runOnIdle { assertTrue(zoom.action()) }
         compose.waitUntil(5_000) {
             image.fetchSemanticsNode().config[SemanticsActions.CustomActions].any {
                 it.label == "Fit image"

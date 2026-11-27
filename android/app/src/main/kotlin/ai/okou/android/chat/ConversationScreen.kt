@@ -904,10 +904,16 @@ internal fun ConversationRoute(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (showTimeline && showHistoryProgress) {
-                    if (visible && !historyProgressShown) SideEffect { historyProgressShown = true }
-                    Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
-                        ContentReadProgress(R.string.history_syncing)
+                if (showTimeline) {
+                    if (showHistoryProgress && visible && !historyProgressShown) {
+                        SideEffect { historyProgressShown = true }
+                    }
+                    key(model, threadId) {
+                        ContentReadProgress(
+                            R.string.history_syncing,
+                            visible = showHistoryProgress,
+                            modifier = Modifier.fillMaxWidth().testTag("history_sync_progress"),
+                        )
                     }
                 }
             }

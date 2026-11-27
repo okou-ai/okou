@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { LEGACY_MODEL_PROVIDER_ENV_PLACEHOLDERS } from "../model-provider-firewalls";
 import {
   getModelProviderEnvBindings,
   getFrameworkForType,
@@ -35,10 +34,7 @@ describe("model-first canonical catalog", () => {
       "OPENAI_API_KEY",
     ]);
     const values = MODEL_PROVIDER_ENV_PLACEHOLDERS;
-    const allValues = [
-      ...Object.values(LEGACY_MODEL_PROVIDER_ENV_PLACEHOLDERS),
-      ...Object.values(values),
-    ];
+    const allValues = Object.values(values);
     expect(new Set(allValues).size).toBe(allValues.length);
     for (const value of Object.values(values)) {
       expect(value).toContain("OkouModelProvider");
