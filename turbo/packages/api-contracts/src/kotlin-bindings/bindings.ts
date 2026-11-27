@@ -52,6 +52,7 @@ import {
   billingStatusContract,
   billingUsagePackCreditsContract,
 } from "../contracts/billing";
+import { artifactAccessContract } from "../contracts/artifact-access";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { chatRelationsContract } from "../contracts/chat-relations";
 import { artifactDownloadsContract } from "../contracts/artifact-downloads";
@@ -343,6 +344,17 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     name: "artifactSitePreview",
     response: "ArtifactSitePreview",
     route: hostContract.sitePreview,
+  },
+  {
+    name: "artifactVisibility",
+    response: "ArtifactVisibility",
+    route: artifactAccessContract.getVisibility,
+  },
+  {
+    name: "updateArtifactVisibility",
+    response: "ArtifactVisibility",
+    request: "ArtifactVisibilityUpdate",
+    route: artifactAccessContract.updateVisibility,
   },
   {
     name: "artifactShareStatus",
@@ -815,6 +827,16 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "ArtifactSitePreview",
     schema: hostContract.sitePreview.responses[200],
     direction: "output",
+  },
+  {
+    name: "ArtifactVisibility",
+    schema: artifactAccessContract.getVisibility.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ArtifactVisibilityUpdate",
+    schema: artifactAccessContract.updateVisibility.body,
+    direction: "input",
   },
   {
     name: "ArtifactShareStatus",

@@ -213,7 +213,12 @@ export const resolveOwnedArtifactAccessTarget$ = command(
       .from(artifacts)
       .where(
         and(
-          eq(artifacts.id, args.artifactId),
+          or(
+            eq(artifacts.id, args.artifactId),
+            eq(artifacts.entityId, args.artifactId),
+            eq(artifacts.projectionFileId, args.artifactId),
+            eq(artifacts.logicalKey, `site:${args.artifactId}`),
+          ),
           eq(artifacts.orgId, args.orgId),
           eq(artifacts.authorUserId, args.userId),
           isNull(artifacts.deletedAt),

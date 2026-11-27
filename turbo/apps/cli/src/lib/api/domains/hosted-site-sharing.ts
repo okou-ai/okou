@@ -1,13 +1,14 @@
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import {
+  artifactAccessContract,
+  artifactVisibilityResponseSchema,
+} from "@okouai/api-contracts/contracts/artifact-access";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import {
   hostedSiteVisibilityStatusSchema,
   type HostedSiteVisibility,
 } from "@okouai/api-contracts/contracts/hosted-site-access";
-import {
-  hostedSiteSharingContract,
-  hostedSiteShareSchema,
-} from "@okouai/api-contracts/contracts/hosted-site-sharing";
+import { hostedSiteShareSchema } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import {
   featureSwitchesContract,
   featureSwitchesResponseSchema,
@@ -55,54 +56,72 @@ export async function getHostedSiteVisibility(publicSlug: string) {
     throw new ApiRequestError("Published website not found", "NOT_FOUND", 404);
   }
   const { siteId } = alias.body.pointer;
-  const response = await client.siteVisibility({
-    params: { siteId },
+  const accessClient = initClient(
+    artifactAccessContract,
+    await getClientConfig(),
+  );
+  const response = await accessClient.getVisibility({
+    params: { artifactId: siteId },
     fetchOptions: { cache: "no-store" },
   });
   if (response.status !== 200) {
     handleError(response, "Website visibility is not available");
   }
-  const current = hostedSiteVisibilityStatusSchema.parse(response.body);
-  if (current.siteId !== siteId) {
-    throw new Error("The API returned visibility for a different website");
-  }
-  return current;
+  const parsed = artifactVisibilityResponseSchema.parse(response.body);
+  return hostedSiteVisibilityStatusSchema.parse({
+    siteId,
+    visibility: parsed.visibility,
+    revision: parsed.revision,
+  });
 }
 
 export async function updateHostedSiteVisibility(
   current: VisibilityStatus,
   visibility: HostedSiteVisibility,
 ) {
-  const client = initClient(hostContract, await getClientConfig());
-  const response = await client.updateSiteVisibility({
-    params: { siteId: current.siteId },
+  const accessClient = initClient(
+    artifactAccessContract,
+    await getClientConfig(),
+  );
+  const response = await accessClient.updateVisibility({
+    params: { artifactId: current.siteId },
     body: { visibility, expectedRevision: current.revision },
   });
   if (response.status !== 200) {
     handleError(response, "Could not update website visibility");
   }
-  const saved = hostedSiteVisibilityStatusSchema.parse(response.body);
-  if (saved.siteId !== current.siteId || saved.visibility !== visibility) {
+  const parsed = artifactVisibilityResponseSchema.parse(response.body);
+  if (parsed.visibility !== visibility) {
     throw new Error(
       "The API did not confirm the requested website visibility. No email invitations were requested.",
     );
   }
-  return saved;
+  return hostedSiteVisibilityStatusSchema.parse({
+    siteId: current.siteId,
+    visibility: parsed.visibility,
+    revision: parsed.revision,
+  });
 }
 
 export async function shareHostedSiteByEmail(
   siteId: string,
   email: string,
 ): Promise<HostedSiteShare> {
-  const client = initClient(hostedSiteSharingContract, await getClientConfig());
-  const response = await client.share({
-    params: { siteId },
+  const accessClient = initClient(
+    artifactAccessContract,
+    await getClientConfig(),
+  );
+  const response = await accessClient.addShare({
+    params: { artifactId: siteId },
     body: { email },
   });
   if (response.status !== 200) {
     handleError(response, "Could not process the website sharing invitation");
   }
-  const share = hostedSiteShareSchema.parse(response.body.share);
+  const share = hostedSiteShareSchema.parse({
+    id: response.body.share.id,
+    email: response.body.share.email,
+  });
   if (share.email !== email) {
     throw new Error("The API did not confirm the requested invitation email");
   }

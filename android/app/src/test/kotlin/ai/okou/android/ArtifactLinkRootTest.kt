@@ -22,8 +22,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
@@ -45,11 +43,12 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
         val reads = CopyOnWriteArrayList<String>()
         val releaseChecklist = CountDownLatch(1)
         app.fixture.commandResponse = { request ->
-            if (request.path == "/api/artifact-shares/status") {
-                assertEquals("POST", request.method)
-                val body = request.body.readUtf8()
-                reads += body
-                val id = parse(body).jsonObject.getValue("id").jsonPrimitive.content
+            val path = request.path.orEmpty()
+            val match = Regex("^/api/artifacts/([^/]+)/visibility$").matchEntire(path)
+            if (match != null) {
+                assertEquals("GET", request.method)
+                val id = match.groupValues[1]
+                reads += id
                 if (id == fixture.checklist.id) check(releaseChecklist.await(15, TimeUnit.SECONDS))
                 policy(id)
             } else previous(request)
@@ -84,10 +83,8 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
         compose.waitUntil(5_000) { clipboard.primaryClip != null }
         assertEquals(ownerLink, clipboard.primaryClip?.getItemAt(0)?.text?.toString())
         assertEquals(
-            listOf(fixture.checklist.id, fixture.image.id).map { id ->
-                parse("""{"kind":"file","id":"$id"}""")
-            },
-            reads.map(::parse),
+            listOf(fixture.checklist.id, fixture.image.id),
+            reads,
         )
         assertNull(shadowOf(compose.activity).nextStartedActivity)
     }
@@ -101,20 +98,21 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
         val respond = CountDownLatch(1)
         val saved = AtomicBoolean()
         app.fixture.commandResponse = { request ->
-            when (request.path) {
-                "/api/artifact-shares/status" ->
+            if (request.path == "/api/artifacts/${fixture.checklist.id}/visibility") {
+                if (request.method == "GET") {
                     policy(
                         fixture.checklist.id,
                         if (saved.get()) "organization" else "private",
                     )
-                "/api/artifact-shares" -> {
-                    assertEquals("PUT", request.method)
+                } else {
+                    assertEquals("PATCH", request.method)
                     writes += request.body.readUtf8()
                     check(respond.await(15, TimeUnit.SECONDS))
                     saved.set(true)
                     policy(fixture.checklist.id, "organization")
                 }
-                else -> previous(request)
+            } else {
+                previous(request)
             }
         }
 
@@ -135,9 +133,7 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
         val current = "Current access · Workspace members · Launch team"
         awaitText(current)
         assertEquals(
-            parse(
-                """{"target":{"kind":"file","id":"${fixture.checklist.id}"},"audience":"organization"}""",
-            ),
+            parse("""{"visibility":"organization"}"""),
             parse(writes.single()),
         )
         compose.onNodeWithContentDescription("Back").performClick()
@@ -159,17 +155,17 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
         val calls = CopyOnWriteArrayList<String>()
         val verify = CountDownLatch(1)
         app.fixture.commandResponse = { request ->
-            when (request.path) {
-                "/api/artifact-shares/status" -> {
+            if (request.path == "/api/artifacts/${fixture.checklist.id}/visibility") {
+                if (request.method == "GET") {
                     calls += "read"
                     if (calls.size > 1) check(verify.await(15, TimeUnit.SECONDS))
                     policy(fixture.checklist.id)
-                }
-                "/api/artifact-shares" -> {
+                } else {
                     calls += "write"
                     MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                 }
-                else -> previous(request)
+            } else {
+                previous(request)
             }
         }
         try {
@@ -214,16 +210,16 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
                         """{"siteId":"$siteId","publicSlug":"fixture","url":"https://fixture.okou.app/","isActive":true,"effectiveUrl":"$siteAddress"}""",
                     )
                 }
-                "/api/host/sites/${fixture.site.id}/visibility" ->
+                "/api/artifacts/${fixture.site.id}/visibility" ->
                     if (request.method == "GET") {
                         jsonResponse(
-                            """{"siteId":"${fixture.site.id}","visibility":"public","revision":"$revision"}""",
+                            """{"artifactId":"${fixture.site.id}","kind":"hosted-site","visibility":"public","revision":"$revision","ownerUrl":"$siteAddress","shareUrl":"$siteAddress","shortUrl":"$siteAddress","organization":{"id":"$workspaceId","name":"Launch team"}}""",
                         )
                     } else {
                         assertEquals("PATCH", request.method)
                         writes += request.body.readUtf8()
                         jsonResponse(
-                            """{"siteId":"${fixture.site.id}","visibility":"private","revision":null}""",
+                            """{"artifactId":"${fixture.site.id}","kind":"hosted-site","visibility":"private","revision":null,"ownerUrl":"$siteAddress","shareUrl":null,"shortUrl":null,"organization":{"id":"$workspaceId","name":"Launch team"}}""",
                         )
                     }
                 else -> previous(request)
@@ -302,10 +298,8 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
     private fun policy(id: String, audience: String = "private"): MockResponse {
         val open = audience != "private"
         val url = if (open) "\"$sharedLink\"" else "null"
-        val target = if (open) """{"kind":"file","id":"$id"}""" else "null"
-        val shareId = if (open) "\"00000000-0000-4000-8000-000000000100\"" else "null"
         return jsonResponse(
-            """{"ownerUrl":"$ownerLink","shareId":$shareId,"audience":"$audience","organization":{"id":"org","name":"Launch team"},"selectedTarget":$target,"selectedVersion":null,"candidateVersion":null,"url":$url,"shortUrl":$url}""",
+            """{"artifactId":"$id","kind":"file","visibility":"$audience","revision":null,"ownerUrl":"$ownerLink","shareUrl":$url,"shortUrl":$url,"organization":{"id":"org","name":"Launch team"}}""",
         )
     }
 

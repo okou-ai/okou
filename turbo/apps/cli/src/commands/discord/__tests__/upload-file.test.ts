@@ -229,9 +229,10 @@ describe("okou discord upload-file", () => {
     );
 
     await expect(upload(["--json"])).rejects.toThrow("process.exit called");
-    expect(printedJson()).toStrictEqual(envelope({ status: "pending" }));
-    expect(warnings.mock.calls.flat().join("\n")).toContain(
-      `check delivery status, reuse the same file and destination with --operation-id ${OPERATION_ID}; delivery will not be resent`,
+    expect(output).not.toHaveBeenCalled();
+    expect(warnings).not.toHaveBeenCalled();
+    expect(errors.mock.calls.flat().join("\n")).toContain(
+      "Delivery acknowledgement lost",
     );
 
     await upload(["--json"]);
@@ -291,26 +292,14 @@ describe("okou discord upload-file", () => {
     await upload(["--json"]);
 
     expect(printedJson()).toStrictEqual(envelope({ status: "pending" }));
-    expect(warnings).toHaveBeenLastCalledWith(
-      `Upload operation: ${OPERATION_ID}`,
-    );
+    expect(warnings).not.toHaveBeenCalled();
   });
 
-  it("reports its generated operation ID when initialization fails", async () => {
+  it("sends a generated operation ID and exits when initialization fails", async () => {
     server.use(
       http.post(`${API}/init`, async ({ request }) => {
         const body: unknown = await request.json();
         expect(body).toMatchObject({ operationId: expect.any(String) });
-        if (
-          typeof body !== "object" ||
-          body === null ||
-          !("operationId" in body)
-        ) {
-          throw new Error("Expected operation ID");
-        }
-        expect(warnings.mock.calls.flat().join("\n")).toContain(
-          String(body.operationId),
-        );
         return HttpResponse.json(
           {
             error: {
@@ -337,6 +326,7 @@ describe("okou discord upload-file", () => {
     expect(errors.mock.calls.flat().join("\n")).toContain(
       "Discord feature is disabled",
     );
+    expect(warnings).not.toHaveBeenCalled();
     expect(output).not.toHaveBeenCalled();
   });
 
@@ -355,8 +345,8 @@ describe("okou discord upload-file", () => {
     expect(errors.mock.calls.flat().join("\n")).toContain(
       "Canonical file upload failed (HTTP 403)",
     );
-    expect(warnings.mock.calls.flat().join("\n")).toContain(
-      `--operation-id ${OPERATION_ID}`,
+    expect(warnings.mock.calls.flat().join("\n")).not.toContain(
+      "--operation-id",
     );
     expect(output).not.toHaveBeenCalled();
   });

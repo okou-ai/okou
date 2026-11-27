@@ -62,10 +62,6 @@ function readUploadFile(path: string): {
   return { content: readFileSync(path), size };
 }
 
-function warnDeliveryRetry(operationId: string): void {
-  console.warn(chalk.dim(`  Retry with --operation-id ${operationId}`));
-}
-
 type SlackUploadOutput = Pick<MessageSendOutput, "messages" | "delivery"> & {
   readonly fileUrl: string | null;
 };
@@ -126,7 +122,6 @@ function failedSlackDelivery(
   error: string,
 ): Pick<MessageSendOutput, "messages" | "delivery"> {
   console.warn(chalk.yellow(`⚠ Slack delivery failed: ${error}`));
-  warnDeliveryRetry(operationId);
   return { messages: [], delivery: { status: "failed", error, operationId } };
 }
 
@@ -136,16 +131,10 @@ async function publishCanonicalFile(
   fileContent: Buffer,
 ): Promise<SlackUploadOutput> {
   await uploadCanonicalBody(initialized, contentType, fileContent);
-  let materialized: Awaited<ReturnType<typeof deliverSlackFileUpload>>;
-  try {
-    materialized = await deliverSlackFileUpload({
-      assetId: initialized.assetId,
-      operationId: initialized.operationId,
-    });
-  } catch (error) {
-    warnDeliveryRetry(initialized.operationId);
-    throw error;
-  }
+  const materialized = await deliverSlackFileUpload({
+    assetId: initialized.assetId,
+    operationId: initialized.operationId,
+  });
   const fileUrl = materialized.url;
 
   if (materialized.delivery.status === "delivered") {

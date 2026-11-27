@@ -1,3 +1,4 @@
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { HostedSiteVisibility } from "@okouai/api-contracts/contracts/hosted-site-access";
@@ -77,14 +78,28 @@ export async function openSharing(
       expiresAt: privatePreview ? "2099-01-01T00:00:00.000Z" : null,
     });
   });
-  context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
-    await options.visibilityRead;
-    return options.denyVisibility
-      ? respond(403, { error: { code: "FORBIDDEN", message: "Access denied" } })
-      : respond(200, { siteId: site, visibility: audience, revision });
-  });
   context.mocks.api(
-    hostContract.updateSiteVisibility,
+    artifactAccessContract.getVisibility,
+    async ({ respond }) => {
+      await options.visibilityRead;
+      return options.denyVisibility
+        ? respond(403, {
+            error: { code: "FORBIDDEN", message: "Access denied" },
+          })
+        : respond(200, {
+            artifactId: site,
+            kind: "hosted-site",
+            visibility: audience,
+            revision,
+            ownerUrl: stable,
+            shareUrl: audience === "public" ? stable : null,
+            shortUrl: null,
+            organization: { id: "org_default", name: "Default Org" },
+          });
+    },
+  );
+  context.mocks.api(
+    artifactAccessContract.updateVisibility,
     async ({ body, respond }) => {
       await options.beforeWrite?.(body.visibility);
       if (body.expectedRevision !== revision) {
@@ -97,7 +112,16 @@ export async function openSharing(
       }
       audience = body.visibility;
       revision = crypto.randomUUID();
-      return respond(200, { siteId: site, visibility: audience, revision });
+      return respond(200, {
+        artifactId: site,
+        kind: "hosted-site",
+        visibility: audience,
+        revision,
+        ownerUrl: stable,
+        shareUrl: audience === "public" ? stable : null,
+        shortUrl: null,
+        organization: { id: "org_default", name: "Default Org" },
+      });
     },
   );
   context.mocks.api(hostContract.siteBanner, ({ respond }) => {

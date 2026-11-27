@@ -117,7 +117,6 @@ Notes:
           options.contentType ?? inferContentType(options.file);
         const fileContent = readFileSync(options.file);
         const operationId = options.operationId ?? randomUUID();
-        console.warn(`Upload operation: ${operationId}`);
         const prepared = await initTeamsFileUpload({
           canonical: {
             version: 2,

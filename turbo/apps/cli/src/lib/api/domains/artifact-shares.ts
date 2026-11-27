@@ -1,10 +1,13 @@
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
+  artifactAccessContract,
+  type ArtifactVisibilityResponse,
+} from "@okouai/api-contracts/contracts/artifact-access";
+import {
   artifactReferencesContract,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import {
-  artifactSharesContract,
   artifactShareTargetSchema,
   type ArtifactShareStatus,
   type ArtifactShareTarget,
@@ -12,18 +15,27 @@ import {
 import { getPlatformOrigin } from "../../platform-url";
 import { getClientConfig, handleError } from "../core/client-factory";
 
+function toShareStatus(
+  target: ArtifactShareTarget,
+  response: ArtifactVisibilityResponse,
+): ArtifactShareStatus {
+  return {
+    ownerUrl: response.ownerUrl ?? "",
+    shareId: null,
+    audience: response.visibility,
+    organization: response.organization,
+    selectedTarget: response.visibility === "private" ? null : target,
+    selectedVersion: null,
+    candidateVersion: null,
+    url: response.shareUrl,
+    shortUrl: response.shortUrl,
+  };
+}
+
 export async function getArtifactSharingAvailability(): Promise<{
   enabled: boolean;
 }> {
-  const client = initClient(artifactSharesContract, await getClientConfig());
-  const response = await client.availability();
-  if (response.status !== 200) {
-    handleError(
-      response,
-      "--visibility requires an API that supports private creation. Start a new run.",
-    );
-  }
-  return response.body;
+  return await Promise.resolve({ enabled: true });
 }
 
 export async function resolveArtifactShareTarget(
@@ -56,12 +68,14 @@ export async function resolveArtifactShareTarget(
 export async function getArtifactShareStatus(
   target: ArtifactShareTarget,
 ): Promise<ArtifactShareStatus> {
-  const client = initClient(artifactSharesContract, await getClientConfig());
-  const response = await client.status({ body: target });
+  const client = initClient(artifactAccessContract, await getClientConfig());
+  const response = await client.getVisibility({
+    params: { artifactId: target.id },
+  });
   if (response.status !== 200) {
     handleError(response, "Could not read artifact sharing");
   }
-  return response.body;
+  return toShareStatus(target, response.body);
 }
 
 export async function setArtifactAudience(
@@ -84,13 +98,16 @@ export async function setArtifactAudience(
   ) {
     return status;
   }
-  const client = initClient(artifactSharesContract, await getClientConfig());
-  const response = await client.update({ body: { target, audience } });
+  const client = initClient(artifactAccessContract, await getClientConfig());
+  const response = await client.updateVisibility({
+    params: { artifactId: target.id },
+    body: { visibility: audience },
+  });
   if (response.status !== 200) {
     handleError(
       response,
       "Could not change artifact visibility. Rerun without --visibility before retrying; the change may have applied.",
     );
   }
-  return response.body;
+  return toShareStatus(target, response.body);
 }

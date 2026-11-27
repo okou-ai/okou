@@ -2,7 +2,8 @@ import { createSharePeopleSignals } from "./share-people.ts";
 import { command, computed, state, type Computed } from "ccstate";
 import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
-import { artifactSharesContract } from "@okouai/api-contracts/client/artifact-shares";
+import { artifactAccessContract } from "@okouai/api-contracts/client/artifact-access";
+import type { ArtifactVisibilityResponse } from "@okouai/api-contracts/contracts/artifact-access";
 import type {
   ArtifactShareStatus,
   ArtifactShareTarget,
@@ -42,8 +43,26 @@ export interface ArtifactShareSource {
 }
 type Audience = ArtifactShareStatus["audience"];
 
+function visibilityToShareStatus(
+  target: ArtifactShareTarget,
+  response: ArtifactVisibilityResponse,
+): ArtifactShareStatus {
+  return {
+    ownerUrl: response.ownerUrl ?? location.href,
+    shareId: null,
+    audience: response.visibility,
+    organization: response.organization,
+    selectedTarget: response.visibility === "private" ? null : target,
+    selectedVersion: null,
+    candidateVersion: null,
+    url: response.shareUrl,
+    shortUrl: response.shortUrl,
+  };
+}
+
 function ownedShareDetails(
   target: ArtifactShareTarget,
+  artifactId: string,
   status: ArtifactShareStatus,
   fragment: string,
 ) {
@@ -53,7 +72,13 @@ function ownedShareDetails(
     status.selectedTarget && status.selectedTarget.id !== target.id
       ? "private"
       : status.audience;
-  return { target, status, audience, copyUrl: copyUrl.href } as const;
+  return {
+    target,
+    artifactId,
+    status,
+    audience,
+    copyUrl: copyUrl.href,
+  } as const;
 }
 
 async function loadShareDetails(
@@ -87,6 +112,7 @@ async function loadShareDetails(
   if (resolved?.sharedThreadSnapshot) {
     return {
       target,
+      artifactId: target.id,
       status: null,
       audience: undefined,
       copyUrl: new URL(source.copyUrl ?? source.url, location.origin).href,
@@ -95,18 +121,24 @@ async function loadShareDetails(
   // Viewing access does not imply ownership. Only this endpoint authorizes the
   // permission controls; its 404 response identifies a read-only recipient.
   const result = await accept(
-    client(artifactSharesContract).status({
-      body: target,
-      fetchOptions: { signal },
+    client(artifactAccessContract).getVisibility({
+      params: { artifactId: target.id },
+      fetchOptions: { signal, cache: "no-store" },
     }),
     [200, 404],
     signal,
   );
   if (result.status === 200) {
-    return ownedShareDetails(target, result.body, reference?.fragment ?? "");
+    return ownedShareDetails(
+      target,
+      result.body.artifactId,
+      visibilityToShareStatus(target, result.body),
+      reference?.fragment ?? "",
+    );
   }
   return {
     target,
+    artifactId: target.id,
     status: null,
     audience: undefined,
     copyUrl: new URL(source.copyUrl ?? source.url, location.origin).href,
@@ -175,8 +207,9 @@ function createAudienceSignals(source: ArtifactShareSource) {
         return;
       }
       const updated = await accept(
-        get(apiClient$)(artifactSharesContract).update({
-          body: { target: details.target, audience },
+        get(apiClient$)(artifactAccessContract).updateVisibility({
+          params: { artifactId: details.artifactId },
+          body: { visibility: audience },
           fetchOptions: { signal },
         }),
         [200],
@@ -187,7 +220,8 @@ function createAudienceSignals(source: ArtifactShareSource) {
         initialRead,
         details: ownedShareDetails(
           details.target,
-          updated.body,
+          updated.body.artifactId,
+          visibilityToShareStatus(details.target, updated.body),
           new URL(details.copyUrl).hash,
         ),
       });

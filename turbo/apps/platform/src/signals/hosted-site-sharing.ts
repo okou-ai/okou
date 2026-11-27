@@ -8,6 +8,7 @@ import {
   type State,
 } from "ccstate";
 import type { infer as zInfer } from "zod";
+import { artifactAccessContract } from "@okouai/api-contracts/client/artifact-access";
 import { hostContract } from "@okouai/api-contracts/client/host";
 import { hostedSiteUrlSlugSchema } from "@okouai/api-contracts/validators/host";
 import type { hostedSiteUrlSchema } from "@okouai/api-contracts/contracts/host";
@@ -62,13 +63,20 @@ function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
     }
     get(reload$);
     const result = await accept(
-      get(apiClient$)(hostContract).siteVisibility({
-        params: { siteId: site.siteId },
+      get(apiClient$)(artifactAccessContract).getVisibility({
+        params: { artifactId: site.siteId },
         fetchOptions: { cache: "no-store" },
       }),
       [200, 404],
     );
-    return result.status === 200 ? result.body : null;
+    return result.status === 200
+      ? {
+          siteId: site.siteId,
+          artifactId: result.body.artifactId,
+          visibility: result.body.visibility,
+          revision: result.body.revision,
+        }
+      : null;
   });
   const persist$ = command(
     async ({ get, set }, visibility: Visibility, signal: AbortSignal) => {
@@ -78,8 +86,8 @@ function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
         return false;
       }
       await accept(
-        get(apiClient$)(hostContract).updateSiteVisibility({
-          params: { siteId: details.siteId },
+        get(apiClient$)(artifactAccessContract).updateVisibility({
+          params: { artifactId: details.artifactId },
           body: { visibility, expectedRevision: details.revision },
           fetchOptions: { signal },
         }),

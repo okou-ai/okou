@@ -140,39 +140,26 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
     size: content.byteLength,
     json: options.json,
   };
-  console.warn(`Upload operation: ${operationId}`);
-  try {
-    const initialized = await initWechatFileUpload({
-      filename,
-      length: content.byteLength,
-      contentType,
-      checksumSha256: createHash("sha256").update(content).digest("hex"),
-      operationId,
-      channelId,
-      ...(options.text === undefined ? {} : { comment: options.text }),
-    });
-    await uploadCanonicalBody(initialized, contentType, content);
-    const operation = { assetId: initialized.assetId, operationId };
-    const materialized = await materializeWechatFileUpload(operation);
-    if (materialized.delivery.status === "delivered") {
-      printDelivery(materialized, upload);
-      return;
-    }
-    let completed: WechatUploadMaterializeResponse;
-    try {
-      completed = await completeWechatFileUpload(operation);
-    } catch (error) {
-      // Publication has succeeded even if the delivery response was lost.
-      printDelivery(materialized, upload);
-      throw error;
-    }
-    printDelivery(completed, upload);
-  } catch (error) {
-    console.warn(
-      `To resume publication or check delivery status, reuse the same file and destination with --operation-id ${operationId}; delivery will not be resent.`,
-    );
-    throw error;
+  // External IM delivery is fire-and-forget; generate a fresh operationId for
+  // Release 1 backend compatibility without exposing a retry state machine.
+  const initialized = await initWechatFileUpload({
+    filename,
+    length: content.byteLength,
+    contentType,
+    checksumSha256: createHash("sha256").update(content).digest("hex"),
+    operationId,
+    channelId,
+    ...(options.text === undefined ? {} : { comment: options.text }),
+  });
+  await uploadCanonicalBody(initialized, contentType, content);
+  const operation = { assetId: initialized.assetId, operationId };
+  const materialized = await materializeWechatFileUpload(operation);
+  if (materialized.delivery.status === "delivered") {
+    printDelivery(materialized, upload);
+    return;
   }
+  const completed = await completeWechatFileUpload(operation);
+  printDelivery(completed, upload);
 }
 
 export const uploadFileCommand = new Command()

@@ -1,7 +1,7 @@
 import { command, computed, state, type Computed } from "ccstate";
 import type { infer as zInfer } from "zod";
 import type { hostedSiteShareSchema } from "@okouai/api-contracts/contracts/hosted-site-sharing";
-import { artifactSharingContract } from "@okouai/api-contracts/client/artifact-sharing";
+import { artifactAccessContract } from "@okouai/api-contracts/client/artifact-access";
 import { hostedSiteShareEmailSchema } from "@okouai/api-contracts/validators/hosted-site-sharing";
 import type { ArtifactSharingTarget } from "@okouai/api-contracts/contracts/artifact-sharing";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -32,8 +32,8 @@ function createPeopleSearch(
         return [];
       }
       const result = await accept(
-        get(apiClient$)(artifactSharingContract).search({
-          params: site,
+        get(apiClient$)(artifactAccessContract).searchShareAccounts({
+          params: { artifactId: site.id },
           query: { query },
           fetchOptions: { signal, cache: "no-store" },
         }),
@@ -89,14 +89,16 @@ function createPeopleList(
       return async (client: ApiClientFactory, resource: SharingResource) => {
         signal.throwIfAborted();
         const response = await accept(
-          client(artifactSharingContract).list({
-            params: resource,
+          client(artifactAccessContract).listShares({
+            params: { artifactId: resource.id },
             fetchOptions: { cache: "no-store", signal },
           }),
           [200],
           signal,
         );
-        return response.body.shares;
+        return response.body.shares.map((share) => {
+          return { id: share.id, email: share.email };
+        });
       };
     });
   });
@@ -117,8 +119,8 @@ export function createSharePeopleSignals(
         return;
       }
       await accept(
-        get(apiClient$)(artifactSharingContract).share({
-          params: site,
+        get(apiClient$)(artifactAccessContract).addShare({
+          params: { artifactId: site.id },
           body: { email },
           fetchOptions: { signal },
         }),
@@ -146,8 +148,8 @@ export function createSharePeopleSignals(
         return;
       }
       await accept(
-        get(apiClient$)(artifactSharingContract).remove({
-          params: { ...site, shareId },
+        get(apiClient$)(artifactAccessContract).removeShare({
+          params: { artifactId: site.id, shareId },
           fetchOptions: { signal },
         }),
         [200],

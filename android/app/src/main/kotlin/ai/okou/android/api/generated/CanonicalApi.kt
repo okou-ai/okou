@@ -113,6 +113,12 @@ internal interface CanonicalApi {
     @GET("/api/host/sites/{publicSlug}/preview")
     suspend fun `artifactSitePreview`(@Header("Authorization") token: String, @Path("publicSlug") `pathPublicSlug`: String, @Query("hostname") `queryHostname`: String): Response<ArtifactSitePreview>
 
+    @GET("/api/artifacts/{artifactId}/visibility")
+    suspend fun `artifactVisibility`(@Header("Authorization") token: String, @Path("artifactId") `pathArtifactId`: String): Response<ArtifactVisibility>
+
+    @PATCH("/api/artifacts/{artifactId}/visibility")
+    suspend fun `updateArtifactVisibility`(@Header("Authorization") token: String, @Path("artifactId") `pathArtifactId`: String, @Body body: ArtifactVisibilityUpdate): Response<ArtifactVisibility>
+
     @POST("/api/artifact-shares/status")
     suspend fun `artifactShareStatus`(@Header("Authorization") token: String, @Body body: ArtifactShareTarget): Response<ArtifactShareStatus>
 

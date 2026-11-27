@@ -3650,6 +3650,86 @@ data class ArtifactSitePreview(
 )
 
 @Serializable
+enum class ArtifactVisibilityKind {
+    @SerialName("file")
+    FILE,
+    @SerialName("hosted-site")
+    HOSTED_SITE,
+    @SerialName("image")
+    IMAGE,
+    @SerialName("video")
+    VIDEO,
+    @SerialName("avatar")
+    AVATAR,
+    @SerialName("presentation")
+    PRESENTATION,
+    @SerialName("shared-thread")
+    SHARED_THREAD,
+}
+
+@Serializable
+enum class ArtifactVisibilityVisibility {
+    @SerialName("private")
+    PRIVATE,
+    @SerialName("organization")
+    ORGANIZATION,
+    @SerialName("public")
+    PUBLIC,
+}
+
+@Serializable
+data class ArtifactVisibilityOrganization(
+    val `id`: String,
+    val `name`: String,
+)
+
+@Serializable
+data class ArtifactVisibility(
+    val `artifactId`: String,
+    val `kind`: ArtifactVisibilityKind,
+    val `visibility`: ArtifactVisibilityVisibility,
+    val `revision`: String?,
+    val `ownerUrl`: String?,
+    val `shareUrl`: String?,
+    val `shortUrl`: String?,
+    val `organization`: ArtifactVisibilityOrganization,
+)
+
+@Serializable
+enum class ArtifactVisibilityUpdateVisibility {
+    @SerialName("private")
+    PRIVATE,
+    @SerialName("organization")
+    ORGANIZATION,
+    @SerialName("public")
+    PUBLIC,
+}
+
+@Serializable(with = CanonicalOptionalSerializer::class)
+sealed interface CanonicalOptional<out T> {
+    data object Absent : CanonicalOptional<Nothing>
+    data class Present<T>(val value: T) : CanonicalOptional<T>
+}
+
+class CanonicalOptionalSerializer<T>(private val serializer: KSerializer<T>) : KSerializer<CanonicalOptional<T>> {
+    override val descriptor = buildClassSerialDescriptor("CanonicalOptional", serializer.descriptor)
+    override fun deserialize(decoder: Decoder): CanonicalOptional<T> =
+        CanonicalOptional.Present(decoder.decodeSerializableValue(serializer))
+    override fun serialize(encoder: Encoder, value: CanonicalOptional<T>) {
+        when (value) {
+            CanonicalOptional.Absent -> throw SerializationException("Absent field must be omitted")
+            is CanonicalOptional.Present -> encoder.encodeSerializableValue(serializer, value.value)
+        }
+    }
+}
+
+@Serializable
+data class ArtifactVisibilityUpdate(
+    val `visibility`: ArtifactVisibilityUpdateVisibility,
+    val `expectedRevision`: CanonicalOptional<String?> = CanonicalOptional.Absent,
+)
+
+@Serializable
 enum class ArtifactShareStatusAudience {
     @SerialName("private")
     PRIVATE,
@@ -5572,24 +5652,6 @@ data class WorkflowRunHistory(
     val `runs`: List<WorkflowRunHistoryEntry>,
     val `nextCursor`: String?,
 )
-
-@Serializable(with = CanonicalOptionalSerializer::class)
-sealed interface CanonicalOptional<out T> {
-    data object Absent : CanonicalOptional<Nothing>
-    data class Present<T>(val value: T) : CanonicalOptional<T>
-}
-
-class CanonicalOptionalSerializer<T>(private val serializer: KSerializer<T>) : KSerializer<CanonicalOptional<T>> {
-    override val descriptor = buildClassSerialDescriptor("CanonicalOptional", serializer.descriptor)
-    override fun deserialize(decoder: Decoder): CanonicalOptional<T> =
-        CanonicalOptional.Present(decoder.decodeSerializableValue(serializer))
-    override fun serialize(encoder: Encoder, value: CanonicalOptional<T>) {
-        when (value) {
-            CanonicalOptional.Absent -> throw SerializationException("Absent field must be omitted")
-            is CanonicalOptional.Present -> encoder.encodeSerializableValue(serializer, value.value)
-        }
-    }
-}
 
 @Serializable
 data class UpdateWorkflowRequestFilesItem(

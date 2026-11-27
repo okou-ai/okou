@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { artifactAccessContract } from "@okouai/api-contracts/contracts/artifact-access";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import type { HostedSiteVisibility } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { server } from "../../../mocks/server";
 import { createHostCommand } from "../index";
@@ -102,7 +102,16 @@ describe("hosted website email visibility", () => {
     acknowledge?: boolean;
     failEmail?: string;
   } = {}) {
-    let status = { siteId, visibility: initial, revision: randomUUID() };
+    let status = {
+      artifactId: siteId,
+      kind: "hosted-site" as const,
+      visibility: initial,
+      revision: randomUUID(),
+      ownerUrl: siteUrl,
+      shareUrl: null,
+      shortUrl: null,
+      organization: { id: "org_test", name: "Test organization" },
+    };
     const shares: { id: string; email: string }[] = [];
     server.use(
       http.get(`${base}/host/aliases/demo-site`, () => {
@@ -121,14 +130,14 @@ describe("hosted website email visibility", () => {
           },
         });
       }),
-      http.get(`${base}/host/sites/${siteId}/visibility`, () => {
+      http.get(`${base}/artifacts/${siteId}/visibility`, () => {
         events.push("read-visibility");
         return HttpResponse.json(status);
       }),
       http.patch(
-        `${base}/host/sites/${siteId}/visibility`,
+        `${base}/artifacts/${siteId}/visibility`,
         async ({ request }) => {
-          const body = hostContract.updateSiteVisibility.body.parse(
+          const body = artifactAccessContract.updateVisibility.body.parse(
             await request.json(),
           );
           events.push(`visibility:${body.visibility}`);
@@ -152,8 +161,8 @@ describe("hosted website email visibility", () => {
           return HttpResponse.json(status);
         },
       ),
-      http.post(`${base}/host/sites/${siteId}/shares`, async ({ request }) => {
-        const { email } = hostedSiteSharingContract.share.body.parse(
+      http.post(`${base}/artifacts/${siteId}/shares`, async ({ request }) => {
+        const { email } = artifactAccessContract.addShare.body.parse(
           await request.json(),
         );
         events.push(`share:${email}`);
@@ -167,7 +176,7 @@ describe("hosted website email visibility", () => {
         }
         const share = { id: randomUUID(), email };
         shares.push(share);
-        return HttpResponse.json({ share });
+        return HttpResponse.json({ share: { ...share, userId: null } });
       }),
     );
     return shares;

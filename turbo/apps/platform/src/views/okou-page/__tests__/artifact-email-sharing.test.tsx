@@ -1,13 +1,14 @@
-import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
+import {
+  artifactAccessContract,
+  type ArtifactUserShareEntry,
+  type ArtifactVisibilityResponse,
+  type ArtifactVisibilityValue,
+} from "@okouai/api-contracts/contracts/artifact-access";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   artifactReferencesContract,
   artifactReferencePath,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import {
-  artifactSharesContract,
-  type ArtifactShareStatus,
-} from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -106,49 +107,59 @@ async function previewArtifact(
   context.mocks.api(artifactReferencesContract.ownerArtifact, ({ respond }) => {
     return respond(200, { artifactId: summary.id });
   });
-  let audience: ArtifactShareStatus["audience"] = "private";
-  const status = (): ArtifactShareStatus => {
+  let audience: ArtifactVisibilityValue = "private";
+  const status = (): ArtifactVisibilityResponse => {
     return {
+      artifactId: fileId,
+      kind: "file",
+      visibility: audience,
+      revision: null,
       ownerUrl: new URL(canonical, "https://app.okou.ai").href,
-      audience,
-      shareId: audience === "private" ? null : shareId,
-      organization: { id: "org_test", name: "Acme" },
-      selectedTarget:
-        audience === "private" ? null : { kind: "file", id: fileId },
-      selectedVersion: null,
-      candidateVersion: null,
-      url: null,
+      shareUrl: null,
       shortUrl: null,
+      organization: { id: "org_test", name: "Acme" },
     };
   };
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+  context.mocks.api(artifactAccessContract.getVisibility, ({ respond }) => {
     return respond(200, status());
-  });
-  context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
-    audience = body.audience;
-    return respond(200, status());
-  });
-  let shares: { id: string; email: string }[] = [];
-  context.mocks.api(artifactSharingContract.list, ({ params, respond }) => {
-    expect(params).toMatchObject({ kind: "file", id: fileId });
-    return respond(200, { shares });
-  });
-  context.mocks.api(artifactSharingContract.search, ({ respond }) => {
-    return respond(200, { accounts: [account] });
   });
   context.mocks.api(
-    artifactSharingContract.share,
+    artifactAccessContract.updateVisibility,
+    ({ body, respond }) => {
+      audience = body.visibility;
+      return respond(200, status());
+    },
+  );
+  let shares: ArtifactUserShareEntry[] = [];
+  context.mocks.api(
+    artifactAccessContract.listShares,
+    ({ params, respond }) => {
+      expect(params).toMatchObject({ artifactId: fileId });
+      return respond(200, { shares });
+    },
+  );
+  context.mocks.api(
+    artifactAccessContract.searchShareAccounts,
+    ({ respond }) => {
+      return respond(200, { accounts: [account] });
+    },
+  );
+  context.mocks.api(
+    artifactAccessContract.addShare,
     ({ params, body, respond }) => {
-      expect(params).toMatchObject({ kind: "file", id: fileId });
+      expect(params).toMatchObject({ artifactId: fileId });
       expect(body.email).toBe(account.email);
-      shares = [{ id: shareId, email: body.email }];
+      shares = [{ id: shareId, userId: account.userId, email: body.email }];
       return respond(200, { share: shares[0]! });
     },
   );
-  context.mocks.api(artifactSharingContract.remove, ({ params, respond }) => {
-    shares = [];
-    return respond(200, { removed: params.shareId });
-  });
+  context.mocks.api(
+    artifactAccessContract.removeShare,
+    ({ params, respond }) => {
+      shares = [];
+      return respond(200, { removed: params.shareId });
+    },
+  );
   configureSharing?.();
   await setupPage({
     context,
@@ -284,21 +295,20 @@ test("A catalog publication replacing its file shares the current resource", asy
   const replacementFileId = "00000000-0000-4000-8000-000000000724";
   let currentFileId = fileId;
   let title = summary.title;
-  let audience: ArtifactShareStatus["audience"] = "private";
-  const status = (): ArtifactShareStatus => {
+  let audience: ArtifactVisibilityValue = "private";
+  const status = (): ArtifactVisibilityResponse => {
     return {
+      artifactId: currentFileId,
+      kind: "file",
+      visibility: audience,
+      revision: null,
       ownerUrl: new URL(
         artifactReferencePath(currentFileId, title),
         "https://app.okou.ai",
       ).href,
-      audience,
-      shareId: null,
-      organization: { id: "org_test", name: "Acme" },
-      selectedTarget: null,
-      selectedVersion: null,
-      candidateVersion: null,
-      url: null,
+      shareUrl: null,
       shortUrl: null,
+      organization: { id: "org_test", name: "Acme" },
     };
   };
   const { menu } = await openArtifact("catalog", true, () => {
@@ -326,28 +336,34 @@ test("A catalog publication replacing its file shares the current resource", asy
         target: { kind: "file", id: currentFileId },
       });
     });
-    context.mocks.api(artifactSharesContract.status, ({ body, respond }) => {
-      return body.id === currentFileId
-        ? respond(200, status())
-        : respond(404, {
+    context.mocks.api(
+      artifactAccessContract.getVisibility,
+      ({ params, respond }) => {
+        return params.artifactId === currentFileId
+          ? respond(200, status())
+          : respond(404, {
+              error: {
+                code: "NOT_FOUND",
+                message: "Previous file is no longer owned",
+              },
+            });
+      },
+    );
+    context.mocks.api(
+      artifactAccessContract.updateVisibility,
+      ({ params, body, respond }) => {
+        if (params.artifactId !== replacementFileId) {
+          return respond(403, {
             error: {
-              code: "NOT_FOUND",
+              code: "FORBIDDEN",
               message: "Previous file is no longer owned",
             },
           });
-    });
-    context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
-      if (body.target.id !== replacementFileId) {
-        return respond(403, {
-          error: {
-            code: "FORBIDDEN",
-            message: "Previous file is no longer owned",
-          },
-        });
-      }
-      audience = body.audience;
-      return respond(200, status());
-    });
+        }
+        audience = body.visibility;
+        return respond(200, status());
+      },
+    );
   });
   await userEvent.setup().keyboard("{Escape}");
   await waitFor(() => {
@@ -379,13 +395,13 @@ test("Closing a preview cancels its pending invitation and reopening reads the s
   const aborted = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   const processed = context.mocks.deferred<void>();
-  let shares: { id: string; email: string }[] = [];
+  let shares: ArtifactUserShareEntry[] = [];
   const { menu } = await openArtifact("catalog", true, () => {
-    context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+    context.mocks.api(artifactAccessContract.listShares, ({ respond }) => {
       return respond(200, { shares });
     });
     context.mocks.api(
-      artifactSharingContract.share,
+      artifactAccessContract.addShare,
       async ({ request, respond }) => {
         request.signal.addEventListener(
           "abort",
@@ -396,7 +412,9 @@ test("Closing a preview cancels its pending invitation and reopening reads the s
         );
         began.resolve();
         await release.promise;
-        shares = [{ id: shareId, email: account.email }];
+        shares = [
+          { id: shareId, userId: account.userId, email: account.email },
+        ];
         processed.resolve();
         return respond(200, { share: shares[0]! });
       },
@@ -442,7 +460,7 @@ test("A failed file invitation releases dismissal and keeps the address availabl
   const began = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   const { menu } = await openArtifact("catalog", true, () => {
-    context.mocks.api(artifactSharingContract.share, async ({ respond }) => {
+    context.mocks.api(artifactAccessContract.addShare, async ({ respond }) => {
       began.resolve();
       await release.promise;
       return respond(429, {
@@ -490,7 +508,7 @@ test.each(["file", "website"] as const)(
     let pending = true;
     const configure = () => {
       context.mocks.api(
-        artifactSharingContract.list,
+        artifactAccessContract.listShares,
         async ({ request, respond }) => {
           if (pending) {
             request.signal.addEventListener(
@@ -511,7 +529,9 @@ test.each(["file", "website"] as const)(
             });
           }
           return respond(200, {
-            shares: [{ id: shareId, email: account.email }],
+            shares: [
+              { id: shareId, userId: account.userId, email: account.email },
+            ],
           });
         },
       );
@@ -552,20 +572,27 @@ test.each(["invite", "remove"] as const)(
   async (operation) => {
     const began = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
-    let shares =
-      operation === "remove" ? [{ id: shareId, email: account.email }] : [];
+    let shares: ArtifactUserShareEntry[] =
+      operation === "remove"
+        ? [{ id: shareId, userId: account.userId, email: account.email }]
+        : [];
     const { menu } = await openArtifact("catalog", true, () => {
-      context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+      context.mocks.api(artifactAccessContract.listShares, ({ respond }) => {
         return respond(200, { shares });
       });
-      context.mocks.api(artifactSharingContract.share, async ({ respond }) => {
-        began.resolve();
-        await release.promise;
-        shares = [{ id: shareId, email: account.email }];
-        return respond(200, { share: shares[0]! });
-      });
       context.mocks.api(
-        artifactSharingContract.remove,
+        artifactAccessContract.addShare,
+        async ({ respond }) => {
+          began.resolve();
+          await release.promise;
+          shares = [
+            { id: shareId, userId: account.userId, email: account.email },
+          ];
+          return respond(200, { share: shares[0]! });
+        },
+      );
+      context.mocks.api(
+        artifactAccessContract.removeShare,
         async ({ params, respond }) => {
           began.resolve();
           await release.promise;
