@@ -86,7 +86,7 @@ class ScreenshotScenario {
         await(label(R.string.settings_credit_workspace))
         await(text("860"))
         await(text("2,400"))
-        await(label(R.string.settings_credit_web))
+        reveal(label(R.string.settings_credit_web))
         capture("04-credit-balance.png")
     }
 
@@ -98,6 +98,7 @@ class ScreenshotScenario {
         val previousLocale = locale.applicationLocales
         val previousSession = auth.state.value
         val previousAccount = auth.account.value
+        val previousMemberships = auth.available
         val previousChat = app.chatService
         val previousRecovery = app.recoveryService
         val previousRole = app.workspaceRole
@@ -110,6 +111,9 @@ class ScreenshotScenario {
                 app.chatService = api.service
                 app.recoveryService = api.service
                 app.workspaceRole = OrganizationRole.ADMIN
+                auth.available = previousMemberships.map {
+                    if (it.id == "org-a") it.copy(role = "org:admin") else it
+                }
                 app.initialPreferences =
                     testPreferences().copy(
                         locale = UserPreferencesLocale.ZH_HANS,
@@ -130,6 +134,7 @@ class ScreenshotScenario {
                 locale.applicationLocales = previousLocale
                 auth.state.value = previousSession
                 auth.account.value = previousAccount
+                auth.available = previousMemberships
                 app.chatService = previousChat
                 app.recoveryService = previousRecovery
                 app.workspaceRole = previousRole
