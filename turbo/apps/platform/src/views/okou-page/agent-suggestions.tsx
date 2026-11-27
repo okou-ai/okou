@@ -44,11 +44,8 @@ import { ChatComposer } from "./composer.tsx";
 const SUGGESTION_ROW =
   "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal px-4 py-3 text-left text-sm font-normal [&:hover]:bg-state-hover-overlay";
 
-// The simplified deck uses the For you redesign's tighter corners: 12px rows
-// and panels, 8px feedback buttons.
-function suggestionRowRadius(simplified: boolean) {
-  return simplified ? "rounded-xl" : "rounded-3xl";
-}
+// Option rows and the direction panel match the composer's 24px corners.
+const SUGGESTION_ROW_RADIUS = "rounded-3xl";
 
 // An option is a raised button on the card, and in the simplified deck its
 // text can still be selected; the direction trigger stays a quiet input-like row in the muted fill, the
@@ -57,7 +54,7 @@ function suggestionRowRadius(simplified: boolean) {
 // rounds to device pixels exactly like the feedback buttons' border beside it,
 // yet takes no width: the label keeps the 16px inset the heading aligns to.
 const SUGGESTION_OPTION =
-  "relative bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] after:pointer-events-none after:absolute after:inset-0 after:border after:border-border hover:bg-card hover:shadow-surface hover:after:border-control-border";
+  "relative bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-border hover:bg-card hover:shadow-surface hover:after:border-control-border";
 
 const SUGGESTION_DIRECTION_TRIGGER =
   "bg-muted text-muted-foreground hover:bg-muted";
@@ -301,14 +298,13 @@ function SuggestionDirectionEntry({
   const { t } = useTranslation();
   const open = useSet(openSuggestionDirection$);
   const signal = useGet(pageSignal$);
-  const simplified = useForYouSimplifiedDeck();
   return (
     <Button
       type="button"
       variant="quiet"
       className={cn(
         SUGGESTION_ROW,
-        suggestionRowRadius(simplified),
+        SUGGESTION_ROW_RADIUS,
         SUGGESTION_DIRECTION_TRIGGER,
       )}
       aria-description={t(($) => {
@@ -353,8 +349,6 @@ function SuggestionDirectionComposer({
   const composer =
     prepared.state === "hasData" && prepared.data ? prepared.data : null;
   const ready = composer !== null || prepared.state === "hasError";
-  const simplified = useForYouSimplifiedDeck();
-  const radius = suggestionRowRadius(simplified);
   return (
     <section
       aria-label={t(($) => {
@@ -367,7 +361,7 @@ function SuggestionDirectionComposer({
         <div
           className={cn(
             "flex min-h-14 items-center justify-center bg-muted",
-            radius,
+            SUGGESTION_ROW_RADIUS,
           )}
         >
           <Loader2
@@ -380,7 +374,7 @@ function SuggestionDirectionComposer({
       <div
         className={cn(
           "grid min-w-0",
-          radius,
+          SUGGESTION_ROW_RADIUS,
           ready
             ? "grid-rows-[1fr] motion-safe:animate-suggestion-direction-expand"
             : "grid-rows-[0fr] overflow-clip",
@@ -421,7 +415,6 @@ function SuggestionDirectionComposer({
                 signals={composer}
                 showPendingItems={false}
                 layout="card"
-                radius={simplified ? "compact" : "default"}
               />
             </div>
           ) : null}
@@ -526,11 +519,9 @@ export function AgentSuggestionCard({
               variant="quiet"
               className={cn(
                 SUGGESTION_ROW,
-                suggestionRowRadius(simplified),
+                SUGGESTION_ROW_RADIUS,
                 SUGGESTION_OPTION,
-                simplified
-                  ? "select-text after:rounded-xl"
-                  : "after:rounded-3xl",
+                simplified && "select-text",
               )}
               aria-label={option.label}
               aria-description={[
