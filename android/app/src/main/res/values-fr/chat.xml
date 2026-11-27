@@ -96,7 +96,6 @@
     <string name="chat_delete_pending">Suppression…</string>
     <string name="chat_project_deleted">Le projet a été supprimé et ses conversations ont été déplacées hors des projets.</string>
     <string name="chat_project_delete_rejected">Impossible de supprimer le projet.</string>
-    <string name="chat_project_delete_unconfirmed">Impossible de confirmer la suppression du projet.</string>
     <string name="chat_row_action_rejected_named">Impossible de terminer «\u00A0%1$s\u00A0».</string>
     <string name="chat_row_action_offline_named">Impossible de terminer «\u00A0%1$s\u00A0». Vérifiez votre connexion, puis réessayez.</string>
     <string name="chat_rename_save_failed">Impossible d’enregistrer. Vos modifications sont conservées.</string>

@@ -221,21 +221,26 @@ internal fun WorkspaceChatFeedback(
         val feedback = deleteFeedback.lastOrNull { it.projectId == deleteProject.id }
         DeleteProjectDialog(
             projectName = deleteProject.name,
-            pending = list.projectList.deletingId == deleteProject.id,
+            pending = list.projectList.isDeleting(deleteProject.id),
             status = feedback?.status,
             enabled = list.canDeleteProject,
             dismiss = {
                 dismissProjectDelete()
                 if (feedback?.rejected == true) chats.dismissProjectDeleteFeedback(feedback)
             },
-            confirm = {
-                if (feedback?.status == ProjectDeleteStatus.Unconfirmed)
-                    chats.retryProjectDelete(feedback)
-                else chats.deleteProject(deleteProject.id)
-            },
+            confirm = { chats.deleteProject(deleteProject.id) },
         )
     } else if (confirmingProjectDelete != null && list.projectsPhase == ChatReadPhase.Ready) {
-        LaunchedEffect(confirmingProjectDelete) { dismissProjectDelete() }
+        LaunchedEffect(confirmingProjectDelete) {
+            dismissProjectDelete()
+            if (deleteProject == null) {
+                deleteFeedback
+                    .firstOrNull {
+                        it.projectId == confirmingProjectDelete && it.rejected
+                    }
+                    ?.let(chats::dismissProjectDeleteFeedback)
+            }
+        }
     }
 
     val conversationUndo = list.conversationUndo?.takeIf { it.threadId == visibleConversationId }
@@ -398,7 +403,7 @@ internal fun WorkspaceChatFeedback(
     }
     val rowError = listFailures.firstOrNull { it.rejected }
     val projectError = deleteFeedback.firstOrNull {
-        it.rejected && it.projectId != deleteProject?.id
+        it.rejected && it.projectId != confirmingProjectDelete
     }
     val projectNotice = deleteFeedback.lastOrNull {
         !it.rejected && it.projectId != deleteProject?.id
@@ -442,7 +447,7 @@ internal fun WorkspaceChatFeedback(
                 },
                 projectError?.let { error ->
                     PaneFeedbackError(error.feedbackOrder) {
-                        ProjectDeleteSnackbar(chats, error, list.canDeleteProject, listSnackbar)
+                        ProjectDeleteSnackbar(chats, error, listSnackbar)
                     }
                 },
                 batchError?.let { error ->
@@ -481,8 +486,7 @@ internal fun WorkspaceChatFeedback(
         result = {
             when {
                 rowNotice != null -> ChatRowFailureFeedback(chats, list, rowNotice, listSnackbar)
-                projectNotice != null ->
-                    ProjectDeleteSnackbar(chats, projectNotice, list.canDeleteProject, listSnackbar)
+                projectNotice != null -> ProjectDeleteSnackbar(chats, projectNotice, listSnackbar)
                 batchNotice != null -> MarkAllReadSnackbar(chats, batchNotice, listSnackbar)
                 moveNotice != null -> {
                     val message =
@@ -522,34 +526,23 @@ private fun RenameSavedSnackbar(
 private fun ProjectDeleteSnackbar(
     chats: ChatListModel,
     feedback: ProjectDeleteFeedback,
-    canDeleteProject: Boolean,
     snackbar: SnackbarHostState,
 ) {
-    val unconfirmed = feedback.status == ProjectDeleteStatus.Unconfirmed
     val message =
         stringResource(
             when (feedback.status) {
                 ProjectDeleteStatus.Confirmed -> R.string.chat_project_deleted
                 ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
                 ProjectDeleteStatus.ConnectionFailed -> R.string.chat_action_connection_failed
-                ProjectDeleteStatus.Unconfirmed -> R.string.chat_project_delete_unconfirmed
             },
         )
-    val retry = if (unconfirmed && canDeleteProject) stringResource(R.string.retry) else null
-    LaunchedEffect(chats, snackbar, feedback, message, retry) {
-        val result =
-            try {
-                snackbar.showSnackbar(
-                    message,
-                    actionLabel = retry,
-                    withDismissAction = unconfirmed,
-                    duration = SnackbarDuration.Indefinite,
-                )
-            } finally {
-                if (feedback.rejected) chats.dismissProjectDeleteFeedback(feedback)
-            }
-        if (result == SnackbarResult.ActionPerformed) chats.retryProjectDelete(feedback)
-        else if (!feedback.rejected) chats.dismissProjectDeleteFeedback(feedback)
+    LaunchedEffect(chats, snackbar, feedback, message) {
+        try {
+            snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+        } finally {
+            if (feedback.rejected) chats.dismissProjectDeleteFeedback(feedback)
+        }
+        if (!feedback.rejected) chats.dismissProjectDeleteFeedback(feedback)
     }
 }
 

@@ -96,7 +96,6 @@
     <string name="chat_delete_pending">Deleting…</string>
     <string name="chat_project_deleted">Project deleted and its chats moved outside Projects.</string>
     <string name="chat_project_delete_rejected">Could not delete the Project.</string>
-    <string name="chat_project_delete_unconfirmed">Could not confirm Project deletion.</string>
     <string name="chat_row_action_rejected_named">Could not complete “%1$s”.</string>
     <string name="chat_row_action_offline_named">Could not complete “%1$s”. Check your connection and try again.</string>
     <string name="chat_rename_save_failed">Could not save. Your changes are still here.</string>

@@ -94,7 +94,6 @@
     <string name="chat_delete_pending">Menghapus…</string>
     <string name="chat_project_deleted">Proyek dihapus dan chatnya dipindahkan ke luar proyek.</string>
     <string name="chat_project_delete_rejected">Proyek tidak dapat dihapus.</string>
-    <string name="chat_project_delete_unconfirmed">Penghapusan proyek tidak dapat dikonfirmasi.</string>
     <string name="chat_row_action_rejected_named">Tidak dapat menyelesaikan “%1$s”.</string>
     <string name="chat_row_action_offline_named">Tidak dapat menyelesaikan “%1$s”. Periksa koneksi dan coba lagi.</string>
     <string name="chat_rename_save_failed">Tidak dapat menyimpan. Perubahan Anda masih tersimpan di formulir.</string>
