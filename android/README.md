@@ -150,8 +150,9 @@ deletion restores the row and shows one Snackbar in the chat list. Deleting a
 linked chat from a workflow run returns feedback to the run history.
 Canonical event IDs settle submitted changes, including events observed before
 a snapshot rebase. Chat list reads retry while the foreground needs the list,
-after 3, 3, 6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend
-the wait. A first read with no available list shows the skeleton after 250 ms.
+after 3, 3, 6, 12, 24, and then every 48 seconds. A valid server `Retry-After`
+sets the wait for the next automatic attempt. A first read with no available
+list shows the skeleton after 250 ms.
 Failures keep the available list or skeleton in place. With a confirmed list,
 the progress bar appears during an active read once the last confirmation is
 more than ten minutes old, or immediately after three consecutive read

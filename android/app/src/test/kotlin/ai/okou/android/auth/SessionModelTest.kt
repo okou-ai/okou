@@ -353,14 +353,17 @@ class SessionEntryModelTest : SessionModelTestFixture() {
         val auth = TestAuthentication(testAuthenticationState(workspace = null))
         var attempts = 0
         auth.membershipsAction = {
-            if (++attempts <= 3) throw ApiFailure.Network(java.io.IOException("fixture"))
+            if (++attempts <= 3) throw ApiFailure.Http(503, null, null, 1L.takeIf { attempts == 1 })
             auth.available
         }
         check(auth) { model, _ ->
             model.foregroundChanged(true)
             runCurrent()
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
-            advanceTimeBy(3_000)
+            advanceTimeBy(999)
+            runCurrent()
+            assertEquals(1, attempts)
+            advanceTimeBy(1)
             runCurrent()
             assertEquals(2, attempts)
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
@@ -917,7 +920,7 @@ class SessionModelTest : SessionModelTestFixture() {
             auth,
             configure = { resource ->
                 resource.verifyOrganization = {
-                    if (++organizations == 1) throw ApiFailure.Http(503, null, null, null)
+                    if (++organizations == 1) throw ApiFailure.Http(503, null, null, 1)
                     testOrganization(resource.identity.workspaceId)
                 }
                 resource.loadPreferences = {
@@ -934,7 +937,7 @@ class SessionModelTest : SessionModelTestFixture() {
             assertEquals(1, organizations)
             assertEquals(0, preferences)
 
-            advanceTimeBy(4_999)
+            advanceTimeBy(999)
             runCurrent()
             assertEquals(1, organizations)
             advanceTimeBy(1)

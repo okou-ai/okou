@@ -250,10 +250,10 @@ internal class ProjectListOwner(
                 } catch (error: Exception) {
                     requireCurrent()
                     if (createRequest !== request) return@launch
-                    val retryAfter = dependencyRetryAfterMillis(error)
-                    if (retryAfter != null && retries < ChatDependencyRetryCount) {
+                    val retryDelay = dependencyRetryDelayMillis(error, retries)
+                    if (retryDelay != null && retries < ChatDependencyRetryCount) {
                         retries++
-                        delay(maxOf(ChatDependencyRetryDelayMillis, retryAfter))
+                        delay(retryDelay)
                         requireCurrent()
                         if (createRequest !== request) return@launch
                         continue

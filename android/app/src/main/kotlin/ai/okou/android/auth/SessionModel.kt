@@ -2,7 +2,12 @@ package ai.okou.android.auth
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.continuousRetryDelayMillis
+import ai.okou.android.api.continuousRetryDelays
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.isTransientApiFailure
+import ai.okou.android.api.retryAfterDelayMillis
+import ai.okou.android.api.retryAfterSeconds
 import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.ChatCacheStore
@@ -692,7 +697,6 @@ class SessionModel(
         snapshot: AuthenticationState,
         session: NativeSession,
     ): List<WorkspaceMembership> {
-        var backoff = 3_000L
         var failures = 0
         while (true) {
             requireCurrent(ticket, snapshot)
@@ -704,8 +708,9 @@ class SessionModel(
                 throw cancelled
             } catch (error: Exception) {
                 requireCurrent(ticket, snapshot)
-                val retryAfter = error.bootstrapRetryAfterMillis() ?: throw error
-                failures++
+                if (!error.isTransientApiFailure()) throw error
+                val retryDelay = continuousRetryDelayMillis(failures, error.retryAfterSeconds())
+                failures = (failures + 1).coerceAtMost(continuousRetryDelays.size)
                 if (failures == 3) {
                     mutable.value =
                         mutable.value.copy(
@@ -714,9 +719,8 @@ class SessionModel(
                             entryReadFailed = true,
                         )
                 }
-                delay(maxOf(backoff, retryAfter))
+                delay(retryDelay)
                 foreground.first { it }
-                if (failures >= 2) backoff = (backoff * 2).coerceAtMost(48_000L)
             }
         }
     }
@@ -908,16 +912,17 @@ class SessionModel(
             } catch (error: Exception) {
                 if (!current(ticket, snapshot) || workspaceFailure(ticket, snapshot, error))
                     return null
-                val retryAfter = error.bootstrapRetryAfterMillis()
+                val retryable = error.isTransientApiFailure()
                 mutable.value =
                     mutable.value.copy(
                         stage = SessionStage.Unavailable,
-                        working = retryAfter != null,
+                        working = retryable,
                     )
-                if (retryAfter == null) return null
+                if (!retryable) return null
+                val retryAfter = retryAfterDelayMillis(error.retryAfterSeconds())
                 val interrupted =
-                    if (retryAfter > 0) {
-                        delay(maxOf(backoff, retryAfter))
+                    if (retryAfter != null) {
+                        delay(retryAfter)
                         false
                     } else {
                         withTimeoutOrNull(backoff) { foreground.first { !it } } != null
@@ -1179,16 +1184,6 @@ class SessionModel(
         retire()
     }
 }
-
-private fun Exception.bootstrapRetryAfterMillis(): Long? =
-    when (this) {
-        is ApiFailure.Network -> 0L
-        is ApiFailure.Http ->
-            if (status == 408 || status == 429 || status in 500..599)
-                (retryAfterSeconds ?: 0L).coerceIn(0, Long.MAX_VALUE / 1_000) * 1_000
-            else null
-        else -> null
-    }
 
 private inline fun <reified T : ViewModel> ViewModelStore.workspaceModel(
     key: String = T::class.java.name,

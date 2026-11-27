@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1195.2](https://github.com/okou-ai/okou/compare/app-v0.1195.1...app-v0.1195.2) (2026-11-27)
+
+
+### Refactoring
+
+* **ui:** unify dropdown menu patterns and sidebar filter layout ([#51420](https://github.com/okou-ai/okou/issues/51420)) ([6e83b75](https://github.com/okou-ai/okou/commit/6e83b75cc9aab7e71339b00c2ce17b935a4004d4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.139.0
+    * @okouai/core bumped to 8.887.6
+    * @okouai/ui bumped to 1.22.45
+
 ## [0.1195.1](https://github.com/okou-ai/okou/compare/app-v0.1195.0...app-v0.1195.1) (2026-11-27)
 
 

@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.continuousRetryDelays
 import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.ChatEventsEventsItemVariant1
 import ai.okou.android.api.generated.Indicators
@@ -43,6 +44,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 
 private const val listRetryProgressThreshold = 3
 private const val unreadSnapshotRenewalMillis = 30_000L
@@ -1908,7 +1910,9 @@ class ChatListModel(
     private fun scheduleListRetry(retryAt: Long) {
         listRetry?.cancel()
         listRetry = viewModelScope.launch {
-            delay((retryAt - monotonicMillis()).coerceAtLeast(0))
+            val wait = retryAt - monotonicMillis()
+            // A zero-delay retry must wait for the current failure to finish publishing.
+            if (wait > 0) delay(wait) else yield()
             listRetry = null
             listRetryAt = null
             refreshList()
@@ -2126,10 +2130,10 @@ class ChatListModel(
             throw cancelled
         } catch (error: Exception) {
             requireCurrent()
-            val retryAfter = chatReadRetryAfterMillis(error)
+            val retryDelay = chatReadRetryDelayMillis(error, listFailures)
             fail(error) { state ->
                 val failed = state.copy(listPhase = ChatReadPhase.Failed)
-                if (retryAfter == null) {
+                if (retryDelay == null) {
                     resetListReadFailures()
                     failed.copy(
                         listReadFailure = ChatListReadFailure.NeedsRetry,
@@ -2145,7 +2149,7 @@ class ChatListModel(
                             else state.listRefreshFailureOrder,
                     )
                 } else if (needsListRead && retryScope === listReadScope) {
-                    recordListReadFailure(retryAfter)
+                    recordListReadFailure(retryDelay)
                     failed.copy(
                         listReadFailure = ChatListReadFailure.Retrying,
                         listRetryProgressVisible =
@@ -2176,10 +2180,9 @@ class ChatListModel(
         listFailures = 0
     }
 
-    private fun recordListReadFailure(retryAfter: Long) {
+    private fun recordListReadFailure(delay: Long) {
         val now = monotonicMillis()
-        listFailures = (listFailures + 1).coerceAtMost(chatReadRetryDelays.size)
-        val delay = maxOf(chatReadRetryDelays[listFailures - 1], retryAfter)
+        listFailures = (listFailures + 1).coerceAtMost(continuousRetryDelays.size)
         val maxDelay = Long.MAX_VALUE - now.coerceAtLeast(0L)
         val nextRetry = now + minOf(delay, maxDelay)
         listRetryAt = maxOf(nextRetry, listRetryAt ?: nextRetry)
@@ -2536,7 +2539,7 @@ class ChatListModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                val retryable = dependencyRetryAfterMillis(error) != null
+                val retryable = dependencyRetryDelayMillis(error, 0) != null
                 val resumeListIndicators = afterWrite && retryable && needsListRead
                 fail(error) { state ->
                     state.copy(

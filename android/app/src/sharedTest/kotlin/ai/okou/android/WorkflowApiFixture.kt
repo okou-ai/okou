@@ -93,7 +93,8 @@ internal class WorkflowApiFixture(
     @Volatile var releaseInCatalog = true
     val sharedTitle = if (chinese) "发布后跟进" else "Release follow-up"
     private val feedbackTitle = if (chinese) "客户反馈汇总" else "Customer feedback"
-    val releasePurpose =
+    @Volatile
+    var releasePurpose =
         if (chinese) "按渠道核对发布文案、素材与上线安排。" else "Check launch copy, assets, and timing by channel."
     val ruleTitle = if (chinese) "工作日 09:00" else "Weekdays at 09:00"
 
@@ -142,6 +143,7 @@ internal class WorkflowApiFixture(
                             .setResponseCode(409)
                     val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                     body["displayName"]?.jsonPrimitive?.content?.let { releaseTitle = it }
+                    body["description"]?.jsonPrimitive?.content?.let { releasePurpose = it }
                     body["instruction"]?.jsonPrimitive?.content?.let { instruction = it }
                 }
                 jsonResponse(detail(release(), instruction, "[${releaseRules().joinToString()}]"))
