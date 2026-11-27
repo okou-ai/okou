@@ -299,48 +299,46 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun reopeningAFailedCheckRespectsItsLastServerDelayAndDownloadsKeepTheirRetryBudget() =
-        runTest {
-            val service =
-                ControlledUpdates().apply { checkRejection = ApiFailure.Http(429, null, null, 1) }
-            AppUpdates(
-                    service,
-                    MemoryUpdateStore(),
-                    "0.12.0",
-                    35,
-                    StandardTestDispatcher(testScheduler),
-                    clock = testScheduler.timeSource,
-                )
-                .use { owner ->
-                    owner.check()
-                    advanceTimeBy(1_000)
-                    runCurrent()
-                    service.checkRejection = ApiFailure.Http(429, null, null, 8)
-                    advanceTimeBy(1_000)
-                    runCurrent()
-                    assertEquals(3, service.checks)
-                    assertEquals(UpdateCheck.Failed, owner.state.value.check)
+    fun automaticChecksRespectTheLastServerDelayAndDownloadsKeepTheirRetryBudget() = runTest {
+        val service =
+            ControlledUpdates().apply { checkRejection = ApiFailure.Http(429, null, null, 1) }
+        AppUpdates(
+                service,
+                MemoryUpdateStore(),
+                "0.12.0",
+                35,
+                StandardTestDispatcher(testScheduler),
+                clock = testScheduler.timeSource,
+            )
+            .use { owner ->
+                owner.check()
+                advanceTimeBy(1_000)
+                runCurrent()
+                service.checkRejection = ApiFailure.Http(429, null, null, 8)
+                advanceTimeBy(1_000)
+                runCurrent()
+                assertEquals(3, service.checks)
+                assertEquals(UpdateCheck.Failed, owner.state.value.check)
 
-                    service.checkRejection = null
-                    owner.checkOnDetailsOpen()
-                    owner.check(manual = false)
-                    advanceTimeBy(7_999)
-                    owner.checkOnDetailsOpen()
-                    runCurrent()
-                    assertEquals(3, service.checks)
-                    advanceTimeBy(1)
-                    owner.checkOnDetailsOpen()
-                    runCurrent()
-                    assertEquals(4, service.checks)
-                    assertEquals(UpdateCheck.Checked, owner.state.value.check)
-                    service.transfer.completeExceptionally(SocketTimeoutException("download"))
-                    assertTrue(owner.download(updateRelease()))
-                    advanceTimeBy(6_000)
-                    runCurrent()
-                    assertEquals(List(3) { updateRelease() }, service.downloadedReleases)
-                    assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
-                }
-        }
+                service.checkRejection = null
+                owner.check(manual = false)
+                advanceTimeBy(7_999)
+                owner.check(manual = false)
+                runCurrent()
+                assertEquals(3, service.checks)
+                advanceTimeBy(1)
+                owner.check(manual = false)
+                runCurrent()
+                assertEquals(4, service.checks)
+                assertEquals(UpdateCheck.Checked, owner.state.value.check)
+                service.transfer.completeExceptionally(SocketTimeoutException("download"))
+                assertTrue(owner.download(updateRelease()))
+                advanceTimeBy(6_000)
+                runCurrent()
+                assertEquals(List(3) { updateRelease() }, service.downloadedReleases)
+                assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
+            }
+    }
 
     @Test
     fun manualCheckAdvancesThePendingRetryWithoutAddingAttempts() = runTest {
@@ -358,7 +356,6 @@ class AppUpdatesTest {
                 runCurrent()
                 assertEquals(UpdateCheck.Waiting, owner.state.value.check)
                 owner.check(manual = false)
-                owner.checkOnDetailsOpen()
                 runCurrent()
                 assertEquals(1, service.checks)
 
@@ -817,6 +814,7 @@ class AppUpdatesTest {
         try {
             advanceUntilIdle()
             assertFalse(updated.state.value.required)
+            assertEquals(UpdateCheck.Unknown, updated.state.value.check)
             assertNull(updated.state.value.selectedRelease)
         } finally {
             updated.close()
