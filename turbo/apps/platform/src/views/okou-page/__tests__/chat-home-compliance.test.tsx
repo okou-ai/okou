@@ -1,7 +1,10 @@
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 
@@ -32,4 +35,5 @@ test("The chat home lists the compliance statuses", async () => {
     ["ISO/IEC 27001", "Aligned"],
   ]);
   expect(compliance).not.toHaveTextContent(/certified/iu);
+  expect(queryAllByRoleFast("button", compliance)).toStrictEqual([]);
 });
