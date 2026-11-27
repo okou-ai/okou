@@ -6,7 +6,11 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  setupPage,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifact,
@@ -15,11 +19,11 @@ import {
 } from "./artifact-catalog-test-helpers.ts";
 
 const context = testContext();
-const ids = [
+const ids = Object.freeze([
   "a0000000-0000-4000-a000-000000000101",
   "a0000000-0000-4000-a000-000000000102",
   "a0000000-0000-4000-a000-000000000103",
-];
+]);
 function createEntries() {
   return ids.map((id, index) => {
     return artifact({
@@ -160,7 +164,13 @@ test("cancels a pending cover batch when the category changes", async () => {
     await waitFor(() => {
       expect(requests).toHaveLength(1);
     });
-    click(screen.getByRole("tab", { name: "Images" }));
+    const images = queryAllByRoleFast("tab").find((tab) => {
+      return tab.textContent?.trim() === "Images";
+    });
+    if (!images) {
+      throw new Error("Expected the Images category tab");
+    }
+    click(images);
     await expect(
       findArtifactAction("cover-1.png"),
     ).resolves.toBeInTheDocument();
