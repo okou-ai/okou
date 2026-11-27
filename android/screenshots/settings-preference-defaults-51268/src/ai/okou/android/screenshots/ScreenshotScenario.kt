@@ -15,6 +15,7 @@ import ai.okou.android.openChatListSettings
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
 import android.app.LocaleManager
+import android.content.res.Configuration
 import android.os.LocaleList
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -37,6 +38,11 @@ class ScreenshotScenario {
     private val app =
         InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
             as TestOkouApplication
+    private val chineseLocales = LocaleList.forLanguageTags("zh-Hans")
+    private val chinese =
+        app.createConfigurationContext(
+            Configuration(app.resources.configuration).apply { setLocales(chineseLocales) },
+        )
 
     @Test
     fun defaultsHandOverToConfirmedWorkspacePreferencesInPlace() {
@@ -66,17 +72,20 @@ class ScreenshotScenario {
                         cloudBrowserEnabledByDefault = false,
                     )
                 app.screenshotPreferencesGate = preferenceGate
-                locale.applicationLocales = LocaleList.forLanguageTags("zh-Hans")
+                locale.applicationLocales = LocaleList.getEmptyLocaleList()
                 check(locale.systemLocales[0]?.language == "en")
                 TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
                 auth.account.value = NativeAccount(user, "account@example.com")
                 auth.state.value = testAuthenticationState(user = user)
                 ActivityScenario.launch(MainActivity::class.java).use {
                     device.awaitChatList(app)
-                    device.openChatListSettings(app)
+                    // Apply the app locale after the pending workspace owns the Activity.
+                    locale.applicationLocales = chineseLocales
+                    device.awaitChatList(chinese)
+                    device.openChatListSettings(chinese)
                     await(label(R.string.settings_cloud_browser))
                     val scroll = await(By.pkg(app.packageName).scrollable(true))
-                    scroll.scroll(Direction.DOWN, 0.55f)
+                    scroll.scroll(Direction.DOWN, 0.67f)
                     val pendingSwitch = await(switch(enabled = false, checked = true))
                     await(label(R.string.appearance_system))
                     await(label(R.string.palette_default))
@@ -120,7 +129,7 @@ class ScreenshotScenario {
 
     private fun timezone(offset: String) = By.pkg(app.packageName).textContains(offset)
 
-    private fun label(id: Int) = By.pkg(app.packageName).text(app.getString(id))
+    private fun label(id: Int) = By.pkg(app.packageName).text(chinese.getString(id))
 
     private fun await(selector: BySelector): UiObject2 =
         checkNotNull(device.wait(Until.findObject(selector), 12_000)) { "Expected $selector" }
