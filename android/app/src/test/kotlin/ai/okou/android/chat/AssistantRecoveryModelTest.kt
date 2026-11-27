@@ -889,6 +889,14 @@ class AssistantRecoveryModelTest {
         )
         assertEquals(latest(input, failure), latest(input, failure, lateLegacy))
         assertEquals(
+            latest(input, failure),
+            latest(
+                input,
+                failure,
+                historyEventWire("blank", 3, payload = """{"content":" \n"}"""),
+            ),
+        )
+        assertEquals(
             AssistantFailure.Output("late-legacy", "Ordinary output error"),
             latest(
                 input,
@@ -961,6 +969,16 @@ class AssistantRecoveryModelTest {
         assertTrue(
             classifyFailure(AssistantFailure.Run("id", "provider_server_error"), null).canContinue,
         )
+        val legacySafety =
+            classifyFailure(
+                AssistantFailure.Output(
+                    "id",
+                    """Bad request: {"error":{"code":"content_policy_violation"}}""",
+                ),
+                RecoveryFramework.Codex,
+            )
+        assertEquals(FailureKind.Safety, legacySafety.kind)
+        assertFalse(legacySafety.canContinue)
         val model =
             classifyFailure(
                 AssistantFailure.Output("id", "You've hit your usage limit for gpt-5"),

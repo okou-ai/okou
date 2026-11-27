@@ -174,9 +174,7 @@ internal fun ConversationRoute(
             activeRun?.let { runId ->
                 content.lastOrNull {
                     it.message.runId == runId &&
-                        (it.message.isOutputReply() ||
-                            it.message.role == HistoryRole.User ||
-                            it.showFeedbackHeader)
+                        (it.message.isOutputReply() || it.message.role == HistoryRole.User)
                 }
             }
         }
@@ -219,13 +217,18 @@ internal fun ConversationRoute(
                 }
                 if (activity != null) {
                     // Reverse layout places the status below its owning message.
-                    val index =
-                        messages.indexOfFirst { it.key == activeMessage?.key }.coerceAtLeast(0)
+                    val anchorIndex = messages.indexOfFirst {
+                        it.key == activeMessage?.key ||
+                            (activeRun != null &&
+                                it.message.runId == activeRun &&
+                                it.message.isTurnFeedback())
+                    }
                     add(
-                        index,
+                        anchorIndex.coerceAtLeast(0),
                         ConversationActivityRow(
                             activity,
-                            !replying && activeMessage?.showFeedbackHeader != true,
+                            !replying &&
+                                messages.getOrNull(anchorIndex)?.showFeedbackHeader != true,
                             activeRun,
                         ),
                     )
@@ -759,11 +762,11 @@ internal fun ConversationRoute(
                                         }
                                 val previous = timeline.getOrNull(index + 1) as? ConversationMessage
                                 val statusWithReply =
-                                    entry.message.runId != null &&
+                                    !entry.showFeedbackHeader &&
+                                        entry.message.runId != null &&
                                         entry.message.runId == previous?.message?.runId &&
-                                        previous.message.isOutputReply() &&
-                                        entry.message.status in
-                                            listOf("run.failed", "run.cancelled")
+                                        previous.message.hasReplyBody() &&
+                                        entry.message.isTurnFeedback()
                                 // Keep a message's lower edge independent of a new reply below it.
                                 Column(
                                     trackSize.padding(

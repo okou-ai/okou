@@ -245,14 +245,7 @@ internal fun ConversationMessageRow(
                 }
                 when (message.status) {
                     "run.failed" -> failureContent(message)
-                    "output.error" ->
-                        FailureFeedbackCard(R.string.history_run_failed) {
-                            if (message.blocks.isNotEmpty()) {
-                                Column(Modifier.padding(top = 4.dp)) {
-                                    MessageBody(message, compact = true)
-                                }
-                            }
-                        }
+                    "output.error" -> LegacyFailureCard(message)
                     else -> {
                         MessageStatus(message)
                         if (message.blocks.isNotEmpty()) MessageBody(message, compact = true)
@@ -713,6 +706,17 @@ private fun MessageStatus(message: HistoryMessage) {
                 modifier = Modifier.testTag("conversation_stopped"),
                 stopped = true,
             )
+    }
+}
+
+@Composable
+private fun LegacyFailureCard(message: HistoryMessage) {
+    val copy = message.failureReason?.let(::assistantRunFailureCopy)
+    val description = copy?.description?.takeIf { message.blocks.isEmpty() }
+    FailureFeedbackCard(copy?.title ?: R.string.history_run_failed, description) {
+        if (message.blocks.isNotEmpty()) {
+            Column(Modifier.padding(top = 4.dp)) { MessageBody(message, compact = true) }
+        }
     }
 }
 

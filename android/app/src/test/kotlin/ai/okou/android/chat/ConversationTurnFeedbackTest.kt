@@ -3,15 +3,18 @@ package ai.okou.android.chat
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.OkouTheme
+import ai.okou.android.RecoveryApiFixture
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItem
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItemFramework
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItemType
+import ai.okou.android.historyEventWire
 import android.content.res.Configuration
 import android.os.LocaleList
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,6 +22,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -59,6 +63,104 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ConversationTurnFeedbackTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun historicalFailureShowsReasonAndGuidanceWithoutRecoveryNetworkReads() {
+        fun history(wire: String): HistoryMessage {
+            val row = HistoryEvent.decode(wire)
+            return projectHistory(
+                    HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId)),
+                )
+                .messages
+                .single()
+        }
+        fun failure(reason: String) = history(RecoveryApiFixture.failure(reason))
+        val legacy =
+            history(
+                historyEventWire(
+                    "legacy",
+                    1,
+                    type = "output.error",
+                    payload = """{"error":"Legacy error"}""",
+                ),
+            )
+        val displayed = mutableStateOf(listOf(legacy))
+        fun show(vararg messages: HistoryMessage) {
+            compose.runOnIdle { displayed.value = messages.toList() }
+        }
+        compose.setContent {
+            OkouTheme {
+                Column {
+                    for (entry in conversationTurns(displayed.value, emptySet()).messages) {
+                        key(entry.key) { ConversationMessageRow(entry) }
+                    }
+                }
+            }
+        }
+        val header = compose.onNodeWithTag("conversation_reply_header")
+        val avatar = compose.onNodeWithTag("conversation_reply_avatar")
+        val card = compose.onNodeWithTag("conversation_failure_card")
+        val legacyTop = card.getUnclippedBoundsInRoot().top
+        compose.onNodeWithText("Legacy error").assertExists()
+
+        show(legacy, failure("provider_request_timeout"))
+        compose.onNodeWithText("Legacy error").assertDoesNotExist()
+        assertEquals(legacyTop, card.getUnclippedBoundsInRoot().top)
+        val headerBounds = header.getUnclippedBoundsInRoot()
+        val avatarBounds = avatar.getUnclippedBoundsInRoot()
+        assertEquals(48.dp, headerBounds.bottom - headerBounds.top)
+        assertEquals(32.dp, avatarBounds.right - avatarBounds.left)
+        assertEquals(
+            8.dp,
+            card.getUnclippedBoundsInRoot().top - header.getUnclippedBoundsInRoot().bottom,
+        )
+        compose.onNodeWithText("The model response timed out").assertExists()
+        compose
+            .onNodeWithText("Try again in a moment, or choose another model to keep working.")
+            .assertExists()
+
+        show(failure("future_reason"))
+        compose.onNodeWithText("This run couldn't finish").assertExists()
+        compose.onNodeWithText("Open the chat on the Okou website for details.").assertExists()
+
+        show(failure("provider_image_too_large"))
+        compose.onNodeWithText("Image is too large").assertExists()
+        compose.onNodeWithText("Remove the image or replace it with a smaller one.").assertExists()
+
+        show(failure("guest_memory_oom_killed"))
+        compose.onNodeWithText("This run ran out of memory").assertExists()
+        compose.onNodeWithText("The content generated so far is still available.").assertExists()
+
+        show(failure("safety_policy_refusal"))
+        compose.onNodeWithText("Revise your request before sending it again.").assertExists()
+
+        val legacySafety =
+            history(
+                historyEventWire(
+                    "legacy-safety",
+                    1,
+                    type = "output.error",
+                    payload =
+                        """{"content":"Legacy diagnostic","error":"Bad request: {\"error\":{\"code\":\"content_policy_violation\"}}"}""",
+                ),
+            )
+        show(legacySafety)
+        compose.onNodeWithText("Revise your request before sending it again.").assertExists()
+        compose.onNodeWithText("Legacy diagnostic").assertDoesNotExist()
+        compose.onNodeWithText("Bad request", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Continue").assertDoesNotExist()
+
+        show(failure("firewall_auth_failed"))
+        compose.onNodeWithText("This run couldn't finish").assertExists()
+
+        show(history(historyEventWire(type = "run.cancelled", payload = "null")))
+        header.assertExists()
+        compose.onNodeWithText("Stopped").assertExists()
+        card.assertDoesNotExist()
+        val stopped = compose.onNodeWithTag("conversation_stopped").getUnclippedBoundsInRoot()
+        assertEquals(8.dp, stopped.top - header.getUnclippedBoundsInRoot().bottom)
+        assertEquals(24.dp, stopped.bottom - stopped.top)
+    }
 
     @Test
     @Config(qualifiers = "en-rUS-w412dp-h892dp")

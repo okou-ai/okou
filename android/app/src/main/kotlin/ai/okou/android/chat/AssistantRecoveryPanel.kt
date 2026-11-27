@@ -44,6 +44,11 @@ fun AssistantRecoveryPanel(
     failureId: String,
     reason: String?,
 ) {
+    val classification = classifyRunFailure(reason)
+    if (!classification.canContinue && classification.kind != FailureKind.Billing) {
+        AssistantFailureCard(reason)
+        return
+    }
     val read by model.uiState.collectAsStateWithLifecycle()
     val input by composer.uiState.collectAsStateWithLifecycle()
     if (read.selection?.threadId != target.threadId || read.selection?.failureId != failureId) {
@@ -232,7 +237,7 @@ internal fun AssistantFailureCard(reason: String?, content: @Composable () -> Un
 internal fun FailureFeedbackCard(
     @StringRes title: Int,
     @StringRes description: Int? = null,
-    content: @Composable () -> Unit,
+    content: @Composable () -> Unit = {},
 ) {
     Surface(
         Modifier.fillMaxWidth().testTag("conversation_failure_card"),
