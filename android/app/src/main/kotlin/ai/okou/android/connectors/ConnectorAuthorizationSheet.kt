@@ -103,6 +103,7 @@ internal fun ConnectorRenameSheet(
         when {
             action?.reconciling == true && action.busy ->
                 stringResource(R.string.chat_rename_checking_result)
+            problem == ConnectorProblem.Failed -> stringResource(R.string.chat_rename_save_failed)
             problem != null -> stringResource(connectorActionProblemMessage(problem))
             else -> null
         }
