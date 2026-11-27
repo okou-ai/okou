@@ -891,16 +891,17 @@ internal constructor(
                 ) {
                     updatePreview(id) {
                         previews.remove(id)
-                        copy(content = null, access = null)
+                        copy(
+                            content = null,
+                            access = null,
+                            problem = ArtifactProblem.OriginalUnavailable,
+                        )
                     }
                     val thumbnail =
                         readThumbnailAfterMissingOriginal(id, failedPreview.access?.url?.toString())
                     if (thumbnail != null) {
                         updatePreview(id) {
-                            copy(
-                                content = ArtifactContent.Image(thumbnail),
-                                problem = ArtifactProblem.OriginalUnavailable,
-                            )
+                            copy(content = ArtifactContent.Image(thumbnail))
                         }
                         return@launch
                     }
