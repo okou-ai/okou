@@ -619,6 +619,14 @@ internal fun ConnectorSheet(
                         16.dp
                 }
             val scrollAll = actions != null && maxHeight < minimumControlsHeight
+            val minimumBodyHeight =
+                if (feedbackInContent && overlayFeedback != null) {
+                    with(LocalDensity.current) {
+                        val line = MaterialTheme.typography.bodyMedium.lineHeight.toDp()
+                        // Leave room for a wrapped Snackbar even when the result is empty.
+                        maxOf(48.dp, line * 2 + 28.dp) + 8.dp
+                    }
+                } else 0.dp
             Column(
                 when {
                     scrollAll -> Modifier.fillMaxWidth().verticalScroll(scroll)
@@ -644,8 +652,9 @@ internal fun ConnectorSheet(
                     )
                 }
                 Box(
-                    if (scrollAll) Modifier.fillMaxWidth()
-                    else Modifier.weight(1f, fill = fullScreen).fillMaxWidth(),
+                    (if (scrollAll) Modifier else Modifier.weight(1f, fill = fullScreen))
+                        .fillMaxWidth()
+                        .heightIn(min = minimumBodyHeight),
                     propagateMinConstraints = true,
                 ) {
                     Column(
