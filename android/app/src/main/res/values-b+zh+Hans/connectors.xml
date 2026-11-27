@@ -130,6 +130,4 @@
     <string name="connector_access_allow_hour">允许 1 小时</string>
     <string name="connector_access_allow_day">允许 24 小时</string>
     <string name="connector_access_allow_week">允许 7 天</string>
-    <string name="chat_connector_check_result">核对结果</string>
-    <string name="chat_connector_check_before_send">发送前，请在聊天选项中核对连接器选择。</string>
 </resources>

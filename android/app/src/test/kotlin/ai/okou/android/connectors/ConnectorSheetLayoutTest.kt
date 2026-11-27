@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.CONNECTOR_CALENDAR
 import ai.okou.android.CONNECTOR_CALENDAR_PRIMARY
 import ai.okou.android.CONNECTOR_CALENDAR_SECONDARY
 import ai.okou.android.CONNECTOR_EXAMPLE_DEVICE_CODE
@@ -20,6 +21,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -37,6 +39,7 @@ import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -63,6 +66,63 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = TestOkouApplication::class)
 class ConnectorSheetLayoutTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun directorySkeletonAndConnectedRowsUseNativeListGeometry() {
+        ConnectorApiFixture().use { fixture ->
+            fixture.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+            val discovery = CountDownLatch(1)
+            fixture.discoveryGate = discovery
+            withConnectors(fixture) {
+                val skeletonTag = "connector-directory-skeleton-row"
+                try {
+                    compose.waitUntilAtLeastOneExists(hasTestTag(skeletonTag), 10_000)
+                    val skeleton = compose.onAllNodesWithTag(skeletonTag)[0]
+                    skeleton.assertHeightIsEqualTo(72.dp)
+                    assertEquals(16.dp, skeleton.getUnclippedBoundsInRoot().left)
+                } finally {
+                    discovery.countDown()
+                }
+
+                val recommendations = compose.onNodeWithText("Recommended")
+                val rowTag = "connector-${CONNECTOR_CALENDAR}"
+                val discoverRow = compose.onNodeWithTag(rowTag)
+                val confirmedRow = hasTestTag(rowTag) and hasText("1 account connected")
+                compose.waitUntilAtLeastOneExists(confirmedRow, 10_000)
+                assertEquals(32.dp, recommendations.getUnclippedBoundsInRoot().left)
+                discoverRow.assertHeightIsAtLeast(88.dp)
+                compose.onNodeWithText("Connected").performClick().assertIsSelected()
+                val categories = compose.onNode(hasContentDescription("Filter by service category"))
+                categories.performClick()
+                compose.onNodeWithText("Meetings and scheduling").performClick()
+                categories.assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.StateDescription,
+                        "Meetings and scheduling",
+                    ),
+                )
+                compose
+                    .onNodeWithTag("connector-search")
+                    .performTextReplacement("calendar@example.com")
+                compose.waitUntilAtLeastOneExists(confirmedRow, 10_000)
+                val connectedRow = compose.onNodeWithTag(rowTag)
+                compose
+                    .onNodeWithText("查看日程、查找空闲时间和创建会议。", useUnmergedTree = true)
+                    .assertDoesNotExist()
+                connectedRow.assertHeightIsAtLeast(72.dp)
+                connectedRow.performClick()
+                compose.waitUntilAtLeastOneExists(hasText("Add account"), 10_000)
+                val touchBounds =
+                    compose.onNodeWithText("Add account").fetchSemanticsNode().touchBoundsInRoot
+                assertTrue(touchBounds.height >= with(compose.density) { 48.dp.toPx() })
+                compose
+                    .onNodeWithText("Permissions this service can request")
+                    .assertHeightIsAtLeast(56.dp)
+            }
+        }
+    }
 
     @Test
     @OptIn(ExperimentalTestApi::class)
@@ -442,30 +502,20 @@ class ConnectorSheetLayoutTest {
     @Test
     @OptIn(ExperimentalTestApi::class)
     @Config(qualifiers = "en-rUS-w412dp-h892dp")
-    fun exhaustedVerificationKeepsTheDraftWithTerminalFieldFeedback() {
+    fun aLostRenameResponseKeepsTheDraftWithFieldFeedback() {
         ConnectorApiFixture().use { fixture ->
             fixture.deferRenameCommit = true
-            withConnectors(fixture) { model ->
+            withConnectors(fixture) {
                 openCalendarRename()
                 val input = compose.onNodeWithTag("connector-input").performClick()
                 val draft = "Meeting calendar"
                 val selection = TextRange(0, 7)
                 val save = compose.onNodeWithText("Save")
-                val checking = hasText("The outcome is still unconfirmed.")
                 val message = "Could not save. Your changes are still here."
                 input.performTextReplacement(draft)
                 input.performTextInputSelection(selection)
                 val saveBounds = save.getUnclippedBoundsInRoot()
                 save.performClick()
-                compose.waitUntilAtLeastOneExists(checking, 10_000)
-                repeat(2) {
-                    compose.runOnIdle { model.resume() }
-                    compose.waitUntilAtLeastOneExists(
-                        checking or hasText(message),
-                        10_000,
-                    )
-                }
-
                 compose.waitUntilAtLeastOneExists(hasText(message), 10_000)
                 input
                     .assertTextContains(draft)

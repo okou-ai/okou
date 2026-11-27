@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,13 +36,7 @@ internal fun WorkspaceToolDirectoryRow(
     leading: @Composable () -> Unit,
     supportingContent: @Composable (() -> Unit)? = null,
 ) {
-    val activeShape = MaterialTheme.shapes.extraLarge
-    val shapes =
-        ListItemDefaults.shapes(
-            selectedShape = activeShape,
-            pressedShape = activeShape,
-            focusedShape = activeShape,
-        )
+    val shapes = okouListItemShapes()
     val colors = ListItemDefaults.colors()
     val foreground = if (selected) colors.selectedContentColor else colors.contentColor
     ListItem(
@@ -67,6 +62,16 @@ internal fun WorkspaceToolDirectoryRow(
     ) {
         Text(title)
     }
+}
+
+@Composable
+internal fun okouListItemShapes(): ListItemShapes {
+    val active = MaterialTheme.shapes.extraLarge
+    return ListItemDefaults.shapes(
+        selectedShape = active,
+        pressedShape = active,
+        focusedShape = active,
+    )
 }
 
 @Composable
