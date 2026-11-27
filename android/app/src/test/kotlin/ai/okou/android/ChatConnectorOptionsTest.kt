@@ -32,6 +32,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
@@ -49,8 +50,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 class ChatConnectorRootApplication : TestOkouApplication() {
     internal lateinit var connectors: ConnectorApiFixture
@@ -367,6 +370,121 @@ class ChatConnectorOptionsTest {
         waitTag(calendarTag)
         compose.onNodeWithTag(calendarTag).performClick()
         waitTag("chat-connector-selection-$replacementId")
+    }
+
+    @Test
+    fun coldConnectorReadsShowTheSharedFailureIllustrationOnBothLevels() {
+        openNewChat()
+        app.connectors.failChatOverview = true
+        openOverview(waitForRows = false)
+        waitText("Temporarily unable to load")
+        compose
+            .onNodeWithTag("content-read-failure-illustration", useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithTag("chat-connector-manage").assertIsDisplayed()
+        val overviewRead = "/api/chat-connector-overview" to null
+        assertEquals(3, app.connectors.chatConnectorReads.count { it == overviewRead })
+
+        inSheet(hasContentDescription("Back")).performClick()
+        dismissParentOptions()
+        app.connectors.failChatOverview = false
+        openOverview()
+        app.connectors.failAccountReads = true
+        app.connectors.accountRetryAfterSeconds = 0
+        compose.onNodeWithTag(calendarTag).performClick()
+        waitText("Temporarily unable to load")
+        compose
+            .onNodeWithTag("content-read-failure-illustration", useUnmergedTree = true)
+            .assertIsDisplayed()
+        inSheet(hasContentDescription("Back")).performClick()
+        compose.onNodeWithTag(calendarTag).assertIsDisplayed()
+        assertEquals(4, app.connectors.chatConnectorReads.count { it == overviewRead })
+    }
+
+    @Test
+    fun warmOverviewRefreshFailureKeepsRowsAndClearsItsSnackbarOnRecovery() {
+        openNewChat()
+        openOverview()
+        val lastService = compose.onNodeWithTag("chat-connector-service-slack")
+        val footer = compose.onNodeWithTag("chat-connector-manage")
+        val serviceBounds = lastService.getUnclippedBoundsInRoot()
+        val footerBounds = footer.getUnclippedBoundsInRoot()
+        app.connectors.failChatOverview = true
+        val options = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                        ?.connectors,
+                )
+                .chatOptions
+        }
+        compose.runOnIdle { options.invalidate("slack") }
+        val message = "Could not refresh connectors."
+        waitText(message)
+        val snackbar = compose.onNodeWithText(message).assertIsDisplayed()
+        compose.onNodeWithTag(calendarTag).assertIsDisplayed()
+        lastService.assertIsDisplayed()
+        footer.assertIsDisplayed()
+        assertEquals(serviceBounds, lastService.getUnclippedBoundsInRoot())
+        assertEquals(footerBounds, footer.getUnclippedBoundsInRoot())
+        assertTrue(serviceBounds.bottom <= snackbar.getUnclippedBoundsInRoot().top)
+        val overviewRead = "/api/chat-connector-overview" to null
+        assertEquals(4, app.connectors.chatConnectorReads.count { it == overviewRead })
+
+        app.connectors.failChatOverview = false
+        compose.runOnIdle { options.invalidate("slack") }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(message).fetchSemanticsNodes().isEmpty()
+        }
+        compose.onNodeWithTag(calendarTag).assertIsDisplayed()
+        assertEquals(5, app.connectors.chatConnectorReads.count { it == overviewRead })
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w240dp-h680dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun confirmedEmptyOverviewKeepsItsBoundsWhenRefreshFeedbackAppears() {
+        val fontScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            openNewChat()
+            app.connectors.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+            app.connectors.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+            app.connectors.removeAccount(CONNECTOR_SLACK_ACCOUNT)
+            openOverview(waitForRows = false)
+            val empty = "There are no connected accounts in this workspace."
+            waitText(empty)
+            val footer = compose.onNodeWithTag("chat-connector-manage")
+            val before = footer.getUnclippedBoundsInRoot()
+
+            app.connectors.failChatOverview = true
+            compose.runOnIdle {
+                val workspace =
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                checkNotNull(workspace?.connectors).chatOptions.invalidate("slack")
+            }
+            val message = "Could not refresh connectors."
+            waitText(message)
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText(message).assertIsDisplayed().performSemanticsAction(
+                SemanticsActions.GetTextLayoutResult,
+            ) {
+                it(layouts)
+            }
+            val layout = layouts.single()
+            assertTrue(layout.lineCount > 2)
+            assertTrue(!layout.hasVisualOverflow)
+            compose.onNodeWithText(empty).assertIsDisplayed()
+            assertEquals(before, footer.getUnclippedBoundsInRoot())
+        } finally {
+            RuntimeEnvironment.setFontScale(fontScale)
+        }
     }
 
     @Test

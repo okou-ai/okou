@@ -189,8 +189,7 @@ final class ChatModelSelectionResourceTests: XCTestCase {
     XCTAssertEqual(reads.withLock { $0 }, 2)
   }
 
-  func testSavingReadsFreshConfirmationInsteadOfReusingCachedMetadata() async throws {
-    let saved = Mutex(false)
+  func testSavingAppliesConfirmedSelectionWithoutRedundantMetadataReadback() async throws {
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
       if request.httpMethod == "POST",
@@ -199,14 +198,12 @@ final class ChatModelSelectionResourceTests: XCTestCase {
         let body = try XCTUnwrap(
           JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
         XCTAssertEqual(body["model"] as? String, "claude-model")
-        saved.withLock { $0 = true }
         return ChatHTTPResponse(status: 204, body: "")
       }
       let response = try modelReadResponse(request)
       if request.url?.path == metadataPath {
         reads.withLock { $0 += 1 }
-        return ChatHTTPResponse(
-          body: saved.withLock { $0 } ? changedMetadata : ModelHTTPFixtures.metadata)
+        return ChatHTTPResponse(body: ModelHTTPFixtures.metadata)
       }
       return response
     }
@@ -224,7 +221,7 @@ final class ChatModelSelectionResourceTests: XCTestCase {
     XCTAssertTrue(committed)
     XCTAssertEqual(selection.selection.model, "claude-model")
     XCTAssertTrue(selection.canSend)
-    XCTAssertEqual(reads.withLock { $0 }, 2)
+    XCTAssertEqual(reads.withLock { $0 }, 1)
   }
 
   private func modelStore(_ fixture: ChatHTTPFixture) -> ChatModelStore {

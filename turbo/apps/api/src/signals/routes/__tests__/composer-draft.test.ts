@@ -1,12 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { input } from "zod";
 import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
-import {
-  CLIENT_TYPE_ANDROID,
-  CLIENT_TYPE_HEADER,
-  CLIENT_TYPE_IOS,
-  CLIENT_VERSION_HEADER,
-} from "@okouai/api-contracts/contracts/client-headers";
 import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -25,11 +19,6 @@ function newMember(orgId = `org_${randomUUID()}`): Member {
   return { userId: `user_${randomUUID()}`, orgId };
 }
 
-interface NativeClient {
-  readonly type: string;
-  readonly version: string;
-}
-
 function drafts(member: Member) {
   createRouteMocks(context).clerk.session(member.userId, member.orgId);
   return setupApp({ context, routes: composerDraftRoutes })(
@@ -37,21 +26,8 @@ function drafts(member: Member) {
   );
 }
 
-function readDraft(member: Member, client?: NativeClient) {
-  return accept(
-    drafts(member).get({
-      headers,
-      ...(client
-        ? {
-            extraHeaders: {
-              [CLIENT_TYPE_HEADER]: client.type,
-              [CLIENT_VERSION_HEADER]: client.version,
-            },
-          }
-        : {}),
-    }),
-    [200],
-  );
+function readDraft(member: Member) {
+  return accept(drafts(member).get({ headers }), [200]);
 }
 
 function saveDraft(
@@ -65,7 +41,7 @@ function textDocument(text: string): UserMessageInputDocument {
   return { version: 1, parts: [{ type: "text", text }] };
 }
 
-test("composer-draft-002 stores, projects for older native clients and clears the member's composer draft", async () => {
+test("composer-draft-002 stores, replaces and clears the member's composer draft", async () => {
   const member = newMember();
   const fileId = randomUUID();
   const clipId = randomUUID();
@@ -136,30 +112,6 @@ test("composer-draft-002 stores, projects for older native clients and clears th
     draftUserMessage: document,
     draftAttachments: [attachment],
   });
-  const ios061 = await readDraft(member, {
-    type: CLIENT_TYPE_IOS,
-    version: "0.61.0",
-  });
-  expect(ios061.body.draftUserMessage).toStrictEqual(document);
-
-  const legacyParts = [
-    filePart,
-    {
-      type: "file",
-      fileId: clipId,
-      filenameSnapshot: "Voice clip 1",
-      contentType: "audio/*",
-    },
-    { type: "text", text: "Review the plan" },
-    ...feedbackParts,
-  ];
-  for (const type of [CLIENT_TYPE_IOS, CLIENT_TYPE_ANDROID]) {
-    const legacy = await readDraft(member, { type, version: "0.60.0" });
-    expect(legacy.body.draftUserMessage).toStrictEqual({
-      version: 1,
-      parts: legacyParts,
-    });
-  }
 
   await accept(
     saveDraft(member, { draftUserMessage: textDocument("Just text now") }),

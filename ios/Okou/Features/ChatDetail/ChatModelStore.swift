@@ -600,15 +600,12 @@ final class ChatModelSelectionStore {
       }
       return true
     }
-    var accepted = false
     var checkingUncertainWrite = false
     do {
       try await models.service.save(next, effort: effort, threadID: threadID)
-      accepted = true
-      let confirmed = try await models.service.selection(threadID: threadID)
       guard !closed, !Task.isCancelled else { return false }
       update {
-        $0.stored = confirmed
+        $0.stored = next
         $0.hasLoaded = true
         $0.needsThreadReadback = false
         $0.error = nil
@@ -621,7 +618,7 @@ final class ChatModelSelectionStore {
         $0.error = ChatRequestFailure.message(for: error)
       }
       models.report(error)
-      if accepted || ChatRequestFailure.isTransient(error) {
+      if ChatRequestFailure.isTransient(error) {
         checkingUncertainWrite = true
         refreshAfterSave = true
       }
@@ -652,9 +649,6 @@ final class ChatModelSelectionStore {
         value, effort: value.model.flatMap { value.modelSettings[$0]?.effort })
       guard !closed, !Task.isCancelled else { return false }
       models.applyPreference(preference)
-      // Preserve canonical readback after a write while reusing other metadata.
-      await models.refresh([.modelPreference])
-      guard !closed, !Task.isCancelled else { return false }
       error = nil
     } catch {
       guard !closed else { return false }
