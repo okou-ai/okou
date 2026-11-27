@@ -1,4 +1,5 @@
 import { antigravityDeviceAuthContract } from "@okouai/api-contracts/contracts/antigravity-device-auth";
+import { ANTIGRAVITY_FIREWALL_PLACEHOLDER } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { VOICE_TRANSCRIPTION_MODEL } from "@okouai/api-contracts/contracts/voice-clips";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -18,6 +19,7 @@ import {
   executionEnvironment,
   requireOrgId,
 } from "./helpers/chat-events-fixture";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
@@ -26,9 +28,10 @@ import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
+const firewall = createFirewallApi(context);
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-/** Google issues the sign-in grant once and a fresh access token per run. */
+/** Google issues the sign-in grant once and a fresh access token for the trusted request. */
 function mockGoogle() {
   const refreshes: URLSearchParams[] = [];
   server.use(
@@ -81,7 +84,7 @@ async function connectGoogleAccount(orgId: string, userId: string) {
 describe("Antigravity execution", () => {
   beforeEach(mockSecretKmsHttp);
 
-  it("launches agy with the selected model and a freshly minted credential", async () => {
+  it("launches agy with placeholders and resolves the access token at the firewall", async () => {
     mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_ID", "agy-client.example");
     mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_SECRET", "agy-client-secret");
     const refreshes = mockGoogle();
@@ -118,8 +121,8 @@ describe("Antigravity execution", () => {
         OKOU_REASONING_EFFORT: "high",
       });
       const token = {
-        access_token: "test-google-run-access",
-        refresh_token: "test-google-refresh",
+        access_token: ANTIGRAVITY_FIREWALL_PLACEHOLDER,
+        refresh_token: "okou-antigravity-local-refresh-placeholder",
         token_type: "Bearer",
       };
       // agy reads the nested token and personal-account auth method; the
@@ -131,8 +134,27 @@ describe("Antigravity execution", () => {
         token,
         auth_method: "consumer",
       });
-      // The credential never resolves through firewall secret references.
+      expect(refreshes).toHaveLength(0);
+      expect(JSON.stringify(execution)).not.toContain("test-google-refresh");
       expect(execution.secretConnectorMetadataMap ?? {}).toStrictEqual({});
+      expect(execution.firewalls).toContainEqual({
+        kind: "builtin",
+        name: "model-provider:antigravity",
+      });
+      const headers = { authorization: `Bearer ${execution.firewallToken}` };
+      const authHeaders = {
+        Authorization: `Bearer ${secretTemplate("ANTIGRAVITY_ACCESS_TOKEN")}`,
+      };
+      const result = await firewall.requestFirewallAuth(
+        headers,
+        { authHeaders },
+        [200],
+      );
+      expect(result.body).toMatchObject({
+        headers: { Authorization: "Bearer test-google-run-access" },
+        expiresAt: expect.any(Number),
+      });
+      expect(JSON.stringify(result.body)).not.toContain("test-google-refresh");
       expect(refreshes).toHaveLength(1);
       expect(Object.fromEntries(refreshes[0] ?? [])).toMatchObject({
         grant_type: "refresh_token",
@@ -140,6 +162,14 @@ describe("Antigravity execution", () => {
         client_id: "agy-client.example",
         client_secret: "agy-client-secret",
       });
+
+      const denied = await firewall.requestFirewallAuth(
+        headers,
+        { authHeaders, authBase: secretTemplate("ANTIGRAVITY_ACCESS_TOKEN") },
+        [424],
+      );
+      expect(denied.status).toBe(424);
+      expect(refreshes).toHaveLength(1);
     });
   });
 

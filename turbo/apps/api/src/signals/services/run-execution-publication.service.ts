@@ -1,4 +1,3 @@
-import { safeJsonParse } from "../utils";
 import type {
   ExecutionContext,
   PreparedExecutionContext,
@@ -22,27 +21,6 @@ export interface ExecutionPublicationRun extends ExecutionContextRun {
   readonly isFirstRun: boolean;
 }
 
-/** Mask the whole native credential and each token it carries. */
-function antigravityCredentialSecrets(credential: string | undefined) {
-  if (!credential) {
-    return [];
-  }
-  const parsed = safeJsonParse(credential);
-  const tokens =
-    typeof parsed === "object" && parsed !== null
-      ? [
-          (parsed as Record<string, unknown>).access_token,
-          (parsed as Record<string, unknown>).refresh_token,
-        ]
-      : [];
-  return [
-    credential,
-    ...tokens.filter((value): value is string => {
-      return typeof value === "string" && value.length > 0;
-    }),
-  ];
-}
-
 function secretValuesForRunner(
   preparedContext: PreparedExecutionContext,
 ): string[] {
@@ -50,12 +28,7 @@ function secretValuesForRunner(
   if (!token) {
     throw new Error("API execution requires its Guest OKOU_TOKEN");
   }
-  return [
-    token,
-    ...antigravityCredentialSecrets(
-      preparedContext.platformEnvironment.OKOU_ANTIGRAVITY_OAUTH_TOKEN,
-    ),
-  ];
+  return [token];
 }
 
 export const prepareExecutionNetworkPolicy$ = command(

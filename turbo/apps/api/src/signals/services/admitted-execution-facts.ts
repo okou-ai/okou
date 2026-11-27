@@ -25,7 +25,6 @@ export interface AdmittedExecutionFacts {
   };
   readonly okouToken: string;
   /** Freshly minted native `agy` credential for an Antigravity run only. */
-  readonly antigravityCredential?: string;
   readonly disabledPaidTools: readonly PaidToolId[];
   readonly realAgentInPreview: boolean | undefined;
   readonly apiStartTime: number | undefined;
