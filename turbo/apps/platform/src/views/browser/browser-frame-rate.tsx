@@ -1,9 +1,9 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { Check } from "lucide-react";
 import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuRadioItemIndicator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -29,18 +29,16 @@ export function BrowserFrameRateMenu({
         })}
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent side="left">
-        <DropdownMenuRadioGroup
-          value={enabled ? "on" : "off"}
-          onValueChange={(next: string) => {
-            change(next === "on");
-          }}
-        >
+        <DropdownMenuRadioGroup value={enabled ? "on" : "off"}>
           {([false, true] as const).map((value) => {
             return (
               <DropdownMenuRadioItem
                 closeOnClick
                 key={String(value)}
                 value={value ? "on" : "off"}
+                onClick={() => {
+                  change(value);
+                }}
               >
                 <span className="flex-1">
                   {value
@@ -51,7 +49,7 @@ export function BrowserFrameRateMenu({
                         return $.browserViewer.fpsOff;
                       })}
                 </span>
-                <DropdownMenuRadioItemIndicator />
+                {enabled === value && <Check size={14} />}
               </DropdownMenuRadioItem>
             );
           })}

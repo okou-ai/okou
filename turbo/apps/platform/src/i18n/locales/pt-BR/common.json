@@ -2656,7 +2656,6 @@
       "deleteTitle": "Excluir conversa?",
       "draft": "Rascunho",
       "empty": "Nenhuma conversa ainda",
-      "filter": "Filtrar",
       "filteredTitle": "{{filter}} · {{title}}",
       "inbox": "Caixa de entrada",
       "inboxEmpty": "Sua caixa de entrada está vazia",

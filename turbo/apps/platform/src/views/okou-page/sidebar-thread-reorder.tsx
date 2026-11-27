@@ -42,7 +42,7 @@ export function ThreadPinMoveMenuItems({
           return detach(move(signals.threadId, -1, signal), Reason.DomCallback);
         }}
       >
-        <ArrowUp size={16} />
+        <ArrowUp size={16} className="mr-2" />
         {upLabel}
         <ChatThreadMenuShortcut
           shortcut={GLOBAL_KEYBOARD_SHORTCUTS.moveChatPinUp.binding}
@@ -57,7 +57,7 @@ export function ThreadPinMoveMenuItems({
           return detach(move(signals.threadId, 1, signal), Reason.DomCallback);
         }}
       >
-        <ArrowDown size={16} />
+        <ArrowDown size={16} className="mr-2" />
         {downLabel}
         <ChatThreadMenuShortcut
           shortcut={GLOBAL_KEYBOARD_SHORTCUTS.moveChatPinDown.binding}

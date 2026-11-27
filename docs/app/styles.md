@@ -558,20 +558,6 @@ type rail and its current-model rows pair a label with a summary line and state
 their own `h-11` and `h-12`; they sit outside this contract because they are not
 single-line list rows.
 
-Section headings inside dropdown and select menus use `DropdownMenuGroup` with
-`DropdownMenuLabel` (or `SelectGroup` with `SelectLabel`), sharing the
-`px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground/80` rhythm rather
-than hand-rolled `<div>` or `<p>` headers. Single-select menu lists use
-`DropdownMenuRadioGroup` + `DropdownMenuRadioItem` +
-`DropdownMenuRadioItemIndicator`, and multi-select lists use
-`DropdownMenuCheckboxItem` + `DropdownMenuCheckboxItemIndicator`. Both
-indicator primitives reserve a right-aligned `size-4 shrink-0` column and
-default to `<Check />` sized by the row's `[&_svg]:size-4` rule, so selection is
-communicated by the trailing check without adding a persistent selected
-background fill (`bg-state-selected` or `bg-muted`). Menu items rely on their
-built-in `gap-2` (8px) between icon and label instead of per-icon `mr-*`
-margins.
-
 ### Fills inside interactive rows
 
 A fill drawn inside an element that takes a state — the icon tile in a menu

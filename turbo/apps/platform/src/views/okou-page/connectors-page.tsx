@@ -37,7 +37,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Search, Filter, ChevronDown } from "lucide-react";
+import { Search, Filter, ChevronDown, Check } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -108,11 +108,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuRadioItemIndicator,
+  DropdownMenuItem,
   DropdownMenuSeparator,
   Input,
   SegmentControl,
@@ -129,7 +125,34 @@ import {
 import { AddRemoteDeviceButton } from "./remote-device-directory.tsx";
 import { WorkspaceCanvasBackdrop } from "./workspace-inset.tsx";
 
-const ALL_CONNECTORS_FILTER_VALUE = "__all__";
+function ConnectorFilterSectionLabel({
+  children,
+}: {
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground/80">
+      {children}
+    </div>
+  );
+}
+
+function ConnectorFilterOption({
+  active,
+  onSelect,
+  children,
+}: {
+  readonly active: boolean;
+  readonly onSelect: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <DropdownMenuItem className="justify-between gap-2" onClick={onSelect}>
+      <span className="flex min-w-0 items-center gap-2">{children}</span>
+      {active && <Check size={15} className="shrink-0 text-foreground" />}
+    </DropdownMenuItem>
+  );
+}
 
 /** Configured resources determine whether a remote-access service is connected. */
 function configuredRemoteAccessResources(
@@ -435,69 +458,48 @@ function DirectoryControls() {
                 align="end"
                 className="max-h-[min(420px,var(--available-height))] w-64 overflow-y-auto"
               >
-                <DropdownMenuRadioGroup
-                  value={
-                    customScope
-                      ? null
-                      : (categoryFilter ?? ALL_CONNECTORS_FILTER_VALUE)
-                  }
-                  onValueChange={(
-                    next:
-                      | (typeof categories)[number]["category"]
-                      | typeof ALL_CONNECTORS_FILTER_VALUE,
-                  ) => {
-                    setCategoryFilter(
-                      next === ALL_CONNECTORS_FILTER_VALUE ? null : next,
-                    );
+                <ConnectorFilterSectionLabel>
+                  {t(($) => {
+                    return $.connectors.catalog.directory.browse;
+                  })}
+                </ConnectorFilterSectionLabel>
+                <ConnectorFilterOption
+                  active={!customScope && categoryFilter === null}
+                  onSelect={() => {
+                    setCategoryFilter(null);
                   }}
                 >
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>
-                      {t(($) => {
-                        return $.connectors.catalog.directory.browse;
-                      })}
-                    </DropdownMenuLabel>
-                    <DropdownMenuRadioItem
-                      value={ALL_CONNECTORS_FILTER_VALUE}
-                      closeOnClick
+                  {t(($) => {
+                    return $.connectors.catalog.filters.all;
+                  })}
+                </ConnectorFilterOption>
+                <DropdownMenuSeparator />
+                <ConnectorFilterSectionLabel>
+                  {t(($) => {
+                    return $.connectors.catalog.filterCategory;
+                  })}
+                </ConnectorFilterSectionLabel>
+                {categories.map((section) => {
+                  const total = categoryCounts?.[section.category];
+                  return (
+                    <ConnectorFilterOption
+                      key={section.category}
+                      active={categoryFilter === section.category}
+                      onSelect={() => {
+                        setCategoryFilter(section.category);
+                      }}
                     >
-                      {t(($) => {
-                        return $.connectors.catalog.filters.all;
-                      })}
-                      <DropdownMenuRadioItemIndicator />
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>
-                      {t(($) => {
-                        return $.connectors.catalog.filterCategory;
-                      })}
-                    </DropdownMenuLabel>
-                    {categories.map((section) => {
-                      const total = categoryCounts?.[section.category];
-                      return (
-                        <DropdownMenuRadioItem
-                          key={section.category}
-                          value={section.category}
-                          closeOnClick
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <span className="min-w-0 truncate">
-                              {section.menuLabel}
-                            </span>
-                            {total !== undefined && (
-                              <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
-                                {total}
-                              </span>
-                            )}
-                          </span>
-                          <DropdownMenuRadioItemIndicator />
-                        </DropdownMenuRadioItem>
-                      );
-                    })}
-                  </DropdownMenuGroup>
-                </DropdownMenuRadioGroup>
+                      <span className="min-w-0 truncate">
+                        {section.menuLabel}
+                      </span>
+                      {total !== undefined && (
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
+                          {total}
+                        </span>
+                      )}
+                    </ConnectorFilterOption>
+                  );
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

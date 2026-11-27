@@ -160,7 +160,12 @@ export function SharePermissionChoices({
               described ? "items-start" : "items-center",
               MENU_ROW_HEIGHT_CLASS,
               unavailable && "opacity-50",
-              "hover:bg-state-hover",
+              // `state-hover` says "the pointer is here"; selection owns
+              // `state-selected`. Painting both with the hover layer made a
+              // hovered row and the current audience the same fill.
+              isSelected
+                ? "bg-state-selected hover:bg-state-selected-hover"
+                : "hover:bg-state-hover",
               unavailable && "hover:bg-transparent",
             )}
           >
@@ -176,14 +181,12 @@ export function SharePermissionChoices({
               description={described ? description : null}
               selected={isSelected}
             />
-            <span
-              className={cn(
-                "ml-auto flex size-4 shrink-0 items-center justify-center",
-                described && "mt-0.5",
-              )}
-            >
-              {isSelected && <Check size={16} aria-hidden="true" />}
-            </span>
+            {isSelected && (
+              <Check
+                size={16}
+                className={cn("shrink-0", described && "mt-0.5")}
+              />
+            )}
           </RadioPrimitive.Root>
         );
       })}

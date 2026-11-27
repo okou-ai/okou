@@ -117,10 +117,7 @@ export function menuItemByText(text: string): HTMLElement {
 
 export function queryMenuItemByText(text: string): HTMLElement | null {
   return (
-    [
-      ...queryAllByRoleFast("menuitem"),
-      ...queryAllByRoleFast("menuitemradio"),
-    ].find((candidate) => {
+    queryAllByRoleFast("menuitem").find((candidate) => {
       const semanticContent = candidate.cloneNode(true);
       if (!(semanticContent instanceof HTMLElement)) {
         return false;

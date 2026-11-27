@@ -80,10 +80,7 @@ async function choose(name: string, scope?: HTMLElement) {
     : await findButton("More actions");
   click(trigger!);
   const menu = await screen.findByRole("menu");
-  const item = [
-    ...queryAllByRoleFast("menuitem", menu),
-    ...queryAllByRoleFast("menuitemradio", menu),
-  ].find((el) => {
+  const item = queryAllByRoleFast("menuitem", menu).find((el) => {
     return el.textContent?.trim() === name;
   });
   expect(item).toBeDefined();
@@ -432,11 +429,7 @@ test.each(["mobile", "desktop"] as const)(
     await expect(findButton("Artifacts and chats")).resolves.toBeEnabled();
     await user.click(more);
     const menu = await screen.findByRole("menu");
-    const labels = Array.from(
-      menu.querySelectorAll<HTMLElement>(
-        '[role="menuitem"], [role="menuitemradio"]',
-      ),
-    ).map((item) => {
+    const labels = queryAllByRoleFast("menuitem", menu).map((item) => {
       return item.textContent;
     });
     expect(labels).toStrictEqual(

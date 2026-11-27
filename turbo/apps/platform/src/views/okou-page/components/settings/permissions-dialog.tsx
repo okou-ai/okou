@@ -72,6 +72,7 @@ import type { PermissionDrawerSession } from "../../../../signals/okou-page/sett
 import { activeUserPermissionGrantSnapshot } from "../../../../signals/user-permission-grants.ts";
 import type { PermissionPolicy } from "../../../../signals/okou-page/settings/permissions.ts";
 import {
+  Check,
   ChevronRight,
   Clock,
   ChevronDown,
@@ -505,10 +506,14 @@ function PermissionAllowDurationDropdown({
                 key={option}
                 value={option}
                 closeOnClick
-                className="gap-4"
+                className="flex items-center justify-between gap-4"
               >
                 {allowDurationMenuLabel(option)}
-                <DropdownMenuRadioItemIndicator />
+                <span className="h-3.5 w-3.5 shrink-0">
+                  <DropdownMenuRadioItemIndicator>
+                    <Check size={14} aria-hidden />
+                  </DropdownMenuRadioItemIndicator>
+                </span>
               </DropdownMenuRadioItem>
             );
           })}

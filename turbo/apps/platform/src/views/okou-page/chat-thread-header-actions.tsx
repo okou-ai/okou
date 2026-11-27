@@ -10,6 +10,7 @@ import {
   Ellipsis,
   Globe,
   Mail,
+  Check,
   Pencil,
   Pin,
   PinOff,
@@ -19,9 +20,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuRadioItemIndicator,
   DropdownMenuSeparator,
 } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
@@ -267,54 +265,46 @@ export function DesktopChatThreadMoreMenu({
           // The email popover takes focus when selected; dismissal returns here.
           finalFocus={mailOpen ? false : undefined}
         >
-          <DropdownMenuRadioGroup
-            value={
-              target?.type === "automations" || target?.type === "browser"
-                ? target.type
-                : null
-            }
+          <DropdownMenuItem
+            disabled={transitioning}
+            onClick={() => {
+              reloadAutomations();
+              openAutomations(thread);
+            }}
           >
-            <DropdownMenuRadioItem
-              value="automations"
-              closeOnClick
-              disabled={transitioning}
-              onClick={() => {
-                reloadAutomations();
-                openAutomations(thread);
-              }}
-            >
-              <Clock size={16} />
-              {t(($) => {
-                return $.chat.automations.title;
-              })}
-              <DropdownMenuRadioItemIndicator />
-            </DropdownMenuRadioItem>
-            <DropdownMenuItem
-              disabled={transitioning}
-              onClick={() => {
-                return openMail(thread);
-              }}
-            >
-              <Mail size={16} />
-              {t(($) => {
-                return $.chat.mail.manager.open;
-              })}
-            </DropdownMenuItem>
-            <DropdownMenuRadioItem
-              value="browser"
-              closeOnClick
-              disabled={transitioning}
-              onClick={() => {
-                return openBrowser(thread.threadId);
-              }}
-            >
-              <Globe size={16} />
-              {t(($) => {
-                return $.chat.thread.openBrowser;
-              })}
-              <DropdownMenuRadioItemIndicator />
-            </DropdownMenuRadioItem>
-          </DropdownMenuRadioGroup>
+            <Clock size={16} />
+            {t(($) => {
+              return $.chat.automations.title;
+            })}
+            {target?.type === "automations" && (
+              <Check className="ml-auto" size={16} />
+            )}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={transitioning}
+            onClick={() => {
+              return openMail(thread);
+            }}
+          >
+            <Mail size={16} />
+            {t(($) => {
+              return $.chat.mail.manager.open;
+            })}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={transitioning}
+            onClick={() => {
+              return openBrowser(thread.threadId);
+            }}
+          >
+            <Globe size={16} />
+            {t(($) => {
+              return $.chat.thread.openBrowser;
+            })}
+            {target?.type === "browser" && (
+              <Check className="ml-auto" size={16} />
+            )}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <ThreadMailButton thread={thread} menuAnchor={anchor} />

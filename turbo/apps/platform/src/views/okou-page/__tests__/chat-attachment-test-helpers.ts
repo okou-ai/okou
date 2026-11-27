@@ -457,10 +457,8 @@ function getNamedMenuItem(
   name: string,
   container: ParentNode = document.body,
 ): HTMLElement {
-  const menuItem = [
-    ...queryAllByRoleFast("menuitem", container),
-    ...queryAllByRoleFast("menuitemradio", container),
-  ].find((candidate) => {
+  const menuItem = queryAllByRoleFast("menuitem", container).find(
+    (candidate) => {
       return (
         candidate.getAttribute("aria-label") === name ||
         candidate.textContent?.trim() === name
