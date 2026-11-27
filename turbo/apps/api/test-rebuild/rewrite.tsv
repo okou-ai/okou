@@ -747,12 +747,12 @@ chat	src/signals/routes/__tests__/chat-events-automations.test.ts	chat-events-au
 chat	src/signals/routes/__tests__/chat-events-automations.test.ts	chat-events-automations-002	rewritten	450.6	split 1->2: (1/2) timeout=800 (450.6ms), (2/2) timeout=600 (363.9ms)	src/signals/routes/__tests__/chat-events-attachments-and-runtime.test.ts	R28	a-run
 chat	src/signals/routes/__tests__/chat-events-automations.test.ts	chat-events-automations-004	rewritten	256.7	timeout=400 (5-run idle non-first median 256.7ms)	src/signals/routes/__tests__/chat-events-attachments-and-runtime.test.ts	R28	a-run
 chat	src/signals/routes/__tests__/chat-events-batched-preload.test.ts	chat-events-batched-preload-002	rewritten	376.0	timeout=800 (5-run idle non-first median 376.0ms)	src/signals/routes/__tests__/chat-events-pi-lifecycle.test.ts	R28	a-run
-chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-001	planned				pilot	a-run
-chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-002	revisit		revisit: reclassify to a-run: verifies model usage attribution across two dispatched Runs (including draining a queued send on a busy thread)		pilot	d-other
-chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-008	planned				pilot	a-run
-chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-009	planned				pilot	a-run
-chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-010	planned				pilot	a-run
-chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-011	planned				pilot	a-run
+chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-001	rewritten	424.2	timeout=800 (TRIPLE_RUN)	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-002	rewritten	326.6	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	R30	d-other
+chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-008	rewritten	140.5	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-009	rewritten	178.5	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-010	rewritten	330.7	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	chat-events-bootstrap-prefetch-011	rewritten	214.6	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts	R30	a-run
 chat	src/signals/routes/__tests__/chat-events-budget-steer.test.ts	chat-events-budget-steer-001	rewritten	251.6	timeout=600 (5-run idle non-first median 251.6ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	d-other
 chat	src/signals/routes/__tests__/chat-events-budget-steer.test.ts	chat-events-budget-steer-003	rewritten	230.0	timeout=600 (5-run idle non-first median 230.0ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
 chat	src/signals/routes/__tests__/chat-events-budget-steer.test.ts	chat-events-budget-steer-004	rewritten	261.7	timeout=600 (5-run idle non-first median 261.7ms)	src/signals/routes/__tests__/chat-events-queue-and-overrides.test.ts	R28	a-run
@@ -764,12 +764,12 @@ chat	src/signals/routes/__tests__/chat-events-concurrency-prefetch.test.ts	chat-
 chat	src/signals/routes/__tests__/chat-events-connector-selection.test.ts	chat-events-connector-selection-001	rewritten	388.4	timeout=600 (DOUBLE_RUN); split into 2 rows (1/2: 213.6ms, 2/2: 388.4ms) merged into chat-connector-execution-runs.test.ts	src/signals/routes/__tests__/chat-connector-execution-runs.test.ts	R30	a-run
 chat	src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	chat-events-connector-snapshot-001	rewritten	385.6	timeout=800 (2 non-first idle samples [384.0, 387.1]; 3x cold #1)	src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	chat-events-connector-snapshot-002	rewritten	318.2	timeout=400 (5-run idle non-first median 318.2ms)	src/signals/routes/__tests__/chat-events-connector-snapshot.test.ts	R26	a-run
-chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-002	planned				pilot	a-run
-chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-004	revisit		revisit: reclassify to a-run: verifies selected OpenAI connection ID in Runner dispatch		pilot	d-other
-chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-005	revisit		revisit: reclassify to a-run: verifies OpenAI credential reference omitted/restored across Runner dispatches		pilot	d-other
-chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-007	revisit		revisit: reclassify to a-run: dispatches and completes a Run with default OpenAI account then dispatches continuation while revoked		pilot	d-other
-chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-009	planned				pilot	a-run
-chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-011	revisit		revisit: reclassify to a-run: verifies Run still dispatches omitting unavailable custom connector target		pilot	d-other
+chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-002	rewritten	239.8	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-connectors.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-004	rewritten	195.4	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-connectors.test.ts	R30	d-other
+chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-005	rewritten	282.7	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-connectors.test.ts	R30	d-other
+chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-007	rewritten	287.9	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-connectors.test.ts	R30	d-other
+chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-009	rewritten	226.1	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-connectors.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-connectors-011	rewritten	206.5	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-connectors.test.ts	R30	d-other
 chat	src/signals/routes/__tests__/chat-events-context-batches.test.ts	chat-events-context-batches-002	skipped		slow-setup: Given+first When/Then 371 ms and 373 ms (warm lower bound that omits the Slack, custom connector and workflow Given steps: entitled Pro actor with personal Claude Fable 5.1 124/116 ms, Codex OAuth device-auth connect 72/79 ms, initial send dispatching the Run plus its Runner execution input 175/178 ms)		B07	d-other
 chat	src/signals/routes/__tests__/chat-events-custom-domains-prompt.test.ts	chat-events-custom-domains-prompt-002	rewritten	488.3	timeout=600 (single-row 5-run idle median 488.3ms)	src/signals/routes/__tests__/chat-events-custom-domains-prompt.test.ts	R26	a-run
 chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-001	rewritten	98.4	timeout=400 (5-run idle non-first median 98.4ms)	src/signals/routes/__tests__/chat-events-model-execution.test.ts	R28	a-run
@@ -842,16 +842,16 @@ chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-s
 chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-010	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-012	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-shared-queue.test.ts	chat-events-shared-queue-014	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-001	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-005	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-007	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-008	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-010	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-001	planned		reclassified to a-run in round 16: the Given needs a dispatched Run; kept planned until the a-run decision		B11	a-run
-chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-004	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-005	planned		reclassified to a-run in round 16: the Given needs a dispatched Run; kept planned until the a-run decision		B11	a-run
-chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-006	planned		reclassified to a-run in round 16: the Given needs a dispatched Run; kept planned until the a-run decision		B11	a-run
-chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-007	planned					a-run
+chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-001	rewritten	218.5	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-steer.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-005	rewritten	244.2	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-steer.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-007	rewritten	263.1	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-steer.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-008	rewritten	264.4	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-steer.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-steer.test.ts	chat-events-steer-010	rewritten	291.8	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-steer.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-001	rewritten	349.2	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-004	rewritten	220.5	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-005	rewritten	424.8	timeout=800 (TRIPLE_RUN)	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-006	rewritten	291.7	split n=2: 1/2=291.7 (timeout=600); 2/2=165.6 (timeout=400)	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-007	rewritten	402.6	split n=2: 1/2=402.6 (timeout=800); 2/2=273.9 (timeout=600)	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	R30	a-run
 chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-001	rewritten	190.0	split n=2: 1/2=48.1; 2/2=123.9; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/chat-files.bdd.test.ts	B09	d-other
 chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-002	rewritten	54.8	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/chat-files.bdd.test.ts	B09	d-other
 chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-004	rewritten	120.9	split n=3: 1/3=94.6; 2/3=120.9; 3/3=113.2	src/signals/routes/__tests__/chat-threads-state-and-files.test.ts	R29	a-run
@@ -891,12 +891,12 @@ chat	src/signals/routes/__tests__/chat-thread-mark-all-read.test.ts	chat-thread-
 chat	src/signals/routes/__tests__/chat-thread-mark-all-read.test.ts	chat-thread-mark-all-read-006	skipped		slow-setup: Given+first When/Then 257 ms and 256 ms (lower bound with only the first member: entitled Pro actor 106/107 ms, chat send dispatching a Run 88/85 ms, terminal Run event 56/54 ms, bulk mark-read 7/11 ms; the second member needs its own Run as well)		B07	d-other
 chat	src/signals/routes/__tests__/chat-thread-pdf-filename.test.ts	chat-thread-pdf-filename-001	skipped		slow-setup: Given+first When/Then 455 ms and 569 ms (lower bound with one selected prompt: entitled Pro actor with runner group and personal model 228/285 ms, the prompt must be run-bound to be a visible canonical message so its send dispatches a Run 200/239 ms, first filename request 27/45 ms; an unentitled send is rejected for insufficient credits and its prompt becomes invisible)		B07	d-other
 chat	src/signals/routes/__tests__/chat-thread-pdf-filename.test.ts	chat-thread-pdf-filename-004	skipped		slow-setup: Given+first When/Then 300 ms and 304 ms (lower bound: entitled Pro actor 172/170 ms, canonical prompt needs a dispatched Run 121/126 ms, unauthenticated request 8/8 ms; revoking a queued prompt instead races the background pick, which rejects it first)		B07	d-other
-chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-001	planned					a-run
-chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-003	planned					a-run
-chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-005	planned					a-run
-chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-007	planned					a-run
-chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-009	planned					a-run
-chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-010	planned					a-run
+chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-001	rewritten	524.2	timeout=800 (TRIPLE_RUN)	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-003	rewritten	302.9	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-005	rewritten	261.5	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-007	rewritten	354.8	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-009	rewritten	368.1	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	chat-thread-queue-pick-010	rewritten	300.3	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/chat-thread-queue-pick.test.ts	R30	a-run
 chat	src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	chat-thread-read-cursor-001	skipped		slow-setup:run-token: an unread thread needs a terminal Run event (run.completed/failed/cancelled) to set the read watermark; only public path is a dispatched chat Run (240-790 ms setup)		pilot	
 chat	src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	chat-thread-read-cursor-005	rewritten	63.2	extension after sandbox reset	src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	pilot	
 chat	src/signals/routes/__tests__/chat-thread-read-cursor.test.ts	chat-thread-read-cursor-006	skipped		slow-setup:run-token: mark-read only advances the cursor and the thread only shows as unread with a terminal Run event; only public path is a dispatched chat Run (240-790 ms setup)		pilot	
@@ -2457,12 +2457,12 @@ account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	pri
 account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-003	rewritten	129.6		src/signals/routes/__tests__/private-integration-uploads.test.ts	B06	
 account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-005	rewritten	174.2	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/private-integration-uploads.test.ts	B06	
 account-org	src/signals/routes/__tests__/proactive-preferences.test.ts	proactive-preferences-001	skipped		slow-setup: Given+first When/Then 545 ms and 507 ms (launching the primary chat Run with an execution token via createRunExecutionCredentials: 433 ms and 400 ms incl. ~100 ms file cold start; first Run-token read of proactive suggestions 9-10 ms; Official catalog publication not yet included)		B05	
-chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-001	planned					a-run
-chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-002	planned					a-run
-chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-005	planned					a-run
-chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-006	planned					a-run
-chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-008	planned					a-run
-chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-009	planned					a-run
+chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-001	rewritten	190.9	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/project-reference-validation.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-002	rewritten	164.1	timeout=400 (SINGLE_RUN)	src/signals/routes/__tests__/project-reference-validation.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-005	rewritten	355.6	timeout=600 (DOUBLE_RUN)	src/signals/routes/__tests__/project-reference-validation.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-006	rewritten	70.0		src/signals/routes/__tests__/project-reference-validation.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-008	rewritten	38.8		src/signals/routes/__tests__/project-reference-validation.test.ts	R30	a-run
+chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-009	rewritten	34.5		src/signals/routes/__tests__/project-reference-validation.test.ts	R30	a-run
 chat	src/signals/routes/__tests__/project-run-context.test.ts	project-run-context-001	rewritten	403.0	timeout=600 (5-run idle non-first median 403.0ms)	src/signals/routes/__tests__/run-lifecycle-and-context.test.ts	R28	a-run
 chat	src/signals/routes/__tests__/projects.test.ts	projects-001	rewritten	80.1	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
 chat	src/signals/routes/__tests__/projects.test.ts	projects-002	rewritten	95.5	accepted by the non-first median rule	src/signals/routes/__tests__/projects.test.ts	B09	d-other
