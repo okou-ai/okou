@@ -8,12 +8,15 @@ import ai.okou.android.chat.TextDisposition
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -115,6 +118,28 @@ internal class ChatSentImageViewerRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    fun plusZoomsTheFocusedImageFromFit() {
+        val fixture = openConversation()
+        // Keep the thumbnail in place throughout the keyboard interaction.
+        val releaseOriginal = CountDownLatch(1)
+        fixture.beforeOriginal = { releaseOriginal.await() }
+        try {
+            compose.onNodeWithContentDescription(fixture.first).performClick()
+            val image =
+                hasTestTag("artifact_image_transform") and hasContentDescription(fixture.first)
+            val fitImage = hasImageAction("Fit image")
+            val readyImage = image and isFocused() and hasImageAction("Zoom in") and !fitImage
+            compose.waitUntilExactlyOneExists(readyImage, 5_000)
+
+            compose.onNode(readyImage).performKeyInput { pressKey(Key.Plus) }
+
+            compose.waitUntilExactlyOneExists(image and fitImage, 5_000)
+        } finally {
+            releaseOriginal.countDown()
+        }
+    }
+
+    @Test
     fun shareThatLosesAccessToAZoomedImageLeavesTheGroupNavigable() {
         val fixture = openConversation()
         compose.onNodeWithContentDescription(fixture.first).performClick()
@@ -180,6 +205,11 @@ internal class ChatSentImageViewerRootTest : ArtifactCatalogRootTestFixture() {
             hasTestTag("artifact_image_transform") and hasContentDescription(filename),
             10_000,
         )
+
+    private fun hasImageAction(label: String) =
+        SemanticsMatcher("has image action '$label'") { node ->
+            node.config.getOrNull(SemanticsActions.CustomActions)?.any { it.label == label } == true
+        }
 }
 
 class ChatPendingImageApplication : ChatListApplication() {
