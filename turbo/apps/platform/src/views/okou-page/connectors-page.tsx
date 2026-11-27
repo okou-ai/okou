@@ -281,6 +281,12 @@ function ConnectorsScopeSegment() {
         })}
         <ConnectedScopeCount />
       </SegmentControlItem>
+      <SegmentControlItem value="custom" data-testid="connectors-scope-custom">
+        {t(($) => {
+          return $.connectors.catalog.scope.custom;
+        })}
+        <CustomScopeCount />
+      </SegmentControlItem>
       <SegmentControlItem
         value="remote-control"
         data-testid="connectors-scope-remote-control"
@@ -298,12 +304,6 @@ function ConnectorsScopeSegment() {
           return $.connectors.catalog.scope.privateNetwork;
         })}
         <PrivateNetworkScopeCount />
-      </SegmentControlItem>
-      <SegmentControlItem value="custom" data-testid="connectors-scope-custom">
-        {t(($) => {
-          return $.connectors.catalog.scope.custom;
-        })}
-        <CustomScopeCount />
       </SegmentControlItem>
     </SegmentControl>
   );
