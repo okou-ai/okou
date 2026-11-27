@@ -26,10 +26,12 @@ import ai.okou.android.chat.ComposerPrefillResult
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.ConfirmedProject
+import ai.okou.android.chat.ConversationCodeReading
 import ai.okou.android.chat.ConversationContentMaxWidth
 import ai.okou.android.chat.ConversationFind
 import ai.okou.android.chat.ConversationFindTarget
 import ai.okou.android.chat.ConversationFindVisit
+import ai.okou.android.chat.ConversationFullCode
 import ai.okou.android.chat.ConversationLink
 import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
@@ -62,6 +64,7 @@ import ai.okou.android.chat.imageFocusReply
 import ai.okou.android.chat.openConversationWebLink
 import ai.okou.android.chat.projectDestinations
 import ai.okou.android.chat.rememberChatAttachmentPicker
+import ai.okou.android.chat.rememberConversationReadVisit
 import ai.okou.android.chat.rowActions
 import ai.okou.android.chat.searchCatalog
 import ai.okou.android.chat.searchWorkflowById
@@ -87,6 +90,7 @@ import ai.okou.android.state.rememberArtifactPageHolder
 import ai.okou.android.state.rememberChatConnectorVisit
 import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberConnectorsOpen
+import ai.okou.android.state.rememberConversationCodeVisit
 import ai.okou.android.state.rememberConversationLinkPosition
 import ai.okou.android.state.rememberConversationLinkReturns
 import ai.okou.android.state.rememberConversationQueueFlag
@@ -392,7 +396,32 @@ internal fun OkouApp(
                 resourcesId == null &&
                 (listWidth != null || !searchActive)
         }
-    val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
+    val conversationSnackbar = remember(chats) { SnackbarHostState() }
+    val savedCodeVisit = rememberConversationCodeVisit()
+    val codeReading =
+        remember(savedCodeVisit, conversationSnackbar) {
+            ConversationCodeReading(savedCodeVisit, conversationSnackbar)
+        }
+    val codeThread = (target as? WorkspaceTarget.Chat)?.id
+    LaunchedEffect(chats, target) {
+        if (chats != null) codeReading.retainChat(codeThread)
+    }
+    val codeVisit =
+        codeReading.visit?.takeIf {
+            it.threadId == codeThread &&
+                thread != null &&
+                settings == null &&
+                !showWorkflows &&
+                !showingConnectors &&
+                !showArtifacts &&
+                resourcesId == null &&
+                !showingFind &&
+                inlineArtifactLink == null &&
+                (listWidth != null || !searchActive)
+        }
+    val showList =
+        codeVisit?.expanded != true &&
+            (listWidth != null || searchActive || target == WorkspaceTarget.List)
     val showChatList =
         settings == null &&
             showList &&
@@ -1075,9 +1104,14 @@ internal fun OkouApp(
         !showWorkflows &&
             !showArtifacts &&
             !showingConnectors &&
-            (settings != null || showWorkspaceBack || searchActive || findVisit != null),
+            (codeVisit != null ||
+                settings != null ||
+                showWorkspaceBack ||
+                searchActive ||
+                findVisit != null),
         onBack = {
-            if (
+            if (codeVisit != null) codeReading.close()
+            else if (
                 settings == null &&
                     searchActive &&
                     (listWidth == null || navigation.search == SearchRoute.Open)
@@ -1121,10 +1155,26 @@ internal fun OkouApp(
                 !showArtifacts &&
                 resourcesId == null &&
                 inlineArtifactLink == null &&
+                codeVisit == null &&
                 !showingFind &&
                 (listWidth != null || !searchActive)
         }
-    val conversationSnackbar = remember(chats) { SnackbarHostState() }
+    // The transcript and complete source are destinations within the same live visit.
+    val conversationReadVisit =
+        if (
+            chats != null &&
+                codeThread != null &&
+                !awaitingCreatedChat &&
+                (visibleConversationId != null || codeVisit != null)
+        ) {
+            val generation =
+                runActions?.confirmed?.generation
+                    ?: chats.history.uiState.collectAsStateWithLifecycle().value.generation
+            rememberConversationReadVisit(chats.history, codeThread, generation, visible = true)
+        } else null
+    if (codeVisit != null) {
+        SideEffect { conversationReadVisit?.value?.showRunActivity(null) }
+    }
     if (visibleConversationId != null) {
         DisposableEffect(chats, visibleConversationId) {
             onDispose {
@@ -1718,7 +1768,7 @@ internal fun OkouApp(
             }
         },
         topBar = {
-            if (!showingFind) {
+            if (!showingFind && codeVisit == null) {
                 if (settings == null && listWidth == null && showList && !searchActive) {
                     Box(Modifier.windowInsetsPadding(TopAppBarDefaults.windowInsets)) {
                         listToolbar()
@@ -1917,7 +1967,7 @@ internal fun OkouApp(
                             }
                         }
                     }
-                    if (listWidth != null) VerticalDivider()
+                    if (listWidth != null && showList) VerticalDivider()
                     if (
                         chats != null &&
                             (listWidth != null || (!searchActive && target != WorkspaceTarget.List))
@@ -1926,6 +1976,18 @@ internal fun OkouApp(
                             Modifier.weight(1f).fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) detailPane@{
+                            if (codeVisit != null) {
+                                key(codeVisit.threadId, codeVisit.target) {
+                                    ConversationFullCode(
+                                        chats.history,
+                                        runActions?.presentation,
+                                        codeVisit,
+                                        codeReading,
+                                        wide = listWidth != null,
+                                    )
+                                }
+                                return@detailPane
+                            }
                             if (inlineArtifactLink != null && chatArtifacts != null) {
                                 inlineArtifactPageState.SaveableStateProvider(
                                     "chat-artifact-link",
@@ -2040,6 +2102,8 @@ internal fun OkouApp(
                                                 queueOpen = queueOpen,
                                                 queuePosition = queuePosition,
                                                 dismissQueue = { queueOpenState?.value = false },
+                                                codeReading = codeReading,
+                                                readVisit = conversationReadVisit,
                                                 onFollowup =
                                                     if (canEdit) { prompt -> followup = prompt }
                                                     else null,

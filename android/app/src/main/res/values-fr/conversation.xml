@@ -71,4 +71,13 @@
     <string name="conversation_link_no_browser">Aucun navigateur ne peut ouvrir ce lien</string>
     <string name="chat_model_check_required">Impossible de vérifier le modèle enregistré.</string>
     <string name="chat_model_save_rejected">Impossible d’enregistrer le modèle de cette conversation.</string>
+    <string name="conversation_code_generic">Code</string>
+    <string name="conversation_code_copy">Copier le code</string>
+    <string name="conversation_code_copied">Code copié</string>
+    <string name="conversation_code_copy_failed">Impossible de copier le code</string>
+    <string name="conversation_code_lines">%1$d lignes affichées sur %2$d</string>
+    <string name="conversation_code_view">Afficher le code complet</string>
+    <string name="conversation_code_full">Code complet</string>
+    <string name="conversation_code_expand">Agrandir la vue du code</string>
+    <string name="conversation_code_collapse">Réduire la vue du code</string>
 </resources>

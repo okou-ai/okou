@@ -65,4 +65,13 @@
     <string name="conversation_link_no_browser">没有可打开此链接的浏览器</string>
     <string name="chat_model_check_required">无法核对已保存的模型。</string>
     <string name="chat_model_save_rejected">无法保存此聊天的模型。</string>
+    <string name="conversation_code_generic">代码</string>
+    <string name="conversation_code_copy">复制代码</string>
+    <string name="conversation_code_copied">已复制代码</string>
+    <string name="conversation_code_copy_failed">复制失败</string>
+    <string name="conversation_code_lines">显示 %1$d / %2$d 行</string>
+    <string name="conversation_code_view">查看完整代码</string>
+    <string name="conversation_code_full">完整代码</string>
+    <string name="conversation_code_expand">展开代码查看器</string>
+    <string name="conversation_code_collapse">收起代码查看器</string>
 </resources>

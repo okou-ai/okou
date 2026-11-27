@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -66,7 +67,9 @@ import androidx.compose.ui.layout.layoutBounds
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -126,6 +129,8 @@ internal fun ConversationRoute(
     queueOpen: Boolean = false,
     queuePosition: LazyListState? = null,
     dismissQueue: () -> Unit = {},
+    codeReading: ConversationCodeReading? = null,
+    readVisit: State<ConversationReadSession?>? = null,
     artifactActions: ChatArtifactActions? = null,
     findTarget: ConversationFindTarget? = null,
     linkPosition: ConversationLinkPosition? = null,
@@ -160,12 +165,14 @@ internal fun ConversationRoute(
     val firstReadFailed = !hasContent && thread != null && state.initialReadFailed
     val waitingForHistory = historyAvailable && !hasContent && !firstReadFailed && !missing
     val visit =
-        rememberConversationReadVisit(
-            model,
-            threadId,
-            state.generation,
-            visible && historyAvailable,
-        )
+        (readVisit
+                ?: rememberConversationReadVisit(
+                    model,
+                    threadId,
+                    state.generation,
+                    visible && historyAvailable,
+                ))
+            .value
     val activeRun = controls?.currentRunId ?: transcript?.activeRunId
     val execution = transcript?.execution
     val activeMessage =
@@ -304,6 +311,7 @@ internal fun ConversationRoute(
     key(model, threadId) {
         val position = rememberLazyListState()
         val timelineFocus = remember { FocusRequester() }
+        val returningCode = codeReading?.returning?.takeIf { it.threadId == threadId }
         val inputMode = LocalInputModeManager.current
         var queueWasOpen by remember { mutableStateOf(false) }
         LaunchedEffect(queueOpen) {
@@ -414,11 +422,15 @@ internal fun ConversationRoute(
                 derivedStateOf { position.pastEnd(jumpDistance, recentKeys, recentSizes) }
             }
         SideEffect { recentSizes.keys.retainAll(recentKeys.toSet()) }
-        LaunchedEffect(model, threadId, linkPosition) {
+        LaunchedEffect(model, threadId, linkPosition, returningCode) {
             val source = linkPosition?.source
             initialReadingPosition =
                 ReadingPosition(
-                    if (source != null) source.anchor else model.restoreReadingAnchor(threadId),
+                    when {
+                        returningCode != null -> returningCode.anchor
+                        source != null -> source.anchor
+                        else -> model.restoreReadingAnchor(threadId)
+                    },
                 )
         }
         val foundIndex =
@@ -660,6 +672,35 @@ internal fun ConversationRoute(
         val visibleArtifacts =
             if (imageReply != null && !readingReady) artifactActions?.copy(restoreKey = null)
             else artifactActions
+        if (codeReading != null && returningCode != null && readingReady) {
+            LaunchedEffect(returningCode, timeline) {
+                val index = timeline.indexOfFirst {
+                    it is ConversationMessage && it.includes(returningCode.target.messageId)
+                }
+                if (index < 0) {
+                    if (timelineFocus.requestFocus()) codeReading.restored(returningCode)
+                } else if (
+                    position.layoutInfo.visibleItemsInfo.none { it.key == timeline[index].key }
+                ) {
+                    position.scrollToItem(index + 1)
+                }
+            }
+        }
+        val codeFocus = LocalFocusManager.current
+        val codeKeyboard = LocalSoftwareKeyboardController.current
+        val code = codeReading?.let { reading ->
+            ConversationCodeActions(
+                open = { target ->
+                    val anchor = position.firstVisibleMessage()?.readingAnchor(density)
+                    codeFocus.clearFocus()
+                    codeKeyboard?.hide()
+                    reading.open(threadId, target, anchor)
+                },
+                returning = returningCode.takeIf { readingReady },
+                restored = reading::restored,
+                feedback = reading.previewFeedback,
+            )
+        }
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
         val avatarViewport = remember { LayoutBoundsHolder() }
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -762,6 +803,7 @@ internal fun ConversationRoute(
                                         artifactActions = visibleArtifacts,
                                         findHighlight = highlight,
                                         links = links,
+                                        code = code,
                                         animateAvatarIn =
                                             avatarViewport.takeIf {
                                                 entry.message.id == animatedReplyId
@@ -942,15 +984,16 @@ private fun LazyListState.pastEnd(
 }
 
 @Composable
-private fun rememberConversationReadVisit(
+internal fun rememberConversationReadVisit(
     model: ConversationHistoryModel,
     threadId: String,
     generation: Long,
     visible: Boolean,
-): ConversationReadSession? {
+): State<ConversationReadSession?> {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var visit by
+    val state =
         remember(model, threadId, generation) { mutableStateOf<ConversationReadSession?>(null) }
+    var visit by state
     DisposableEffect(model, threadId, generation, lifecycle, visible) {
         fun update() {
             if (visible && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
@@ -969,7 +1012,7 @@ private fun rememberConversationReadVisit(
             visit = null
         }
     }
-    return visit
+    return state
 }
 
 @Composable

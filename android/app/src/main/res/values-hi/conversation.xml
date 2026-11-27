@@ -68,4 +68,13 @@
     <string name="conversation_link_no_browser">कोई ब्राउज़र यह लिंक नहीं खोल सकता</string>
     <string name="chat_model_check_required">सेव किए गए मॉडल की पुष्टि नहीं हो सकी।</string>
     <string name="chat_model_save_rejected">इस चैट का मॉडल सेव नहीं हो सका।</string>
+    <string name="conversation_code_generic">कोड</string>
+    <string name="conversation_code_copy">कोड कॉपी करें</string>
+    <string name="conversation_code_copied">कोड कॉपी हो गया</string>
+    <string name="conversation_code_copy_failed">कोड कॉपी नहीं हो सका</string>
+    <string name="conversation_code_lines">%2$d में से %1$d लाइनें दिख रही हैं</string>
+    <string name="conversation_code_view">पूरा कोड देखें</string>
+    <string name="conversation_code_full">पूरा कोड</string>
+    <string name="conversation_code_expand">कोड व्यूअर बड़ा करें</string>
+    <string name="conversation_code_collapse">कोड व्यूअर छोटा करें</string>
 </resources>

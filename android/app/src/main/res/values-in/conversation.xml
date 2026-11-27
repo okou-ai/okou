@@ -65,4 +65,13 @@
     <string name="conversation_link_no_browser">Tidak ada browser yang dapat membuka tautan ini</string>
     <string name="chat_model_check_required">Model yang disimpan tidak dapat diperiksa.</string>
     <string name="chat_model_save_rejected">Model untuk chat ini tidak dapat disimpan.</string>
+    <string name="conversation_code_generic">Kode</string>
+    <string name="conversation_code_copy">Salin kode</string>
+    <string name="conversation_code_copied">Kode disalin</string>
+    <string name="conversation_code_copy_failed">Kode tidak dapat disalin</string>
+    <string name="conversation_code_lines">Menampilkan %1$d dari %2$d baris</string>
+    <string name="conversation_code_view">Lihat kode lengkap</string>
+    <string name="conversation_code_full">Kode lengkap</string>
+    <string name="conversation_code_expand">Perluas tampilan kode</string>
+    <string name="conversation_code_collapse">Perkecil tampilan kode</string>
 </resources>

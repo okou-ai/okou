@@ -69,4 +69,13 @@
     <string name="conversation_link_no_browser">No browser can open this link</string>
     <string name="chat_model_check_required">Couldn’t check the saved model.</string>
     <string name="chat_model_save_rejected">Couldn’t save the model for this chat.</string>
+    <string name="conversation_code_generic">Code</string>
+    <string name="conversation_code_copy">Copy code</string>
+    <string name="conversation_code_copied">Code copied</string>
+    <string name="conversation_code_copy_failed">Couldn’t copy code</string>
+    <string name="conversation_code_lines">Showing %1$d / %2$d lines</string>
+    <string name="conversation_code_view">View full code</string>
+    <string name="conversation_code_full">Full code</string>
+    <string name="conversation_code_expand">Expand code viewer</string>
+    <string name="conversation_code_collapse">Collapse code viewer</string>
 </resources>

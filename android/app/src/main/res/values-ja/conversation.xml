@@ -65,4 +65,13 @@
     <string name="conversation_link_no_browser">このリンクを開けるブラウザがありません</string>
     <string name="chat_model_check_required">保存済みのモデルを確認できませんでした。</string>
     <string name="chat_model_save_rejected">このチャットのモデルを保存できませんでした。</string>
+    <string name="conversation_code_generic">コード</string>
+    <string name="conversation_code_copy">コードをコピー</string>
+    <string name="conversation_code_copied">コードをコピーしました</string>
+    <string name="conversation_code_copy_failed">コードをコピーできませんでした</string>
+    <string name="conversation_code_lines">%2$d 行中 %1$d 行を表示</string>
+    <string name="conversation_code_view">コード全体を表示</string>
+    <string name="conversation_code_full">コード全体</string>
+    <string name="conversation_code_expand">コードビューアを拡大</string>
+    <string name="conversation_code_collapse">コードビューアを縮小</string>
 </resources>
