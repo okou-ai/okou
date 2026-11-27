@@ -549,11 +549,12 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun detailLoadingSharesTheContentInsetAndKeepsTheUseButtonInPlace() {
         val detail = CountDownLatch(1)
         app.fixture.beforeReleaseDetailRead = { detail.await() }
         val use = compose.onNodeWithTag("workflow_use")
-        val (loadingBounds, pendingBounds) =
+        val (loadingBounds, pendingBounds, pendingTabs) =
             try {
                 compose.onNodeWithContentDescription("Workflows").performClick()
                 app.gate.countDown()
@@ -561,8 +562,11 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
                 compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
                 waitForTag("workflow_loading")
                 val skeleton = compose.onNodeWithTag("workflow_loading").assertIsDisplayed()
-                skeleton.getUnclippedBoundsInRoot() to
-                    use.assertIsDisplayed().assertIsNotEnabled().getUnclippedBoundsInRoot()
+                Triple(
+                    skeleton.getUnclippedBoundsInRoot(),
+                    use.assertIsDisplayed().assertIsNotEnabled().getUnclippedBoundsInRoot(),
+                    compose.onNodeWithTag("workflow_loading_tabs").getUnclippedBoundsInRoot(),
+                )
             } finally {
                 detail.countDown()
             }
@@ -572,6 +576,9 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         assertEquals(title.left, loadingBounds.left)
         assertEquals(title.top, loadingBounds.top)
         assertEquals(pendingBounds, use.assertIsEnabled().getUnclippedBoundsInRoot())
+        val tabs = compose.onNodeWithTag("workflow_tab_instructions").getUnclippedBoundsInRoot()
+        assertEquals(tabs.top, pendingTabs.top)
+        assertEquals(tabs.bottom, pendingTabs.bottom)
     }
 
     @Test
@@ -1447,6 +1454,51 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
     application = WorkflowRootApplication::class,
 )
 internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun historyLoadingWaitsForTheSharedDelayAndReservesScaledRows() {
+        val originalScale = app.resources.configuration.fontScale
+        val release = CountDownLatch(1)
+        app.fixture.beforeHistoryRead = { release.await() }
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            openWorkflowDetail()
+            val use = compose.onNodeWithTag("workflow_use")
+            val useBounds = use.assertIsEnabled().getUnclippedBoundsInRoot()
+            val loading = compose.onNodeWithTag("workflow_history_loading")
+            compose.mainClock.autoAdvance = false
+            val rowBounds =
+                try {
+                    compose.onNodeWithTag("workflow_tab_history").performClick()
+                    compose.mainClock.advanceTimeByFrame()
+                    compose.mainClock.advanceTimeBy(200)
+                    loading.assertDoesNotExist()
+                    compose.mainClock.advanceTimeBy(80)
+                    loading.assertIsDisplayed()
+                    compose
+                        .onAllNodesWithTag("workflow_history_loading_row")[0]
+                        .getUnclippedBoundsInRoot()
+                } finally {
+                    compose.mainClock.autoAdvance = true
+                    release.countDown()
+                }
+            assertTrue(rowBounds.bottom - rowBounds.top > 64.dp)
+            val tag = "workflow_run_$WORKFLOW_SOURCE_RUN"
+            waitForTag(tag)
+            loading.assertDoesNotExist()
+            val loaded = compose.onNodeWithTag(tag).assertTextContains("Running")
+            val loadedBounds = loaded.getUnclippedBoundsInRoot()
+            assertEquals(rowBounds.top, loadedBounds.top)
+            assertEquals(rowBounds.left, loadedBounds.left)
+            assertEquals(rowBounds.right, loadedBounds.right)
+            assertEquals(useBounds, use.assertIsEnabled().getUnclippedBoundsInRoot())
+        } finally {
+            release.countDown()
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
+    }
+
     @Test
     fun firstHistoryFailureUsesTheBodyBetweenTheHeadingAndUseAction() {
         val fixture = app.fixture

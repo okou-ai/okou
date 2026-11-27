@@ -6,7 +6,6 @@ import ai.okou.android.api.generated.WorkflowRunHistoryEntryEventType
 import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
 import ai.okou.android.api.generated.WorkflowRunHistoryEntryTrigger
 import ai.okou.android.chat.ChatSkeletonBlock
-import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,8 +13,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,6 +42,10 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+private val historyRowBounds = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+private val historyIconSize = 18.dp
 
 internal class WorkflowHistoryLayout(padding: PaddingValues) {
     private var listHeight by mutableIntStateOf(0)
@@ -66,12 +69,16 @@ internal class WorkflowHistoryLayout(padding: PaddingValues) {
 }
 
 @Composable
-internal fun WorkflowHistoryPending(failure: WorkflowReadFailure?, modifier: Modifier) {
+internal fun WorkflowHistoryPending(
+    failure: WorkflowReadFailure?,
+    showSkeleton: Boolean,
+    modifier: Modifier,
+) {
     if (failure == WorkflowReadFailure.Unavailable) {
         WorkflowInitialReadError(R.string.workflow_history_unavailable)
     } else if (failure is WorkflowReadFailure.Failed) {
         WorkflowReadFailureContent(modifier)
-    } else if (rememberContentReadSkeleton()) {
+    } else if (showSkeleton) {
         val label = stringResource(R.string.workflow_history_loading)
         Column(
             Modifier.fillMaxWidth().testTag("workflow_history_loading").semantics {
@@ -80,16 +87,13 @@ internal fun WorkflowHistoryPending(failure: WorkflowReadFailure?, modifier: Mod
             },
         ) {
             repeat(3) {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                WorkflowHistoryRowLayout(
+                    historyRowBounds.testTag("workflow_history_loading_row"),
+                    leading = { ChatSkeletonBlock(Modifier.size(historyIconSize)) },
+                    trailing = { Spacer(Modifier.size(historyIconSize)) },
                 ) {
-                    ChatSkeletonBlock(Modifier.size(18.dp))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ChatSkeletonBlock(Modifier.fillMaxWidth(.56f).height(16.dp))
-                        ChatSkeletonBlock(Modifier.fillMaxWidth(.32f).height(12.dp))
-                    }
+                    WorkflowSkeletonLine(.56f, 24.sp)
+                    WorkflowSkeletonLine(.32f, 20.sp)
                 }
             }
         }
@@ -116,10 +120,9 @@ internal fun WorkflowHistoryRow(
             else -> colors.onSurfaceVariant
         }
     val shape = RoundedCornerShape(8.dp)
-    Row(
+    WorkflowHistoryRowLayout(
         modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
+            .then(historyRowBounds)
             .clip(shape)
             .testTag("workflow_run_${run.id}")
             .then(
@@ -132,45 +135,68 @@ internal fun WorkflowHistoryRow(
                             role = Role.Button,
                             onClick = { onOpenChat(run.id, source) },
                         ),
+            ),
+        leading = {
+            Icon(
+                painterResource(R.drawable.ic_schedule),
+                null,
+                Modifier.size(historyIconSize),
+                tint = colors.onSurfaceVariant,
             )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        },
+        trailing = {
+            if (source != null)
+                Icon(
+                    painterResource(R.drawable.ic_chevron_right),
+                    null,
+                    Modifier.size(historyIconSize),
+                )
+        },
+    ) {
+        Text(
+            workflowTimestamp(run.createdAt, timezone),
+            style = workflowBodyStyle(),
+            fontWeight = FontWeight.SemiBold,
+        )
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            WorkflowSecondary(stringResource(run.triggerLabel), small = true)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "·",
+                    Modifier.clearAndSetSemantics {},
+                    color = colors.onSurfaceVariant,
+                    style = workflowSmallStyle(),
+                )
+                WorkflowStatus(stringResource(run.status.label), statusColor)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowHistoryRowLayout(
+    modifier: Modifier,
+    leading: @Composable () -> Unit,
+    trailing: @Composable () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Row(
+        modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            painterResource(R.drawable.ic_schedule),
-            null,
-            Modifier.size(18.dp),
-            tint = colors.onSurfaceVariant,
-        )
+        leading()
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                workflowTimestamp(run.createdAt, timezone),
-                style = workflowBodyStyle(),
-                fontWeight = FontWeight.SemiBold,
-            )
-            FlowRow(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                itemVerticalAlignment = Alignment.CenterVertically,
-            ) {
-                WorkflowSecondary(stringResource(run.triggerLabel), small = true)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "·",
-                        Modifier.clearAndSetSemantics {},
-                        color = colors.onSurfaceVariant,
-                        style = workflowSmallStyle(),
-                    )
-                    WorkflowStatus(stringResource(run.status.label), statusColor)
-                }
-            }
+            content()
         }
-        if (source != null)
-            Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(18.dp))
+        trailing()
     }
 }
 
