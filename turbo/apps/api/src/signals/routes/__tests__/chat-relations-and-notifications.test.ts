@@ -578,7 +578,7 @@ describe("chat relations and mail notifications", () => {
 
   describe("chat relationships", () => {
     it(
-      "chat-relations-002 records both directions between existing chats and attributes only consumed messages",
+      "chat-relations-002 (1/2) records bidirectional messages between existing chats and attributes steered replies once",
       { timeout: TEST_WITH_TRIPLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
       async () => {
         const tracker = createRunTracker();
@@ -721,50 +721,60 @@ describe("chat relations and mail notifications", () => {
           targetRunId: sourceRun.runId,
           messageEventId: replyEventId,
         });
+      },
+    );
 
-        const recalledEventId = randomUUID();
+    it(
+      "chat-relations-002 (2/2) leaves recalled messages unattributed, ignores self follow-ups and forwards, and reports exact communication counts",
+      { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },
+      async () => {
+        const tracker = createRunTracker();
+        const actor = bdd.user();
+        const orgId = requireOrgId(actor);
+        const [runnerGroup] = await Promise.all([
+          prepareRunner(4),
+          bdd.bootstrapLimitedFreeOnboarding(actor),
+        ]);
+        configureClerkDirectory([actor], new Map([[actor.userId, [orgId]]]));
+
+        const [sourceRun, peerCreated] = await Promise.all([
+          launchThreadRun(actor, runnerGroup, tracker, {
+            prompt: "Coordinate with the peer thread",
+            model: null,
+          }),
+          accept(
+            chatThreadsCreateClient.create({
+              headers: sessionHeaders(actor),
+              body: { title: "Peer thread", model: null },
+            }),
+            [201],
+          ),
+        ]);
+        const peerThreadId = peerCreated.body.id;
+
         await accept(
           chatEventsClient.send({
             headers: bearerHeaders(sourceRun.okouToken),
             body: {
               threadId: peerThreadId,
-              clientEventId: recalledEventId,
-              prompt: "Draft message to recall",
+              clientEventId: randomUUID(),
+              prompt: "Check deployment health",
               hasTextContent: true,
-              userMessage: textUserMessage("Draft message to recall"),
-            },
-          }),
-          [201],
-        );
-        await accept(
-          chatEventsClient.send({
-            headers: sessionHeaders(actor),
-            body: {
-              threadId: peerThreadId,
-              revokesEventId: recalledEventId,
+              userMessage: textUserMessage("Check deployment health"),
             },
           }),
           [201],
         );
 
-        const afterRecall = await accept(
-          chatRelationsClient.messages({
-            headers: sessionHeaders(actor),
-            params: { id: sourceRun.threadId, peerId: peerThreadId },
-          }),
-          [200],
-        );
-        expect(afterRecall.body.items).toContainEqual(
-          expect.objectContaining({
-            direction: "sent",
-            sourceRunId: sourceRun.runId,
-            targetRunId: null,
-            messageEventId: recalledEventId,
-          }),
-        );
+        const peerExecution = await runs.nextReceivedExecution(runnerGroup);
+        tracker.track(actor, peerExecution.runId, peerExecution.sandboxToken);
+        const peerOkouToken = okouTokenFromExecution(peerExecution);
 
+        const replyEventId = randomUUID();
+        const recalledEventId = randomUUID();
         const selfFollowupEventId = randomUUID();
         const forwardedEventId = randomUUID();
+        tracker.trackQueuedInput(actor, sourceRun.threadId, replyEventId);
         tracker.trackQueuedInput(
           actor,
           sourceRun.threadId,
@@ -773,6 +783,32 @@ describe("chat relations and mail notifications", () => {
         tracker.trackQueuedInput(actor, peerThreadId, forwardedEventId);
 
         await Promise.all([
+          accept(
+            chatEventsClient.send({
+              headers: bearerHeaders(peerOkouToken),
+              body: {
+                threadId: sourceRun.threadId,
+                clientEventId: replyEventId,
+                prompt: "Deployment health is green",
+                hasTextContent: true,
+                userMessage: textUserMessage("Deployment health is green"),
+              },
+            }),
+            [201],
+          ),
+          accept(
+            chatEventsClient.send({
+              headers: bearerHeaders(sourceRun.okouToken),
+              body: {
+                threadId: peerThreadId,
+                clientEventId: recalledEventId,
+                prompt: "Draft message to recall",
+                hasTextContent: true,
+                userMessage: textUserMessage("Draft message to recall"),
+              },
+            }),
+            [201],
+          ),
           accept(
             chatEventsClient.send({
               headers: bearerHeaders(sourceRun.okouToken),
@@ -802,30 +838,57 @@ describe("chat relations and mail notifications", () => {
           ),
         ]);
 
-        const [sourceComms, peerComms, sourceChildren] = await Promise.all([
-          accept(
-            chatRelationsClient.communications({
-              headers: sessionHeaders(actor),
-              params: { id: sourceRun.threadId },
-            }),
-            [200],
-          ),
-          accept(
-            chatRelationsClient.communications({
-              headers: sessionHeaders(actor),
-              params: { id: peerThreadId },
-            }),
-            [200],
-          ),
-          accept(
-            chatRelationsClient.children({
-              headers: sessionHeaders(actor),
-              params: { id: sourceRun.threadId },
-            }),
-            [200],
-          ),
-        ]);
+        await accept(
+          chatEventsClient.send({
+            headers: sessionHeaders(actor),
+            body: {
+              threadId: peerThreadId,
+              revokesEventId: recalledEventId,
+            },
+          }),
+          [201],
+        );
 
+        const [afterRecall, sourceComms, peerComms, sourceChildren] =
+          await Promise.all([
+            accept(
+              chatRelationsClient.messages({
+                headers: sessionHeaders(actor),
+                params: { id: sourceRun.threadId, peerId: peerThreadId },
+              }),
+              [200],
+            ),
+            accept(
+              chatRelationsClient.communications({
+                headers: sessionHeaders(actor),
+                params: { id: sourceRun.threadId },
+              }),
+              [200],
+            ),
+            accept(
+              chatRelationsClient.communications({
+                headers: sessionHeaders(actor),
+                params: { id: peerThreadId },
+              }),
+              [200],
+            ),
+            accept(
+              chatRelationsClient.children({
+                headers: sessionHeaders(actor),
+                params: { id: sourceRun.threadId },
+              }),
+              [200],
+            ),
+          ]);
+
+        expect(afterRecall.body.items).toContainEqual(
+          expect.objectContaining({
+            direction: "sent",
+            sourceRunId: sourceRun.runId,
+            targetRunId: null,
+            messageEventId: recalledEventId,
+          }),
+        );
         expect(sourceComms.body.items).toStrictEqual([
           expect.objectContaining({
             threadId: peerThreadId,

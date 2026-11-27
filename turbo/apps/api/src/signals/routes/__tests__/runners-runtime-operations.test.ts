@@ -683,6 +683,9 @@ describe("Runner runtime operations", () => {
         device.device_code,
         [200],
       );
+      if (!("access_token" in exchanged.body)) {
+        throw new Error("Expected CLI OAuth access token");
+      }
       const cliAuthHeaders = {
         authorization: `Bearer ${exchanged.body.access_token}`,
       };

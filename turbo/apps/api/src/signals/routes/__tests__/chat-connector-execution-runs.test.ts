@@ -109,7 +109,17 @@ beforeAll(async () => {
   await Promise.all([
     accept(threadsApi.create({ headers: {}, body: { model: null } }), [401]),
     accept(
-      chatEventsApi.send({ headers: {}, body: { prompt: "warmup" } }),
+      chatEventsApi.send({
+        headers: {},
+        body: {
+          prompt: "warmup",
+          hasTextContent: true,
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "warmup" }],
+          },
+        },
+      }),
       [401],
     ),
     accept(

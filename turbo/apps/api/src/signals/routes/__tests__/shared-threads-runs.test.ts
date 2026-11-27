@@ -361,17 +361,25 @@ async function grantProMembers(actors: readonly ApiTestUser[]): Promise<void> {
     }),
   );
   mockStripeClient(context.mocks.stripe);
-  context.mocks.stripe.customers.retrieve.mockImplementation((id: string) => {
-    return Promise.resolve(customersById.get(id));
+  context.mocks.stripe.customers.retrieve.mockImplementation((id: unknown) => {
+    return Promise.resolve(
+      typeof id === "string" ? customersById.get(id) : undefined,
+    );
   });
   context.mocks.stripe.subscriptions.retrieve.mockImplementation(
-    (id: string) => {
-      return Promise.resolve(subscriptionsById.get(id));
+    (id: unknown) => {
+      return Promise.resolve(
+        typeof id === "string" ? subscriptionsById.get(id) : undefined,
+      );
     },
   );
   context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
-    (_payload: unknown, signature: string) => {
-      return Promise.resolve(eventsBySignature.get(signature));
+    (_payload: unknown, signature: unknown) => {
+      return Promise.resolve(
+        typeof signature === "string"
+          ? eventsBySignature.get(signature)
+          : undefined,
+      );
     },
   );
   await Promise.all(
@@ -610,10 +618,10 @@ async function uploadStoredFile(
     }),
     [200],
   );
-  const uploadUrl = prepared.body.uploadUrl;
-  if (!uploadUrl) {
+  if (!("uploadUrl" in prepared.body)) {
     throw new Error("Expected a single-PUT upload URL");
   }
+  const uploadUrl = prepared.body.uploadUrl;
   const putResponse = await fetch(uploadUrl, {
     method: "PUT",
     headers: {
