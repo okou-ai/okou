@@ -5,7 +5,6 @@ import ai.okou.android.OkouFormActions
 import ai.okou.android.OkouFormFieldSupport
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
-import ai.okou.android.RenameDraft
 import ai.okou.android.RenameFieldError
 import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItem
@@ -53,10 +52,14 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -69,23 +72,24 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
+import kotlinx.coroutines.flow.filterNotNull
 import okhttp3.HttpUrl
 
 @Composable
 internal fun ConnectorRenameSheet(
-    account: ConnectorSavedAccount,
+    editor: ConnectorRenameEditor,
+    confirmedLabel: String?,
     canModify: Boolean,
     action: ConnectorAction?,
     save: (String) -> Unit,
     cancel: () -> Unit,
     readFeedback: SnackbarHostState,
 ) {
-    val currentLabel = account.label()
-    val draft = remember(account.id) { RenameDraft(currentLabel) }
-    LaunchedEffect(draft, currentLabel, action?.busy) {
-        if (action?.busy != true) draft.receive(currentLabel)
+    val draft = editor.draft
+    LaunchedEffect(editor, confirmedLabel, action?.busy) {
+        if (confirmedLabel != null) editor.receive(confirmedLabel, readOnly = action?.busy == true)
     }
-    val form = draft.form(currentLabel, canModify, CONNECTOR_ACCOUNT_NAME_LIMIT)
+    val form = draft.form(confirmedLabel, canModify, CONNECTOR_ACCOUNT_NAME_LIMIT)
     val errorMessage =
         when (form.error) {
             RenameFieldError.Required -> stringResource(R.string.connector_rename_required)
@@ -125,10 +129,14 @@ internal fun ConnectorRenameSheet(
             )
         },
     ) {
+        val focus = remember { FocusRequester() }
+        var fieldFocused by remember { mutableStateOf(false) }
         ConnectorInput(
             stringResource(R.string.connector_account_name),
             draft.input,
             readOnly = !canModify,
+            modifier =
+                Modifier.focusRequester(focus).onFocusChanged { fieldFocused = it.isFocused },
             showLabel = false,
             supportingText = {
                 OkouFormFieldSupport(
@@ -140,6 +148,17 @@ internal fun ConnectorRenameSheet(
             },
             errorMessage = errorMessage ?: feedback.takeIf { definiteFailure },
         )
+        LaunchedEffect(editor) {
+            editor.focusedSelection?.let { selection ->
+                focus.requestFocus()
+                if (draft.input.selection != selection)
+                    draft.input.edit { this.selection = selection }
+            }
+            // Window teardown may collapse the native selection after the field loses focus.
+            snapshotFlow { draft.input.selection.takeIf { fieldFocused } }
+                .filterNotNull()
+                .collect { editor.focusedSelection = it }
+        }
     }
 }
 
