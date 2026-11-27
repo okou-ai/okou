@@ -1,7 +1,7 @@
 import { ChatConnectorAccountDialogs } from "./chat-connector-account-dialogs.tsx";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { remoteDevicesEnabled$ } from "../../signals/remote-devices.ts";
-import { ComposerRemoteDevices } from "./remote-device-directory.tsx";
+import { ComposerRemoteDevicesMenu } from "./composer-remote-devices.tsx";
 import { ComposerPresentationFormatSetup } from "./composer-presentation-format-setup.tsx";
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 
@@ -2192,21 +2192,9 @@ function ComposerRemoteAccessMenu({
   computerUse: ComposerComputerUse | undefined;
   onOpenDownloadDialog: () => void;
 }) {
-  const deviceMode = useLastResolved(remoteDevicesEnabled$);
-  const session = useGet(authenticatedSessionKey$);
   const openRemoteAccessDialog = useSet(
     signals.connector.openRemoteAccessDialog$,
   );
-  if (deviceMode) {
-    return (
-      <>
-        {computerUse && (
-          <ComposerCloudBrowserToggle computerUse={computerUse} />
-        )}
-        <ComposerRemoteDevices key={session} />
-      </>
-    );
-  }
   const remoteAccess = (
     <ThreadRemoteAccessSection
       threadId={signals.threadId}
@@ -2244,6 +2232,8 @@ function ConnectorsPopoverButton({
   onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
+  const deviceMode = useLastResolved(remoteDevicesEnabled$) === true;
+  const session = useGet(authenticatedSessionKey$);
   const popoverOpen = useGet(signals.connector.popoverOpen$);
   const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
   const setTriggerRef = useSet(signals.connector.setTriggerRef$);
@@ -2293,10 +2283,21 @@ function ConnectorsPopoverButton({
           return $.chat.connectors.title;
         })}
         collisionAvoidance={{ fallbackAxisSide: "none" }}
-        className="flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0"
+        positionerClassName={
+          deviceMode
+            ? "max-sm:inset-x-2! max-sm:top-auto! max-sm:bottom-[max(.5rem,env(safe-area-inset-bottom))]! max-sm:transform-none!"
+            : undefined
+        }
+        className={cn(
+          "flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0",
+          deviceMode &&
+            "h-96 w-80 max-w-[var(--available-width)] max-sm:max-h-[calc(100dvh-1rem-env(safe-area-inset-bottom))] max-sm:w-full max-sm:max-w-none",
+        )}
       >
         {popoverOpen && (
           <ChatConnectorsPopoverBody
+            key={session}
+            deviceMode={deviceMode}
             signals={signals}
             onOpenAddDialog={onOpenAddDialog}
             onOpenDownloadDialog={() => {
@@ -2319,14 +2320,29 @@ function ConnectorsPopoverButton({
 
 function ChatConnectorsPopoverBody({
   signals,
+  deviceMode,
   onOpenAddDialog,
   onOpenDownloadDialog,
 }: {
   signals: ComposerSignals;
+  deviceMode: boolean;
   onOpenAddDialog: () => void;
   onOpenDownloadDialog: () => void;
 }) {
   const computerUse = useComposerComputerUse(signals);
+  if (deviceMode) {
+    return (
+      <ComposerRemoteDevicesMenu
+        signals={signals}
+        cloudBrowser={
+          computerUse && (
+            <ComposerCloudBrowserToggle computerUse={computerUse} />
+          )
+        }
+        onOpenAddDialog={onOpenAddDialog}
+      />
+    );
+  }
   return (
     <ChatConnectorMenu
       signals={signals}

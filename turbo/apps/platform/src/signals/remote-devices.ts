@@ -1,3 +1,5 @@
+import { delay } from "signal-timers";
+import { now } from "../lib/time.ts";
 import { remoteDevicesContract } from "@okouai/api-contracts/client/remote-devices";
 import type {
   RemoteDeviceAccess,
@@ -18,6 +20,29 @@ import { onRef } from "./utils.ts";
 const revision$ = state(0);
 const creation$ = state<{ readonly id: string; readonly name: string } | null>(
   null,
+);
+
+// The open composer schedules only the next grant expiry. Re-rendering at
+// that deadline updates both the count and rows without refetching the list.
+const remoteDeviceClock$ = state(0);
+export const composerRemoteDeviceClock$ = computed((get) => {
+  return get(remoteDeviceClock$);
+});
+
+export const mountComposerRemoteDeviceExpiry$ = onRef(
+  command(async ({ set }, element: HTMLTimeElement, signal: AbortSignal) => {
+    await delay(Math.max(0, Date.parse(element.dateTime) - now()), { signal });
+    signal.throwIfAborted();
+    set(remoteDeviceClock$, (tick) => {
+      return tick + 1;
+    });
+  }),
+);
+
+export const focusDeviceMenuControl$ = onRef(
+  command((_context, element: HTMLElement, _signal: AbortSignal) => {
+    element.focus({ preventScroll: true });
+  }),
 );
 
 export const remoteDeviceCreation$ = computed((get) => {
@@ -123,6 +148,12 @@ export const createRemoteDevice$ = command(
   },
 );
 
+const pendingDeviceAccess$ = state<ReadonlySet<string>>(new Set());
+
+export const remoteDeviceAccessPending$ = computed((get) => {
+  return get(pendingDeviceAccess$);
+});
+
 export const updateRemoteDeviceAccess$ = command(
   async (
     { get, set },
@@ -130,7 +161,12 @@ export const updateRemoteDeviceAccess$ = command(
     body: RemoteDeviceAccess,
     signal: AbortSignal,
   ) => {
-    await accept(
+    const pending = get(pendingDeviceAccess$);
+    if (pending.has(deviceId)) {
+      return;
+    }
+    set(pendingDeviceAccess$, new Set([...pending, deviceId]));
+    const saving = accept(
       get(apiClient$)(remoteDevicesContract).setAccess({
         params: { deviceId },
         body,
@@ -139,6 +175,14 @@ export const updateRemoteDeviceAccess$ = command(
       [200],
       signal,
     );
+    await saving.finally(() => {
+      set(pendingDeviceAccess$, (current) => {
+        const remaining = new Set(current);
+        remaining.delete(deviceId);
+        return remaining;
+      });
+    });
+    signal.throwIfAborted();
     set(invalidateRemoteDeviceDirectory$);
   },
 );
