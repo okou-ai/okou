@@ -22,12 +22,12 @@ class CanonicalWorkspaceSessionTest {
 
     @After fun stop() = server.shutdown()
 
-    private fun owner() =
+    private fun owner(timezone: String? = "Asia/Shanghai") =
         CanonicalWorkspaceSession(
             WorkspaceIdentity(server.url("/").toString(), "user-a", "session-a", "org-a"),
             WorkspaceTokenProvider { "token" },
             InitializePreferencesRequestLocale.ZH_HANT,
-            "Asia/Shanghai",
+            timezone,
         )
 
     @Test
@@ -87,6 +87,21 @@ class CanonicalWorkspaceSessionTest {
                 initialize.body.readUtf8(),
             )
         }
+    }
+
+    @Test
+    fun unsupportedDeviceTimezoneUsesTheServerDefaultDuringInitialization() = runTest {
+        val timezone = initialTimezone("GMT+05:30")
+        assertNull(timezone)
+        server.enqueue(MockResponse().setResponseCode(409))
+        server.enqueue(
+            MockResponse().setBody(TEST_PREFERENCES.replace("UTC", "America/Los_Angeles")),
+        )
+        owner(timezone).use { assertEquals("America/Los_Angeles", it.preferences().timezone) }
+        server.takeRequest()
+        val initialize = server.takeRequest()
+        assertEquals("/api/user-preferences/initialize", initialize.path)
+        assertEquals("""{"locale":"zh-Hant"}""", initialize.body.readUtf8())
     }
 
     @Test
