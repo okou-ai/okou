@@ -21,15 +21,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 @Composable
-internal fun ContentReadProgress(@StringRes label: Int) {
-    val description = stringResource(label)
+internal fun ContentReadProgress(@StringRes label: Int, announce: Boolean = true) {
+    val bounds = Modifier.fillMaxWidth().height(4.dp)
     val modifier =
-        Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = description }
+        if (announce) {
+            val description = stringResource(label)
+            bounds.semantics { contentDescription = description }
+        } else {
+            bounds.clearAndSetSemantics { hideFromAccessibility() }
+        }
     var animate by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val motion = coroutineContext[MotionDurationScale]

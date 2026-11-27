@@ -83,7 +83,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -810,11 +809,10 @@ private fun SearchResults(
         key(keyword, type) {
             AnimatedVisibility(
                 visible = showProgress,
-                modifier = if (showProgress) Modifier else Modifier.clearAndSetSemantics {},
                 enter = fadeIn(tween(150, easing = LinearOutSlowInEasing)),
                 exit = fadeOut(tween(150, easing = FastOutLinearInEasing)),
             ) {
-                ContentReadProgress(R.string.chat_search_loading)
+                ContentReadProgress(R.string.chat_search_loading, announce = showProgress)
             }
         }
         Box(Modifier.align(Alignment.BottomCenter)) {
