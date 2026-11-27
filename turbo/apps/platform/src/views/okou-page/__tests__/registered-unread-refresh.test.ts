@@ -178,7 +178,7 @@ async function openUnreadHistory() {
   click(await findFastControl("button", "Open chat list menu"));
   click(
     await waitFor(() => {
-      const item = queryAllByRoleFast("menuitem").find((element) => {
+      const item = queryAllByRoleFast("menuitemradio").find((element) => {
         return element.textContent?.includes("Unread");
       });
       if (!item) {

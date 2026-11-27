@@ -2,7 +2,9 @@ import {
   Button,
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuRadioItemIndicator,
@@ -16,7 +18,7 @@ import {
   TooltipTrigger,
 } from "@okouai/ui";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
-import { Check, ChevronRight, Cpu } from "lucide-react";
+import { ChevronRight, Cpu } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   connectSubscriptionLinkingProvider$,
@@ -183,45 +185,43 @@ export function SubscriptionLinkingComposerMenu() {
               })}
               detailId="subscription-linking-auto-detail"
             />
-            <span className="flex w-4 shrink-0 justify-center">
-              <DropdownMenuRadioItemIndicator>
-                <Check size={15} aria-hidden="true" />
-              </DropdownMenuRadioItemIndicator>
-            </span>
+            <DropdownMenuRadioItemIndicator />
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
-        <p className="px-2 pb-1 pt-2 text-xs text-muted-foreground">
-          {t(($) => {
-            return $.settings.models.personal.ownPlan;
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>
+            {t(($) => {
+              return $.settings.models.personal.ownPlan;
+            })}
+          </DropdownMenuLabel>
+          {SUBSCRIPTION_PROVIDERS.map((type) => {
+            const detailId = `subscription-linking-${type}-plans`;
+            return (
+              <DropdownMenuItem
+                key={type}
+                label={title(type)}
+                aria-label={title(type)}
+                aria-describedby={detailId}
+                className="pr-2"
+                onClick={() => {
+                  connect(type);
+                }}
+              >
+                <ProviderIcon type={type} size={16} />
+                <SubscriptionPlanRowText
+                  title={title(type)}
+                  detail={plans(type)}
+                  detailId={detailId}
+                />
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {t(($) => {
+                    return $.settings.models.personal.connect;
+                  })}
+                </span>
+              </DropdownMenuItem>
+            );
           })}
-        </p>
-        {SUBSCRIPTION_PROVIDERS.map((type) => {
-          const detailId = `subscription-linking-${type}-plans`;
-          return (
-            <DropdownMenuItem
-              key={type}
-              label={title(type)}
-              aria-label={title(type)}
-              aria-describedby={detailId}
-              className="pr-2"
-              onClick={() => {
-                connect(type);
-              }}
-            >
-              <ProviderIcon type={type} size={16} />
-              <SubscriptionPlanRowText
-                title={title(type)}
-                detail={plans(type)}
-                detailId={detailId}
-              />
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {t(($) => {
-                  return $.settings.models.personal.connect;
-                })}
-              </span>
-            </DropdownMenuItem>
-          );
-        })}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
