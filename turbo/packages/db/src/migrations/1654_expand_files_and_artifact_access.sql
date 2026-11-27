@@ -2,7 +2,7 @@ CREATE TABLE "artifact_user_shares" (
 	"user_id" text NOT NULL,
 	"org_id" text NOT NULL,
 	"artifact_id" uuid NOT NULL,
-	"email" text,
+	"email" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "artifact_user_shares_pk" PRIMARY KEY("user_id","org_id","artifact_id")
 );
@@ -29,5 +29,6 @@ ALTER TABLE "artifact_user_shares" ADD CONSTRAINT "artifact_user_shares_artifact
 CREATE INDEX "artifact_user_shares_artifact_idx" ON "artifact_user_shares" USING btree ("artifact_id");--> statement-breakpoint
 CREATE INDEX "files_owner_created_idx" ON "files" USING btree ("org_id","owner_user_id","created_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE "files"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "files_storage_key_idx" ON "files" USING btree ("storage_key") WHERE "files"."storage_key" IS NOT NULL;--> statement-breakpoint
-CREATE INDEX "artifacts_author_category_created_idx" ON "artifacts" USING btree ("org_id","author_user_id","category","created_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE "artifacts"."deleted_at" IS NULL;--> statement-breakpoint
-ALTER TABLE "artifacts" ADD CONSTRAINT "artifacts_visibility_check" CHECK ("artifacts"."visibility" IN ('private', 'organization', 'public'));
+-- Add visibility CHECK as NOT VALID so live writes on artifacts are not blocked;
+-- migration 1655 validates the constraint and builds artifacts_author_category_created_idx concurrently.
+ALTER TABLE "artifacts" ADD CONSTRAINT "artifacts_visibility_check" CHECK ("artifacts"."visibility" IN ('private', 'organization', 'public')) NOT VALID;

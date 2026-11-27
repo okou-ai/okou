@@ -27,7 +27,6 @@ import {
   privateArtifactRecord$,
 } from "./private-artifact-storage.service";
 import { browserCapturePublication } from "./browser-capture-publication";
-import { dualWriteFileUpdate$ } from "./files-dual-write.service";
 
 const BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS = 30_000;
 const BROWSER_SCREENSHOT_CONTENT_TYPE = "image/webp";
@@ -188,10 +187,7 @@ function browserScreenshotPublication(
 }
 
 const publishBrowserScreenshot$ = command(
-  async (
-    { get, set },
-    args: BrowserScreenshotPublication,
-  ): Promise<boolean> => {
+  async ({ set }, args: BrowserScreenshotPublication): Promise<boolean> => {
     const { browser } = args;
     const artifact = { key: args.objectKey, url: args.url };
     const db = set(writeDb$);
@@ -263,13 +259,6 @@ const publishBrowserScreenshot$ = command(
     );
     if (!outcome) {
       throw new Error("Browser screenshot publication returned no outcome");
-    }
-    if (outcome.saved) {
-      await set(
-        dualWriteFileUpdate$,
-        { id: args.fileId, origin: "system" },
-        get(rootSignal$),
-      );
     }
     return outcome.saved;
   },

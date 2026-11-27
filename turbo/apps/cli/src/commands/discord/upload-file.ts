@@ -160,7 +160,13 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
     printDelivery(materialized, upload);
     return;
   }
-  const completed = await completeDiscordFileUpload(operation);
+  let completed: DiscordUploadMaterializeResponse;
+  try {
+    completed = await completeDiscordFileUpload(operation);
+  } catch (error) {
+    printDelivery(materialized, upload);
+    throw error;
+  }
   printDelivery(completed, upload);
 }
 
@@ -201,7 +207,7 @@ Examples:
 Output:
   Prints "✓ File uploaded" with the Discord message ID, permalink, and Okou file URL.
   With --json, prints one JSON object:
-    {"integration":"discord","chatId":"123456789012345678","messages":[{"id":"...","url":"https://discord.com/channels/..."}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered"}}
+    {"integration":"discord","chatId":"123456789012345678","messages":[{"id":"...","url":"https://discord.com/channels/..."}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered","operationId":"..."}}
   delivery.status is delivered, pending, or failed; messages is empty until delivered.
 
 Notes:

@@ -274,7 +274,7 @@ Notes:
 Output:
   Prints "✓ File uploaded" with the Slack file ID, permalink, and Okou file URL.
   With --json, prints one JSON object:
-    {"integration":"slack","chatId":"C01234","messages":[{"id":"F0123","url":"https://..."}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered"}}
+    {"integration":"slack","chatId":"C01234","messages":[{"id":"F0123","url":"https://..."}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered","operationId":"..."}}
   delivery is present for canonical uploads; status is delivered or failed.`,
   )
   .action(withErrorHandler(uploadFile));

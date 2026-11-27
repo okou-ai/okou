@@ -197,14 +197,14 @@ test("Switching catalog websites cancels the previous domain read and shows the 
     ({ params, respond }) => {
       const site = sites.find((item) => {
         return item.siteId === params.artifactId;
-      });
+      })!;
       const visibility = params.artifactId === first.id ? "public" : "private";
       return respond(200, {
         artifactId: params.artifactId,
         kind: "hosted-site",
         visibility,
-        ownerUrl: site?.url ?? null,
-        shareUrl: visibility === "public" ? (site?.url ?? null) : null,
+        ownerUrl: site.url,
+        shareUrl: visibility === "public" ? site.url : null,
         shortUrl: null,
         organization: { id: "org_default", name: "Default Org" },
       });

@@ -1,3 +1,11 @@
+/**
+ * Release 1 rollout dual-write helpers mirroring legacy visibility/share writes
+ * into `artifacts.visibility` and `artifact_user_shares`.
+ * Surface: DB vs API & old clients -> API.
+ * Remove in Release 2 once outgoing API drains, client-version floor excludes
+ * legacy endpoints, and `artifacts.visibility` / `artifact_user_shares` become
+ * sole authorities.
+ */
 import { command } from "ccstate";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import {
@@ -142,7 +150,7 @@ export const syncArtifactUserShareBySiteId$ = command(
     args: {
       readonly siteId: string;
       readonly userId: string;
-      readonly email: string | null;
+      readonly email: string;
     },
     signal: AbortSignal,
   ) => {
@@ -217,7 +225,7 @@ export const syncArtifactUserShareByFileId$ = command(
     args: {
       readonly fileId: string;
       readonly userId: string;
-      readonly email: string | null;
+      readonly email: string;
     },
     signal: AbortSignal,
   ) => {

@@ -20,7 +20,7 @@ function toShareStatus(
   response: ArtifactVisibilityResponse,
 ): ArtifactShareStatus {
   return {
-    ownerUrl: response.ownerUrl ?? "",
+    ownerUrl: response.ownerUrl,
     shareId: null,
     audience: response.visibility,
     organization: response.organization,

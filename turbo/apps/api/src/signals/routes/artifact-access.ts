@@ -198,6 +198,14 @@ const addShare$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!input.ok) {
     return input.response;
   }
+  const target = await set(
+    resolveOwnedArtifactAccessTarget$,
+    { artifactId, userId: auth.userId, orgId: auth.orgId },
+    signal,
+  );
+  if (!target) {
+    return notFound("Artifact not found");
+  }
   if ("userId" in input.data && input.data.userId === auth.userId) {
     return badRequestMessage("You already own this artifact");
   }

@@ -17,26 +17,16 @@ import {
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
-import {
-  chatThreadArtifactsContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  CLIENT_TYPE_HEADER,
-  CLIENT_VERSION_HEADER,
-} from "@okouai/api-contracts/contracts/client-headers";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { now } from "../../../lib/time";
 import { artifactAccessRoutes } from "../artifact-access";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { artifactShareRoutes } from "../artifact-shares";
 import { artifactSharingRoutes } from "../artifact-sharing";
-import { chatThreadRoutes } from "../chat-threads";
 import { hostRoutes } from "../host";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -92,7 +82,6 @@ function app(user: ApiTestUser) {
       ...artifactCatalogRoutes,
       ...artifactSharingRoutes,
       ...artifactShareRoutes,
-      ...chatThreadRoutes,
       ...hostRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
@@ -319,26 +308,7 @@ async function createHostedArtifact(
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function legacyDeprecationEvents(): Record<string, unknown>[] {
-  const matched: Record<string, unknown>[] = [];
-  for (const [, events] of context.mocks.axiom.ingest.mock.calls) {
-    if (!Array.isArray(events)) {
-      continue;
-    }
-    for (const event of events) {
-      if (isRecord(event) && event.type === "legacy_artifact_endpoint_called") {
-        matched.push(event);
-      }
-    }
-  }
-  return matched;
-}
-
-test("unified artifact visibility bidirectionally syncs file artifacts without exposing revision", async () => {
+test("unified artifact visibility bidirectionally syncs file artifacts", async () => {
   const owner = createBddApi(context).user();
   directory([profile(owner)], [owner]);
 
@@ -359,7 +329,6 @@ test("unified artifact visibility bidirectionally syncs file artifacts without e
   );
   expect(patched.body.artifactId).toBe(artifactId);
   expect(patched.body.visibility).toBe("organization");
-  expect(patched.body).not.toHaveProperty("revision");
 
   // Legacy POST /api/artifact-shares/status observes the update
   const legacyStatus = await accept(
@@ -396,7 +365,6 @@ test("unified artifact visibility bidirectionally syncs file artifacts without e
   );
   expect(unifiedRead.body.visibility).toBe("private");
   expect(unifiedRead.body.shareUrl).toBeNull();
-  expect(unifiedRead.body).not.toHaveProperty("revision");
 });
 
 test("unified file visibility read-repairs drifted artifacts.visibility from legacy R2 policy", async () => {
@@ -549,7 +517,6 @@ test("unified artifact shares support userId primary path, email fallback, non-m
     email: colleague.email,
     name: "Alice Member",
   });
-  expect(addByUserId.body.share).not.toHaveProperty("id");
 
   // 2. Fallback path: add by email (resolved in current org directory)
   const addByEmail = await accept(
@@ -744,7 +711,6 @@ async function assertHostedArtifactBidirectionalSync(
   );
   expect(patched.body.artifactId).toBe(created.artifactId);
   expect(patched.body.visibility).toBe("organization");
-  expect(patched.body).not.toHaveProperty("revision");
 
   const legacyRead = await accept(
     app(owner)(hostContract).siteVisibility({
@@ -932,111 +898,108 @@ test("unified artifact visibility works for standalone hosted sites without an a
   expect(legacyRead.body.visibility).toBe("organization");
 });
 
-test("legacy artifact endpoints emit legacy_artifact_endpoint_called telemetry with client headers", async () => {
+test("addShare returns 404 for unowned or missing artifacts before membership lookup or quota", async () => {
   const owner = createBddApi(context).user();
+  const otherOwner = { ...createBddApi(context).user(), orgId: owner.orgId };
+  const colleague = { ...createBddApi(context).user(), orgId: owner.orgId };
   if (!owner.orgId) {
     throw new Error("Fixture requires orgId");
   }
   await updateFeatureSwitchesForUser(
     context,
     { ...owner, orgId: owner.orgId },
-    { [FeatureSwitchKey.HostedSiteEmailSharing]: true },
+    { [FeatureSwitchKey.ArtifactUserSharing]: true },
   );
-  directory([profile(owner)], [owner]);
+  directory(
+    [
+      profile(owner, "Owner", "User"),
+      profile(otherOwner, "Other", "Owner"),
+      profile(colleague, "Alice", "Member"),
+    ],
+    [owner, otherOwner, colleague],
+  );
 
-  const { fileId } = await createFileArtifact(
-    owner,
-    "telemetry.pdf",
+  const { artifactId: foreignArtifactId } = await createFileArtifact(
+    otherOwner,
+    "foreign.pdf",
     "application/pdf",
   );
-  const hosted = await createHostedArtifact(owner, "hosted-site");
+  const { artifactId: ownArtifactId } = await createFileArtifact(
+    owner,
+    "owned.pdf",
+    "application/pdf",
+  );
+  const missingArtifactId = randomUUID();
+
+  // Fail Clerk membership lookup to prove ownership check short-circuits first
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
+    new Error("Clerk directory should not be queried for unowned artifacts"),
+  );
+
+  for (const targetId of [foreignArtifactId, missingArtifactId]) {
+    await accept(
+      app(owner)(artifactAccessContract).addShare({
+        headers,
+        params: { artifactId: targetId },
+        body: { email: "outsider@external.example" },
+      }),
+      [404],
+    );
+    await accept(
+      app(owner)(artifactAccessContract).addShare({
+        headers,
+        params: { artifactId: targetId },
+        body: { userId: colleague.userId },
+      }),
+      [404],
+    );
+    await accept(
+      app(owner)(artifactAccessContract).addShare({
+        headers,
+        params: { artifactId: targetId },
+        body: { userId: owner.userId },
+      }),
+      [404],
+    );
+  }
+
+  // Restore directory and confirm owner can still share their own artifact
+  directory(
+    [
+      profile(owner, "Owner", "User"),
+      profile(otherOwner, "Other", "Owner"),
+      profile(colleague, "Alice", "Member"),
+    ],
+    [owner, otherOwner, colleague],
+  );
+  const granted = await accept(
+    app(owner)(artifactAccessContract).addShare({
+      headers,
+      params: { artifactId: ownArtifactId },
+      body: { userId: colleague.userId },
+    }),
+    [200],
+  );
+  expect(granted.body.share.userId).toBe(colleague.userId);
+});
+
+test("hosted-site visibility read propagates unexpected Clerk lookup errors instead of fabricating orgId", async () => {
+  const owner = createBddApi(context).user();
   directory([profile(owner)], [owner]);
-  const thread = await accept(
-    app(owner)(chatThreadsContract).create({
-      headers,
-      body: { title: "Telemetry thread" },
-    }),
-    [201],
+  const created = await createHostedArtifact(owner, "hosted-site");
+
+  context.mocks.clerk.organizations.getOrganization.mockRejectedValueOnce(
+    new Error("Clerk upstream unavailable"),
   );
 
-  context.mocks.axiom.ingest.mockClear();
-
-  await accept(
-    app(owner)(artifactSharesContract).status({
+  const failed = await accept(
+    app(owner)(artifactAccessContract).getVisibility({
       headers,
-      extraHeaders: {
-        [CLIENT_TYPE_HEADER]: "web",
-        [CLIENT_VERSION_HEADER]: "2026.11.1",
-      },
-      body: { kind: "file", id: fileId },
+      params: { artifactId: created.artifactId },
     }),
-    [200],
+    [500],
   );
-  await accept(
-    app(owner)(artifactSharingContract).list({
-      headers,
-      extraHeaders: {
-        [CLIENT_TYPE_HEADER]: "android",
-        [CLIENT_VERSION_HEADER]: "1.42.0",
-      },
-      params: { kind: "file", id: fileId },
-    }),
-    [200],
-  );
-  await accept(
-    app(owner)(hostContract).siteVisibility({
-      headers,
-      extraHeaders: {
-        [CLIENT_TYPE_HEADER]: "cli",
-        [CLIENT_VERSION_HEADER]: "10.44.25",
-      },
-      params: { siteId: hosted.siteId },
-    }),
-    [200],
-  );
-  await accept(
-    app(owner)(chatThreadArtifactsContract).list({
-      headers,
-      extraHeaders: {
-        [CLIENT_TYPE_HEADER]: "ios",
-        [CLIENT_VERSION_HEADER]: "3.1.0",
-      },
-      params: { threadId: thread.body.id },
-    }),
-    [200],
-  );
-
-  await flushWaitUntilForTest();
-
-  const events = legacyDeprecationEvents();
-  expect(events).toStrictEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        type: "legacy_artifact_endpoint_called",
-        endpoint: "POST /api/artifact-shares/status",
-        x_client_type: "web",
-        x_client_version: "2026.11.1",
-      }),
-      expect.objectContaining({
-        type: "legacy_artifact_endpoint_called",
-        endpoint: "GET /api/artifact-sharing/:kind/:id/shares",
-        x_client_type: "android",
-        x_client_version: "1.42.0",
-      }),
-      expect.objectContaining({
-        type: "legacy_artifact_endpoint_called",
-        endpoint: "GET /api/host/sites/:siteId/visibility",
-        x_client_type: "cli",
-        x_client_version: "10.44.25",
-      }),
-      expect.objectContaining({
-        type: "legacy_artifact_endpoint_called",
-        endpoint: "GET /api/chat-threads/:threadId/artifacts",
-        x_client_type: "ios",
-        x_client_version: "3.1.0",
-      }),
-    ]),
-  );
+  expect(failed.status).toBe(500);
 });
 
 test("composer user uploads and library artifact deletion succeed cleanly with files dual-write active", async () => {

@@ -68,18 +68,19 @@ const claimFileShareAccess$ = command(
         email: artifactFileShares.email,
       });
     signal.throwIfAborted();
-    if (claimed.length > 0) {
+    const [firstClaimed] = claimed;
+    if (firstClaimed) {
       await set(
         syncArtifactUserShareByFileId$,
         {
           fileId: args.fileId,
           userId: args.userId,
-          email: claimed[0]?.email ?? null,
+          email: firstClaimed.email,
         },
         signal,
       );
     }
-    return claimed.length > 0;
+    return firstClaimed !== undefined;
   },
 );
 

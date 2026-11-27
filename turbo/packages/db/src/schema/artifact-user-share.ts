@@ -29,7 +29,7 @@ export const artifactUserShares = pgTable(
         },
         { onDelete: "cascade" },
       ),
-    email: text("email"),
+    email: text("email").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {

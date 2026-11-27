@@ -229,12 +229,13 @@ describe("okou discord upload-file", () => {
     );
 
     await expect(upload(["--json"])).rejects.toThrow("process.exit called");
-    expect(output).not.toHaveBeenCalled();
+    expect(printedJson()).toStrictEqual(envelope({ status: "pending" }));
     expect(warnings).not.toHaveBeenCalled();
     expect(errors.mock.calls.flat().join("\n")).toContain(
       "Delivery acknowledgement lost",
     );
 
+    output.mockClear();
     await upload(["--json"]);
     expect(printedJson()).toStrictEqual(DELIVERED_ENVELOPE);
   });
@@ -344,9 +345,6 @@ describe("okou discord upload-file", () => {
 
     expect(errors.mock.calls.flat().join("\n")).toContain(
       "Canonical file upload failed (HTTP 403)",
-    );
-    expect(warnings.mock.calls.flat().join("\n")).not.toContain(
-      "--operation-id",
     );
     expect(output).not.toHaveBeenCalled();
   });

@@ -50,7 +50,7 @@ function visibilityToShareStatus(
   response: ArtifactVisibilityResponse,
 ): ArtifactShareStatus {
   return {
-    ownerUrl: response.ownerUrl ?? location.href,
+    ownerUrl: response.ownerUrl,
     shareId: null,
     audience: response.visibility,
     organization: response.organization,

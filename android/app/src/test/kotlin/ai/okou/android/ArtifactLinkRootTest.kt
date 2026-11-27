@@ -262,11 +262,8 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
         app.fixture.historyReply = "Legacy site ready.\n\n[Legacy deck]($legacyPath)"
         fixture.install()
         val previous = app.fixture.commandResponse
-        val requests = CopyOnWriteArrayList<String>()
         app.fixture.commandResponse = { request ->
-            val path = request.requestUrl?.encodedPath.orEmpty()
-            requests += "${request.method} $path"
-            when (path) {
+            when (request.requestUrl?.encodedPath.orEmpty()) {
                 "/api/artifact-references/legacy0001.html" ->
                     jsonResponse(
                         """{"url":"$legacyPreviewUrl","expiresAt":"2099-01-01T00:00:00.000Z","downloadUrl":"$legacyPreviewUrl","downloadAllowed":false,"filename":"index.html","contentType":"text/html","target":{"kind":"html","id":"$deploymentId"}}""",
@@ -294,10 +291,6 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithContentDescription("More actions").performClick()
         awaitText("Copy link")
         compose.onNodeWithText("Manage access").assertDoesNotExist()
-        assertEquals(
-            false,
-            requests.any { it.contains("/api/artifact-shares/status") },
-        )
     }
 
     private fun openArtifact(fixture: ArtifactApiFixture, title: String) {

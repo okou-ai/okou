@@ -1,3 +1,10 @@
+/**
+ * Release 1 rollout dual-write helpers mirroring binary file mutations from
+ * `run_uploaded_files` into the new `files` table.
+ * Surface: DB vs API (old code after migration & zero-loss rollback safety).
+ * Remove in Release 2 once readers/writers switch to `files` and
+ * `run_uploaded_files` retires.
+ */
 import { command } from "ccstate";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { files, type FileOrigin } from "@okouai/db/schema/file";

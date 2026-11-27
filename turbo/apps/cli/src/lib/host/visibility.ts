@@ -75,12 +75,7 @@ export async function shareHostedSitePrivately(
   try {
     const status = await updateHostedSiteVisibility(current, "private");
     for (const email of emails) {
-      shares.push(
-        await shareHostedSiteByEmail(
-          status.artifactId ?? current.siteId,
-          email,
-        ),
-      );
+      shares.push(await shareHostedSiteByEmail(status.artifactId, email));
     }
     return { status, shares };
   } catch (cause) {

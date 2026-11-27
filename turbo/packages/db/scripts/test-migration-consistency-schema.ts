@@ -72,6 +72,7 @@ import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundl
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
 import { validatePermanentFilesAndArtifactAccess } from "./test-files-and-artifact-access-permanent";
+import { validateFilesAndArtifactAccessBackfill } from "./test-files-and-artifact-access-backfill";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validateCanonicalModelSelections } from "./test-canonical-model-selections-permanent";
@@ -2930,6 +2931,10 @@ async function main(): Promise<void> {
       await migrationTimestamp(
         "1650_invalidate_domain_verification_without_record_checks",
       ),
+    );
+    await validateFilesAndArtifactAccessBackfill(
+      dbUrl1,
+      await migrationTimestamp("1655_backfill_files_and_artifact_access"),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");

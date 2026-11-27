@@ -158,7 +158,13 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
     printDelivery(materialized, upload);
     return;
   }
-  const completed = await completeWechatFileUpload(operation);
+  let completed: WechatUploadMaterializeResponse;
+  try {
+    completed = await completeWechatFileUpload(operation);
+  } catch (error) {
+    printDelivery(materialized, upload);
+    throw error;
+  }
   printDelivery(completed, upload);
 }
 
@@ -192,7 +198,7 @@ Examples:
 Output:
   Prints "✓ File uploaded" with the stored message ID and Okou file URL. Wechat has no message permalink.
   With --json, prints one JSON object:
-    {"integration":"wechat","chatId":"<conversation-id>","messages":[{"id":"...","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered"}}
+    {"integration":"wechat","chatId":"<conversation-id>","messages":[{"id":"...","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered","operationId":"..."}}
   delivery.status is delivered, pending, or failed; messages is empty until delivered.
 
 Notes:

@@ -25,7 +25,7 @@ import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { env } from "../../lib/env";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
-import { clerk$ } from "../external/clerk";
+import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
@@ -464,6 +464,13 @@ const resolveLegacyHtmlDeploymentTarget$ = command(
   },
 );
 
+/**
+ * Resolve an owned artifact access target by canonical `artifacts.id` or,
+ * during Release 1 client cutover, by legacy `entity_id` / `projection_file_id`
+ * / `siteId` / `deploymentId` aliases (including standalone hosted sites and
+ * legacy private HTML deployments). Remove legacy ID fallbacks in Release 2
+ * after all clients address artifacts exclusively by `artifacts.id`.
+ */
 export const resolveOwnedArtifactAccessTarget$ = command(
   async (
     { get, set },
@@ -516,6 +523,7 @@ export const resolveOwnedArtifactAccessTarget$ = command(
 /**
  * Read-repair `artifacts.visibility` when the authoritative R1 source (file R2
  * policy or hosted_site_visibility) differs from the cached column value.
+ * Remove in Release 2 once `artifacts.visibility` is the sole authority.
  */
 const repairArtifactVisibilityIfDrifted$ = command(
   async (
@@ -553,12 +561,15 @@ const resolveOrganizationSummary$ = command(
       ),
       signal,
     );
-    const resolvedName = result.ok
-      ? (result.value as { readonly name?: string } | undefined)?.name
-      : undefined;
+    if (!result.ok) {
+      if (isClerkResourceNotFound(result.error)) {
+        return { id: orgId, name: orgId };
+      }
+      throw result.error;
+    }
     return {
       id: orgId,
-      name: resolvedName || orgId,
+      name: result.value.name || orgId,
     };
   },
 );
@@ -578,7 +589,10 @@ const resolveUserDisplayNames$ = command(
       signal,
     );
     if (!result.ok) {
-      return names;
+      if (isClerkResourceNotFound(result.error)) {
+        return names;
+      }
+      throw result.error;
     }
     for (const user of result.value.data) {
       const fullName =
@@ -688,7 +702,7 @@ export const getArtifactVisibility$ = command(
     if (!share) {
       return null;
     }
-    if (resolved.targetKind === "file" || resolved.hasArtifactRow) {
+    if (resolved.targetKind === "file") {
       await set(
         repairArtifactVisibilityIfDrifted$,
         {
@@ -827,7 +841,7 @@ export const updateArtifactVisibility$ = command(
         message: updated.body.error.message,
       };
     }
-    if (resolved.targetKind === "file" || resolved.hasArtifactRow) {
+    if (resolved.targetKind === "file") {
       await set(writeDb$)
         .update(artifacts)
         .set({ visibility: updated.audience, updatedAt: nowDate() })
@@ -915,8 +929,10 @@ export const listArtifactShares$ = command(
 
     const byUserId = new Map<string, string>();
     for (const share of userShares) {
-      byUserId.set(share.userId, share.email ?? share.userId);
+      byUserId.set(share.userId, share.email);
     }
+    // Release 1 compatibility: union legacy per-user grants alongside
+    // artifact_user_shares. Remove in Release 2 once legacy share tables retire.
     for (const share of legacyShares) {
       if (share.userId && !byUserId.has(share.userId)) {
         byUserId.set(share.userId, share.email);

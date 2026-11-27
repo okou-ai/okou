@@ -59,7 +59,14 @@ export const selectArtifactPreviewSessions$ = command(
       siteSession?.sourceUrl !== source.url &&
       (siteSession || isHostedSiteUrl(source.url))
     ) {
-      set(site.select$, source.url, signal, source.artifactId);
+      set(
+        site.select$,
+        {
+          url: source.url,
+          ...(source.artifactId ? { artifactId: source.artifactId } : {}),
+        },
+        signal,
+      );
     }
     const sharing = getArtifactShareScope(surface);
     const currentShare = get(sharing.session$)?.source;

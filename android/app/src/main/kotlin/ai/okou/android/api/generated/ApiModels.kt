@@ -5331,7 +5331,7 @@ data class ArtifactVisibility(
     val `artifactId`: String,
     val `kind`: ArtifactVisibilityKind,
     val `visibility`: ArtifactVisibilityVisibility,
-    val `ownerUrl`: String?,
+    val `ownerUrl`: String,
     val `shareUrl`: String?,
     val `shortUrl`: String?,
     val `deploymentVersion`: Long? = null,

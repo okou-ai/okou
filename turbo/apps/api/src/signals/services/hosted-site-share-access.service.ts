@@ -65,17 +65,18 @@ export const claimHostedSiteShareAccess$ = command(
         email: hostedSiteShares.email,
       });
     signal.throwIfAborted();
-    if (claimed.length > 0) {
+    const [firstClaimed] = claimed;
+    if (firstClaimed) {
       await set(
         syncArtifactUserShareBySiteId$,
         {
           siteId: args.siteId,
           userId: args.userId,
-          email: claimed[0]?.email ?? null,
+          email: firstClaimed.email,
         },
         signal,
       );
     }
-    return claimed.length > 0;
+    return firstClaimed !== undefined;
   },
 );

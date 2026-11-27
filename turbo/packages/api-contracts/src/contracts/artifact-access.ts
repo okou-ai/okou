@@ -43,7 +43,7 @@ export const artifactVisibilityResponseSchema = object({
   artifactId: uuid(),
   kind: artifactAccessKindSchema,
   visibility: artifactVisibilityValueSchema,
-  ownerUrl: url().nullable(),
+  ownerUrl: url(),
   shareUrl: url().nullable(),
   shortUrl: url().nullable(),
   deploymentVersion: number().int().nullable().optional(),

@@ -446,7 +446,6 @@ describe("okou slack upload-file command", () => {
       expect(logCalls).toContain("delivery: failed");
       const warnings = mockConsoleWarn.mock.calls.flat().join("\n");
       expect(warnings).toContain("Slack delivery failed: Slack upload failed");
-      expect(warnings).not.toContain("--operation-id");
     });
 
     it.each([404, 503])(

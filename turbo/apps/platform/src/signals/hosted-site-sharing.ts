@@ -487,17 +487,19 @@ function createHostedSiteShareScope() {
   const select$ = command(
     (
       { get, set },
-      url: string,
+      selection: { readonly url: string; readonly artifactId?: string },
       parentSignal: AbortSignal,
-      artifactId?: string,
     ) => {
       parentSignal.throwIfAborted();
       const signal = set(resetSession$, parentSignal);
-      if (!isHostedSiteUrl(url)) {
+      if (!isHostedSiteUrl(selection.url)) {
         set(source$, null);
         return;
       }
-      const source = { url, ...(artifactId ? { artifactId } : {}) };
+      const source = {
+        url: selection.url,
+        ...(selection.artifactId ? { artifactId: selection.artifactId } : {}),
+      };
       set(source$, source);
       const session = get(session$)!;
       set(session.signal$, signal);
