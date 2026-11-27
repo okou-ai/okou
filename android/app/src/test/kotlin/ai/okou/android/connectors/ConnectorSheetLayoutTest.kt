@@ -6,8 +6,10 @@ import ai.okou.android.CONNECTOR_CALENDAR_SECONDARY
 import ai.okou.android.CONNECTOR_EXAMPLE_DEVICE_CODE
 import ai.okou.android.CONNECTOR_EXAMPLE_EXTERNAL_CODE
 import ai.okou.android.ConnectorApiFixture
+import ai.okou.android.MemorySnapshotClock
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +22,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
@@ -54,18 +57,101 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.time.TestTimeSource
+import kotlin.time.TimeSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 class ConnectorSheetLayoutTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun searchSkeletonWaitsForDispatchAndDisappearsWhenTheReadIsRetired() {
+        ConnectorApiFixture().use { fixture ->
+            withConnectors(fixture, snapshotClock = TestTimeSource()) { model ->
+                val row = hasTestTag("connector-$CONNECTOR_CALENDAR")
+                compose.waitUntilAtLeastOneExists(row, 10_000)
+                val search = compose.onNodeWithTag("connector-search")
+                val filter = compose.onNode(hasContentDescription("Filter by service category"))
+                val discover = compose.onNodeWithText("Discover")
+                val connected = compose.onNodeWithText("Connected")
+                val skeletons = compose.onAllNodesWithTag("connector-directory-skeleton-row")
+                val searchBounds = search.getUnclippedBoundsInRoot()
+                val filterBounds = filter.getUnclippedBoundsInRoot()
+                filter.assertWidthIsEqualTo(48.dp).assertHeightIsEqualTo(48.dp)
+                discover.assertHeightIsAtLeast(48.dp)
+                connected.assertHeightIsAtLeast(48.dp)
+                val discoverBounds = discover.getUnclippedBoundsInRoot()
+                val connectedBounds = connected.getUnclippedBoundsInRoot()
+                assertEquals(
+                    discoverBounds.right - discoverBounds.left,
+                    connectedBounds.right - connectedBounds.left,
+                )
+                assertEquals(8.dp, searchBounds.top - discoverBounds.bottom)
+                assertEquals(8.dp, filterBounds.left - searchBounds.right)
+                val fastReply = CountDownLatch(1)
+                val slowReply = CountDownLatch(1)
+                val mainLooper = shadowOf(Looper.getMainLooper())
+                compose.runOnIdle {
+                    model.pause()
+                    fixture.discoveryGate = fastReply
+                }
+                compose.mainClock.autoAdvance = false
+                try {
+                    search.performTextReplacement("calendar")
+                    compose.mainClock.advanceTimeBy(320)
+                    assertEquals("calendar", model.uiState.value.matches?.filter?.keyword)
+                    skeletons.assertCountEquals(0)
+
+                    compose.runOnUiThread { model.resume() }
+                    mainLooper.idleFor(250, TimeUnit.MILLISECONDS)
+                    checkNotNull(model.uiState.value.matches?.entries?.startedAt)
+                    compose.mainClock.advanceTimeBy(112)
+                    skeletons.assertCountEquals(0)
+                    fastReply.countDown()
+                    compose.waitUntil(10_000) {
+                        mainLooper.idle()
+                        model.uiState.value.matches?.entries?.data != null
+                    }
+                    compose.mainClock.advanceTimeBy(64)
+                    compose.onNode(row).assertIsDisplayed()
+                    skeletons.assertCountEquals(0)
+
+                    fixture.discoveryGate = slowReply
+                    search.performTextReplacement("no matching service")
+                    compose.mainClock.advanceTimeBy(48)
+                    mainLooper.idleFor(250, TimeUnit.MILLISECONDS)
+                    val pending = checkNotNull(model.uiState.value.matches)
+                    assertEquals("no matching service", pending.filter.keyword)
+                    checkNotNull(pending.entries.startedAt)
+                    compose.mainClock.advanceTimeBy(224)
+                    skeletons.assertCountEquals(0)
+                    compose.mainClock.advanceTimeBy(64)
+                    skeletons.assertCountEquals(3)
+                    assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
+                    assertEquals(filterBounds, filter.getUnclippedBoundsInRoot())
+
+                    compose.runOnUiThread { model.pause() }
+                    compose.mainClock.advanceTimeBy(48)
+                    skeletons.assertCountEquals(0)
+                } finally {
+                    fastReply.countDown()
+                    slowReply.countDown()
+                    compose.mainClock.autoAdvance = true
+                }
+            }
+        }
+    }
 
     @Test
     @OptIn(ExperimentalTestApi::class)
@@ -654,6 +740,7 @@ class ConnectorSheetLayoutTest {
     private fun withConnectors(
         fixture: ConnectorApiFixture,
         restoration: StateRestorationTester? = null,
+        snapshotClock: TimeSource = MemorySnapshotClock,
         exercise: (ConnectorModel) -> Unit,
     ) {
         val store = ViewModelStore()
@@ -663,7 +750,11 @@ class ConnectorSheetLayoutTest {
                         store,
                         viewModelFactory {
                             initializer {
-                                ConnectorModel(fixture.service, { true }) {
+                                ConnectorModel(
+                                    fixture.service,
+                                    { true },
+                                    snapshotClock = snapshotClock,
+                                ) {
                                     throw AssertionError(it)
                                 }
                             }

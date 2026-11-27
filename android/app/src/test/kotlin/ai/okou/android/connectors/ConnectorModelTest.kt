@@ -20,6 +20,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TestTimeSource
@@ -100,6 +101,63 @@ internal abstract class ConnectorModelTestFixture {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class ConnectorModelTest : ConnectorModelTestFixture() {
+    @Test
+    fun discoveryDispatchTimeSurvivesRetryAndEndsWithItsQuery() {
+        val clock = TestTimeSource()
+        withModel(CONNECTOR_CALENDAR, clock = clock) { fixture, model ->
+            model.await { it.browse.data != null && it.connected.data != null }
+            val query = ConnectorBrowseFilter("calendar", null)
+            val next = ConnectorBrowseFilter("no matching service", null)
+            val initial = CountDownLatch(1)
+            val initialReply = CountDownLatch(1)
+            val retry = CountDownLatch(1)
+            val retryReply = CountDownLatch(1)
+            val attempts = AtomicInteger()
+            fixture.discoveryRetryAfterSeconds = 0
+            fixture.failDiscoveryForKeyword = { keyword ->
+                when {
+                    keyword != query.keyword -> false
+                    attempts.incrementAndGet() == 1 -> {
+                        initial.countDown()
+                        initialReply.await()
+                        true
+                    }
+                    else -> {
+                        retry.countDown()
+                        retryReply.await()
+                        false
+                    }
+                }
+            }
+            try {
+                model.setFilter(query)
+                assertNull(model.uiState.value.matches?.entries?.startedAt)
+                clock += 1.seconds
+                withContext(Dispatchers.IO) { assertTrue(initial.await(10, TimeUnit.SECONDS)) }
+                val dispatch = checkNotNull(model.uiState.value.matches?.entries?.startedAt)
+                assertEquals(clock.markNow(), dispatch)
+
+                clock += 1.seconds
+                initialReply.countDown()
+                withContext(Dispatchers.IO) { assertTrue(retry.await(10, TimeUnit.SECONDS)) }
+                assertEquals(dispatch, model.uiState.value.matches?.entries?.startedAt)
+
+                model.setFilter(next)
+                assertEquals(next, model.uiState.value.matches?.filter)
+                assertNull(model.uiState.value.matches?.entries?.startedAt)
+                retryReply.countDown()
+                val result = model.await { it.matches?.entries?.data != null }.matches
+                assertEquals(next, result?.filter)
+                assertTrue(result?.entries?.data?.entries?.isEmpty() == true)
+                assertNull(result?.entries?.startedAt)
+                assertEquals(2, attempts.get())
+            } finally {
+                initialReply.countDown()
+                retryReply.countDown()
+            }
+        }
+    }
+
     @Test
     fun catalogDenialClearsTheVisibleCategoryAndReportsUnavailable() =
         withModel(CONNECTOR_CALENDAR) { fixture, model ->
