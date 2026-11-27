@@ -80,7 +80,17 @@ internal fun ChatMessageAttachments(
         if (openImages != null) {
             val start = images.indexOfFirst { it.index == index }
             openImages(
-                ChatSentImageVisit(actions.threadId, images.map { it.value }, start, localFiles),
+                ChatImageVisit(
+                    actions.threadId,
+                    images.map { (_, file) ->
+                        ChatImagePage(
+                            file.attachmentPreviewId(),
+                            file.filename,
+                            localFiles[file.id],
+                        )
+                    },
+                    start,
+                ),
                 key,
             )
         } else actions.open(attachments[index].attachmentPreviewId(), key)

@@ -63,6 +63,14 @@ internal class InlineArtifactImages(
     fun thumbnail(threadId: String, source: String): Bitmap? =
         entries.value.thumbnail(threadId, source)
 
+    fun unavailableSources(threadId: String): Set<String> =
+        entries.value.entries
+            .asSequence()
+            .filter { (request, state) ->
+                request.threadId == threadId && state.status == InlineImageStatus.Unavailable
+            }
+            .mapTo(mutableSetOf()) { it.key.source }
+
     private fun Map<InlineImageRequest, InlineImageState>.thumbnail(
         threadId: String,
         source: String,
