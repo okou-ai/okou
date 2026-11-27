@@ -84,7 +84,7 @@ const expectedVercelCrons = [
     path: cronRetainChatEventsContract.retain.path,
     schedule: "* * * * *",
   },
-  { path: cronProactiveContract.compare.path, schedule: "* * * * *" },
+  { path: cronProactiveContract.dispatch.path, schedule: "* * * * *" },
   {
     path: cronExecuteWorkflowAutomationsContract.execute.path,
     schedule: "* * * * *",

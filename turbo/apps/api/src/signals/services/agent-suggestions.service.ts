@@ -48,9 +48,6 @@ import {
 import { nowDate } from "../../lib/time";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
-import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { loadProactivePreferences$ } from "./proactive-member-preferences.service";
 import {
   storedSuggestion$,
   suggestionOwner,
@@ -60,7 +57,6 @@ import {
   customSuggestionContextVersion,
   withSuggestionConsumeToken,
 } from "./agent-suggestion-consumption-token";
-import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive";
 import { readFeedSources$ } from "./feed-sources.service";
 
 interface Owner {
@@ -112,9 +108,7 @@ export const suggestionAccess$ = command(
     if (auth.tokenType === "agent") {
       const [run] = await get(db$)
         .select({
-          id: agentRuns.id,
           triggerSource: agentRuns.triggerSource,
-          provenance: agentRuns.officialWorkflowProvenance,
         })
         .from(agentRuns)
         .where(
@@ -144,32 +138,6 @@ export const suggestionAccess$ = command(
           userId: auth.userId,
           proactiveCardDelivery: receipt.cardDeliveryEnabled === true,
         };
-      }
-      if (
-        run.provenance?.definitions.some((definition) => {
-          return definition.name === PROACTIVE_LEARNING_DEFINITION_NAME;
-        })
-      ) {
-        return resourceUnavailable(
-          "Learning maintains memory, not Suggestions.",
-        );
-      }
-      if (
-        (run.triggerSource === "automation-schedule" ||
-          run.triggerSource === "automation-event") &&
-        run.provenance?.definitions.some((definition) => {
-          return (
-            definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
-            isMorningBriefDefinitionName(definition.name)
-          );
-        })
-      ) {
-        const preference = await set(loadProactivePreferences$, auth, signal);
-        if (!preference.suggestions) {
-          return resourceUnavailable(
-            "Automatic suggestion curation is disabled or no longer available. Continue without changing suggestions.",
-          );
-        }
       }
     }
     return { userId: auth.userId, orgId: auth.orgId };

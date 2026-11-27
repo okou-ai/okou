@@ -597,7 +597,7 @@ function proactiveCard() {
 }
 
 describe("Standalone proactive dispatch", () => {
-  it("drains globally, preserves choices saved during the handoff and skips an inactive member's original slot", async () => {
+  it("preserves a paused Morning Brief and skips an inactive member's original slot", async () => {
     const app = await setupApp({
       context,
       isolatePg: true,
@@ -632,59 +632,22 @@ describe("Standalone proactive dispatch", () => {
         return workflow.official;
       }),
     ).toHaveLength(0);
-    await accept(
-      client.handoff({ headers: {}, body: { action: "drain", apply: true } }),
-      [401],
-    );
-    await accept(client.compare({ headers: {} }), [401]);
-    const preview = await accept(
-      client.handoff({
-        headers: cron,
-        body: { action: "drain", apply: false },
-      }),
-      [200],
-    );
-    expect(preview.body).toMatchObject({
-      phase: "automation",
-      ready: true,
-      changed: false,
-    });
-    const drained = await accept(
-      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
-      [200],
-    );
-    expect(drained.body).toMatchObject({
-      phase: "draining",
-      changed: true,
-      copied: 0,
-    });
+    await accept(client.dispatch({ headers: {} }), [401]);
     await accept(brief.update({ headers, body: { enabled: false } }), [200]);
-    const early = await accept(
-      client.handoff({
-        headers: cron,
-        body: { action: "activate", apply: true },
-      }),
-      [200],
-    );
-    expect(early.body).toMatchObject({ phase: "draining", ready: false });
-    mockNow(start + 5 * 60_000 - 1);
-    expect(
-      (await accept(client.compare({ headers: cron }), [200])).body,
-    ).toMatchObject({ phase: "draining" });
     mockNow(start + 65 * 60_000);
     await accept(
       app(cronExecuteWorkflowAutomationsContract).execute({ headers: cron }),
       [200],
     );
     expect(
-      (await accept(client.compare({ headers: cron }), [200])).body,
+      (await accept(client.dispatch({ headers: cron }), [200])).body,
     ).toMatchObject({ phase: "standalone", inactive: 1, enqueued: 0 });
     expect((await accept(brief.get({ headers }), [200])).body).toMatchObject({
       enabled: false,
       status: "paused",
     });
     expect(
-      (await accept(client.compare({ headers: cron }), [200])).body,
+      (await accept(client.dispatch({ headers: cron }), [200])).body,
     ).toMatchObject({ phase: "standalone", inactive: 0, enqueued: 0 });
   });
 
@@ -733,7 +696,6 @@ describe("Standalone proactive dispatch", () => {
     );
     await accept(brief.update({ headers, body: { enabled: true } }), [200]);
     const scheduled = createProactiveCronApi(context);
-    await scheduled.activate();
     clockTime = Date.UTC(2030, 0, 2, 6, 59);
     mockNow(clockTime);
     await owned.run(() => {
@@ -884,19 +846,6 @@ describe("Standalone proactive dispatch", () => {
       prompt: "Review the day's work.",
     });
     await launchBudgetRun(context, owned, source);
-    await accept(
-      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
-      [200],
-    );
-    mockNow(start + 5 * 60_000);
-    const activated = await accept(
-      client.handoff({
-        headers: cron,
-        body: { action: "activate", apply: true },
-      }),
-      [200],
-    );
-    expect(activated.body.phase).toBe("standalone");
     const choice = await accept(
       app(proactiveSuggestionsContract).update({
         headers: authHeaders(actor),
@@ -911,11 +860,11 @@ describe("Standalone proactive dispatch", () => {
       return runs.registerDirectRunner(owned.runnerGroup);
     });
     const ticks = await Promise.all([
-      client.compare({ headers: cron }),
-      client.compare({ headers: cron }),
+      client.dispatch({ headers: cron }),
+      client.dispatch({ headers: cron }),
     ]);
     const enqueued = ticks.map((tick) => {
-      if (tick.status !== 200 || !("enqueued" in tick.body)) {
+      if (tick.status !== 200) {
         throw new Error("Expected standalone dispatcher");
       }
       return tick.body.enqueued;
@@ -945,7 +894,7 @@ describe("Standalone proactive dispatch", () => {
     await owned.run(() => {
       return runs.registerDirectRunner(owned.runnerGroup);
     });
-    const replacement = await accept(client.compare({ headers: cron }), [200]);
+    const replacement = await accept(client.dispatch({ headers: cron }), [200]);
     expect(replacement.body).toMatchObject({ enqueued: 1 });
     await accept(
       app(cronCleanupSandboxesContract).cleanup({ headers: cron }),
@@ -1042,20 +991,6 @@ describe("Standalone proactive dispatch", () => {
     await completeWithSearchUsage(source.runId, manual.sandboxHeaders, balance);
     await expect(walletCredits(actor)).resolves.toBe(0);
     const client = app(cronProactiveContract);
-    await accept(
-      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
-      [200],
-    );
-    clockTime += 5 * 60_000;
-    mockNow(clockTime);
-    const active = await accept(
-      client.handoff({
-        headers: cron,
-        body: { action: "activate", apply: true },
-      }),
-      [200],
-    );
-    expect(active.body.phase).toBe("standalone");
     await bdd.completeOnboarding(actor, { timezone: "UTC" });
     await accept(
       app(proactiveSuggestionsContract).updateWithFeed({
@@ -1069,7 +1004,7 @@ describe("Standalone proactive dispatch", () => {
     await owned.run(() => {
       return runs.registerDirectRunner(owned.runnerGroup);
     });
-    const tick = await accept(client.compare({ headers: cron }), [200]);
+    const tick = await accept(client.dispatch({ headers: cron }), [200]);
     expect(tick.body).toMatchObject({ enqueued: 1 });
     await accept(
       app(cronCleanupSandboxesContract).cleanup({ headers: cron }),
@@ -1146,7 +1081,7 @@ describe("Standalone proactive dispatch", () => {
     );
     await completeWithSearchUsage(run.id, sandboxHeaders, 7);
     await expect(walletCredits(actor)).resolves.toBe(0);
-    const settled = await accept(client.compare({ headers: cron }), [200]);
+    const settled = await accept(client.dispatch({ headers: cron }), [200]);
     expect(settled.body).toMatchObject({ enqueued: 0 });
     const setting = await accept(
       app(proactiveSuggestionsContract).get({ headers: authHeaders(actor) }),
@@ -1168,18 +1103,6 @@ describe("Standalone proactive dispatch", () => {
     const start = Date.UTC(2030, 0, 2, 3);
     mockNow(start);
     const { actor } = await prepareBriefMember();
-    await accept(
-      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
-      [200],
-    );
-    mockNow(start + 5 * 60_000);
-    await accept(
-      client.handoff({
-        headers: cron,
-        body: { action: "activate", apply: true },
-      }),
-      [200],
-    );
     const brief = app(morningBriefPreferenceContract);
     const suggestions = app(proactiveSuggestionsContract);
     const headers = authHeaders(actor);
@@ -1192,7 +1115,7 @@ describe("Standalone proactive dispatch", () => {
       expect(choice.body.unavailableReason).toBe("missing-timezone");
     }
     await bdd.completeOnboarding(actor, { timezone: "UTC" });
-    await accept(client.compare({ headers: cron }), [200]);
+    await accept(client.dispatch({ headers: cron }), [200]);
     const preferences = await Promise.all([
       accept(brief.get({ headers }), [200]),
       accept(suggestions.get({ headers }), [200]),
@@ -1239,18 +1162,6 @@ describe("Standalone proactive dispatch", () => {
       prompt: "Review today's work.",
     });
     await launchBudgetRun(context, owned, manual);
-    await accept(
-      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
-      [200],
-    );
-    at(start + 5 * 60_000);
-    await accept(
-      client.handoff({
-        headers: cron,
-        body: { action: "activate", apply: true },
-      }),
-      [200],
-    );
     const settings = app(proactiveSuggestionsContract);
     await accept(
       settings.update({ headers: authHeaders(actor), body: { enabled: true } }),
@@ -1263,7 +1174,7 @@ describe("Standalone proactive dispatch", () => {
         return runs.registerDirectRunner(owned.runnerGroup);
       });
       expect(
-        (await accept(client.compare({ headers: cron }), [200])).body,
+        (await accept(client.dispatch({ headers: cron }), [200])).body,
       ).toMatchObject({ enqueued: 1 });
       await accept(
         app(cronCleanupSandboxesContract).cleanup({ headers: cron }),
@@ -1293,7 +1204,7 @@ describe("Standalone proactive dispatch", () => {
       );
       await flushWaitUntilForTest();
       expect(
-        (await accept(client.compare({ headers: cron }), [200])).body,
+        (await accept(client.dispatch({ headers: cron }), [200])).body,
       ).toMatchObject({ enqueued: 0 });
     }
     expect(
@@ -1301,7 +1212,7 @@ describe("Standalone proactive dispatch", () => {
     ).toMatchObject({ enabled: true, status: "error" });
     at(Date.UTC(2030, 0, 2, 13, 48));
     expect(
-      (await accept(client.compare({ headers: cron }), [200])).body,
+      (await accept(client.dispatch({ headers: cron }), [200])).body,
     ).toMatchObject({ enqueued: 1 });
   });
 
@@ -1316,21 +1227,6 @@ describe("Standalone proactive dispatch", () => {
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
     const cronClient = app(cronProactiveContract);
-    await accept(
-      cronClient.handoff({
-        headers: cron,
-        body: { action: "drain", apply: true },
-      }),
-      [200],
-    );
-    mockNow(start + 5 * 60_000);
-    await accept(
-      cronClient.handoff({
-        headers: cron,
-        body: { action: "activate", apply: true },
-      }),
-      [200],
-    );
     const brief = app(morningBriefPreferenceContract);
     const headers = authHeaders(actor);
     const pending = await accept(
@@ -1350,11 +1246,11 @@ describe("Standalone proactive dispatch", () => {
     expect(ready.body).toMatchObject({ enabled: true, status: "enabled" });
     mockNow(Date.UTC(2030, 0, 2, 7));
     expect(
-      (await accept(cronClient.compare({ headers: cron }), [200])).body,
+      (await accept(cronClient.dispatch({ headers: cron }), [200])).body,
     ).toMatchObject({ enqueued: 0, inactive: 0, expired: 0 });
     mockNow(Date.UTC(2030, 0, 2, 23));
     expect(
-      (await accept(cronClient.compare({ headers: cron }), [200])).body,
+      (await accept(cronClient.dispatch({ headers: cron }), [200])).body,
     ).toMatchObject({ enqueued: 0, inactive: 1, expired: 0 });
     await accept(
       brief.update({ headers: authHeaders(actor), body: { enabled: false } }),
