@@ -10,6 +10,7 @@ import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
@@ -22,6 +23,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.text.TextLayoutResult
@@ -37,6 +39,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -56,22 +59,7 @@ internal class ConversationCodeRootTest : ArtifactCatalogRootTestFixture() {
         instrumentation.setInTouchMode(false)
         try {
             compose.activityRule.scenario.recreate()
-            startChat(
-                listOf(
-                    input(),
-                    historyEventWire(
-                        ReplyId,
-                        2,
-                        payload = """{"content":${JsonPrimitive(wrapped)}}""",
-                    ),
-                    historyEventWire(
-                        "51385000-0000-4000-8000-000000000003",
-                        3,
-                        type = "run.completed",
-                        payload = "null",
-                    ),
-                ),
-            )
+            startChat(settled(wrapped))
             awaitText("Showing 12 / 16 lines")
             val read = compose.onNodeWithText("View full code")
             val copy = compose.onNodeWithContentDescription("Copy code")
@@ -117,6 +105,50 @@ internal class ConversationCodeRootTest : ArtifactCatalogRootTestFixture() {
             assertEquals(copyBounds, copy.getUnclippedBoundsInRoot())
         } finally {
             instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    fun narrowingAReaderWithSearchOpenKeepsTheSourceAndReturnsToTheChat() {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        val sample =
+            (1..18).joinToString("\n", postfix = "\n") {
+                "release checkpoint $it " + "details ".repeat(23)
+            }
+        try {
+            startChat(settled("```text\n$sample```"))
+            awaitText("Showing 12 / 18 lines")
+            compose.onNodeWithTag("workspace_search_entry").performClick()
+            val query = compose.onNodeWithTag("chat_search_query")
+            query.performTextReplacement("release")
+            compose.onNodeWithText("View full code").performClick()
+            awaitText("Full code")
+            query.assertIsDisplayed()
+            val scrolling =
+                compose.onNode(
+                    SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange) and
+                        hasAnyAncestor(hasTestTag("conversation_full_code")),
+                )
+            fun axis() =
+                scrolling.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange]
+            scrolling.performSemanticsAction(SemanticsActions.ScrollBy) { it(180f, 0f) }
+            compose.waitUntil(10_000) { axis().value() > 0f }
+            compose.waitForIdle()
+            val offset = axis().value()
+
+            RuntimeEnvironment.setQualifiers("en-rUS-w412dp-h780dp")
+            compose.activityRule.scenario.recreate()
+            awaitText("Full code")
+            query.assertDoesNotExist()
+            assertEquals(offset, axis().value(), 1f)
+
+            compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+            awaitText("Showing 12 / 18 lines")
+            query.assertDoesNotExist()
+            compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+            query.assertTextContains("release")
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
         }
     }
 
@@ -213,6 +245,18 @@ internal class ConversationCodeRootTest : ArtifactCatalogRootTestFixture() {
             payload =
                 """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Show the release code."}]}}""",
             createdAt = Instant.now().toString(),
+        )
+
+    private fun settled(markdown: String) =
+        listOf(
+            input(),
+            historyEventWire(ReplyId, 2, payload = """{"content":${JsonPrimitive(markdown)}}"""),
+            historyEventWire(
+                "51385000-0000-4000-8000-000000000003",
+                3,
+                type = "run.completed",
+                payload = "null",
+            ),
         )
 
     private fun startChat(events: List<String>) {

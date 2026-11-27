@@ -416,12 +416,11 @@ internal fun OkouApp(
                 !showArtifacts &&
                 resourcesId == null &&
                 !showingFind &&
-                inlineArtifactLink == null &&
-                (listWidth != null || !searchActive)
+                inlineArtifactLink == null
         }
     val showList =
-        codeVisit?.expanded != true &&
-            (listWidth != null || searchActive || target == WorkspaceTarget.List)
+        if (codeVisit != null) listWidth != null && !codeVisit.expanded
+        else listWidth != null || searchActive || target == WorkspaceTarget.List
     val showChatList =
         settings == null &&
             showList &&
@@ -577,6 +576,14 @@ internal fun OkouApp(
         restoreSearchFocus = true
         searchState.reset()
         navigation = navigation.copy(search = SearchRoute.Closed)
+    }
+
+    fun closeCodeReader() {
+        codeReading.close()
+        if (listWidth == null && searchActive) {
+            releaseSearchFocus()
+            navigation = navigation.copy(search = SearchRoute.ReturnOnBack)
+        }
     }
 
     fun openSearch() {
@@ -1110,7 +1117,7 @@ internal fun OkouApp(
                 searchActive ||
                 findVisit != null),
         onBack = {
-            if (codeVisit != null) codeReading.close()
+            if (codeVisit != null) closeCodeReader()
             else if (
                 settings == null &&
                     searchActive &&
@@ -1970,7 +1977,9 @@ internal fun OkouApp(
                     if (listWidth != null && showList) VerticalDivider()
                     if (
                         chats != null &&
-                            (listWidth != null || (!searchActive && target != WorkspaceTarget.List))
+                            (codeVisit != null ||
+                                listWidth != null ||
+                                (!searchActive && target != WorkspaceTarget.List))
                     ) {
                         Column(
                             Modifier.weight(1f).fillMaxHeight(),
@@ -1982,8 +1991,9 @@ internal fun OkouApp(
                                         chats.history,
                                         runActions?.presentation,
                                         codeVisit,
-                                        codeReading,
                                         wide = listWidth != null,
+                                        back = ::closeCodeReader,
+                                        expand = codeReading::toggleExpanded,
                                     )
                                 }
                                 return@detailPane

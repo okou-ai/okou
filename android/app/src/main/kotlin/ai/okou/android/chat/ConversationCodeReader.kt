@@ -183,8 +183,8 @@ internal fun ConversationCodeCard(
                 source.language,
                 background,
                 Modifier.fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                    .horizontalScroll(rememberScrollState()),
             )
             if (long) CodePreviewFooter(source.lineCount, focus) { reader.open(target) }
         }
@@ -251,8 +251,9 @@ internal fun ConversationFullCode(
     history: ConversationHistoryModel,
     presentation: ConversationContent?,
     visit: ConversationCodeVisit,
-    reader: ConversationCodeReading,
     wide: Boolean,
+    back: () -> Unit,
+    expand: () -> Unit,
 ) {
     val historyState by history.uiState.collectAsStateWithLifecycle()
     val availableHistory = historyState.takeIf { it.thread?.id == visit.threadId }
@@ -291,14 +292,14 @@ internal fun ConversationFullCode(
         rememberMarkdownLayout(body) { it?.let { conversationMarkdownCode(it, target.path) } }
     val retire = code == null && availableHistory?.phase?.let { it != HistoryPhase.Loading } == true
     LaunchedEffect(retire) {
-        if (retire) reader.close()
+        if (retire) back()
     }
     FullCodePage(
         code.takeUnless { missing },
         wide,
         visit.expanded,
-        reader::close,
-        reader::toggleExpanded,
+        back,
+        expand,
     )
 }
 
@@ -373,17 +374,18 @@ private fun FullCodePage(
                 val vertical = rememberScrollState()
                 val horizontal = rememberScrollState()
                 if (source != null) {
-                    CodeText(
-                        source.text,
-                        source.language,
-                        colors.surface,
-                        Modifier.fillMaxSize()
-                            .padding(16.dp)
-                            .verticalScroll(vertical)
-                            .horizontalScroll(horizontal),
-                        vertical,
-                        onFocus = { expansionFocused = false },
-                    )
+                    Box(
+                        Modifier.fillMaxSize().padding(16.dp).verticalScroll(vertical),
+                    ) {
+                        CodeText(
+                            source.text,
+                            source.language,
+                            colors.surface,
+                            Modifier.fillMaxWidth().horizontalScroll(horizontal),
+                            vertical,
+                            onFocus = { expansionFocused = false },
+                        )
+                    }
                 } else {
                     CircularProgressIndicator(Modifier.align(Alignment.Center).size(20.dp))
                 }
