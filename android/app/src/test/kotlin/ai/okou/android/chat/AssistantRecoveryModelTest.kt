@@ -876,9 +876,31 @@ class AssistantRecoveryModelTest {
         }
         val input = RecoveryApiFixture.input()
         val failure = RecoveryApiFixture.failure()
+        val lateLegacy =
+            historyEventWire(
+                "late-legacy",
+                3,
+                type = "output.error",
+                payload = """{"error":"Ordinary output error"}""",
+            )
         assertEquals(
             AssistantFailure.Run(RecoveryApiFixture.FAILURE, "usage_limit"),
             latest(input, failure),
+        )
+        assertEquals(latest(input, failure), latest(input, failure, lateLegacy))
+        assertEquals(
+            AssistantFailure.Output("late-legacy", "Ordinary output error"),
+            latest(
+                input,
+                failure,
+                RecoveryApiFixture.input(3),
+                historyEventWire(
+                    "late-legacy",
+                    4,
+                    type = "output.error",
+                    payload = """{"error":"Ordinary output error"}""",
+                ),
+            ),
         )
         assertEquals(
             AssistantFailure.Output("output", "Ordinary output error"),

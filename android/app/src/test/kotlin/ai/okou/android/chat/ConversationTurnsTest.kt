@@ -24,9 +24,40 @@ class ConversationTurnsTest {
 
         assertEquals(listOf(failed.id), headers(input, failed))
         assertEquals(listOf(stopped.id), headers(input, reply, steer, stopped))
-        assertEquals(listOf(legacy.id), headers(input, legacy, failed))
+        assertEquals(listOf(failed.id), headers(input, legacy, failed))
         assertEquals(emptyList<String>(), headers(input, reply, legacy, failed))
         assertEquals(emptyList<String>(), headers(input, reply, stopped))
+    }
+
+    @Test
+    fun structuredFailureReplacesLegacyFeedbackInPlaceWithinItsTurn() {
+        val input = row(1, "input.prompt")
+        val legacy = row(2, "output.error", payload = """{"error":"Could not continue"}""")
+        val failure = row(3, "run.failed")
+        val laterLegacy = row(4, "output.error", payload = """{"error":"Could not continue"}""")
+        val firstCard = content(input, legacy).messages.last()
+        val upgraded = content(input, legacy, failure).messages.last()
+        assertEquals(legacy.id, firstCard.key)
+        assertEquals(firstCard.key, upgraded.key)
+        assertEquals(failure.id, upgraded.message.id)
+        assertTrue(upgraded.includes(legacy.id))
+        assertTrue(upgraded.includes(failure.id))
+        assertEquals(
+            listOf(input.id, failure.id),
+            content(input, legacy, failure).messages.map { it.message.id },
+        )
+
+        val structuredFirst = content(input, failure, laterLegacy).messages.last()
+        assertEquals(failure.id, structuredFirst.key)
+        assertEquals(failure.id, structuredFirst.message.id)
+        assertTrue(structuredFirst.includes(laterLegacy.id))
+
+        val steer = row(5, "input.prompt")
+        val nextError = row(6, "output.error", payload = """{"error":"New failure"}""")
+        assertEquals(
+            listOf(input.id, failure.id, steer.id, nextError.id),
+            content(input, failure, laterLegacy, steer, nextError).messages.map { it.message.id },
+        )
     }
 
     @Test

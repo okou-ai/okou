@@ -70,27 +70,37 @@ fun latestAssistantFailure(
     transcript: HistoryTranscript = projectHistory(checkpoint),
 ): AssistantFailure? {
     val byId = checkpoint.rows.associateBy { it.id }
-    val last =
-        transcript.messages.lastOrNull { message ->
-            if (message.queued) false
-            else {
-                val row = byId[message.id]
-                row != null &&
-                    when (row.type) {
-                        "input.prompt",
-                        "input.automation",
-                        "input.rejected",
-                        "output.error",
-                        "run.failed",
-                        "run.cancelled",
-                        "control.interrupt" -> true
-                        "output.message",
-                        "run.completed" -> row.content?.isNotEmpty() == true
-                        else -> false
-                    }
-            }
-        } ?: return null
-    val row = byId.getValue(last.id)
+    val messages = transcript.messages
+    val lastIndex = messages.indexOfLast { message ->
+        if (message.queued) false
+        else {
+            val row = byId[message.id]
+            row != null &&
+                when (row.type) {
+                    "input.prompt",
+                    "input.automation",
+                    "input.rejected",
+                    "output.error",
+                    "run.failed",
+                    "run.cancelled",
+                    "control.interrupt" -> true
+                    "output.message",
+                    "run.completed" -> row.content?.isNotEmpty() == true
+                    else -> false
+                }
+        }
+    }
+    val last = messages.getOrNull(lastIndex) ?: return null
+    // A late compatibility error cannot take recovery actions away from its structured failure.
+    val structured =
+        if (last.status == "output.error" && last.runId != null) {
+            (lastIndex - 1 downTo 0)
+                .asSequence()
+                .map { messages[it] }
+                .takeWhile { it.continuesDisplayTurn(last.runId) }
+                .firstOrNull { it.status == "run.failed" }
+        } else null
+    val row = byId.getValue(structured?.id ?: last.id)
     return when (row.type) {
         "run.failed" -> AssistantFailure.Run(row.id, row.failureReason)
         "output.error" ->

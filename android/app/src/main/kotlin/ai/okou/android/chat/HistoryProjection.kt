@@ -59,6 +59,12 @@ data class HistoryMessage(
 
 data class QueuedWorkflow(val name: String?, val triggerBrief: String?)
 
+internal fun HistoryMessage.isDeliveredInput() =
+    role == HistoryRole.User && runId != null && !rejected
+
+internal fun HistoryMessage.continuesDisplayTurn(previousRunId: String?) =
+    runId != null && runId == previousRunId && !isDeliveredInput()
+
 internal fun HistoryMessage.visibleInConversation() =
     when (status) {
         null,

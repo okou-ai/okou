@@ -4,6 +4,7 @@ import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.api.generated.ResetSubscriptionResultOutcome
 import android.text.format.DateUtils
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -208,6 +209,15 @@ fun AssistantRecoveryPanel(
 @Composable
 internal fun AssistantFailureCard(reason: String?, content: @Composable () -> Unit = {}) {
     val copy = assistantRunFailureCopy(reason)
+    FailureFeedbackCard(copy.title, copy.description, content)
+}
+
+@Composable
+internal fun FailureFeedbackCard(
+    @StringRes title: Int,
+    @StringRes description: Int? = null,
+    content: @Composable () -> Unit,
+) {
     Surface(
         Modifier.fillMaxWidth().testTag("conversation_failure_card"),
         shape = RoundedCornerShape(12.dp),
@@ -216,7 +226,7 @@ internal fun AssistantFailureCard(reason: String?, content: @Composable () -> Un
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text(
-                stringResource(copy.title),
+                stringResource(title),
                 style =
                     MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 16.sp,
@@ -224,13 +234,17 @@ internal fun AssistantFailureCard(reason: String?, content: @Composable () -> Un
                         fontWeight = FontWeight.Medium,
                     ),
             )
-            Text(
-                stringResource(copy.description),
-                modifier = Modifier.padding(top = 4.dp),
-                style =
-                    MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (description != null)
+                Text(
+                    stringResource(description),
+                    modifier = Modifier.padding(top = 4.dp),
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                        ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             content()
         }
     }

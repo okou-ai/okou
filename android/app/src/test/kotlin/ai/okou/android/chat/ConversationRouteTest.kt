@@ -17,10 +17,12 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import android.content.ClipboardManager
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -91,25 +93,46 @@ class ConversationRouteTest {
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun historicalFailureShowsReasonAndGuidanceWithoutRecoveryNetworkReads() {
-        fun message(reason: String): HistoryMessage {
-            val row = HistoryEvent.decode(RecoveryApiFixture.failure(reason))
+        fun history(wire: String): HistoryMessage {
+            val row = HistoryEvent.decode(wire)
             return projectHistory(
                     HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId)),
                 )
                 .messages
                 .single()
         }
-        val displayed = mutableStateOf(message("provider_request_timeout"))
+        fun failure(reason: String) = history(RecoveryApiFixture.failure(reason))
+        val legacy =
+            history(
+                historyEventWire(
+                    "legacy",
+                    1,
+                    type = "output.error",
+                    payload = """{"error":"Legacy error"}""",
+                ),
+            )
+        val displayed = mutableStateOf(listOf(legacy))
+        fun show(vararg messages: HistoryMessage) {
+            compose.runOnIdle { displayed.value = messages.toList() }
+        }
         compose.setContent {
             OkouTheme {
-                ConversationMessageRow(
-                    conversationTurns(listOf(displayed.value), emptySet()).messages.single(),
-                )
+                Column {
+                    for (entry in conversationTurns(displayed.value, emptySet()).messages) {
+                        key(entry.key) { ConversationMessageRow(entry) }
+                    }
+                }
             }
         }
         val header = compose.onNodeWithTag("conversation_reply_header")
         val avatar = compose.onNodeWithTag("conversation_reply_avatar")
         val card = compose.onNodeWithTag("conversation_failure_card")
+        val legacyTop = card.getUnclippedBoundsInRoot().top
+        compose.onNodeWithText("Legacy error").assertExists()
+
+        show(legacy, failure("provider_request_timeout"))
+        compose.onNodeWithText("Legacy error").assertDoesNotExist()
+        assertEquals(legacyTop, card.getUnclippedBoundsInRoot().top)
         val headerBounds = header.getUnclippedBoundsInRoot()
         val avatarBounds = avatar.getUnclippedBoundsInRoot()
         assertEquals(48.dp, headerBounds.bottom - headerBounds.top)
@@ -123,28 +146,25 @@ class ConversationRouteTest {
             .onNodeWithText("Try again in a moment, or choose another model to keep working.")
             .assertExists()
 
-        compose.runOnIdle { displayed.value = message("future_reason") }
+        show(failure("future_reason"))
         compose.onNodeWithText("This run couldn't finish").assertExists()
         compose.onNodeWithText("Open the chat on the Okou website for details.").assertExists()
 
-        compose.runOnIdle { displayed.value = message("provider_image_too_large") }
+        show(failure("provider_image_too_large"))
         compose.onNodeWithText("Image is too large").assertExists()
         compose.onNodeWithText("Remove the image or replace it with a smaller one.").assertExists()
 
-        compose.runOnIdle { displayed.value = message("guest_memory_oom_killed") }
+        show(failure("guest_memory_oom_killed"))
         compose.onNodeWithText("This run ran out of memory").assertExists()
         compose.onNodeWithText("The content generated so far is still available.").assertExists()
 
-        compose.runOnIdle { displayed.value = message("safety_policy_refusal") }
+        show(failure("safety_policy_refusal"))
         compose.onNodeWithText("Revise your request before sending it again.").assertExists()
 
-        compose.runOnIdle { displayed.value = message("firewall_auth_failed") }
+        show(failure("firewall_auth_failed"))
         compose.onNodeWithText("This run couldn't finish").assertExists()
 
-        compose.runOnIdle {
-            displayed.value =
-                displayed.value.copy(role = HistoryRole.Assistant, status = "run.cancelled")
-        }
+        show(history(historyEventWire(type = "run.cancelled", payload = "null")))
         header.assertExists()
         compose.onNodeWithText("Stopped").assertExists()
         card.assertDoesNotExist()

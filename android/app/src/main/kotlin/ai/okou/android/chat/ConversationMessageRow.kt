@@ -90,11 +90,13 @@ internal data class ConversationMessage(
     val preview: ComposerMessagePreview? = null,
     val summary: ReplySummary? = null,
     val showFeedbackHeader: Boolean = false,
+    val failureEventIds: List<String> = emptyList(),
 ) : ConversationTimelineRow {
     override val key: String
-        get() = earlier.firstOrNull()?.id ?: message.id
+        get() = failureEventIds.firstOrNull() ?: earlier.firstOrNull()?.id ?: message.id
 
-    fun includes(id: String?) = message.id == id || earlier.any { it.id == id }
+    fun includes(id: String?) =
+        message.id == id || id in failureEventIds || earlier.any { it.id == id }
 }
 
 @Composable
@@ -241,10 +243,21 @@ internal fun ConversationMessageRow(
                     ConversationReplyHeader()
                     Spacer(Modifier.height(4.dp))
                 }
-                val failed = message.status == "run.failed"
-                if (!failed) MessageStatus(message)
-                if (message.blocks.isNotEmpty()) MessageBody(message, compact = true)
-                if (failed) failureContent(message)
+                when (message.status) {
+                    "run.failed" -> failureContent(message)
+                    "output.error" ->
+                        FailureFeedbackCard(R.string.history_run_failed) {
+                            if (message.blocks.isNotEmpty()) {
+                                Column(Modifier.padding(top = 4.dp)) {
+                                    MessageBody(message, compact = true)
+                                }
+                            }
+                        }
+                    else -> {
+                        MessageStatus(message)
+                        if (message.blocks.isNotEmpty()) MessageBody(message, compact = true)
+                    }
+                }
             }
     }
 }
@@ -691,14 +704,12 @@ internal fun Modifier.conversationFindHighlight(
 private fun MessageStatus(message: HistoryMessage) {
     if (message.rejected) ConversationMeta(stringResource(R.string.history_rejected))
     when (message.status) {
-        "run.failed" -> AssistantFailureCard(message.failureReason)
         "run.cancelled" ->
             ConversationActivity(
                 stringResource(R.string.history_cancelled),
                 modifier = Modifier.testTag("conversation_stopped"),
                 stopped = true,
             )
-        "output.error" -> ConversationMeta(stringResource(R.string.history_run_failed))
     }
 }
 
