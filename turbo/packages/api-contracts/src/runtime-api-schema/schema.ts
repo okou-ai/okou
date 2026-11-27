@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
 import {
   array,
   boolean,
@@ -91,8 +92,9 @@ export function renderRuntimeApiSchemaDocument(
 export async function readRuntimeApiSchemaDocument(
   path: string,
 ): Promise<RuntimeApiSchemaDocument> {
-  const raw = await readFile(path, "utf8");
-  return parseRuntimeApiSchemaDocument(JSON.parse(raw));
+  const bytes = await readFile(path);
+  const json = path.endsWith(".gz") ? gunzipSync(bytes) : bytes;
+  return parseRuntimeApiSchemaDocument(JSON.parse(json.toString("utf8")));
 }
 
 function parseRuntimeApiSchemaDocument(
