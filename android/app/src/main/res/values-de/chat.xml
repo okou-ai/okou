@@ -8,9 +8,7 @@
     <string name="chat_undo_marked_read">Chat als gelesen markiert</string>
     <string name="chat_undo">Rückgängig</string>
     <string name="chat_action_connection_failed">Verbindung fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.</string>
-    <string name="chat_undo_checking">Ergebnis wird geprüft …</string>
     <string name="chat_undo_failed">Die Änderung konnte nicht rückgängig gemacht werden.</string>
-    <string name="chat_undo_unconfirmed">Es konnte nicht bestätigt werden, dass die Änderung rückgängig gemacht wurde.</string>
     <string name="chat_feedback_dismiss">Schließen</string>
     <string name="chat_list_first_load_failed">Vorübergehend nicht verfügbar</string>
     <string name="chat_list_title">Chats</string>
@@ -21,14 +19,8 @@
     <string name="chat_metadata_unavailable">Projektinformationen sind vorübergehend nicht verfügbar.</string>
     <string name="chat_inbox">Posteingang</string>
     <string name="chat_mark_all_read">Alles als gelesen markieren</string>
-    <string name="chat_mark_all_read_unconfirmed">Einige Chats sind möglicherweise noch ungelesen.</string>
     <string name="chat_mark_all_read_failed">Chats konnten nicht als gelesen markiert werden.</string>
     <string name="chat_mark_all_read_partial_failed">Als gelesen markiert: %1$d. Fehlgeschlagen: %2$d.</string>
-    <string name="chat_mark_all_read_mixed">Als gelesen markiert: %1$d. Fehlgeschlagen: %2$d. Unbestätigt: %3$d.</string>
-    <plurals name="chat_mark_all_read_partial">
-        <item quantity="one">%1$d von %2$d Chats wurde als gelesen markiert.</item>
-        <item quantity="other">%1$d von %2$d Chats wurden als gelesen markiert.</item>
-    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d Chat als gelesen markiert.</item>
         <item quantity="other">%1$d Chats als gelesen markiert.</item>
