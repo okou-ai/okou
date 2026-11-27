@@ -135,7 +135,6 @@ class ScreenshotScenario {
         val oldWorkflows = app.workflows
         val oldPreferences = app.snapshotApiPreferences()
         val oldLocales = AppCompatDelegate.getApplicationLocales()
-        val oldConnectivity = app.connectivity.value
         val authentication = app.authentication as TestAuthentication
         val oldAuthentication = authentication.state.value
         val size = overrideValue("size", device.executeShellCommand("wm size"))
@@ -152,7 +151,6 @@ class ScreenshotScenario {
                         app.chatService = composer.service
                         app.composerService = composer.service
                         app.workflows = workflow.service
-                        app.connectivity.value = true
                         val user = "connector-form-${UUID.randomUUID()}"
                         app.restoreApiPreferences(
                             oldPreferences + (Triple(BuildConfig.API_ORIGIN, user, "org-a") to
@@ -187,7 +185,6 @@ class ScreenshotScenario {
                         app.chatService = oldChat
                         app.composerService = oldComposer
                         app.workflows = oldWorkflows
-                        app.connectivity.value = oldConnectivity
                         app.restoreApiPreferences(oldPreferences)
                         authentication.state.value = oldAuthentication
                         instrumentation.runOnMainSync { AppCompatDelegate.setApplicationLocales(oldLocales) }
