@@ -486,6 +486,12 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         assertFalse(app.fixture.requests.any { it.requestUrl?.encodedPath == "/api/workflows" })
         compose.onNodeWithContentDescription("Workflows").performClick()
         compose.onNodeWithTag("workflow_query").assertIsDisplayed()
+        val newButton = compose.onNodeWithTag("workflow_create").getUnclippedBoundsInRoot()
+        val newLabel = compose.onNodeWithText("New", useUnmergedTree = true)
+        newLabel.assertLabelLarge()
+        val newTextBounds = newLabel.getUnclippedBoundsInRoot()
+        assertEquals(16.dp, newButton.right - newTextBounds.right)
+        assertEquals(38.dp, newTextBounds.left - newButton.left)
         app.gate.countDown()
         waitFor("Release checklist")
         val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").getUnclippedBoundsInRoot()
@@ -1132,6 +1138,38 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    @Config(qualifiers = "de-rDE-w360dp-h840dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun automationHeadingAndActionStayReadableInANarrowWindowAtLargeText() {
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            compose.activityRule.scenario.onActivity {
+                assertEquals(360, it.resources.configuration.screenWidthDp)
+                assertEquals(2f, it.resources.configuration.fontScale, 0f)
+            }
+            openWorkflowDetail()
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            val title = compose.onNodeWithText("Auslöseregeln", useUnmergedTree = true)
+            val add = compose.onNodeWithText("Automatisierung hinzufügen")
+            val layouts = mutableListOf<TextLayoutResult>()
+            title.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            assertEquals(
+                "Heading ${layout.size} and action ${add.getUnclippedBoundsInRoot()}",
+                1,
+                layout.lineCount,
+            )
+            title.assertIsDisplayed()
+            add.assertIsDisplayed().assertIsEnabled().performClick()
+            compose.onNodeWithTag("workflow_save").assertIsDisplayed()
+        } finally {
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
+    }
+
+    @Test
     fun pendingRuleKeepsTheConfirmedStatusAndFocusedActionUntilTheReceipt() = withHardwareKeyboard {
         val fixture = app.fixture
         fixture.active.set(true)
@@ -1263,6 +1301,11 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val add = compose.onNodeWithText("Add automation").assertIsEnabled()
         val addBounds = add.getUnclippedBoundsInRoot()
         assertTrue(addBounds.bottom - addBounds.top >= 48.dp)
+        val addLabel = compose.onNodeWithText("Add automation", useUnmergedTree = true)
+        addLabel.assertLabelLarge()
+        val addTextBounds = addLabel.getUnclippedBoundsInRoot()
+        assertEquals(24.dp, addTextBounds.left - addBounds.left)
+        assertEquals(24.dp, addBounds.right - addTextBounds.right)
         add.pressEnter()
 
         val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
