@@ -95,6 +95,7 @@ internal class ChatConnectorOptions(
     private var overviewRequest: Job? = null
     private val accountRequests = mutableMapOf<String, Job>()
     private var targetGeneration = 0L
+    private var readFailureRound = 0L
 
     fun activate(key: String?) {
         val previous = mutable.value
@@ -128,7 +129,10 @@ internal class ChatConnectorOptions(
 
     fun showOverview(target: ComposerTarget) {
         if (!current(target) || overviewRequest?.isActive == true) return
-        if (mutable.value.overview.forEntry().data != null) return
+        val snapshot = mutable.value
+        if (snapshot.overview.forEntry().data != null) return
+        if (snapshot.overview.data == null && snapshot.overview.failureRound != null)
+            mutable.value = snapshot.copy(overview = snapshot.overview.confirmed())
         val request = scope.launch(start = CoroutineStart.LAZY) { readOverview(target) }
         overviewRequest = request
         request.start()
@@ -170,6 +174,8 @@ internal class ChatConnectorOptions(
         val summary = snapshot.overview.data?.find { it.entry.slug == slug } ?: return
         val previous = snapshot.details[slug] ?: ChatConnectorDetails()
         if (previous.accounts.forEntry().data == null) {
+            if (previous.accounts.data == null && previous.accounts.failureRound != null)
+                updateDetails(slug) { it.copy(accounts = it.accounts.confirmed()) }
             val memberAccess =
                 snapshot.details.values.firstNotNullOfOrNull {
                     it.accounts.forEntry().data?.memberAccess
@@ -459,7 +465,11 @@ internal class ChatConnectorOptions(
     private fun saveInProgress() = mutable.value.save?.let { it.saving || it.blocksSend } == true
 
     private fun <T> ConnectorRead<T>.cached() =
-        if (data == null) this else copy(expiresAt = TimeSource.Monotonic.markNow() + 10.minutes)
+        when {
+            data != null -> copy(expiresAt = TimeSource.Monotonic.markNow() + 10.minutes)
+            failure == ConnectorReadFailure.Unavailable -> this
+            else -> copy(failureRound = ++readFailureRound)
+        }
 
     private fun current(target: ComposerTarget) = authorized() && mutable.value.target == target.key
 }

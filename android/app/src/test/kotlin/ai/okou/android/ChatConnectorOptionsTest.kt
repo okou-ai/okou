@@ -370,6 +370,68 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
+    fun coldConnectorReadsShowTheSharedFailureIllustrationOnBothLevels() {
+        openNewChat()
+        app.connectors.failChatOverview = true
+        openOverview(waitForRows = false)
+        waitText("Temporarily unable to load")
+        compose
+            .onNodeWithTag("content-read-failure-illustration", useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithTag("chat-connector-manage").assertIsDisplayed()
+        val overviewRead = "/api/chat-connector-overview" to null
+        assertEquals(3, app.connectors.chatConnectorReads.count { it == overviewRead })
+
+        inSheet(hasContentDescription("Back")).performClick()
+        dismissParentOptions()
+        app.connectors.failChatOverview = false
+        openOverview()
+        app.connectors.failAccountReads = true
+        app.connectors.accountRetryAfterSeconds = 0
+        compose.onNodeWithTag(calendarTag).performClick()
+        waitText("Temporarily unable to load")
+        compose
+            .onNodeWithTag("content-read-failure-illustration", useUnmergedTree = true)
+            .assertIsDisplayed()
+        inSheet(hasContentDescription("Back")).performClick()
+        compose.onNodeWithTag(calendarTag).assertIsDisplayed()
+        assertEquals(4, app.connectors.chatConnectorReads.count { it == overviewRead })
+    }
+
+    @Test
+    fun warmOverviewRefreshFailureKeepsRowsAndClearsItsSnackbarOnRecovery() {
+        openNewChat()
+        openOverview()
+        app.connectors.failChatOverview = true
+        val options = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                        ?.connectors,
+                )
+                .chatOptions
+        }
+        compose.runOnIdle { options.invalidate("slack") }
+        val message = "Could not refresh connectors."
+        waitText(message)
+        compose.onNodeWithText(message).assertIsDisplayed()
+        compose.onNodeWithTag(calendarTag).assertIsDisplayed()
+        compose.onNodeWithTag("chat-connector-manage").assertIsDisplayed()
+        val overviewRead = "/api/chat-connector-overview" to null
+        assertEquals(4, app.connectors.chatConnectorReads.count { it == overviewRead })
+
+        app.connectors.failChatOverview = false
+        compose.runOnIdle { options.invalidate("slack") }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(message).fetchSemanticsNodes().isEmpty()
+        }
+        compose.onNodeWithTag(calendarTag).assertIsDisplayed()
+        assertEquals(5, app.connectors.chatConnectorReads.count { it == overviewRead })
+    }
+
+    @Test
     fun overviewAndSelectedServiceUseSeparateCachedReads() {
         openNewChat()
         val overview = "/api/chat-connector-overview" to null

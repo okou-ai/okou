@@ -49,6 +49,7 @@ internal data class FixtureConnectorIcon(
     val asset: String,
     val invertInDarkMode: Boolean = false,
     val scale: Double? = null,
+    val svg: String? = null,
 )
 
 internal data class FixtureChatOverride(
@@ -84,6 +85,7 @@ internal class ConnectorApiFixture(
     @Volatile var memberAccess = false
     @Volatile var denyPolicyReads = false
     @Volatile var overviewReplyGate: CountDownLatch? = null
+    @Volatile var failChatOverview = false
     val chatConnectorReads = CopyOnWriteArrayList<Pair<String, String?>>()
     @Volatile var devicePollStatus = "pending"
     @Volatile var devicePollInterval = 5
@@ -209,7 +211,11 @@ internal class ConnectorApiFixture(
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val url = checkNotNull(request.requestUrl)
-                    if (url.encodedPath.startsWith("/fixture-icons/")) return rejected(404)
+                    if (url.encodedPath.startsWith("/fixture-icons/")) {
+                        val asset = url.pathSegments.last().removeSuffix(".svg")
+                        val svg = icons.values.firstOrNull { it.asset == asset }?.svg ?: return rejected(404)
+                        return MockResponse().setHeader("Content-Type", "image/svg+xml").setBody(svg)
+                    }
                     if (request.getHeader("Authorization") != "Bearer connector-test")
                         return rejected(401)
                     when (url.encodedPath) {
@@ -380,6 +386,7 @@ internal class ConnectorApiFixture(
                 )
             path == "/api/chat-connector-overview" -> {
                 overviewReplyGate?.await()
+                if (failChatOverview) return rejected(503).setHeader("Retry-After", 0)
                 json(
                     JsonArray(
                         accounts.entries
