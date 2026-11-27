@@ -1,12 +1,12 @@
 package ai.okou.android.screenshots
 
 import ai.okou.android.ChatCacheSnapshot
-import ai.okou.android.ChatListApiFixture
 import ai.okou.android.MainActivity
 import ai.okou.android.R
 import ai.okou.android.ScreenshotCapture
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.WorkflowApiFixture
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.awaitChatList
@@ -41,6 +41,9 @@ class ScreenshotScenario {
         val auth = app.authentication as TestAuthentication
         val originalAuth = auth.state.value
         val chats = app.chatService
+        val search = app.searchService
+        val composer = app.composerService
+        val workflows = app.workflows
         val preferences = app.snapshotApiPreferences()
         val initial = app.initialPreferences
         val cache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
@@ -78,8 +81,11 @@ class ScreenshotScenario {
                         locale = UserPreferencesLocale.ZH_HANS,
                         theme = if (wide) UserPreferencesTheme.DARK else UserPreferencesTheme.LIGHT,
                     )
-                    ChatListApiFixture().use { fixture ->
+                    WorkflowApiFixture(chinese = true).use { fixture ->
                         app.chatService = fixture.service
+                        app.searchService = fixture.service
+                        app.composerService = fixture.service
+                        app.workflows = fixture.service
                         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                             device.awaitChatList(app)
                             var expectedHeight = 0
@@ -89,14 +95,13 @@ class ScreenshotScenario {
                                     TypedValue.COMPLEX_UNIT_SP, 24f, it.resources.displayMetrics,
                                 ).roundToInt() + 16)
                             }
-                            val entry = get(desc(R.string.chat_search_workspace).clickable(true))
+                            val entry = get(desc(R.string.chat_search_workspace))
                             val home = entry.visibleBounds
                             assertEquals(expectedHeight, home.height())
                             ScreenshotCapture.capture("home-$layout.png")
                             entry.click()
-                            val editor = By.pkg(app.packageName).clazz("android.widget.EditText")
-                                .desc(localized.getString(R.string.chat_search_workspace))
-                            val input = get(editor.focused(true))
+                            val editor = By.pkg(app.packageName).clazz("android.widget.EditText").focused(true)
+                            val input = get(editor)
                             imeVisible(true)
                             fun checkInput() {
                                 val bounds = get(editor).visibleBounds
@@ -108,20 +113,23 @@ class ScreenshotScenario {
                             input.text = "project"
                             get(desc(R.string.chat_search_clear)).click()
                             checkInput()
-                            get(editor.focused(true))
+                            get(editor)
                             assertTrue(device.pressBack())
                             imeVisible(false)
                             checkInput()
                             ScreenshotCapture.capture("search-$layout.png")
                             assertTrue(device.pressBack())
                             device.awaitChatList(app)
-                            assertEquals(home, get(desc(R.string.chat_search_workspace).clickable(true)).visibleBounds)
+                            assertEquals(home, get(desc(R.string.chat_search_workspace)).visibleBounds)
                         }
                     }
                 }
             }
         } finally {
             app.chatService = chats
+            app.searchService = search
+            app.composerService = composer
+            app.workflows = workflows
             auth.state.value = originalAuth
             app.restoreApiPreferences(preferences)
             app.initialPreferences = initial
