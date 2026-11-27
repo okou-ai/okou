@@ -9,21 +9,6 @@ const RETIRED_PROACTIVE_DEFINITION_NAMES = [
   "proactive-jobs",
 ] as const;
 
-export function proactiveWorkflowKind(name: string | null) {
-  if (name === PROACTIVE_LEARNING_DEFINITION_NAME) {
-    return "learning" as const;
-  }
-  return name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME
-    ? ("suggestions" as const)
-    : null;
-}
-
-export function isRetiredProactiveWorkflow(name: string | null) {
-  return RETIRED_PROACTIVE_DEFINITION_NAMES.some((retired) => {
-    return retired === name;
-  });
-}
-
 /** These installed identities are historical. A user's Workflow may have the same name. */
 export const LEGACY_PROACTIVE_WORKFLOW_NAMES = [
   ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,

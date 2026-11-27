@@ -4,6 +4,9 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
 import ai.okou.android.normalizedRenameName
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.util.Locale
@@ -138,6 +141,9 @@ class ConnectorModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectorUiState())
     internal val uiState = mutableState.asStateFlow()
+    internal var renameEditor by mutableStateOf<ConnectorRenameEditor?>(null)
+        private set
+
     internal val chatOptions =
         ChatConnectorOptions(service, viewModelScope, authorized, ::reportSessionFailure)
     private val recentMatches =
@@ -168,6 +174,10 @@ class ConnectorModel(
     private var authorizationDeadline: TimeMark? = null
     private var pendingExternalCode: String? = null
     private var pendingChange: PendingChange? = null
+
+    override fun onCleared() {
+        renameEditor = null
+    }
 
     internal fun setOpen(open: Boolean) {
         if (this.open == open) return
@@ -353,6 +363,7 @@ class ConnectorModel(
             }
             return
         }
+        renameEditor = null
         previous.slug?.let { previousSlug ->
             val snapshot =
                 ServiceReadSnapshot(
@@ -401,6 +412,7 @@ class ConnectorModel(
                 load({ service.detail(slug) }) { read ->
                     val unavailable = read.failure == ConnectorReadFailure.Unavailable
                     if (unavailable) {
+                        invalidateRename(slug)
                         permissionJob?.cancel()
                         permissionJob = null
                     }
@@ -428,9 +440,10 @@ class ConnectorModel(
             accountsJob = viewModelScope.launch {
                 load({ service.accounts(slug) }) { read ->
                     if (read.data != null) publishAccounts(slug, read.data)
-                    else
+                    else {
+                        val unavailable = read.failure == ConnectorReadFailure.Unavailable
+                        if (unavailable) invalidateRename(slug)
                         mutableState.update { state ->
-                            val unavailable = read.failure == ConnectorReadFailure.Unavailable
                             state.copy(
                                 accounts = read.retaining(state.accounts),
                                 cachedAccounts = state.cachedAccounts.takeUnless { unavailable },
@@ -442,6 +455,7 @@ class ConnectorModel(
                                     else state.connected,
                             )
                         }
+                    }
                 }
             }
         }
@@ -507,6 +521,32 @@ class ConnectorModel(
                 },
             )
         }
+    }
+
+    internal fun openRename(id: String, fallbackName: String) {
+        if (!canStart()) return
+        val state = mutableState.value
+        val slug = state.slug ?: return
+        if (state.detail.failure == ConnectorReadFailure.Unavailable) return
+        val account = state.accounts.data?.firstOrNull { it.id == id } ?: return
+        renameEditor =
+            ConnectorRenameEditor(
+                slug,
+                id,
+                account.displayName ?: account.identity ?: fallbackName,
+            )
+    }
+
+    internal fun submitRename(editor: ConnectorRenameEditor, name: String) {
+        if (renameEditor === editor) rename(editor.accountId, name)
+    }
+
+    internal fun closeRename(editor: ConnectorRenameEditor) {
+        if (renameEditor === editor) renameEditor = null
+    }
+
+    private fun invalidateRename(slug: String) {
+        if (renameEditor?.target?.slug == slug) renameEditor = null
     }
 
     internal fun rename(id: String, name: String) {
@@ -629,6 +669,7 @@ class ConnectorModel(
     }
 
     private suspend fun verifyChange(change: PendingChange) {
+        change.readbackAttempts++
         val accounts = service.accounts(change.target.slug)
         invalidateConnectionReads()
         publishAccounts(change.target.slug, accounts)
@@ -639,15 +680,17 @@ class ConnectorModel(
         }
 
         // The read can race a commit after a lost response. Keep checking the original account.
-        change.unmatchedReads++
-        val keepChecking = change.unmatchedReads < ACCOUNT_READBACK_LIMIT
-        if (!keepChecking) {
-            pendingChange = null
-            verificationFailures = 0
+        if (change.readbackAttempts < ACCOUNT_READBACK_LIMIT) {
+            updateAction { it.copy(problem = ConnectorProblem.VerificationPending) }
+        } else {
+            finishPendingChange()
+            updateAction { it.copy(reconciling = false, problem = ConnectorProblem.Failed) }
         }
-        updateAction {
-            it.copy(reconciling = keepChecking, problem = ConnectorProblem.VerificationPending)
-        }
+    }
+
+    private fun finishPendingChange() {
+        pendingChange = null
+        verificationFailures = 0
     }
 
     internal fun startAuthorization(id: String?, methodId: String, values: Map<String, String>) {
@@ -1044,6 +1087,14 @@ class ConnectorModel(
     }
 
     private fun publishAccounts(slug: String, accounts: List<ConnectorSavedAccount>) {
+        val editor = renameEditor
+        if (
+            editor != null &&
+                editor.target.slug == slug &&
+                accounts.none { it.id == editor.accountId }
+        ) {
+            closeRename(editor)
+        }
         val confirmed = ConnectorRead(accounts, confirmedAt = clock.markNow())
         val cached = recentServices[slug]
         if (cached != null) recentServices[slug] = cached.copy(accounts = confirmed)
@@ -1090,22 +1141,29 @@ class ConnectorModel(
                 val connectionFailed = error.connectionFailed()
                 val uncertain = error.hasUncertainResponse()
                 val canRetryBrowserReceipt = uncertain && !authorizationExpired()
-                if (definitive) pendingChange = null
+                val currentChange = pendingChange
+                val readbackExhausted =
+                    currentChange != null &&
+                        currentChange.target == action.target &&
+                        currentChange.readbackAttempts >= ACCOUNT_READBACK_LIMIT
+                val verificationEnded = definitive || readbackExhausted
+                if (verificationEnded && currentChange != null) finishPendingChange()
                 updateAction {
                     val checkExternalSession =
                         it.authorization is ConnectorAuthorization.External &&
                             (action.awaitingExternalReceipt || uncertain && !connectionFailed)
                     val verifying =
-                        !definitive &&
+                        !verificationEnded &&
                             (it.reconciling ||
                                 it.awaitingBrowserReceipt && canRetryBrowserReceipt ||
                                 checkExternalSession)
                     it.copy(
-                        reconciling = it.reconciling && !definitive,
+                        reconciling = it.reconciling && !verificationEnded,
                         authorization =
                             if (definitive && it.reconciling) null else it.authorization,
                         problem =
                             when {
+                                readbackExhausted -> ConnectorProblem.Failed
                                 verifying && connectionFailed ->
                                     ConnectorProblem.VerificationNetwork
                                 verifying -> ConnectorProblem.VerificationPending
@@ -1229,7 +1287,7 @@ class ConnectorModel(
         val result: ConnectorResult?,
         val matches: (ConnectorSavedAccount?) -> Boolean,
     ) {
-        var unmatchedReads = 0
+        var readbackAttempts = 0
     }
 }
 

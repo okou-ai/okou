@@ -51,12 +51,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.ForYouSimplifiedDeck]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Browse For you without arrow buttons, show a display-only progress bar, lower the card stack, size cards from the deck width, use tighter card and option corners, label what each option does, and let option text be selected.",
-    enabled: false,
-  },
   [FeatureSwitchKey.WorkflowListRedesign]: {
     maintainer: "ming@okou.ai",
     description:
@@ -132,7 +126,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.PresentationOutputFormat]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Choose HTML or PPTX for presentations and remember your default in this workspace.",
+      "Choose HTML or PPTX for presentations and remember the preference on this device.",
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
@@ -163,6 +157,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description: "Show For you in the chat list only when the feed has cards.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ChatListHoverPreview]: {
+    maintainer: "bingjie@okou.ai",
+    description: "Preview the hidden chat list in a popover on hover.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"],
+    enabledEmailHashes: ["6490c77f"],
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatListAllFilter]: {

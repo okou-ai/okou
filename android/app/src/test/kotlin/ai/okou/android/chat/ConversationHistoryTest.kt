@@ -177,10 +177,12 @@ internal class ConversationHistoryTest : ConversationHistoryTestFixture() {
             val visit =
                 checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
             model.uiState.first { it.consecutiveReadFailures == 1 }
+            val round = checkNotNull(model.uiState.value.readRound)
             val start = attempts.single()
             for (interval in listOf(1_000L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 48_000L)) {
                 advanceTimeBy(interval)
                 runCurrent()
+                assertTrue(round === model.uiState.value.readRound)
             }
             assertEquals(
                 listOf(0L, 1_000L, 4_000L, 10_000L, 22_000L, 46_000L, 94_000L, 142_000L),
@@ -191,6 +193,7 @@ internal class ConversationHistoryTest : ConversationHistoryTestFixture() {
             advanceTimeBy(96_000)
             runCurrent()
             assertEquals(8, attempts.size)
+            assertNull(model.uiState.value.readRound)
         } finally {
             model.close()
             lease.close()

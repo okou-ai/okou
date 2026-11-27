@@ -15,6 +15,15 @@ use crate::types::{
     StartAgentProcessRequest, StartProcessRequest, StorageManifestRequest, WriteFileEntry,
 };
 
+/// Home mount status after a successful fresh sandbox start.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SandboxStartOutcome {
+    /// Startup mounted and validated the configured Home for this attachment.
+    HomeMounted,
+    /// Startup supplied no mount proof for the current Home.
+    HomeUnverified,
+}
+
 /// Eligibility result after a sandbox successfully reaches the parked state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SandboxParkOutcome {
@@ -649,13 +658,15 @@ pub trait Sandbox: Send + Sync + Any {
     /// This has the same lifecycle, success, failure, and cleanup contract as
     /// [`start`](Self::start). An overriding implementation reports each stage
     /// applicable to its provider and must not use observer callbacks as
-    /// cleanup authority. The default implementation preserves existing
-    /// provider behavior and emits no callbacks.
+    /// cleanup authority. A mounted Home is reported only after validation of
+    /// the current attachment during this start. The default emits no callbacks
+    /// and provides no Home mount proof.
     async fn start_with_observer(
         &mut self,
         _observer: &mut dyn SandboxStartObserver,
-    ) -> Result<()> {
-        self.start().await
+    ) -> Result<SandboxStartOutcome> {
+        self.start().await?;
+        Ok(SandboxStartOutcome::HomeUnverified)
     }
     /// Shut the guest down gracefully, then terminate the backing process.
     ///

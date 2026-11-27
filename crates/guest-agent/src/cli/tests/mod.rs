@@ -577,12 +577,12 @@ async fn cli_exit_observation_distinguishes_stdout_drain_from_loop_completion() 
     );
     assert!(runtime.arm_post_result_cleanup(false, termination_deadline.as_mut()));
 
-    let mut cli_status = None;
-    let mut cli_exit_at = None;
+    let mut child_exit = None;
+    let status = std::process::ExitStatus::from_raw(0);
+    let before_observation = Instant::now();
     let observation = record_cli_exit(
-        std::process::ExitStatus::from_raw(0),
-        &mut cli_status,
-        &mut cli_exit_at,
+        status,
+        &mut child_exit,
         &controller,
         &mut runtime,
         false,
@@ -590,8 +590,10 @@ async fn cli_exit_observation_distinguishes_stdout_drain_from_loop_completion() 
     );
 
     assert_eq!(observation, CliExitObservation::ExitedDrainingStdout);
-    assert!(cli_status.is_some());
-    assert!(cli_exit_at.is_some());
+    let child_exit = child_exit.expect("recorded exit");
+    assert_eq!(child_exit.status, status);
+    assert!(child_exit.observed_at >= before_observation);
+    assert!(child_exit.observed_at <= Instant::now());
     assert!(!runtime.has_pending_deadline());
     assert!(!runtime.has_post_result_cleanup());
     assert!(!runtime.arm_post_result_cleanup(false, termination_deadline.as_mut()));

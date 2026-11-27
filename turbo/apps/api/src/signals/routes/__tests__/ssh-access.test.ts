@@ -151,6 +151,91 @@ describe("SSH remote device channel management", () => {
     );
   });
 
+  it("pf-150 deletes an owned device and its SSH channel and rejects new attachments", async () => {
+    useSecretKmsProbe();
+    const owner = {
+      orgId: `org_${randomUUID()}`,
+      userId: `user_${randomUUID()}`,
+      orgRole: "org:admin" as const,
+    };
+    await Promise.all([
+      store.set(
+        seedOrgMembership$,
+        { orgId: owner.orgId, userId: owner.userId, role: "admin" },
+        context.signal,
+      ),
+      updateFeatureSwitchesForUser(context, owner, {
+        [FeatureSwitchKey.RemoteDevices]: true,
+      }),
+    ]);
+    createRouteMocks(context).clerk.session(
+      owner.userId,
+      owner.orgId,
+      owner.orgRole,
+    );
+
+    const deviceId = randomUUID();
+    await accept(
+      remoteDevicesApi.create({
+        headers,
+        body: { id: deviceId, displayName: "Decommissioned Host" },
+      }),
+      [201],
+    );
+
+    const channelId = randomUUID();
+    await accept(
+      sshConnectionsApi.create({
+        headers,
+        body: {
+          id: channelId,
+          remoteDeviceId: deviceId,
+          displayName: "Retired SSH",
+          host: "retired.example.com",
+          credential: inlineSshKey("ops", `key-${randomUUID()}`),
+        },
+      }),
+      [201],
+    );
+
+    await accept(
+      remoteDevicesApi.delete({ headers, params: { deviceId } }),
+      [204],
+    );
+
+    const [directory, sshList, secondDelete, attachAfterDelete] =
+      await Promise.all([
+        accept(remoteDevicesApi.list({ headers }), [200]),
+        accept(sshConnectionsApi.list({ headers }), [200]),
+        accept(
+          remoteDevicesApi.delete({ headers, params: { deviceId } }),
+          [404],
+        ),
+        accept(
+          sshConnectionsApi.create({
+            headers,
+            body: {
+              id: randomUUID(),
+              remoteDeviceId: deviceId,
+              displayName: "Late Attachment",
+              host: "late.example.com",
+              credential: inlineSshKey("ops", `key-${randomUUID()}`),
+            },
+          }),
+          [404],
+        ),
+      ]);
+
+    expect(
+      directory.body.devices.some((device) => {
+        return device.id === deviceId;
+      }),
+    ).toBeFalsy();
+    expect(sshList.body.connections).toStrictEqual([]);
+    expect(secondDelete.status).toBe(404);
+    expect(attachAfterDelete.status).toBe(404);
+  });
+
   it(
     "pf-135 admits a running SSH client on approval and distinguishes changed configuration from expiry",
     { timeout: TEST_WITH_DOUBLE_RUN_LEGACY_TIMEOUT_DO_NOT_INCREASE },

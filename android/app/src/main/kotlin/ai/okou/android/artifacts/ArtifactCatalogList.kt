@@ -207,12 +207,7 @@ internal fun ArtifactCatalogList(
             )
             return@Column
         }
-        val showSkeleton =
-            rememberContentReadSkeleton(
-                hasContent = page != null,
-                awaitingRead = current?.initialReadRound != null,
-                readScope = current?.initialReadRound,
-            )
+        val showSkeleton = rememberArtifactCatalogSkeleton(current)
         Box(Modifier.fillMaxWidth().weight(1f)) {
             LazyColumn(
                 modifier =
@@ -278,6 +273,14 @@ internal fun ArtifactCatalogList(
         }
     }
 }
+
+@Composable
+internal fun rememberArtifactCatalogSkeleton(state: ArtifactCatalogState?): Boolean =
+    rememberContentReadSkeleton(
+        hasContent = state?.catalog != null,
+        awaitingRead = state?.initialReadRound != null,
+        readScope = state?.initialReadRound,
+    )
 
 @Composable
 internal fun ArtifactToolbar(

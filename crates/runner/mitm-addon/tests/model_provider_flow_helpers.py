@@ -1,6 +1,8 @@
 """Shared model-provider flow helpers for mitm-addon tests."""
 
-from collections.abc import Callable
+import asyncio
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,10 +11,14 @@ from mitmproxy.test import tutils
 
 import flow_metadata_keys as metadata_keys
 import http_network_log
+import mitm_addon
+import usage
 from tests.flow_helpers import header_map
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.usage_helpers import UsageWebhookServer
 
 RealFlowFactory = Callable[..., http.HTTPFlow]
+type _UsageWebhookApi = Callable[[], AbstractContextManager[UsageWebhookServer]]
 _WEBSOCKET_KEY = "dGhlIHNhbXBsZSBub25jZQ=="
 _WEBSOCKET_ACCEPT = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 
@@ -222,6 +228,32 @@ def make_model_provider_sse_flow(
         headers=header_map({"content-type": "text/event-stream"}),
     )
     return flow
+
+
+async def _join_completion(completion: Awaitable[None]) -> None:
+    await completion
+
+
+def _run_terminal_hook(
+    flow: http.HTTPFlow,
+    usage_webhook_api: _UsageWebhookApi,
+    hook: Callable[[http.HTTPFlow], Awaitable[None] | None],
+) -> UsageWebhookServer:
+    """Complete the hook and flush usage while the test webhook is active."""
+    with usage_webhook_api() as webhook:
+        completion = hook(flow)
+        if completion is not None:
+            asyncio.run(_join_completion(completion))
+        usage.flush_usage_events(trigger="test")
+    return webhook
+
+
+def run_response(flow: http.HTTPFlow, usage_webhook_api: _UsageWebhookApi) -> UsageWebhookServer:
+    return _run_terminal_hook(flow, usage_webhook_api, mitm_addon.response)
+
+
+def run_error(flow: http.HTTPFlow, usage_webhook_api: _UsageWebhookApi) -> UsageWebhookServer:
+    return _run_terminal_hook(flow, usage_webhook_api, mitm_addon.error)
 
 
 def model_provider_usage_sources(flow: http.HTTPFlow) -> dict:

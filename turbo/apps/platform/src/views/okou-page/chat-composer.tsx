@@ -2,7 +2,6 @@ import { ChatConnectorAccountDialogs } from "./chat-connector-account-dialogs.ts
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { remoteDevicesEnabled$ } from "../../signals/remote-devices.ts";
 import { ComposerRemoteDevicesMenu } from "./composer-remote-devices.tsx";
-import { ComposerPresentationFormatSetup } from "./composer-presentation-format-setup.tsx";
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 
 import { ChatConnectorMenu } from "./chat-connector-menu.tsx";
@@ -3197,12 +3196,9 @@ function ComposerInputSlot({
 function ComposerSendButton({
   action,
   onActivate,
-  sendRef,
 }: {
   action: ComposerPrimaryAction;
   onActivate: () => void;
-  /** Anchors the first-use presentation format menu to Send. */
-  sendRef: (element: HTMLButtonElement | null) => (() => void) | undefined;
 }) {
   const { t } = useTranslation();
   const sendModeLoadable = useLastLoadable(sendMode$);
@@ -3229,7 +3225,6 @@ function ComposerSendButton({
   });
   const button = (
     <Button
-      ref={sendRef}
       size="icon-sm"
       className="shrink-0"
       onClick={onActivate}
@@ -3274,9 +3269,6 @@ function ComposerSendControl({
   actions: ComposerActions;
 }) {
   const action = useComposerPrimaryAction(signals, actions);
-  const setFormatSetupAnchor = useSet(
-    signals.submission.presentationFormatSetup.setAnchor$,
-  );
   const activatePrimaryAction = actions.submit;
   const ensurePushSubscription = useSet(ensurePushSubscription$);
   const rootSignal = useGet(rootSignal$);
@@ -3296,13 +3288,7 @@ function ComposerSendControl({
       rootSignal,
     );
   };
-  return (
-    <ComposerSendButton
-      action={action}
-      onActivate={activate}
-      sendRef={setFormatSetupAnchor}
-    />
-  );
+  return <ComposerSendButton action={action} onActivate={activate} />;
 }
 
 function ModelConfigurationWarning({
@@ -4203,9 +4189,6 @@ export function ChatComposer({
   const setLifecycleRef = useSet(signals.setLifecycleRef$);
   return (
     <>
-      <ComposerPresentationFormatSetup
-        signals={signals.submission.presentationFormatSetup}
-      />
       {(!signals.threadId || signals.editor.forwardComposer) && (
         <ThreadRemoteAccessDialog signals={signals} />
       )}

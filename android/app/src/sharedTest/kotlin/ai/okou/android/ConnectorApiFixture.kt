@@ -333,6 +333,10 @@ internal class ConnectorApiFixture(
         synchronized(accounts) { accounts.remove(id) }
     }
 
+    fun setAccountName(id: String, name: String) {
+        synchronized(accounts) { accounts.getValue(id).name = name }
+    }
+
     fun addCalendarAccount(id: String) {
         synchronized(accounts) {
             accounts[id] = FixtureAccount(CONNECTOR_CALENDAR, null, "replacement@example.com")

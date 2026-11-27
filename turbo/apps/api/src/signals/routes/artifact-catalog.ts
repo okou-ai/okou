@@ -1,3 +1,6 @@
+import { artifactLibraryPreviewsContract } from "@okouai/api-contracts/contracts/artifact-library-previews";
+import { resolveArtifactLibraryPreviews$ } from "../services/artifact-library-previews.service";
+import { setResHeader$ } from "../context/hono";
 import { command } from "ccstate";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -6,7 +9,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { notFound, resourceUnavailable } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { pathParamsOf, queryOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import {
   getArtifactCatalogEntry$,
   listArtifactCatalog$,
@@ -60,6 +63,41 @@ const listArtifactCatalogInner$ = command(
         nextCursor: result.nextCursor,
       },
     };
+  },
+);
+
+const resolveLibraryPreviewsInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    const auth = get(organizationAuthContext$);
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!isFeatureEnabled(FeatureSwitchKey.ArtifactLibrary, featureContext)) {
+      return resourceUnavailable("Artifact library is not available");
+    }
+    const body = await get(
+      bodyResultOf(artifactLibraryPreviewsContract.resolve),
+    );
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const { artifactIds } = body.data;
+    const previews = await set(
+      resolveArtifactLibraryPreviews$,
+      {
+        artifactIds,
+        orgId: auth.orgId,
+        userId: auth.userId,
+      },
+      signal,
+    );
+    return { status: 200 as const, body: { previews } };
   },
 );
 
@@ -129,6 +167,17 @@ const deleteArtifactInner$ = command(
 );
 
 export const artifactCatalogRoutes: readonly RouteEntry[] = [
+  {
+    route: artifactLibraryPreviewsContract.resolve,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-event:read",
+      },
+      resolveLibraryPreviewsInner$,
+    ),
+  },
   {
     route: artifactCatalogContract.list,
     handler: authRoute(

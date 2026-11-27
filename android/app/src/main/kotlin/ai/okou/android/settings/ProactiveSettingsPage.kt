@@ -76,21 +76,16 @@ internal fun ProactiveSettingsPage(
     val context by rememberUpdatedState(LocalContext.current)
     LaunchedEffect(model, lifecycle, snackbar) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            model.notices.collect { notice ->
+            model.saveFailures.collect { setting ->
                 val message =
-                    when (notice.failure) {
-                        ProactiveSaveFailure.Rejected ->
-                            context.getString(
-                                when (notice.setting) {
-                                    ProactiveSetting.MorningBrief ->
-                                        R.string.settings_morning_brief_save_failed
-                                    ProactiveSetting.Suggestions ->
-                                        R.string.settings_suggestions_save_failed
-                                },
-                            )
-                        ProactiveSaveFailure.Unconfirmed ->
-                            context.getString(R.string.settings_proactive_save_unconfirmed)
-                    }
+                    context.getString(
+                        when (setting) {
+                            ProactiveSetting.MorningBrief ->
+                                R.string.settings_morning_brief_save_failed
+                            ProactiveSetting.Suggestions ->
+                                R.string.settings_suggestions_save_failed
+                        },
+                    )
                 snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
             }
         }
@@ -191,7 +186,7 @@ private fun MorningBriefRow(
         checked = state.enabled,
         onCheckedChange =
             select.takeIf { state.canChoose && state.confirmed?.needsTimezone == false },
-        modifier = modifier,
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
         supportingText = stringResource(state.detail(R.string.settings_morning_brief_detail)),
     )
 }
@@ -255,7 +250,8 @@ private fun SuggestionsRow(
                 leading = { SettingsIcon(R.drawable.ic_lightbulb) },
                 checked = state.enabled,
                 onCheckedChange = select.takeIf { state.canChoose },
-                modifier = modifier.then(triggerModifier),
+                modifier =
+                    modifier.then(triggerModifier).semantics { liveRegion = LiveRegionMode.Polite },
                 supportingText = stringResource(state.detail(R.string.settings_suggestions_detail)),
             )
         }
@@ -264,11 +260,11 @@ private fun SuggestionsRow(
 
 private fun ProactiveSettingState.detail(default: Int): Int =
     when {
-        checking != null -> R.string.settings_proactive_save_unconfirmed
+        checking -> R.string.settings_save_checking
+        pending != null -> R.string.settings_saving
         confirmed?.needsTimezone == true -> R.string.settings_proactive_needs_timezone
         readFailed && confirmed == null -> R.string.settings_proactive_read_failed
         readFailed -> R.string.settings_proactive_refresh_failed
-        pending != null -> default
         else ->
             when (confirmed?.status) {
                 ProactiveStatus.Preparing -> R.string.settings_proactive_preparing

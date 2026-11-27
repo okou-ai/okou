@@ -5,6 +5,7 @@ import { and, eq, exists, isNull, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
+import { OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE } from "./official-workflow-constants";
 import type { WorkflowRow, WorkflowMember } from "./workflow-data.service";
 import {
   prepareWorkflowAttachments$,
@@ -93,7 +94,7 @@ export const updateWorkflow$ = command(
   ): Promise<boolean> => {
     const { workflow, body } = args;
     if (workflow.officialDefinitionName !== null) {
-      throw new Error("Official Workflow content and structure are read-only");
+      throw new Error(OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE);
     }
     if (workflow.attachments === null && body.files === undefined) {
       throw new Error("Workflow attachments have not been migrated");

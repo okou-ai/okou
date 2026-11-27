@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1196.0](https://github.com/okou-ai/okou/compare/app-v0.1195.2...app-v0.1196.0) (2026-11-27)
+
+
+### Features
+
+* **platform:** add remote device deletion with confirmation ([#51428](https://github.com/okou-ai/okou/issues/51428)) ([b09fbb2](https://github.com/okou-ai/okou/commit/b09fbb279a729ee9f57878dfcb798b7cfa930170))
+
+
+### Refactoring
+
+* **api:** retire official workflow admission for proactive runs ([#51409](https://github.com/okou-ai/okou/issues/51409)) ([7a23914](https://github.com/okou-ai/okou/commit/7a239141cfc683da184e8f42ff2456b294025b7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.140.0
+    * @okouai/core bumped to 8.887.7
+    * @okouai/ui bumped to 1.22.46
+
 ## [0.1195.2](https://github.com/okou-ai/okou/compare/app-v0.1195.1...app-v0.1195.2) (2026-11-27)
 
 

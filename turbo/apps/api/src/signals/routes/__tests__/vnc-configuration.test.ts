@@ -2132,4 +2132,110 @@ describe("VNC owner configuration (client certificates)", () => {
       }),
     );
   });
+
+  it("pf-151 deletes dependent channels together and protects channels on other devices", async () => {
+    const owner = await signedInAdmin();
+    const devices = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: owner.userId, orgId: owner.orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.RemoteDevices]: true },
+    );
+    signIn(owner);
+
+    const gatewayDeviceId = randomUUID();
+    const targetDeviceId = randomUUID();
+    await Promise.all([
+      accept(
+        devices.create({
+          headers,
+          body: { id: gatewayDeviceId, displayName: "Gateway Workstation" },
+        }),
+        [201],
+      ),
+      accept(
+        devices.create({
+          headers,
+          body: { id: targetDeviceId, displayName: "Display Workstation" },
+        }),
+        [201],
+      ),
+    ]);
+
+    const sshId = randomUUID();
+    await accept(
+      sshConnections().create({
+        headers,
+        body: {
+          id: sshId,
+          remoteDeviceId: gatewayDeviceId,
+          displayName: "Shared Bastion",
+          host: "bastion.example.com",
+          credential: inlineSshKey("ops", `key-${randomUUID()}`),
+        },
+      }),
+      [201],
+    );
+
+    const vncId = randomUUID();
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: vncId,
+          remoteDeviceId: targetDeviceId,
+          displayName: "Tunneled Desktop",
+          host: "127.0.0.1",
+          port: 5900,
+          transport: { type: "ssh", connectionId: sshId },
+          credential: {
+            create: {
+              name: "Tunneled Password",
+              authentication: vncPassword("secretpw"),
+            },
+          },
+          security: x509Vnc,
+        },
+      }),
+      [201],
+    );
+
+    const blocked = await accept(
+      devices.delete({ headers, params: { deviceId: gatewayDeviceId } }),
+      [409],
+    );
+    expect(blocked.body.error.message).toContain("channel dependency");
+
+    await accept(
+      devices.moveChannel({
+        headers,
+        params: {
+          deviceId: gatewayDeviceId,
+          kind: "vnc",
+          channelId: vncId,
+        },
+      }),
+      [204],
+    );
+
+    await accept(
+      devices.delete({ headers, params: { deviceId: gatewayDeviceId } }),
+      [204],
+    );
+
+    const [directory, remainingSsh, remainingVnc] = await Promise.all([
+      accept(devices.list({ headers }), [200]),
+      accept(sshConnections().list({ headers }), [200]),
+      accept(hosts().list({ headers }), [200]),
+    ]);
+    expect(
+      directory.body.devices.map((device) => {
+        return device.id;
+      }),
+    ).toStrictEqual([targetDeviceId]);
+    expect(remainingSsh.body.connections).toStrictEqual([]);
+    expect(remainingVnc.body.connections).toStrictEqual([]);
+  });
 });

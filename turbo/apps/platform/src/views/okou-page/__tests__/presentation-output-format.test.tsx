@@ -1,24 +1,22 @@
-import { cleanup, act, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  createTestRuntime,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
 import {
   click,
   fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { findComposerEditor, THREAD_ID } from "./chat-composer-test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 import {
   captureTemplateSubmission,
@@ -30,15 +28,15 @@ const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 const ownerAuth = Object.freeze({
   user: Object.freeze({
     id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
-    fullName: "Presentation Owner",
-    email: "presentation-owner@example.test",
+    fullName: "Bingjie Zang",
+    email: "bingjie@okou.ai",
   }),
 });
 const enabledFeatures = Object.freeze({
   [FeatureSwitchKey.PresentationOutputFormat]: true,
 });
 
-function button(name: string, container: ParentNode = document): HTMLElement {
+function button(name: string, container: ParentNode = document.body) {
   const found = queryAllByRoleFast("button", container).find((candidate) => {
     return (
       (candidate.getAttribute("aria-label") ??
@@ -51,7 +49,7 @@ function button(name: string, container: ParentNode = document): HTMLElement {
   return found;
 }
 
-async function openPresentation(): Promise<void> {
+async function selectPresentation() {
   const discovery = await screen.findByRole("group", {
     name: "Explore Okou capabilities",
   });
@@ -59,176 +57,105 @@ async function openPresentation(): Promise<void> {
   await screen.findByRole("combobox", { name: "Slide count" });
 }
 
-async function openChart(): Promise<HTMLElement> {
+async function openPresentation() {
+  await selectPresentation();
+  return await screen.findByRole("group", { name: "Output format" });
+}
+
+async function openChart() {
   await clickComposerAddMenuItem("Create");
-  const create = await screen.findByRole("radiogroup", { name: "Create" });
-  const chart = queryAllByRoleFast("radio", create).find((candidate) => {
+  const types = screen.getByRole("radiogroup", { name: "Create" });
+  const chart = queryAllByRoleFast("radio", types).find((candidate) => {
     return candidate.textContent?.trim() === "Chart";
   });
   if (!chart) {
-    throw new Error("Expected Chart creation option");
+    throw new Error("Expected Chart type");
   }
   click(chart);
   return await screen.findByRole("region", { name: "Visualization options" });
 }
 
 test.each([
-  ["presentation-output-format-001", "html"],
-  ["presentation-output-format-003", "pptx"],
+  ["presentation-output-format-001", "HTML"],
+  ["presentation-output-format-003", "PPTX"],
 ] as const)(
-  "%s Presentation submits the saved %s default without rewriting the user's explicit format",
+  "%s Presentation defaults to HTML and submits %s without rewriting the user's prompt",
   async (_id, format) => {
-    context.mocks.data.userPreferences({ presentationFormat: format });
     const capture = mockTemplateChat();
     await setupPage({
       context,
-      path: "/",
+      path: `/`,
       auth: ownerAuth,
       featureSwitches: enabledFeatures,
     });
     const editor = await findComposerEditor();
-    await openPresentation();
+    const formats = await openPresentation();
+    expect(button("HTML", formats)).toHaveAttribute("aria-pressed", "true");
+    expect(button("PPTX", formats)).toHaveAttribute("aria-pressed", "false");
+    // A format is always selected, even when the selected option is clicked again.
+    click(button("HTML", formats));
+    expect(button("HTML", formats)).toHaveAttribute("aria-pressed", "true");
+    if (format === "PPTX") {
+      click(button("PPTX", formats));
+    }
+    expect(button(format, formats)).toHaveAttribute("aria-pressed", "true");
+    await fill(editor, "Our launch deck; use PPTX for this one");
     const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
-    const request = `Please deliver ${format === "pptx" ? "HTML" : "PPTX"} this time`;
-    await fill(editor, request);
     const shelf = screen.getByRole("group", { name: "Presentation templates" });
     click(button(template.title, shelf));
-    click(screen.getByRole("combobox", { name: "Slide count" }));
-    click(await screen.findByRole("option", { name: "4–8 slides" }));
     click(button("Send"));
     await waitFor(() => {
       expect(capture.sentMessages).toHaveLength(1);
     });
     expect(capture.runPrompts).toStrictEqual([
-      expect.stringContaining(request),
+      expect.stringContaining("Our launch deck; use PPTX for this one"),
     ]);
     expect(capture.selectedTemplates[0]).toMatchObject({
       type: "presentation",
-      selection: { templateId: template.templateId, outputFormat: format },
+      selection: {
+        templateId: template.templateId,
+        outputFormat: format.toLowerCase(),
+      },
+    });
+    expect(capture.sentMessages[0]?.parts).toContainEqual({
+      type: "additional_info",
+      text: expect.stringContaining(`- Output format: ${format} format`),
     });
     expect(capture.sentMessages[0]?.parts).toContainEqual({
       type: "additional_info",
       text: expect.stringContaining(
-        `- Output format: ${format.toUpperCase()} format`,
-      ),
-    });
-    expect(capture.sentMessages[0]?.parts).toContainEqual({
-      type: "additional_info",
-      text: expect.stringContaining("- Slide count: 4-8"),
-    });
-    expect(capture.sentMessages[0]?.parts).toContainEqual({
-      type: "additional_info",
-      text: expect.stringContaining(
-        "unless the message explicitly requests another format",
+        "The output format is a preference. Where this run's message asks for a different output format or slide count, the message wins.",
       ),
     });
   },
 );
 
-test.each(["html", "pptx"] as const)(
-  "An untagged message carries the saved %s default without requesting a presentation",
-  async (format) => {
-    context.mocks.data.userPreferences({ presentationFormat: format });
-    const capture = mockTemplateChat();
-    await setupPage({
-      context,
-      path: "/",
-      auth: ownerAuth,
-      featureSwitches: enabledFeatures,
-    });
-    const editor = await findComposerEditor();
-    const prompt = "Summarize our launch plan";
-    await fill(editor, prompt);
-    click(button("Send"));
-    await waitFor(() => {
-      expect(capture.sentMessages).toHaveLength(1);
-    });
-    expect(capture.runPrompts).toStrictEqual([prompt]);
-    expect(capture.sentMessages[0]?.parts).toContainEqual({
-      type: "text",
-      text: prompt,
-    });
-    expect(capture.sentMessages[0]?.parts).toContainEqual({
-      type: "additional_info",
-      text: expect.stringContaining(
-        `- Output format: ${format.toUpperCase()} format`,
-      ),
-    });
-    expect(capture.sentMessages[0]?.parts).toContainEqual({
-      type: "additional_info",
-      text: expect.stringContaining(
-        "This preference does not request a presentation or change another artifact's output type.",
-      ),
-    });
-  },
-);
-
-test("An unselected default leaves an untagged message unchanged", async () => {
+test("A format changed after choosing a template is frozen at send time", async () => {
   const capture = mockTemplateChat();
   await setupPage({
     context,
-    path: "/",
     auth: ownerAuth,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
-  const prompt = "Summarize our launch plan";
-  await fill(await findComposerEditor(), prompt);
+  const editor = await findComposerEditor();
+  const formats = await openPresentation();
+  await fill(editor, "Prepare the quarterly deck");
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+  const shelf = screen.getByRole("group", { name: "Presentation templates" });
+  click(button(template.title, shelf));
+  click(button("PPTX", formats));
   click(button("Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
   });
-  expect(capture.sentMessages[0]?.parts).toStrictEqual([
-    { type: "text", text: prompt },
-  ]);
-});
-
-test("A queued untagged message freezes its saved presentation default", async () => {
-  context.mocks.data.userPreferences({ presentationFormat: "pptx" });
-  mockTemplateChat();
-  const queued: UserMessageDocument[] = [];
-  const runId = crypto.randomUUID();
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    activeRunIds: [runId],
-    chatEvents: [
-      {
-        role: "user",
-        content: "Review the launch brief",
-        runId,
-        createdAt: "2026-09-07T00:00:00.000Z",
-      },
-    ],
-    onQueuedEventAppend: (body) => {
-      if (body.userMessage) {
-        queued.push(body.userMessage);
-      }
-    },
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    auth: ownerAuth,
-    featureSwitches: enabledFeatures,
-  });
-  await screen.findByText("Review the launch brief");
-  await fill(await findComposerEditor(), "Prepare the next briefing");
-  click(button("Send"));
-  await waitFor(() => {
-    expect(queued).toHaveLength(1);
-  });
-  expect(queued[0]?.parts).toContainEqual({
-    type: "text",
-    text: "Prepare the next briefing",
-  });
-  expect(queued[0]?.parts).toContainEqual({
-    type: "additional_info",
-    text: expect.stringContaining("- Output format: PPTX format"),
+  expect(capture.selectedTemplates[0]).toMatchObject({
+    type: "presentation",
+    selection: { templateId: template.templateId, outputFormat: "pptx" },
   });
 });
 
-test("presentation-output-format-004 The saved default reaches presentation templates inside feedback without dropping their fields", async () => {
-  context.mocks.data.userPreferences({ presentationFormat: "pptx" });
-  const capture = mockTemplateChat();
+test("presentation-output-format-004 A restored feedback template freezes the changed format when sent", async () => {
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
   const feedback = {
     type: "feedback" as const,
@@ -249,6 +176,7 @@ test("presentation-output-format-004 The saved default reaches presentation temp
       { type: "text" as const, text: " for this revision." },
     ],
   };
+  const capture = mockTemplateChat();
   context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: { version: 1, parts: [feedback] },
@@ -257,8 +185,8 @@ test("presentation-output-format-004 The saved default reaches presentation temp
   });
   await setupPage({
     context,
-    path: "/",
     auth: ownerAuth,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
   const editor = await findComposerEditor();
@@ -266,6 +194,10 @@ test("presentation-output-format-004 The saved default reaches presentation temp
     expect(editor).toHaveTextContent(template.title);
     expect(editor).toHaveTextContent(feedback.quote);
   });
+  const formats = await openPresentation();
+  expect(button("HTML", formats)).toHaveAttribute("aria-pressed", "true");
+  click(button("PPTX", formats));
+  expect(button("PPTX", formats)).toHaveAttribute("aria-pressed", "true");
   click(button("Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
@@ -290,79 +222,116 @@ test("presentation-output-format-004 The saved default reaches presentation temp
   });
 });
 
-test("presentation-output-format-005 A fresh page reads the server default again", async () => {
-  context.mocks.data.userPreferences({ presentationFormat: "html" });
+test("presentation-output-format-005 A changed format survives a fresh page and is shared by Chart presentation output", async () => {
   mockTemplateChat();
   await setupPage({
     context,
-    path: "/",
     auth: ownerAuth,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
   await findComposerEditor();
+  const formats = await openPresentation();
+  const user = userEvent.setup({ delay: null });
+  button("PPTX", formats).focus();
+  await user.keyboard("{Enter}");
+  expect(button("PPTX", formats)).toHaveAttribute("aria-pressed", "true");
+
+  // Replace the app graph, keeping browser storage as a page reload does.
   cleanup();
   vi.mocked(window.history.pushState).mockRestore();
   vi.mocked(window.history.replaceState).mockRestore();
   vi.mocked(window.history.back).mockRestore();
   vi.mocked(window.history.forward).mockRestore();
-  context.mocks.data.userPreferences({ presentationFormat: "pptx" });
   const capture = mockTemplateChat();
   await setupPage({
     context: reloadedContext,
-    path: "/",
     auth: ownerAuth,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
-  await fill(await findComposerEditor(), "Prepare the refreshed briefing");
+  const editor = await findComposerEditor();
+  const restored = await openPresentation();
+  expect(button("PPTX", restored)).toHaveAttribute("aria-pressed", "true");
+  const chart = await openChart();
+  const outputs = within(chart).getByRole("group", { name: "Output format" });
+  click(button("Presentation", outputs));
+  const chartFormats = await within(chart).findByRole("group", {
+    name: "Presentation format",
+  });
+  expect(button("PPTX", chartFormats)).toHaveAttribute("aria-pressed", "true");
+  await fill(editor, "Explain our quarterly results");
   click(button("Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
   });
   expect(capture.sentMessages[0]?.parts).toContainEqual({
     type: "additional_info",
-    text: expect.stringContaining("- Output format: PPTX format"),
+    text: expect.stringContaining(
+      "- Preferred output format: presentation (PPTX format)",
+    ),
+  });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining(
+      'okou generate presentation --format pptx --prompt "<user request>"',
+    ),
+  });
+  // Keep the structured selection compatible with message summaries.
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining(
+      "- User-selected output format: presentation",
+    ),
   });
 });
 
-test.each([null, "pptx"] as const)(
-  "Chart presentation output keeps its category with a saved %s default",
-  async (format) => {
-    context.mocks.data.userPreferences({ presentationFormat: format });
-    const capture = mockTemplateChat();
-    await setupPage({
-      context,
-      path: "/",
-      auth: ownerAuth,
-      featureSwitches: enabledFeatures,
-    });
-    const editor = await findComposerEditor();
-    const charts = await openChart();
-    click(button("Presentation", charts));
-    await fill(editor, "Visualize our results");
-    click(button("Send"));
-    await waitFor(() => {
-      expect(capture.sentMessages).toHaveLength(1);
-    });
-    expect(capture.sentMessages[0]?.parts).toContainEqual({
-      type: "additional_info",
-      text: expect.stringContaining("- Preferred output format: presentation"),
-    });
-  },
-);
-
-test("A saved presentation default does not change Chart website output", async () => {
-  context.mocks.data.userPreferences({ presentationFormat: "pptx" });
+test("Chart presentation output uses HTML until the user changes the preference", async () => {
   const capture = mockTemplateChat();
   await setupPage({
     context,
-    path: "/",
     auth: ownerAuth,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
   const editor = await findComposerEditor();
-  const charts = await openChart();
-  click(button("Website", charts));
-  await fill(editor, "Build a visual site");
+  await openPresentation();
+  const chart = await openChart();
+  const outputs = within(chart).getByRole("group", { name: "Output format" });
+  click(button("Presentation", outputs));
+  const formats = await within(chart).findByRole("group", {
+    name: "Presentation format",
+  });
+  expect(button("HTML", formats)).toHaveAttribute("aria-pressed", "true");
+  await fill(editor, "Visualize our results");
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining(
+      "- Preferred output format: presentation (HTML format)",
+    ),
+  });
+});
+
+test("A presentation format preference does not change another Chart output type", async () => {
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    auth: ownerAuth,
+    path: `/`,
+    featureSwitches: enabledFeatures,
+  });
+  const editor = await findComposerEditor();
+  const formats = await openPresentation();
+  click(button("PPTX", formats));
+  const chart = await openChart();
+  const outputs = within(chart).getByRole("group", { name: "Output format" });
+  click(button("Website", outputs));
+  expect(button("Website", outputs)).toHaveAttribute("aria-pressed", "true");
+  await fill(editor, "Make a dashboard");
   click(button("Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
@@ -370,83 +339,69 @@ test("A saved presentation default does not change Chart website output", async 
   const instructions = capture.sentMessages[0]?.parts.find((part) => {
     return part.type === "additional_info";
   });
-  expect(instructions?.text).toContain("- Preferred output format: website");
-  expect(instructions?.text).toContain("- Output format: PPTX format");
-  expect(instructions?.text).toContain(
-    "This preference does not request a presentation or change another artifact's output type.",
-  );
+  expect(instructions).toMatchObject({
+    type: "additional_info",
+    text: expect.stringContaining("- Preferred output format: website"),
+  });
+  expect(instructions?.text).not.toContain("PPTX");
 });
 
-test("An unavailable preference rejects submission instead of treating it as unselected", async () => {
+test("An opted-in peer can select a presentation format without changing the rollout default", async () => {
   const capture = mockTemplateChat();
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
-    return respond(200, {
-      timezone: "UTC",
-      locale: "en-US",
-      supportedLocales: ["en-US"],
-      sendMode: "enter",
-      cloudBrowserEnabledByDefault: true,
-      chatResourcesEnabledByDefault: false,
-      forYouCoverId: null,
-      theme: "system",
-      colorTheme: null,
-      captureNetworkBodiesRemaining: 0,
-      memoryInitialized: true,
-    });
+  await setupPage({
+    context,
+    path: `/`,
+    featureSwitches: enabledFeatures,
   });
+  const editor = await findComposerEditor();
+  const discovery = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  click(button("Presentation", discovery));
+  const shelf = await screen.findByRole("group", {
+    name: "Presentation templates",
+  });
+  const formats = await screen.findByRole("group", {
+    name: "Output format",
+  });
+  expect(button("HTML", formats)).toHaveAttribute("aria-pressed", "true");
+  click(button("PPTX", formats));
+  await fill(editor, "Prepare our deck");
+  click(button(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title, shelf));
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.selectedTemplates[0]).toMatchObject({
+    type: "presentation",
+    selection: { outputFormat: "pptx" },
+  });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining("- Output format: PPTX format"),
+  });
+});
+
+test("An untagged message submits only the user's request with a saved presentation default", async () => {
+  context.mocks.data.userPreferences({ presentationFormat: "pptx" });
+  const capture = mockTemplateChat();
   await setupPage({
     context,
     path: "/",
     auth: ownerAuth,
     featureSwitches: enabledFeatures,
   });
-  const editor = await findComposerEditor();
-  await fill(editor, "Retain this briefing request");
-  await act(() => {
-    click(button("Send"));
-  });
+  const prompt = "哈哈哈";
+  await fill(await findComposerEditor(), prompt);
+  click(button("Send"));
   await waitFor(() => {
-    expect(button("Send")).toBeEnabled();
+    expect(capture.sentMessages).toHaveLength(1);
   });
-  expect(editor).toHaveTextContent("Retain this briefing request");
-  expect(capture.sentMessages).toHaveLength(0);
+  expect(capture.sentMessages[0]?.parts).toStrictEqual([
+    { type: "text", text: prompt },
+  ]);
+  expect(capture.runPrompts).toStrictEqual([prompt]);
 });
-
-test.each([false, true])(
-  "A Lab tester sends with presentation format opt-in set to %s",
-  async (enabled) => {
-    context.mocks.data.userPreferences({ presentationFormat: "pptx" });
-    const capture = mockTemplateChat();
-    await setupPage({
-      context,
-      path: "/",
-      featureSwitches: {
-        [FeatureSwitchKey.PresentationOutputFormat]: enabled,
-      },
-    });
-    const editor = await findComposerEditor();
-    await openPresentation();
-    await fill(editor, "Prepare our launch deck");
-    click(button("Send"));
-    await waitFor(() => {
-      expect(capture.sentMessages).toHaveLength(1);
-    });
-    const additionalInfo = capture.sentMessages[0]?.parts
-      .filter((part) => {
-        return part.type === "additional_info";
-      })
-      .map((part) => {
-        return part.text;
-      })
-      .join("\n");
-    expect(additionalInfo?.includes("# Presentation Output Preference")).toBe(
-      enabled,
-    );
-    expect(additionalInfo?.includes("- Output format: PPTX format")).toBe(
-      enabled,
-    );
-  },
-);
 
 test("presentation-output-format-009 A chosen template keeps its default slide range when format preferences are disabled", async () => {
   context.mocks.data.userPreferences({ presentationFormat: "pptx" });
@@ -457,7 +412,7 @@ test("presentation-output-format-009 A chosen template keeps its default slide r
     auth: ownerAuth,
     featureSwitches: { [FeatureSwitchKey.PresentationOutputFormat]: false },
   });
-  await openPresentation();
+  await selectPresentation();
   const text = "Prepare the intertidal field report";
   await fill(await findComposerEditor(), text);
   const shelf = screen.getByRole("group", { name: "Presentation templates" });

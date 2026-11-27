@@ -8,218 +8,31 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import chalk from "chalk";
-import { http, HttpResponse } from "msw";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { listPresentationRunbookPackages } from "@okouai/core/resource-registry";
-import { server } from "../../../mocks/server";
 import { createGenerateCommand } from "../index";
 import { createPresentationGenerateCommand } from "../../shared/presentation-generate";
 
-const featureSwitchesUrl = "http://localhost:3000/api/feature-switches";
+const generateCommand = createGenerateCommand();
 
 describe("okou generate presentation command", () => {
-  let featureSwitchReads = 0;
-  const mockProcessExit = vi.spyOn(process, "exit").mockImplementation((() => {
+  vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
   }) as never);
   const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
-  const mockConsoleError = vi
-    .spyOn(console, "error")
-    .mockImplementation(() => {});
-
-  function mockFormatGate(enabled: boolean | undefined, rawEnabled?: boolean) {
-    server.use(
-      http.get(featureSwitchesUrl, ({ request }) => {
-        featureSwitchReads += 1;
-        expect(request.headers.get("authorization")).toBe("Bearer test-token");
-        return HttpResponse.json({
-          switches:
-            rawEnabled === undefined
-              ? {}
-              : { [FeatureSwitchKey.PresentationOutputFormat]: rawEnabled },
-          effectiveSwitches:
-            enabled === undefined
-              ? {}
-              : { [FeatureSwitchKey.PresentationOutputFormat]: enabled },
-        });
-      }),
-    );
-  }
 
   beforeEach(() => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    featureSwitchReads = 0;
-    mockFormatGate(false);
   });
 
   afterEach(() => {
-    mockProcessExit.mockClear();
     mockConsoleLog.mockClear();
-    mockConsoleError.mockClear();
     vi.unstubAllEnvs();
   });
 
-  describe.each([
-    { selection: "catalog", templateArgs: [] },
-    {
-      selection: "selected template",
-      templateArgs: ["--template", "html-ppt-schoolhouse"],
-    },
-  ])("$selection format policy", ({ templateArgs }) => {
-    it.each([
-      { format: "html", enabled: false },
-      { format: "html", enabled: true },
-      { format: "pptx", enabled: false },
-      { format: "pptx", enabled: true },
-    ])(
-      "uses effective $enabled for $format despite a conflicting raw override",
-      async ({ format, enabled }) => {
-        mockFormatGate(enabled, !enabled);
-        await createGenerateCommand().parseAsync([
-          "node",
-          "cli",
-          "presentation",
-          "--format",
-          format,
-          "--prompt",
-          "A school community planning deck",
-          ...templateArgs,
-        ]);
-
-        const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-        expect(featureSwitchReads).toBe(1);
-        expect(stdout).toContain(`Requested output format: ${format}`);
-        expect(stdout.split(/^- Presentation output:/mu)).toHaveLength(
-          enabled ? 2 : 1,
-        );
-        if (enabled) {
-          expect(stdout).toContain(
-            "explicit current request → CURRENT message's saved `# Presentation Output Preference` → HTML",
-          );
-          expect(stdout).toContain(
-            "Do not ask for, query or save a preference",
-          );
-          expect(stdout).toContain(
-            "A default does not request a presentation or affect other artifact types",
-          );
-          expect(stdout).toContain(
-            "Use the template version matching this format; template instructions do not override it",
-          );
-          expect(stdout.split("Deliver one format")).toHaveLength(2);
-          expect(stdout).toContain(
-            format === "html"
-              ? "For HTML delivery only, follow the preview and hosting steps below"
-              : "For a new deck with resolved PPTX output, author an editable native PPTX",
-          );
-        } else if (format === "html") {
-          expect(stdout).toContain(
-            "- Presentation delivery: when a native PPTX template is selected",
-          );
-          expect(stdout).toContain(
-            "- For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions.",
-          );
-        } else {
-          expect(stdout).toContain("- Author an editable native PPTX directly");
-          expect(stdout).toContain(
-            "- Return the exact URL printed by the file delivery command.",
-          );
-        }
-        if (templateArgs.length > 0) {
-          expect(stdout).toContain(
-            "If the selected package is unavailable, stop and report it",
-          );
-          expect(stdout).toContain(
-            enabled
-              ? "The replacement packet supersedes all remaining instructions here"
-              : "The message wins over the selected format preference",
-          );
-        }
-      },
-    );
-  });
-
-  it("keeps a missing effective key OFF even when its raw override is ON", async () => {
-    mockFormatGate(undefined, true);
-    await createGenerateCommand().parseAsync([
-      "node",
-      "cli",
-      "presentation",
-      "--prompt",
-      "A planning deck",
-    ]);
-
-    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(featureSwitchReads).toBe(1);
-    expect(stdout).toContain(
-      "- Presentation delivery: when a native PPTX template is selected",
-    );
-    expect(stdout).not.toContain("# Presentation Output Preference");
-  });
-
-  it.each([
-    {
-      failure: "HTTP",
-      response: () => {
-        return HttpResponse.json(
-          {
-            error: {
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Feature switches unavailable",
-            },
-          },
-          { status: 500 },
-        );
-      },
-      message: /500: Feature switches unavailable/,
-    },
-    {
-      failure: "schema",
-      response: () => {
-        return HttpResponse.json({ switches: {}, effectiveSwitches: null });
-      },
-      message: /effectiveSwitches/,
-    },
-    {
-      failure: "network",
-      response: () => {
-        return HttpResponse.error();
-      },
-      message: /fetch failed|Failed to fetch/,
-    },
-  ])(
-    "reports a $failure read failure without emitting a packet or retrying",
-    async ({ response, message }) => {
-      server.use(
-        http.get(featureSwitchesUrl, ({ request }) => {
-          featureSwitchReads += 1;
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer test-token",
-          );
-          return response();
-        }),
-      );
-
-      await expect(
-        createGenerateCommand().parseAsync([
-          "node",
-          "cli",
-          "presentation",
-          "--prompt",
-          "A planning deck",
-        ]),
-      ).rejects.toThrow("process.exit called");
-
-      expect(mockProcessExit).toHaveBeenCalledWith(1);
-      expect(mockConsoleError.mock.calls.flat().join("\n")).toMatch(message);
-      expect(mockConsoleLog).not.toHaveBeenCalled();
-      expect(featureSwitchReads).toBe(1);
-    },
-  );
-
   it("guides source-aware template selection before authoring", async () => {
-    await createGenerateCommand().parseAsync([
+    await generateCommand.parseAsync([
       "node",
       "cli",
       "presentation",
@@ -323,7 +136,7 @@ describe("okou generate presentation command", () => {
       templateArgs: ["--template", "html-ppt-playful-launch"],
     },
   ])("preserves org visibility for $label", async ({ templateArgs }) => {
-    await createGenerateCommand().parseAsync([
+    await generateCommand.parseAsync([
       "node",
       "cli",
       "presentation",
@@ -343,6 +156,18 @@ describe("okou generate presentation command", () => {
     expect(hostInstructions).toEqual([
       '- For HTML delivery, host the finished deck: okou host <output-dir> --site team-plan --title "<presentation title>" --artifact-kind presentation-html --visibility org --preview ./generated/previews/cover.png --json',
     ]);
+    expect(stdout).toContain(
+      "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
+    );
+    expect(stdout).toContain(
+      "Do not infer a conversion request from remembered preferences or intended use",
+    );
+    expect(stdout).toContain(
+      "Deliver one format unless the user requests multiple formats",
+    );
+    expect(stdout).toContain(
+      "For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions. Otherwise, follow the HTML preview and hosting steps below",
+    );
     expect(stdout).toContain("okou web upload-file -f <file> --visibility org");
     expect(stdout).toContain(
       "Keep supporting generated media at its default visibility",
@@ -382,15 +207,6 @@ describe("okou generate presentation command", () => {
       expect(stdout).toContain(
         "Author an editable native PPTX directly with the selected package",
       );
-      expect(stdout).toContain(
-        "- Follow the package's PowerPoint export and verification workflow",
-      );
-      expect(stdout).toContain(
-        "- Deliver the final .pptx with this integration's upload-file command. Do not host an HTML deck instead.",
-      );
-      expect(stdout).toContain(
-        "- Return the exact URL printed by the file delivery command.",
-      );
       expect(stdout).toContain("template:pptx-schoolhouse-runbook");
       expect(stdout).toContain("--dir ./generated/resources/pptx");
       expect(stdout).toContain("SKILL.md");
@@ -400,14 +216,10 @@ describe("okou generate presentation command", () => {
       );
       expect(stdout).not.toContain("index.html");
       expect(stdout).not.toContain("okou host");
+      expect(stdout).not.toContain("conversion instructions");
+      expect(stdout).not.toContain("convert to PPTX");
 
       if (templateArgs.length > 0) {
-        expect(stdout).toContain(
-          'okou generate presentation --format <html|pptx> --template template:html-ppt-schoolhouse --prompt "<user request>"',
-        );
-        expect(stdout).toContain(
-          "The message wins over the selected format preference",
-        );
         expect(stdout).toContain(
           "okou resource pull template:pptx-schoolhouse-runbook --dir ./generated/resources/pptx",
         );
@@ -516,21 +328,11 @@ describe("okou generate presentation command", () => {
       expect(helpOutput).toContain(
         'okou generate presentation --format pptx --prompt "A strategy deck for reducing support volume"',
       );
-      expect(featureSwitchReads).toBe(0);
     },
   );
 
-  it("lists generation choices without reading feature switches", async () => {
-    await createGenerateCommand().parseAsync(["node", "cli", "presentation"]);
-
-    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(stdout).toContain("Presentation generation choices");
-    expect(stdout).toContain("okou generate presentation -h");
-    expect(featureSwitchReads).toBe(0);
-  });
-
   it("resolves --template to direct-HTML instructions", async () => {
-    await createGenerateCommand().parseAsync([
+    await generateCommand.parseAsync([
       "node",
       "cli",
       "presentation",
@@ -590,30 +392,38 @@ describe("okou generate presentation command", () => {
   ])(
     "rejects an unknown template with the $format package catalog",
     async ({ format, packageId }) => {
-      await expect(
-        createPresentationGenerateCommand().parseAsync([
-          "node",
-          "okou",
-          "--format",
-          format,
-          "--prompt",
-          "launch plan",
-          "--template",
-          "not-a-real-template",
-        ]),
-      ).rejects.toThrow("process.exit called");
+      const mockConsoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
 
-      const stderr = mockConsoleError.mock.calls.flat().join("\n");
-      expect(stderr).toContain(
-        `Unknown template for ${format.toUpperCase()} presentation: not-a-real-template`,
-      );
-      expect(stderr).toContain(
-        `Available templates for ${format.toUpperCase()} presentation:`,
-      );
-      expect(stderr).toContain(`Package: ${packageId}`);
-      expect(stderr).toContain(
-        `okou generate presentation --format ${format} --template template:html-ppt-playful-launch --prompt "..."`,
-      );
+      try {
+        await expect(async () => {
+          await createPresentationGenerateCommand().parseAsync([
+            "node",
+            "okou",
+            "--format",
+            format,
+            "--prompt",
+            "launch plan",
+            "--template",
+            "not-a-real-template",
+          ]);
+        }).rejects.toThrow("process.exit called");
+
+        const stderr = mockConsoleError.mock.calls.flat().join("\n");
+        expect(stderr).toContain(
+          `Unknown template for ${format.toUpperCase()} presentation: not-a-real-template`,
+        );
+        expect(stderr).toContain(
+          `Available templates for ${format.toUpperCase()} presentation:`,
+        );
+        expect(stderr).toContain(`Package: ${packageId}`);
+        expect(stderr).toContain(
+          `okou generate presentation --format ${format} --template template:html-ppt-playful-launch --prompt "..."`,
+        );
+      } finally {
+        mockConsoleError.mockRestore();
+      }
     },
   );
 });

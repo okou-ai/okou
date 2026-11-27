@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { computerUseSessionHostsContract } from "@okouai/api-contracts/contracts/computer-use";
+import {
+  computerUseCommandContract,
+  computerUseSessionHostsContract,
+} from "@okouai/api-contracts/contracts/computer-use";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -11,8 +16,10 @@ import {
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, nowDate } from "../../../lib/time";
 import { computerUseRoutes } from "../computer-use";
+import { remoteDevicesRoutes } from "../remote-devices";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
@@ -922,5 +929,119 @@ describe("Native Computer Use session authentication", () => {
       setup.commandId,
     );
     expect(command.status).toBe("running");
+  });
+
+  it("pf-149 deletes the Desktop and command history and registers a fresh device on reconnect", async () => {
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    if (!admin.orgId) {
+      throw new Error("Expected an org admin");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: admin.userId, orgId: admin.orgId, orgRole: admin.orgRole },
+      { [FeatureSwitchKey.RemoteDevices]: true },
+    );
+    const setup = await registerAndClaimAppsList(admin);
+    const remoteDevices = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    const commands = setupApp({ context, routes: computerUseRoutes })(
+      computerUseCommandContract,
+    );
+
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      sessionHosts().complete({
+        headers: sessionHeaders,
+        params: { hostId: setup.hostId, commandId: setup.commandId },
+        body: {
+          connectionGeneration: setup.connectionGeneration,
+          status: "succeeded",
+          result: { apps: [] },
+        },
+      }),
+      [200],
+    );
+
+    const beforeDirectory = await accept(
+      remoteDevices.list({ headers: sessionHeaders }),
+      [200],
+    );
+    const originalDevice = beforeDirectory.body.devices.find((device) => {
+      return device.channels.some((channel) => {
+        return channel.kind === "desktop" && channel.id === setup.hostId;
+      });
+    });
+    expect(originalDevice).toBeDefined();
+    if (!originalDevice) {
+      throw new Error("Expected Desktop channel in remote devices directory");
+    }
+
+    const commandBefore = await setup.api.readComputerUseCommand(
+      admin,
+      setup.commandId,
+    );
+    expect(commandBefore.status).toBe("succeeded");
+
+    setAuthToken(admin, setup.sessionId);
+    await accept(
+      remoteDevices.delete({
+        headers: sessionHeaders,
+        params: { deviceId: originalDevice.id },
+      }),
+      [204],
+    );
+
+    const [afterDirectory, hostsAfter, commandAfter, auditAfter] =
+      await Promise.all([
+        accept(remoteDevices.list({ headers: sessionHeaders }), [200]),
+        setup.api.listComputerUseHosts(admin),
+        accept(
+          commands.get({
+            headers: sessionHeaders,
+            params: { commandId: setup.commandId },
+          }),
+          [404],
+        ),
+        setup.api.listComputerUseAuditEvents(admin, { hostId: setup.hostId }),
+      ]);
+
+    expect(
+      afterDirectory.body.devices.some((device) => {
+        return device.id === originalDevice.id;
+      }),
+    ).toBeFalsy();
+    expect(
+      hostsAfter.hosts.some((host) => {
+        return host.id === setup.hostId;
+      }),
+    ).toBeFalsy();
+    expect(commandAfter.status).toBe(404);
+    expect(auditAfter.auditEvents).toStrictEqual([]);
+
+    signInDesktop(admin, setup.sessionId);
+    const reconnected = await accept(
+      sessionHosts().register({
+        headers: sessionHeaders,
+        body: runtimeBody({ installationId: setup.installationId }),
+      }),
+      [200],
+    );
+    expect(reconnected.body.hostId).not.toBe(setup.hostId);
+    expect(reconnected.body.connectionGeneration).toBe(1);
+
+    const reconnectedDirectory = await accept(
+      remoteDevices.list({ headers: sessionHeaders }),
+      [200],
+    );
+    const freshDevice = reconnectedDirectory.body.devices.find((device) => {
+      return device.channels.some((channel) => {
+        return (
+          channel.kind === "desktop" && channel.id === reconnected.body.hostId
+        );
+      });
+    });
+    expect(freshDevice).toBeDefined();
+    expect(freshDevice?.id).not.toBe(originalDevice.id);
   });
 });

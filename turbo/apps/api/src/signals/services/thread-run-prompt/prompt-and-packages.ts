@@ -140,7 +140,6 @@ function createIntegrationPrompts(
     automation: createAutomationThreadPrompt(
       threadContext.automationSnapshot$,
       threadContext.automationPayload$,
-      threadContext.officialWorkflowObservation$,
     ),
   };
 }

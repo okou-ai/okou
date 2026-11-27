@@ -1625,8 +1625,6 @@
           "option": "Copertina {{index}}"
         },
         "loading": "Caricamento dei suggerimenti",
-        "next": "Suggerimento successivo",
-        "previous": "Suggerimento precedente",
         "remaining": "{{total}} rimanenti",
         "sources": {
           "description": "Scegli cosa ricevere in futuro. Le schede già ricevute restano finché non le gestisci. Gli avvisi di contenuti non letti includono solo le fonti attivate.",
@@ -1642,9 +1640,7 @@
       "homeCard": {
         "completeDescription": "Okou porterà qui la prossima cosa quando ci sarà qualcosa che merita il tuo tempo.",
         "completeTitle": "Tutto fatto",
-        "feedback": "Azioni del suggerimento",
-        "navigation": "Sfoglia suggerimenti",
-        "show": "Mostra il suggerimento {{index}} di {{total}}"
+        "feedback": "Azioni del suggerimento"
       },
       "label": "Suggerimenti",
       "later": "Più tardi",
@@ -1992,7 +1988,6 @@
         "documentPlaceholder": "Cosa vorresti includere nel tuo documento?",
         "imagePlaceholder": "Descrivi l’immagine che vuoi creare…",
         "presentationPlaceholder": "Di cosa tratta la tua presentazione?",
-        "presentationPlaceholderWithDefault": "Di cosa parla la tua presentazione? ({{format}} predefinito)",
         "slideCount": "Numero di diapositive",
         "slideCountAuto": "Automatico",
         "slideCountRange": "{{range}} diapositive"
@@ -2004,16 +1999,6 @@
       "message": "Messaggio",
       "modelForThisChat": "Modello per questa chat",
       "placeholder": "Chiedimi di automatizzare i flussi di lavoro, gestire le attività...",
-      "presentationFormatSetup": {
-        "htmlDescription": "Un link che si apre in qualsiasi browser",
-        "htmlLabel": "Slide web",
-        "openSettings": "Apri impostazioni",
-        "pptxDescription": "Un file .pptx modificabile",
-        "pptxLabel": "PowerPoint",
-        "savedDefault": "{{format}} è ora il tuo formato predefinito per le presentazioni",
-        "settingsHint": "Usato per ogni nuova presentazione. Puoi cambiarlo nelle Impostazioni.",
-        "title": "Scegli un formato predefinito per iniziare"
-      },
       "selectedModelUnavailable": "Il modello selezionato non è disponibile. Configuralo prima dell'invio.",
       "selectedModelUnavailableToast": "Il modello selezionato non è disponibile",
       "selectModel": "Seleziona modello",
@@ -2713,6 +2698,11 @@
       "unsupported": "Il ripristino manuale non è supportato; l’utilizzo si ripristina automaticamente."
     },
     "taskChips": {
+      "presentationFormat": "Formato della presentazione",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Modelli di presentazione",
       "removeTask": "Rimuovi {{task}}",
       "shelf": {
@@ -5633,6 +5623,9 @@
     "continueTask": "Continua l’attività",
     "create": "Crea dispositivo",
     "createEmpty": "Crea dispositivo vuoto",
+    "deleteDescription": "Il dispositivo e tutti i suoi canali verranno eliminati definitivamente.",
+    "deleteDevice": "Elimina dispositivo",
+    "deleteTitle": "Eliminare {{device}}?",
     "empty": "Nessun dispositivo remoto.",
     "find": "Cerca dispositivi",
     "grantScope": "L’accesso si estende a tutti i canali del dispositivo nelle tue chat.",
@@ -6174,14 +6167,6 @@
           "title": "Modello predefinito"
         },
         "description": "Scegli le impostazioni predefinite per le nuove chat e come inviare i messaggi.",
-        "presentationFormat": {
-          "htmlDescription": "Le nuove presentazioni si aprono come link nel browser",
-          "pptxDescription": "Le nuove presentazioni arrivano come file .pptx modificabile",
-          "saveFailed": "Impossibile salvare il formato predefinito. Riprova.",
-          "title": "Formato predefinito per le presentazioni",
-          "unavailable": "Impossibile caricare il formato predefinito",
-          "unsetDescription": "Te lo chiederemo la prima volta che crei una presentazione"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

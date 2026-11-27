@@ -78,17 +78,10 @@ import java.text.NumberFormat
 internal fun DefaultModelFeedback(model: DefaultModelSettings, snackbar: SnackbarHostState) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val rolledBack by rememberUpdatedState(stringResource(R.string.settings_model_save_rolled_back))
-    val unconfirmed by
-        rememberUpdatedState(stringResource(R.string.settings_model_save_unconfirmed))
     LaunchedEffect(model, lifecycle, snackbar) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            model.notices.collect { notice ->
-                val message =
-                    when (notice) {
-                        DefaultModelNotice.SaveRolledBack -> rolledBack
-                        DefaultModelNotice.SaveUnconfirmed -> unconfirmed
-                    }
-                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            model.notices.collect {
+                snackbar.showSnackbar(rolledBack, duration = SnackbarDuration.Indefinite)
             }
         }
     }
@@ -203,6 +196,17 @@ private fun DefaultModelSheet(
         selectFast = model::fast,
         dismiss = dismiss,
         snackbar = snackbar,
+        footer = {
+            val checking = stringResource(R.string.settings_save_checking)
+            val saving = stringResource(R.string.settings_saving)
+            val status =
+                when (state.save?.checking) {
+                    true -> checking
+                    false -> saving
+                    null -> ""
+                }
+            SettingsWriteStatus(status, listOf(checking, saving), Modifier.padding(top = 8.dp))
+        },
     )
 }
 

@@ -1600,8 +1600,6 @@
           "option": "Cover {{index}}"
         },
         "loading": "Loading suggestions",
-        "next": "Next suggestion",
-        "previous": "Previous suggestion",
         "remaining": "{{total}} to go",
         "sources": {
           "description": "Choose what arrives next. Cards already here stay until you handle them. Unread alerts only include sources you have turned on.",
@@ -1617,9 +1615,7 @@
       "homeCard": {
         "completeDescription": "Okou will bring the next thing here when there is something worth your time.",
         "completeTitle": "All caught up",
-        "feedback": "Suggestion actions",
-        "navigation": "Browse suggestions",
-        "show": "Show suggestion {{index}} of {{total}}"
+        "feedback": "Suggestion actions"
       },
       "label": "Suggestion",
       "later": "Later",
@@ -1962,7 +1958,6 @@
         "documentPlaceholder": "What would you like to include in your document?",
         "imagePlaceholder": "Describe the image you want to create…",
         "presentationPlaceholder": "What is your presentation about?",
-        "presentationPlaceholderWithDefault": "What is your presentation about? ({{format}} by default)",
         "slideCount": "Slide count",
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
@@ -1974,16 +1969,6 @@
       "message": "Message",
       "modelForThisChat": "Model for this chat",
       "placeholder": "Ask me to automate workflows, manage tasks...",
-      "presentationFormatSetup": {
-        "htmlDescription": "A link that opens in any browser",
-        "htmlLabel": "Web slides",
-        "openSettings": "Open settings",
-        "pptxDescription": "An editable .pptx file",
-        "pptxLabel": "PowerPoint",
-        "savedDefault": "{{format}} is now your default for decks",
-        "settingsHint": "Used for every new deck. You can change it in Settings.",
-        "title": "Pick a default format to start"
-      },
       "selectedModelUnavailable": "The selected model is not available. Configure it before sending.",
       "selectedModelUnavailableToast": "The selected model is not available",
       "selectModel": "Select model",
@@ -2663,6 +2648,11 @@
       "unsupported": "Manual reset is not supported; usage recovers naturally."
     },
     "taskChips": {
+      "presentationFormat": "Presentation format",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
       "shelf": {
@@ -5565,6 +5555,9 @@
     "continueTask": "Continue task",
     "create": "Create device",
     "createEmpty": "Create empty device",
+    "deleteDescription": "This permanently deletes the device and all its channels.",
+    "deleteDevice": "Delete device",
+    "deleteTitle": "Delete {{device}}?",
     "empty": "No remote devices yet.",
     "find": "Search devices",
     "grantScope": "Access covers all channels on this device across your chats.",
@@ -6102,14 +6095,6 @@
           "title": "Default model"
         },
         "description": "Choose defaults for new chats and how messages are sent.",
-        "presentationFormat": {
-          "htmlDescription": "New decks open as a link in any browser",
-          "pptxDescription": "New decks arrive as a .pptx file you can edit",
-          "saveFailed": "Couldn't save the default format. Try again.",
-          "title": "Default presentation format",
-          "unavailable": "Couldn't load your default format",
-          "unsetDescription": "We’ll ask the first time you make a deck"
-        },
         "sectionTitle": "Chat"
       },
       "debug": {

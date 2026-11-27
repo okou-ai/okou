@@ -1,8 +1,9 @@
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import {
   artifactCatalogContract,
   type ArtifactCatalogListQuery,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactLibraryPreviewsContract } from "@okouai/api-contracts/contracts/artifact-library-previews";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -21,6 +22,12 @@ const files = createChatFilesBddApi(context);
 function catalog() {
   return setupApp({ context, routes: artifactCatalogRoutes })(
     artifactCatalogContract,
+  );
+}
+
+function previews() {
+  return setupApp({ context, routes: artifactCatalogRoutes })(
+    artifactLibraryPreviewsContract,
   );
 }
 
@@ -233,5 +240,118 @@ describe("artifact library list queries", () => {
 
     const fileKind = await allPages(member, { kind: "file", limit: 10 });
     expect(fileKind).toHaveLength(3);
+  });
+});
+
+describe("artifact library batch covers", () => {
+  async function uploadImageArtifact(
+    actor: ApiTestUser,
+    filename: string,
+  ): Promise<string> {
+    await upload(actor, filename, "image/png");
+    const listed = ok(await list(actor, { keyword: filename, limit: 10 }));
+    const match = listed.artifacts.find((artifact) => {
+      return artifact.title === filename;
+    });
+    if (!match) {
+      throw new Error(`Expected catalog artifact for ${filename}`);
+    }
+    return match.id;
+  }
+
+  it("pf-152 serves completed private covers without another storage HEAD and honors the library switch", async () => {
+    const member = bdd.user({ orgRole: "org:member" });
+    const artifactId = await uploadImageArtifact(member, "cover-ready.png");
+
+    const disabled = await accept(
+      previews().resolve({
+        headers: signIn(member),
+        body: { artifactIds: [artifactId] },
+      }),
+      [403],
+    );
+    expect(disabled.status).toBe(403);
+
+    await setOptIn(member, true);
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof HeadObjectCommand) {
+        return Promise.reject(
+          new Error("Batch preview resolution must not issue HeadObject"),
+        );
+      }
+      return Promise.resolve({});
+    });
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/presigned/cover-ready.png",
+    );
+
+    const resolved = await accept(
+      previews().resolve({
+        headers: signIn(member),
+        body: { artifactIds: [artifactId] },
+      }),
+      [200],
+    );
+    expect(resolved.headers.get("cache-control")).toBe("private, no-store");
+    expect(resolved.body.previews).toStrictEqual([
+      {
+        artifactId,
+        url: "https://r2.example.com/presigned/cover-ready.png",
+        expiresAt: expect.any(String),
+        contentType: "image/png",
+      },
+    ]);
+  });
+
+  it("pf-153 does not reveal another owner, workspace, or deleted cover", async () => {
+    const owner = bdd.user({ orgRole: "org:member" });
+    const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    const outsider = bdd.user({ orgRole: "org:member" });
+    await setOptIn(owner, true);
+
+    const [liveId, deletedId, peerId, outsiderId] = [
+      await uploadImageArtifact(owner, "owner-live.png"),
+      await uploadImageArtifact(owner, "owner-deleted.png"),
+      await uploadImageArtifact(peer, "peer-cover.png"),
+      await uploadImageArtifact(outsider, "outsider-cover.png"),
+    ];
+
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof GetObjectCommand) {
+        return Promise.reject(
+          Object.assign(new Error("NoSuchKey"), {
+            name: "NoSuchKey",
+            $metadata: { httpStatusCode: 404 },
+          }),
+        );
+      }
+      return Promise.resolve({});
+    });
+    await accept(
+      catalog().delete({
+        headers: signIn(owner),
+        params: { artifactId: deletedId },
+      }),
+      [200],
+    );
+
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/presigned/owner-live.png",
+    );
+    const resolved = await accept(
+      previews().resolve({
+        headers: signIn(owner),
+        body: { artifactIds: [liveId, deletedId, peerId, outsiderId] },
+      }),
+      [200],
+    );
+    expect(resolved.body.previews).toStrictEqual([
+      {
+        artifactId: liveId,
+        url: "https://r2.example.com/presigned/owner-live.png",
+        expiresAt: expect.any(String),
+        contentType: "image/png",
+      },
+    ]);
   });
 });

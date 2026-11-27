@@ -8,10 +8,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import { presentationTemplateSkillInstruction } from "@okouai/core/presentation-template-skill";
-import {
-  PRESENTATION_DELIVERY_INSTRUCTION,
-  PRESENTATION_OUTPUT_FORMAT_INSTRUCTION,
-} from "@okouai/core/presentation-generation-instructions";
+import { PRESENTATION_DELIVERY_INSTRUCTION } from "@okouai/core/presentation-generation-instructions";
 import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 
 const wechatToolsGuidance = Object.freeze([
@@ -63,7 +60,6 @@ export interface AgentToolsPromptInputs {
   readonly larkOfficialEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
-  readonly presentationOutputFormatEnabled: boolean;
   readonly markdownFirstOutputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly remoteDevicesEnabled: boolean;
@@ -101,10 +97,6 @@ export function buildAgentToolsPromptInputs(args: {
     ),
     presentationConvertEnabled: isFeatureEnabled(
       FeatureSwitchKey.PresentationConvert,
-      context,
-    ),
-    presentationOutputFormatEnabled: isFeatureEnabled(
-      FeatureSwitchKey.PresentationOutputFormat,
       context,
     ),
     markdownFirstOutputEnabled: isFeatureEnabled(
@@ -256,14 +248,10 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
       : []),
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
-    args.presentationOutputFormatEnabled
-      ? PRESENTATION_OUTPUT_FORMAT_INSTRUCTION
-      : PRESENTATION_DELIVERY_INSTRUCTION,
+    PRESENTATION_DELIVERY_INSTRUCTION,
     ...(args.presentationConvertEnabled
       ? [
-          args.presentationOutputFormatEnabled
-            ? "- HTML-to-PPTX conversion: run `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, inspect the converted slide images, then upload the PPTX with this surface's `upload-file` command. For an existing HTML deck, convert that file without regenerating it."
-            : "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
+          "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
         ]
       : []),
     "- Third-party services (GitHub, Slack, Notion, 4,000+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",

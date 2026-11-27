@@ -66,6 +66,20 @@ export const MODEL_PROVIDER_ENV_PLACEHOLDERS = {
   CHATGPT_REFRESH_TOKEN: "rt_VM0_PLACEHOLDER_DO_NOT_TRUST",
 } as const;
 
+// Roll out Runner support for these exact values before switching the firewall
+// catalog and sandbox environment over to them.
+export const MODEL_PROVIDER_NAMESPACED_ENV_PLACEHOLDERS = {
+  CLAUDE_CODE_OAUTH_TOKEN: `sk-ant-oat01-${"OkouModelProviderClaudeCodeOauthToken".padEnd(93, "0")}AA`,
+  // The OpenRouter route uses an opaque API-key value in Codex and Pi.
+  OPENAI_API_KEY: "OkouModelProviderOpenRouterCodexOpenaiApiKey",
+  CHATGPT_ACCESS_TOKEN: "chatgpt-token-OkouModelProviderCodexOauthAccessToken",
+  CHATGPT_ACCOUNT_ID: "ws_OkouModelProviderCodexOauthAccountId",
+  CHATGPT_REFRESH_TOKEN: "rt_OkouModelProviderCodexOauthRefreshToken",
+} as const satisfies Record<
+  keyof typeof MODEL_PROVIDER_ENV_PLACEHOLDERS,
+  string
+>;
+
 const MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS: Record<
   SingleSecretFirewallProvider,
   SingleSecretFirewallProviderConfig

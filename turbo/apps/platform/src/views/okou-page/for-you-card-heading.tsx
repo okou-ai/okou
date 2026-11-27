@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
-import { cn } from "@okouai/ui";
 import { focusSuggestionTitleOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { forYouIllustrations$ } from "../../signals/okou-page/for-you-artwork.ts";
-import { useForYouSimplifiedDeck } from "./for-you-deck-switch.ts";
 
 export function ForYouCardHeading({
   id,
@@ -20,28 +18,15 @@ export function ForYouCardHeading({
 }) {
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
   const illustration = useGet(forYouIllustrations$)[id];
-  const simplified = useForYouSimplifiedDeck();
   return (
-    <header
-      className={cn(
-        "grid grid-cols-[minmax(0,1fr)_7rem] items-start gap-4 max-[360px]:grid-cols-[minmax(0,1fr)_5.75rem] max-[360px]:gap-2.5",
-        simplified
-          ? "@min-[32rem]/for-you:grid-cols-[minmax(0,1fr)_11rem] @min-[32rem]/for-you:gap-6"
-          : "sm:grid-cols-[minmax(0,1fr)_11rem] sm:gap-6",
-      )}
-    >
+    <header className="grid grid-cols-[minmax(0,1fr)_7rem] items-start gap-4 max-[360px]:grid-cols-[minmax(0,1fr)_5.75rem] max-[360px]:gap-2.5 @min-[32rem]/for-you:grid-cols-[minmax(0,1fr)_11rem] @min-[32rem]/for-you:gap-6">
       <div className="min-w-0">
         {source && <div className="mb-2.5 flex min-w-0">{source}</div>}
         <h3
           id={`suggestion-title-${id}`}
           ref={active ? focusTitle : undefined}
           tabIndex={-1}
-          className={cn(
-            "text-lg font-semibold leading-7 text-foreground wrap-break-word focus:outline-none",
-            simplified
-              ? "@min-[32rem]/for-you:text-xl @min-[32rem]/for-you:leading-8"
-              : "sm:text-xl sm:leading-8",
-          )}
+          className="text-lg font-semibold leading-7 text-foreground wrap-break-word focus:outline-none @min-[32rem]/for-you:text-xl @min-[32rem]/for-you:leading-8"
         >
           {title}
         </h3>
@@ -51,12 +36,7 @@ export function ForYouCardHeading({
           </p>
         )}
       </div>
-      <div
-        className={cn(
-          "relative mx-2.5 self-stretch max-[360px]:mx-2",
-          simplified ? "@min-[32rem]/for-you:mx-3" : "sm:mx-3",
-        )}
-      >
+      <div className="relative mx-2.5 self-stretch max-[360px]:mx-2 @min-[32rem]/for-you:mx-3">
         {/* Decorative artwork follows the copy height without stretching it. */}
         {illustration && (
           <img
@@ -66,10 +46,7 @@ export function ForYouCardHeading({
             draggable={false}
             width={152}
             height={136}
-            className={cn(
-              "absolute inset-0 m-auto h-full max-h-27 w-full select-none object-contain max-[360px]:max-h-25",
-              simplified ? "@min-[32rem]/for-you:max-h-34" : "sm:max-h-34",
-            )}
+            className="absolute inset-0 m-auto h-full max-h-27 w-full select-none object-contain max-[360px]:max-h-25 @min-[32rem]/for-you:max-h-34"
           />
         )}
       </div>

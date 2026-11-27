@@ -1,3 +1,6 @@
+import { artifactLibraryPreviewsContract } from "@okouai/api-contracts/client/artifact-library-previews";
+import type { ArtifactLibraryPreview } from "@okouai/api-contracts/contracts/artifact-library-previews";
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import {
   createAttachmentPreviewRegistry,
   createAttachmentPreviewSignals,
@@ -58,11 +61,17 @@ export interface ArtifactCatalogQuery {
   readonly direction: ArtifactCatalogDirection;
 }
 
+interface CatalogPageResponse extends ArtifactCatalogListResponse {
+  readonly thumbnailPreviews$?: Computed<
+    Promise<readonly ArtifactLibraryPreview[]>
+  >;
+}
+
 type CatalogPageRequest = (
   createClient: ApiClientFactory,
   query: ArtifactCatalogListClientQuery,
   signal?: AbortSignal,
-) => Promise<ArtifactCatalogListResponse>;
+) => Promise<CatalogPageResponse>;
 
 interface CatalogQuerySnapshot {
   readonly query: ArtifactCatalogListClientQuery;
@@ -86,10 +95,7 @@ interface CatalogPagingOperation {
 }
 
 function withThumbnailLoad(
-  page: {
-    readonly artifacts: readonly ArtifactSummary[];
-    readonly nextCursor: string | null;
-  },
+  page: CatalogPageResponse,
   identity: CatalogIdentity,
 ): LoadedArtifactCatalogPage {
   return {
@@ -107,9 +113,37 @@ function withThumbnailLoad(
         ...artifact,
         thumbnailLoad: createImageLoadSignals(),
         thumbnailUrl$: computed(async (get) => {
-          return thumbnailPreview
-            ? await get(thumbnailPreview.thumbnailUrl$)
-            : null;
+          if (!thumbnailPreview || !artifact.thumbnail) {
+            return null;
+          }
+          const previews =
+            page.thumbnailPreviews$ &&
+            parseArtifactReference(
+              publicAttachmentUrl(artifact.thumbnail.url),
+              location.origin,
+            )
+              ? await get(page.thumbnailPreviews$)
+              : [];
+          const preview = previews.find(({ artifactId }) => {
+            return artifactId === artifact.id;
+          });
+          if (preview) {
+            const resolved = createAttachmentPreviewSignals(
+              artifact.thumbnail.url,
+              {
+                thumbnailSize: { width: ARTIFACT_CARD_THUMBNAIL_WIDTH_PX },
+                resolvedToken: {
+                  token: preview.url,
+                  expiresAt: preview.expiresAt,
+                  contentType: preview.contentType,
+                  publicUrl: null,
+                },
+              },
+            );
+            return await get(resolved.thumbnailUrl$);
+          }
+          // Public covers and share aliases keep their existing resolver.
+          return await get(thumbnailPreview.thumbnailUrl$);
         }),
         videoPreview,
         videoUrl$: computed(async (get) => {
@@ -154,6 +188,24 @@ export interface ArtifactCatalogSignals extends ArtifactCatalogViewSignals {
   readonly cancelQuery$: Command<void, []>;
 }
 
+async function loadLibraryPreviews(
+  createClient: ApiClientFactory,
+  artifactIds: string[],
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const response = await accept(
+    createClient(artifactLibraryPreviewsContract).resolve({
+      body: { artifactIds },
+      fetchOptions: { signal },
+    }),
+    [200],
+    signal,
+    { showErrorToast: false },
+  );
+  return response.body.previews;
+}
+
 function artifactLibraryPageRequest(
   ownerSignal: AbortSignal,
 ): CatalogPageRequest {
@@ -171,7 +223,34 @@ function artifactLibraryPageRequest(
       requestSignal,
     );
     requestSignal.throwIfAborted();
-    return result.body;
+    if (query.direction === undefined) {
+      return result.body;
+    }
+    const artifactIds = result.body.artifacts
+      .filter((artifact) => {
+        return (
+          artifact.thumbnail &&
+          parseArtifactReference(
+            publicAttachmentUrl(artifact.thumbnail.url),
+            location.origin,
+          )
+        );
+      })
+      .map(({ id }) => {
+        return id;
+      });
+    const requestPreviews = () => {
+      return artifactIds.length === 0
+        ? Promise.resolve([])
+        : loadLibraryPreviews(createClient, artifactIds, requestSignal);
+    };
+    return {
+      ...result.body,
+      // The query owns cancellation; all cards share this lazy page request.
+      thumbnailPreviews$: computed(() => {
+        return requestPreviews();
+      }),
+    };
   };
 }
 

@@ -304,7 +304,7 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   if (hasCredits === "closed") {
-    return resourceUnavailable("Official Workflow run is no longer active");
+    return resourceUnavailable("This platform-paid run is no longer active");
   }
   if (!hasCredits) {
     return insufficientCredits();

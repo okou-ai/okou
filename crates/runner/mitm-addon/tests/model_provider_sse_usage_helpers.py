@@ -1,22 +1,14 @@
 """Shared model-provider SSE usage integration-test mechanics."""
 
-import asyncio
 import gzip
 import zlib
-from collections.abc import Awaitable, Callable
-from contextlib import AbstractContextManager
 from pathlib import Path
 
 from mitmproxy import http
 
 import flow_metadata_keys as metadata_keys
-import mitm_addon
-import usage
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import RealFlowFactory, make_model_provider_sse_flow
-from tests.usage_helpers import UsageWebhookServer
-
-UsageWebhookApi = Callable[[], AbstractContextManager[UsageWebhookServer]]
 
 
 def model_provider_sse_flow(
@@ -45,34 +37,6 @@ def compress_zlib_sse(body: bytes, encoding: str) -> bytes:
         return gzip.compress(body)
     assert encoding == "deflate"
     return zlib.compress(body)
-
-
-async def _join_completion(completion: Awaitable[None]) -> None:
-    await completion
-
-
-def run_response(
-    flow: http.HTTPFlow,
-    usage_webhook_api: UsageWebhookApi,
-) -> UsageWebhookServer:
-    with usage_webhook_api() as webhook:
-        completion = mitm_addon.response(flow)
-        if completion is not None:
-            asyncio.run(_join_completion(completion))
-        usage.flush_usage_events(trigger="test")
-    return webhook
-
-
-def run_error(
-    flow: http.HTTPFlow,
-    usage_webhook_api: UsageWebhookApi,
-) -> UsageWebhookServer:
-    with usage_webhook_api() as webhook:
-        completion = mitm_addon.error(flow)
-        if completion is not None:
-            asyncio.run(_join_completion(completion))
-        usage.flush_usage_events(trigger="test")
-    return webhook
 
 
 def model_sse_parse_warnings(flow: http.HTTPFlow) -> list[dict]:

@@ -16,7 +16,6 @@ import type {
   ExecutionPackageScope,
   ExecutionPackageSources,
 } from "./execution-package-sources";
-import type { OfficialWorkflowObservation } from "./official-workflow-run.service";
 import type { NamedSkillBundle } from "./run-prompt-and-skills";
 import type { ThreadAutomationTarget } from "./thread-automation-context.service";
 
@@ -33,7 +32,6 @@ type SelectedSkillBundle = {
 };
 
 export interface ExecutionPackageMounts {
-  readonly officialWorkflowBundles: readonly SelectedSkillBundle[];
   readonly seedSkillBundles: readonly SelectedSkillBundle[];
   readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
 }
@@ -61,19 +59,15 @@ export function resolveOrdinaryAutomationWorkflowName(
 /** Choose and decode the packages for the Run from its first source observation. */
 export function selectExecutionPackages(
   sources: ExecutionPackageSources | null,
-  input: {
-    readonly officialWorkflowNames: readonly string[];
-    readonly ordinaryAutomation: Pick<
-      ThreadAutomationTarget,
-      "ordinaryWorkflowName"
-    > | null;
-  },
+  ordinaryAutomation: Pick<
+    ThreadAutomationTarget,
+    "ordinaryWorkflowName"
+  > | null,
 ): CapturedExecutionPackages | { readonly error: string } {
   if (!sources) {
     return { error: "Run package source authorization is unavailable" };
   }
-  const officialNames = new Set(input.officialWorkflowNames);
-  const requiredWorkflow = input.ordinaryAutomation?.ordinaryWorkflowName;
+  const requiredWorkflow = ordinaryAutomation?.ordinaryWorkflowName;
   const instructionsBundle = contentBundleSchema.safeParse(
     sources.memberInstructions,
   );
@@ -83,9 +77,6 @@ export function selectExecutionPackages(
   const selectedWorkflows: CapturedExecutionPackages["workflows"][number][] =
     [];
   for (const workflow of sources.workflows) {
-    if (officialNames.has(workflow.name)) {
-      continue;
-    }
     const contentBundle = contentBundleSchema.safeParse(workflow.contentBundle);
     if (!contentBundle.success) {
       log.warn("Workflow Skill bundle is unavailable", {
@@ -99,7 +90,7 @@ export function selectExecutionPackages(
     });
   }
   if (
-    input.ordinaryAutomation &&
+    ordinaryAutomation &&
     !selectedWorkflows.some(({ name }) => {
       return name === requiredWorkflow;
     })
@@ -142,7 +133,6 @@ export function prepareRunPackageMounts(args: {
     readonly builtinConnectorSkills: readonly NamedSkillBundle[];
     readonly templateGuidanceBundles: ExecutionPackageMounts["templateGuidanceBundles"];
   };
-  readonly officialWorkflow: OfficialWorkflowObservation | undefined;
 }) {
   const { skillRoot, memoryMountPath } = frameworkMountPaths[args.framework];
   const { sources } = args;
@@ -168,8 +158,6 @@ export function prepareRunPackageMounts(args: {
   return {
     memoryMountPath,
     mounts: {
-      officialWorkflowBundles:
-        args.officialWorkflow?.definitions.map(describeMount) ?? [],
       seedSkillBundles: [...seedSkills.values()].map(describeMount),
       templateGuidanceBundles: sources.templateGuidanceBundles,
     } satisfies ExecutionPackageMounts,

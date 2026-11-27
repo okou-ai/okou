@@ -527,6 +527,43 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    fun chatResourcesRestartsItsSkeletonDelayWhenTheReadIsReplaced() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val release = CountDownLatch(1)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/artifacts/catalog")
+                check(release.await(10, TimeUnit.SECONDS))
+            respond(request)
+        }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        val realtime = app.realtimeService as TestRealtimeService
+        val skeletons = compose.onAllNodes(hasTestTag("artifact_row_skeleton"))
+        try {
+            openChatResources(fixture.sourceTitle)
+            val model = ready.chatArtifacts
+            compose.waitUntil(5_000) { model.state.value.initialReadRound != null }
+            compose.mainClock.autoAdvance = false
+            compose.mainClock.advanceTimeBy(320)
+            assertTrue(skeletons.fetchSemanticsNodes().isNotEmpty())
+            val firstRound = model.state.value.initialReadRound
+            realtime.invalidate(ChatChanges(artifactThreads = setOf(CHAT_PERSONAL)))
+            compose.waitUntil(5_000) {
+                model.state.value.initialReadRound?.let { it !== firstRound } == true
+            }
+            compose.mainClock.advanceTimeByFrame()
+            assertTrue(skeletons.fetchSemanticsNodes().isEmpty())
+        } finally {
+            compose.mainClock.autoAdvance = true
+            release.countDown()
+        }
+        awaitText(fixture.summary.title)
+        assertTrue(skeletons.fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
     fun workspaceRefreshFeedbackFollowsTheActiveFilter() {
         val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
         fixture.install()

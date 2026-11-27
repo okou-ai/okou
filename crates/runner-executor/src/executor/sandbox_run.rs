@@ -11,7 +11,7 @@ use sandbox::{
     Sandbox, SandboxConfig, SandboxCreateObserver, SandboxCreateStage, SandboxError,
     SandboxFactory, SandboxGuestConnectionPhase, SandboxGuestDnsReadinessReason, SandboxId,
     SandboxNbdCowCreateOutcome, SandboxNbdCowCreateStage, SandboxNbdNetlinkConnectStage,
-    SandboxStartObserver, SandboxStartStage,
+    SandboxStartObserver, SandboxStartOutcome, SandboxStartStage,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -1326,28 +1326,39 @@ async fn create_started_sandbox(
             prepared_guest_runtime => prepared_guest_runtime,
         };
 
-        let mount_started = Instant::now();
-        let mount_result = ensure_home_drive_mounted(sandbox.as_ref(), context.run_id).await;
-        let mount_duration = mount_started.elapsed();
-        let guest_duration = match mount_result {
-            Ok(guest_duration) => guest_duration,
-            Err(e) => {
-                telemetry.record(
-                    HOME_DRIVE_MOUNT,
-                    mount_duration,
-                    false,
-                    Some(&e.error.to_string()),
-                );
-                record_home_drive_mount_guest_exec(telemetry, e.guest_duration, false);
-                break 'prepare (
-                    SandboxPrepareError::retry_without_home_image(e.error.into(), false),
-                    "failed to unregister sandbox from proxy after home mount failure",
-                    prepared_guest_runtime,
-                );
-            }
+        // An intervening Guest request can fail after startup mounted Home.
+        // Keep the existing preparation retry boundary for those failures.
+        let guest_operation_failed = match &prepared_guest_runtime {
+            Some(PreparedGuestRuntime::Failed(RunnerError::Sandbox(_))) => true,
+            Some(PreparedGuestRuntime::Ready(prefetch)) => prefetch.start_failed(),
+            _ => false,
         };
-        telemetry.record(HOME_DRIVE_MOUNT, mount_duration, true, None);
-        record_home_drive_mount_guest_exec(telemetry, guest_duration, true);
+        if !matches!(start_result, Ok(SandboxStartOutcome::HomeMounted))
+            || (guest_operation_failed && !cancel.is_cancelled())
+        {
+            let mount_started = Instant::now();
+            let mount_result = ensure_home_drive_mounted(sandbox.as_ref(), context.run_id).await;
+            let mount_duration = mount_started.elapsed();
+            let guest_duration = match mount_result {
+                Ok(guest_duration) => guest_duration,
+                Err(e) => {
+                    telemetry.record(
+                        HOME_DRIVE_MOUNT,
+                        mount_duration,
+                        false,
+                        Some(&e.error.to_string()),
+                    );
+                    record_home_drive_mount_guest_exec(telemetry, e.guest_duration, false);
+                    break 'prepare (
+                        SandboxPrepareError::retry_without_home_image(e.error.into(), false),
+                        "failed to unregister sandbox from proxy after home mount failure",
+                        prepared_guest_runtime,
+                    );
+                }
+            };
+            telemetry.record(HOME_DRIVE_MOUNT, mount_duration, true, None);
+            record_home_drive_mount_guest_exec(telemetry, guest_duration, true);
+        }
         if let Some(notifier) = sandbox_prepared
             && let Err(error) = notifier.notify(context.run_id, sandbox_id).await
         {

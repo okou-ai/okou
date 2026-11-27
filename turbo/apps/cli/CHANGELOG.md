@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.44.29](https://github.com/okou-ai/okou/compare/cli-v10.44.28...cli-v10.44.29) (2026-11-27)
+
+
+### Refactoring
+
+* **api:** retire official workflow admission for proactive runs ([#51409](https://github.com/okou-ai/okou/issues/51409)) ([7a23914](https://github.com/okou-ai/okou/commit/7a239141cfc683da184e8f42ff2456b294025b7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.140.0
+    * @okouai/core bumped to 8.887.7
+    * @okouai/pi-agent-runtime bumped to 1.52.102
+
 ## [10.44.28](https://github.com/okou-ai/okou/compare/cli-v10.44.27...cli-v10.44.28) (2026-11-27)
 
 

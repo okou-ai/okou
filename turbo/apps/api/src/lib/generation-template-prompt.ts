@@ -121,7 +121,6 @@ type GenerationTemplateGuidanceResult =
  */
 interface GenerationTemplatePromptOptions {
   readonly includeManagedImageInstructions?: boolean;
-  readonly presentationOutputFormatEnabled?: boolean;
   readonly mountedUserPresentationTemplateIds?: readonly string[];
   /**
    * The custom templates this run will carry, each with the kind its row says
@@ -190,7 +189,6 @@ function resolveGenerationTemplateGuidance(
     generationTemplate,
     options.mountedUserPresentationTemplateIds ?? [],
     imageGenerationEnabled,
-    options.presentationOutputFormatEnabled === true,
   );
 }
 
@@ -370,7 +368,6 @@ function buildPresentationGenerationTemplatePrompt(
   generationTemplate: PresentationGenerationTemplateInput,
   mountedUserPresentationTemplateIds: readonly string[],
   imageGenerationEnabled: boolean,
-  presentationOutputFormatEnabled: boolean,
 ): GenerationTemplateGuidanceResult {
   const { templateId } = generationTemplate.selection;
   if (isUserPresentationTemplateId(templateId)) {
@@ -383,11 +380,7 @@ function buildPresentationGenerationTemplatePrompt(
     if (!mountedUserPresentationTemplateIds.includes(rowId)) {
       return { status: "invalid", message: "Presentation template not found" };
     }
-    return buildUserPresentationTemplatePrompt(
-      rowId,
-      imageGenerationEnabled,
-      presentationOutputFormatEnabled,
-    );
+    return buildUserPresentationTemplatePrompt(rowId, imageGenerationEnabled);
   }
   // Presentation picker selections are valid only when they resolve to a
   // self-contained runbook package. The legacy multi-resource registry flow has
@@ -403,7 +396,6 @@ function buildPresentationGenerationTemplatePrompt(
     generationTemplate,
     runbookPackage,
     imageGenerationEnabled,
-    presentationOutputFormatEnabled,
   );
 }
 
@@ -423,7 +415,6 @@ function buildPresentationGenerationTemplatePrompt(
 function buildUserPresentationTemplatePrompt(
   rowId: string,
   imageGenerationEnabled: boolean,
-  presentationOutputFormatEnabled: boolean,
 ): GenerationTemplateGuidanceResult {
   return {
     status: "resolved",
@@ -441,9 +432,7 @@ function buildUserPresentationTemplatePrompt(
         "- Use the slide count the user asks for; if unspecified, default to 8 pages.",
         ...presentationImageInstructions(imageGenerationEnabled),
         PRESENTATION_STATIC_HTML_INSTRUCTION,
-        ...presentationDeliveryInstructions({
-          presentationOutputFormatEnabled,
-        }),
+        ...presentationDeliveryInstructions(),
         "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
       ].join("\n");
     },
@@ -454,7 +443,6 @@ function buildPresentationRunbookPrompt(
   generationTemplate: PresentationGenerationTemplateInput,
   runbookPackage: PresentationRunbookPackage,
   imageGenerationEnabled: boolean,
-  presentationOutputFormatEnabled: boolean,
 ): GenerationTemplateGuidanceResult {
   const color = resolvePresentationRunbookColorToken(
     runbookPackage,
@@ -476,7 +464,6 @@ function buildPresentationRunbookPrompt(
           runbookPackage,
           colorSystemToken: color.token,
           imageGenerationEnabled,
-          presentationOutputFormatEnabled,
         }),
         ...(runbookPackage.outputFormat === "html"
           ? [
