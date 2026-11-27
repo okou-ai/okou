@@ -363,9 +363,9 @@ class PersonalInstructionsModelTest {
         }
 
     @Test
-    fun unresolvedSaveSurvivesRetirementAndAReadRestoresTheEdit() =
+    fun exhaustedSaveVerificationRestoresEditingAndConditionalSave() =
         check { service, store, create, _ ->
-            var model = create(false)
+            val model = create(false)
             model.open()
             runCurrent()
             model.edit("Frozen intent")
@@ -382,23 +382,14 @@ class PersonalInstructionsModelTest {
             advanceTimeBy(6_000)
             runCurrent()
             assertEquals(3, reads)
-            assertEquals(InstructionsPhase.Uncertain, model.uiState.value.phase)
-            model.edit("Replacement must not erase recovery")
-            model.save()
-            runCurrent()
-            assertEquals("Frozen intent", model.uiState.value.content)
-            assertEquals(1, service.writes.size)
-            assertTrue(checkNotNull(store.load(identity).draft).attempted)
-
-            service.read = { service.saved }
-            model = create(true)
-            model.open()
-            runCurrent()
-            assertEquals("Frozen intent", model.uiState.value.content)
+            assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
+            assertTrue(model.uiState.value.saveRejected)
             assertTrue(model.uiState.value.canEdit)
             assertTrue(model.uiState.value.canSave)
-            assertTrue(model.uiState.value.saveRejected)
+            assertEquals("Frozen intent", model.uiState.value.content)
+            assertEquals(1, service.writes.size)
             assertNull(store.load(identity).draft)
+            model.edit("Edited after verification")
             service.write = { content, version ->
                 assertEquals("v1", version)
                 service.saved.copy(content = content, version = "confirmed").also {
@@ -410,7 +401,7 @@ class PersonalInstructionsModelTest {
             runCurrent()
             assertEquals(2, service.writes.size)
             assertNull(model.uiState.value.draft)
-            assertEquals("Frozen intent", service.saved.content)
+            assertEquals("Edited after verification", service.saved.content)
         }
 
     @Test
@@ -425,8 +416,8 @@ class PersonalInstructionsModelTest {
         runCurrent()
         advanceTimeBy(6_000)
         runCurrent()
-        assertEquals(InstructionsPhase.Uncertain, model.uiState.value.phase)
-        assertFalse(model.uiState.value.canSave)
+        assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
+        assertTrue(model.uiState.value.canSave)
         assertTrue(model.discardEdits(checkNotNull(model.uiState.value.draft)))
         runCurrent()
         assertEquals("Original", model.uiState.value.content)
@@ -772,10 +763,11 @@ class PersonalInstructionsModelTest {
                 runCurrent()
                 advanceTimeBy(6_000)
                 runCurrent()
-                assertEquals(InstructionsPhase.Uncertain, fresh.uiState.value.phase)
+                assertEquals(InstructionsPhase.Ready, fresh.uiState.value.phase)
+                assertTrue(fresh.uiState.value.saveRejected)
                 held.complete(Unit)
                 runCurrent()
-                assertTrue(checkNotNull(store.load(identity).draft).attempted)
+                assertNull(store.load(identity).draft)
                 service.read = { service.saved }
                 fresh.refresh()
                 runCurrent()

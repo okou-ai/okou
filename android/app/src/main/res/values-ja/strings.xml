@@ -64,7 +64,7 @@
     <string name="instructions_unavailable">現在、個人の指示は利用できません。</string>
     <string name="instructions_unsaved">未保存の変更があります。</string>
     <string name="instructions_local_failed">ローカルの下書きを保存できませんでした。再試行してください。</string>
-    <string name="instructions_save_rejected">保存が拒否されました。変更は保持されています。</string>
+    <string name="instructions_save_rejected">保存できませんでした。変更内容は保持されています。</string>
     <string name="instructions_invalid">テキストに未対応の文字が含まれています。</string>
     <string name="instructions_checking">保存結果を確認しています…</string>
     <string name="instructions_save">保存</string>

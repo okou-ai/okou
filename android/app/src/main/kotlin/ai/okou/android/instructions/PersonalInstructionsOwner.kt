@@ -372,6 +372,20 @@ internal class PersonalInstructionsOwner(
         val denied = error is ApiFailure.Http && (error.status == 403 || error.status == 404)
         if (denied) store.forgetConfirmed(identity)
         val state = mutable.value
+        val draft = state.draft
+        if (
+            !denied &&
+                state.read != InstructionsRead.Unavailable &&
+                state.request == InstructionsRequest.CheckingSave &&
+                draft?.attempted == true
+        ) {
+            // Keep the edit and its conditional-write base after verification ends.
+            replaceDraft(
+                draft.copy(attempted = false),
+                state.copy(read = InstructionsRead.RefreshFailed, saveRejected = true),
+            )
+            return
+        }
         val read =
             when {
                 denied || state.read == InstructionsRead.Unavailable -> InstructionsRead.Unavailable

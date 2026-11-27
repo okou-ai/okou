@@ -64,7 +64,7 @@
     <string name="instructions_unavailable">Persönliche Anweisungen sind hier nicht verfügbar.</string>
     <string name="instructions_unsaved">Du hast ungespeicherte Änderungen.</string>
     <string name="instructions_local_failed">Der lokale Entwurf konnte nicht gespeichert werden. Erneut versuchen.</string>
-    <string name="instructions_save_rejected">Das Speichern wurde abgelehnt. Deine Änderungen bleiben erhalten.</string>
+    <string name="instructions_save_rejected">Speichern nicht möglich. Deine Änderungen bleiben erhalten.</string>
     <string name="instructions_invalid">Der Text enthält ein nicht unterstütztes Zeichen.</string>
     <string name="instructions_checking">Speicherergebnis wird geprüft…</string>
     <string name="instructions_save">Speichern</string>
