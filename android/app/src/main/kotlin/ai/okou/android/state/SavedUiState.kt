@@ -5,6 +5,8 @@ import ai.okou.android.ReadFailureAnnouncement
 import ai.okou.android.artifacts.ArtifactFilter
 import ai.okou.android.artifacts.ExternalImagePreviewPrefix
 import ai.okou.android.chat.ConversationAnchor
+import ai.okou.android.chat.ConversationCodeTarget
+import ai.okou.android.chat.ConversationCodeVisit
 import ai.okou.android.chat.ConversationFindTarget
 import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
@@ -608,6 +610,52 @@ internal fun rememberConversationLinkReturns(): MutableState<List<ConversationLi
     }
 
 private const val MAX_SAVED_CONVERSATION_EVENT_ID_CHARS = 36
+
+@Composable
+internal fun rememberConversationCodeVisit(): MutableState<ConversationCodeVisit?> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<ConversationCodeVisit?, Any>(
+                save = { visit ->
+                    val target = visit?.target
+                    if (
+                        visit == null ||
+                            target == null ||
+                            target.messageId.length > MAX_SAVED_CONVERSATION_EVENT_ID_CHARS ||
+                            target.path.length > 512
+                    ) {
+                        emptyList()
+                    } else
+                        listOf(
+                            visit.threadId,
+                            target.messageId,
+                            target.bodyIndex,
+                            target.path,
+                            visit.anchor?.eventId.orEmpty(),
+                            visit.anchor?.offsetDp ?: 0f,
+                            visit.previewOffsetPx,
+                            visit.expanded,
+                        )
+                },
+                restore = { fields ->
+                    ConversationCodeVisit(
+                        fields[0] as String,
+                        ConversationCodeTarget(
+                            fields[1] as String,
+                            fields[2] as Int,
+                            fields[3] as String,
+                        ),
+                        (fields[4] as String).takeIf(String::isNotEmpty)?.let {
+                            ConversationAnchor(it, fields[5] as Float)
+                        },
+                        fields[6] as Int,
+                        fields[7] as Boolean,
+                    )
+                },
+            ),
+    ) {
+        mutableStateOf(null)
+    }
 
 @Composable
 internal fun rememberConversationLinkPosition(): MutableState<ConversationLinkPosition?> =
