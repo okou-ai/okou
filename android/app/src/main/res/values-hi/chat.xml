@@ -95,7 +95,6 @@
     <string name="chat_delete_pending">हटाया जा रहा है…</string>
     <string name="chat_project_deleted">प्रोजेक्ट हटा दिया गया और उसकी चैट बाहर ले जाई गईं।</string>
     <string name="chat_project_delete_rejected">प्रोजेक्ट हटाया नहीं जा सका।</string>
-    <string name="chat_project_delete_unconfirmed">प्रोजेक्ट हटाए जाने की पुष्टि नहीं हो सकी।</string>
     <string name="chat_row_action_rejected_named">“%1$s” पूरा नहीं किया जा सका।</string>
     <string name="chat_row_action_offline_named">“%1$s” पूरा नहीं किया जा सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="chat_rename_save_failed">सेव नहीं हो सका। आपके बदलाव सुरक्षित हैं।</string>

@@ -95,7 +95,6 @@
     <string name="chat_delete_pending">Wird gelöscht…</string>
     <string name="chat_project_deleted">Das Projekt wurde gelöscht und seine Chats wurden aus den Projekten verschoben.</string>
     <string name="chat_project_delete_rejected">Das Projekt konnte nicht gelöscht werden.</string>
-    <string name="chat_project_delete_unconfirmed">Das Löschen des Projekts konnte nicht bestätigt werden.</string>
     <string name="chat_row_action_rejected_named">„%1$s“ konnte nicht abgeschlossen werden.</string>
     <string name="chat_row_action_offline_named">„%1$s“ konnte nicht abgeschlossen werden. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="chat_rename_save_failed">Speichern fehlgeschlagen. Deine Änderungen sind noch da.</string>
