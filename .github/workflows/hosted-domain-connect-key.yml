@@ -2,6 +2,11 @@ name: Provision hosted website Domain Connect key
 
 on:
   workflow_dispatch:
+    inputs:
+      doppler_identity_id:
+        description: Doppler OIDC identity (write access for initialization; read access for recovery)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -27,7 +32,7 @@ jobs:
         run: node --test ops/hosted-domain-connect/provision-key.node-test.mjs
       - name: Generate or recover the signing key inside the trusted runner
         env:
-          DOPPLER_SERVICE_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          DOPPLER_SERVICE_IDENTITY_ID: ${{ inputs.doppler_identity_id }}
         run: node ops/hosted-domain-connect/provision-key.node.mjs
       - name: Retain public DNS records for publication
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
