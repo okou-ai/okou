@@ -9,7 +9,6 @@
     <string name="recovery_reset_retry">Verifica la reimpostazione originale</string>
     <string name="recovery_checking_reset">Verifica della richiesta originale…</string>
     <string name="recovery_working">Preparazione della ripresa…</string>
-    <string name="recovery_needs_changes">Cambia modello, impostazioni account o conversazione prima di continuare.</string>
     <string name="recovery_billing">Crediti dello spazio: %1$s. Controlla la fatturazione.</string>
     <string name="recovery_no_credit">Nessun credito disponibile durante la reimpostazione precedente.</string>
     <string name="recovery_submitted">Continuazione accettata. In attesa della cronologia.</string>

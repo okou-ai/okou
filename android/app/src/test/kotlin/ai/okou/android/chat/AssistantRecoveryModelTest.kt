@@ -919,7 +919,7 @@ class AssistantRecoveryModelTest {
     }
 
     @Test
-    fun structuredReasonsExcludeSettingsBillingAndUnknownDespitePersonalRoute() {
+    fun structuredReasonsWithoutContinueStayIneligibleOnPersonalRoutes() {
         for (reason in
             listOf(
                 "invalid_credentials",
@@ -927,6 +927,8 @@ class AssistantRecoveryModelTest {
                 "context_window_exceeded",
                 "terms_acceptance_required",
                 "input_too_large",
+                "provider_image_too_large",
+                "safety_policy_refusal",
                 "future_reason",
             )) {
             assertFalse(

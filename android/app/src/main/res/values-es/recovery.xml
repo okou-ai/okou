@@ -9,7 +9,6 @@
     <string name="recovery_reset_retry">Comprobar el restablecimiento original</string>
     <string name="recovery_checking_reset">Comprobando la solicitud original…</string>
     <string name="recovery_working">Preparando la continuación…</string>
-    <string name="recovery_needs_changes">Cambia el modelo, la configuración de la cuenta o la conversación antes de continuar.</string>
     <string name="recovery_billing">Créditos del espacio: %1$s. Revisa la facturación.</string>
     <string name="recovery_no_credit">No había créditos disponibles en el restablecimiento anterior.</string>
     <string name="recovery_submitted">Continuación aceptada. Esperando el historial.</string>

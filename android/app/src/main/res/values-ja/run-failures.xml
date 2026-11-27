@@ -5,7 +5,7 @@
     <string name="run_failure_guest_root_filesystem_full_title">この実行の保存容量が足りません</string>
     <string name="run_failure_guest_root_filesystem_full_description">この実行ではこれ以上ファイルを保存できません。再試行して続けてください。</string>
     <string name="run_failure_execution_timeout_title">時間制限に達しました</string>
-    <string name="run_failure_execution_timeout_description">停止したところから続けられます。</string>
+    <string name="run_failure_execution_timeout_description">これまでに生成された内容は引き続き利用できます。</string>
     <string name="run_failure_provider_insufficient_credits_title">サブスクリプションアカウントのクレジットが不足しています</string>
     <string name="run_failure_provider_insufficient_credits_description">サブスクリプションアカウントの使用量またはクレジット残高を確認してから、もう一度お試しください。</string>
     <string name="run_failure_invalid_api_key_title">サブスクリプションのサインインを更新する必要があります</string>
@@ -33,9 +33,9 @@
     <string name="run_failure_provider_server_error_title">モデルプロバイダーで一時的なエラーが発生しました</string>
     <string name="run_failure_provider_server_error_description">少し待ってから再試行するか、別のモデルで続けてください。</string>
     <string name="run_failure_response_connection_lost_title">応答が途中で途切れました</string>
-    <string name="run_failure_response_connection_lost_description">少し待ってから再試行するか、別のモデルで続けてください。</string>
+    <string name="run_failure_response_connection_lost_description">これまでに生成された内容は引き続き利用できます。</string>
     <string name="run_failure_safety_policy_refusal_title">モデルはこのリクエストに対応できませんでした</string>
-    <string name="run_failure_safety_policy_refusal_description">このリクエストはモデルの安全基準を満たしませんでした。表現を変えるか、別のモデルを選んでください。</string>
+    <string name="run_failure_safety_policy_refusal_description">リクエストを修正してから再送信してください。</string>
     <string name="run_failure_reconnect_required_title">モデルアカウントを再接続</string>
     <string name="run_failure_reconnect_required_description">「設定 &gt; モデル」でアカウントを再接続または更新してから、再試行してください。</string>
     <string name="run_failure_unsupported_model_title">選択したモデルは利用できません</string>
@@ -44,9 +44,11 @@
     <string name="run_failure_usage_limit_description">使用制限がリセットされた後に続行するか、今すぐ別のモデルに切り替えられます。</string>
     <string name="run_failure_unknown_title">この実行を完了できませんでした</string>
     <string name="run_failure_unknown_description">詳細は Okou のウェブサイトでこのチャットを開いて確認してください。</string>
-    <string name="run_failure_guest_memory_oom_killed_title">この実行を完了できませんでした</string>
-    <string name="run_failure_guest_memory_oom_killed_description">エラーが発生しました。</string>
-    <string name="run_failure_insufficient_credits_title">クレジットが不足しています</string>
+    <string name="run_failure_guest_memory_oom_killed_title">メモリ不足で実行が中断されました</string>
+    <string name="run_failure_guest_memory_oom_killed_description">これまでに生成された内容は引き続き利用できます。</string>
+    <string name="run_failure_provider_image_too_large_title">画像が大きすぎます</string>
+    <string name="run_failure_provider_image_too_large_description">画像を削除するか、より小さい画像に置き換えてください。</string>
+    <string name="run_failure_insufficient_credits_title">Okou クレジットが不足しています</string>
     <string name="run_failure_insufficient_credits_description">ワークスペースのプランまたはクレジット残高を確認してください。</string>
     <string name="run_failure_account_verification_required_title">Claude アカウントの確認が必要です</string>
     <string name="run_failure_account_verification_required_description">現在、Claude アカウントで返信を受け取れません。Anthropic Verification Portal で次の手順を確認してください。</string>

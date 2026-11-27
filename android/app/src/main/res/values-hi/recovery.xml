@@ -9,7 +9,6 @@
     <string name="recovery_reset_retry">मूल रीसेट की जाँच करें</string>
     <string name="recovery_checking_reset">मूल अनुरोध की जाँच हो रही है…</string>
     <string name="recovery_working">जारी रखने की तैयारी हो रही है…</string>
-    <string name="recovery_needs_changes">जारी रखने से पहले मॉडल, खाते की सेटिंग या बातचीत बदलें।</string>
     <string name="recovery_billing">वर्कस्पेस क्रेडिट: %1$s। बिलिंग जाँचें।</string>
     <string name="recovery_no_credit">पिछली रीसेट कोशिश में कोई क्रेडिट उपलब्ध नहीं था।</string>
     <string name="recovery_submitted">जारी रखने का अनुरोध स्वीकार हुआ। इतिहास की प्रतीक्षा है।</string>

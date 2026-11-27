@@ -9,7 +9,6 @@
     <string name="recovery_reset_retry">Verificar a redefinição original</string>
     <string name="recovery_checking_reset">Verificando a solicitação original…</string>
     <string name="recovery_working">Preparando para continuar…</string>
-    <string name="recovery_needs_changes">Altere o modelo, as configurações da conta ou a conversa antes de continuar.</string>
     <string name="recovery_billing">Créditos do espaço: %1$s. Verifique a cobrança.</string>
     <string name="recovery_no_credit">Não havia crédito disponível na redefinição anterior.</string>
     <string name="recovery_submitted">Continuação aceita. Aguardando o histórico.</string>

@@ -5,7 +5,7 @@
     <string name="run_failure_guest_root_filesystem_full_title">这次运行的存储空间用完了</string>
     <string name="run_failure_guest_root_filesystem_full_description">这次运行没法再保存文件。请重试后继续。</string>
     <string name="run_failure_execution_timeout_title">已达时间上限</string>
-    <string name="run_failure_execution_timeout_description">可以从上次停止的地方继续。</string>
+    <string name="run_failure_execution_timeout_description">保留已生成的内容。</string>
     <string name="run_failure_provider_insufficient_credits_title">你的订阅账号需要更多额度</string>
     <string name="run_failure_provider_insufficient_credits_description">请检查订阅账号的用量或额度余额，然后重试。</string>
     <string name="run_failure_invalid_api_key_title">你的订阅登录需要更新</string>
@@ -33,9 +33,9 @@
     <string name="run_failure_provider_server_error_title">模型服务商暂时出错</string>
     <string name="run_failure_provider_server_error_description">可以稍等片刻再试，或换个模型继续。</string>
     <string name="run_failure_response_connection_lost_title">回复中途断开了</string>
-    <string name="run_failure_response_connection_lost_description">可以稍等片刻再试，或换个模型继续。</string>
+    <string name="run_failure_response_connection_lost_description">保留已生成的内容。</string>
     <string name="run_failure_safety_policy_refusal_title">模型无法处理这个请求</string>
-    <string name="run_failure_safety_policy_refusal_description">这个请求未通过模型的安全检查。可以换个说法，或选择其他模型。</string>
+    <string name="run_failure_safety_policy_refusal_description">请修改请求后再发送。</string>
     <string name="run_failure_reconnect_required_title">重新连接模型账户</string>
     <string name="run_failure_reconnect_required_description">到「设置 &gt; 模型」中重新连接或更新账户，然后再试。</string>
     <string name="run_failure_unsupported_model_title">所选模型不可用</string>
@@ -44,9 +44,11 @@
     <string name="run_failure_usage_limit_description">等用量额度重置后可以继续，也可以现在换个模型。</string>
     <string name="run_failure_unknown_title">这次运行没能完成</string>
     <string name="run_failure_unknown_description">在 Okou 网站打开此聊天以查看详情。</string>
-    <string name="run_failure_guest_memory_oom_killed_title">这次运行没能完成</string>
-    <string name="run_failure_guest_memory_oom_killed_description">出了点问题。</string>
-    <string name="run_failure_insufficient_credits_title">额度不足</string>
+    <string name="run_failure_guest_memory_oom_killed_title">这次运行因内存不足而中断</string>
+    <string name="run_failure_guest_memory_oom_killed_description">保留已生成的内容。</string>
+    <string name="run_failure_provider_image_too_large_title">图片太大</string>
+    <string name="run_failure_provider_image_too_large_description">请移除图片或换一张较小的图片。</string>
+    <string name="run_failure_insufficient_credits_title">Okou 积分不足</string>
     <string name="run_failure_insufficient_credits_description">检查工作区的套餐或剩余额度。</string>
     <string name="run_failure_account_verification_required_title">Claude 账号需要验证</string>
     <string name="run_failure_account_verification_required_description">你的 Claude 账号目前无法接收回复。请前往 Anthropic 验证门户查看下一步操作。</string>

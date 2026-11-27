@@ -76,6 +76,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS", application = TestOkouApplication::class)
@@ -88,6 +89,7 @@ class ConversationRouteTest {
     private var ownerJob: Job? = null
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun historicalFailureShowsReasonAndGuidanceWithoutRecoveryNetworkReads() {
         fun message(reason: String): HistoryMessage {
             val row = HistoryEvent.decode(RecoveryApiFixture.failure(reason))
@@ -100,9 +102,22 @@ class ConversationRouteTest {
         val displayed = mutableStateOf(message("provider_request_timeout"))
         compose.setContent {
             OkouTheme {
-                ConversationMessageRow(ConversationMessage(displayed.value))
+                ConversationMessageRow(
+                    conversationTurns(listOf(displayed.value), emptySet()).messages.single(),
+                )
             }
         }
+        val header = compose.onNodeWithTag("conversation_reply_header")
+        val avatar = compose.onNodeWithTag("conversation_reply_avatar")
+        val card = compose.onNodeWithTag("conversation_failure_card")
+        val headerBounds = header.getUnclippedBoundsInRoot()
+        val avatarBounds = avatar.getUnclippedBoundsInRoot()
+        assertEquals(48.dp, headerBounds.bottom - headerBounds.top)
+        assertEquals(32.dp, avatarBounds.right - avatarBounds.left)
+        assertEquals(
+            8.dp,
+            card.getUnclippedBoundsInRoot().top - header.getUnclippedBoundsInRoot().bottom,
+        )
         compose.onNodeWithText("The model response timed out").assertExists()
         compose
             .onNodeWithText("Try again in a moment, or choose another model to keep working.")
@@ -111,6 +126,31 @@ class ConversationRouteTest {
         compose.runOnIdle { displayed.value = message("future_reason") }
         compose.onNodeWithText("This run couldn't finish").assertExists()
         compose.onNodeWithText("Open the chat on the Okou website for details.").assertExists()
+
+        compose.runOnIdle { displayed.value = message("provider_image_too_large") }
+        compose.onNodeWithText("Image is too large").assertExists()
+        compose.onNodeWithText("Remove the image or replace it with a smaller one.").assertExists()
+
+        compose.runOnIdle { displayed.value = message("guest_memory_oom_killed") }
+        compose.onNodeWithText("This run ran out of memory").assertExists()
+        compose.onNodeWithText("The content generated so far is still available.").assertExists()
+
+        compose.runOnIdle { displayed.value = message("safety_policy_refusal") }
+        compose.onNodeWithText("Revise your request before sending it again.").assertExists()
+
+        compose.runOnIdle { displayed.value = message("firewall_auth_failed") }
+        compose.onNodeWithText("This run couldn't finish").assertExists()
+
+        compose.runOnIdle {
+            displayed.value =
+                displayed.value.copy(role = HistoryRole.Assistant, status = "run.cancelled")
+        }
+        header.assertExists()
+        compose.onNodeWithText("Stopped").assertExists()
+        card.assertDoesNotExist()
+        val stopped = compose.onNodeWithTag("conversation_stopped").getUnclippedBoundsInRoot()
+        assertEquals(8.dp, stopped.top - header.getUnclippedBoundsInRoot().bottom)
+        assertEquals(24.dp, stopped.bottom - stopped.top)
     }
 
     @Test

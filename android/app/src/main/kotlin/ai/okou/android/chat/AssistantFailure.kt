@@ -58,6 +58,7 @@ data class FailureClassification(
                     FailureKind.Settings,
                     FailureKind.NewChat,
                     FailureKind.InputTooLarge,
+                    FailureKind.Safety,
                     FailureKind.Terms,
                     FailureKind.Billing,
                 )

@@ -53,11 +53,15 @@ internal fun assistantRunFailureCopy(reason: String?): AssistantRunFailureCopy =
                 R.string.run_failure_context_window_exceeded_title,
                 R.string.run_failure_context_window_exceeded_description,
             )
-        KnownRunFailureReason.INPUT_TOO_LARGE,
-        KnownRunFailureReason.PROVIDER_IMAGE_TOO_LARGE ->
+        KnownRunFailureReason.INPUT_TOO_LARGE ->
             AssistantRunFailureCopy(
                 R.string.run_failure_input_too_large_title,
                 R.string.run_failure_input_too_large_description,
+            )
+        KnownRunFailureReason.PROVIDER_IMAGE_TOO_LARGE ->
+            AssistantRunFailureCopy(
+                R.string.run_failure_provider_image_too_large_title,
+                R.string.run_failure_provider_image_too_large_description,
             )
         KnownRunFailureReason.OUTPUT_TOKEN_LIMIT ->
             AssistantRunFailureCopy(
@@ -120,13 +124,13 @@ internal fun assistantRunFailureCopy(reason: String?): AssistantRunFailureCopy =
                 R.string.run_failure_usage_limit_title,
                 R.string.run_failure_usage_limit_description,
             )
-        KnownRunFailureReason.UNKNOWN ->
+        KnownRunFailureReason.UNKNOWN,
+        KnownRunFailureReason.FIREWALL_AUTH_FAILED ->
             AssistantRunFailureCopy(
                 R.string.run_failure_unknown_title,
                 R.string.run_failure_unknown_description,
             )
-        KnownRunFailureReason.GUEST_MEMORY_OOM_KILLED,
-        KnownRunFailureReason.FIREWALL_AUTH_FAILED ->
+        KnownRunFailureReason.GUEST_MEMORY_OOM_KILLED ->
             AssistantRunFailureCopy(
                 R.string.run_failure_guest_memory_oom_killed_title,
                 R.string.run_failure_guest_memory_oom_killed_description,

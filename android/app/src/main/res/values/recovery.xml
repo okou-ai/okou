@@ -9,7 +9,6 @@
     <string name="recovery_reset_retry">Check original reset</string>
     <string name="recovery_checking_reset">Checking the original request…</string>
     <string name="recovery_working">Preparing to continue…</string>
-    <string name="recovery_needs_changes">Change the model, account settings or conversation before continuing.</string>
     <string name="recovery_billing">Workspace credits: %1$s. Review billing to recover.</string>
     <string name="recovery_no_credit">The previous reset found no available credit.</string>
     <string name="recovery_submitted">Continue accepted. Waiting for conversation history.</string>

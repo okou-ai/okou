@@ -84,8 +84,9 @@ internal data class ConversationTurns(
     val completion: ConversationCompletion?,
 )
 
-internal fun HistoryMessage.isOutputReply() =
-    role == HistoryRole.Assistant && status == null && blocks.isNotEmpty()
+internal fun HistoryMessage.hasReplyBody() = role == HistoryRole.Assistant && blocks.isNotEmpty()
+
+internal fun HistoryMessage.isOutputReply() = status == null && hasReplyBody()
 
 internal fun HistoryMessage.isTerminalStatus() =
     status == "run.completed" || status == "run.failed" || status == "run.cancelled"
@@ -123,6 +124,14 @@ internal fun conversationTurns(
             val terminal = turn.lastOrNull { it.isTerminalStatus() }
             val replies = turn.filter { it.isOutputReply() }
             val latestReply = replies.lastOrNull()
+            val feedbackHeader =
+                if (latestReply == null && turn.none { it.hasReplyBody() }) {
+                    turn.firstOrNull {
+                        it.status == "run.failed" ||
+                            it.status == "run.cancelled" ||
+                            it.status == "output.error"
+                    }
+                } else null
             val phase =
                 when (terminal?.status) {
                     "run.completed" -> ReplyPhase.Completed
@@ -161,7 +170,12 @@ internal fun conversationTurns(
                         ),
                     )
                 } else if (!message.isOutputReply()) {
-                    add(ConversationMessage(message))
+                    add(
+                        ConversationMessage(
+                            message,
+                            showFeedbackHeader = message === feedbackHeader,
+                        ),
+                    )
                 }
             }
             if (latestTurn && (input != null || terminal != null || latestReply != null)) {

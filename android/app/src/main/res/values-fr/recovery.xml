@@ -9,7 +9,6 @@
     <string name="recovery_reset_retry">Vérifier la réinitialisation initiale</string>
     <string name="recovery_checking_reset">Vérification de la demande initiale…</string>
     <string name="recovery_working">Préparation de la reprise…</string>
-    <string name="recovery_needs_changes">Modifiez le modèle, le compte ou la conversation avant de continuer.</string>
     <string name="recovery_billing">Crédits de l’espace\u00A0: %1$s. Vérifiez la facturation.</string>
     <string name="recovery_no_credit">Aucun crédit disponible lors de la dernière réinitialisation.</string>
     <string name="recovery_submitted">Suite acceptée. En attente de l’historique.</string>

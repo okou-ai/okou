@@ -9,7 +9,6 @@
     <string name="recovery_reset_retry">核對原重設</string>
     <string name="recovery_checking_reset">正在核對原請求…</string>
     <string name="recovery_working">正在準備繼續…</string>
-    <string name="recovery_needs_changes">繼續前請調整模型、帳號設定或建立新對話。</string>
     <string name="recovery_billing">工作區點數：%1$s。請檢查帳單以復原。</string>
     <string name="recovery_no_credit">上次重設時沒有可用額度。</string>
     <string name="recovery_submitted">繼續請求已接受，等待對話歷程確認。</string>

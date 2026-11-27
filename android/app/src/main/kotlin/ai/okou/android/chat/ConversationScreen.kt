@@ -135,7 +135,7 @@ internal fun ConversationRoute(
     searchMessageAnchor: SearchMessageAnchor? = null,
     onSearchMessageResolved: (SearchMessageAnchor, Boolean) -> Unit = { _, _ -> },
     onFollowup: ((String) -> Unit)? = null,
-    recovery: @Composable (HistoryMessage) -> Unit = { AssistantFailureText(it.failureReason) },
+    recovery: @Composable (HistoryMessage) -> Unit = { AssistantFailureCard(it.failureReason) },
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
     val state = model.uiState.collectAsStateWithLifecycle().value
@@ -174,7 +174,9 @@ internal fun ConversationRoute(
             activeRun?.let { runId ->
                 content.lastOrNull {
                     it.message.runId == runId &&
-                        (it.message.isOutputReply() || it.message.role == HistoryRole.User)
+                        (it.message.isOutputReply() ||
+                            it.message.role == HistoryRole.User ||
+                            it.showFeedbackHeader)
                 }
             }
         }
@@ -223,7 +225,7 @@ internal fun ConversationRoute(
                         index,
                         ConversationActivityRow(
                             activity,
-                            !replying,
+                            !replying && activeMessage?.showFeedbackHeader != true,
                             activeRun,
                         ),
                     )

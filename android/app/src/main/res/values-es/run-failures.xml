@@ -5,7 +5,7 @@
     <string name="run_failure_guest_root_filesystem_full_title">Este proceso se quedó sin espacio</string>
     <string name="run_failure_guest_root_filesystem_full_description">Este proceso no pudo guardar más archivos. Vuelve a intentarlo para continuar.</string>
     <string name="run_failure_execution_timeout_title">Se alcanzó el límite de tiempo</string>
-    <string name="run_failure_execution_timeout_description">Puedes continuar desde donde se detuvo este proceso.</string>
+    <string name="run_failure_execution_timeout_description">El contenido generado hasta ahora sigue disponible.</string>
     <string name="run_failure_provider_insufficient_credits_title">Tu cuenta de suscripción necesita más saldo</string>
     <string name="run_failure_provider_insufficient_credits_description">Revisa el uso o el saldo de tu cuenta de suscripción y vuelve a intentarlo.</string>
     <string name="run_failure_invalid_api_key_title">Hay que actualizar el inicio de sesión de tu suscripción</string>
@@ -33,9 +33,9 @@
     <string name="run_failure_provider_server_error_title">El proveedor de modelos tuvo un error temporal</string>
     <string name="run_failure_provider_server_error_description">Vuelve a intentarlo en un momento o elige otro modelo para seguir trabajando.</string>
     <string name="run_failure_response_connection_lost_title">La respuesta se interrumpió</string>
-    <string name="run_failure_response_connection_lost_description">Vuelve a intentarlo en un momento o elige otro modelo para seguir trabajando.</string>
+    <string name="run_failure_response_connection_lost_description">El contenido generado hasta ahora sigue disponible.</string>
     <string name="run_failure_safety_policy_refusal_title">El modelo no pudo ayudar con esta solicitud</string>
-    <string name="run_failure_safety_policy_refusal_description">La solicitud no superó las comprobaciones de seguridad del modelo. Prueba a reformularla o a elegir otro modelo.</string>
+    <string name="run_failure_safety_policy_refusal_description">Modifica la solicitud antes de volver a enviarla.</string>
     <string name="run_failure_reconnect_required_title">Vuelve a conectar tu cuenta de modelo</string>
     <string name="run_failure_reconnect_required_description">Abre Configuración &gt; Modelos para volver a conectar o actualizar tu cuenta y, después, inténtalo de nuevo.</string>
     <string name="run_failure_unsupported_model_title">El modelo seleccionado no está disponible</string>
@@ -44,9 +44,11 @@
     <string name="run_failure_usage_limit_description">Puedes continuar cuando se restablezca tu límite de uso o cambiar de modelo ahora.</string>
     <string name="run_failure_unknown_title">No se pudo completar esta ejecución</string>
     <string name="run_failure_unknown_description">Abre el chat en el sitio web de Okou para ver los detalles.</string>
-    <string name="run_failure_guest_memory_oom_killed_title">No se pudo completar esta ejecución</string>
-    <string name="run_failure_guest_memory_oom_killed_description">Se ha producido un error.</string>
-    <string name="run_failure_insufficient_credits_title">Sin créditos</string>
+    <string name="run_failure_guest_memory_oom_killed_title">La ejecución se quedó sin memoria</string>
+    <string name="run_failure_guest_memory_oom_killed_description">El contenido generado hasta ahora sigue disponible.</string>
+    <string name="run_failure_provider_image_too_large_title">La imagen es demasiado grande</string>
+    <string name="run_failure_provider_image_too_large_description">Elimina la imagen o sustitúyela por una más pequeña.</string>
+    <string name="run_failure_insufficient_credits_title">Sin créditos de Okou</string>
     <string name="run_failure_insufficient_credits_description">Revisa el plan o el saldo de créditos de tu espacio de trabajo.</string>
     <string name="run_failure_account_verification_required_title">Se requiere verificar la cuenta de Claude</string>
     <string name="run_failure_account_verification_required_description">Tu cuenta de Claude no puede recibir respuestas en este momento. Consulta el siguiente paso en el portal de verificación de Anthropic.</string>

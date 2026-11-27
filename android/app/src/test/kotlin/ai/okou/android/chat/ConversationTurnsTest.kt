@@ -12,6 +12,24 @@ import org.junit.Test
 
 class ConversationTurnsTest {
     @Test
+    fun feedbackWithoutReplyOwnsOneHeaderInItsDisplayTurn() {
+        val input = row(1, "input.prompt")
+        val reply = row(2)
+        val steer = row(3, "input.prompt")
+        val legacy = row(4, "output.error", payload = """{"error":"Could not continue"}""")
+        val failed = row(5, "run.failed")
+        val stopped = row(6, "run.cancelled")
+        fun headers(vararg rows: HistoryEvent) =
+            content(*rows).messages.filter { it.showFeedbackHeader }.map { it.message.id }
+
+        assertEquals(listOf(failed.id), headers(input, failed))
+        assertEquals(listOf(stopped.id), headers(input, reply, steer, stopped))
+        assertEquals(listOf(legacy.id), headers(input, legacy, failed))
+        assertEquals(emptyList<String>(), headers(input, reply, legacy, failed))
+        assertEquals(emptyList<String>(), headers(input, reply, stopped))
+    }
+
+    @Test
     fun aDeliveredSteerEndsThePreviousSummaryAndStartsItsOwnTurn() {
         val queued = row(1, "input.prompt", run = null, time = "10:00:00")
         val delivered = row(2, "input.prompt", time = "10:01:00", revoke = queued.id)
