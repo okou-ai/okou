@@ -218,13 +218,17 @@ internal class ChatConnectorOptions(
     fun save(target: ComposerTarget, slug: String, changes: List<ChatConnectorOverride>) {
         val threadId = target.threadId ?: return
         if (!current(target) || changes.isEmpty() || saveInProgress()) return
-        if (mutable.value.details[slug]?.accounts?.data?.memberAccess != false) return
+        val snapshot = mutable.value
+        if (snapshot.details[slug]?.accounts?.data?.memberAccess != false) return
         overviewRequest?.cancel()
         for (choice in changes) accountRequests.remove(choice.slug)?.cancel()
         val key = target.key
         val first =
             ChatConnectorSave(changes.first().connectionId, ChatConnectorSavePhase.Saving, changes)
-        mutable.value = mutable.value.withChatSave(key, first).copy(policySave = null)
+        mutable.value =
+            snapshot
+                .withChatSave(key, first)
+                .copy(revision = snapshot.revision + 1, policySave = null)
         scope.launch {
             for ((index, choice) in changes.withIndex()) {
                 if (!authorized()) return@launch
@@ -295,8 +299,11 @@ internal class ChatConnectorOptions(
         overviewRequest?.cancel()
         accountRequests.remove(choice.slug)?.cancel()
         val key = target.key
+        // Restart canceled reads even if checking finishes before the picker observes that phase.
         mutable.value =
-            snapshot.withChatSave(key, save.copy(phase = ChatConnectorSavePhase.Checking))
+            snapshot
+                .withChatSave(key, save.copy(phase = ChatConnectorSavePhase.Checking))
+                .copy(revision = snapshot.revision + 1)
         scope.launch {
             val accounts =
                 try {
@@ -353,10 +360,16 @@ internal class ChatConnectorOptions(
                     }
                 summary.copy(accounts = updated).takeIf { updated.isNotEmpty() }
             }
+        // The scoped response lacks the metadata needed to display newly connected accounts.
+        val retainedAccountCount =
+            overview?.find { it.entry.slug == choice.slug }?.accounts?.size ?: 0
+        val hasNewAccounts = accounts.size > retainedAccountCount
+        val overviewExpiry = snapshot.overview.expiresAt.takeUnless { hasNewAccounts }
         val details = snapshot.details[choice.slug]
         val existing = details?.accounts?.data
         val confirmedDetails =
-            if (existing == null) snapshot.details
+            if (hasNewAccounts) snapshot.details - choice.slug
+            else if (existing == null) snapshot.details
             else {
                 val rows =
                     existing.accounts.mapNotNull { row ->
@@ -380,7 +393,7 @@ internal class ChatConnectorOptions(
             snapshot
                 .withChatSave(key, save)
                 .copy(
-                    overview = snapshot.overview.copy(data = overview),
+                    overview = snapshot.overview.copy(data = overview, expiresAt = overviewExpiry),
                     details = confirmedDetails,
                 )
     }
