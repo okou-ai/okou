@@ -27,6 +27,8 @@ import java.io.IOException
 import java.io.OutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -187,7 +189,15 @@ private suspend fun copyDraftImage(
         try {
             file.inputStream().use { source ->
                 val sink = destination() ?: return@withContext ArtifactSaveResult.Failed
-                sink.use { source.copyTo(it) }
+                sink.use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val bytes = source.read(buffer)
+                        if (bytes < 0) break
+                        output.write(buffer, 0, bytes)
+                    }
+                }
             }
             ArtifactSaveResult.Saved
         } catch (_: IOException) {

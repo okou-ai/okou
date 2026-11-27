@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.artifacts.ArtifactContent
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ComposerTarget
@@ -58,8 +59,23 @@ internal class ChatSentImageViewerRootTest : ArtifactCatalogRootTestFixture() {
         }
         awaitPage(1)
         awaitImage(fixture.first)
-        compose.waitUntil(10_000) { fixture.originalReads.contains(fixture.first) }
-        assertEquals(fixture.first, fixture.originalReads.last())
+        try {
+            compose.waitUntil(10_000) {
+                val preview = compose.runOnIdle { ready.chatArtifacts.state.value.preview }
+                preview?.item?.title == fixture.first &&
+                    preview.access != null &&
+                    preview.problem == null &&
+                    (preview.content is ArtifactContent.EncodedImage ||
+                        preview.content is ArtifactContent.Image)
+            }
+        } catch (failure: Exception) {
+            val preview = compose.runOnIdle { ready.chatArtifacts.state.value.preview }
+            throw AssertionError(
+                "Requests: ${fixture.resolves}; originals: ${fixture.originalReads}; " +
+                    "preview: ${preview?.problem} ${preview?.content?.javaClass?.simpleName}",
+                failure,
+            )
+        }
 
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         awaitText(fixture.prompt)

@@ -102,7 +102,6 @@ internal fun ChatDraftAttachments(
     ) {
         items(attachments, key = { it.key }) { attachment ->
             val local = attachment.takeIf { it.staged }?.let { model.attachmentFile(it.key) }
-            val imageFocus = remember { FocusRequester() }
             ChatDraftAttachmentCard(
                 attachment,
                 progress[attachment.key],
@@ -115,12 +114,8 @@ internal fun ChatDraftAttachments(
                         openLocalImage(attachment) { previewKey = attachment.key }
                     else previewKey = attachment.key
                 },
-                imageFocus =
-                    if (restoreImage == attachment.key)
-                        Modifier.focusRequester(imageFocus).onGloballyPositioned {
-                            if (imageFocus.requestFocus()) onImageFocusRestored()
-                        }
-                    else Modifier,
+                restoreFocus = restoreImage == attachment.key,
+                onFocusRestored = onImageFocusRestored,
                 recover = {
                     when (attachment.failure) {
                         AttachmentFailure.SourceUnavailable -> reselect(attachment)
@@ -206,7 +201,8 @@ private fun ChatDraftAttachmentCard(
     remoteImages: InlineArtifactImages?,
     threadId: String,
     open: () -> Unit,
-    imageFocus: Modifier,
+    restoreFocus: Boolean,
+    onFocusRestored: () -> Unit,
     recover: () -> Unit,
     remove: () -> Unit,
 ) {
@@ -252,6 +248,13 @@ private fun ChatDraftAttachmentCard(
             )
         else Modifier
     if (attachment.contentType.isAttachmentImage) {
+        val focus = remember { FocusRequester() }
+        val imageFocus =
+            if (restoreFocus)
+                Modifier.focusRequester(focus).onGloballyPositioned {
+                    if (focus.requestFocus()) onFocusRestored()
+                }
+            else Modifier
         Box(card.width(132.dp).height(if (expanded) 104.dp else 80.dp)) {
             Box(
                 Modifier.matchParentSize()
