@@ -38,6 +38,7 @@ import {
   KeyRound,
   Laptop,
   Monitor,
+  Pencil,
   Plus,
   Smartphone,
   Terminal,
@@ -52,18 +53,26 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { permissionGrantExpiryText } from "../../signals/permission-allow/permission-grant-expiration.ts";
 import { enterRemoteSetup$ } from "../../signals/remote-control-setup.ts";
 import {
+  closeRemoteDeviceRename$,
   createRemoteDevice$,
   deleteRemoteDevice$,
+  finishRemoteDeviceRenameClose$,
   invalidateRemoteDeviceDirectory$,
   mountRemoteDeviceCreation$,
+  mountRemoteDeviceRename$,
   moveRemoteDeviceChannel$,
+  openRemoteDeviceRename$,
   remoteDeviceCreation$,
   remoteDeviceDirectory$,
+  remoteDeviceRenameDraft$,
+  remoteDeviceRenameRequest$,
+  renameRemoteDevice$,
   selectedRemoteDeviceId$,
   setRemoteDeviceCreationOpen$,
   updateRemoteDeviceAccess$,
   remoteDeviceAccessPending$,
   updateRemoteDeviceName$,
+  updateRemoteDeviceRename$,
 } from "../../signals/remote-devices.ts";
 import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
 import { searchParams$ } from "../../signals/route.ts";
@@ -340,6 +349,44 @@ export function RemoteDeviceLoadError() {
   );
 }
 
+const deviceNameLimit = 120;
+
+function RemoteDeviceNameField({
+  name,
+  onChange,
+  readOnly,
+}: {
+  readonly name: string;
+  readonly onChange: (name: string) => void;
+  readonly readOnly?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <label className="grid gap-2 text-sm font-medium">
+      {t(($) => {
+        return $.remoteDevices.name;
+      })}
+      <Input
+        value={name}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Enter" &&
+            (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+          ) {
+            event.preventDefault();
+          }
+        }}
+        readOnly={readOnly}
+        required
+        maxLength={deviceNameLimit}
+      />
+    </label>
+  );
+}
+
 function AddRemoteDeviceForm() {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
@@ -355,19 +402,7 @@ function AddRemoteDeviceForm() {
         await save(signal);
       })}
     >
-      <label className="grid gap-2 text-sm font-medium">
-        {t(($) => {
-          return $.remoteDevices.name;
-        })}
-        <Input
-          value={draft?.name ?? ""}
-          onChange={(event) => {
-            setName(event.target.value);
-          }}
-          required
-          maxLength={120}
-        />
-      </label>
+      <RemoteDeviceNameField name={draft?.name ?? ""} onChange={setName} />
       {saving.state === "hasError" && (
         <p role="alert" className="text-sm text-destructive">
           {t(($) => {
@@ -600,6 +635,104 @@ function RemoteDeviceChannelRow({
   );
 }
 
+function RenameRemoteDevice({
+  device,
+}: {
+  readonly device: RemoteDeviceDirectoryItem;
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const draft = useGet(remoteDeviceRenameDraft$);
+  const saving = useLoadable(remoteDeviceRenameRequest$);
+  const openRename = useSet(openRemoteDeviceRename$);
+  const closeRename = useSet(closeRemoteDeviceRename$);
+  const finishClose = useSet(finishRemoteDeviceRenameClose$);
+  const mount = useSet(mountRemoteDeviceRename$);
+  const setName = useSet(updateRemoteDeviceRename$);
+  const rename = useSet(renameRemoteDevice$);
+  const pending = saving.state === "loading";
+  const name = draft?.name?.trim() ?? "";
+  const canSave =
+    name.length > 0 &&
+    name.length <= deviceNameLimit &&
+    name !== device.displayName;
+  return (
+    <Dialog
+      open={draft?.deviceId === device.id && draft.open}
+      onOpenChange={(open, details) => {
+        if (open) {
+          openRename(device.id);
+        } else if (pending) {
+          details.cancel();
+        } else {
+          closeRename();
+        }
+      }}
+      onOpenChangeComplete={(open) => {
+        if (!open) {
+          finishClose();
+        }
+      }}
+    >
+      <DialogTrigger
+        ref={mount}
+        render={<Button variant="outline" size="xs" />}
+      >
+        <Pencil size={14} aria-hidden />
+        {t(($) => {
+          return $.remoteDevices.rename;
+        })}
+      </DialogTrigger>
+      <DialogContent maxWidth="md" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>
+            {t(($) => {
+              return $.remoteDevices.renameDevice;
+            })}
+          </DialogTitle>
+        </DialogHeader>
+        <form
+          className="grid gap-4"
+          aria-busy={pending}
+          onSubmit={onDomEventFn(async (event: FormEvent<HTMLFormElement>) => {
+            event.preventDefault();
+            if (canSave && !pending) {
+              await rename(signal);
+            }
+          })}
+        >
+          <RemoteDeviceNameField
+            name={draft?.name ?? device.displayName}
+            onChange={setName}
+            readOnly={pending}
+          />
+          {saving.state === "hasError" && (
+            <p role="alert" className="text-sm text-destructive">
+              {t(($) => {
+                return $.remoteDevices.saveFailed;
+              })}
+            </p>
+          )}
+          <DialogFooter>
+            <DialogClose
+              render={<Button variant="outline" disabled={pending} />}
+            >
+              {t(($) => {
+                return $.remoteDevices.cancel;
+              })}
+            </DialogClose>
+            <Button type="submit" disabled={!canSave} pending={pending}>
+              {t(($) => {
+                return $.remoteDevices.save;
+              })}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DeleteRemoteDevice({
   device,
 }: {
@@ -688,11 +821,12 @@ function RemoteDeviceDetails({
         })}
       </Link>
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-divider pb-4">
-        <h2 className="min-w-0 break-words text-lg font-semibold">
+        <h2 className="min-w-0 wrap-anywhere text-lg font-semibold">
           {device.displayName}
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <RemoteDevicePolicyControl device={device} />
+          <RenameRemoteDevice key={`rename:${device.id}`} device={device} />
           <DeleteRemoteDevice key={device.id} device={device} />
         </div>
       </header>

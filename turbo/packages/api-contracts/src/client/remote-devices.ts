@@ -41,6 +41,17 @@ export const remoteDevicesContract: ClientDescriptor<
       404: true,
     },
   },
+  rename: {
+    method: "PATCH",
+    path: "/api/remote-devices/:deviceId",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   moveChannel: {
     method: "PUT",
     path: "/api/remote-devices/:deviceId/channels/:kind/:channelId",

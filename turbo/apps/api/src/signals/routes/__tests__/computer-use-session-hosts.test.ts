@@ -74,6 +74,78 @@ async function app() {
 }
 
 describe("Native Computer Use session authentication", () => {
+  it("renames the owned device and preserves its access and channel across Desktop registration", async () => {
+    const api = await app();
+    const client = api(contract);
+    const devices = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    const owner = identity();
+    const enabled = { [FeatureSwitchKey.RemoteDevices]: true };
+    await updateFeatureSwitchesForUser(context, owner, enabled);
+    authenticate(owner);
+    const { body: host } = await accept(
+      client.register({ headers, body: runtimeBody }),
+      [200],
+    );
+    const { body: original } = await accept(devices.list({ headers }), [200]);
+    const [device] = original.devices;
+    if (!device) {
+      throw new Error("Expected the registered Desktop device");
+    }
+    const params = { deviceId: device.id };
+    const { body: granted } = await accept(
+      devices.setAccess({ headers, params, body: { mode: "for", hours: 24 } }),
+      [200],
+    );
+    const rename = {
+      headers,
+      params,
+      body: { displayName: "  Studio Mac  " },
+    };
+
+    for (const actor of [
+      { ...identity(), orgId: owner.orgId },
+      { ...identity(), userId: owner.userId },
+    ]) {
+      await updateFeatureSwitchesForUser(context, actor, enabled);
+      authenticate(actor);
+      await accept(devices.rename(rename), [404]);
+    }
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.RemoteDevices]: false,
+    });
+    authenticate(owner);
+    await accept(devices.rename(rename), [404]);
+    await updateFeatureSwitchesForUser(context, owner, enabled);
+    authenticate(owner);
+    for (const displayName of ["  ", "x".repeat(121)]) {
+      await accept(
+        devices.rename({ headers, params, body: { displayName } }),
+        [400],
+      );
+    }
+    const { body: before } = await accept(devices.list({ headers }), [200]);
+    expect(before.devices).toMatchObject([granted]);
+
+    const renamed = { ...granted, displayName: "Studio Mac" };
+    const { body: saved } = await accept(devices.rename(rename), [200]);
+    expect(saved).toStrictEqual(renamed);
+    const hostName = "Updated macOS host name";
+    const { body: reconnected } = await accept(
+      client.register({ headers, body: { ...runtimeBody, hostName } }),
+      [200],
+    );
+    expect(reconnected.hostId).toBe(host.hostId);
+    const { body: current } = await accept(devices.list({ headers }), [200]);
+    expect(current.devices).toMatchObject([
+      {
+        ...renamed,
+        channels: [{ id: host.hostId, kind: "desktop", displayName: hostName }],
+      },
+    ]);
+  });
+
   it("deletes the Desktop and command history and registers a fresh device on reconnect", async () => {
     const api = await app();
     const actor = identity();
