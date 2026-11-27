@@ -1,12 +1,4 @@
-import {
-  androidChatUltrafastTransforms,
-  iosChatUltrafastTransforms,
-} from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { chatThreadEventRows } from "../services/chat-event-row-read.service";
-import {
-  iosChatContextTransforms,
-  androidChatContextTransforms,
-} from "@okouai/api-contracts/client-transforms/native-chat-context";
 import { chatThreadUsageRoutes } from "./chat-threads-usage";
 import { chatRelationsRoutes } from "./chat-relations";
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
@@ -427,10 +419,6 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   {
     route: chatThreadsContract.events,
-    responseTransforms: [
-      iosChatUltrafastTransforms.events,
-      androidChatUltrafastTransforms.events,
-    ],
     handler: authRoute(
       {
         requireOrganization: true,
@@ -461,10 +449,6 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   {
     route: chatThreadEventsContract.catchUp,
-    responseTransforms: [
-      iosChatContextTransforms.catchUp,
-      androidChatContextTransforms.catchUp,
-    ],
     handler: authRoute(
       {
         requireOrganization: true,
@@ -487,10 +471,6 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   {
     route: chatThreadEventsContract.rows,
-    responseTransforms: [
-      iosChatContextTransforms.rows,
-      androidChatContextTransforms.rows,
-    ],
     handler: authRoute(
       {
         requireOrganization: true,

@@ -66,7 +66,6 @@ private struct PersonalSubscriptionsContent: View {
               .frame(maxWidth: .infinity, alignment: .leading)
               .contentShape(Rectangle())
           }
-          .disabled(accounts.filter { $0.type == type.rawValue }.count >= 10)
         }
       } header: {
         Text("Add account").okouSectionHeader()
@@ -216,9 +215,7 @@ private struct PersonalSubscriptionsContent: View {
           if account.isActive != false {
             Text("Active").font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
           }
-          if let workspace = account.workspaceName, workspace != account.accountEmail,
-            !workspace.hasSuffix("'s Organization")
-          {
+          if let workspace = account.workspaceName, workspace != account.accountEmail {
             Text(workspace).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
               .lineLimit(1)
           }

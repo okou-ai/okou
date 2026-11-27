@@ -124,10 +124,7 @@ public struct ChatModelConfiguration: Sendable {
   public init(
     preference: ModelPreference, available: AvailableRunModels, catalog: ModelCatalog,
     switches: [String: Bool]
-  ) throws {
-    guard catalog.routes.allSatisfy({ $0.piRuntimeCapable != nil }) else {
-      throw APIClientError.incompatibleData
-    }
+  ) {
     self.preference = preference
     self.available = available
     self.catalog = catalog

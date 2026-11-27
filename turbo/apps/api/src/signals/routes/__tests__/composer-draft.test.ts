@@ -144,26 +144,8 @@ describe("GET/PATCH /api/chat-drafts/composer", () => {
         }),
         [200],
       );
-      expect(native.body.draftUserMessage?.parts).toStrictEqual([
-        draftUserMessage.parts[0],
-        {
-          type: "file",
-          fileId: recordingId,
-          filenameSnapshot: "Voice clip 1",
-          contentType: "audio/*",
-        },
-        ...draftUserMessage.parts.slice(2),
-      ]);
+      expect(native.body.draftUserMessage).toStrictEqual(draftUserMessage);
     }
-
-    const voiceAware = await accept(
-      draftsClient().get({
-        headers: authHeaders("0.61.0"),
-        extraHeaders: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS },
-      }),
-      [200],
-    );
-    expect(voiceAware.body.draftUserMessage).toStrictEqual(draftUserMessage);
 
     const updatedDraftUserMessage: UserMessageInputDocument = {
       version: 1,

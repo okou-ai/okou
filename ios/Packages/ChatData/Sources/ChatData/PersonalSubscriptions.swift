@@ -9,13 +9,6 @@ public enum PersonalSubscriptionType: String, CaseIterable, Sendable, Identifiab
   public static var deviceAuthCases: [PersonalSubscriptionType] {
     allCases.filter(\.supportsDeviceAuth)
   }
-  public var authPath: String? {
-    switch self {
-    case .codex: "codex"
-    case .claude: "claude-code"
-    case .antigravity: nil
-    }
-  }
 }
 
 public struct PersonalSubscription: Decodable, Identifiable, Sendable {
