@@ -119,7 +119,10 @@ class ScreenshotScenario {
                             } == listOf("/api/connector-accounts/connections" to CONNECTOR_CALENDAR))
                             device.waitForIdle()
                             ScreenshotCapture.capture("$name-chat-connector-accounts.png")
-                            check(device.pressBack()) { "Android Back was not delivered" }
+                            // UiDevice.pressBack also waits for accessibility-idle and can
+                            // return false on the test display. Send one native event and
+                            // assert the resulting panel and preserved overview below.
+                            device.executeShellCommand("input keyevent KEYCODE_BACK")
                             text("管理连接器")
                             text("Google Calendar")
                             check(!device.hasObject(By.pkg(app.packageName).text("工作日历")))
