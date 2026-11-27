@@ -2165,7 +2165,10 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         compose.onNode(hasText(fixture.otherHit) and results).assertIsDisplayed()
         val row = compose.onNode(result)
         val preview = row.fetchSemanticsNode().config[SemanticsProperties.Text]
-        assertTrue(preview.any { it.text == fixture.hit })
+        val snippet = preview.single { it.text == fixture.hit }
+        val expectedMatches =
+            Regex.fromLiteral(fixture.keyword).findAll(fixture.hit).map { it.range }
+        assertEquals(expectedMatches.toList(), snippet.spanStyles.map { it.start until it.end })
         row.performClick()
 
         val focused = hasTestTag("conversation_find_hit") and isFocused()

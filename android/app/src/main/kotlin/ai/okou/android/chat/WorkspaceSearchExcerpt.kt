@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import org.commonmark.ext.gfm.tables.TableCell
+import org.commonmark.internal.util.Escaping
 import org.commonmark.node.Block
 import org.commonmark.node.Code
 import org.commonmark.node.FencedCodeBlock
@@ -43,12 +44,19 @@ internal fun Node.tablePipeEscapes(source: String): List<Int> {
 }
 
 internal fun List<Int>.originalMarkdownIndex(inlineIndex: Int): Int {
-    var index = inlineIndex
-    for (escape in this) {
-        if (escape >= index) break
-        index++
+    // Each removed backslash shifts the subsequent inline positions by one.
+    var low = 0
+    var high = size
+    while (low < high) {
+        val middle = (low + high) ushr 1
+        if (this[middle] - middle < inlineIndex) low = middle + 1 else high = middle
     }
-    return index
+    return inlineIndex + low
+}
+
+private fun List<Int>.countBefore(index: Int): Int {
+    val position = binarySearch(index)
+    return if (position < 0) -position - 1 else position
 }
 
 /** Collect the visible literals paired with the search index's UTF-16 offsets. */
@@ -66,12 +74,13 @@ private class MarkdownExcerpt(
 
     fun append(node: Node, escapes: List<Int> = emptyList()) {
         when (node) {
-            is Text -> appendLiteral(node.literal, node.sourceSpans, escapes)
-            is Code -> appendLiteral(node.literal, node.sourceSpans, escapes)
-            is FencedCodeBlock -> appendLiteral(node.literal, node.sourceSpans.drop(1), escapes)
-            is IndentedCodeBlock -> appendLiteral(node.literal, node.sourceSpans, escapes)
-            is HtmlInline -> appendLiteral(node.literal, node.sourceSpans, escapes)
-            is HtmlBlock -> appendLiteral(node.literal, node.sourceSpans, escapes)
+            is Text -> appendText(node, escapes)
+            is Code -> appendCode(node, escapes)
+            is FencedCodeBlock ->
+                appendLines(node.literal, node.sourceSpans, escapes, skipLines = 1)
+            is IndentedCodeBlock -> appendLines(node.literal, node.sourceSpans, escapes)
+            is HtmlInline -> appendLines(node.literal, node.sourceSpans, escapes)
+            is HtmlBlock -> appendLines(node.literal, node.sourceSpans, escapes)
             is SoftLineBreak,
             is HardLineBreak -> if (!firstMatchOnly) text.append(' ')
             else -> {
@@ -90,48 +99,125 @@ private class MarkdownExcerpt(
         }
     }
 
-    private fun appendLiteral(literal: String, spans: List<SourceSpan>, escapes: List<Int>) {
+    private fun appendText(node: Text, escapes: List<Int>) =
+        appendLiteral(node.literal, node.sourceSpans, escapes) { start, end, offset ->
+            val literal = node.literal
+            if (
+                escapes.isEmpty() &&
+                    end - start == literal.length &&
+                    source.startsWith(literal, start)
+            ) {
+                appendCopy(start, end, offset, escapes)
+            } else {
+                for ((copied, visibleStart) in
+                    copiedText(inlineSource(start, end, escapes), literal)) {
+                    appendCopy(
+                        start + copied.first,
+                        start + copied.last + 1,
+                        offset + visibleStart,
+                        escapes,
+                    )
+                    if (firstMatchOnly && sourceRange != null) break
+                }
+            }
+        }
+
+    private fun appendCode(node: Code, escapes: List<Int>) =
+        appendLiteral(node.literal, node.sourceSpans, escapes) { _, _, offset ->
+            val spans = node.sourceSpans
+            val lines = spans.map {
+                inlineSource(it.inputIndex, it.inputIndex + it.length, escapes)
+            }
+            // CommonMark folds inline code's line breaks to spaces and may strip one padding space
+            // on each side.
+            val raw = lines.joinToString(" ")
+            val fence = raw.indexOfFirst { it != '`' }
+            val start = fence + if (raw.length - 2 * fence == node.literal.length + 2) 1 else 0
+            val end = raw.length - start
+            if (
+                start < 0 ||
+                    end - start != node.literal.length ||
+                    !raw.startsWith(node.literal, start)
+            )
+                return@appendLiteral
+
+            var lineStart = 0
+            for ((index, line) in lines.withIndex()) {
+                val from = maxOf(start - lineStart, 0)
+                val to = minOf(end - lineStart, line.length)
+                val spanStart = spans[index].inputIndex
+                appendCopy(
+                    spanStart + from,
+                    spanStart + to,
+                    offset + lineStart + from - start,
+                    escapes,
+                )
+                if (firstMatchOnly && sourceRange != null) break
+                lineStart += line.length + 1
+            }
+        }
+
+    private fun appendLines(
+        literal: String,
+        spans: List<SourceSpan>,
+        escapes: List<Int>,
+        skipLines: Int = 0,
+    ) =
+        appendLiteral(literal, spans, escapes) { _, _, offset ->
+            val firstLine = spans.first().lineIndex + skipLines
+            var spanIndex = 0
+            var lineOffset = offset
+            for ((index, line) in literal.lineSequence().withIndex()) {
+                val lineNumber = firstLine + index
+                while (
+                    spanIndex < spans.size && spans[spanIndex].lineIndex < lineNumber
+                ) spanIndex++
+                val span = spans.getOrNull(spanIndex) ?: break
+                if (span.lineIndex == lineNumber) {
+                    val end = span.inputIndex + span.length
+                    // Code block literals may omit indentation at the start of a source line.
+                    val length =
+                        line.commonSuffixWith(inlineSource(span.inputIndex, end, escapes)).length
+                    appendCopy(end - length, end, lineOffset + line.length - length, escapes)
+                    if (firstMatchOnly && sourceRange != null) break
+                }
+                lineOffset += line.length + 1
+            }
+        }
+
+    private inline fun appendLiteral(
+        literal: String,
+        spans: List<SourceSpan>,
+        escapes: List<Int>,
+        project: (start: Int, end: Int, visibleStart: Int) -> Unit,
+    ) {
         val offset = text.length
         if (!firstMatchOnly) text.append(literal)
-        val sourceStart =
-            spans.firstOrNull()?.let { escapes.originalMarkdownIndex(it.inputIndex) } ?: return
+        val start = spans.firstOrNull()?.inputIndex ?: return
         val last = spans.last()
-        val sourceEnd = escapes.originalMarkdownIndex(last.inputIndex + last.length)
+        val end = last.inputIndex + last.length
+        val first = firstPossibleMatch(escapes.originalMarkdownIndex(start))
+        if (ranges.getOrNull(first)?.first?.let { it < escapes.originalMarkdownIndex(end) } == true)
+            project(start, end, offset)
+    }
+
+    private fun firstPossibleMatch(sourceStart: Int): Int {
         // The service returns ordered, disjoint ranges. Find the first possible overlap.
         val index = ranges.binarySearch { it.last.compareTo(sourceStart) }
-        val first = if (index < 0) -index - 1 else index
-        if (ranges.getOrNull(first)?.first?.let { it < sourceEnd } != true) return
-        val raw = source.substring(sourceStart, sourceEnd)
-        val literalStart = raw.indexOf(literal)
-        val prefix = if (literalStart >= 0) 0 else raw.commonPrefixWith(literal).length
-        val suffix = if (literalStart >= 0) 0 else raw.commonSuffixWith(literal).length
-        for (i in first until ranges.size) {
+        return if (index < 0) -index - 1 else index
+    }
+
+    private fun appendCopy(start: Int, end: Int, offset: Int, escapes: List<Int>) {
+        if (start >= end) return
+        val sourceStart = escapes.originalMarkdownIndex(start)
+        val sourceEnd = escapes.originalMarkdownIndex(end)
+        for (i in firstPossibleMatch(sourceStart) until ranges.size) {
             val range = ranges[i]
             if (range.first >= sourceEnd) break
-            val start = maxOf(range.first - sourceStart, 0)
-            val end = minOf(range.last + 1, sourceEnd) - sourceStart
-            if (start >= end) continue
-            val visibleStart =
-                when {
-                    literalStart >= 0 -> start - literalStart
-                    end <= prefix -> start
-                    start >= raw.length - suffix -> start + literal.length - raw.length
-                    else -> {
-                        // CommonMark can decode escapes and entities inside a text node.
-                        val term = raw.substring(start, end)
-                        val found = literal.indexOf(term)
-                        if (
-                            found < 0 ||
-                                literal.indexOf(term, found + 1) >= 0 ||
-                                raw.indexOf(term) != start ||
-                                raw.indexOf(term, start + 1) >= 0
-                        )
-                            continue
-                        found
-                    }
-                }
-            val from = maxOf(0, visibleStart)
-            val to = minOf(literal.length, visibleStart + end - start)
+            val rawStart = maxOf(range.first, sourceStart)
+            val rawEnd = minOf(range.last + 1, sourceEnd)
+            val from = rawStart - escapes.countBefore(rawStart) - start
+            val to = rawEnd - escapes.countBefore(rawEnd) - start
             if (from < to) {
                 if (sourceRange == null) sourceRange = range
                 if (firstMatchOnly) return
@@ -139,4 +225,66 @@ private class MarkdownExcerpt(
             }
         }
     }
+
+    private fun inlineSource(start: Int, end: Int, escapes: List<Int>): String {
+        val sourceStart = escapes.originalMarkdownIndex(start)
+        val sourceEnd = escapes.originalMarkdownIndex(end)
+        val first = escapes.countBefore(sourceStart)
+        val last = escapes.countBefore(sourceEnd)
+        val raw =
+            if (first == last) source.substring(sourceStart, sourceEnd)
+            else
+                buildString(end - start) {
+                    var from = sourceStart
+                    for (index in first until last) {
+                        val escape = escapes[index]
+                        append(source, from, escape)
+                        from = escape + 1
+                    }
+                    append(source, from, sourceEnd)
+                }
+        return raw.replace('\u0000', '\uFFFD')
+    }
+}
+
+private val inlineTextEscapes =
+    Regex("""\\${Escaping.ESCAPABLE}|${Escaping.ENTITY}""", RegexOption.IGNORE_CASE)
+
+private data class LiteralCopy(val source: IntRange, val visibleStart: Int)
+
+// CommonMark merges adjacent Text spans after decoding. Keep only characters copied into the
+// displayed text.
+private fun copiedText(raw: String, literal: String): List<LiteralCopy> {
+    if (raw == literal) return listOf(LiteralCopy(raw.indices, 0))
+    val copies = mutableListOf<LiteralCopy>()
+    var start = 0
+    var visibleStart = 0
+    for (escape in inlineTextEscapes.findAll(raw)) {
+        val token = escape.value
+        val decoded = Escaping.unescapeString(token)
+        if (token == decoded) continue
+        val end = escape.range.first
+        val length = end - start
+        val decodedStart = visibleStart + length
+        if (
+            !literal.regionMatches(visibleStart, raw, start, length) ||
+                !literal.startsWith(decoded, decodedStart)
+        )
+            return emptyList()
+        copies += LiteralCopy(start until end, visibleStart)
+        if (token.startsWith('\\')) {
+            start = end + 1
+            visibleStart = decodedStart
+        } else {
+            start = escape.range.last + 1
+            visibleStart = decodedStart + decoded.length
+        }
+    }
+    val length = literal.length - visibleStart
+    if (length < 0 || !literal.regionMatches(visibleStart, raw, start, length)) return emptyList()
+    val end = start + length
+    // Text spans can include trailing line whitespace that the parser leaves out of the literal.
+    if ((end until raw.length).any { raw[it] != ' ' && raw[it] != '\t' }) return emptyList()
+    copies += LiteralCopy(start until end, visibleStart)
+    return copies
 }

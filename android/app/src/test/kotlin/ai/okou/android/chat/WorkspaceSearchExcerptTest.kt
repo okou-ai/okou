@@ -62,11 +62,60 @@ class WorkspaceSearchExcerptTest {
 
     @Test
     fun decodedInlineTextPreservesTheSelectedOccurrence() {
-        val source = "Plan &amp; Launch and Launch."
+        val source = "&amp; Launch and Launch &amp;  \nConfirmed."
         val start = source.lastIndexOf("Launch")
-        val excerpt = workspaceSearchMarkdownExcerpt(source, listOf(start until start + 6))
-        assertEquals("Plan & Launch and Launch.", excerpt.text)
-        assertEquals(listOf(18..23), excerpt.ranges)
+        val range = start until start + 6
+        val excerpt = workspaceSearchMarkdownExcerpt(source, listOf(range))
+        assertEquals("& Launch and Launch & Confirmed.", excerpt.text)
+        assertEquals(listOf(13..18), excerpt.ranges)
+        assertEquals(range, excerpt.sourceRange)
+    }
+
+    @Test
+    fun decodedEntityNameDoesNotTakeThePlaceOfVisibleText() {
+        val source = "&amp; &#97;&#109;&#112;\n\nReview amp settings."
+        val ranges = Regex("amp").findAll(source).map { it.range }.toList()
+        val excerpt = workspaceSearchMarkdownExcerpt(source, ranges)
+
+        assertEquals("Review amp settings.", excerpt.text)
+        assertEquals(listOf(7..9), excerpt.ranges)
+        assertEquals(ranges.last(), excerpt.sourceRange)
+    }
+
+    @Test
+    fun repeatedTextBetweenEscapedTablePipesKeepsBothMatches() {
+        val source = "| Summary |\n| --- |\n| \\\\| Launch \\| Launch \\| |"
+        val ranges = Regex("Launch").findAll(source).map { it.range }.toList()
+        val excerpt = workspaceSearchMarkdownExcerpt(source, ranges)
+
+        assertEquals("| Launch | Launch |", excerpt.text)
+        assertEquals(listOf(2..7, 11..16), excerpt.ranges)
+        assertEquals(ranges.first(), excerpt.sourceRange)
+    }
+
+    @Test
+    fun visibleAutolinkTextKeepsItsLiteralEntityNameInATable() {
+        val source = "| Summary |\n| --- |\n| <https://example.org/?q=&amp;> \\| Details |"
+        val text = "https://example.org/?q=&amp; | Details"
+        assertExcerpt(source, "amp", text, text.indexOf("amp"))
+    }
+
+    @Test
+    fun repeatedTextInMultilineCodeKeepsItsSourceOffsets() {
+        val inline = "- Check ` Launch\r\n  and Launch ` now."
+        val fenced = "  ```\r\n  Launch\r\n\r\n    and Launch\r\n  ```"
+        for ((source, text, offsets) in
+            listOf(
+                Triple(inline, "Check Launch and Launch now.", listOf(6..11, 17..22)),
+                Triple(fenced, "Launch\n\n  and Launch", listOf(0..5, 14..19)),
+            )) {
+            val ranges = Regex("Launch").findAll(source).map { it.range }.toList()
+            val excerpt = workspaceSearchMarkdownExcerpt(source, ranges)
+
+            assertEquals(text, excerpt.text)
+            assertEquals(offsets, excerpt.ranges)
+            assertEquals(ranges.first(), excerpt.sourceRange)
+        }
     }
 
     private fun assertExcerpt(source: String, keyword: String, text: String, offset: Int) {
