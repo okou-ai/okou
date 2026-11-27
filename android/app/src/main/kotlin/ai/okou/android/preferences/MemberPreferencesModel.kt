@@ -12,6 +12,7 @@ import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.WorkspaceSession
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.IOException
@@ -24,6 +25,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+private const val preferenceRefreshMillis = 10 * 60_000L
 
 enum class PreferenceStatus {
     Ready,
@@ -198,6 +201,7 @@ class MemberPreferencesModel(
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
     initialPending: PreferenceChange? = null,
+    private val monotonicMillis: () -> Long = SystemClock::elapsedRealtime,
 ) : ViewModel() {
     private class Recovery(val job: Job, val protectsReadback: Boolean)
 
@@ -214,6 +218,10 @@ class MemberPreferencesModel(
     private var readRequested = false
     private var needsWriteReadback = false
     private var failedWrite: PreferenceChange? = null
+    private var foreground = false
+    private var settingsOpen = false
+    private var nextRefreshAt = monotonicMillis() + preferenceRefreshMillis
+    private var refreshTimer: Job? = null
 
     init {
         if (mutable.value.pending != null) synchronize()
@@ -271,7 +279,7 @@ class MemberPreferencesModel(
         synchronize()
     }
 
-    fun refresh() {
+    internal fun refresh() {
         if (!current() || request != null || recovery != null) return
         if (mutable.value.pending != null) {
             if (mutable.value.status == PreferenceStatus.SaveUnconfirmed) synchronize()
@@ -282,14 +290,72 @@ class MemberPreferencesModel(
         synchronize()
     }
 
-    fun refreshFromForeground() = refresh()
-
-    internal fun settingsVisibilityChanged(visible: Boolean) {
-        if (visible) refresh()
-        else if (mutable.value.pending == null) {
-            readRequested = false
-            clearRecovery()
+    internal fun foreground(active: Boolean) {
+        if (foreground == active) return
+        foreground = active
+        if (active) {
+            if (mutable.value.status == PreferenceStatus.SaveUnconfirmed) refresh()
+            scheduleRefresh()
+        } else {
+            pauseRefresh()
         }
+    }
+
+    internal fun showSettings(visible: Boolean) {
+        if (settingsOpen == visible) return
+        settingsOpen = visible
+        if (visible) {
+            pauseRefresh()
+            if (mutable.value.status == PreferenceStatus.SaveUnconfirmed) refresh()
+        } else {
+            scheduleRefresh()
+        }
+    }
+
+    private fun scheduleRefresh() {
+        refreshTimer?.cancel()
+        refreshTimer = null
+        if (
+            !current() ||
+                !foreground ||
+                settingsOpen ||
+                request != null ||
+                recovery != null ||
+                mutable.value.pending != null
+        )
+            return
+        val timer =
+            viewModelScope.launch(start = CoroutineStart.LAZY) {
+                delay((nextRefreshAt - monotonicMillis()).coerceAtLeast(0))
+                refreshTimer = null
+                refresh()
+            }
+        refreshTimer = timer
+        timer.start()
+    }
+
+    private fun pauseRefresh() {
+        refreshTimer?.cancel()
+        refreshTimer = null
+        val state = mutable.value
+        if (state.status != PreferenceStatus.Refreshing) return
+        readRequested = false
+        clearRecovery()
+        mutable.value = state.copy(status = PreferenceStatus.Ready, recovering = false)
+        request?.let { read ->
+            // Release the slot even if cancellation happens before the request starts.
+            read.invokeOnCompletion {
+                viewModelScope.launch { finishRequest(read, continueSync = true) }
+            }
+            read.cancel()
+        }
+    }
+
+    private fun finishRequest(job: Job, continueSync: Boolean) {
+        if (request !== job) return
+        request = null
+        if (continueSync) synchronize()
+        scheduleRefresh()
     }
 
     fun retry() {
@@ -310,6 +376,8 @@ class MemberPreferencesModel(
         if (!current() || request != null || recovery != null) return
         val change = mutable.value.pending
         if (change == null && !readRequested) return
+        refreshTimer?.cancel()
+        refreshTimer = null
         readRequested = false
         val saving = change != null
         val verifying = saving && needsWriteReadback
@@ -343,6 +411,9 @@ class MemberPreferencesModel(
                         }
                     currentCoroutineContext().ensureActive()
                     if (current()) {
+                        if (change == null || verifying) {
+                            nextRefreshAt = monotonicMillis() + preferenceRefreshMillis
+                        }
                         val state = mutable.value
                         val confirmed =
                             if (change != null && !verifying)
@@ -402,10 +473,11 @@ class MemberPreferencesModel(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
+                    currentCoroutineContext().ensureActive()
                     continueSync = fail(error, saving, sent = change.takeUnless { verifying })
                 } finally {
-                    request = null
-                    if (continueSync) synchronize()
+                    val job = checkNotNull(currentCoroutineContext()[Job])
+                    finishRequest(job, continueSync || (change == null && job.isCancelled))
                 }
             }
         request = job
@@ -475,6 +547,7 @@ class MemberPreferencesModel(
                 )
             readRequested = retry
             if (wait != null) scheduleRecovery(wait)
+            else nextRefreshAt = monotonicMillis() + preferenceRefreshMillis
             return false
         }
         if (

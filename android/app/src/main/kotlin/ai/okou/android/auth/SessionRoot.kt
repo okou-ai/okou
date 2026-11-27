@@ -210,6 +210,7 @@ internal fun SessionRoot(
                         workspaceReady = ready != null,
                         startupRecovery = startupRecovery,
                         defaultModel = ready?.settings?.defaultModel,
+                        memberPreferences = ready?.preferences,
                         snackbar = snackbar,
                         feedbackInOverlay = feedbackInOverlay,
                     )
