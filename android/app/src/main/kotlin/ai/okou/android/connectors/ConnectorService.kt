@@ -268,7 +268,7 @@ class ConnectorService(private val api: ApiClient) {
         )
     }
 
-    private suspend fun chatAccess(
+    internal suspend fun chatAccess(
         threadId: String,
         slug: String,
     ): List<ChatConnectorAccessAccountsItem> =

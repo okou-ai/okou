@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.R
 import ai.okou.android.artifacts.InlineArtifactImages
 import ai.okou.android.connectors.ChatConnectorOptions
+import ai.okou.android.connectors.ChatConnectorSavePhase
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.currentWindowSizeDp
@@ -63,6 +64,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.OffsetMapping
@@ -103,15 +105,19 @@ internal fun ChatComposerField(
     attachmentImages: InlineArtifactImages? = null,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    val connectorSaving =
+    val connectorSave =
         remember(connectorOptions, target.key) {
                 connectorOptions
                     ?.state
-                    ?.map { it.target == target.key && it.save?.saving == true }
+                    ?.map { state ->
+                        state.save?.phase?.takeIf {
+                            state.target == target.key && state.save.blocksSend
+                        }
+                    }
                     ?.distinctUntilChanged()
             }
-            ?.collectAsStateWithLifecycle(initialValue = false)
-            ?.value == true
+            ?.collectAsStateWithLifecycle(initialValue = null)
+            ?.value
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
     val attachments = state.attachments(target)
@@ -131,6 +137,12 @@ internal fun ChatComposerField(
     val cardShape = RoundedCornerShape(20.dp)
     val label = stringResource(R.string.composer_message)
     val sendLabel = stringResource(R.string.composer_send)
+    val connectorStatus = connectorSave?.let {
+        stringResource(
+            if (it == ChatConnectorSavePhase.Unconfirmed) R.string.chat_connector_check_before_send
+            else it.message(),
+        )
+    }
     val textStyle =
         MaterialTheme.typography.bodyLarge.copy(
             color = colors.onSurface,
@@ -191,6 +203,16 @@ internal fun ChatComposerField(
             minOf(maximumTextHeight, textSpace).coerceAtLeast(minimumTextHeight)
         ComposerScroll(keepEditorAnchored = { inputFocused && textSpace >= minimumTextHeight }) {
             ComposerFeedback(model, target, state, entry)
+            if (connectorSave == ChatConnectorSavePhase.Unconfirmed) {
+                Text(
+                    stringResource(R.string.chat_connector_check_before_send),
+                    Modifier.fillMaxWidth().padding(bottom = 4.dp).semantics {
+                        liveRegion = LiveRegionMode.Polite
+                    },
+                    color = colors.onSurfaceVariant,
+                    style = connectorFeedbackType(),
+                )
+            }
             Column(
                 Modifier.fillMaxWidth()
                     .testTag("chat_input_card")
@@ -310,12 +332,18 @@ internal fun ChatComposerField(
                     }
                     FilledIconButton(
                         onClick = {
-                            focus.clearFocus()
-                            beforeSend()
-                            model.send(target, defaultModel?.state?.value?.options)
+                            if (connectorOptions?.blocksSend(target) != true) {
+                                focus.clearFocus()
+                                beforeSend()
+                                model.send(target, defaultModel?.state?.value?.options)
+                            }
                         },
-                        modifier = Modifier.semantics { contentDescription = sendLabel },
-                        enabled = state.canSend(target) && !connectorSaving,
+                        modifier =
+                            Modifier.semantics {
+                                contentDescription = sendLabel
+                                if (connectorStatus != null) stateDescription = connectorStatus
+                            },
+                        enabled = state.canSend(target) && connectorSave == null,
                         shape = CircleShape,
                         colors =
                             IconButtonDefaults.filledIconButtonColors(

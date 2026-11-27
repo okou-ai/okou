@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.api.generated.ChatConnectorAccessAccountsItem
 import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import ai.okou.android.api.generated.ConnectorOverviewItemAccountsItem
 import ai.okou.android.chat.ComposerTarget
@@ -58,6 +59,9 @@ internal data class ChatConnectorSave(
 ) {
     val saving: Boolean
         get() = phase == ChatConnectorSavePhase.Saving || phase == ChatConnectorSavePhase.Checking
+
+    val blocksSend: Boolean
+        get() = pending.isNotEmpty()
 }
 
 internal data class ChatConnectorOptionsState(
@@ -79,10 +83,12 @@ internal class ChatConnectorOptions(
     val state = mutable.asStateFlow()
     private var overviewRequest: Job? = null
     private val accountRequests = mutableMapOf<String, Job>()
+    private var targetGeneration = 0L
 
     fun activate(key: String?) {
         val previous = mutable.value
         if (previous.target == key) return
+        targetGeneration++
         overviewRequest?.cancel()
         overviewRequest = null
         accountRequests.values.forEach { it.cancel() }
@@ -182,14 +188,21 @@ internal class ChatConnectorOptions(
     }
 
     fun dismissFailure(target: ComposerTarget) {
-        if (current(target) && mutable.value.save?.saving != true)
+        if (current(target) && mutable.value.save?.phase == ChatConnectorSavePhase.Failed)
             mutable.value = mutable.value.copy(save = null)
     }
 
+    fun blocksSend(target: ComposerTarget): Boolean =
+        mutable.value.let { it.target == target.key && it.save?.blocksSend == true }
+
     fun save(target: ComposerTarget, slug: String, changes: List<ChatConnectorOverride>) {
         val threadId = target.threadId ?: return
-        if (!current(target) || changes.isEmpty() || mutable.value.save?.saving == true) return
+        if (!current(target) || changes.isEmpty() || saveInProgress()) return
         if (mutable.value.details[slug]?.accounts?.data?.memberAccess != false) return
+        overviewRequest?.cancel()
+        for (choice in changes) accountRequests.remove(choice.slug)?.cancel()
+        val generation = targetGeneration
+        fun active() = current(target) && targetGeneration == generation
         mutable.value =
             mutable.value.copy(
                 save =
@@ -201,7 +214,7 @@ internal class ChatConnectorOptions(
             )
         scope.launch {
             for ((index, choice) in changes.withIndex()) {
-                if (!current(target)) return@launch
+                if (!active()) return@launch
                 val saving =
                     ChatConnectorSave(
                         choice.connectionId,
@@ -214,7 +227,7 @@ internal class ChatConnectorOptions(
                         service.setChatOverride(
                             threadId,
                             choice,
-                            canReadBack = { current(target) },
+                            canReadBack = ::active,
                             onChecking = {
                                 mutable.value =
                                     mutable.value.copy(
@@ -226,7 +239,7 @@ internal class ChatConnectorOptions(
                         throw error
                     } catch (error: Exception) {
                         onError(error)
-                        if (current(target)) {
+                        if (active()) {
                             val snapshot = mutable.value
                             val phase =
                                 if (snapshot.save?.phase == ChatConnectorSavePhase.Checking)
@@ -234,53 +247,117 @@ internal class ChatConnectorOptions(
                                 else ChatConnectorSavePhase.Failed
                             mutable.value =
                                 snapshot.copy(
-                                    save = saving.copy(phase = phase, pending = emptyList()),
+                                    save =
+                                        saving.copy(
+                                            phase = phase,
+                                            pending =
+                                                if (phase == ChatConnectorSavePhase.Unconfirmed)
+                                                    listOf(choice)
+                                                else emptyList(),
+                                        ),
                                 )
                         }
                         return@launch
                     }
-                if (!current(target)) return@launch
-                val snapshot = mutable.value
-                val byId = accounts.associateBy { it.connectionId }
-                val overview =
-                    snapshot.overview.data?.mapNotNull { summary ->
-                        if (summary.entry.slug != choice.slug) return@mapNotNull summary
-                        val updated =
-                            summary.accounts.mapNotNull row@{ row ->
-                                val account = byId[row.connectionId] ?: return@row null
-                                row.copy(
-                                    displayName = account.displayName,
-                                    defaultEnabled = account.defaultEnabled,
-                                    isDefault = account.isDefault,
-                                    overrideEnabled = account.overrideEnabled,
-                                    enabled = account.enabled,
-                                )
-                            }
-                        summary.copy(accounts = updated).takeIf { updated.isNotEmpty() }
-                    }
-                mutable.value = snapshot.copy(overview = snapshot.overview.copy(data = overview))
-                if (choice.slug in snapshot.details)
-                    updateDetails(choice.slug) { details ->
-                        val data = details.accounts.data ?: return@updateDetails details
-                        val rows =
-                            data.accounts.mapNotNull { row ->
-                                byId[row.account.id]?.let { account ->
-                                    ChatConnectorAccount(
-                                        row.account.copy(
-                                            displayName = account.displayName,
-                                            defaultEnabled = account.defaultEnabled,
-                                        ),
-                                        account.overrideEnabled,
-                                    )
-                                }
-                            }
-                        details.copy(
-                            accounts = details.accounts.copy(data = data.copy(accounts = rows)),
+                if (!active()) return@launch
+                val remaining = changes.subList(index + 1, changes.size)
+                applyReadback(
+                    choice,
+                    accounts,
+                    remaining.firstOrNull()?.let {
+                        ChatConnectorSave(it.connectionId, ChatConnectorSavePhase.Saving, remaining)
+                    },
+                )
+            }
+        }
+    }
+
+    fun checkSave(target: ComposerTarget) {
+        val threadId = target.threadId ?: return
+        val snapshot = mutable.value
+        val save = snapshot.save ?: return
+        val choice = save.pending.singleOrNull() ?: return
+        if (!current(target) || save.phase != ChatConnectorSavePhase.Unconfirmed) return
+        overviewRequest?.cancel()
+        accountRequests.remove(choice.slug)?.cancel()
+        val generation = targetGeneration
+        fun active() = current(target) && targetGeneration == generation
+        mutable.value = snapshot.copy(save = save.copy(phase = ChatConnectorSavePhase.Checking))
+        scope.launch {
+            val accounts =
+                try {
+                    service.chatAccess(threadId, choice.slug)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    onError(error)
+                    if (active()) mutable.value = mutable.value.copy(save = save)
+                    return@launch
+                }
+            if (!active()) return@launch
+            val confirmed =
+                accounts.firstOrNull { it.connectionId == choice.connectionId }?.overrideEnabled ==
+                    choice.enabled
+            val failure =
+                ChatConnectorSave(choice.connectionId, ChatConnectorSavePhase.Failed).takeUnless {
+                    confirmed
+                }
+            applyReadback(choice, accounts, failure)
+        }
+    }
+
+    private fun applyReadback(
+        choice: ChatConnectorOverride,
+        accounts: List<ChatConnectorAccessAccountsItem>,
+        save: ChatConnectorSave?,
+    ) {
+        val snapshot = mutable.value
+        val byId = accounts.associateBy { it.connectionId }
+        val overview =
+            snapshot.overview.data?.mapNotNull { summary ->
+                if (summary.entry.slug != choice.slug) return@mapNotNull summary
+                val updated =
+                    summary.accounts.mapNotNull row@{ row ->
+                        val account = byId[row.connectionId] ?: return@row null
+                        row.copy(
+                            displayName = account.displayName,
+                            defaultEnabled = account.defaultEnabled,
+                            isDefault = account.isDefault,
+                            overrideEnabled = account.overrideEnabled,
+                            enabled = account.enabled,
                         )
                     }
+                summary.copy(accounts = updated).takeIf { updated.isNotEmpty() }
             }
-            if (current(target)) mutable.value = mutable.value.copy(save = null)
-        }
+        val details = snapshot.details[choice.slug]
+        val existing = details?.accounts?.data
+        val confirmedDetails =
+            if (existing == null) snapshot.details
+            else {
+                val rows =
+                    existing.accounts.mapNotNull { row ->
+                        byId[row.account.id]?.let { account ->
+                            ChatConnectorAccount(
+                                row.account.copy(
+                                    displayName = account.displayName,
+                                    defaultEnabled = account.defaultEnabled,
+                                ),
+                                account.overrideEnabled,
+                            )
+                        }
+                    }
+                snapshot.details +
+                    (choice.slug to
+                        details.copy(
+                            accounts = details.accounts.copy(data = existing.copy(accounts = rows)),
+                        ))
+            }
+        mutable.value =
+            snapshot.copy(
+                overview = snapshot.overview.copy(data = overview),
+                details = confirmedDetails,
+                save = save,
+            )
     }
 
     fun savePolicy(
@@ -289,12 +366,15 @@ internal class ChatConnectorOptions(
         connectionId: String,
         policy: ConnectorAccountPolicyRequestPolicy,
     ) {
-        if (!current(target) || mutable.value.save?.saving == true) return
+        if (!current(target) || saveInProgress()) return
         val details = mutable.value.details[slug] ?: return
         val accounts = details.accounts.data ?: return
         if (!accounts.memberAccess || details.policies.data?.containsKey(connectionId) != true)
             return
         if (accounts.accounts.none { it.account.id == connectionId }) return
+        accountRequests.remove(slug)?.cancel()
+        val generation = targetGeneration
+        fun active() = current(target) && targetGeneration == generation
         val saving = ChatConnectorSave(connectionId, ChatConnectorSavePhase.Saving)
         mutable.value = mutable.value.copy(save = saving)
         scope.launch {
@@ -305,7 +385,7 @@ internal class ChatConnectorOptions(
                     throw error
                 } catch (error: Exception) {
                     onError(error)
-                    if (current(target)) {
+                    if (active()) {
                         mutable.value =
                             mutable.value.copy(
                                 save = saving.copy(phase = ChatConnectorSavePhase.Failed),
@@ -313,7 +393,7 @@ internal class ChatConnectorOptions(
                     }
                     return@launch
                 }
-            if (!current(target)) return@launch
+            if (!active()) return@launch
             updateDetails(slug) {
                 it.copy(
                     policies =
@@ -337,6 +417,8 @@ internal class ChatConnectorOptions(
 
     private fun canRead(target: ComposerTarget) =
         current(target) && mutable.value.save?.saving != true
+
+    private fun saveInProgress() = mutable.value.save?.let { it.saving || it.blocksSend } == true
 
     private fun <T> ConnectorRead<T>.cached() =
         if (data == null) this else copy(expiresAt = TimeSource.Monotonic.markNow() + 10.minutes)

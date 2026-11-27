@@ -595,6 +595,7 @@ internal fun ConnectorSheet(
         dismissible,
         fullScreen,
         snackbar = feedback.takeUnless { fullScreen },
+        onBack = back,
     ) { centered ->
         val frame =
             if (fullScreen) Modifier.fillMaxSize()

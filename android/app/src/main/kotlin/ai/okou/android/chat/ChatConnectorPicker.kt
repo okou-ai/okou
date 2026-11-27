@@ -513,6 +513,7 @@ internal fun ChatConnectorOptionsButton(
                 val pendingChoices = save?.pending.orEmpty().associateBy { it.connectionId }
                 val canEdit =
                     !saving &&
+                        save?.blocksSend != true &&
                         (memberAccess || !newChat || composerState.canEditDraftConnectors(target))
                 ConnectorOptionFeedback(
                     if (memberAccess) R.string.connector_access_scope
@@ -584,11 +585,16 @@ internal fun ChatConnectorOptionsButton(
                     )
                 }
             }
+            if (showingAccounts && save?.phase == ChatConnectorSavePhase.Unconfirmed) {
+                TextButton(onClick = { options.checkSave(target) }) {
+                    Text(stringResource(R.string.chat_connector_check_result))
+                }
+            }
         }
     }
 }
 
-private fun ChatConnectorSavePhase.message(): Int =
+internal fun ChatConnectorSavePhase.message(): Int =
     when (this) {
         ChatConnectorSavePhase.Saving -> R.string.chat_connector_saving
         ChatConnectorSavePhase.Checking -> R.string.connector_working

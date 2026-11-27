@@ -175,9 +175,12 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
-    fun existingChatRetainsTheConfirmedChoiceWhenReadbackIsUnavailable() {
+    fun existingChatBlocksSendUntilAnUnconfirmedChoiceIsChecked() {
         waitText("Personal chat")
         compose.onNodeWithText("Personal chat").performClick()
+        waitForComposer()
+        compose.onNodeWithTag("message_input").performTextReplacement("Read my calendar")
+        val send = compose.onNodeWithContentDescription("Send").assertIsEnabled()
         openPicker()
         val account = compose.onNodeWithTag(primaryTag)
         val readback = CountDownLatch(1)
@@ -192,8 +195,25 @@ class ChatConnectorOptionsTest {
             readback.countDown()
         }
         waitText("The outcome is still unconfirmed.")
-        account.assertIsOn()
+        account.assertIsOff().assertIsNotEnabled()
         assertEquals(listOf(CHAT_PERSONAL to CONNECTOR_CALENDAR), app.connectors.chatOverrideReads)
+        closeOptions()
+        send.assertIsNotEnabled()
+        compose
+            .onNodeWithText("Check the connector choice in Chat options before sending.")
+            .assertIsDisplayed()
+
+        app.connectors.failChatOverrideReads = false
+        openPicker()
+        compose.onNodeWithText("Check result").performClick()
+        waitTag("chat-connector-reset")
+        account.assertIsOff().assertIsEnabled()
+        closeOptions()
+        send.assertIsEnabled()
+        assertEquals(
+            List(2) { CHAT_PERSONAL to CONNECTOR_CALENDAR },
+            app.connectors.chatOverrideReads,
+        )
         assertEquals(1, app.connectors.chatOverrideRequests.size)
     }
 

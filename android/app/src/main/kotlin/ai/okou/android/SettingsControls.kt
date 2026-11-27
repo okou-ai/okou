@@ -389,12 +389,13 @@ internal fun SettingsModal(
     confirmDismiss: (() -> Boolean)? = null,
     reserveTopInset: Boolean = false,
     snackbar: SnackbarHostState? = null,
+    onBack: (() -> Unit)? = null,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
     if (fullScreen || workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
-            onDismissRequest = { if (confirmDismiss?.invoke() != false) onDismiss() },
+            onDismissRequest = { if (confirmDismiss?.invoke() != false) (onBack ?: onDismiss)() },
             properties =
                 DialogProperties(
                     dismissOnBackPress = dismissible,
@@ -457,16 +458,17 @@ internal fun SettingsModal(
                 } else null,
             properties =
                 ModalBottomSheetProperties(
-                    shouldDismissOnBackPress = dismissible && confirmDismiss == null,
+                    shouldDismissOnBackPress =
+                        dismissible && confirmDismiss == null && onBack == null,
                     shouldDismissOnClickOutside = dismissible,
                 ),
         ) {
             // A vetoed native predictive hide can leave the sheet scaled after Back.
             val imeVisible = WindowInsets.isImeVisible
             val keyboard = LocalSoftwareKeyboardController.current
-            BackHandler(enabled = confirmDismiss != null) {
+            BackHandler(enabled = confirmDismiss != null || onBack != null) {
                 if (imeVisible) keyboard?.hide()
-                else if (dismissible && confirmDismiss?.invoke() != false) onDismiss()
+                else if (dismissible && confirmDismiss?.invoke() != false) (onBack ?: onDismiss)()
             }
             content(false)
         }
