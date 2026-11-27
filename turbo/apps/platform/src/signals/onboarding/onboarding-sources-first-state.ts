@@ -1,35 +1,23 @@
 import { command, computed, state } from "ccstate";
-import {
-  onboardingDraftAnswersSchema,
-  onboardingDraftStepSchema,
-  type OnboardingDraftPayload,
-} from "@okouai/api-contracts/validators/onboarding";
+import type { OnboardingDraftPayload } from "@okouai/api-contracts/validators/onboarding";
 import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
-import {
-  literal,
-  object,
-  string,
-  enum as zEnum,
-  type infer as zInfer,
-} from "zod";
 
 import {
   STARTING_PROMPT_MAX_LENGTH,
   type OnboardingOutputFormat,
   type StartingPromptOutput,
 } from "./onboarding-output-format.ts";
-import { localStorageSignals } from "../external/local-storage.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { detach, jsonParseOr, Reason, resetSignal } from "../utils.ts";
+import { detach, Reason, resetSignal } from "../utils.ts";
 import {
   createServerOnboardingDraftSync,
   loadServerOnboardingDraft$,
 } from "./onboarding-server-draft.ts";
 
 export type SourcesFirstFlow = "owner" | "member";
-export type SourcesFirstStep = zInfer<typeof onboardingDraftStepSchema>;
+export type SourcesFirstStep = NonNullable<OnboardingDraftPayload["step"]>;
 
 export const SOURCES_FIRST_STEP_ROUTES: Readonly<
   Record<SourcesFirstStep, RoutePath>
@@ -87,45 +75,6 @@ interface SourcesFirstDraftIdentity {
   readonly userId: string;
 }
 
-const persistedDraftIdentitySchema = object({
-  orgId: string().min(1),
-  userId: string().min(1),
-});
-
-const persistedStepSchema = persistedDraftIdentitySchema.extend({
-  // Existing browser drafts can still point at the retired invitation step.
-  step: zEnum([...onboardingDraftStepSchema.options, "team"]),
-});
-
-const persistedDraftSchema = onboardingDraftAnswersSchema.extend({
-  ...persistedDraftIdentitySchema.shape,
-  version: literal(2),
-});
-
-type PersistedSourcesFirstDraft = zInfer<typeof persistedDraftSchema>;
-
-function savedDraftForIdentity(
-  raw: string | null,
-  identity: SourcesFirstDraftIdentity,
-): PersistedSourcesFirstDraft | null {
-  if (raw === null) {
-    return null;
-  }
-  const parsed = persistedDraftSchema.safeParse(
-    jsonParseOr<unknown>(raw, null),
-  );
-  if (!parsed.success) {
-    return null;
-  }
-  if (
-    parsed.data.orgId !== identity.orgId ||
-    parsed.data.userId !== identity.userId
-  ) {
-    return null;
-  }
-  return parsed.data;
-}
-
 function restoredDraft(
   saved: OnboardingDraftPayload["answers"] | null,
 ): SourcesFirstDraft {
@@ -156,11 +105,6 @@ function restoredDraft(
   };
 }
 
-// Keep importing these keys until seven days after the Web version floor
-// excludes the last build that wrote them (#48819).
-const draftStorage = localStorageSignals("onboarding:sources-first-draft");
-const stepStorage = localStorageSignals("onboarding:sources-first-step");
-const onboardingStorages = [draftStorage, stepStorage] as const;
 const internalDraftIdentity$ = state<SourcesFirstDraftIdentity | null>(null);
 const internalDraft$ = state<SourcesFirstDraft>(emptyDraft());
 
@@ -169,20 +113,6 @@ const internalStep$ = state<SourcesFirstStep | null>(null);
 const serverSync$ = state<ReturnType<
   typeof createServerOnboardingDraftSync
 > | null>(null);
-
-function isDraftOwner(
-  raw: string | null,
-  identity: SourcesFirstDraftIdentity,
-): boolean {
-  const parsed = persistedDraftIdentitySchema.safeParse(
-    raw === null ? null : jsonParseOr<unknown>(raw, null),
-  );
-  return (
-    parsed.success &&
-    parsed.data.orgId === identity.orgId &&
-    parsed.data.userId === identity.userId
-  );
-}
 
 /**
  * Restore answers once per identity/app lifetime. Only the entry page resumes
@@ -216,21 +146,9 @@ export const restoreSourcesFirstDraft$ = command(
         : null,
     );
 
-    const saved = savedDraftForIdentity(set(draftStorage.readFresh$), identity);
-    const savedStep = persistedStepSchema.safeParse(
-      jsonParseOr<unknown>(set(stepStorage.readFresh$) ?? "null", null),
-    );
-    const legacyStep =
-      savedStep.success &&
-      savedStep.data.orgId === identity.orgId &&
-      savedStep.data.userId === identity.userId
-        ? savedStep.data.step === "team"
-          ? "experience"
-          : savedStep.data.step
-        : null;
-    const step = remote?.snapshot ? remote.snapshot.step : legacyStep;
+    const step = remote?.snapshot?.step ?? null;
     set(internalDraftIdentity$, identity);
-    set(internalDraft$, restoredDraft(remote?.snapshot?.answers ?? saved));
+    set(internalDraft$, restoredDraft(remote?.snapshot?.answers ?? null));
     set(internalStep$, step);
     return step;
   },
@@ -254,31 +172,19 @@ function draftAnswers(
   };
 }
 
-const syncSourcesFirstDraft$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const server = get(serverSync$);
-    const owner = get(internalDraftIdentity$);
-    if (!server || !owner) {
-      return;
-    }
-    const legacy = onboardingStorages.map((storage) => {
-      return set(storage.readFresh$);
-    });
-    const saved = await set(server, {
-      answers: draftAnswers(get(internalDraft$)),
-      step: get(internalStep$),
-    });
-    signal.throwIfAborted();
-    if (saved && get(serverSync$) === server) {
-      for (const [index, storage] of onboardingStorages.entries()) {
-        const raw = set(storage.readFresh$);
-        if (raw === legacy[index] && isDraftOwner(raw, owner)) {
-          set(storage.clear$);
-        }
-      }
-    }
-  },
-);
+const syncSourcesFirstDraft$ = command(({ get, set }): void => {
+  const server = get(serverSync$);
+  if (server) {
+    detach(
+      set(server, {
+        answers: draftAnswers(get(internalDraft$)),
+        step: get(internalStep$),
+      }),
+      Reason.Deferred,
+      "save onboarding draft",
+    );
+  }
+});
 
 export const saveSourcesFirstStep$ = command(
   ({ get, set }, step: SourcesFirstStep): void => {
@@ -286,25 +192,11 @@ export const saveSourcesFirstStep$ = command(
       return;
     }
     set(internalStep$, step);
-    if (get(serverSync$)) {
-      detach(
-        set(syncSourcesFirstDraft$, get(rootSignal$)),
-        Reason.Deferred,
-        "save onboarding step",
-      );
-    }
+    set(syncSourcesFirstDraft$);
   },
 );
 
-export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
-  const identity = get(internalDraftIdentity$);
-  if (identity !== null) {
-    for (const storage of onboardingStorages) {
-      if (isDraftOwner(set(storage.readFresh$), identity)) {
-        set(storage.clear$);
-      }
-    }
-  }
+export const clearSourcesFirstDraft$ = command(({ set }): void => {
   set(draftServerLifetime$);
   set(serverSync$, null);
   set(internalStep$, null);
@@ -380,13 +272,7 @@ export const updateSourcesFirstDraft$ = command(
       next.startingPromptOutput = null;
     }
     set(internalDraft$, next);
-    if (get(serverSync$)) {
-      detach(
-        set(syncSourcesFirstDraft$, get(rootSignal$)),
-        Reason.Deferred,
-        "save onboarding answers",
-      );
-    }
+    set(syncSourcesFirstDraft$);
   },
 );
 

@@ -68,11 +68,11 @@ export function createServerOnboardingDraftSync(
       signal: AbortSignal,
     ) => {
       if (get(stopped$)) {
-        return false;
+        return;
       }
       const serialized = serializedPayload(payload);
       if (serialized === get(savedPayload$)) {
-        return false;
+        return;
       }
       const result = await accept(
         client.save({
@@ -91,11 +91,10 @@ export function createServerOnboardingDraftSync(
         if (result.status === 409) {
           await accept(Promise.resolve(result), [200], signal);
         }
-        return false;
+        return;
       }
       set(revision$, result.body.revision);
       set(savedPayload$, serialized);
-      return true;
     },
   );
 
