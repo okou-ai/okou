@@ -656,9 +656,6 @@ function RenameRemoteDevice({
     name.length > 0 &&
     name.length <= deviceNameLimit &&
     name !== device.displayName;
-  const label = t(($) => {
-    return $.remoteDevices.renameDevice;
-  });
   return (
     <Dialog
       open={draft?.deviceId === device.id && draft.open}
@@ -682,11 +679,17 @@ function RenameRemoteDevice({
         render={<Button variant="outline" size="xs" />}
       >
         <Pencil size={14} aria-hidden />
-        {label}
+        {t(($) => {
+          return $.remoteDevices.rename;
+        })}
       </DialogTrigger>
       <DialogContent maxWidth="md" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>{label}</DialogTitle>
+          <DialogTitle>
+            {t(($) => {
+              return $.remoteDevices.renameDevice;
+            })}
+          </DialogTitle>
         </DialogHeader>
         <form
           className="grid gap-4"
@@ -822,8 +825,8 @@ function RemoteDeviceDetails({
           {device.displayName}
         </h2>
         <div className="flex flex-wrap items-center gap-2">
-          <RenameRemoteDevice key={`rename:${device.id}`} device={device} />
           <RemoteDevicePolicyControl device={device} />
+          <RenameRemoteDevice key={`rename:${device.id}`} device={device} />
           <DeleteRemoteDevice key={device.id} device={device} />
         </div>
       </header>

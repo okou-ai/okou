@@ -209,7 +209,7 @@ test("renames a device from the detail header and retains the draft after a fail
     path: `/connectors?scope=remote-control&remoteDevice=${deviceId}`,
   });
   const user = userEvent.setup({ delay: null });
-  const trigger = await findFastControl("button", "Rename device");
+  const trigger = await findFastControl("button", "Rename");
   trigger.focus();
   await user.keyboard("{Enter}");
   const dialog = await screen.findByRole("dialog", { name: "Rename device" });
@@ -293,7 +293,7 @@ test("deletes a device from the detail header only after confirming", async () =
   await expect(
     screen.findByRole("group", { name: "Access for Build Mac, Off" }),
   ).resolves.toBeVisible();
-  const trigger = await findFastControl("button", "Delete device");
+  const trigger = await findFastControl("button", "Delete");
   const user = userEvent.setup({ delay: null });
   await user.click(trigger);
   const confirmation = await screen.findByRole("dialog", {
@@ -314,7 +314,7 @@ test("deletes a device from the detail header only after confirming", async () =
   const reopened = await screen.findByRole("dialog", {
     name: "Delete Build Mac?",
   });
-  await user.click(await findFastControl("button", "Delete device", reopened));
+  await user.click(await findFastControl("button", "Delete", reopened));
   await waitFor(() => {
     return expect(deleted).toStrictEqual([deviceId]);
   });
