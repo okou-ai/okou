@@ -93,6 +93,7 @@ internal fun ChatDraftImageViewer(
         pager,
         wide,
         onBack,
+        activeUnavailable = active == null,
         overlayStart = listPaneWidth ?: 0.dp,
         toolbar = { number, expanded, toggle ->
             ImageViewerToolbar(
@@ -176,6 +177,7 @@ internal fun ChatDraftImageViewer(
             modifier,
             localFile = file,
             unavailableLocal = image == null,
+            keyboardPaging = visit.keys.size > 1,
             saveResult = result?.second?.takeIf { image?.key == result?.first },
         )
     }

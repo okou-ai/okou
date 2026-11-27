@@ -29,6 +29,7 @@ internal class ChatImageGalleryFixture(
     val thumbnailReads = CopyOnWriteArrayList<String>()
     val resolves = CopyOnWriteArrayList<String>()
     @Volatile var denied: String? = null
+    @Volatile var downloadDenied: String? = null
     @Volatile var beforeOriginal: (String) -> Unit = {}
     private val images =
         listOf(
@@ -90,8 +91,9 @@ internal class ChatImageGalleryFixture(
                         else -> {
                             val original = api.server.url("/chat-gallery/${image.id}/original")
                             val thumb = api.server.url("/chat-gallery/${image.id}/thumbnail")
+                            val download = api.server.url("/chat-gallery/${image.id}/download")
                             jsonResponse(
-                                """{"url":"$original","downloadUrl":"$original","previewImageUrl":"$thumb","expiresAt":"2099-01-01T00:00:00Z","publicUrl":null}""",
+                                """{"url":"$original","downloadUrl":"$download","previewImageUrl":"$thumb","expiresAt":"2099-01-01T00:00:00Z","publicUrl":null}""",
                             )
                         }
                     }
@@ -99,10 +101,16 @@ internal class ChatImageGalleryFixture(
                 path.startsWith("/chat-gallery/") -> {
                     val segments = url.pathSegments
                     val image = images.single { it.id == segments[1] }
-                    if (segments[2] == "original") {
-                        originalReads += image.filename
-                        beforeOriginal(image.filename)
-                    } else thumbnailReads += image.filename
+                    when (segments[2]) {
+                        "original" -> {
+                            originalReads += image.filename
+                            beforeOriginal(image.filename)
+                        }
+                        "thumbnail" -> thumbnailReads += image.filename
+                        "download" ->
+                            if (image.filename == downloadDenied)
+                                return@response MockResponse().setResponseCode(403)
+                    }
                     MockResponse()
                         .addHeader("Content-Type", "image/png")
                         .setBody(Buffer().write(image.bytes))

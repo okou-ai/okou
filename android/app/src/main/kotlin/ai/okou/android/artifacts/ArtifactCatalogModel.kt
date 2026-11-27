@@ -355,6 +355,9 @@ internal constructor(
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
+                } catch (error: ChatAttachmentAccessLost) {
+                    withdrawExport(id, saveDenied = true, lostAccess = artifactProblem(error))
+                    return@launch
                 } catch (error: Exception) {
                     handleSessionFailure(error)
                     if (error is ApiFailure.Http && error.status in 401..404) {
@@ -382,6 +385,9 @@ internal constructor(
             if (isCurrent()) ArtifactSaveResult.Saved else ArtifactSaveResult.Denied
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (error: ChatAttachmentAccessLost) {
+            withdrawExport(id, lostAccess = artifactProblem(error))
+            ArtifactSaveResult.Denied
         } catch (error: Exception) {
             handleSessionFailure(error)
             if (error is ApiFailure.Http && error.status in 401..404) {
@@ -391,16 +397,34 @@ internal constructor(
         }
     }
 
-    private fun withdrawExport(id: String, saveDenied: Boolean = false) {
-        previews[id]?.let { previews[id] = it.withoutSave() }
+    private fun withdrawExport(
+        id: String,
+        saveDenied: Boolean = false,
+        lostAccess: ArtifactProblem? = null,
+    ) {
+        if (lostAccess != null) {
+            revokeSentImage(id, lostAccess)
+            if (mutable.value.preview?.id == id) previewJob?.cancel()
+        } else previews[id]?.let { previews[id] = it.withoutSave() }
         mutable.update { current ->
             val preview = current.preview
             current.copy(
-                preview = if (preview?.id == id) preview.withoutSave() else preview,
+                preview =
+                    when {
+                        preview?.id != id -> preview
+                        lostAccess != null -> ArtifactPreviewState(id, null, problem = lostAccess)
+                        else -> preview.withoutSave()
+                    },
                 saveResult =
                     if (saveDenied) id to ArtifactSaveResult.Denied else current.saveResult,
             )
         }
+    }
+
+    private fun revokeSentImage(id: String, problem: ArtifactProblem) {
+        previews.remove(id)
+        inlineImages.revoke(id)
+        if (sentImageVisit != null) unavailableSentImages[id] = problem
     }
 
     private fun refreshRelatedChats() {
@@ -941,16 +965,22 @@ internal constructor(
                     errorType == ArtifactProblem.Denied || errorType == ArtifactProblem.Missing
                 val discardContent = revoked || errorType == ArtifactProblem.Unsupported
                 updatePreview(id) {
-                    if (discardContent) previews.remove(id)
-                    if (revoked && (!detailAuthorized || isChatAttachmentImage(id))) {
-                        val source =
-                            if (externalImage) id
-                            else if (chatAttachment(id) != null) id
-                            else messageArtifactLink(id)?.takeIf { it.startsWith("/artifacts/") }
-                        source?.let(inlineImages::revoke)
+                    if (revoked && isChatAttachmentImage(id)) {
+                        revokeSentImage(id, errorType)
+                    } else {
+                        if (discardContent) previews.remove(id)
+                        if (revoked && !detailAuthorized) {
+                            val source =
+                                when {
+                                    externalImage || chatAttachment(id) != null -> id
+                                    else ->
+                                        messageArtifactLink(id)?.takeIf {
+                                            it.startsWith("/artifacts/")
+                                        }
+                                }
+                            source?.let(inlineImages::revoke)
+                        }
                     }
-                    if (revoked && sentImageVisit != null && isChatAttachmentImage(id))
-                        unavailableSentImages[id] = errorType
                     copy(
                         item = item.takeUnless { revoked && externalImage },
                         info = info.takeUnless { revoked && !detailAuthorized },
@@ -1010,6 +1040,7 @@ internal constructor(
 
 private fun artifactProblem(error: Exception): ArtifactProblem =
     when (error) {
+        is ChatAttachmentAccessLost -> artifactHttpProblem(error.rejection.status)
         is ApiFailure.Http -> artifactHttpProblem(error.status)
         is ResponseLimitExceeded -> ArtifactProblem.Unsupported
         is ApiFailure.Network,
