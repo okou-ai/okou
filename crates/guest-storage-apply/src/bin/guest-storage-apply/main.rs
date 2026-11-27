@@ -1,4 +1,4 @@
-use guest_contracts::{env, runtime_paths, storage_files};
+use guest_contracts::{agent_instructions::MAX_METADATA_BYTES, env, runtime_paths, storage_files};
 use guest_storage_apply::input_telemetry::{InputPhase, record_payload_size, record_phase};
 use guest_storage_apply::{ApplyFailure, TARGET_UNAVAILABLE_EXIT_CODE};
 use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};
@@ -38,17 +38,12 @@ fn main() {
     };
 
     if matches!(&input, ManifestInput::InstructionsStdin { check: true }) {
-        match read_instruction_metadata(
-            guest_contracts::agent_instructions::MAX_CHECK_METADATA_BYTES,
-        )
-        .map_err(io::Error::other)
-        .and_then(|metadata| {
-            guest_storage_apply::check_agent_instructions(
-                std::path::Path::new("/home/user"),
-                &metadata,
-            )
-        })
-        .and_then(|checked| serde_json::to_string(&checked).map_err(io::Error::other))
+        match read_instruction_metadata()
+            .map_err(io::Error::other)
+            .and_then(|metadata| {
+                guest_storage_apply::check_agent_instructions(Path::new("/home/user"), &metadata)
+            })
+            .and_then(|checked| serde_json::to_string(&checked).map_err(io::Error::other))
         {
             Ok(checked) => println!("{checked}"),
             Err(error) => {
@@ -131,12 +126,12 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
     }
 }
 
-fn read_instruction_metadata(limit: usize) -> io::Result<Vec<u8>> {
+fn read_instruction_metadata() -> io::Result<Vec<u8>> {
     let mut metadata = Vec::new();
     io::stdin()
-        .take(limit as u64 + 1)
+        .take(MAX_METADATA_BYTES as u64 + 1)
         .read_to_end(&mut metadata)?;
-    if metadata.len() > limit {
+    if metadata.len() > MAX_METADATA_BYTES {
         return Err(io::Error::other("Instruction metadata exceeds bound"));
     }
     Ok(metadata)
@@ -145,9 +140,7 @@ fn read_instruction_metadata(limit: usize) -> io::Result<Vec<u8>> {
 fn run(input: ManifestInput, runtime_dir: &Path) -> Result<(), ApplyFailure> {
     match input {
         ManifestInput::InstructionsStdin { .. } => {
-            let Ok(metadata) =
-                read_instruction_metadata(guest_contracts::agent_instructions::MAX_METADATA_BYTES)
-            else {
+            let Ok(metadata) = read_instruction_metadata() else {
                 return Err(ApplyFailure::Failed);
             };
             guest_storage_apply::apply_agent_instructions_with_result(

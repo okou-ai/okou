@@ -1,20 +1,16 @@
 //! Inspect or apply Storage-delivered instructions without replacing native homes.
 
 use crate::cleanup_directory::CleanupDirectory;
-use guest_contracts::storage_paths::normalize_path;
 use guest_contracts::{
     agent_instructions::{
         InstructionApplication, InstructionCheck, InstructionCheckResult, InstructionPaths,
-        MAX_CHECK_METADATA_BYTES, MAX_METADATA_BYTES, SOURCE_FILENAME, instruction_paths,
+        MAX_METADATA_BYTES, SOURCE_FILENAME, instruction_paths,
     },
     env::CliAgentTypeSelection,
     home_mount::HOME_DIR,
     storage_manifest::member_memory_mount,
 };
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::Path};
 
 /// Consume instruction staging after Storage reconciliation and before Agent startup.
 pub fn apply_agent_instructions(home: &Path, metadata: &[u8]) -> bool {
@@ -59,14 +55,14 @@ pub fn check_agent_instructions(
     home: &Path,
     metadata: &[u8],
 ) -> io::Result<InstructionCheckResult> {
-    if metadata.len() > MAX_CHECK_METADATA_BYTES {
+    if metadata.len() > MAX_METADATA_BYTES {
         return Err(io::Error::other("Instruction check metadata exceeds bound"));
     }
     let check: InstructionCheck = serde_json::from_slice(metadata)
         .map_err(|_| io::Error::other("Invalid instruction check"))?;
     let paths = instruction_paths(home, &check.framework)
         .ok_or_else(|| io::Error::other("Unsupported instruction framework"))?;
-    let instructions_current = check_instruction_target(home, paths, &check)?;
+    let instructions_current = check_instruction_target(&paths.target)?;
     let memory_root_present = check.check_memory_root && instructions_current && {
         let framework = CliAgentTypeSelection::parse(&check.framework).framework();
         let mount = Path::new(member_memory_mount(framework));
@@ -80,13 +76,8 @@ pub fn check_agent_instructions(
     })
 }
 
-fn check_instruction_target(
-    home: &Path,
-    paths: InstructionPaths,
-    check: &InstructionCheck,
-) -> io::Result<bool> {
-    let parent = paths
-        .target
+fn check_instruction_target(target: &Path) -> io::Result<bool> {
+    let parent = target
         .parent()
         .ok_or_else(|| io::Error::other("Missing target parent"))?;
     let directory = match CleanupDirectory::open(parent) {
@@ -94,22 +85,11 @@ fn check_instruction_target(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error),
     };
-    let filename = paths
-        .target
+    let filename = target
         .file_name()
         .ok_or_else(|| io::Error::other("Missing target name"))?;
     match fs::symlink_metadata(directory.proc_path().join(filename)) {
-        Ok(metadata) if metadata.is_file() => {
-            for mount in &check.preserved_download_mounts {
-                if paths
-                    .target
-                    .starts_with(resolve_existing_root(&home.join(mount))?)
-                {
-                    return Ok(false);
-                }
-            }
-            Ok(true)
-        }
+        Ok(metadata) if metadata.is_file() => Ok(true),
         Ok(_) => Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "Instruction target is not a regular file",
@@ -117,24 +97,6 @@ fn check_instruction_target(
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }
-}
-
-// Target preparation creates missing directories, then canonicalizes the mount.
-// Resolve its existing prefix without creating anything during a reuse check.
-fn resolve_existing_root(path: &Path) -> io::Result<PathBuf> {
-    for ancestor in path.ancestors() {
-        match ancestor.canonicalize() {
-            Ok(resolved) => {
-                let suffix = path.strip_prefix(ancestor).map_err(io::Error::other)?;
-                return Ok(normalize_path(&resolved.join(suffix)));
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Err(io::Error::other(
-        "Instruction check mount has no existing ancestor",
-    ))
 }
 
 fn apply(home: &Path, input: InstructionApplication, paths: InstructionPaths) -> io::Result<()> {
