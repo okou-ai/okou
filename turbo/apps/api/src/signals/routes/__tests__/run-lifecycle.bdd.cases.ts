@@ -4639,7 +4639,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const mcpSecretKey = `CUSTOM_${mcp.id.replaceAll("-", "")}_S_SECRET`;
         expect(mcpFirewall.firewall.placeholders).toStrictEqual({
-          [mcpSecretKey]: `okou-custom-${mcpSecretKey}`,
+          [mcpSecretKey]: expect.stringMatching(/^OkouConnector[0-9a-f]{20}$/),
         });
         expect(mcpApi?.auth.headers?.Authorization).toBe(
           `Bearer \${{ secrets.${mcpSecretKey} }}`,
@@ -4667,7 +4667,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(httpFirewall).toMatchObject({
           kind: "inline",
           firewall: {
-            placeholders: { [httpSecretKey]: `okou-custom-${httpSecretKey}` },
+            placeholders: {
+              [httpSecretKey]: expect.stringMatching(
+                /^OkouConnector[0-9a-f]{20}$/,
+              ),
+            },
           },
         });
         const [initialResult, httpResult] = await api.syncConnectorRuntime(
@@ -4680,10 +4684,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         );
         const initialRuntime = availableCustomConnectorRuntime(initialResult);
-        expect(
+        const httpPlaceholders =
           availableCustomConnectorRuntime(httpResult).firewall.firewall
-            .placeholders,
-        ).toStrictEqual({ [httpSecretKey]: `okou-custom-${httpSecretKey}` });
+            .placeholders;
+        expect(httpPlaceholders).toStrictEqual(
+          httpFirewall?.kind === "inline"
+            ? httpFirewall.firewall.placeholders
+            : undefined,
+        );
+        expect(httpPlaceholders?.[httpSecretKey]).not.toBe(
+          mcpFirewall.firewall.placeholders?.[mcpSecretKey],
+        );
         expect(initialRuntime.firewall.firewall.placeholders).toStrictEqual(
           mcpFirewall.firewall.placeholders,
         );

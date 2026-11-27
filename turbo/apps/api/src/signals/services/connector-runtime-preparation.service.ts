@@ -1,4 +1,5 @@
 /** Runtime connector capability shared by launch preparation and runtime sync. */
+import { connectorCredentialPlaceholder } from "@okouai/connectors/firewall-metadata/credential-placeholder";
 import type { ConnectorRuntimeTargetRegistration } from "@okouai/api-contracts/contracts/runners";
 import {
   type ExecutionFirewallInlineEntry,
@@ -385,11 +386,11 @@ function buildCustomConnectorRuntimeRow(args: {
   if (apis.length === 0) {
     return unavailableCustomConnectorRuntimeRow();
   }
+  const firewallName = customConnectorInternalName(args.row.connector.id);
   const placeholders = compactRecord(
     Object.fromEntries(
       extractSecretNamesFromApis(apis).map((name) => {
-        // Custom credential aliases already contain the connector UUID.
-        return [name, `okou-custom-${name}`];
+        return [name, connectorCredentialPlaceholder(firewallName, name)];
       }),
     ),
   );
@@ -403,7 +404,7 @@ function buildCustomConnectorRuntimeRow(args: {
         : { sourceId: args.row.credentialAccess.memberConnectorId }),
     },
     firewall: {
-      name: customConnectorInternalName(args.row.connector.id),
+      name: firewallName,
       description: args.row.connector.displayName,
       apis,
       ...(placeholders === undefined ? {} : { placeholders }),
