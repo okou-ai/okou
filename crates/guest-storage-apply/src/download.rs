@@ -435,7 +435,14 @@ impl<'input> DownloadScheduler<'input> {
                 }
             }
             #[cfg(target_os = "linux")]
-            let inflate_load = if self.concurrency == 1 || self.paired_inflater == Some(download.id)
+            let idle_gated_artifact = self.active_attempts == 0
+                && self.pending.is_empty()
+                && download.task.source_ready.is_some()
+                && download.task.task.telemetry.is_artifact();
+            #[cfg(target_os = "linux")]
+            let inflate_load = if self.concurrency == 1
+                || self.paired_inflater == Some(download.id)
+                || idle_gated_artifact
             {
                 Some(archive::inflate::InflateLoad::Light)
             } else if wide_inflate && download.is_large_local_artifact() {

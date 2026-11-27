@@ -424,6 +424,62 @@ fn ready_archive_priority_preserves_fifo_ties_and_source_gates() {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn gated_artifact_uses_light_read_ahead_only_after_all_peers_finish() {
+    for (peer_active, peer_waiting, expected) in [
+        (false, false, true),
+        (true, false, false),
+        (false, true, false),
+    ] {
+        let memory_ready = Arc::new(AtomicBool::new(false));
+        let mut artifact = pending_at(1, "/memory");
+        artifact.task.task = DownloadTask::artifact(
+            "memory".into(),
+            "file:///tmp/memory.tar.gz".into(),
+            "/memory".into(),
+        );
+        artifact.task.source_ready = Some(Arc::clone(&memory_ready));
+        let mut pending = VecDeque::from([pending_at(0, "/ordinary"), artifact]);
+        if peer_waiting {
+            let mut waiting = pending_at(2, "/waiting");
+            waiting.task.source_ready = Some(Arc::new(AtomicBool::new(false)));
+            pending.push_back(waiting);
+        }
+        let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
+            (
+                download.task.task.telemetry,
+                download.task.logical_mount_path(),
+            )
+        }));
+        let mut scheduler = DownloadScheduler::new(pending, LOCAL_CONCURRENT, false);
+        let (send, receive) = mpsc::sync_channel(LOCAL_CONCURRENT);
+        assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
+        let ordinary = receive.try_recv().unwrap();
+        assert_eq!(ordinary.id, 0);
+        assert!(ordinary.inflate_load.is_none());
+        assert!(matches!(receive.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        if !peer_active {
+            scheduler.record_completion(DownloadCompletion {
+                download: ordinary,
+                outcome: AttemptOutcome::Finished(Ok(())),
+            });
+        }
+
+        memory_ready.store(true, Ordering::Release);
+        assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
+        let memory = receive.try_recv().unwrap();
+        assert_eq!(memory.id, 1);
+        assert_eq!(memory.inflate_load.is_some(), expected);
+        if expected {
+            assert!(matches!(
+                memory.inflate_load,
+                Some(archive::inflate::InflateLoad::Light)
+            ));
+        }
+    }
+}
+
 #[test]
 fn large_archive_priority_respects_logical_and_physical_reservations() {
     for physical_alias in [false, true] {
