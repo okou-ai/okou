@@ -580,11 +580,13 @@ internal fun ConnectorSheet(
     back: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
     feedback: SnackbarHostState? = null,
+    feedbackInContent: Boolean = false,
     retainedScroll: androidx.compose.foundation.ScrollState? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val shortWindow = isShortSettingsPanelWindow()
     val fullScreen = expandInShortWindow && shortWindow
+    val overlayFeedback = feedback.takeIf { fullScreen || feedbackInContent }
     val scroll = retainedScroll ?: key(title) { rememberScrollState() }
     val titleStyle =
         if (fullScreen)
@@ -594,7 +596,7 @@ internal fun ConnectorSheet(
         dismiss,
         dismissible,
         fullScreen,
-        snackbar = feedback.takeUnless { fullScreen },
+        snackbar = feedback.takeIf { overlayFeedback == null },
         onBack = back,
     ) { centered ->
         val frame =
@@ -651,12 +653,12 @@ internal fun ConnectorSheet(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         content = content,
                     )
-                    if (fullScreen && feedback != null) {
+                    if (overlayFeedback != null) {
                         Box(
                             Modifier.matchParentSize().padding(bottom = 8.dp),
                             contentAlignment = Alignment.BottomCenter,
                         ) {
-                            WorkspaceFeedbackHost(feedback, Modifier)
+                            WorkspaceFeedbackHost(overlayFeedback, Modifier)
                         }
                     }
                 }
