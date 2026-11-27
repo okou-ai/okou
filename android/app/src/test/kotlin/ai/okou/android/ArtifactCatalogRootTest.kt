@@ -24,6 +24,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.widget.VideoView
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -236,6 +237,59 @@ class ArtifactWorkflowResourcesApplication : ChatListApplication() {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun refreshedCatalogReplacesTheThumbnailWithoutMovingTheRow() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val original = Color.rgb(220, 190, 164)
+        val replacement = Color.BLUE
+        val requested = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        fixture.imageResponse = {
+            requested.countDown()
+            check(release.await(10, TimeUnit.SECONDS))
+            MockResponse().setBody(Buffer().write(fixture.sampleImage(replacement)))
+        }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.image.title)
+        val row = compose.onNode(hasText(fixture.image.title) and hasTestTag("artifact_row"))
+        val bounds = row.getUnclippedBoundsInRoot()
+        fun thumbnailColor(): Int {
+            val image = row.captureToImage().toPixelMap()
+            return with(compose.density) { image[32.dp.roundToPx(), 28.dp.roundToPx()].toArgb() }
+        }
+        try {
+            compose.waitUntil(5_000) { thumbnailColor() == original }
+            val replacementUrl = app.fixture.server.url("/artifact-bytes/image-preview").toString()
+            fixture.imageThumbnailUrl = replacementUrl
+            resumeArtifactRoute()
+            compose.waitUntil("replacement thumbnail in refreshed catalog", 5_000) {
+                artifactModel.state.value.page
+                    ?.items
+                    ?.firstOrNull { it.id == fixture.image.id }
+                    ?.thumbnail == replacementUrl
+            }
+            compose.waitUntil("replacement thumbnail request", 5_000) { requested.count == 0L }
+            val fallback = thumbnailColor()
+            assertTrue(fallback != original && fallback != replacement)
+            assertEquals(bounds, row.getUnclippedBoundsInRoot())
+
+            release.countDown()
+            compose.waitUntil(5_000) { thumbnailColor() == replacement }
+            assertEquals(bounds, row.getUnclippedBoundsInRoot())
+
+            fixture.imageThumbnailUrl = null
+            resumeArtifactRoute()
+            compose.waitUntil(5_000) { thumbnailColor() == fallback }
+            assertEquals(bounds, row.getUnclippedBoundsInRoot())
+        } finally {
+            release.countDown()
+        }
+    }
+
     @Test
     fun uncachedFiltersStartTheirOwnSkeletonDelay() {
         val fixture = ArtifactApiFixture(app.fixture)
