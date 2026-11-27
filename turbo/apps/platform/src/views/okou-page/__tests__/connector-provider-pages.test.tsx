@@ -1,9 +1,4 @@
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
-import {
-  browserAuthMethod,
-  catalogConnector,
-} from "./chat-capability-connector-test-helpers.ts";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import {
   slackConnectContract,
@@ -175,21 +170,6 @@ test("The signed-out Feishu callback renders its catalog mark before opening the
   const destination = "https://applink.feishu.cn/client/chat/open?id=review";
   const browser = context.mocks.browser.locationAssign();
   const allow = context.mocks.deferred<void>();
-  const item = catalogConnector({
-    slug: "lark",
-    label: "Lark",
-    method: browserAuthMethod(),
-  });
-  const mark = "https://icons.example.test/selected-feishu-mark.svg";
-  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
-    return params.connectorSlug === "lark"
-      ? respond(200, {
-          connector: { ...item, icon: { url: mark, invertInDarkMode: false } },
-        })
-      : respond(404, {
-          error: { code: "NOT_FOUND", message: "Unknown connector" },
-        });
-  });
   context.mocks.api(
     feishuOauthContract.callback,
     async ({ query, respond }) => {
@@ -206,15 +186,15 @@ test("The signed-out Feishu callback renders its catalog mark before opening the
   const page = await startPage({
     context,
     auth: null,
+    host,
     path: "/connectors/feishu/callback?code=oauth-code&state=signed%2Breturn",
   });
   await page.content;
   await screen.findByText("Connecting Feishu…");
-  await waitFor(() => {
-    return expect(
-      document.querySelector('img[src="' + mark + '"]'),
-    ).toBeVisible();
-  });
+  expect(screen.getByAltText("")).toHaveAttribute(
+    "src",
+    "https://api.okou.ai/api/connector-catalog/lark/icon",
+  );
   allow.resolve();
   await waitFor(() => {
     return expect(browser.calls).toContain(destination);
