@@ -55,6 +55,7 @@ class ConversationHistoryModel(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val precedingReadWrite: (String) -> Job? = { null },
     private val wallMillis: () -> Long = System::currentTimeMillis,
+    private val markRead: suspend (String) -> Unit = { service.markRead(it) },
 ) {
     private val mutable = MutableStateFlow(ConversationUiState())
     val uiState = mutable.asStateFlow()
@@ -178,6 +179,7 @@ class ConversationHistoryModel(
                 ::reportAuthorization,
                 onRead,
                 { precedingReadWrite(threadId) },
+                markRead,
             )
             .also {
                 visit = it

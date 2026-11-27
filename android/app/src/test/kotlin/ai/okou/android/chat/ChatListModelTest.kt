@@ -1516,6 +1516,66 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
     }
 
     @Test
+    fun reopeningAChatSettlesAnEarlierUnconfirmedUnreadUndo() = runTest {
+        var lastReadAt: String? = null
+        val latestReply = HistoryCursor(HISTORY_LAST_EVENT, 37)
+        val reply = HistoryEvent.decode(historyEventWire(HISTORY_LAST_EVENT, latestReply.seqId))
+        val source =
+            object : Service() {
+                override suspend fun indicators() =
+                    if (lastReadAt == null)
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    else Indicators(emptyMap(), emptyMap())
+
+                override suspend fun threadDetail(threadId: String) =
+                    ThreadDetail(lastReadAt, false)
+
+                override suspend fun historySnapshot(threadId: String): Nothing =
+                    throw ApiFailure.Http(404, "CHAT_EVENT_SNAPSHOT_NOT_FOUND", null, null)
+
+                override suspend fun historyRows(threadId: String, cursor: HistoryCursor) =
+                    if (cursor.seqId < latestReply.seqId)
+                        HistoryPage(listOf(reply), latestReply, false)
+                    else HistoryPage(emptyList(), cursor, false)
+
+                override suspend fun markRead(threadId: String): ReadState {
+                    lastReadAt = CHAT_DATE
+                    return ReadState(lastReadAt)
+                }
+
+                override suspend fun markUnread(threadId: String): ReadState =
+                    throw ApiFailure.Network(IOException("Response lost"))
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.selectFilter(ChatListFilter.Unread)
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            advanceUntilIdle()
+            assertTrue(model.undoRowAction(checkNotNull(model.uiState.value.rowUndo)))
+            advanceUntilIdle()
+            val awaitingReadback = model.uiState.value
+            assertTrue(awaitingReadback.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatUndoPhase.Unconfirmed, awaitingReadback.rowUndo?.phase)
+
+            val history = model.history
+            history.open(awaitingReadback.threads.single())
+            val visit =
+                checkNotNull(history.beginVisit(CHAT_PERSONAL, history.uiState.value.generation))
+            advanceUntilIdle()
+            visit.confirmDisplayed(checkNotNull(history.uiState.value.confirmation))
+            advanceUntilIdle()
+
+            assertEquals(HistoryReadState.Confirmed, visit.readState.value)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertNull(model.uiState.value.rowUndo)
+        }
+    }
+
+    @Test
     fun undoWaitsForAnEarlierReadBeforeSubmittingTheInverse() = runTest {
         val displayedRead = CompletableDeferred<Unit>()
         val unread =

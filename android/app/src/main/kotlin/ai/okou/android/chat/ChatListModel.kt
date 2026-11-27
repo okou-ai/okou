@@ -86,7 +86,11 @@ data class ChatMarkAllReadResult(
 }
 
 class ChatReadIntent
-internal constructor(internal val action: ChatRowAction, internal val through: String?) {
+internal constructor(
+    internal val action: ChatRowAction,
+    internal val through: String?,
+    internal val undoRequest: ChatRowUndo? = null,
+) {
     // Indicators use the server's fixed-width UTC ISO timestamps.
     // A locally marked unread row can still lack a server watermark on the next action.
     internal fun isUnread(serverUnreadAt: String?): Boolean =
@@ -439,6 +443,7 @@ class ChatListModel(
             dispatcher,
             precedingReadWrite = { readWrites[it] },
             wallMillis = wallMillis,
+            markRead = ::markReadWithReceipt,
         )
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
@@ -502,7 +507,6 @@ class ChatListModel(
     private enum class ReadWriteOrigin {
         Row,
         Batch,
-        Undo,
     }
 
     private class ReadConfirmation(
@@ -832,7 +836,7 @@ class ChatListModel(
         priorProjection: ChatReadIntent? = null,
     ): ReadConfirmation {
         val recover = origin != ReadWriteOrigin.Batch
-        val reportFailure = origin == ReadWriteOrigin.Row
+        val reportFailure = recover && intent.undoRequest == null
         var alreadySatisfied = false
         suspend fun writeRead(): Boolean {
             requireCurrent()
@@ -1199,7 +1203,7 @@ class ChatListModel(
         val acknowledgement = readSession?.pendingAutomaticRead
         val intent =
             if (!action.updatesChat) {
-                ChatReadIntent(action, state.displayUnreadAt?.get(threadId))
+                ChatReadIntent(action, state.displayUnreadAt?.get(threadId), undoRequest)
             } else null
         val priorReadProjection = state.readIntents[threadId]
         val write =
@@ -1301,9 +1305,7 @@ class ChatListModel(
                             writeReadIntent(
                                 threadId,
                                 intent,
-                                origin =
-                                    if (undoRequest == null) ReadWriteOrigin.Row
-                                    else ReadWriteOrigin.Undo,
+                                origin = ReadWriteOrigin.Row,
                                 conversationId = conversationId,
                                 priorProjection = priorReadProjection,
                             )
@@ -1613,23 +1615,36 @@ class ChatListModel(
         }
     }
 
-    private suspend fun markReadWithReceipt(threadId: String): ChatTimestamp? {
+    private suspend fun markReadWithReceipt(threadId: String) {
+        val previous = readConfirmations[threadId]
         val lastReadAt = service.markRead(threadId).lastReadAt
         requireCurrent()
-        val watermark = lastReadAt?.let(::chatTimestamp) ?: return null
+        val watermark = lastReadAt?.let(::chatTimestamp) ?: return
+        var state = mutable.value
+        val undo = previous?.intent?.undoRequest
+        if (previous != null && undo != null && readConfirmations[threadId] === previous) {
+            // A newly confirmed read supersedes the earlier unread Undo for this chat.
+            readConfirmations.remove(threadId)
+            state = state.discardReadIntent(threadId, previous.intent, null)
+            if (state.activeUndo(undo.fromConversation)?.sequence == undo.sequence) {
+                state = state.withUndo(undo.fromConversation, null)
+            }
+        }
         // The current indicator request can still return unread evidence from before this receipt.
-        if (indicatorsJob?.isActive == true) indicatorReadReceipts[threadId] = watermark
-        val state = mutable.value
+        if (indicatorsJob?.isActive == true) {
+            val previousWatermark = indicatorReadReceipts[threadId]
+            if (previousWatermark == null || watermark > previousWatermark)
+                indicatorReadReceipts[threadId] = watermark
+        }
         val indicators = state.indicators
         val saved = state.cachedUnread
-        if (indicators != null) {
-            mutable.value =
+        mutable.value =
+            if (indicators != null) {
                 state.copy(indicators = indicators.acknowledgeUnread(threadId, watermark))
-        } else if (saved != null) {
-            val unreadAt = saved.unreadAt.acknowledgeUnread(threadId, watermark)
-            mutable.value = state.copy(cachedUnread = saved.copy(unreadAt = unreadAt))
-        }
-        return watermark
+            } else if (saved != null) {
+                val unreadAt = saved.unreadAt.acknowledgeUnread(threadId, watermark)
+                state.copy(cachedUnread = saved.copy(unreadAt = unreadAt))
+            } else state
     }
 
     private fun Indicators.acknowledgeUnread(
