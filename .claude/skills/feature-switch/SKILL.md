@@ -30,7 +30,8 @@ A feature switch is **not** required for:
 
 File: `turbo/packages/core/src/feature-switch-key.ts`
 
-Add a new entry to `FeatureSwitchKey`:
+Add a new entry to `FeatureSwitchKey`. Its value is the slug displayed in Lab
+and must use only ASCII letters, digits, and underscores:
 
 ```typescript
 export enum FeatureSwitchKey {
@@ -48,6 +49,7 @@ Add an entry to the `FEATURE_SWITCHES` record:
 ```typescript
 [FeatureSwitchKey.MyFeature]: {
   maintainer: "you@okou.ai",
+  description: "Enable the new feature.",
   enabled: false,
   enabledOrgIdHashes: STAFF_ORG_ID_HASHES, // optional: staff-only access
 },
@@ -58,6 +60,7 @@ Add an entry to the `FEATURE_SWITCHES` record:
 | Field                | Type       | Description                                        |
 | -------------------- | ---------- | -------------------------------------------------- |
 | `maintainer`         | `string`   | Email of the responsible person                    |
+| `description`        | `string`   | One or two short sentences shown in Lab            |
 | `enabled`            | `boolean`  | `true` = on for everyone, `false` = off by default |
 | `enabledUserHashes`  | `string[]` | FNV-1a hashes of allowed user IDs                  |
 | `enabledEmailHashes` | `string[]` | FNV-1a hashes of allowed emails                    |
