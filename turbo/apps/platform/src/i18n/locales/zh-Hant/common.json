@@ -3037,6 +3037,16 @@
       "loading": "正在載入帳號…",
       "loadMore": "載入更多",
       "managerTitle": "管理{{connector}}帳號",
+      "namePresetCustom": "自訂",
+      "namePresets": {
+        "company": "公司",
+        "customer": "客戶",
+        "personal": "個人",
+        "primary": "主要",
+        "secondary": "次要",
+        "work": "工作"
+      },
+      "namePromptCustomHint": "留空則不設定名稱直接儲存。",
       "namePromptDescription": "可以跳過，稍後再命名。",
       "namePromptTitle": "給你的{{connector}}帳號起個名字",
       "noAccounts": "暫無帳號",

@@ -3108,6 +3108,16 @@
       "loading": "Cargando cuentas…",
       "loadMore": "Cargar más",
       "managerTitle": "Gestionar cuentas de {{connector}}",
+      "namePresetCustom": "Personalizado",
+      "namePresets": {
+        "company": "Empresa",
+        "customer": "Cliente",
+        "personal": "Personal",
+        "primary": "Principal",
+        "secondary": "Secundaria",
+        "work": "Trabajo"
+      },
+      "namePromptCustomHint": "Déjalo en blanco para guardar sin nombre.",
       "namePromptDescription": "Puedes omitir este paso y asignar un nombre a la cuenta más tarde.",
       "namePromptTitle": "Asigna un nombre a tu cuenta de {{connector}}",
       "noAccounts": "Sin cuentas",

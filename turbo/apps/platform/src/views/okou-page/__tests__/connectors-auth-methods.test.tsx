@@ -267,7 +267,8 @@ test("connectors-auth-methods-015 retrying saves the same Ahrefs account with it
   const naming = await screen.findByRole("dialog", {
     name: "Name your Ahrefs account",
   });
-  const field = within(naming).getByRole("textbox", { name: "Account name" });
+  const field = within(naming).getByRole("textbox", { name: "Custom" });
+  expect(field).not.toHaveAttribute("placeholder");
   await fill(field, " Work ");
   click(await findEnabledButton("Save", naming));
   await screen.findByText("Rename failed");
@@ -308,14 +309,17 @@ test("connectors-auth-methods-016 a pending save for the first Ahrefs account le
   await setupPage({ context, path: "/connectors" });
   click(await findButton("Connect Ahrefs"));
   const first = await submitCredentials("first-fixture");
-  await fill(within(first).getByLabelText("Account name"), "First account");
+  await fill(
+    within(first).getByRole("textbox", { name: "Custom" }),
+    "First account",
+  );
   click(await findEnabledButton("Save", first));
   await started.promise;
   click(await findButton("Skip"));
   click(await findButton("Manage Ahrefs accounts"));
   click(await findButton("Add account"));
   const second = await submitCredentials("second-fixture");
-  const draft = within(second).getByLabelText("Account name");
+  const draft = within(second).getByRole("textbox", { name: "Custom" });
   await fill(draft, "Second account draft");
   expect(queryButton("Save", second)).toBeDisabled();
   resume.resolve();
@@ -330,4 +334,66 @@ test("connectors-auth-methods-016 a pending save for the first Ahrefs account le
       return item.displayName;
     }),
   ).toStrictEqual(["First account", null]);
+});
+
+test("connectors-auth-methods-019 naming prompt supports preset radio choices and blank custom save without fallback placeholder", async () => {
+  const saved = ahrefsAccounts();
+  const renamed: (string | null)[] = [];
+  context.mocks.api(
+    connectorAccountsContract.rename,
+    ({ params, body, respond }) => {
+      const account = saved.find((item) => {
+        return item.id === params.connectionId;
+      })!;
+      account.displayName = body.displayName;
+      renamed.push(body.displayName);
+      return respond(200, account);
+    },
+  );
+  await setupPage({ context, path: "/connectors" });
+
+  // First account: select a preset radio; custom input hides and preset label is saved.
+  click(await findButton("Connect Ahrefs"));
+  await fill(
+    await screen.findByPlaceholderText("your-ahrefs-api-token"),
+    "preset-fixture",
+  );
+  click(await findButton("Save"));
+  const firstPrompt = await screen.findByRole("dialog", {
+    name: "Name your Ahrefs account",
+  });
+  expect(
+    within(firstPrompt).getByRole("textbox", { name: "Custom" }),
+  ).not.toHaveAttribute("placeholder");
+  click(within(firstPrompt).getByRole("radio", { name: "Work" }));
+  expect(
+    within(firstPrompt).queryByRole("textbox", { name: "Custom" }),
+  ).not.toBeInTheDocument();
+  click(await findEnabledButton("Save", firstPrompt));
+  await waitFor(() => {
+    return expect(firstPrompt).not.toBeInTheDocument();
+  });
+
+  // Second account: keep Custom selected with blank input; saves null.
+  click(await findButton("Manage Ahrefs accounts"));
+  click(await findButton("Add account"));
+  await fill(
+    await screen.findByPlaceholderText("your-ahrefs-api-token"),
+    "blank-custom-fixture",
+  );
+  click(await findButton("Save"));
+  const secondPrompt = await screen.findByRole("dialog", {
+    name: "Name your Ahrefs account",
+  });
+  const customInput = within(secondPrompt).getByRole("textbox", {
+    name: "Custom",
+  });
+  expect(customInput).toHaveValue("");
+  expect(customInput).not.toHaveAttribute("placeholder");
+  click(await findEnabledButton("Save", secondPrompt));
+  await waitFor(() => {
+    return expect(secondPrompt).not.toBeInTheDocument();
+  });
+
+  expect(renamed).toStrictEqual(["Work", null]);
 });
