@@ -541,11 +541,9 @@ internal class DefaultModelSettings(
     ): Boolean {
         val current = mutable.value
         val latest = checkNotNull(current.save)
-        val attemptedConfirmed = attempted.matches(response)
-        if (!attemptedConfirmed && latest.request == attempted) return false
-        // The value before the first write can look like the user's newer choice.
-        // Submit that choice explicitly unless this read also confirms the earlier attempt.
-        val fulfilled = attemptedConfirmed && latest.request.matches(response)
+        val evidence = settingReadback(attempted, latest.request) { it.matches(response) }
+        if (evidence == SettingReadback.Unconfirmed && latest.request == attempted) return false
+        val fulfilled = evidence == SettingReadback.ConfirmsLatest
 
         unconfirmedWrite = null
         readbackBlocked = false
@@ -702,10 +700,6 @@ private val DefaultModelState.canApplyScheduledRead: Boolean
 private fun Exception.retryable(): Boolean =
     this is ApiFailure.Network ||
         this is ApiFailure.Http && (status >= 500 || status == 408 || status == 429)
-
-private fun Exception.definitivelyRejectedWrite(): Boolean =
-    this is ApiFailure.Unauthenticated ||
-        this is ApiFailure.Http && status in 400..499 && status != 408
 
 private fun UpdateDefaultModelPreference.matches(preference: DefaultModelPreference): Boolean =
     // The server can read back an explicit Auto ID for a nullable write.
