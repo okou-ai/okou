@@ -616,8 +616,8 @@ fn download_with_readiness(
     } else {
         concurrency
     };
-    // Local archives compete for CPU. Prefer longer ready work without changing
-    // the original pending order used to enforce logical and physical ownership.
+    // Local archives compete for CPU. Prefer longer ready work while active
+    // reservations protect logical and resolved targets.
     let pending = tasks
         .into_iter()
         .enumerate()
@@ -805,17 +805,6 @@ fn find_startable_download(
             })
         {
             on_conflict(download.id, pending_path, blocking.id, reserved_path);
-            continue;
-        }
-
-        if pending.iter().take(index).any(|earlier| {
-            conflicting_mount_paths(
-                &download.task,
-                earlier.task.logical_mount_path(),
-                earlier.task.effective_mount_path(),
-            )
-            .is_some()
-        }) {
             continue;
         }
 
