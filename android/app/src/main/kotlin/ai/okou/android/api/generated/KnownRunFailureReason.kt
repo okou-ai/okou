@@ -2,6 +2,7 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:kotlin
 package ai.okou.android.api.generated
 
+
 // Known at build time. Keep transport and cache values as raw strings.
 internal enum class KnownRunFailureReason(val wireValue: String) {
     UNKNOWN("unknown"),
@@ -37,8 +38,7 @@ internal enum class KnownRunFailureReason(val wireValue: String) {
     USAGE_LIMIT("usage_limit");
 
     companion object {
-        fun fromWireValue(value: String?): KnownRunFailureReason? = entries.firstOrNull {
-            it.wireValue == value
-        }
+        fun fromWireValue(value: String?): KnownRunFailureReason? =
+            entries.firstOrNull { it.wireValue == value }
     }
 }

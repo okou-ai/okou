@@ -18,6 +18,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "artifact-access",
+    contracts: ["artifactAccessContract"],
+    bindings: [],
+  },
+  {
     module: "artifact-catalog",
     contracts: ["artifactCatalogContract"],
     bindings: [

@@ -7,20 +7,19 @@ internal data class ImageToolOption(val id: String, val title: String, val price
 internal const val dataRouterProtocolVersion = "2026-07-28"
 internal const val defaultImageToolModel = "gpt-image-2.5-flare"
 
-internal val imageToolOptions =
-    listOf(
-        ImageToolOption("gpt-image-1", "GPT Image 1", "\$\$"),
-        ImageToolOption("gpt-image-2", "GPT Image 2", "\$\$\$"),
-        ImageToolOption("gpt-image-2.5-flare", "GPT Image 2.5 Flare", "\$\$\$"),
-        ImageToolOption("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "\$\$\$"),
-        ImageToolOption("fal-ai/nano-banana-2", "Nano Banana 2", "\$\$\$"),
-        ImageToolOption("google/nano-banana-2-lite", "Nano Banana 2 Lite", "\$\$"),
-        ImageToolOption("fal-ai/flux-2-pro", "FLUX.2 Pro", "\$\$"),
-        ImageToolOption("ideogram/v4", "Ideogram 4", "\$"),
-        ImageToolOption("alibaba/qwen-image-3/text-to-image", "Qwen Image 3", "\$\$"),
-        ImageToolOption("fal-ai/flux-pro/v1.1", "Flux Pro v1.1", "\$\$\$"),
-        ImageToolOption("fal-ai/flux-pro/v1.1-ultra", "Flux Pro v1.1 Ultra", "\$\$\$"),
-        ImageToolOption("fal-ai/bytedance/seedream/v4/text-to-image", "Seedream 4", "\$\$"),
-    )
+internal val imageToolOptions = listOf(
+    ImageToolOption("gpt-image-1", "GPT Image 1", "\$\$"),
+    ImageToolOption("gpt-image-2", "GPT Image 2", "\$\$\$"),
+    ImageToolOption("gpt-image-2.5-flare", "GPT Image 2.5 Flare", "\$\$\$"),
+    ImageToolOption("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "\$\$\$"),
+    ImageToolOption("fal-ai/nano-banana-2", "Nano Banana 2", "\$\$\$"),
+    ImageToolOption("google/nano-banana-2-lite", "Nano Banana 2 Lite", "\$\$"),
+    ImageToolOption("fal-ai/flux-2-pro", "FLUX.2 Pro", "\$\$"),
+    ImageToolOption("ideogram/v4", "Ideogram 4", "\$"),
+    ImageToolOption("alibaba/qwen-image-3/text-to-image", "Qwen Image 3", "\$\$"),
+    ImageToolOption("fal-ai/flux-pro/v1.1", "Flux Pro v1.1", "\$\$\$"),
+    ImageToolOption("fal-ai/flux-pro/v1.1-ultra", "Flux Pro v1.1 Ultra", "\$\$\$"),
+    ImageToolOption("fal-ai/bytedance/seedream/v4/text-to-image", "Seedream 4", "\$\$"),
+)
 
 internal val publicImageToolOptions = imageToolOptions.take(9)

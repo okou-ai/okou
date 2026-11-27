@@ -45,6 +45,7 @@ import {
   videoArtifacts,
   type ArtifactKind,
   type ArtifactThumbnail,
+  type ArtifactVisibility,
 } from "@okouai/db/schema/artifact";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
@@ -303,6 +304,109 @@ function hostedArtifactKind(
   return null;
 }
 
+const DIRECT_KIND_CATEGORIES: Readonly<
+  Partial<Record<ArtifactCatalogKind, ArtifactCatalogCategory>>
+> = {
+  avatar: "other",
+  "shared-thread": "other",
+  presentation: "presentation",
+  "hosted-site": "website",
+  image: "image",
+  video: "video",
+};
+
+const FILE_CATEGORY_RULES: readonly {
+  readonly category: ArtifactCatalogCategory;
+  readonly mimePrefixes?: readonly string[];
+  readonly mimeExact?: readonly string[];
+  readonly extPattern: RegExp;
+}[] = [
+  {
+    category: "image",
+    mimePrefixes: ["image/"],
+    extPattern: /\.(?:avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/u,
+  },
+  {
+    category: "video",
+    mimePrefixes: ["video/"],
+    extPattern: /\.(?:avi|m4v|mkv|mov|mp4|mpeg|mpg|ogv|webm)$/u,
+  },
+  {
+    category: "audio",
+    mimePrefixes: ["audio/"],
+    extPattern: /\.(?:aac|aiff?|flac|m4a|mp3|mpga|oga|ogg|opus|wav|wma)$/u,
+  },
+  {
+    category: "presentation",
+    mimePrefixes: [
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.",
+      "application/vnd.oasis.opendocument.presentation",
+    ],
+    extPattern: /\.(?:odp|pot|potm|potx|pps|ppsm|ppsx|ppt|pptm|pptx)$/u,
+  },
+  {
+    category: "spreadsheet",
+    mimeExact: ["text/csv", "text/tab-separated-values"],
+    mimePrefixes: [
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.",
+      "application/vnd.oasis.opendocument.spreadsheet",
+    ],
+    extPattern: /\.(?:csv|numbers|ods|tsv|xls|xlsb|xlsm|xlsx|xlt|xltm|xltx)$/u,
+  },
+  {
+    category: "website",
+    mimeExact: ["text/html", "application/xhtml+xml"],
+    extPattern: /\.(?:html?|xhtml)$/u,
+  },
+  {
+    category: "document",
+    mimePrefixes: [
+      "text/",
+      "application/vnd.ms-word",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.",
+      "application/vnd.oasis.opendocument.text",
+    ],
+    mimeExact: [
+      "application/pdf",
+      "application/msword",
+      "application/rtf",
+      "application/json",
+      "application/xml",
+      "application/yaml",
+      "application/x-yaml",
+    ],
+    extPattern:
+      /\.(?:doc|docm|docx|dot|dotm|dotx|json|markdown|md|odt|pdf|rtf|txt|xml|ya?ml)$/u,
+  },
+];
+
+function inferFileArtifactCategory(
+  kind: ArtifactCatalogKind,
+  contentType: string | null,
+  filename: string,
+): ArtifactCatalogCategory {
+  const direct = DIRECT_KIND_CATEGORIES[kind];
+  if (direct) {
+    return direct;
+  }
+  const ct = (contentType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  const fname = filename.toLowerCase();
+  for (const rule of FILE_CATEGORY_RULES) {
+    const mimeMatch =
+      (rule.mimeExact?.includes(ct) ?? false) ||
+      (rule.mimePrefixes?.some((prefix) => {
+        return ct.startsWith(prefix);
+      }) ??
+        false);
+    if (mimeMatch || rule.extPattern.test(fname)) {
+      return rule.category;
+    }
+  }
+  return "other";
+}
+
 function videoSourceUrl(row: CatalogFileRow, title: string): string | null {
   const contentType = row.contentType ?? inferMimetype(title);
   return row.url && contentType.startsWith("video/") ? row.url : null;
@@ -534,6 +638,7 @@ function artifactCatalogFileHandoffSql(
 interface UpsertArtifactArgs {
   readonly kind: ArtifactKind;
   readonly displayKind: ArtifactCatalogKind;
+  readonly category: ArtifactCatalogCategory;
   readonly sourceUrl: string | null;
   readonly aliasUrl: string | null;
   readonly videoSourceUrl: string | null;
@@ -589,6 +694,7 @@ function artifactUpsertPlan(args: UpsertArtifactArgs) {
       authorUserId: args.authorUserId,
       title: args.title,
       thumbnail: args.thumbnail,
+      category: args.category,
       createdAt: args.createdAt,
     },
     conflict: {
@@ -611,6 +717,7 @@ function artifactUpsertPlan(args: UpsertArtifactArgs) {
         authorUserId: args.authorUserId,
         title: args.title,
         thumbnail: args.thumbnail,
+        category: args.category,
         updatedAt: nowDate(),
       },
       setWhere: lte(
@@ -664,6 +771,10 @@ function fileArtifactInsertSelection(
     thumbnail: sql`${sql.param(values.thumbnail, artifacts.thumbnail)}::jsonb`
       .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
       .as("thumbnail"),
+    visibility: sql`'private'`.mapWith(artifacts.visibility).as("visibility"),
+    category: sql`${values.category ?? null}::varchar`
+      .mapWith(nullableDriverValueDecoder(artifacts.category))
+      .as("category"),
     deletedAt: sql`NULL::timestamp`
       .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
       .as("deleted_at"),
@@ -834,6 +945,9 @@ function hostedArtifactProjection(
     orgId: args.orgId,
     title,
     thumbnail,
+    category: (args.kind === "presentation"
+      ? "presentation"
+      : "website") as ArtifactCatalogCategory,
     updatedAt,
     // Only a new publication may restore a deleted site. Replaying an old
     // file or preview update must preserve the catalog tombstone.
@@ -880,6 +994,10 @@ function hostedArtifactProjection(
     thumbnail: sql`${sql.param(thumbnail, artifacts.thumbnail)}::jsonb`
       .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
       .as("thumbnail"),
+    visibility: sql`'private'`.mapWith(artifacts.visibility).as("visibility"),
+    category: sql`${sql.param(values.category, artifacts.category)}::varchar`
+      .mapWith(nullableDriverValueDecoder(artifacts.category))
+      .as("category"),
     deletedAt: sql`NULL::timestamp`
       .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
       .as("deleted_at"),
@@ -1114,9 +1232,10 @@ const syncFileArtifact$ = command(
         .returning({ id: artifacts.id }),
     );
 
+    const displayKind = catalogArtifactKind(kind, row.metadata, logicalKey);
     const plan = artifactUpsertPlan({
       kind,
-      displayKind: catalogArtifactKind(kind, row.metadata, logicalKey),
+      displayKind,
       sourceUrl: row.url,
       aliasUrl: metadataString(row.metadata, "aliasUrl"),
       videoSourceUrl: videoSourceUrl(row, row.filename ?? row.externalId),
@@ -1128,6 +1247,11 @@ const syncFileArtifact$ = command(
       orgId,
       authorUserId,
       title: row.filename ?? row.externalId,
+      category: inferFileArtifactCategory(
+        displayKind,
+        row.contentType,
+        row.filename ?? row.externalId,
+      ),
       thumbnail: fileThumbnail(row),
       createdAt: row.createdAt,
     });
@@ -1377,6 +1501,7 @@ function toArtifactSummary(row: {
   readonly videoSourceUrl: string | null;
   readonly title: string;
   readonly thumbnail: ArtifactThumbnail | null;
+  readonly visibility?: ArtifactVisibility;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }): ArtifactSummary {
@@ -1389,6 +1514,7 @@ function toArtifactSummary(row: {
     ...(row.sourceUrl ? { sourceUrl: row.sourceUrl } : {}),
     ...(row.aliasUrl ? { aliasUrl: row.aliasUrl } : {}),
     ...(row.videoSourceUrl ? { videoSourceUrl: row.videoSourceUrl } : {}),
+    ...(row.visibility ? { visibility: row.visibility } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -1544,10 +1670,10 @@ export const listArtifactCatalog$ = command(
       videoSourceUrl: artifacts.videoSourceUrl,
       title: artifacts.title,
       thumbnail: artifacts.thumbnail,
+      visibility: artifacts.visibility,
       createdAt: artifacts.createdAt,
       updatedAt: artifacts.updatedAt,
-      // Preserve PostgreSQL microseconds in new keyset cursors; Date truncates
-      // them and can skip records sharing a millisecond at a page boundary.
+      // Preserve PostgreSQL microseconds in new keyset cursors.
       cursorCreatedAt:
         sql`to_char(${artifacts.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
           pgTextDecoder,
@@ -2014,6 +2140,7 @@ function selectArtifactCatalogEntry(
       videoSourceUrl: artifacts.videoSourceUrl,
       title: artifacts.title,
       thumbnail: artifacts.thumbnail,
+      visibility: artifacts.visibility,
       createdAt: artifacts.createdAt,
       updatedAt: artifacts.updatedAt,
     })

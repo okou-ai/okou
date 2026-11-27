@@ -21,6 +21,7 @@ import {
   consumeHostedSiteSharingQuota$,
   type SharingQuotaRequest,
 } from "../services/hosted-site-sharing-quota.service";
+import { recordLegacyArtifactEndpointCall$ } from "../services/legacy-artifact-deprecation-telemetry";
 import type { RouteEntry } from "../route-entry";
 
 const shares$ = hostedSiteShareList(
@@ -87,6 +88,12 @@ const admission$ = command(
 );
 
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "GET /api/host/sites/:siteId/shares",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const { siteId } = get(pathParamsOf(hostedSiteSharingContract.list));
   const owner = await set(owner$, siteId, signal);
   if (!owner) {
@@ -98,6 +105,12 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const search$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "GET /api/host/sites/:siteId/share-accounts",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const { siteId } = get(pathParamsOf(hostedSiteSharingContract.search));
   const owner = await set(owner$, siteId, signal);
   if (!owner) {
@@ -120,6 +133,12 @@ const search$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const share$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "POST /api/host/sites/:siteId/shares",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const { siteId } = get(pathParamsOf(hostedSiteSharingContract.share));
   const owner = await set(owner$, siteId, signal);
   if (!owner) {
@@ -161,6 +180,12 @@ const share$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "DELETE /api/host/sites/:siteId/shares/:shareId",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const params = get(pathParamsOf(hostedSiteSharingContract.remove));
   const owner = await set(owner$, params.siteId, signal);
   if (!owner) {

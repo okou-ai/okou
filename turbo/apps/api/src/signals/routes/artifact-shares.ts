@@ -10,16 +10,28 @@ import {
   resolveArtifactShare$,
   updateArtifactShare$,
 } from "../services/artifact-shares.service";
+import { recordLegacyArtifactEndpointCall$ } from "../services/legacy-artifact-deprecation-telemetry";
 import type { RouteEntry } from "../route-entry";
 
 // Captured CLI packages still check this endpoint before private creation.
 // Remove only after no supported or captured CLI package calls it.
-const availability$ = command(() => {
+const availability$ = command(({ get, set }) => {
+  const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "GET /api/artifact-shares/availability",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   return { status: 200 as const, body: { enabled: true } };
 });
 
 const status$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "POST /api/artifact-shares/status",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const parsed = await get(bodyResultOf(artifactSharesContract.status));
   signal.throwIfAborted();
   if (!parsed.ok) {
@@ -37,6 +49,11 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
+  set(recordLegacyArtifactEndpointCall$, {
+    endpoint: "PUT /api/artifact-shares",
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   const parsed = await get(bodyResultOf(artifactSharesContract.update));
   signal.throwIfAborted();
   if (!parsed.ok) {

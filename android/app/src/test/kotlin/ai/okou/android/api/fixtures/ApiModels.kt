@@ -18,7 +18,8 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-@Serializable(with = ChatSnapshotSerializer::class) sealed interface ChatSnapshot
+@Serializable(with = ChatSnapshotSerializer::class)
+sealed interface ChatSnapshot
 
 @Serializable
 data class ChatSnapshotVariant1(
@@ -28,23 +29,19 @@ data class ChatSnapshotVariant1(
     val `latestSeqId`: Long?,
 ) : ChatSnapshot
 
-@Serializable(with = CanonicalEmptyArraySerializer::class) data object CanonicalEmptyArray
+@Serializable(with = CanonicalEmptyArraySerializer::class)
+data object CanonicalEmptyArray
 
 object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
     override val descriptor = ListSerializer(String.serializer()).descriptor
-
     override fun deserialize(decoder: Decoder): CanonicalEmptyArray {
-        val input =
-            decoder as? JsonDecoder ?: throw SerializationException("Expected JSON empty array")
+        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON empty array")
         val value = input.decodeJsonElement() as? JsonArray
-        if (value == null || value.isNotEmpty())
-            throw SerializationException("Expected empty array")
+        if (value == null || value.isNotEmpty()) throw SerializationException("Expected empty array")
         return CanonicalEmptyArray
     }
-
     override fun serialize(encoder: Encoder, value: CanonicalEmptyArray) {
-        val output =
-            encoder as? JsonEncoder ?: throw SerializationException("Expected JSON empty array")
+        val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON empty array")
         output.encodeJsonElement(JsonArray(emptyList()))
     }
 }
@@ -57,63 +54,73 @@ data class ChatSnapshotVariant2(
 ) : ChatSnapshot
 
 object ChatSnapshotSerializer : KSerializer<ChatSnapshot> {
-    override val descriptor =
-        buildClassSerialDescriptor("ai.okou.android.api.fixtures.ChatSnapshot")
-
-    override fun deserialize(decoder: Decoder): ChatSnapshot {
-        val input =
-            decoder as? JsonDecoder
-                ?: throw SerializationException("Expected JSON object for ChatSnapshot")
-        val value =
-            input.decodeJsonElement() as? JsonObject
-                ?: throw SerializationException("Expected object for ChatSnapshot")
-        val matches = listOf(value.containsKey("url"), value.containsKey("chatThreads"))
-        if (matches.count { it } != 1)
-            throw SerializationException("Unknown or ambiguous ChatSnapshot variant")
-        return when (matches.indexOf(true)) {
+  override val descriptor = buildClassSerialDescriptor("ai.okou.android.api.fixtures.ChatSnapshot")
+  override fun deserialize(decoder: Decoder): ChatSnapshot {
+      val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON object for ChatSnapshot")
+      val value = input.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected object for ChatSnapshot")
+      val matches = listOf(value.containsKey("url"), value.containsKey("chatThreads"))
+      if (matches.count { it } != 1) throw SerializationException("Unknown or ambiguous ChatSnapshot variant")
+      return when (matches.indexOf(true)) {
             0 -> input.json.decodeFromJsonElement(ChatSnapshotVariant1.serializer(), value)
             1 -> input.json.decodeFromJsonElement(ChatSnapshotVariant2.serializer(), value)
-            else -> throw SerializationException("Unknown ChatSnapshot variant")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: ChatSnapshot) {
-        when (value) {
-            is ChatSnapshotVariant1 ->
-                encoder.encodeSerializableValue(ChatSnapshotVariant1.serializer(), value)
-            is ChatSnapshotVariant2 ->
-                encoder.encodeSerializableValue(ChatSnapshotVariant2.serializer(), value)
-        }
-    }
+          else -> throw SerializationException("Unknown ChatSnapshot variant")
+      }
+  }
+  override fun serialize(encoder: Encoder, value: ChatSnapshot) {
+      when (value) {
+            is ChatSnapshotVariant1 -> encoder.encodeSerializableValue(ChatSnapshotVariant1.serializer(), value)
+            is ChatSnapshotVariant2 -> encoder.encodeSerializableValue(ChatSnapshotVariant2.serializer(), value)
+      }
+  }
 }
 
-@Serializable(with = ChatEventsEventsItemSerializer::class) sealed interface ChatEventsEventsItem
+@Serializable(with = ChatEventsEventsItemSerializer::class)
+sealed interface ChatEventsEventsItem
 
 @Serializable
 enum class ChatEventsEventsItemVariant1Kind {
-    @SerialName("created") CREATED,
-    @SerialName("renamed") RENAMED,
-    @SerialName("deleted") DELETED,
-    @SerialName("pinned") PINNED,
-    @SerialName("unpinned") UNPINNED,
-    @SerialName("model_selection_updated") MODEL_SELECTION_UPDATED,
-    @SerialName("service_tier_updated") SERVICE_TIER_UPDATED,
-    @SerialName("computer_use_host_updated") COMPUTER_USE_HOST_UPDATED,
-    @SerialName("sort_touched") SORT_TOUCHED,
-    @SerialName("archived") ARCHIVED,
-    @SerialName("unarchived") UNARCHIVED,
+    @SerialName("created")
+    CREATED,
+    @SerialName("renamed")
+    RENAMED,
+    @SerialName("deleted")
+    DELETED,
+    @SerialName("pinned")
+    PINNED,
+    @SerialName("unpinned")
+    UNPINNED,
+    @SerialName("model_selection_updated")
+    MODEL_SELECTION_UPDATED,
+    @SerialName("service_tier_updated")
+    SERVICE_TIER_UPDATED,
+    @SerialName("computer_use_host_updated")
+    COMPUTER_USE_HOST_UPDATED,
+    @SerialName("sort_touched")
+    SORT_TOUCHED,
+    @SerialName("archived")
+    ARCHIVED,
+    @SerialName("unarchived")
+    UNARCHIVED,
 }
 
 @Serializable
 enum class ChatEventsEventsItemVariant1ModelSettingsValueEffort {
-    @SerialName("low") LOW,
-    @SerialName("medium") MEDIUM,
-    @SerialName("high") HIGH,
-    @SerialName("xhigh") XHIGH,
-    @SerialName("max") MAX,
-    @SerialName("ultra") ULTRA,
-    @SerialName("extra") EXTRA,
-    @SerialName("ultracode") ULTRACODE,
+    @SerialName("low")
+    LOW,
+    @SerialName("medium")
+    MEDIUM,
+    @SerialName("high")
+    HIGH,
+    @SerialName("xhigh")
+    XHIGH,
+    @SerialName("max")
+    MAX,
+    @SerialName("ultra")
+    ULTRA,
+    @SerialName("extra")
+    EXTRA,
+    @SerialName("ultracode")
+    ULTRACODE,
 }
 
 @Serializable
@@ -123,14 +130,22 @@ data class ChatEventsEventsItemVariant1ModelSettingsValue(
 
 @Serializable
 enum class ChatEventsEventsItemVariant1ModelSettingsPatchEffort {
-    @SerialName("low") LOW,
-    @SerialName("medium") MEDIUM,
-    @SerialName("high") HIGH,
-    @SerialName("xhigh") XHIGH,
-    @SerialName("max") MAX,
-    @SerialName("ultra") ULTRA,
-    @SerialName("extra") EXTRA,
-    @SerialName("ultracode") ULTRACODE,
+    @SerialName("low")
+    LOW,
+    @SerialName("medium")
+    MEDIUM,
+    @SerialName("high")
+    HIGH,
+    @SerialName("xhigh")
+    XHIGH,
+    @SerialName("max")
+    MAX,
+    @SerialName("ultra")
+    ULTRA,
+    @SerialName("extra")
+    EXTRA,
+    @SerialName("ultracode")
+    ULTRACODE,
 }
 
 @Serializable
@@ -141,20 +156,30 @@ data class ChatEventsEventsItemVariant1ModelSettingsPatch(
 
 @Serializable
 enum class ChatEventsEventsItemVariant1ReasoningEffort {
-    @SerialName("low") LOW,
-    @SerialName("medium") MEDIUM,
-    @SerialName("high") HIGH,
-    @SerialName("xhigh") XHIGH,
-    @SerialName("max") MAX,
-    @SerialName("ultra") ULTRA,
-    @SerialName("extra") EXTRA,
-    @SerialName("ultracode") ULTRACODE,
+    @SerialName("low")
+    LOW,
+    @SerialName("medium")
+    MEDIUM,
+    @SerialName("high")
+    HIGH,
+    @SerialName("xhigh")
+    XHIGH,
+    @SerialName("max")
+    MAX,
+    @SerialName("ultra")
+    ULTRA,
+    @SerialName("extra")
+    EXTRA,
+    @SerialName("ultracode")
+    ULTRACODE,
 }
 
 @Serializable
 enum class ChatEventsEventsItemVariant1ServiceTier {
-    @SerialName("priority") PRIORITY,
-    @SerialName("ultrafast") ULTRAFAST,
+    @SerialName("priority")
+    PRIORITY,
+    @SerialName("ultrafast")
+    ULTRAFAST,
 }
 
 @Serializable
@@ -180,19 +205,28 @@ data class ChatEventsEventsItemVariant1(
 
 @Serializable
 enum class ChatEventsEventsItemVariant2Kind {
-    @SerialName("project_updated") PROJECT_UPDATED,
+    @SerialName("project_updated")
+    PROJECT_UPDATED,
 }
 
 @Serializable
 enum class ChatEventsEventsItemVariant2ModelSettingsValueEffort {
-    @SerialName("low") LOW,
-    @SerialName("medium") MEDIUM,
-    @SerialName("high") HIGH,
-    @SerialName("xhigh") XHIGH,
-    @SerialName("max") MAX,
-    @SerialName("ultra") ULTRA,
-    @SerialName("extra") EXTRA,
-    @SerialName("ultracode") ULTRACODE,
+    @SerialName("low")
+    LOW,
+    @SerialName("medium")
+    MEDIUM,
+    @SerialName("high")
+    HIGH,
+    @SerialName("xhigh")
+    XHIGH,
+    @SerialName("max")
+    MAX,
+    @SerialName("ultra")
+    ULTRA,
+    @SerialName("extra")
+    EXTRA,
+    @SerialName("ultracode")
+    ULTRACODE,
 }
 
 @Serializable
@@ -202,14 +236,22 @@ data class ChatEventsEventsItemVariant2ModelSettingsValue(
 
 @Serializable
 enum class ChatEventsEventsItemVariant2ModelSettingsPatchEffort {
-    @SerialName("low") LOW,
-    @SerialName("medium") MEDIUM,
-    @SerialName("high") HIGH,
-    @SerialName("xhigh") XHIGH,
-    @SerialName("max") MAX,
-    @SerialName("ultra") ULTRA,
-    @SerialName("extra") EXTRA,
-    @SerialName("ultracode") ULTRACODE,
+    @SerialName("low")
+    LOW,
+    @SerialName("medium")
+    MEDIUM,
+    @SerialName("high")
+    HIGH,
+    @SerialName("xhigh")
+    XHIGH,
+    @SerialName("max")
+    MAX,
+    @SerialName("ultra")
+    ULTRA,
+    @SerialName("extra")
+    EXTRA,
+    @SerialName("ultracode")
+    ULTRACODE,
 }
 
 @Serializable
@@ -220,20 +262,30 @@ data class ChatEventsEventsItemVariant2ModelSettingsPatch(
 
 @Serializable
 enum class ChatEventsEventsItemVariant2ReasoningEffort {
-    @SerialName("low") LOW,
-    @SerialName("medium") MEDIUM,
-    @SerialName("high") HIGH,
-    @SerialName("xhigh") XHIGH,
-    @SerialName("max") MAX,
-    @SerialName("ultra") ULTRA,
-    @SerialName("extra") EXTRA,
-    @SerialName("ultracode") ULTRACODE,
+    @SerialName("low")
+    LOW,
+    @SerialName("medium")
+    MEDIUM,
+    @SerialName("high")
+    HIGH,
+    @SerialName("xhigh")
+    XHIGH,
+    @SerialName("max")
+    MAX,
+    @SerialName("ultra")
+    ULTRA,
+    @SerialName("extra")
+    EXTRA,
+    @SerialName("ultracode")
+    ULTRACODE,
 }
 
 @Serializable
 enum class ChatEventsEventsItemVariant2ServiceTier {
-    @SerialName("priority") PRIORITY,
-    @SerialName("ultrafast") ULTRAFAST,
+    @SerialName("priority")
+    PRIORITY,
+    @SerialName("ultrafast")
+    ULTRAFAST,
 }
 
 @Serializable
@@ -258,56 +310,24 @@ data class ChatEventsEventsItemVariant2(
 ) : ChatEventsEventsItem
 
 object ChatEventsEventsItemSerializer : KSerializer<ChatEventsEventsItem> {
-    override val descriptor =
-        buildClassSerialDescriptor("ai.okou.android.api.fixtures.ChatEventsEventsItem")
-
-    override fun deserialize(decoder: Decoder): ChatEventsEventsItem {
-        val input =
-            decoder as? JsonDecoder
-                ?: throw SerializationException("Expected JSON object for ChatEventsEventsItem")
-        val value =
-            input.decodeJsonElement() as? JsonObject
-                ?: throw SerializationException("Expected object for ChatEventsEventsItem")
-        val matches =
-            listOf(
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString &&
-                        it.content in
-                            setOf(
-                                "created",
-                                "renamed",
-                                "deleted",
-                                "pinned",
-                                "unpinned",
-                                "model_selection_updated",
-                                "service_tier_updated",
-                                "computer_use_host_updated",
-                                "sort_touched",
-                                "archived",
-                                "unarchived",
-                            )
-                } == true,
-                (value["kind"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("project_updated")
-                } == true,
-            )
-        if (matches.count { it } != 1)
-            throw SerializationException("Unknown or ambiguous ChatEventsEventsItem variant")
-        return when (matches.indexOf(true)) {
+  override val descriptor = buildClassSerialDescriptor("ai.okou.android.api.fixtures.ChatEventsEventsItem")
+  override fun deserialize(decoder: Decoder): ChatEventsEventsItem {
+      val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON object for ChatEventsEventsItem")
+      val value = input.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected object for ChatEventsEventsItem")
+      val matches = listOf((value["kind"] as? JsonPrimitive)?.let { it.isString && it.content in setOf("created", "renamed", "deleted", "pinned", "unpinned", "model_selection_updated", "service_tier_updated", "computer_use_host_updated", "sort_touched", "archived", "unarchived") } == true, (value["kind"] as? JsonPrimitive)?.let { it.isString && it.content in setOf("project_updated") } == true)
+      if (matches.count { it } != 1) throw SerializationException("Unknown or ambiguous ChatEventsEventsItem variant")
+      return when (matches.indexOf(true)) {
             0 -> input.json.decodeFromJsonElement(ChatEventsEventsItemVariant1.serializer(), value)
             1 -> input.json.decodeFromJsonElement(ChatEventsEventsItemVariant2.serializer(), value)
-            else -> throw SerializationException("Unknown ChatEventsEventsItem variant")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: ChatEventsEventsItem) {
-        when (value) {
-            is ChatEventsEventsItemVariant1 ->
-                encoder.encodeSerializableValue(ChatEventsEventsItemVariant1.serializer(), value)
-            is ChatEventsEventsItemVariant2 ->
-                encoder.encodeSerializableValue(ChatEventsEventsItemVariant2.serializer(), value)
-        }
-    }
+          else -> throw SerializationException("Unknown ChatEventsEventsItem variant")
+      }
+  }
+  override fun serialize(encoder: Encoder, value: ChatEventsEventsItem) {
+      when (value) {
+            is ChatEventsEventsItemVariant1 -> encoder.encodeSerializableValue(ChatEventsEventsItemVariant1.serializer(), value)
+            is ChatEventsEventsItemVariant2 -> encoder.encodeSerializableValue(ChatEventsEventsItemVariant2.serializer(), value)
+      }
+  }
 }
 
 @Serializable
@@ -318,8 +338,10 @@ data class ChatEvents(
 
 @Serializable
 enum class IndicatorsThreadsValue {
-    @SerialName("active") ACTIVE,
-    @SerialName("unread") UNREAD,
+    @SerialName("active")
+    ACTIVE,
+    @SerialName("unread")
+    UNREAD,
 }
 
 @Serializable
@@ -346,14 +368,22 @@ data class Projects(
 
 @Serializable
 enum class ChatArchiveChatThreadsItemModelSettingsValueEffort {
-    @SerialName("low") LOW,
-    @SerialName("medium") MEDIUM,
-    @SerialName("high") HIGH,
-    @SerialName("xhigh") XHIGH,
-    @SerialName("max") MAX,
-    @SerialName("ultra") ULTRA,
-    @SerialName("extra") EXTRA,
-    @SerialName("ultracode") ULTRACODE,
+    @SerialName("low")
+    LOW,
+    @SerialName("medium")
+    MEDIUM,
+    @SerialName("high")
+    HIGH,
+    @SerialName("xhigh")
+    XHIGH,
+    @SerialName("max")
+    MAX,
+    @SerialName("ultra")
+    ULTRA,
+    @SerialName("extra")
+    EXTRA,
+    @SerialName("ultracode")
+    ULTRACODE,
 }
 
 @Serializable
@@ -363,20 +393,30 @@ data class ChatArchiveChatThreadsItemModelSettingsValue(
 
 @Serializable
 enum class ChatArchiveChatThreadsItemReasoningEffort {
-    @SerialName("low") LOW,
-    @SerialName("medium") MEDIUM,
-    @SerialName("high") HIGH,
-    @SerialName("xhigh") XHIGH,
-    @SerialName("max") MAX,
-    @SerialName("ultra") ULTRA,
-    @SerialName("extra") EXTRA,
-    @SerialName("ultracode") ULTRACODE,
+    @SerialName("low")
+    LOW,
+    @SerialName("medium")
+    MEDIUM,
+    @SerialName("high")
+    HIGH,
+    @SerialName("xhigh")
+    XHIGH,
+    @SerialName("max")
+    MAX,
+    @SerialName("ultra")
+    ULTRA,
+    @SerialName("extra")
+    EXTRA,
+    @SerialName("ultracode")
+    ULTRACODE,
 }
 
 @Serializable
 enum class ChatArchiveChatThreadsItemServiceTier {
-    @SerialName("priority") PRIORITY,
-    @SerialName("ultrafast") ULTRAFAST,
+    @SerialName("priority")
+    PRIORITY,
+    @SerialName("ultrafast")
+    ULTRAFAST,
 }
 
 @Serializable
@@ -408,8 +448,10 @@ data class ChatArchive(
 
 @Serializable
 enum class IndicatorMapValue {
-    @SerialName("active") ACTIVE,
-    @SerialName("unread") UNREAD,
+    @SerialName("active")
+    ACTIVE,
+    @SerialName("unread")
+    UNREAD,
 }
 
 typealias IndicatorMap = Map<String, IndicatorMapValue>

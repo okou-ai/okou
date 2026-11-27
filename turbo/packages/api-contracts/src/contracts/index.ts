@@ -1414,3 +1414,14 @@ export {
   artifactSharingResourceSchema,
   type ArtifactSharingTarget,
 } from "./artifact-sharing";
+
+export {
+  ARTIFACT_VISIBILITY_VALUES,
+  artifactAccessContract,
+  artifactUserShareEntrySchema,
+  artifactVisibilityResponseSchema,
+  artifactVisibilityValueSchema,
+  type ArtifactUserShareEntry,
+  type ArtifactVisibilityResponse,
+  type ArtifactVisibilityValue,
+} from "./artifact-access";

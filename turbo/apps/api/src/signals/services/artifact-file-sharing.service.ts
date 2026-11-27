@@ -10,6 +10,10 @@ import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import artifactInvitationTemplate from "../../lib/artifact-invitation-template.json";
 import type { ArtifactSharingResource } from "./artifact-sharing-resource.service";
+import {
+  deleteArtifactUserShareByFileId$,
+  syncArtifactUserShareByFileId$,
+} from "./artifact-access-dual-write.service";
 
 export const shareFileArtifact$ = command(
   async (
@@ -49,6 +53,17 @@ export const shareFileArtifact$ = command(
     signal.throwIfAborted();
     if (!share) {
       throw new Error("Artifact sharing did not return its grant");
+    }
+    if (share.userId) {
+      await set(
+        syncArtifactUserShareByFileId$,
+        {
+          fileId: args.resource.id,
+          userId: share.userId,
+          email: share.email,
+        },
+        signal,
+      );
     }
     await database
       .insert(emailOutbox)
@@ -111,8 +126,18 @@ export const removeFileArtifactShare$ = command(
           ),
         ),
       )
-      .returning({ id: artifactFileShares.id });
+      .returning({
+        id: artifactFileShares.id,
+        userId: artifactFileShares.userId,
+      });
     signal.throwIfAborted();
-    return removed ?? null;
+    if (removed?.userId) {
+      await set(
+        deleteArtifactUserShareByFileId$,
+        { fileId: args.resource.id, userId: removed.userId },
+        signal,
+      );
+    }
+    return removed ? { id: removed.id } : null;
   },
 );

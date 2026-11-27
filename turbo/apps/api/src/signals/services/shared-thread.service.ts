@@ -435,6 +435,12 @@ const insertSharedThreadIdentity$ = command(
               thumbnail: sql`NULL::jsonb`
                 .mapWith(nullableDriverValueDecoder(artifacts.thumbnail))
                 .as("thumbnail"),
+              visibility: sql`'private'`
+                .mapWith(artifacts.visibility)
+                .as("visibility"),
+              category: sql`'other'`
+                .mapWith(nullableDriverValueDecoder(artifacts.category))
+                .as("category"),
               deletedAt: sql`NULL::timestamp`
                 .mapWith(nullableDriverValueDecoder(artifacts.deletedAt))
                 .as("deleted_at"),

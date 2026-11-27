@@ -10,6 +10,10 @@ import { findClerkUser } from "../external/clerk-users";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
 import hostedSiteInvitationTemplate from "../../lib/hosted-site-invitation-template.json";
+import {
+  deleteArtifactUserShareBySiteId$,
+  syncArtifactUserShareBySiteId$,
+} from "./artifact-access-dual-write.service";
 
 interface Owner {
   readonly siteId: string;
@@ -86,6 +90,13 @@ export const shareHostedSite$ = command(
     if (!share) {
       throw new Error("Website sharing did not return its grant");
     }
+    if (share.userId) {
+      await set(
+        syncArtifactUserShareBySiteId$,
+        { siteId: args.siteId, userId: share.userId, email: share.email },
+        signal,
+      );
+    }
     // The grant ID is also the email operation ID. Retrying after an uncertain
     // enqueue recovers the same invitation instead of sending another email.
     await database
@@ -139,8 +150,18 @@ export const removeHostedSiteShare$ = command(
           ),
         ),
       )
-      .returning({ id: hostedSiteShares.id });
+      .returning({
+        id: hostedSiteShares.id,
+        userId: hostedSiteShares.userId,
+      });
     signal.throwIfAborted();
-    return removed ?? null;
+    if (removed?.userId) {
+      await set(
+        deleteArtifactUserShareBySiteId$,
+        { siteId: args.siteId, userId: removed.userId },
+        signal,
+      );
+    }
+    return removed ? { id: removed.id } : null;
   },
 );

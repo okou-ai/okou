@@ -4,6 +4,7 @@ import { hostedSiteShares } from "@okouai/db/schema/hosted-site-share";
 import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { db$, writeDb$ } from "../external/db";
+import { syncArtifactUserShareBySiteId$ } from "./artifact-access-dual-write.service";
 
 export const claimHostedSiteShareAccess$ = command(
   async (
@@ -59,8 +60,22 @@ export const claimHostedSiteShareAccess$ = command(
           inArray(hostedSiteShares.email, emails),
         ),
       )
-      .returning({ id: hostedSiteShares.id });
+      .returning({
+        id: hostedSiteShares.id,
+        email: hostedSiteShares.email,
+      });
     signal.throwIfAborted();
+    if (claimed.length > 0) {
+      await set(
+        syncArtifactUserShareBySiteId$,
+        {
+          siteId: args.siteId,
+          userId: args.userId,
+          email: claimed[0]?.email ?? null,
+        },
+        signal,
+      );
+    }
     return claimed.length > 0;
   },
 );
