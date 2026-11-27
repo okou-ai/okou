@@ -173,7 +173,8 @@ final class ComposerWorkflowRecencyTests: XCTestCase {
     source.recordUse(["release"])
     XCTAssertEqual(source.recentIDs(), ["release", "morning"])
     try await eventually {
-      fixture.state.value.withLock { $0.recentWorkflowIDs } == ["release", "morning"]
+      writes.value.withLock { $0 } == 3
+        && fixture.state.value.withLock { $0.recentWorkflowIDs } == ["release", "morning"]
     }
     XCTAssertEqual(writes.value.withLock { $0 }, 3)
   }
