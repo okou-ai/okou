@@ -12,6 +12,7 @@ import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.nextPaneFeedbackOrder
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -37,14 +38,16 @@ enum class PreferenceStatus {
     RefreshFailed,
 }
 
-internal sealed interface PreferenceSaveNotice {
-    class Unconfirmed : PreferenceSaveNotice
+internal sealed class PreferenceSaveNotice {
+    val order = nextPaneFeedbackOrder()
+
+    class Unconfirmed : PreferenceSaveNotice()
 
     class Rejected(
         val timezoneOnly: Boolean,
         val rolledBack: Boolean,
         val keptAppearance: Boolean,
-    ) : PreferenceSaveNotice
+    ) : PreferenceSaveNotice()
 }
 
 data class PreferenceChange(
@@ -328,6 +331,7 @@ class MemberPreferencesModel(
     internal fun showSettings(visible: Boolean) {
         if (settingsOpen == visible) return
         settingsOpen = visible
+        saveNotice.value = null
         if (visible) {
             pauseRefresh()
             if (mutable.value.status == PreferenceStatus.SaveUnconfirmed) refresh()

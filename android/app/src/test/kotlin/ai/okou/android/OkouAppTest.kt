@@ -12,9 +12,9 @@ import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.RunControlsModel
-import ai.okou.android.preferences.MemberPreferenceSaveFeedback
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
+import ai.okou.android.preferences.memberPreferenceSaveError
 import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.updates.UpdateTransfer
@@ -265,7 +265,9 @@ class OkouAppTest {
                                 snackbar = snackbar,
                                 feedbackInOverlay = feedbackInOverlay,
                                 settingsContent = { _, _, _ ->
-                                    MemberPreferenceSaveFeedback(models.second, snackbar)
+                                    PaneFeedback(
+                                        listOf(memberPreferenceSaveError(models.second, snackbar)),
+                                    )
                                     SettingsScreen(
                                         models = {
                                             if (defaultModel != null)

@@ -13,7 +13,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -122,7 +121,10 @@ class ProactiveSettingsModelTest {
             assertEquals(true, confirmed.enabled)
 
             fixture.morningWriteStatus = 400
-            val feedback = async(start = CoroutineStart.UNDISPATCHED) { model.saveFailures.first() }
+            val feedback =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    model.saveFailures.first { it.isNotEmpty() }.single().value
+                }
             model.morningBrief.choose(false)
             assertEquals(false, model.morningBrief.state.value.enabled)
             assertEquals(ProactiveSetting.MorningBrief, feedback.await())
@@ -142,10 +144,6 @@ class ProactiveSettingsModelTest {
                 check(releaseWrite.await(10, TimeUnit.SECONDS))
             }
             val model = model(api)
-            val failures = mutableListOf<ProactiveSetting>()
-            backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
-                model.saveFailures.collect { failures += it }
-            }
             try {
                 model.visible(true)
                 model.morningBrief.state.first { it.confirmed?.matches(false) == true }
@@ -159,7 +157,7 @@ class ProactiveSettingsModelTest {
                 assertEquals(false, settled.enabled)
                 assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)
                 runCurrent()
-                assertTrue(failures.isEmpty())
+                assertTrue(model.saveFailures.value.isEmpty())
             } finally {
                 releaseWrite.countDown()
             }
@@ -174,7 +172,10 @@ class ProactiveSettingsModelTest {
             model.visible(true)
             model.morningBrief.state.first { it.confirmed != null }
             fixture.morningWriteStatus = 503
-            val failure = async(start = CoroutineStart.UNDISPATCHED) { model.saveFailures.first() }
+            val failure =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    model.saveFailures.first { it.isNotEmpty() }.single().value
+                }
             model.morningBrief.choose(true)
             val checking = model.morningBrief.state.first { it.checking }
             assertEquals(true, checking.enabled)

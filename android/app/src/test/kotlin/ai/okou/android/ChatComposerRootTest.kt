@@ -1366,7 +1366,7 @@ class ChatComposerRootTest {
     }
 
     @Test
-    fun recoveredHistoryRestoresAWithdrawalWhenItsOutcomeReadAlsoFailed() {
+    fun recoveredWithdrawalTakesPriorityAndMovesWithTheQueueSheet() {
         val app = compose.activity.application as ComposerRootApplication
         val api = app.fixture.chats
         val queuedId = UUID.randomUUID().toString()
@@ -1382,6 +1382,7 @@ class ChatComposerRootTest {
             )
         val readsUnavailable = AtomicBoolean(false)
         val withdrawals = AtomicInteger()
+        val listEvents = api.rowEventTail()
         val otherRows = api.historyRows
         api.historyRows = { request ->
             val url = checkNotNull(request.requestUrl)
@@ -1404,11 +1405,23 @@ class ChatComposerRootTest {
                 )
                     Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                 else null
-            if (body != null && "revokesEventId" in body) {
-                withdrawals.incrementAndGet()
-                readsUnavailable.set(true)
-                jsonResponse("{}").setResponseCode(201)
-            } else otherCommands(request)
+            when {
+                body != null && "revokesEventId" in body -> {
+                    withdrawals.incrementAndGet()
+                    readsUnavailable.set(true)
+                    jsonResponse("{}").setResponseCode(201)
+                }
+                request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
+                    listEvents.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                    MockResponse().setResponseCode(204)
+                }
+                request.requestUrl?.encodedPath in
+                    setOf(
+                        "/api/chat-threads/$CHAT_PERSONAL/mark-read",
+                        "/api/chat-threads/$CHAT_PERSONAL/mark-unread",
+                    ) -> MockResponse().setResponseCode(400)
+                else -> otherCommands(request)
+            }
         }
 
         app.contextGate.countDown()
@@ -1423,6 +1436,11 @@ class ChatComposerRootTest {
         awaitConversation {
             history.uiState.value.phase == HistoryPhase.Ready
         }
+        val actions = compose.onNodeWithContentDescription("Chat actions")
+        actions.performClick()
+        compose.onNodeWithText("Archive chat").performClick()
+        val undo = hasText("Undo")
+        compose.waitUntilExactlyOneExists(undo, 10_000)
         compose.onNodeWithTag("open_conversation_queue").performClick()
         val withdraw =
             hasContentDescription(
@@ -1449,6 +1467,33 @@ class ChatComposerRootTest {
         messageText(queuedId, prompt).assertIsDisplayed()
         compose.onNode(withdraw).assertIsEnabled()
         assertEquals(1, withdrawals.get())
+
+        compose.mainClock.advanceTimeBy(2_500)
+        compose
+            .onNode(
+                hasContentDescription("Back") and
+                    hasAnyAncestor(hasAnyDescendant(hasTestTag("conversation_queue"))),
+            )
+            .performClick()
+        val conversationHost = hasAnyAncestor(hasTestTag("conversation_feedback"))
+        compose.onNode(failure and conversationHost).assertIsDisplayed()
+        compose.onNode(undo).assertDoesNotExist()
+
+        actions.performClick()
+        compose.onNode(hasText("Mark as read") or hasText("Mark as unread")).performClick()
+        awaitConversation { ready.chats.uiState.value.rowActionFailures.any { it.rejected } }
+        val secondError =
+            hasText("Could not complete “Mark as", substring = true) and conversationHost
+        compose.onNode(failure).assertIsDisplayed()
+        compose.onNode(secondError).assertDoesNotExist()
+
+        compose.mainClock.advanceTimeBy(2_500)
+        compose.onNode(failure).assertDoesNotExist()
+        compose.onNode(secondError).assertIsDisplayed()
+        compose.onNode(undo).assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(5_000)
+        compose.onNode(secondError).assertDoesNotExist()
+        compose.onNode(undo and conversationHost).assertIsDisplayed()
     }
 
     @Test

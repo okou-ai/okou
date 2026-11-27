@@ -3,6 +3,8 @@ package ai.okou.android.settings
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.DefaultModelApiFixture
 import ai.okou.android.OkouTheme
+import ai.okou.android.PaneFeedback
+import ai.okou.android.R
 import ai.okou.android.SettingsRow
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.DefaultModelPreference
@@ -37,6 +39,7 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.pressKey
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -302,7 +305,22 @@ class DefaultModelSettingTest {
                 val snackbar = SnackbarHostState()
                 compose.setContent {
                     OkouTheme(dark = false) {
-                        Column { DefaultModelSetting(model, snackbar, onFeedbackInOverlay = {}) }
+                        Column {
+                            PaneFeedback(
+                                listOf(
+                                    settingsRefreshError(
+                                        snackbar,
+                                        model.state
+                                            .collectAsStateWithLifecycle()
+                                            .value
+                                            .settingsCatalogRefreshFailure,
+                                        R.string.settings_model_catalog_refresh_failed,
+                                        model::dismissCatalogFailure,
+                                    ),
+                                ),
+                            )
+                            DefaultModelSetting(model, snackbar, onFeedbackInOverlay = {})
+                        }
                     }
                 }
 

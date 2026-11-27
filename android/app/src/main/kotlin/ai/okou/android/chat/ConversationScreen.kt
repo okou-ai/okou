@@ -2,8 +2,6 @@ package ai.okou.android.chat
 
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
-import ai.okou.android.WorkspaceFeedbackHost
-import ai.okou.android.WorkspaceFeedbackTimeout
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.rememberContentReadSkeleton
@@ -33,9 +31,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -107,13 +103,6 @@ private data class ConversationActivityRow(
     override val key = TimelineActivity
 }
 
-private class ControlFailureSnackbar(override val message: String, val kind: RunControlKind) :
-    SnackbarVisuals {
-    override val actionLabel: String? = null
-    override val withDismissAction = false
-    override val duration = SnackbarDuration.Indefinite
-}
-
 @Composable
 internal fun ConversationRoute(
     model: ConversationHistoryModel,
@@ -127,6 +116,7 @@ internal fun ConversationRoute(
     stopPlacement: ConversationStopPlacement? = null,
     paneFeedbackVisible: Boolean = false,
     queueOpen: Boolean = false,
+    queueFeedback: SnackbarHostState? = null,
     queuePosition: LazyListState? = null,
     dismissQueue: () -> Unit = {},
     codeReading: ConversationCodeReading? = null,
@@ -349,49 +339,6 @@ internal fun ConversationRoute(
             if (execution == HistoryExecution.Running) setOf(TimelineActivity) else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
-        val controlSnackbar = remember { SnackbarHostState() }
-        // The notice can move with the queue panel. Its lifetime belongs to the conversation.
-        WorkspaceFeedbackTimeout(controlSnackbar)
-        val controlFeedback =
-            controlSnackbar.currentSnackbarData?.visuals as? ControlFailureSnackbar
-        val showQueueFeedback =
-            queueOpen && !missing && controlFeedback?.kind == RunControlKind.Revoke
-        val feedbackInConversation = controlFeedback != null && !showQueueFeedback
-        val stopFeedbackBounds =
-            if (stopPlacement != null && feedbackInConversation) {
-                DisposableEffect(stopPlacement) {
-                    onDispose { stopPlacement.reportFeedbackBounds(null) }
-                }
-                Modifier.onGloballyPositioned {
-                    stopPlacement.reportFeedbackBounds(it.boundsInRoot())
-                }
-            } else Modifier
-        val failure = controls?.state?.actionFailures?.firstOrNull { it.threadId == threadId }
-        if (visible && failure != null) {
-            val messageId =
-                when (failure.kind) {
-                    RunControlKind.Interrupt ->
-                        R.string.controls_stop_failed.takeIf {
-                            failure.targetId == controls.currentRunId
-                        }
-                    RunControlKind.Revoke ->
-                        queue
-                            .firstOrNull { it.message.id == failure.targetId }
-                            ?.let {
-                                if (it.message.queuedWorkflow == null)
-                                    R.string.conversation_withdraw_failed
-                                else R.string.conversation_skip_failed
-                            }
-                }
-            val message = messageId?.let { stringResource(it) }
-            LaunchedEffect(failure) {
-                if (controls.model.consumeActionFailure(failure) && message != null) {
-                    scope.launch {
-                        controlSnackbar.showSnackbar(ControlFailureSnackbar(message, failure.kind))
-                    }
-                }
-            }
-        }
         var initialReadingPosition by
             remember(linkPosition) {
                 mutableStateOf<ReadingPosition?>(null)
@@ -706,7 +653,7 @@ internal fun ConversationRoute(
                 },
                 returning = returningCode.takeIf { readingReady },
                 restored = reading::restored,
-                feedback = reading.previewFeedback,
+                feedback = { reading.reportFeedback(threadId, it) },
             )
         }
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
@@ -875,9 +822,7 @@ internal fun ConversationRoute(
                         Box(
                             Modifier.fillMaxWidth()
                                 .padding(
-                                    bottom =
-                                        if (feedbackInConversation || paneFeedbackVisible) 8.dp
-                                        else 4.dp,
+                                    bottom = if (paneFeedbackVisible) 8.dp else 4.dp,
                                     end = if (compactJump) 12.dp else 0.dp,
                                 ),
                             contentAlignment =
@@ -907,16 +852,6 @@ internal fun ConversationRoute(
                             )
                         }
                     }
-                    if (!showQueueFeedback) {
-                        val composerTopInset =
-                            if (composer != null && !missing) ChatComposerTopInset else 0.dp
-                        WorkspaceFeedbackHost(
-                            controlSnackbar,
-                            Modifier.padding(bottom = 8.dp - composerTopInset),
-                            manageTimeout = false,
-                            surfaceModifier = stopFeedbackBounds,
-                        )
-                    }
                 }
                 if (positioned && findTarget != null && foundIndex < 0) {
                     Text(
@@ -941,7 +876,7 @@ internal fun ConversationRoute(
             ConversationQueueModal(
                 queue,
                 controls,
-                controlSnackbar.takeIf { showQueueFeedback },
+                queueFeedback,
                 queuePosition ?: rememberLazyListState(),
                 dismissQueue,
             )

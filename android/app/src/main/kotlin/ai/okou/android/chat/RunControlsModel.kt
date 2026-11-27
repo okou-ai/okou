@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.FeedbackReceipt
 import ai.okou.android.auth.WorkspaceIdentity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,12 +16,14 @@ enum class RunControlPhase {
     Retryable,
 }
 
-data class RunControlsState(
+@ConsistentCopyVisibility
+data class RunControlsState
+internal constructor(
     val pending: List<RunControlIntent> = emptyList(),
     val phases: Map<String, RunControlPhase> = emptyMap(),
     internal val settledQueueInputs: Map<String, Set<String>> = emptyMap(),
     internal val settledRuns: Map<String, Set<String>> = emptyMap(),
-    internal val actionFailures: List<RunControlIntent> = emptyList(),
+    internal val actionFailures: List<FeedbackReceipt<RunControlIntent>> = emptyList(),
 )
 
 fun ConversationUiState.controlRunIds(output: RunOutputState): List<String> =
@@ -98,8 +101,11 @@ class RunControlsModel(
     internal fun checkUnknown(threadId: String) =
         owner.check(connection, threadId, unknownOnly = true)
 
-    internal fun consumeActionFailure(intent: RunControlIntent) =
-        owner.consumeActionFailure(connection, intent)
+    internal fun showActionFeedbackFor(threadId: String?) =
+        owner.showActionFeedbackFor(connection, threadId)
+
+    internal fun consumeActionFailure(receipt: FeedbackReceipt<RunControlIntent>) =
+        owner.consumeActionFailure(connection, receipt)
 
     fun refreshRecovery(threadId: String) {
         if (connection.current() && history.uiState.value.thread?.id == threadId)
