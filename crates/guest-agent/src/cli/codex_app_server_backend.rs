@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::{Map, Value, json};
-use tokio::sync::oneshot;
 
 use crate::env::Framework;
 use crate::error::AgentError;
@@ -22,16 +21,18 @@ use super::codex_app_server_events::{
     notification_to_codex_event,
 };
 use super::event_delivery::{EventDeliveryRuntime, EventDeliverySender};
+use super::heartbeat_monitor::{
+    NativeHeartbeatFailure, NativeHeartbeatOutcome, wait_for_native_heartbeat,
+};
 use super::native_execution::{NativeRunOutcome, run_with_execution_deadline};
 use super::{
     BestEffortAgentLog, CliEventIngestor, CliExecutionControls, CliExecutionResult,
-    CliFailureDiagnostic, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor, HeartbeatStatus,
-    LOG_TAG, ParsedEventAction, codex_runtime_config,
+    CliFailureDiagnostic, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor, LOG_TAG,
+    ParsedEventAction, codex_runtime_config,
 };
 use crate::active_input::{ActiveInputFrame, ActiveInputWriter};
 use guest_contracts::diagnostics::{
     AGENT_EXECUTION_TIMEOUT_EXIT_CODE, CliTerminationDiagnostic, CliTerminationReason,
-    HeartbeatFailureDiagnostic,
 };
 use guest_telemetry::{log_info, log_warn};
 
@@ -128,13 +129,7 @@ enum CodexSteerOutcome {
 
 enum CodexRunError {
     Execution(AgentError),
-    Heartbeat(CodexHeartbeatFailure),
-}
-
-struct CodexHeartbeatFailure {
-    error: AgentError,
-    diagnostic: Option<HeartbeatFailureDiagnostic>,
-    termination_reason: CliTerminationReason,
+    Heartbeat(NativeHeartbeatFailure),
 }
 
 impl From<AgentError> for CodexRunError {
@@ -856,7 +851,7 @@ async fn next_codex_run_event(
                 .map(CodexRunEvent::Notification)
                 .map_err(|error| CodexRunError::Execution(app_server_error(masker, error)))
         }
-        heartbeat_result = wait_for_heartbeat(heartbeat_monitor), if !*heartbeat_done => {
+        heartbeat_result = wait_for_native_heartbeat(heartbeat_monitor), if !*heartbeat_done => {
             *heartbeat_done = true;
             Err(heartbeat_error(heartbeat_result))
         }
@@ -1015,7 +1010,7 @@ async fn race_with_heartbeat<T>(
         biased;
         result = app_server_wait => result
             .map_err(|error| CodexRunError::Execution(app_server_error(masker, error))),
-        heartbeat_result = wait_for_heartbeat(heartbeat_monitor), if !*heartbeat_done => {
+        heartbeat_result = wait_for_native_heartbeat(heartbeat_monitor), if !*heartbeat_done => {
             *heartbeat_done = true;
             Err(heartbeat_error(heartbeat_result))
         }
@@ -1094,39 +1089,12 @@ fn codex_input_too_large_counts(error: &CodexAppServerError) -> Option<(u64, u64
     (max_chars > 0 && actual_chars > max_chars).then_some((actual_chars, max_chars))
 }
 
-async fn wait_for_heartbeat(
-    heartbeat_monitor: &mut HeartbeatMonitor,
-) -> Result<HeartbeatStatus, oneshot::error::RecvError> {
-    match heartbeat_monitor.as_mut() {
-        Some(receiver) => receiver.await,
-        None => std::future::pending().await,
-    }
-}
-
-fn heartbeat_error(result: Result<HeartbeatStatus, oneshot::error::RecvError>) -> CodexRunError {
+fn heartbeat_error(result: NativeHeartbeatOutcome) -> CodexRunError {
     match result {
-        Ok(HeartbeatStatus::Failed(failure)) => CodexRunError::Heartbeat(CodexHeartbeatFailure {
-            error: failure.error,
-            diagnostic: Some(failure.diagnostic),
-            termination_reason: CliTerminationReason::HeartbeatError,
-        }),
-        Ok(HeartbeatStatus::Stopped) => CodexRunError::Execution(AgentError::Execution(
+        NativeHeartbeatOutcome::Failed(failure) => CodexRunError::Heartbeat(failure),
+        NativeHeartbeatOutcome::Stopped => CodexRunError::Execution(AgentError::Execution(
             "heartbeat stopped before codex app-server completed".to_string(),
         )),
-        Ok(HeartbeatStatus::TaskFailed(message)) => {
-            CodexRunError::Heartbeat(CodexHeartbeatFailure {
-                error: AgentError::Execution(format!("heartbeat task panicked: {message}")),
-                diagnostic: None,
-                termination_reason: CliTerminationReason::HeartbeatPanic,
-            })
-        }
-        Err(error) => CodexRunError::Heartbeat(CodexHeartbeatFailure {
-            error: AgentError::Execution(format!(
-                "heartbeat task stopped before reporting status: {error}"
-            )),
-            diagnostic: None,
-            termination_reason: CliTerminationReason::HeartbeatPanic,
-        }),
     }
 }
 

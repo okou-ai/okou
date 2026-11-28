@@ -7,21 +7,22 @@ use std::time::Duration;
 
 use guest_contracts::diagnostics::{
     AGENT_EXECUTION_TIMEOUT_EXIT_CODE, CliObservedExitDiagnostic, CliTerminationDiagnostic,
-    CliTerminationReason, FailureDetailSource, HeartbeatFailureDiagnostic,
+    CliTerminationReason, FailureDetailSource,
 };
 use guest_telemetry::{log_info, log_warn};
 use serde_json::{Value, json};
-use tokio::sync::oneshot;
 
 use crate::active_input::{ActiveInputFrame, ActiveInputWriter};
 use crate::cli::event_delivery::{EventDeliveryRuntime, EventDeliverySender};
+use crate::cli::heartbeat_monitor::{
+    NativeHeartbeatFailure, NativeHeartbeatOutcome, wait_for_native_heartbeat,
+};
 use crate::cli::jsonl_result::JsonlResultSummary;
 use crate::cli::native_execution::{NativeRunOutcome, run_with_execution_deadline};
 use crate::cli::{
     BestEffortAgentLog, CliEventIngestor, CliExecutionControls, CliExecutionResult,
-    CliFailureDiagnostic, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor, HeartbeatStatus,
-    LOG_TAG, ParsedEventAction, child_env, cli_exit_summary_from_status, session_output,
-    user_env_value,
+    CliFailureDiagnostic, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor, LOG_TAG,
+    ParsedEventAction, child_env, cli_exit_summary_from_status, session_output, user_env_value,
 };
 use crate::env::Framework;
 use crate::error::AgentError;
@@ -45,13 +46,7 @@ enum AcpRunEvent {
 
 enum AcpRunError {
     Execution(AgentError),
-    Heartbeat(AcpHeartbeatFailure),
-}
-
-struct AcpHeartbeatFailure {
-    error: AgentError,
-    diagnostic: Option<HeartbeatFailureDiagnostic>,
-    termination_reason: CliTerminationReason,
+    Heartbeat(NativeHeartbeatFailure),
 }
 
 impl From<AgentError> for AcpRunError {
@@ -732,7 +727,7 @@ async fn next_acp_run_event(
         incoming = client.next_incoming(ACP_EVENT_LABEL) => {
             Ok(AcpRunEvent::Incoming(incoming))
         }
-        heartbeat_result = wait_for_heartbeat(heartbeat_monitor), if !*heartbeat_done => {
+        heartbeat_result = wait_for_native_heartbeat(heartbeat_monitor), if !*heartbeat_done => {
             *heartbeat_done = true;
             Err(heartbeat_error(heartbeat_result))
         }
@@ -936,44 +931,19 @@ async fn race_with_heartbeat<T>(
     tokio::select! {
         biased;
         result = fut => Ok(result),
-        heartbeat_result = wait_for_heartbeat(heartbeat_monitor), if !*heartbeat_done => {
+        heartbeat_result = wait_for_native_heartbeat(heartbeat_monitor), if !*heartbeat_done => {
             *heartbeat_done = true;
             Err(heartbeat_error(heartbeat_result))
         }
     }
 }
 
-async fn wait_for_heartbeat(
-    heartbeat_monitor: &mut HeartbeatMonitor,
-) -> Result<HeartbeatStatus, oneshot::error::RecvError> {
-    match heartbeat_monitor.as_mut() {
-        Some(receiver) => receiver.await,
-        None => std::future::pending().await,
-    }
-}
-
-fn heartbeat_error(result: Result<HeartbeatStatus, oneshot::error::RecvError>) -> AcpRunError {
+fn heartbeat_error(result: NativeHeartbeatOutcome) -> AcpRunError {
     match result {
-        Ok(HeartbeatStatus::Failed(failure)) => AcpRunError::Heartbeat(AcpHeartbeatFailure {
-            error: failure.error,
-            diagnostic: Some(failure.diagnostic),
-            termination_reason: CliTerminationReason::HeartbeatError,
-        }),
-        Ok(HeartbeatStatus::Stopped) => AcpRunError::Execution(AgentError::Execution(
+        NativeHeartbeatOutcome::Failed(failure) => AcpRunError::Heartbeat(failure),
+        NativeHeartbeatOutcome::Stopped => AcpRunError::Execution(AgentError::Execution(
             "heartbeat stopped before antigravity acp completed".to_string(),
         )),
-        Ok(HeartbeatStatus::TaskFailed(message)) => AcpRunError::Heartbeat(AcpHeartbeatFailure {
-            error: AgentError::Execution(format!("heartbeat task panicked: {message}")),
-            diagnostic: None,
-            termination_reason: CliTerminationReason::HeartbeatPanic,
-        }),
-        Err(error) => AcpRunError::Heartbeat(AcpHeartbeatFailure {
-            error: AgentError::Execution(format!(
-                "heartbeat task stopped before reporting status: {error}"
-            )),
-            diagnostic: None,
-            termination_reason: CliTerminationReason::HeartbeatPanic,
-        }),
     }
 }
 
