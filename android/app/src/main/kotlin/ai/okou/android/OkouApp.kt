@@ -298,15 +298,16 @@ internal fun OkouApp(
     val requestedTarget = artifactSource?.let { WorkspaceTarget.Chat(it) } ?: navigation.target
     val restoringFirstSend =
         remember(workspaceReady, requestedTarget, composerInput) {
-            derivedStateOf(structuralEqualityPolicy()) {
-                !workspaceReady &&
-                    requestedTarget is WorkspaceTarget.NewChat &&
-                    composerInput
-                        ?.value
-                        ?.entry(ComposerTarget(projectId = requestedTarget.projectId))
-                        ?.let { it.pending != null || it.createdThreadId != null } == true
+                derivedStateOf(structuralEqualityPolicy()) {
+                    !workspaceReady &&
+                        requestedTarget is WorkspaceTarget.NewChat &&
+                        composerInput
+                            ?.value
+                            ?.entry(ComposerTarget(projectId = requestedTarget.projectId))
+                            ?.let { it.pending != null || it.createdThreadId != null } == true
+                }
             }
-        }.value
+            .value
     // Let protected destinations wait for preparation without blocking authorized chat navigation.
     val target =
         if (
@@ -1073,8 +1074,9 @@ internal fun OkouApp(
         }
     val composerRestored =
         remember(composerInput) {
-            derivedStateOf(structuralEqualityPolicy()) { composerInput?.value?.journal != null }
-        }.value
+                derivedStateOf(structuralEqualityPolicy()) { composerInput?.value?.journal != null }
+            }
+            .value
     LaunchedEffect(newChat, deletedNewChatProject, provisionalId, composerRestored) {
         if (
             deletedNewChatProject != null &&
