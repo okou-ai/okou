@@ -36,7 +36,7 @@ import { Link } from "../router/link.tsx";
 import { ForYouCardHeading } from "./for-you-card-heading.tsx";
 import { ChatComposer } from "./composer.tsx";
 
-// Option rows and the direction trigger share one shape. The rows and the
+// Option rows and the direction trigger share one size. The rows and the
 // feedback group hang out of the card's content box by this 16px inset, so
 // their text lines up with the heading. Hover lays the state overlay over the
 // row's own fill, so the row darkens instead of losing it.
@@ -45,6 +45,11 @@ const SUGGESTION_ROW =
 
 // Option rows and the direction panel match the composer's 24px corners.
 const SUGGESTION_ROW_RADIUS = "rounded-3xl";
+
+// The direction trigger, and the placeholder that holds its place while the
+// composer loads, sit directly above the feedback buttons and share their
+// 12px corners.
+const SUGGESTION_DIRECTION_TRIGGER_RADIUS = "rounded-xl";
 
 // An option is a raised button on the card whose text can still be selected;
 // the direction trigger stays a quiet input-like row in the muted fill, the
@@ -253,7 +258,7 @@ function SuggestionDirectionEntry({
       variant="quiet"
       className={cn(
         SUGGESTION_ROW,
-        SUGGESTION_ROW_RADIUS,
+        SUGGESTION_DIRECTION_TRIGGER_RADIUS,
         SUGGESTION_DIRECTION_TRIGGER,
       )}
       aria-description={t(($) => {
@@ -310,7 +315,7 @@ function SuggestionDirectionComposer({
         <div
           className={cn(
             "flex min-h-14 items-center justify-center bg-muted",
-            SUGGESTION_ROW_RADIUS,
+            SUGGESTION_DIRECTION_TRIGGER_RADIUS,
           )}
         >
           <Loader2
