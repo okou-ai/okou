@@ -10,6 +10,44 @@ fn extract_archive(tar_gz: Vec<u8>, mount: &Path) -> bool {
 }
 
 #[test]
+fn adjacent_archive_files_keep_their_own_modes_and_timestamps() {
+    use std::os::unix::fs::MetadataExt;
+
+    let entries = [
+        ("shared/first", 0o644, b"first".as_slice()),
+        ("shared/second", 0o600, b"second"),
+        ("shared/third", 0o644, b"third"),
+        ("shared/replaced", 0o600, b"new"),
+        ("shared/last", 0o644, b"last"),
+        ("separate/file", 0o640, b"separate"),
+    ];
+    let mut archive = tar::Builder::new(flate2::write::GzEncoder::new(
+        Vec::new(),
+        flate2::Compression::fast(),
+    ));
+    for (path, mode, content) in entries {
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(mode);
+        header.set_size(content.len() as u64);
+        header.set_mtime(1234);
+        archive.append_data(&mut header, path, content).unwrap();
+    }
+    let compressed = archive.into_inner().unwrap().finish().unwrap();
+    let target = tempfile::tempdir().unwrap();
+    std::fs::create_dir(target.path().join("shared")).unwrap();
+    std::fs::write(target.path().join("shared/replaced"), b"old").unwrap();
+    assert!(extract_archive(compressed, target.path()));
+
+    for (path, mode, content) in entries {
+        let path = target.path().join(path);
+        let metadata = path.metadata().unwrap();
+        assert_eq!(metadata.mode() & 0o7777, mode);
+        assert_eq!(metadata.mtime(), 1234);
+        assert_eq!(std::fs::read(path).unwrap(), content);
+    }
+}
+
+#[test]
 fn normalize_path_removes_dot() {
     assert_eq!(normalize_path(Path::new("/a/./b")), PathBuf::from("/a/b"));
 }
