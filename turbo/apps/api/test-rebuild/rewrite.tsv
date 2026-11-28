@@ -38,7 +38,7 @@ non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-noti
 non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-006	rewritten	11.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/agent-notification-email-renderer.test.ts	B06	
 non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-001	rewritten	21.2		src/lib/__tests__/billing-redirect.test.ts	B02	
 non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-002	rewritten	7.2		src/lib/__tests__/billing-redirect.test.ts	B02	
-non-route	src/lib/__tests__/log-axiom-transport.test.ts	log-axiom-transport-026	planned					a-run
+non-route	src/lib/__tests__/log-axiom-transport.test.ts	log-axiom-transport-026	rewritten	164.0	timeout=400 (6-run idle non-first median 164.0ms, SINGLE_RUN; merged into axiom.test.ts to avoid single-row Run file; uses mockAxiomSdkTelemetryFailure on vm0-web-logs-dev template_used)	src/signals/external/__tests__/axiom.test.ts	R35	a-run
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-001	skipped		adapter-runtime: library predicate with no public API path in this round		pilot	
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-005	skipped		adapter-runtime: library predicate with no public API path in this round		pilot	
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-009	skipped		adapter-runtime: library predicate with no public API path in this round		pilot	
@@ -58,10 +58,10 @@ non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-009	skipped		private-
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-012	rewritten	275.6	timeout=600 (5-run idle non-first median 275.6ms, DOUBLE_RUN; 2 Runs verifying Banking switch via POST /api/banking/accounts)	src/signals/auth/__tests__/tokens.test.ts	R34	a-run
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-029	rewritten	269.5	timeout=600 (5-run idle non-first median 269.5ms, DOUBLE_RUN; 2 Runs verifying cloudBrowserEnabled via GET /api/browser/:threadId)	src/signals/auth/__tests__/tokens.test.ts	R34	a-run
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-030	rewritten	276.0	timeout=600 (5-run idle non-first median 276.0ms, DOUBLE_RUN; 2 Runs verifying explicit computerUseHostId via GET /api/computer-use/hosts)	src/signals/auth/__tests__/tokens.test.ts	R34	a-run
-non-route	src/signals/external/__tests__/axiom.test.ts	axiom-001	planned					a-run
-non-route	src/signals/external/__tests__/axiom.test.ts	axiom-008	planned					a-run
-non-route	src/signals/external/__tests__/axiom.test.ts	axiom-014	planned					a-run
-non-route	src/signals/external/__tests__/axiom.test.ts	axiom-023	planned					a-run
+non-route	src/signals/external/__tests__/axiom.test.ts	axiom-001	rewritten	155.7	timeout=400 (6-run idle non-first median 155.7ms, SINGLE_RUN; direct HTTP metrics transport to sandbox-telemetry-metrics)	src/signals/external/__tests__/axiom.test.ts	R35	a-run
+non-route	src/signals/external/__tests__/axiom.test.ts	axiom-008	rewritten	175.1	timeout=400 (6-run idle non-first median 175.1ms, SINGLE_RUN; #50973 default-enabled ArtifactThreePointTiming, direct HTTP phase-mark + completion-callback timeline)	src/signals/external/__tests__/axiom.test.ts	R35	a-run
+non-route	src/signals/external/__tests__/axiom.test.ts	axiom-014	rewritten	200.2	timeout=400 (6-run idle non-first median 200.2ms, SINGLE_RUN; owner opt-out suppresses phase-mark & completion-callback collection while preserving normal completion)	src/signals/external/__tests__/axiom.test.ts	R35	a-run
+non-route	src/signals/external/__tests__/axiom.test.ts	axiom-023	rewritten	169.0	timeout=400 (6-run idle non-first median 169.0ms, SINGLE_RUN; #50973 default-enabled three-point timing completes normally on HTTP 503 with single attempt)	src/signals/external/__tests__/axiom.test.ts	R35	a-run
 non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-001	rewritten	9.5	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/external/__tests__/wechat-client.test.ts	B06	
 non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-002	rewritten	7.0	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/external/__tests__/wechat-client.test.ts	B06	
 non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-003	rewritten	25.0	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/external/__tests__/wechat-client.test.ts	B06	
