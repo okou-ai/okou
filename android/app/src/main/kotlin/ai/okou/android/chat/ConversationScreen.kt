@@ -181,14 +181,18 @@ internal fun ConversationRoute(
             }
         }
     val replying = activeMessage?.message?.isOutputReply() == true
+    val animateCurrentTurn =
+        visible &&
+            !missing &&
+            (execution == HistoryExecution.Queued ||
+                execution == HistoryExecution.Running && controls?.canStop != false)
     val animatedReplyId =
         activeMessage
             ?.takeIf {
-                visible &&
+                animateCurrentTurn &&
                     execution == HistoryExecution.Running &&
                     it.summary?.phase == ReplyPhase.Replying &&
-                    output.phase != RunOutputPhase.CatchingUp &&
-                    controls?.canStop != false
+                    output.phase != RunOutputPhase.CatchingUp
             }
             ?.message
             ?.id
@@ -695,8 +699,8 @@ internal fun ConversationRoute(
                         .focusRequester(timelineFocus)
                         .focusable()
                         .then(
-                            if (animatedReplyId == null) Modifier
-                            else Modifier.layoutBounds(avatarViewport),
+                            if (animateCurrentTurn) Modifier.layoutBounds(avatarViewport)
+                            else Modifier,
                         )
                         .then(
                             if (awaitingFindPosition)
@@ -741,7 +745,12 @@ internal fun ConversationRoute(
                                         .fillMaxWidth()
                                         .padding(top = if (entry.showHeader) 20.dp else 8.dp),
                                 ) {
-                                    if (entry.showHeader) ConversationReplyHeader()
+                                    if (entry.showHeader) {
+                                        ConversationReplyHeader(
+                                            animateAvatarIn =
+                                                avatarViewport.takeIf { animateCurrentTurn },
+                                        )
+                                    }
                                     ConversationActivity(
                                         activityText?.takeIf { it.runId == entry.runId }?.text
                                             ?: stringResource(entry.label),
