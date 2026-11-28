@@ -439,10 +439,8 @@ internal fun ConnectorDetails(
                             dismissible = !busy,
                             back = if (account.id == initialAccountId) ::dismissPanel else null,
                             feedback =
-                                rememberConnectorReadFeedback(
-                                    accountNotice.takeUnless { confirmingDisconnect },
-                                    announcements,
-                                ),
+                                if (confirmingDisconnect) null
+                                else rememberConnectorReadFeedback(accountNotice, announcements),
                         ) {
                             ConnectorAccountActions(
                                 account,
