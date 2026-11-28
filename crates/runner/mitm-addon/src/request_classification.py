@@ -74,7 +74,9 @@ _BROWSER_USER_AGENT_MARKERS = (
 _MAX_BROWSER_USER_AGENT_BYTES = 4096
 
 
-def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallRequestContext:
+def _aws_firewall_request_context(
+    flow: http.HTTPFlow, *, applied_credential_owner: str | None = None
+) -> matching.FirewallRequestContext:
     """Build bounded request input for AWS permission selectors.
 
     Ordinary firewall classification must not decode unrelated header values or
@@ -86,6 +88,7 @@ def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallReque
         return matching.FirewallRequestContext(
             body=flow.request.raw_content,
             aws_inspection_available=False,
+            applied_credential_owner=applied_credential_owner,
         )
 
     raw_fields = flow.request.headers.fields
@@ -98,6 +101,7 @@ def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallReque
         return matching.FirewallRequestContext(
             body=flow.request.raw_content,
             aws_inspection_available=False,
+            applied_credential_owner=applied_credential_owner,
         )
 
     selected: list[tuple[str, str]] = []
@@ -115,6 +119,7 @@ def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallReque
         headers=tuple(selected),
         body=flow.request.raw_content,
         raw_header_fields=raw_fields,
+        applied_credential_owner=applied_credential_owner,
     )
 
 
@@ -397,6 +402,7 @@ def classify_request(
     api_url: str,
     tls_admission: TlsAdmissionView | None,
     defer_unresolved_public_destination: bool = False,
+    applied_credential_owner: str | None = None,
 ) -> RequestClassification:
     """Classify a flow and write metadata needed by downstream hook handling.
 
@@ -425,6 +431,7 @@ def classify_request(
         tls_admission=tls_admission,
         trusted_authority=None,
         defer_unresolved_public_destination=defer_unresolved_public_destination,
+        applied_credential_owner=applied_credential_owner,
     )
 
 
@@ -492,6 +499,7 @@ def _classify_request(
     tls_admission: TlsAdmissionView | None,
     trusted_authority: TrustedAuthority | None,
     defer_unresolved_public_destination: bool,
+    applied_credential_owner: str | None = None,
 ) -> RequestClassification:
     client_peername = connection_endpoints.client_peername(flow.client_conn)
     client_ip = client_peername[0] if client_peername is not None else None
@@ -620,7 +628,10 @@ def _classify_request(
             compiled_firewalls,
             compiled_network_policies,
             intent,
-            _aws_firewall_request_context(flow),
+            _aws_firewall_request_context(
+                flow,
+                applied_credential_owner=applied_credential_owner,
+            ),
             is_asterisk_form=is_asterisk_form,
         )
         if isinstance(result, matching.FirewallInvalidInput):

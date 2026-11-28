@@ -447,6 +447,7 @@ class FirewallRequestContext(NamedTuple):
     body: bytes | None = None
     aws_inspection_available: bool = True
     raw_header_fields: tuple[tuple[bytes, bytes], ...] = ()
+    applied_credential_owner: str | None = None
 
 
 def _api_auth_uses_aws_sigv4(api_entry: dict) -> bool:
@@ -1360,6 +1361,7 @@ class FirewallAllow(NamedTuple):
     params: dict[str, str]
     rule: str | None
     rel_path: str
+    selected_by_placeholder: bool = False
 
 
 class FirewallPolicyAllow(NamedTuple):
@@ -2362,9 +2364,12 @@ def _match_compiled_firewall_request_with_api_candidates(
         )
         base_matches.append(api_match)
 
-    placeholder_owner: str | None = None
+    placeholder_owner: str | None = (
+        request_context.applied_credential_owner if request_context is not None else None
+    )
     if (
-        not is_asterisk_form
+        placeholder_owner is None
+        and not is_asterisk_form
         and request_context is not None
         and request_context.aws_inspection_available
         and len(base_matches) > 1
@@ -2391,9 +2396,8 @@ def _match_compiled_firewall_request_with_api_candidates(
             )
         if owners:
             placeholder_owner = next(iter(owners))
-            base_matches = [
-                match for match in base_matches if match.firewall.name == placeholder_owner
-            ]
+    if placeholder_owner is not None:
+        base_matches = [match for match in base_matches if match.firewall.name == placeholder_owner]
 
     custom_connector_matches = any(
         match.firewall.connector_runtime_kind == "custom" for match in base_matches
@@ -2897,6 +2901,6 @@ def _match_request_interpretations(
                 (),
                 "unsafe_path",
             )
-        return original
+        return original._replace(selected_by_placeholder=placeholder_owner is not None)
     except AnalysisLimitError, InvalidPathError:
         return invalid

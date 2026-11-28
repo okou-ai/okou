@@ -282,20 +282,29 @@ async def test_connector_intent_selects_auth_template_in_both_firewall_orders(
 
 
 @pytest.mark.parametrize(
-    ("credential_headers", "chosen"),
+    ("credential_headers", "chosen", "provider_wait"),
     [
-        ((("Authorization", "Bearer fixture-PRIMARY_TOKEN"),), "primary"),
+        ((("Authorization", "Bearer fixture-PRIMARY_TOKEN"),), "primary", False),
+        ((("Authorization", "Bearer fixture-PRIMARY_TOKEN"),), "primary", True),
         (
             (
                 ("Authorization", "Bearer fixture-PRIMARY_TOKEN"),
                 ("Authorization", "Bearer fixture-AUDITOR_TOKEN"),
             ),
             None,
+            False,
         ),
     ],
 )
 async def test_credential_placeholders_select_dispatch_owner(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, credential_headers, chosen
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    credential_headers,
+    chosen,
+    provider_wait,
 ):
     reg_path = _write_registry(tmp_path, sandbox_info=_shared_route_sandbox(tmp_path))
     flow = real_flow(
@@ -308,6 +317,9 @@ async def test_credential_placeholders_select_dispatch_owner(
     with (
         mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer resolved-primary"}) as auth_fetch,
+        patch.object(
+            mitm_addon.codex_model_catalog_cache, "prepare_request", return_value=provider_wait
+        ),
     ):
         await mitm_addon.request(flow)
 

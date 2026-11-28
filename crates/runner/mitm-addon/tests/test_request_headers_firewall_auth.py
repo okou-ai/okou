@@ -206,8 +206,15 @@ async def test_firewall_allow_header_auth_requestheaders_strips_connector_intent
 
 
 @pytest.mark.parametrize("reverse", [False, True])
-async def test_shared_route_intent_selects_requestheaders_auth_in_both_orders(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, reverse
+@pytest.mark.parametrize(
+    "routing_header",
+    [
+        ("X-Okou-Connector-Intent", "primary"),
+        ("Authorization", "Bearer fixture-PRIMARY_TOKEN"),
+    ],
+)
+async def test_shared_route_selects_requestheaders_auth_in_both_orders(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, reverse, routing_header
 ):
     reg_path = _write_registry(
         tmp_path,
@@ -221,7 +228,7 @@ async def test_shared_route_intent_selects_requestheaders_auth_in_both_orders(
         path="/items/123",
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-Okou-Connector-Intent", "primary"),
+            routing_header,
             ("Content-Length", str(STREAM_BUFFER_LIMIT + 1)),
         ),
     )

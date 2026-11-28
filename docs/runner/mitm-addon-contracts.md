@@ -288,6 +288,8 @@ derives these values from the active registry's declared placeholders and the
 matching APIs' credential templates. It then applies route specificity,
 permissions, and URI authorization checks within that owner. Conflicting
 placeholder owners use ordinary egress without connector credential injection.
+After injection replaces the placeholder, continuation revalidates the selected
+owner against the current registry and current destination.
 
 Requests without a usable placeholder during caller migration use this order:
 
