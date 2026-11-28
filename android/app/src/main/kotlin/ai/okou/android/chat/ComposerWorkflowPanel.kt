@@ -72,7 +72,8 @@ internal fun workflowPanelHeight(anchor: IntRect, appBarHeight: Dp, grouped: Boo
             (anchor.top - statusBar - (appBarHeight + 16.dp).roundToPx()).coerceAtMost(
                 240.dp.roundToPx(),
             )
-        val row = maxOf(56.dp.roundToPx(), 36.sp.roundToPx() + 16.dp.roundToPx())
+        val textHeight = 20.sp.roundToPx() + 16.sp.roundToPx()
+        val row = maxOf(56.dp.roundToPx(), textHeight + 16.dp.roundToPx())
         val minimum =
             row + 8.dp.roundToPx() + if (grouped) 16.sp.roundToPx() + 8.dp.roundToPx() else 0
         room.takeIf { it >= minimum && anchor.width > 0 }
@@ -191,6 +192,12 @@ private fun ComposerWorkflowRows(
     select: (ComposerWorkflowsItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val grouped = candidates.recent.isNotEmpty()
+    val atStart = !position.canScrollBackward
+    LaunchedEffect(grouped) {
+        // The first recent response can add rows above an already visible catalog.
+        if (grouped && atStart && highlighted == null) position.requestScrollToItem(0)
+    }
     if (candidates.rows.isEmpty()) {
         val label =
             when {
@@ -211,7 +218,7 @@ private fun ComposerWorkflowRows(
         return
     }
     LazyColumn(modifier.fillMaxWidth(), state = position) {
-        if (candidates.recent.isNotEmpty()) {
+        if (grouped) {
             item("recent-heading") { WorkflowHeading(R.string.composer_workflow_recent) }
             items(candidates.recent, key = { it.workflow.id }) {
                 WorkflowCandidate(it, it.workflow.id == highlighted, focusableRows, select)

@@ -95,7 +95,7 @@ internal class ComposerWorkflowRootTest : ChatComposerRootTestFixture() {
     }
 
     @Test
-    fun choosingACommandBeforeANewlineClosesSuggestionsUntilTheNextEdit() {
+    fun choosingACommandBeforeANewlineClosesSuggestionsUntilTheCaretReturns() {
         val app = compose.activity.application as ComposerRootApplication
         ComposerWorkflowApiFixture(app.fixture)
         app.contextGate.countDown()
@@ -108,6 +108,12 @@ internal class ComposerWorkflowRootTest : ChatComposerRootTestFixture() {
         input.assertIsFocused().assertTextContains("/release-check\nKeep this line")
         compose.onNodeWithTag("composer-workflow-popup").assertDoesNotExist()
 
+        val commandEnd = "/release-check".length
+        input.performTextInputSelection(TextRange(commandEnd + 1))
+        compose.onNodeWithTag("composer-workflow-popup").assertDoesNotExist()
+        input.performTextInputSelection(TextRange(commandEnd))
+        compose.onNodeWithText("/release-check").assertIsDisplayed()
+
         input.performTextInput("s")
         input.assertTextContains("/release-checks\nKeep this line")
         compose.onNodeWithText("No matching workflows").assertIsDisplayed()
@@ -116,18 +122,23 @@ internal class ComposerWorkflowRootTest : ChatComposerRootTestFixture() {
     @Test
     fun keyboardCompletionAndExplicitPickerShareTheCatalogInAnExistingChat() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val recent = CountDownLatch(1)
         instrumentation.setInTouchMode(false)
         try {
             compose.activityRule.scenario.recreate()
             val app = compose.activity.application as ComposerRootApplication
-            ComposerWorkflowApiFixture(app.fixture)
+            val workflows = ComposerWorkflowApiFixture(app.fixture)
+            workflows.beforeRecent = { recent.await() }
             app.contextGate.countDown()
             app.sendGate.countDown()
             compose.waitUntilExactlyOneExists(hasText("Personal chat"), 8_000)
             compose.onNodeWithText("Personal chat").performClick()
             val input = compose.onNodeWithTag("message_input")
             input.performClick().performTextInput("/")
+            compose.waitUntilExactlyOneExists(hasText("/daily-digest"), 8_000)
+            recent.countDown()
             compose.waitUntilExactlyOneExists(hasText("Recently used"), 8_000)
+            compose.onNodeWithText("Recently used").assertIsDisplayed()
             input.performKeyInput {
                 pressKey(Key.DirectionDown)
                 pressKey(Key.Enter)
@@ -149,6 +160,7 @@ internal class ComposerWorkflowRootTest : ChatComposerRootTestFixture() {
                 .assertIsFocused()
             assertTrue(app.fixture.inputs.isEmpty())
         } finally {
+            recent.countDown()
             instrumentation.resetInTouchMode()
         }
     }

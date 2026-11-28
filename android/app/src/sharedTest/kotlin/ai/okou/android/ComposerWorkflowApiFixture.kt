@@ -11,6 +11,7 @@ internal class ComposerWorkflowApiFixture(composer: ComposerApiFixture) {
     val recentWrites = CopyOnWriteArrayList<List<String>>()
     val catalogReads = CopyOnWriteArrayList<Unit>()
     @Volatile var beforeCatalog: () -> Unit = {}
+    @Volatile var beforeRecent: () -> Unit = {}
     @Volatile var catalogStatus = 200
     @Volatile var recent = listOf(ReviewId, ReleaseId)
 
@@ -28,8 +29,10 @@ internal class ComposerWorkflowApiFixture(composer: ComposerApiFixture) {
                             )
                             .setResponseCode(catalogStatus)
                 }
-                "/api/workflows/recent" ->
+                "/api/workflows/recent" -> {
+                    beforeRecent()
                     jsonResponse("""{"workflowIds":${Json.encodeToString(recent)}}""")
+                }
                 "/api/workflows/recent/use" -> {
                     val ids =
                         Json.parseToJsonElement(request.body.clone().readUtf8())

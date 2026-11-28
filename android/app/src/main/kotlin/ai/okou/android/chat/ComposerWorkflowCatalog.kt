@@ -39,7 +39,7 @@ internal data class ComposerWorkflowState(
     val failed: Boolean = false,
 )
 
-/** One cache and refresh per attached workspace composer. Sending never waits for this owner. */
+/** The attached workspace owns these reads and recent uses independently of chat delivery. */
 internal class ComposerWorkflowCatalog(
     private val service: ComposerWorkflowService,
     private val file: File,
@@ -49,66 +49,92 @@ internal class ComposerWorkflowCatalog(
 ) {
     private val mutable = MutableStateFlow(ComposerWorkflowState())
     val state = mutable.asStateFlow()
-    private val updates = Mutex()
-    private var read: Job? = null
+    private val cacheUpdates = Mutex()
+    private val recentUpdates = Mutex()
+    private var catalogRead: Job? = null
+    private var recentRead: Job? = null
     private var hydrated = false
+    private var confirmedRecent = emptyList<String>()
 
     fun refresh() {
-        if (!authorized() || read?.isActive == true) return
-        mutable.value = mutable.value.copy(failed = false)
-        read = scope.launch {
-            hydrate()
-            val failure =
-                retryBoundedRead(authorized) {
+        val pendingCatalog = refreshCatalog() ?: return
+        if (recentRead?.isActive == true) return
+        recentRead = scope.launch {
+            pendingCatalog.join()
+            recentUpdates.withLock {
+                val current = mutable.value
+                if (!authorized() || current.failed || current.snapshot == null) return@withLock
+                val recent =
                     try {
-                        val workflows = service.composerWorkflows()
-                        if (authorized()) {
-                            updates.withLock {
-                                val recent = readRecent()
-                                if (authorized())
-                                    publish(ComposerWorkflowSnapshot(workflows, recent))
-                            }
-                        }
-                        null
+                        service.recentComposerWorkflows()
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
                         reportSessionFailure(error)
-                        error
+                        return@withLock
                     }
-                }
-            if (!authorized() || failure == null) return@launch
-            updates.withLock {
-                if (failure is ApiFailure.Http && failure.status in setOf(403, 404)) {
-                    mutable.value = ComposerWorkflowState(failed = true)
-                    withContext(Dispatchers.IO) { AtomicFile(file).delete() }
-                } else {
-                    mutable.value = mutable.value.copy(failed = true)
-                }
+                updateRecent(recent, confirmed = true)
             }
         }
     }
 
-    private suspend fun readRecent(): List<String> =
-        try {
-            service.recentComposerWorkflows()
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            reportSessionFailure(error)
-            mutable.value.snapshot?.recent.orEmpty()
-        }
+    private fun refreshCatalog(): Job? {
+        if (!authorized()) return null
+        val pending = catalogRead
+        if (pending?.isActive == true) return pending
+        mutable.value = mutable.value.copy(failed = false)
+        return scope
+            .launch {
+                hydrate()
+                val failure =
+                    retryBoundedRead(authorized) {
+                        val workflows =
+                            try {
+                                service.composerWorkflows()
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                reportSessionFailure(error)
+                                return@retryBoundedRead error
+                            }
+                        cacheUpdates.withLock {
+                            if (!authorized()) return@withLock
+                            val recent = mutable.value.snapshot?.recent.orEmpty()
+                            mutable.value =
+                                ComposerWorkflowState(ComposerWorkflowSnapshot(workflows, recent))
+                            save(ComposerWorkflowSnapshot(workflows, confirmedRecent))
+                        }
+                        null
+                    }
+                if (failure == null) return@launch
+                cacheUpdates.withLock {
+                    if (!authorized()) return@withLock
+                    if (failure is ApiFailure.Http && failure.status in setOf(403, 404)) {
+                        mutable.value = ComposerWorkflowState(failed = true)
+                        confirmedRecent = emptyList()
+                        withContext(cacheIo) { AtomicFile(file).delete() }
+                    } else {
+                        mutable.value = mutable.value.copy(failed = true)
+                    }
+                }
+            }
+            .also { catalogRead = it }
+    }
 
     fun accepted(text: String) {
+        if (!authorized()) return
         val commands = sentWorkflowNames(text)
         if (commands.isEmpty()) return
         scope.launch {
             hydrate()
-            if (mutable.value.snapshot == null) {
-                refresh()
-                read?.join()
-            }
-            updates.withLock {
+            recentUpdates.withLock {
+                val pending = catalogRead
+                if (pending?.isActive == true) pending.join()
+                else if (
+                    mutable.value.snapshot?.workflows.orEmpty().count { it.name in commands } <
+                        commands.size
+                )
+                    refreshCatalog()?.join()
                 val snapshot = mutable.value.snapshot ?: return@withLock
                 val ids = snapshot.workflows.filter { it.name in commands }.map { it.id }
                 if (!authorized() || ids.isEmpty()) return@withLock
@@ -119,12 +145,26 @@ internal class ComposerWorkflowCatalog(
                         throw cancelled
                     } catch (error: Exception) {
                         reportSessionFailure(error)
-                        (ids + snapshot.recent).distinct()
+                        updateRecent((ids + snapshot.recent).distinct(), confirmed = false)
+                        return@withLock
                     }
-                if (authorized()) publish(snapshot.copy(recent = recent))
+                updateRecent(recent, confirmed = true)
             }
         }
     }
+
+    // Keep a local promotion after an accepted send, and cache only the server's ordering.
+    private suspend fun updateRecent(recent: List<String>, confirmed: Boolean) =
+        cacheUpdates.withLock {
+            val state = mutable.value
+            val snapshot = state.snapshot ?: return@withLock
+            if (!authorized()) return@withLock
+            mutable.value = state.copy(snapshot = snapshot.copy(recent = recent))
+            if (confirmed && confirmedRecent != recent) {
+                confirmedRecent = recent
+                save(snapshot.copy(recent = recent))
+            }
+        }
 
     private fun reportSessionFailure(error: Exception) {
         if (
@@ -135,10 +175,10 @@ internal class ComposerWorkflowCatalog(
             report(error)
     }
 
-    private suspend fun hydrate() = updates.withLock {
+    private suspend fun hydrate() = cacheUpdates.withLock {
         if (hydrated || !authorized()) return@withLock
         val saved =
-            withContext(Dispatchers.IO) {
+            withContext(cacheIo) {
                 try {
                     Json.decodeFromString<ComposerWorkflowSnapshot>(
                         AtomicFile(file).readFully().decodeToString(),
@@ -149,13 +189,15 @@ internal class ComposerWorkflowCatalog(
                     null
                 }
             }
-        if (authorized() && saved != null) mutable.value = ComposerWorkflowState(saved)
+        if (authorized() && saved != null) {
+            confirmedRecent = saved.recent
+            mutable.value = ComposerWorkflowState(saved)
+        }
         hydrated = true
     }
 
-    private suspend fun publish(snapshot: ComposerWorkflowSnapshot) {
-        mutable.value = ComposerWorkflowState(snapshot)
-        withContext(Dispatchers.IO) {
+    private suspend fun save(snapshot: ComposerWorkflowSnapshot) {
+        withContext(cacheIo) {
             val atomic = AtomicFile(file)
             try {
                 val output = atomic.startWrite()
@@ -170,5 +212,10 @@ internal class ComposerWorkflowCatalog(
                 // A confirmed response remains usable in memory when the cache cannot be written.
             }
         }
+    }
+
+    private companion object {
+        // Replacement sessions with the same scope can reopen the same atomic file.
+        val cacheIo = Dispatchers.IO.limitedParallelism(1)
     }
 }

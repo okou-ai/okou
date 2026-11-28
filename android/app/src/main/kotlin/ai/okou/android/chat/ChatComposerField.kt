@@ -443,7 +443,8 @@ internal fun ChatComposerField(
                             onValueChange = {
                                 // A retiring field can clear its selection while focus moves.
                                 if (shortWindow == currentShortWindow) {
-                                    if (input.edit(it)) dismissedWorkflowInput = null
+                                    input.edit(it)
+                                    if (it != dismissedWorkflowInput) dismissedWorkflowInput = null
                                     model.edit(target, it.text)
                                 }
                             },
@@ -454,7 +455,11 @@ internal fun ChatComposerField(
                                         max = availableTextHeight,
                                     )
                                     .focusRequester(editorFocus)
-                                    .onFocusChanged { inputFocused = it.isFocused }
+                                    .onFocusChanged {
+                                        if (inputFocused && !it.isFocused)
+                                            dismissedWorkflowInput = null
+                                        inputFocused = it.isFocused
+                                    }
                                     .onPreviewKeyEvent { event ->
                                         if (!workflowOpen || event.type != KeyEventType.KeyDown)
                                             return@onPreviewKeyEvent false
