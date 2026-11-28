@@ -21,15 +21,10 @@ from tests.auth_base_forwarder_helpers import (
     forwarder_concurrency_harness,
     http_response,
 )
+from tests.deferred_callback_helpers import await_ready_callbacks
 from tests.thread_helpers import ThreadUnderTest
 
 _PROCESS_EXIT_TIMEOUT_SECONDS = 5
-
-
-async def _run_ready_tasks() -> None:
-    ready = asyncio.Event()
-    asyncio.get_running_loop().call_soon(ready.set)
-    await ready.wait()
 
 
 class _BlockingConnectSocket(FakeSocket):
@@ -1214,7 +1209,7 @@ class TestForwardRequestAsyncWrapper:
                         forwarder.forward_request("https://example.com", "GET", [], None)
                     )
                 )
-                await _run_ready_tasks()
+                await await_ready_callbacks()
                 assert scenario.started == 1
 
                 scenario.release()
@@ -1248,7 +1243,7 @@ class TestForwardRequestAsyncWrapper:
                             forwarder.forward_request("https://example.com", "GET", [], None)
                         )
                     )
-                    await _run_ready_tasks()
+                    await await_ready_callbacks()
 
                 assert scenario.started == 1
 
