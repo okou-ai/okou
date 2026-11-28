@@ -9,7 +9,7 @@ internal data class WorkflowToken(val range: TextRange, val query: String)
 private val fuzzyParts = Regex("[0-9]+|[^0-9]")
 
 internal fun TextFieldValue.activeWorkflowToken(): WorkflowToken? {
-    if (!selection.collapsed || composition != null) return null
+    if (!selection.collapsed) return null
     val cursor = selection.start
     var start = cursor
     while (start > 0) {

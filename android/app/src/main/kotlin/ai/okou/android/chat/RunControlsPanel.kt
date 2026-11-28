@@ -23,8 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -153,12 +155,26 @@ internal class ConversationStopPlacement {
     private var slotBounds: Rect? = null
     private var feedbackBounds: Rect? = null
     private var jumpBounds: Rect? = null
+    var contentCoordinates: LayoutCoordinates? = null
+    private var workflowComposerBounds: Rect? = null
+    private var dismissWorkflow: (() -> Unit)? = null
     var workflowBounds by mutableStateOf<Rect?>(null)
         private set
 
     fun reportWorkflowBounds(bounds: Rect?) {
         workflowBounds = bounds
         updatePlacement()
+    }
+
+    fun registerWorkflowDismissal(composer: Rect?, dismiss: (() -> Unit)?) {
+        workflowComposerBounds = composer
+        dismissWorkflow = dismiss
+    }
+
+    fun onContentPress(position: Offset) {
+        val dismiss = dismissWorkflow ?: return
+        val coordinates = contentCoordinates?.takeIf { it.isAttached } ?: return
+        if (workflowComposerBounds?.contains(coordinates.localToRoot(position)) == false) dismiss()
     }
 
     fun reportInlineSlot(bounds: Rect?) {
