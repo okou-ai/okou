@@ -11,8 +11,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.text.TextRange
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CountDownLatch
 import kotlinx.serialization.json.jsonPrimitive
@@ -90,6 +92,25 @@ internal class ComposerWorkflowRootTest : ChatComposerRootTestFixture() {
         } finally {
             catalog.countDown()
         }
+    }
+
+    @Test
+    fun choosingACommandBeforeANewlineClosesSuggestionsUntilTheNextEdit() {
+        val app = compose.activity.application as ComposerRootApplication
+        ComposerWorkflowApiFixture(app.fixture)
+        app.contextGate.countDown()
+        compose.onNodeWithText("New chat").performClick()
+        val input = compose.onNodeWithTag("message_input")
+        input.performTextInput("/rel\nKeep this line")
+        input.performTextInputSelection(TextRange(4))
+        compose.waitUntilExactlyOneExists(hasText("/release-check"), 8_000)
+        compose.onNodeWithText("/release-check").performClick()
+        input.assertIsFocused().assertTextContains("/release-check\nKeep this line")
+        compose.onNodeWithTag("composer-workflow-popup").assertDoesNotExist()
+
+        input.performTextInput("s")
+        input.assertTextContains("/release-checks\nKeep this line")
+        compose.onNodeWithText("No matching workflows").assertIsDisplayed()
     }
 
     @Test
