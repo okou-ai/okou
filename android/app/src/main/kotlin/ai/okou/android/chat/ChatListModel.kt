@@ -247,12 +247,14 @@ data class ChatListUiState(
     internal val projectRenameRejection: ProjectRenameRejection?
         get() = projectList.renameRejection
 
-    // Both the confirmed and displayed memberships must have caught up to the Project deletion.
+    // The Project feed and both views of chat membership must have caught up to the deletion.
     internal val projectDeleteFeedback: List<ProjectDeleteFeedback>
         get() =
             projectList.deleteFeedback.filterNot { feedback ->
                 feedback.status == ProjectDeleteStatus.Confirmed &&
-                    (source != ChatListSource.Network ||
+                    (projectsSource != ChatListSource.Network ||
+                        projects.any { it.id == feedback.projectId } ||
+                        source != ChatListSource.Network ||
                         confirmedThreads.any { it.projectId == feedback.projectId } ||
                         (confirmedThreads !== threads &&
                             threads.any { it.projectId == feedback.projectId }))
@@ -301,7 +303,9 @@ internal fun ChatListUiState.projectDestinations(
 ): List<ChatProjectDestination> = buildList {
     if (thread.projectId != null) add(ChatProjectDestination(null, null))
     projects.forEach { project ->
-        if (project.id != thread.projectId) add(ChatProjectDestination(project.id, project.name))
+        if (project.id != thread.projectId && !projectList.isDeleting(project.id)) {
+            add(ChatProjectDestination(project.id, project.name))
+        }
     }
 }
 
@@ -400,7 +404,7 @@ internal fun ChatListUiState.rowActions(
         if (
             projectsSource != null &&
                 projectList.deletingId == null &&
-                (thread.projectId != null || projects.isNotEmpty())
+                (thread.projectId != null || projects.any { !projectList.isDeleting(it.id) })
         )
             add(ChatRowAction.MoveProject)
         add(if (thread.muted == true) ChatRowAction.Unmute else ChatRowAction.Mute)
@@ -485,6 +489,7 @@ class ChatListModel(
             dispatcher = dispatcher,
             wallMillis = wallMillis,
             syncChatsAfterDelete = { awaitListRead { true } },
+            isListPaneOpen = { listFeedbackScope != null },
             visibleListFeedbackScope = { visibleListFeedbackScope },
             readState = { mutable.value.projectList },
             publish = { reconcileProjectMoves(mutable.value.copy(projectList = it)) },
@@ -1182,7 +1187,10 @@ class ChatListModel(
                         state.projectList.copy(
                             deleteFeedback =
                                 state.projectList.deleteFeedback.filterNot {
-                                    it.status == ProjectDeleteStatus.Confirmed
+                                    it.status == ProjectDeleteStatus.Confirmed &&
+                                        state.projects.none { project ->
+                                            project.id == it.projectId
+                                        }
                                 },
                         )
                     else state.projectList,
@@ -1831,7 +1839,17 @@ class ChatListModel(
     internal fun listPaneVisibilityChanged(visible: Boolean) {
         if (visible == (listFeedbackScope != null)) return
         listFeedbackScope = if (visible) Any() else null
-        if (!visible && current()) mutable.value = mutable.value.clearRefreshFailures()
+        if (!visible && current()) {
+            val state = mutable.value.clearRefreshFailures()
+            mutable.value =
+                state.copy(
+                    projectList =
+                        state.projectList.copy(
+                            deleteFeedback =
+                                state.projectList.deleteFeedback.filterNot { it.rejected },
+                        ),
+                )
+        }
     }
 
     private fun endListReadScope() {
@@ -2250,10 +2268,6 @@ class ChatListModel(
 
     internal fun deleteProject(id: String) {
         if (mutable.value.canDeleteProject) projectOwner.deleteProject(id)
-    }
-
-    internal fun retryProjectDelete(feedback: ProjectDeleteFeedback) {
-        if (mutable.value.canDeleteProject) projectOwner.retryProjectDelete(feedback)
     }
 
     internal fun dismissProjectDeleteFeedback(feedback: ProjectDeleteFeedback) =

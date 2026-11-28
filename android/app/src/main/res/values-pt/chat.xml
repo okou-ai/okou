@@ -96,7 +96,6 @@
     <string name="chat_delete_pending">Excluindo…</string>
     <string name="chat_project_deleted">O projeto foi excluído e suas conversas foram movidas para fora dos projetos.</string>
     <string name="chat_project_delete_rejected">Não foi possível excluir o projeto.</string>
-    <string name="chat_project_delete_unconfirmed">Não foi possível confirmar a exclusão do projeto.</string>
     <string name="chat_row_action_rejected_named">Não foi possível concluir “%1$s”.</string>
     <string name="chat_row_action_offline_named">Não foi possível concluir “%1$s”. Verifique sua conexão e tente novamente.</string>
     <string name="chat_rename_save_failed">Não foi possível salvar. Suas alterações foram mantidas.</string>

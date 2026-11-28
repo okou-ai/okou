@@ -35,14 +35,12 @@ enum class ProjectDeleteStatus {
     Confirmed,
     Rejected,
     ConnectionFailed,
-    Unconfirmed,
 }
 
 @ConsistentCopyVisibility
 data class ProjectDeleteFeedback
 internal constructor(val projectId: String, val eventId: String, val status: ProjectDeleteStatus) {
-    internal val rejected =
-        status == ProjectDeleteStatus.Rejected || status == ProjectDeleteStatus.ConnectionFailed
+    internal val rejected = status != ProjectDeleteStatus.Confirmed
     internal val feedbackOrder = nextPaneFeedbackOrder()
 }
 
@@ -68,6 +66,11 @@ internal constructor(
 
     internal val canRename: Boolean
         get() = source != null && renamingId == null && deletingId == null
+
+    // Acknowledged deletes can still be visible until the metadata feed catches up.
+    internal fun isDeleting(id: String): Boolean =
+        deletingId == id ||
+            deleteFeedback.any { it.projectId == id && it.status == ProjectDeleteStatus.Confirmed }
 }
 
 internal fun newProjectOperationId(wallMillis: Long): String {
@@ -88,6 +91,7 @@ internal class ProjectListOwner(
     private val dispatcher: CoroutineDispatcher,
     private val wallMillis: () -> Long,
     private val syncChatsAfterDelete: suspend () -> Unit,
+    private val isListPaneOpen: () -> Boolean,
     private val visibleListFeedbackScope: () -> Any?,
     private val readState: () -> ProjectListUiState,
     private val publish: (ProjectListUiState) -> Unit,
@@ -103,7 +107,6 @@ internal class ProjectListOwner(
     private val renameReceipts = mutableMapOf<String, ProjectRenameReceipt>()
     private var projectRename: ProjectRename? = null
     private val unresolvedProjectRenames = mutableMapOf<String, ProjectRename>()
-    private val retryableProjectDeletes = mutableMapOf<String, String>()
     private var projectsRestoreJob: Job? = null
     private var projectsJob: Job? = null
     private var projectsRetry: ChatDependencyRetry? = null
@@ -338,13 +341,23 @@ internal class ProjectListOwner(
     }
 
     fun deleteProject(id: String) {
-        if (!current() || !state.canRename || confirmedRows().none { it.id == id }) return
-        val previousAttempt = retryableProjectDeletes[id]
-        val eventId = previousAttempt ?: newProjectOperationId(wallMillis())
+        val snapshot = state
+        if (
+            !current() ||
+                !snapshot.canRename ||
+                snapshot.isDeleting(id) ||
+                snapshot.rows.none { it.id == id }
+        )
+            return
+        val eventId = newProjectOperationId(wallMillis())
         state =
-            state.copy(
+            snapshot.copy(
                 deletingId = id,
-                deleteFeedback = state.deleteFeedback.filter { it.rejected && it.projectId != id },
+                deleteFeedback =
+                    snapshot.deleteFeedback.filter { feedback ->
+                        feedback.projectId != id &&
+                            (feedback.rejected || snapshot.rows.any { it.id == feedback.projectId })
+                    },
             )
         scope.launch {
             try {
@@ -360,52 +373,34 @@ internal class ProjectListOwner(
                         error
                     }
                 requireCurrent()
-                if (
-                    failure is ApiFailure.Network &&
-                        failure.connectionFailed &&
-                        previousAttempt == null
-                ) {
-                    recordDeleteFeedback(id, eventId, ProjectDeleteStatus.ConnectionFailed)
-                    return@launch
-                }
-                val rejected = failure?.rejectsProjectMutation() == true
-                // Reconcile the chats first so the folder can disappear with its contents
-                // already in the outside group. Project and chat feeds are independent.
-                if (!rejected) syncChatsAfterDelete()
-                requireCurrent()
-                val readBack = refreshAfterWrite()
-                val confirmed =
-                    hasProjectReceipt(eventId) || (readBack && confirmedRows().none { it.id == id })
-                if (confirmed && rejected) syncChatsAfterDelete()
-                requireCurrent()
-                val outcome =
+                val status =
                     when {
-                        confirmed || hasProjectReceipt(eventId) -> ProjectDeleteStatus.Confirmed
-                        rejected -> ProjectDeleteStatus.Rejected
-                        else -> ProjectDeleteStatus.Unconfirmed
+                        failure == null ||
+                            hasProjectReceipt(eventId) ||
+                            (state.source == ChatListSource.Network &&
+                                state.rows.none { it.id == id }) -> ProjectDeleteStatus.Confirmed
+                        failure is ApiFailure.Network && failure.connectionFailed ->
+                            ProjectDeleteStatus.ConnectionFailed
+                        else -> ProjectDeleteStatus.Rejected
                     }
-                if (outcome == ProjectDeleteStatus.Unconfirmed)
-                    retryableProjectDeletes[id] = eventId
-                else retryableProjectDeletes.remove(id)
-                recordDeleteFeedback(id, eventId, outcome)
+                val snapshot = state
+                state =
+                    snapshot.copy(
+                        deletingId = id.takeIf { status == ProjectDeleteStatus.Confirmed },
+                        deleteFeedback =
+                            if (status == ProjectDeleteStatus.Confirmed || isListPaneOpen()) {
+                                snapshot.deleteFeedback + ProjectDeleteFeedback(id, eventId, status)
+                            } else snapshot.deleteFeedback,
+                    )
+                if (status == ProjectDeleteStatus.Confirmed) {
+                    // Catch up chats first, then use the normal retrying Project read.
+                    syncChatsAfterDelete()
+                    requireCurrent()
+                    invalidate()
+                }
             } finally {
-                if (current()) state = state.copy(deletingId = null)
+                if (current() && state.deletingId == id) state = state.copy(deletingId = null)
             }
-        }
-    }
-
-    private fun recordDeleteFeedback(id: String, eventId: String, status: ProjectDeleteStatus) {
-        state =
-            state.copy(
-                deleteFeedback = state.deleteFeedback + ProjectDeleteFeedback(id, eventId, status),
-            )
-    }
-
-    fun retryProjectDelete(feedback: ProjectDeleteFeedback) {
-        if (
-            feedback in state.deleteFeedback && feedback.status == ProjectDeleteStatus.Unconfirmed
-        ) {
-            deleteProject(feedback.projectId)
         }
     }
 
@@ -465,7 +460,7 @@ internal class ProjectListOwner(
 
     private fun submitProjectRename(rename: ProjectRename): Boolean {
         val snapshot = state
-        if (!current() || !snapshot.canRename) return false
+        if (!current() || !snapshot.canRename || snapshot.isDeleting(rename.id)) return false
         val baseline = confirmedRows().firstOrNull { it.id == rename.id } ?: return false
         val snapshotCursor = checkNotNull(confirmedProjects).checkpoint.snapshotCursor
         projectRename = rename
@@ -597,6 +592,10 @@ internal class ProjectListOwner(
     private suspend fun refreshAfterWrite(): Boolean {
         // Wait out a read that could have started before the write.
         while (projectsJob?.isCompleted == false) {
+            val snapshot = state
+            // Keep the regular read that is still reconciling an acknowledged deletion.
+            if (projectsRetry != null && snapshot.rows.any { snapshot.isDeleting(it.id) })
+                return false
             projectsRetry?.stopRetrying()
             projectsJob?.join()
         }
@@ -672,10 +671,6 @@ internal class ProjectListOwner(
                                         receipt.snapshotCursor.seqId)
                         }
                     }
-                    if (retryableProjectDeletes.isNotEmpty()) {
-                        val ids = selected.rows.mapTo(hashSetOf()) { it.id }
-                        retryableProjectDeletes.keys.retainAll(ids)
-                    }
                     val snapshot = state
                     var confirmedRenameIds = snapshot.confirmedRenameIds
                     fun recordConfirmedRename(id: String, eventId: String) {
@@ -715,15 +710,6 @@ internal class ProjectListOwner(
                             renameRejection =
                                 snapshot.renameRejection.takeIf { resolvedRejection == null },
                             confirmedRenameIds = confirmedRenameIds,
-                            deleteFeedback =
-                                snapshot.deleteFeedback.map { feedback ->
-                                    if (
-                                        feedback.status != ProjectDeleteStatus.Confirmed &&
-                                            selected.rows.none { it.id == feedback.projectId }
-                                    )
-                                        feedback.copy(status = ProjectDeleteStatus.Confirmed)
-                                    else feedback
-                                },
                         ),
                     )
                 } catch (cancelled: CancellationException) {
