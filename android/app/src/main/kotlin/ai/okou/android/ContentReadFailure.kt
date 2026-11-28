@@ -47,7 +47,7 @@ internal fun ContentReadFailure(
     val maxArtWidth = if (compact) 112.dp else 160.dp
     val gap = if (compact) 12.dp else 16.dp
     val color = MaterialTheme.colorScheme.onSurface
-    val illustration = ImageBitmap.imageResource(R.drawable.okou_load_failure)
+    val illustration = ImageBitmap.imageResource(R.drawable.okou_load_failed)
     val aspectRatio = illustration.width.toFloat() / illustration.height
     val dark = LocalOkouDarkMode.current
     Layout(
