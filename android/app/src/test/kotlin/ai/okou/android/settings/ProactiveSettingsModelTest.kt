@@ -15,6 +15,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -134,7 +135,7 @@ class ProactiveSettingsModelTest {
     }
 
     @Test
-    fun revertingAQueuedToggleSkipsTheRetryWhenTheEarlierChoiceIsThrottled() = runTest {
+    fun revertingAQueuedToggleSettlesWithoutWaitingForTheThrottledRetry() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = ProactiveSettingsApiFixture(api).apply { morningWriteStatus = 429 }
             val writeStarted = CountDownLatch(1)
@@ -151,9 +152,11 @@ class ProactiveSettingsModelTest {
                 withContext(Dispatchers.IO) { assertTrue(writeStarted.await(10, TimeUnit.SECONDS)) }
                 model.morningBrief.choose(false)
                 assertEquals(false, model.morningBrief.state.value.enabled)
+                val revertedAt = currentTime
                 releaseWrite.countDown()
 
                 val settled = model.morningBrief.state.first { it.choice == null }
+                assertEquals(revertedAt, currentTime)
                 assertEquals(false, settled.enabled)
                 assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)
                 runCurrent()
