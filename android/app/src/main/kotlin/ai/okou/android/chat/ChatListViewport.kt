@@ -21,6 +21,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -41,6 +44,8 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -211,12 +216,26 @@ internal fun ChatSkeletonBlock(modifier: Modifier, cornerRadius: Dp = 8.dp) {
 @Composable
 internal fun ChatListSkeleton(@StringRes loadingLabel: Int = R.string.chat_loading) {
     val label = stringResource(loadingLabel)
+    val textMeasurer = rememberTextMeasurer()
     Column(Modifier.semantics { contentDescription = label }) {
         val widths = listOf(.56f, .70f, .44f)
         repeat(6) { index ->
-            ListItem(modifier = Modifier.fillMaxWidth()) {
-                ChatSkeletonBlock(Modifier.fillMaxWidth(widths[index % widths.size]).height(14.dp))
+            ListItem(modifier = Modifier.fillMaxWidth().testTag("chat_list_skeleton_row")) {
+                ListItemSkeletonLine(widths[index % widths.size], textMeasurer)
             }
         }
+    }
+}
+
+@Composable
+internal fun ListItemSkeletonLine(widthFraction: Float, textMeasurer: TextMeasurer) {
+    // Measure the slot's typography using the same nonlinear scaling as the rendered title.
+    val lineHeight =
+        textMeasurer.measure("M", style = LocalTextStyle.current, maxLines = 1).size.height
+    Box(
+        Modifier.fillMaxWidth().heightIn(min = with(LocalDensity.current) { lineHeight.toDp() }),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        ChatSkeletonBlock(Modifier.fillMaxWidth(widthFraction).height(14.dp))
     }
 }

@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -44,7 +43,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -88,6 +86,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -907,6 +906,7 @@ private fun SearchResult(
 @Composable
 private fun SearchResultSkeleton(@StringRes loadingLabel: Int, supporting: Boolean) {
     val label = stringResource(loadingLabel)
+    val textMeasurer = rememberTextMeasurer()
     Column(Modifier.semantics { contentDescription = label }) {
         val widths = listOf(.56f, .70f, .44f)
         repeat(6) { index ->
@@ -914,23 +914,12 @@ private fun SearchResultSkeleton(@StringRes loadingLabel: Int, supporting: Boole
                 modifier = Modifier.fillMaxWidth(),
                 supportingContent =
                     if (supporting) {
-                        { SearchSkeletonLine(.4f) }
+                        { ListItemSkeletonLine(.4f, textMeasurer) }
                     } else null,
             ) {
-                SearchSkeletonLine(widths[index % widths.size])
+                ListItemSkeletonLine(widths[index % widths.size], textMeasurer)
             }
         }
-    }
-}
-
-@Composable
-private fun SearchSkeletonLine(width: Float) {
-    val lineHeight = LocalTextStyle.current.lineHeight
-    Box(
-        Modifier.fillMaxWidth().heightIn(min = with(LocalDensity.current) { lineHeight.toDp() }),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        ChatSkeletonBlock(Modifier.fillMaxWidth(width).height(14.dp))
     }
 }
 
