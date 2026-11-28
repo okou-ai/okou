@@ -129,7 +129,7 @@ export const materializeActiveInputSource$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly runId: string;
-      readonly framework?: string | null;
+      readonly framework: string | null;
     },
     signal: AbortSignal,
   ): Promise<string> => {
@@ -163,7 +163,7 @@ export const materializeActiveInputSource$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         runId: auth.runId,
-        framework: auth.framework ?? null,
+        framework: auth.framework,
         featureSwitchContext,
       },
       signal,

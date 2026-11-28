@@ -115,7 +115,6 @@ const loadActiveInputDeliveryScope$ = command(
         userId: agentRuns.userId,
         orgId: agentRuns.orgId,
         status: agentRuns.status,
-        framework: agentRuns.framework,
         launchSnapshot: agentRuns.launchSnapshot,
       })
       .from(agentRuns)
@@ -138,7 +137,7 @@ const loadActiveInputDeliveryScope$ = command(
       userId: row.userId,
       orgId: row.orgId,
       status: runStatusSchema.parse(row.status),
-      framework: row.launchSnapshot?.framework ?? row.framework ?? null,
+      framework: row.launchSnapshot?.framework ?? null,
     };
   },
 );

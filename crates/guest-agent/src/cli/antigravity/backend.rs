@@ -269,13 +269,10 @@ async fn run_antigravity_acp(
             }
         };
 
-        let session_id = session_response
-            .get("sessionId")
-            .and_then(Value::as_str)
-            .or_else(|| resumed.then_some(runtime.resume_session_id.as_ref()))
-            .filter(|id| uuid::Uuid::try_parse(id).is_ok())
-            .ok_or_else(|| AgentError::Execution("Invalid Antigravity session ID".into()))?
-            .to_owned();
+        let session_id = session_id_from_response(
+            &session_response,
+            resumed.then_some(runtime.resume_session_id.as_ref()),
+        )?;
         active_session_id = Some(session_id.clone());
         sink.ingest(projector.begin_session(session_id.clone()))
             .await?;
@@ -889,7 +886,7 @@ async fn start_or_resume_session(
     match resumed {
         Ok(value) => Ok(Ok((value, true))),
         Err(AntigravityAcpError::Rpc { method, error })
-            if runtime.native_continuation.is_some()
+            if has_non_empty_recovery_prompt(runtime.native_continuation)
                 && method == "session/resume"
                 && is_missing_or_unreadable_session_error(&error) =>
         {
@@ -909,6 +906,40 @@ async fn start_or_resume_session(
         }
         Err(error) => Ok(Err(error)),
     }
+}
+
+pub(super) fn session_id_from_response(
+    response: &Value,
+    resumed_session_id: Option<&str>,
+) -> Result<String, AgentError> {
+    let raw_id = match response.get("sessionId") {
+        Some(value) => value
+            .as_str()
+            .ok_or_else(|| AgentError::Execution("Invalid Antigravity session ID".into()))?,
+        None => resumed_session_id
+            .ok_or_else(|| AgentError::Execution("Invalid Antigravity session ID".into()))?,
+    };
+    if uuid::Uuid::try_parse(raw_id).is_err() {
+        return Err(AgentError::Execution(
+            "Invalid Antigravity session ID".into(),
+        ));
+    }
+    if let Some(expected) = resumed_session_id
+        && raw_id != expected
+    {
+        return Err(AgentError::Execution(
+            "Antigravity session/resume returned a different session ID".into(),
+        ));
+    }
+    Ok(raw_id.to_owned())
+}
+
+pub(super) fn has_non_empty_recovery_prompt(
+    native_continuation: Option<&guest_contracts::env::NativeContinuation>,
+) -> bool {
+    native_continuation
+        .and_then(|native| native.recovery_prompt.as_deref())
+        .is_some_and(|prompt| !prompt.trim().is_empty())
 }
 
 fn is_missing_or_unreadable_session_error(error: &JsonRpcError) -> bool {

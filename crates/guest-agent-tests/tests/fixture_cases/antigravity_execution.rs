@@ -35,7 +35,14 @@ fn runtime(
     let dir = root.join(mode);
     let home = dir.join("home");
     fs::create_dir_all(&home)?;
-    if matches!(mode, "resume" | "resume-missing") {
+    if matches!(
+        mode,
+        "resume"
+            | "resume-missing"
+            | "resume-mismatch"
+            | "resume-missing-no-recovery"
+            | "resume-missing-empty-recovery"
+    ) {
         let conversations = home.join(".gemini/antigravity-cli/conversations");
         fs::create_dir_all(&conversations)?;
         let mut valid_db = b"SQLite format 3\0".to_vec();
@@ -50,11 +57,23 @@ fn runtime(
         &guest_contracts::env::RunPayload {
             prompt: PROMPT.into(),
             append_system_prompt: RULE.into(),
-            native_continuation: if matches!(mode, "recovery" | "resume" | "resume-missing") {
+            native_continuation: if matches!(
+                mode,
+                "recovery"
+                    | "resume"
+                    | "resume-missing"
+                    | "resume-mismatch"
+                    | "resume-missing-no-recovery"
+                    | "resume-missing-empty-recovery"
+            ) {
                 serde_json::to_string(&guest_contracts::env::NativeContinuation {
                     session_id: Some(RESUMED_SESSION.into()),
                     generation_run_id: Some(THREAD.into()),
-                    recovery_prompt: Some("Previous chat messages go here.".into()),
+                    recovery_prompt: match mode {
+                        "resume-missing-no-recovery" => None,
+                        "resume-missing-empty-recovery" => Some(String::new()),
+                        _ => Some("Previous chat messages go here.".into()),
+                    },
                 })?
             } else {
                 String::new()
@@ -112,6 +131,9 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
         "recovery",
         "resume",
         "resume-missing",
+        "resume-mismatch",
+        "resume-missing-no-recovery",
+        "resume-missing-empty-recovery",
     ] {
         let runtime = runtime(root.path(), &server.base_url, mode)?;
         let dir = root.path().join(mode);
@@ -137,6 +159,9 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
         if mode == "malformed" {
             let err = result.unwrap_err();
             assert!(err.to_string().contains("Invalid Antigravity JSON record"));
+        } else if mode == "resume-mismatch" {
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("different session ID"));
         } else {
             let result = result?;
             assert!(result.stderr_lines.is_empty());
@@ -206,6 +231,20 @@ async fn antigravity_turn_delivery_failure_and_cancellation()
                     );
                 }
                 "recovery" | "resume" | "resume-missing" => assert_eq!(result.exit_code, 0),
+                "resume-missing-no-recovery" | "resume-missing-empty-recovery" => {
+                    assert_eq!(result.exit_code, 1);
+                    assert_eq!(
+                        result.jsonl_result.unwrap().status,
+                        JsonlResultStatus::Error
+                    );
+                    assert!(
+                        result
+                            .failure_diagnostic
+                            .unwrap()
+                            .message
+                            .contains("Antigravity reported an execution error")
+                    );
+                }
                 "missing" => {
                     assert_eq!(result.exit_code, 1);
                     assert!(

@@ -113,6 +113,25 @@ elif mode == "resume-missing":
     assert "Previous chat messages go here." in append_prompt
     send_result(fallback_req["id"], {"sessionId": session})
     mode = "success"
+elif mode == "resume-mismatch":
+    assert session_req["method"] == "session/resume"
+    assert session_req["params"]["sessionId"] == session
+    send_result(
+        session_req["id"],
+        {"sessionId": "11111111-1111-4111-8111-111111111111"},
+    )
+    assert read_msg() is None
+    sys.exit(0)
+elif mode in ("resume-missing-no-recovery", "resume-missing-empty-recovery"):
+    assert session_req["method"] == "session/resume"
+    assert session_req["params"]["sessionId"] == session
+    send_error(
+        session_req["id"],
+        -32603,
+        f"Failed to read session {session}; retry, or load it with session/load",
+    )
+    assert read_msg() is None
+    sys.exit(0)
 else:
     assert session_req["method"] == "session/new"
     append_prompt = (
