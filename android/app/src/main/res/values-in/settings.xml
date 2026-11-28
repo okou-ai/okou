@@ -47,7 +47,6 @@
     <string name="settings_account_select">Pilih</string>
     <string name="settings_account_reconnect">Perlu dihubungkan kembali</string>
     <string name="settings_account_switching">Mengganti…</string>
-    <string name="settings_account_switch_unconfirmed">Peralihan belum dikonfirmasi</string>
     <string name="settings_account_switch_failed">Gagal mengganti akun model.</string>
     <string name="settings_quota">Kuota</string>
     <string name="settings_hour_quota">Kuota %1$d jam</string>

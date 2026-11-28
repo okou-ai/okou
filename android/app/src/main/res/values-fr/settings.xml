@@ -47,7 +47,6 @@
     <string name="settings_account_select">Sélectionner</string>
     <string name="settings_account_reconnect">Reconnexion nécessaire</string>
     <string name="settings_account_switching">Changement en cours…</string>
-    <string name="settings_account_switch_unconfirmed">Changement non confirmé</string>
     <string name="settings_account_switch_failed">Impossible de changer de compte de modèle.</string>
     <string name="settings_quota">Quota</string>
     <string name="settings_hour_quota">Quota de %1$d h</string>

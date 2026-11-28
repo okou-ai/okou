@@ -47,7 +47,6 @@
     <string name="settings_account_select">選択</string>
     <string name="settings_account_reconnect">再接続が必要</string>
     <string name="settings_account_switching">切り替え中…</string>
-    <string name="settings_account_switch_unconfirmed">切り替え結果は未確認</string>
     <string name="settings_account_switch_failed">モデルアカウントを切り替えられませんでした。</string>
     <string name="settings_quota">使用枠</string>
     <string name="settings_hour_quota">%1$d時間の使用枠</string>

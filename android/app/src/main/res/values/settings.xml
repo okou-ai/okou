@@ -47,7 +47,6 @@
     <string name="settings_account_select">Select</string>
     <string name="settings_account_reconnect">Reconnect required</string>
     <string name="settings_account_switching">Switching…</string>
-    <string name="settings_account_switch_unconfirmed">Switch unconfirmed</string>
     <string name="settings_account_switch_failed">Unable to switch model accounts.</string>
     <string name="settings_quota">Quota</string>
     <string name="settings_hour_quota">%1$d-hour quota</string>
