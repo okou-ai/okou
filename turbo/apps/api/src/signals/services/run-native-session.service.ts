@@ -2,11 +2,11 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { nativeThreadBindingSql } from "@okouai/db/operations/native-thread-binding";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { command } from "ccstate";
-import { nativeContinuationSchema } from "@okouai/api-contracts/contracts/runners";
+import { cliAgentSessionIdSchema } from "@okouai/api-contracts/contracts/runners";
 import type { EventConsumerPayload } from "../../lib/event-consumer/verify";
 import { writeDb$ } from "../external/db";
 
-const nativeSessionId = nativeContinuationSchema.shape.sessionId.unwrap();
+const nativeSessionId = cliAgentSessionIdSchema;
 
 /** Bind actual Framework initialization, including runs that later fail/cancel. */
 export const captureRunNativeSession$ = command(
@@ -60,17 +60,6 @@ export const captureRunNativeSession$ = command(
     const sessionId = identities[0];
     if (sessionId === undefined) {
       return;
-    }
-    // An earlier API launched standalone Pi with the thread ID. Remove that
-    // case after its callbacks drain and rollback cannot launch it (#50929).
-    if (
-      run.launchSnapshot?.schemaVersion === 5 &&
-      framework === "pi" &&
-      !(run.triggerSource === "proactive" && sessionId === run.id) &&
-      sessionId !==
-        (run.officialWorkflowProvenance ? run.id : (run.chatThreadId ?? run.id))
-    ) {
-      throw new Error("Pi reported an identity outside its captured launch");
     }
     if (
       identities.some((id) => {

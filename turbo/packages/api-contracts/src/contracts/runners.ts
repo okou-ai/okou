@@ -510,13 +510,45 @@ const startupInputsSchema = object({
   contentBundles: executionContentBundlesSchema,
 });
 
-/** Retained native files are disposable; Chat remains the recovery source. */
+export const cliAgentSessionIdSchema = string()
+  .min(1)
+  .max(255)
+  .regex(/^[A-Za-z0-9_-]+$/);
+
+/**
+ * Pure filesystem-level native continuation intent; carries no framework session ID.
+ * Runner checks `source_run_id == expectedSourceRunId` before reusing home state,
+ * clears `continueNative` on any home miss, and lets each CLI auto-continue locally.
+ */
+export const sessionContinuationSchema = object({
+  continueNative: boolean(),
+  expectedSourceRunId: uuid().nullable(),
+  /** Enabled only when native context could not resume, before CLI start. */
+  recoveryPrompt: string().min(1).max(4096).nullable(),
+})
+  .strict()
+  .superRefine((continuation, context) => {
+    if (
+      continuation.continueNative &&
+      continuation.expectedSourceRunId === null
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["expectedSourceRunId"],
+        message: "Native continuation requires its expected source Run",
+      });
+    }
+  });
+export type SessionContinuation = zInfer<typeof sessionContinuationSchema>;
+
+/**
+ * Legacy wire shape kept as a bounded rollout bridge while draining pre-cutover
+ * Runners whose `NativeContinuation` uses `deny_unknown_fields`. Remove after
+ * those Runner releases finish draining and are excluded from rollback
+ * (see `docs/deployment-compatibility.md`).
+ */
 export const nativeContinuationSchema = object({
-  sessionId: string()
-    .min(1)
-    .max(255)
-    .regex(/^[A-Za-z0-9_-]+$/)
-    .nullable(),
+  sessionId: cliAgentSessionIdSchema.nullable(),
   generationRunId: uuid().nullable(),
   /** Enabled only when native context could not resume, before CLI start. */
   recoveryPrompt: string().min(1).max(4096).nullable(),
@@ -784,6 +816,7 @@ export const piLaunchPayloadSchema = object({
   schemaVersion: literal(1),
   appendSystemPrompt: string().nullable(),
   launchConfig: piLaunchConfigSchema,
+  continueNative: boolean().optional(),
 })
   .strict()
   .readonly();
@@ -849,6 +882,8 @@ const preparedExecutionContextObjectSchema = object({
   // Connector-owned runtime vars used by proxy/firewall template resolution.
   // Original Run vars travel in the admitted launch and merge during execution preparation.
   vars: record(string(), string()).nullable(),
+  sessionContinuation: sessionContinuationSchema,
+  // Rollout bridge for draining older Runners; remove once pre-cutover Runners drain.
   nativeContinuation: nativeContinuationSchema,
   // Maps firewall auth secret env aliases (the `NAME` in `${{ secrets.NAME }}`) to
   // their connector or provider owner. Keys are env aliases, not storage secret names.
@@ -929,6 +964,8 @@ const executionContextObjectSchema = object({
   firewallToken: string().min(1),
   environment: record(string(), string()).nullable(),
   platformEnvironment: record(string(), string()),
+  sessionContinuation: sessionContinuationSchema,
+  // Rollout bridge for draining older Runners; remove once pre-cutover Runners drain.
   nativeContinuation: nativeContinuationSchema,
   // Plain secret values used by the runner for redaction. These are values, not
   // names, and are base64-encoded only when exported through OKOU_SECRET_VALUES.

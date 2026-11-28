@@ -20,7 +20,6 @@ export function requirePiMainLoopEnvironment(): void {
   if (
     process.env[PI_SESSION_ROLE_ENV] === "child" ||
     !process.env.OKOU_RUN_ID ||
-    !process.env.OKOU_PI_SESSION_ID ||
     !process.env.OKOU_PI_MODEL_CONFIG ||
     !process.env.OKOU_PI_LAUNCH_PAYLOAD_FILE
   ) {

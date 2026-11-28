@@ -1,4 +1,4 @@
-import { nativeContinuationSchema } from "@okouai/api-contracts/contracts/runners";
+import { cliAgentSessionIdSchema } from "@okouai/api-contracts/contracts/runners";
 import { normalizeRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   runResultSchema,
@@ -123,20 +123,13 @@ function outputIdentity(input: CompletionPublicationInput) {
     sessionId: output?.cliAgentSessionId ?? null,
     disposition: output?.cliAgentSessionHistoryDisposition ?? null,
     nativeSessionValid: output
-      ? nativeContinuationSchema.shape.sessionId.safeParse(
-          output.cliAgentSessionId,
-        ).success
+      ? cliAgentSessionIdSchema.safeParse(output.cliAgentSessionId).success
       : false,
   };
 }
 
 function outputDecision(input: CompletionPublicationInput) {
   const identity = outputIdentity(input);
-  // Keep unbound thread-ID completions until older standalone Pi callbacks
-  // drain and rollback cannot relaunch them (#50929). Bound retries stay exact.
-  const matchesPiSession = sql`(${identity.sessionId}::text = CASE WHEN r.official_workflow_provenance IS NOT NULL
-      THEN r.id::text ELSE COALESCE(r.chat_thread_id,r.id)::text END
-    OR (r.trigger_source = 'proactive' AND ${identity.sessionId}::text = r.id::text))`;
   const exactRetry = sql`r.status IN ('completed','failed','cancelled') AND r.result IS NOT NULL
     AND r.existing_valid AND r.result ? 'storageOutputs'
     AND r.framework = ${identity.type} AND r.framework_session_id = ${identity.sessionId}
@@ -156,8 +149,7 @@ function outputDecision(input: CompletionPublicationInput) {
       WHEN jsonb_typeof(r.storage_mounts) IS DISTINCT FROM 'array' THEN 'invalid-data'
       WHEN r.launch_snapshot->'schemaVersion' = '5'::jsonb AND
         (${identity.disposition}::text IS DISTINCT FROM 'native_only' OR NOT ${identity.nativeSessionValid}
-          OR r.launch_snapshot->>'framework' IS DISTINCT FROM ${identity.type}::text
-          OR r.launch_snapshot->>'framework' = 'pi' AND ${matchesPiSession} IS NOT TRUE) THEN 'native'
+          OR r.launch_snapshot->>'framework' IS DISTINCT FROM ${identity.type}::text) THEN 'native'
       WHEN COALESCE(r.launch_snapshot->>'framework' = 'pi',false) <> ${identity.type === "pi"} THEN 'type'
       WHEN r.status IN ('completed','failed','cancelled') AND r.result IS NOT NULL AND NOT COALESCE(r.existing_valid,false) THEN 'invalid-data'
       WHEN r.status IN ('completed','failed','cancelled') AND r.result IS NOT NULL AND r.result ? 'storageOutputs' AND r.missing_version THEN 'invalid-version'

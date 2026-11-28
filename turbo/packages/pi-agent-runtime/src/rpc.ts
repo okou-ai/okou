@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-
 import {
   createAgentSessionRuntime,
   runRpcMode,
@@ -7,10 +5,6 @@ import {
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
 
-import {
-  parseValidatedPiSessionJsonl,
-  validatePiSessionEntries,
-} from "./session-validation";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
 import {
@@ -23,30 +17,11 @@ import type { PiAgentModelConfig } from "./types";
 function resolveSessionManager(args: {
   readonly cwd: string;
   readonly sessionDir: string;
-  readonly sessionId: string;
-  readonly sessionFile: string;
+  readonly continueNative: boolean;
 }): SessionManager {
-  // Keep the read, validation and SDK open synchronous: opening can migrate
-  // and rewrite a legacy file. Reject invalid bytes and identity before that.
-  const { header } = parseValidatedPiSessionJsonl(
-    new TextDecoder("utf-8", { fatal: true }).decode(
-      readFileSync(args.sessionFile),
-    ),
-  );
-  if (header.id !== args.sessionId) {
-    throw new Error("Pi handoff session id does not match the launch session");
-  }
-  const sessionManager = SessionManager.open(
-    args.sessionFile,
-    args.sessionDir,
-    args.cwd,
-  );
-  if (sessionManager.getSessionId() !== args.sessionId) {
-    throw new Error("Pi handoff session id does not match the launch session");
-  }
-  // Validate the actual SDK-loaded entries before any context traversal, too.
-  validatePiSessionEntries(sessionManager.getEntries());
-  return sessionManager;
+  return args.continueNative
+    ? SessionManager.continueRecent(args.cwd, args.sessionDir)
+    : SessionManager.create(args.cwd, args.sessionDir);
 }
 
 function createRuntimeFactory(args: {
@@ -77,7 +52,7 @@ function createRuntimeFactory(args: {
 /** Run Pi's official AgentSession RPC host until stdin closes. */
 export async function runPiOfficialRpcMode(args: {
   readonly sessionRole?: "parent" | "child";
-  readonly sessionId: string;
+  readonly continueNative: boolean;
   readonly sessionDir: string;
   readonly cwd: string;
   readonly agentDir: string;
@@ -87,7 +62,6 @@ export async function runPiOfficialRpcMode(args: {
   /** Sandbox-side session preparation phases. */
   readonly onPreparationTiming?: PiPreparationObserver;
   readonly onFirstTool?: () => void;
-  readonly sessionFile: string;
 }): Promise<never> {
   let retainImageHistory: () => void;
   const createRuntime = createRuntimeFactory({

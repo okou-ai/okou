@@ -1873,6 +1873,8 @@ export function createThreadClaimRunObjects(
           modelProvider: persistedModelProvider(modelProvider),
         },
         runner: {
+          sessionContinuation:
+            args.threadContinuation.executionSnapshot.sessionContinuation,
           nativeContinuation:
             args.threadContinuation.executionSnapshot.nativeContinuation,
           realAgentInPreview: args.realAgentInPreview,
@@ -3363,6 +3365,7 @@ interface ThreadRunnerFacts {
     | "connectorEnvironment"
     | "userTimezone"
   >;
+  readonly sessionContinuation: ChatThreadContinuation["executionSnapshot"]["sessionContinuation"];
   readonly nativeContinuation: ChatThreadContinuation["executionSnapshot"]["nativeContinuation"];
   readonly realAgentInPreview?: boolean;
   readonly profile: string;
@@ -3382,6 +3385,7 @@ function prepareRunnerLaunch(input: {
   const { args } = input;
   const facts = {
     ...args.facts,
+    sessionContinuation: args.sessionContinuation,
     nativeContinuation: args.nativeContinuation,
     okouToken: input.okouToken,
     ...(input.antigravityCredential

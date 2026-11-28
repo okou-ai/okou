@@ -176,6 +176,13 @@ export const prepareExecutionRuntimeContext$ = command(
             realAgentInPreview: facts.realAgentInPreview,
             apiStartTime: facts.apiStartTime,
             storageMounts: [memory.mount],
+            sessionContinuation: {
+              ...facts.sessionContinuation,
+              recoveryPrompt:
+                facts.sessionContinuation.recoveryPrompt === null
+                  ? null
+                  : NATIVE_CONTEXT_RECOVERY_PROMPT,
+            },
             nativeContinuation: {
               ...facts.nativeContinuation,
               recoveryPrompt:

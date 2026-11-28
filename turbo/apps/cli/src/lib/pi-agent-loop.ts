@@ -1,5 +1,4 @@
-import { mkdir, open, readFile, readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 
 import {
   CANONICAL_PI_SESSION_DIR,
@@ -8,7 +7,6 @@ import {
   piModelConfigSchema,
   type PiLaunchPayload,
 } from "@okouai/api-contracts/contracts/runners";
-import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import {
   materializePiAgentModelConfig,
   runPiOfficialRpcMode,
@@ -24,7 +22,6 @@ import {
 import { PI_EFFECTIVE_THINKING_ENV } from "./pi-session-env";
 
 const RUN_ID_ENV = "OKOU_RUN_ID";
-const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
 const PI_MODEL_CONFIG_ENV = "OKOU_PI_MODEL_CONFIG";
 
@@ -45,7 +42,6 @@ export function recordPiPreparationTiming(
 
 export interface PiSandboxAgentConfig {
   readonly runId: string;
-  readonly sessionId: string;
   readonly launchPayload: PiLaunchPayload;
   readonly model: PiAgentModelConfig;
   /** guest-agent owns the sandbox operation log and opts this child in. */
@@ -85,80 +81,6 @@ async function readLaunchPayload(
   }
 }
 
-function isPiSessionFileName(name: string, sessionId: string): boolean {
-  if (!name.endsWith(".jsonl")) {
-    return false;
-  }
-  const stem = name.slice(0, -".jsonl".length);
-  return (
-    stem === sessionId ||
-    stem.endsWith(`-${sessionId}`) ||
-    stem.endsWith(`_${sessionId}`)
-  );
-}
-
-/**
- * Open the run's Pi session file, creating a fresh one on the first turn.
- *
- * The Runner restores a resumed session from the execution context's
- * `resumeSession` (inline `sessionHistory` or blob `historyRef`) as
- * `restored-<sessionId>.jsonl`; a reused sandbox keeps the file its previous
- * run appended to. The most recently modified file for the session wins.
- */
-async function resolvePiSessionFile(args: {
-  readonly sessionDir: string;
-  readonly sessionId: string;
-  readonly cwd: string;
-}): Promise<string> {
-  const finish = startPiCliObservation("cli_session_file");
-  let outcome: "success" | "error" = "error";
-  try {
-    const names = await readdir(args.sessionDir).catch(
-      (error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") {
-          return [];
-        }
-        throw error;
-      },
-    );
-    let latest: { readonly path: string; readonly modifiedAt: number } | null =
-      null;
-    for (const name of names) {
-      if (!isPiSessionFileName(name, args.sessionId)) {
-        continue;
-      }
-      const path = join(args.sessionDir, name);
-      const { mtimeMs } = await stat(path);
-      if (latest === null || mtimeMs > latest.modifiedAt) {
-        latest = { path, modifiedAt: mtimeMs };
-      }
-    }
-    if (latest !== null) {
-      outcome = "success";
-      return latest.path;
-    }
-    const sessionFile = join(args.sessionDir, `${args.sessionId}.jsonl`);
-    await mkdir(args.sessionDir, { recursive: true });
-    const file = await open(sessionFile, "wx", 0o600);
-    try {
-      await file.writeFile(
-        createPiSessionJsonl({
-          cwd: args.cwd,
-          sessionId: args.sessionId,
-          timestamp: new Date().toISOString(),
-        }),
-        "utf8",
-      );
-    } finally {
-      await file.close();
-    }
-    outcome = "success";
-    return sessionFile;
-  } finally {
-    finish(outcome);
-  }
-}
-
 /**
  * Resolve immutable Pi runtime inputs injected by guest-agent.
  *
@@ -183,7 +105,6 @@ export async function piSandboxAgentConfigFromEnv(
     });
     const config = {
       runId,
-      sessionId: requiredEnv(env, PI_SESSION_ID_ENV),
       launchPayload: await readLaunchPayload(env),
       reportPreparationTiming: env[PI_PREPARATION_TIMING_ENV] === "1",
       model: await materializeSandboxModel(parsedModel, env),
@@ -220,18 +141,7 @@ async function materializeSandboxModel(
 }
 
 /**
- * Open the run's Pi session and run the official sandbox-owned Pi RPC host.
- *
- * The sandbox owns the whole turn. This host writes the private startup
- * control before entering `runPiOfficialRpcMode`.
- *
- * The guest-agent consumes that control record before admitting any official
- * Pi RPC record, so the control is not an agent event, Chat event, transcript
- * line, or public delivery. `runPiOfficialRpcMode` owns the official RPC
- * command/record stream; guest-agent owns its stdin and keeps it open through
- * `agent_settled`, closing it only after terminal handling and active-input
- * quiescence. The host consequently remains in official RPC mode until the
- * guest closes stdin.
+ * Open or continue the run's Pi session and run the official sandbox-owned Pi RPC host.
  */
 export async function runPiSandboxAgentLoop(args: {
   readonly config: PiSandboxAgentConfig;
@@ -241,14 +151,9 @@ export async function runPiSandboxAgentLoop(args: {
 }): Promise<void> {
   const sessionDir = args.sessionDir ?? CANONICAL_PI_SESSION_DIR;
   const cwd = args.cwd ?? process.cwd();
-  const sessionFile = await resolvePiSessionFile({
-    sessionDir,
-    sessionId: args.config.sessionId,
-    cwd,
-  });
   return await runPiOfficialRpcMode({
     sessionRole: "parent",
-    sessionId: args.config.sessionId,
+    continueNative: args.config.launchPayload.continueNative ?? false,
     sessionDir,
     cwd,
     agentDir: args.agentDir ?? PI_AGENT_DIR,
@@ -261,7 +166,6 @@ export async function runPiSandboxAgentLoop(args: {
           },
         }
       : {}),
-    sessionFile,
   });
 }
 

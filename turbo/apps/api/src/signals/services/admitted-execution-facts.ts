@@ -1,4 +1,7 @@
-import type { NativeContinuation } from "@okouai/api-contracts/contracts/runners";
+import type {
+  NativeContinuation,
+  SessionContinuation,
+} from "@okouai/api-contracts/contracts/runners";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
@@ -19,6 +22,7 @@ export interface ExecutionNetworkPolicyInputs {
 export interface AdmittedExecutionFacts {
   /** Same member observation as the admission Prompt; later edits affect later Runs. */
   readonly userTimezone: string | undefined;
+  readonly sessionContinuation: SessionContinuation;
   readonly nativeContinuation: NativeContinuation;
   readonly featureFlags: {
     readonly [FeatureSwitchKey.ArtifactThreePointTiming]: boolean;
