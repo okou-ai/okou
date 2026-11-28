@@ -247,6 +247,8 @@ fn scheduler_limits_wide_read_ahead_to_the_first_promoted_local_artifact() {
     for (count, local_ready, artifact_is_largest, expected) in [
         (32, true, false, Some(9)),
         (32, true, true, Some(9)),
+        // The last ungated Artifact is the only task in its wave.
+        (33, true, false, Some(9)),
         (31, true, false, None),
         (40, false, false, None),
     ] {
@@ -254,13 +256,17 @@ fn scheduler_limits_wide_read_ahead_to_the_first_promoted_local_artifact() {
             .map(|id| {
                 let path = format!("/independent-{id}");
                 let mut download = pending_at(id, &path);
-                if matches!(id, 9 | 17) {
+                if matches!(id, 9 | 17) || id == count - 1 {
                     download.task.task = DownloadTask::artifact(
                         path.clone(),
                         "file:///tmp/artifact.tar.gz".into(),
                         path,
                     );
-                    download.estimated_work = if id == 9 { 700_000 } else { 500_000 };
+                    download.estimated_work = match id {
+                        9 => 700_000,
+                        17 => 500_000,
+                        _ => 300_000,
+                    };
                 } else if id == 2 {
                     download.estimated_work = if artifact_is_largest {
                         600_000
@@ -421,6 +427,62 @@ fn ready_archive_priority_preserves_fifo_ties_and_source_gates() {
             ),
             Some((expected, expected))
         );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn gated_artifact_uses_light_read_ahead_only_after_all_peers_finish() {
+    for (peer_active, peer_waiting, expected) in [
+        (false, false, true),
+        (true, false, false),
+        (false, true, false),
+    ] {
+        let memory_ready = Arc::new(AtomicBool::new(false));
+        let mut artifact = pending_at(1, "/memory");
+        artifact.task.task = DownloadTask::artifact(
+            "memory".into(),
+            "file:///tmp/memory.tar.gz".into(),
+            "/memory".into(),
+        );
+        artifact.task.source_ready = Some(Arc::clone(&memory_ready));
+        let mut pending = VecDeque::from([pending_at(0, "/ordinary"), artifact]);
+        if peer_waiting {
+            let mut waiting = pending_at(2, "/waiting");
+            waiting.task.source_ready = Some(Arc::new(AtomicBool::new(false)));
+            pending.push_back(waiting);
+        }
+        let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
+            (
+                download.task.task.telemetry,
+                download.task.logical_mount_path(),
+            )
+        }));
+        let mut scheduler = DownloadScheduler::new(pending, LOCAL_CONCURRENT, false);
+        let (send, receive) = mpsc::sync_channel(LOCAL_CONCURRENT);
+        assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
+        let ordinary = receive.try_recv().unwrap();
+        assert_eq!(ordinary.id, 0);
+        assert!(ordinary.inflate_load.is_none());
+        assert!(matches!(receive.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        if !peer_active {
+            scheduler.record_completion(DownloadCompletion {
+                download: ordinary,
+                outcome: AttemptOutcome::Finished(Ok(())),
+            });
+        }
+
+        memory_ready.store(true, Ordering::Release);
+        assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
+        let memory = receive.try_recv().unwrap();
+        assert_eq!(memory.id, 1);
+        assert_eq!(memory.inflate_load.is_some(), expected);
+        if expected {
+            assert!(matches!(
+                memory.inflate_load,
+                Some(archive::inflate::InflateLoad::Light)
+            ));
+        }
     }
 }
 
