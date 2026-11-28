@@ -85,11 +85,20 @@ impl CleanupDirectory {
     #[cfg(target_os = "linux")]
     pub(super) fn read_ext_directory<'a>(
         &'a self,
+        entry_budget: usize,
         buffer: &'a mut [std::mem::MaybeUninit<u8>],
     ) -> Option<rustix::fs::RawDir<'a, &'a File>> {
         use rustix::fs::{Access, AtFlags, RawDir, accessat, fstatfs};
 
         if fstatfs(&self.0).ok()?.f_type != libc::EXT4_SUPER_MAGIC {
+            return None;
+        }
+        // Even a bounded listing can read cold index blocks from a sparse
+        // parent. Use individual lookups when the directory exceeds the
+        // maximum footprint of the listing's entry budget.
+        let byte_budget =
+            u64::try_from(entry_budget.saturating_mul(size_of::<libc::dirent64>())).ok()?;
+        if self.metadata().ok()?.len() > byte_budget {
             return None;
         }
         // A readable directory can still deny lookups of its children.

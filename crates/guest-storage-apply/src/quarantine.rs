@@ -175,6 +175,8 @@ fn unchecked_after_listing<'a>(manifest: &'a Manifest, home: &Path) -> Option<Ve
     let mut buffer = [MaybeUninit::uninit(); 4096];
     for group in groups() {
         let paths = || group.iter().map(|entry| Path::new(&entry.mount_path));
+        // Account for the declared names plus "." and "..".
+        let entry_budget = group.len().saturating_add(2);
         let parent = group
             .first()
             .and_then(retained_parent)
@@ -182,7 +184,7 @@ fn unchecked_after_listing<'a>(manifest: &'a Manifest, home: &Path) -> Option<Ve
             .and_then(|path| CleanupDirectory::open(path).ok());
         let Some(mut listing) = parent
             .as_ref()
-            .and_then(|parent| parent.read_ext_directory(&mut buffer))
+            .and_then(|parent| parent.read_ext_directory(entry_budget, &mut buffer))
         else {
             unchecked.extend(paths());
             continue;
@@ -190,7 +192,6 @@ fn unchecked_after_listing<'a>(manifest: &'a Manifest, home: &Path) -> Option<Ve
 
         // These retained roots have no write or repair work. A typed direct
         // child of the checked parent proves the root is a real directory.
-        // Bound the scan by the declared names plus "." and "..".
         let mut unverified = paths().filter_map(Path::file_name).collect::<HashSet<_>>();
         for _ in 0..unverified.len().saturating_add(2) {
             let Some(entry) = listing.next() else {
