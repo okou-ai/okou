@@ -82,6 +82,21 @@ impl CleanupDirectory {
         fs::read_dir(self.proc_path())
     }
 
+    #[cfg(target_os = "linux")]
+    pub(super) fn read_ext_directory<'a>(
+        &'a self,
+        buffer: &'a mut [std::mem::MaybeUninit<u8>],
+    ) -> Option<rustix::fs::RawDir<'a, &'a File>> {
+        use rustix::fs::{Access, AtFlags, RawDir, accessat, fstatfs};
+
+        if fstatfs(&self.0).ok()?.f_type != libc::EXT4_SUPER_MAGIC {
+            return None;
+        }
+        // A readable directory can still deny lookups of its children.
+        accessat(&self.0, c".", Access::EXEC_OK, AtFlags::EACCESS).ok()?;
+        Some(RawDir::new(&self.0, buffer))
+    }
+
     /// Keep this directory alive until all operations on the returned path finish.
     pub(super) fn proc_path(&self) -> PathBuf {
         PathBuf::from("/proc/self/fd").join(self.0.as_raw_fd().to_string())

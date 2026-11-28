@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const MIN_PARALLEL_TARGETS: usize = 64;
+const WIDE_TARGET_COUNT: usize = 64;
 const TARGET_READERS: usize = 4;
 const SAMPLE_TARGETS: usize = 16;
 const SLOW_SAMPLE: Duration = Duration::from_millis(1);
@@ -80,7 +80,16 @@ impl Quarantine {
         {
             return Ok(None);
         }
-        if !check_targets(&targets)? {
+        #[cfg(target_os = "linux")]
+        let unchecked = unchecked_after_listing(manifest, home);
+        #[cfg(not(target_os = "linux"))]
+        let unchecked: Option<Vec<&Path>> = None;
+        let eligible_targets = match unchecked {
+            Some(paths) if paths.len() < WIDE_TARGET_COUNT => check_target_slice(&paths)?,
+            Some(paths) => check_targets(&paths)?,
+            None => check_targets(&targets)?,
+        };
+        if !eligible_targets {
             return Ok(None);
         }
         // Existing final exec/park and terminal cache preparation own every
@@ -135,8 +144,83 @@ impl Quarantine {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn unchecked_after_listing<'a>(manifest: &'a Manifest, home: &Path) -> Option<Vec<&'a Path>> {
+    use guest_contracts::storage_manifest::StorageEntry;
+    use std::ffi::OsStr;
+    use std::mem::MaybeUninit;
+    use std::os::unix::ffi::OsStrExt;
+
+    fn retained_parent(entry: &StorageEntry) -> Option<&Path> {
+        if entry.cached && entry.archive_url.is_none() {
+            Path::new(&entry.mount_path).parent()
+        } else {
+            None
+        }
+    }
+
+    if manifest.storages.len() < WIDE_TARGET_COUNT {
+        return None;
+    }
+    let groups = || {
+        manifest.storages.chunk_by(|left, right| {
+            retained_parent(left).is_some_and(|parent| retained_parent(right) == Some(parent))
+        })
+    };
+    if !groups().any(|group| group.len() >= WIDE_TARGET_COUNT) {
+        return None;
+    }
+
+    let mut unchecked = Vec::new();
+    let mut buffer = [MaybeUninit::uninit(); 4096];
+    for group in groups() {
+        let paths = || group.iter().map(|entry| Path::new(&entry.mount_path));
+        let parent = group
+            .first()
+            .and_then(retained_parent)
+            .filter(|path| group.len() >= WIDE_TARGET_COUNT && path.starts_with(home))
+            .and_then(|path| CleanupDirectory::open(path).ok());
+        let Some(mut listing) = parent
+            .as_ref()
+            .and_then(|parent| parent.read_ext_directory(&mut buffer))
+        else {
+            unchecked.extend(paths());
+            continue;
+        };
+
+        // These retained roots have no write or repair work. A typed direct
+        // child of the checked parent proves the root is a real directory.
+        // Bound the scan by the declared names plus "." and "..".
+        let mut unverified = paths().filter_map(Path::file_name).collect::<HashSet<_>>();
+        for _ in 0..unverified.len().saturating_add(2) {
+            let Some(entry) = listing.next() else {
+                break;
+            };
+            let entry = entry.ok()?;
+            if entry.file_type() == rustix::fs::FileType::Directory {
+                unverified.remove(OsStr::from_bytes(entry.file_name().to_bytes()));
+                if unverified.is_empty() {
+                    break;
+                }
+            }
+        }
+        unchecked.extend(paths().filter(|path| {
+            path.file_name()
+                .is_none_or(|name| unverified.contains(name))
+        }));
+    }
+    unchecked.extend(
+        manifest
+            .artifacts
+            .iter()
+            .map(|entry| Path::new(&entry.mount_path)),
+    );
+    let total = manifest.storages.len() + manifest.artifacts.len();
+    (unchecked.len() < total).then_some(unchecked)
+}
+
 fn check_targets(targets: &[&Path]) -> io::Result<bool> {
-    if targets.len() < MIN_PARALLEL_TARGETS {
+    if targets.len() < WIDE_TARGET_COUNT {
         return check_target_group(targets, None);
     }
 
