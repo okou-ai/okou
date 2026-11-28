@@ -1,6 +1,5 @@
 package ai.okou.android.screenshots
 
-import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ChatCacheSnapshot
 import ai.okou.android.ChatListApiFixture
@@ -36,6 +35,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.io.ByteArrayOutputStream
+import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Test
@@ -54,7 +54,6 @@ class ScreenshotScenario {
         withFixture { fixture, realtime ->
             val prompt = "Please put the launch tasks in review order."
             val queuedInput = inputEvent(1, null, prompt)
-            val firstInput = inputEvent(2, HISTORY_RUN, prompt, revoke = eventId(1))
             val text = "Start with the launch checklist."
             val reply = "$text\n\n1. Review the home page.\n2. Confirm the email copy.\n3. Check the channel links."
             val replyId = eventId(3)
@@ -75,6 +74,10 @@ class ScreenshotScenario {
                 check(!device.hasObject(action))
                 ScreenshotCapture.capture("00-queued.png")
 
+                val firstInput = inputEvent(
+                    2, HISTORY_RUN, prompt, revoke = eventId(1),
+                    createdAt = Instant.now().minusSeconds(68).toString(),
+                )
                 fixture.setHistoryEvents(CHAT_PERSONAL, listOf(queuedInput, firstInput))
                 realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
                 item(By.text(app.getString(R.string.conversation_processing)))
@@ -88,9 +91,10 @@ class ScreenshotScenario {
                 ScreenshotCapture.capture("01-preparing.png")
 
                 await("live output subscription") { realtime.target.value?.runId == HISTORY_RUN }
+                val replyAt = Instant.now().toString()
                 realtime.output(
                     RunOutputSignal.Delta(
-                        SessionOutputDelta(CHAT_PERSONAL, HISTORY_RUN, replyId, "reply-header", CHAT_DATE, 0, reply)
+                        SessionOutputDelta(CHAT_PERSONAL, HISTORY_RUN, replyId, "reply-header", replyAt, 0, reply)
                     )
                 )
                 val bodyBounds = item(body).visibleBounds
@@ -120,8 +124,12 @@ class ScreenshotScenario {
                 setMotion("1")
                 await("animation resumes with motion enabled") { nativeAvatar(activity)?.running == true }
 
-                val persisted = historyEventWire(replyId, 3, payload = """{"content":${JsonPrimitive(reply)}}""")
-                val completion = historyEventWire(eventId(4), 4, type = "run.completed", payload = "null")
+                val persisted = historyEventWire(
+                    replyId, 3, payload = """{"content":${JsonPrimitive(reply)}}""", createdAt = replyAt,
+                )
+                val completion = historyEventWire(
+                    eventId(4), 4, type = "run.completed", payload = "null", createdAt = Instant.now().toString(),
+                )
                 val finished = listOf(queuedInput, firstInput, persisted, completion)
                 fixture.setHistoryEvents(CHAT_PERSONAL, finished)
                 realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
@@ -148,6 +156,7 @@ class ScreenshotScenario {
                     .plus(tail).joinToString("\n\n")
                 val nextReply = historyEventWire(
                     eventId(6), 6, payload = """{"content":${JsonPrimitive(longReply)}}""", run = nextRun,
+                    createdAt = Instant.now().toString(),
                 )
                 fixture.setHistoryEvents(CHAT_PERSONAL, finished + listOf(nextInput, nextReply))
                 realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
@@ -158,12 +167,19 @@ class ScreenshotScenario {
             }
         }
 
-    private fun inputEvent(seq: Long, run: String?, text: String, revoke: String? = null) =
+    private fun inputEvent(
+        seq: Long,
+        run: String?,
+        text: String,
+        revoke: String? = null,
+        createdAt: String = Instant.now().toString(),
+    ) =
         historyEventWire(
             eventId(seq), seq, type = "input.prompt",
             payload = """{"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]}}""",
             run = run,
             revoke = revoke,
+            createdAt = createdAt,
         )
 
     private fun eventId(seq: Long) = "cccccccc-cccc-4ccc-8ccc-${seq.toString().padStart(12, '0')}"
