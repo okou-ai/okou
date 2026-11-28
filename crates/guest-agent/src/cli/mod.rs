@@ -40,6 +40,7 @@ mod event_delivery;
 #[cfg(test)]
 mod event_delivery_budget_tests;
 mod exec_boundary;
+mod heartbeat_monitor;
 mod jsonl_result;
 mod line_reader;
 mod message_event_delivery;
@@ -91,6 +92,7 @@ use guest_contracts::diagnostics::{
 use guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
 use guest_telemetry::telemetry::record_sandbox_op;
 use guest_telemetry::{log_info, log_warn};
+use heartbeat_monitor::wait_for_heartbeat;
 use process_group::ChildProcessGroup;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -260,10 +262,10 @@ pub enum HeartbeatStatus {
 
     /// The heartbeat task completed successfully, not necessarily the CLI execution.
     ///
-    /// If observed before execution completes, the Codex app-server backend
-    /// treats this as an execution error and terminates the app-server. The
-    /// shared Claude Code/Pi JSONL path instead ends its event loop without
-    /// introducing a heartbeat error, then settles the actual process exit.
+    /// If observed before execution completes, the Codex app-server and
+    /// Antigravity ACP backends treat this as an execution error and terminate
+    /// the child. The shared Claude Code/Pi JSONL path ends its event loop
+    /// and settles the actual process exit.
     /// See [`HeartbeatMonitor`] for the required heartbeat lifetime.
     Stopped,
 
@@ -1941,15 +1943,7 @@ async fn execute_cli_inner(
                     );
                 }
             }
-            heartbeat_result = async {
-                match heartbeat_monitor.as_mut() {
-                    Some(receiver) => receiver.await,
-                    None => {
-                        std::future::pending::<Result<HeartbeatStatus, oneshot::error::RecvError>>()
-                            .await
-                    }
-                }
-            }, if !heartbeat_done && child_exit.is_none() => {
+            heartbeat_result = wait_for_heartbeat(&mut heartbeat_monitor), if !heartbeat_done && child_exit.is_none() => {
                 heartbeat_done = true;
                 match try_observe_cli_exit(
                     &mut child,
