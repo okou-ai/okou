@@ -125,12 +125,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private const val SECTION_EDITOR_FOCUS = "section"
+private val workflowDirectoryListPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp)
 
 // Keep the stroke within a 40 dp surface centered in the 48 dp touch target.
 internal val WorkflowFilledActionFocusInset = 6.dp
-internal val WorkflowPaneMaxContentWidth = 730.dp
-
-internal fun workflowPaneHorizontalInset(wide: Boolean) = if (wide) 32.dp else 20.dp
 
 @Composable
 internal fun WorkflowScreen(
@@ -225,7 +223,7 @@ internal fun WorkflowScreen(
             workflowReadErrors(notices, readAnnouncements.detail, detailSnackbar),
             detailSnackbar,
         )
-        WorkspaceFeedbackTimeout(detailSnackbar)
+        WorkspaceFeedbackTimeout(detailSnackbar, showDismissAction = true)
     }
     val detailFeedback: @Composable () -> Unit = {
         WorkflowSnackbarHost(detailSnackbar, manageTimeout = false)
@@ -566,84 +564,92 @@ private fun WorkflowDirectory(
             }
             return@Column
         }
-        Column(
-            Modifier.widthIn(max = WorkflowPaneMaxContentWidth)
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (createError != null) WorkflowNotice(createError)
-            WorkspaceSearchInput(
-                value = query.query,
-                onValueChange = query::edit,
-                label = stringResource(R.string.workflow_search),
-                onClear = clearQuery,
-                modifier =
-                    Modifier.fillMaxWidth()
-                        .focusRequester(searchFocus)
-                        .onFocusChanged { if (!it.isFocused) query.cancelComposition() }
-                        .testTag("workflow_query"),
-                clearLabel = stringResource(R.string.workflow_clear_search),
-                enabled = inputEnabled,
-            )
-            WorkspaceFilterRow(
-                WorkflowScope.entries,
-                route.scope,
-                Role.RadioButton,
-                label = { stringResource(it.label) },
-                modifier = Modifier.fillMaxWidth(),
-                optionModifier = { Modifier.testTag("workflow_scope_${it.name}") },
-                enabled = inputEnabled,
-                onSelect = onScope,
-            )
-        }
-        Box(Modifier.weight(1f).widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()) {
-            when {
-                catalog == null && state.catalogFailure != null ->
-                    WorkflowReadFailureContent(Modifier.fillMaxSize().padding(horizontal = 16.dp))
-                catalog == null ->
-                    WorkflowDirectorySkeleton(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
-                else ->
-                    LazyColumn(
-                        Modifier.fillMaxSize(),
-                        state = query.position,
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
-                        userScrollEnabled = inputEnabled,
-                    ) {
-                        if (accessFeedback != null)
-                            item(key = DIRECTORY_READ_FEEDBACK) {
-                                WorkflowNotice(accessFeedback, PaddingValues(bottom = 12.dp))
-                            }
-                        if (rows.isEmpty())
-                            item(key = "workflow_directory_empty") {
-                                WorkflowEmpty(
-                                    route.scope,
-                                    text,
-                                    clearQuery,
-                                    onScope,
-                                    enabled = inputEnabled,
-                                    topPadding = if (accessFeedback == null) 24.dp else 0.dp,
+        WorkflowPaneLayout(
+            modifier = Modifier.weight(1f),
+            controlsAtTop = true,
+            minimumBodyHeight = 48.dp + workflowDirectoryListPadding.calculateBottomPadding(),
+            scrollEnabled = inputEnabled,
+            feedback = {
+                key(route.scope, text) { WorkflowReadFeedbackHost(readNotices, announced) }
+            },
+            body = {
+                when {
+                    catalog == null && state.catalogFailure != null ->
+                        WorkflowReadFailureContent(
+                            Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                        )
+                    catalog == null ->
+                        WorkflowDirectorySkeleton(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
+                    else ->
+                        LazyColumn(
+                            Modifier.fillMaxSize(),
+                            state = query.position,
+                            contentPadding = workflowDirectoryListPadding,
+                            userScrollEnabled = inputEnabled,
+                        ) {
+                            if (accessFeedback != null)
+                                item(key = DIRECTORY_READ_FEEDBACK) {
+                                    WorkflowNotice(accessFeedback, PaddingValues(bottom = 12.dp))
+                                }
+                            if (rows.isEmpty())
+                                item(key = "workflow_directory_empty") {
+                                    WorkflowEmpty(
+                                        route.scope,
+                                        text,
+                                        clearQuery,
+                                        onScope,
+                                        enabled = inputEnabled,
+                                        topPadding = if (accessFeedback == null) 24.dp else 0.dp,
+                                    )
+                                }
+                            items(rows, key = { it.id }) { row ->
+                                WorkflowRow(
+                                    row,
+                                    rules?.let { it[row.id].orEmpty() },
+                                    connections,
+                                    row.id == route.id,
+                                    canNavigate,
+                                    modifier =
+                                        if (row.id == restoreRow) Modifier.focusRequester(rowFocus)
+                                        else Modifier,
+                                    onSelect = { onSelect(row.id) },
                                 )
                             }
-                        items(rows, key = { it.id }) { row ->
-                            WorkflowRow(
-                                row,
-                                rules?.let { it[row.id].orEmpty() },
-                                connections,
-                                row.id == route.id,
-                                canNavigate,
-                                modifier =
-                                    if (row.id == restoreRow) Modifier.focusRequester(rowFocus)
-                                    else Modifier,
-                                onSelect = { onSelect(row.id) },
-                            )
                         }
-                    }
-            }
-            Box(Modifier.align(Alignment.BottomCenter)) {
-                key(route.scope, text) { WorkflowReadFeedbackHost(readNotices, announced) }
+                }
+            },
+        ) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (createError != null) WorkflowNotice(createError)
+                WorkspaceSearchInput(
+                    value = query.query,
+                    onValueChange = query::edit,
+                    label = stringResource(R.string.workflow_search),
+                    onClear = clearQuery,
+                    modifier =
+                        Modifier.fillMaxWidth()
+                            .focusRequester(searchFocus)
+                            .onFocusChanged { if (!it.isFocused) query.cancelComposition() }
+                            .testTag("workflow_query"),
+                    clearLabel = stringResource(R.string.workflow_clear_search),
+                    enabled = inputEnabled,
+                )
+                WorkspaceFilterRow(
+                    WorkflowScope.entries,
+                    route.scope,
+                    Role.RadioButton,
+                    label = { stringResource(it.label) },
+                    modifier = Modifier.fillMaxWidth(),
+                    optionModifier = { Modifier.testTag("workflow_scope_${it.name}") },
+                    enabled = inputEnabled,
+                    onSelect = onScope,
+                )
             }
         }
     }
@@ -816,7 +822,6 @@ private fun WorkflowDetailPane(
     onEarlierRuns: () -> Unit,
     historySkeletonVisible: Boolean,
 ) {
-    val contentWidth = Modifier.widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()
     val listPadding = workflowDetailPadding(wide)
     // An empty loading layout must not clamp the saved position of a long history.
     val pendingHistory = tab == WorkflowTab.History && state.history == null
@@ -843,11 +848,11 @@ private fun WorkflowDetailPane(
                         } == true,
             )
         else Modifier
-    Column(
-        Modifier.fillMaxSize().then(returnModifier).testTag("workflow_detail"),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(contentWidth.weight(1f)) {
+    WorkflowPaneLayout(
+        modifier = returnModifier.testTag("workflow_detail"),
+        minimumBodyHeight = 48.dp + listPadding.calculateBottomPadding(),
+        feedback = feedback,
+        body = {
             LazyColumn(
                 Modifier.fillMaxSize().then(historyLayout?.list ?: Modifier),
                 state = listState,
@@ -997,8 +1002,8 @@ private fun WorkflowDetailPane(
                     }
                 }
             }
-            Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
-        }
+        },
+    ) {
         WorkflowUseBar(
             wide = wide,
             enabled =
@@ -1018,12 +1023,15 @@ private fun WorkflowPendingDetail(
     failure: WorkflowReadFailure?,
     feedback: @Composable () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.weight(1f).widthIn(max = WorkflowPaneMaxContentWidth).fillMaxWidth()) {
+    val listPadding = workflowDetailPadding(wide)
+    WorkflowPaneLayout(
+        minimumBodyHeight = 48.dp + listPadding.calculateBottomPadding(),
+        feedback = feedback,
+        body = {
             when (failure) {
                 null ->
                     WorkflowDetailSkeleton(
-                        modifier = Modifier.padding(workflowDetailPadding(wide)),
+                        modifier = Modifier.padding(listPadding),
                     )
                 WorkflowReadFailure.Unavailable ->
                     WorkflowInitialReadError(R.string.workflow_unavailable)
@@ -1033,8 +1041,8 @@ private fun WorkflowPendingDetail(
                             .padding(horizontal = workflowPaneHorizontalInset(wide)),
                     )
             }
-            Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
-        }
+        },
+    ) {
         WorkflowUseBar(wide = wide, enabled = false, onUse = {})
     }
 }
@@ -1052,8 +1060,7 @@ private fun WorkflowUseBar(
     WorkflowDivider()
     val colors = MaterialTheme.colorScheme
     Column(
-        Modifier.widthIn(max = WorkflowPaneMaxContentWidth)
-            .fillMaxWidth()
+        Modifier.fillMaxWidth()
             .padding(horizontal = workflowPaneHorizontalInset(wide))
             .padding(top = 8.dp, bottom = 10.dp),
         horizontalAlignment = if (wide) Alignment.End else Alignment.CenterHorizontally,

@@ -67,5 +67,6 @@ internal fun WorkflowSnackbarHost(snackbar: SnackbarHostState, manageTimeout: Bo
         Modifier.padding(bottom = 8.dp),
         manageTimeout = manageTimeout,
         surfaceModifier = Modifier.testTag("workflow_read_snackbar"),
+        showDismissAction = true,
     )
 }

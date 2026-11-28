@@ -52,6 +52,7 @@ import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
@@ -220,6 +221,47 @@ internal abstract class WorkflowRootTestFixture {
     application = WorkflowRootApplication::class,
 )
 internal class WorkflowRootTest : WorkflowRootTestFixture() {
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortDirectoryKeepsFilteredResultsReachable() {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            app.gate.countDown()
+            compose.onNodeWithContentDescription("Workflows").performClick()
+            val rowTag = "workflow_row_$WORKFLOW_RELEASE"
+            waitForTag(rowTag)
+            val query = compose.onNodeWithTag("workflow_query")
+            query.performTextReplacement("release")
+            selectScope("Only me")
+
+            RuntimeEnvironment.setQualifiers("en-rUS-w360dp-h230dp")
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            waitForTag("workflow_directory")
+            query.assertTextContains("release")
+            compose.onNodeWithTag("workflow_scope_Private").assertIsSelected()
+
+            compose.onNodeWithTag("workflow_directory").performTouchInput {
+                swipeUp(startY = height * .9f, endY = height * .45f)
+            }
+            val row = compose.onNodeWithTag(rowTag).assertIsDisplayed()
+            val visibleHeight = row.fetchSemanticsNode().boundsInRoot.height
+            assertTrue(
+                "Reachable result height: $visibleHeight px",
+                visibleHeight >= with(compose.density) { 48.dp.toPx() },
+            )
+            row.performTouchInput { click() }
+            waitForTag("workflow_detail_title")
+            compose
+                .onNodeWithTag("workflow_detail_title")
+                .assertTextContains(app.fixture.releaseTitle)
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
+    }
+
     @Test
     fun blankWorkflowNameUsesTheCommandWithoutRenamingOnPurposeSave() {
         val blankTitle = "   "
@@ -1114,6 +1156,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val filterScroll =
             compose.onNode(
                 hasAnyDescendant(hasTestTag("workflow_scope_Private")) and
+                    SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange) and
                     SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollBy),
             )
         filterScroll.assertExists()
@@ -1626,6 +1669,10 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
             val feedback = "Could not refresh. Showing last loaded data."
             waitFor(feedback)
             compose.onNodeWithText(feedback).assertIsDisplayed()
+            assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+            compose.onNodeWithContentDescription("Dismiss").assertIsDisplayed().performClick()
+            compose.onNodeWithText(feedback).assertDoesNotExist()
+            save.assertIsDisplayed().assertIsNotEnabled()
             assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
         } finally {
             RuntimeEnvironment.setQualifiers(originalQualifiers)
