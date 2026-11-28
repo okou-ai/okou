@@ -114,7 +114,7 @@ CACHE_TMP_TAR=""
 # Pinned versions (changes here invalidate the template cache via script hash)
 NODE_VERSION="26.13.1"
 GO_VERSION="1.27.4"
-RUST_VERSION="1.100.0"
+RUST_VERSION="1.100.1"
 CLAUDE_CODE_VERSION="2.1.332"
 CODEX_CLI_VERSION="0.172.0"
 AGY_VERSION="1.5.18"

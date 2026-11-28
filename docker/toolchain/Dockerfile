@@ -69,7 +69,7 @@ RUN ARCH=$(dpkg --print-architecture) \
 
 # Install Rust toolchain with runner Linux musl targets.
 # Used for building runner and guest binaries for Firecracker VMs.
-ARG RUST_VERSION=1.100.0
+ARG RUST_VERSION=1.100.1
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
@@ -263,9 +263,6 @@ RUN existing_group="$(getent group 1000 | cut -d: -f1 || true)" \
     && mkdir -p /home/vscode/.local/share /home/vscode/.local/share/agent-browser /home/vscode/.cache /home/vscode/.config \
     && chown -R vscode:vscode /home/vscode
 
-# Install rust-src for rust-analyzer (IDE support for standard library)
-RUN rustup component add rust-src
-
 # Install Caddy web server with Cloudflare DNS module for automatic Let's Encrypt certificates
 # Uses xcaddy to build a custom Caddy binary with the caddy-dns/cloudflare plugin
 RUN GOLANG_VERSION=1.24.4 \
@@ -299,8 +296,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && sed -i "s/UI.initSetting('reconnect', false)/UI.initSetting('reconnect', true)/" /usr/share/novnc/app/ui.js
 
 # Install cargo-llvm-cov for Rust test coverage
-RUN cargo install cargo-llvm-cov --locked \
-    && rustup component add llvm-tools-preview
+RUN cargo install cargo-llvm-cov --locked
 
 # Install Stripe CLI for local webhook forwarding during development
 RUN curl -s https://packages.stripe.dev/api/security/keypair/stripe-cli-gpg/public | gpg --dearmor -o /usr/share/keyrings/stripe.gpg \
