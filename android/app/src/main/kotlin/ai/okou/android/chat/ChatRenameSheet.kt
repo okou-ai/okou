@@ -152,6 +152,12 @@ internal fun CreateProjectSheet(
     val field = editor.field
     val confirmEnabled = !busy && field.input.text.isNotBlank()
     val failed = phase == ProjectCreatePhase.Rejected || phase == ProjectCreatePhase.Unconfirmed
+    val notice =
+        when {
+            failed -> R.string.chat_project_create_failed
+            phase == ProjectCreatePhase.Checking -> R.string.chat_project_create_checking_status
+            else -> null
+        }
     val idleLabel = stringResource(R.string.chat_project_create_confirm)
     val creatingLabel = stringResource(R.string.chat_project_creating)
     val checkingLabel = stringResource(R.string.chat_project_checking)
@@ -193,7 +199,7 @@ internal fun CreateProjectSheet(
             readOnly = busy,
             validation = projectNameError(field),
             projectName = true,
-            notice = R.string.chat_project_create_failed.takeIf { failed },
+            notice = notice,
             noticeIsError = failed,
             submit = ::submit,
         )

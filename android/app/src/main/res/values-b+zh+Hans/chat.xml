@@ -73,6 +73,7 @@
     <string name="chat_project_create_confirm">创建</string>
     <string name="chat_project_creating">正在创建…</string>
     <string name="chat_project_checking">正在核对…</string>
+    <string name="chat_project_create_checking_status">正在核对创建结果</string>
     <string name="chat_project_create_failed">未能创建项目，名称已保留</string>
     <string name="chat_project_name_too_long">项目名称不能超过 %1$d 个字符</string>
     <string name="chat_project_rename_rejected">无法重命名项目。</string>

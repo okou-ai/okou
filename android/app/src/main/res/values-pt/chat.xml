@@ -75,6 +75,7 @@
     <string name="chat_project_create_confirm">Criar</string>
     <string name="chat_project_creating">Criando…</string>
     <string name="chat_project_checking">Verificando…</string>
+    <string name="chat_project_create_checking_status">Verificando se o projeto foi criado</string>
     <string name="chat_project_create_failed">Não foi possível criar o projeto. O nome foi mantido.</string>
     <string name="chat_project_name_too_long">O nome do projeto deve ter no máximo %1$d caracteres</string>
     <string name="chat_project_rename_rejected">Não foi possível renomear o projeto.</string>

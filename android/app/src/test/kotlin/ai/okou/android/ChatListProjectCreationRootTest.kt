@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -219,6 +220,7 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
         val writes = AtomicInteger()
         val committed = AtomicBoolean(false)
         val lookups = AtomicInteger()
+        val releaseReceipt = CountDownLatch(1)
         app.fixture.commandResponse = { request ->
             when {
                 request.method == "POST" && request.path == "/api/projects" -> {
@@ -232,8 +234,10 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
                 }
                 request.method == "GET" && request.path == "/api/projects/${id.get()}" -> {
                     lookups.incrementAndGet()
-                    if (committed.get()) projectReceipt(id.get())
-                    else MockResponse().setResponseCode(404)
+                    if (committed.get()) {
+                        check(releaseReceipt.await(10, TimeUnit.SECONDS))
+                        projectReceipt(id.get())
+                    } else MockResponse().setResponseCode(404)
                 }
                 else -> null
             }
@@ -257,7 +261,15 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
         openCreate().assertTextContains("Another draft")
         field.performTextReplacement("  Field notes  ")
         committed.set(true)
-        confirm().performClick()
+        try {
+            confirm().performClick()
+            compose.onNodeWithText("Checking whether the project was created").assertIsDisplayed()
+            compose.onNodeWithText("Checking…").assertIsNotEnabled()
+            compose.onNodeWithText("Cancel").assertIsNotEnabled()
+            compose.onNode(failed).assertDoesNotExist()
+        } finally {
+            releaseReceipt.countDown()
+        }
         compose.waitUntilExactlyOneExists(createdProject(), 10_000)
         field.assertDoesNotExist()
         compose.onNodeWithText("New chat in this Project").assertIsDisplayed()
