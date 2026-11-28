@@ -10,6 +10,7 @@ import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.isAtLeastMediumWindowWidth
 import ai.okou.android.rememberContentReadSkeleton
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
@@ -303,7 +304,7 @@ internal fun ChatListScreen(
     val metadataUsable = state.projectsSource != null
     val listLabel = stringResource(R.string.chat_list_title)
     val widthDp = currentWindowSizeDp().width
-    val largeCompact = widthDp >= 600
+    val largeCompact = isAtLeastMediumWindowWidth(widthDp)
     val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
     val outline = MaterialTheme.colorScheme.outlineVariant
     val missingUnread = state.confirmedAt != null && state.waitingForUnreadIndicators

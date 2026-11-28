@@ -2473,7 +2473,7 @@ private fun WorkspaceChatMovePicker(
 /** Returns the persistent list width in dp when the window has room for both panes. */
 internal fun workspaceListPaneWidth(widthDp: Int, heightDp: Int): Int? =
     when {
-        widthDp < 840 || heightDp < 480 -> null
+        !supportsWorkspacePanes(widthDp, heightDp) -> null
         widthDp >= 1100 -> 344
         else -> 320
     }

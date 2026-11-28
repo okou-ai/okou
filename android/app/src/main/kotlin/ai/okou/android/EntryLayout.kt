@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-internal const val EntryCompactHeight = 480
 internal val EntryContentWidth = 360.dp
 internal val EntryContentGutter = 18.dp
 
@@ -35,7 +34,7 @@ private val compactBrandMinHeight = 48.dp
 internal fun entrySpacing(compact: Boolean) = if (compact) 12.dp else 24.dp
 
 internal fun entryTopPadding(windowHeight: Int) =
-    if (windowHeight < EntryCompactHeight) 12.dp else (windowHeight * 0.08f).coerceIn(32f, 80f).dp
+    if (isShortWindowHeight(windowHeight)) 12.dp else (windowHeight * 0.08f).coerceIn(32f, 80f).dp
 
 @Composable
 internal fun entryTitleStyle(compact: Boolean) =

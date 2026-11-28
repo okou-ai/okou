@@ -12,7 +12,7 @@ import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
-import ai.okou.android.isShortSettingsPanelWindow
+import ai.okou.android.isShortWindowHeight
 import ai.okou.android.settingsPanelContentPadding
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -200,7 +200,7 @@ internal fun ModelPickerSheet(
     footerHasAction: Boolean = false,
     footer: @Composable () -> Unit = {},
 ) {
-    val fullScreen = isShortSettingsPanelWindow()
+    val fullScreen = isShortWindowHeight()
     val scroll = rememberScrollState()
     val contentPadding = settingsPanelContentPadding(compactHeight = fullScreen)
     var footerHeight by remember { mutableIntStateOf(0) }
