@@ -1,6 +1,5 @@
 """Shared firewall base URL validation contract tests."""
 
-import json
 from pathlib import Path
 
 import pytest
@@ -8,6 +7,7 @@ import pytest
 import builtin_base_url
 import builtin_firewall_cache
 import matching
+from tests.contract_cases import contract_case_name, load_named_contract_cases
 from tests.registry_builtin_helpers import write_catalog_cache
 
 _CONTRACT_PATH = (
@@ -21,30 +21,16 @@ _CONTRACT_PATH = (
 )
 
 
-def _load_cases(key: str) -> list[dict[str, object]]:
-    raw_contract = json.loads(_CONTRACT_PATH.read_text(encoding="utf-8"))
-    assert isinstance(raw_contract, dict)
-    cases = raw_contract[key]
-    assert isinstance(cases, list)
-    assert cases
-    assert all(isinstance(case, dict) for case in cases)
-    names = [_case_name(case) for case in cases]
-    assert len(names) == len(set(names))
-    return cases
+_BASE_URL_VALIDATION_CASES = load_named_contract_cases(_CONTRACT_PATH, "baseUrlValidationCases")
+_CATALOG_BASE_URL_VALIDATION_CASES = load_named_contract_cases(
+    _CONTRACT_PATH, "catalogBaseUrlValidationCases"
+)
+_BASE_URL_TEMPLATE_RESOLUTION_CASES = load_named_contract_cases(
+    _CONTRACT_PATH, "baseUrlTemplateResolutionCases"
+)
 
 
-def _case_name(case: dict[str, object]) -> str:
-    name = case["name"]
-    assert isinstance(name, str)
-    return name
-
-
-_BASE_URL_VALIDATION_CASES = _load_cases("baseUrlValidationCases")
-_CATALOG_BASE_URL_VALIDATION_CASES = _load_cases("catalogBaseUrlValidationCases")
-_BASE_URL_TEMPLATE_RESOLUTION_CASES = _load_cases("baseUrlTemplateResolutionCases")
-
-
-@pytest.mark.parametrize("case", _BASE_URL_VALIDATION_CASES, ids=_case_name)
+@pytest.mark.parametrize("case", _BASE_URL_VALIDATION_CASES, ids=contract_case_name)
 def test_firewall_base_url_config_validity_matches_shared_contract(
     case: dict[str, object],
 ) -> None:
@@ -56,7 +42,7 @@ def test_firewall_base_url_config_validity_matches_shared_contract(
     assert matching.firewall_base_config_is_valid(base) is expected_valid
 
 
-@pytest.mark.parametrize("case", _CATALOG_BASE_URL_VALIDATION_CASES, ids=_case_name)
+@pytest.mark.parametrize("case", _CATALOG_BASE_URL_VALIDATION_CASES, ids=contract_case_name)
 def test_firewall_catalog_base_url_validity_matches_shared_contract(
     case: dict[str, object],
     tmp_path: Path,
@@ -113,7 +99,7 @@ def test_firewall_catalog_base_url_validity_matches_shared_contract(
     )
 
 
-@pytest.mark.parametrize("case", _BASE_URL_TEMPLATE_RESOLUTION_CASES, ids=_case_name)
+@pytest.mark.parametrize("case", _BASE_URL_TEMPLATE_RESOLUTION_CASES, ids=contract_case_name)
 def test_firewall_base_url_template_resolution_matches_shared_contract(
     case: dict[str, object],
     tmp_path: Path,
