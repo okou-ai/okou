@@ -8,7 +8,14 @@ import ai.okou.android.ScreenshotCapture
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.testAuthenticationState
+import android.app.Instrumentation
 import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inspector.WindowInspector
+import androidx.core.view.children
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -75,11 +82,14 @@ class ScreenshotScenario {
                     await(By.text("Recently used"))
                     await(By.textContains("/review-changes"))
                     ScreenshotCapture.capture("workflow-recent.png")
-                    // The accessibility label is a separate virtual node from the editor.
-                    await(editor()).text = "/rel"
+                    val connection = focusedInputConnection(instrumentation)
+                    instrumentation.runOnMainSync { check(connection.setComposingText("rel", 1)) }
                     await(editor().text("/rel"))
-                    await(By.textContains("/release-check"))
                     check(device.wait(Until.gone(By.text("Recently used")), 5_000) == true)
+                    check(device.findObject(By.textContains("/release-check")) == null)
+                    instrumentation.runOnMainSync { check(connection.finishComposingText()) }
+                    await(By.textContains("/release-check"))
+                    check(device.findObject(By.text("Recently used")) == null)
                     check(workflows.catalogReads.size == 1)
                     ScreenshotCapture.capture("workflow-filtered.png")
                     await(By.textContains("/release-check")).click()
@@ -124,4 +134,21 @@ class ScreenshotScenario {
             }
         }
     }
+}
+
+private fun focusedInputConnection(instrumentation: Instrumentation): InputConnection {
+    fun View.textEditor(): View? =
+        if (onCheckIsTextEditor()) this
+        else (this as? ViewGroup)?.children?.firstNotNullOfOrNull { it.textEditor() }
+
+    var connection: InputConnection? = null
+    instrumentation.runOnMainSync {
+        connection =
+            WindowInspector.getGlobalWindowViews()
+                .asSequence()
+                .filter(View::hasWindowFocus)
+                .mapNotNull { it.textEditor() }
+                .firstNotNullOfOrNull { it.onCreateInputConnection(EditorInfo()) }
+    }
+    return checkNotNull(connection) { "The focused chat editor has no input connection" }
 }
