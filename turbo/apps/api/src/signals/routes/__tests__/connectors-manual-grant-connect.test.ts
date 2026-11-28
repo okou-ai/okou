@@ -470,6 +470,9 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
         },
         [200],
       );
+      if (!("headers" in resolved.body)) {
+        throw new Error("Expected resolved firewall headers");
+      }
       expect(resolved.body.headers).toStrictEqual({
         Authorization: "Bearer test-subdomain-token",
       });

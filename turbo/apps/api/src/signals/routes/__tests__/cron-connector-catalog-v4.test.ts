@@ -257,6 +257,9 @@ describe("connector catalog v4 preparation", () => {
         },
         [200],
       );
+      if (!("headers" in resolved.body)) {
+        throw new Error("Expected resolved firewall headers");
+      }
       expect(resolved.body.headers).toStrictEqual({
         "X-Figma-Token": "accepted-catalog-figma-token",
       });
