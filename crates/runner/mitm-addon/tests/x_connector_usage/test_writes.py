@@ -10,6 +10,7 @@ import pytest
 import flow_metadata_keys as metadata_keys
 import request_streaming
 from body_limits import REQUEST_BODY_BILLING_INSPECTION_LIMIT, STREAM_BUFFER_LIMIT
+from tests.body_decode_helpers import track_zlib_decompressor
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.repeated_bytes_helpers import repeat_bytes
 from tests.x_flow_helpers import (
@@ -220,40 +221,8 @@ def test_tweet_create_many_gzip_members_use_bounded_input(x_usage, tmp_path, rea
     )
     flow.request.method = "POST"
 
-    real_factory = zlib.decompressobj
-    stats = {"calls": 0, "max_input": 0, "max_unused_data": 0}
-
-    class NonConcatenableUnusedData(bytes):
-        def __add__(self, _other: object) -> bytes:
-            raise TypeError("zlib unused data must not be concatenated")
-
-    class TrackingDecompressionObj:
-        def __init__(self, wrapped):
-            self._wrapped = wrapped
-
-        def decompress(self, chunk, *args, **kwargs):
-            stats["calls"] += 1
-            stats["max_input"] = max(stats["max_input"], len(chunk))
-            return self._wrapped.decompress(chunk, *args, **kwargs)
-
-        @property
-        def eof(self):
-            return self._wrapped.eof
-
-        @property
-        def unused_data(self):
-            unused_data = NonConcatenableUnusedData(self._wrapped.unused_data)
-            stats["max_unused_data"] = max(stats["max_unused_data"], len(unused_data))
-            return unused_data
-
-        @property
-        def unconsumed_tail(self):
-            return self._wrapped.unconsumed_tail
-
-    def factory(*args, **kwargs):
-        return TrackingDecompressionObj(real_factory(*args, **kwargs))
-
-    with patch("zlib_decoding.zlib.decompressobj", factory):
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        stats = track_zlib_decompressor(monkeypatch, "zlib_decoding.zlib.decompressobj")
         p = x_usage.call_and_get_single_billing(flow)
 
     assert p["category"] == "content.create"

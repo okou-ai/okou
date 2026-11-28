@@ -4,6 +4,7 @@ import zlib
 
 import pytest
 
+from tests.body_decode_helpers import track_zlib_decompressor
 from zlib_decoding import decode_zlib_bounded
 
 _GZIP_WBITS = 16 + zlib.MAX_WBITS
@@ -225,40 +226,7 @@ def test_zero_output_budget_detects_output_without_retaining_probe(wbits):
 def test_many_members_use_bounded_input_and_tail(monkeypatch):
     member = _compress(b"", _GZIP_WBITS)
     compressed = member * (64 * 1024 // len(member))
-    real_factory = zlib.decompressobj
-    stats = {"calls": 0, "max_input": 0, "max_unused_data": 0}
-
-    class NonConcatenableUnusedData(bytes):
-        def __add__(self, _other: object) -> bytes:
-            raise TypeError("zlib unused data must not be concatenated")
-
-    class TrackingDecompressionObj:
-        def __init__(self, wrapped):
-            self._wrapped = wrapped
-
-        def decompress(self, chunk, *args, **kwargs):
-            stats["calls"] += 1
-            stats["max_input"] = max(stats["max_input"], len(chunk))
-            return self._wrapped.decompress(chunk, *args, **kwargs)
-
-        @property
-        def eof(self):
-            return self._wrapped.eof
-
-        @property
-        def unused_data(self):
-            unused_data = NonConcatenableUnusedData(self._wrapped.unused_data)
-            stats["max_unused_data"] = max(stats["max_unused_data"], len(unused_data))
-            return unused_data
-
-        @property
-        def unconsumed_tail(self):
-            return self._wrapped.unconsumed_tail
-
-    def factory(*args, **kwargs):
-        return TrackingDecompressionObj(real_factory(*args, **kwargs))
-
-    monkeypatch.setattr("zlib_decoding.zlib.decompressobj", factory)
+    stats = track_zlib_decompressor(monkeypatch, "zlib_decoding.zlib.decompressobj")
 
     result = decode_zlib_bounded(compressed, wbits=_GZIP_WBITS, max_output=0)
 
