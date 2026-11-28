@@ -7,6 +7,7 @@ import ai.okou.android.OkouFormActions
 import ai.okou.android.OkouFormFieldSupport
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
+import ai.okou.android.ReadFailureIllustration
 import ai.okou.android.SettingsSheet
 import ai.okou.android.canAdoptConfirmedForm
 import ai.okou.android.okouFormInputStyle
@@ -17,7 +18,6 @@ import ai.okou.android.state.rememberJournalTextField
 import ai.okou.android.state.rememberSettingsFlag
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,12 +51,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -369,17 +366,7 @@ private fun InstructionsReadFailure(modifier: Modifier) {
     Layout(
         modifier = modifier,
         content = {
-            Box {
-                if (colors.surface.luminance() < colors.onSurface.luminance()) {
-                    Image(
-                        painterResource(R.drawable.okou_load_failed_outline),
-                        contentDescription = null,
-                        modifier = Modifier.matchParentSize(),
-                        colorFilter = ColorFilter.tint(colors.onSurface.copy(alpha = 0.38f)),
-                    )
-                }
-                Image(painterResource(R.drawable.okou_load_failed), contentDescription = null)
-            }
+            ReadFailureIllustration()
             Text(
                 stringResource(R.string.instructions_load_failed),
                 Modifier.testTag("instructions_read_failure").semantics {
