@@ -190,12 +190,16 @@ fn wide_manifest_retains_siblings_and_isolates_the_changed_artifact() {
     let retained_inode = fs::metadata(&retained).unwrap().ino();
     let mut input = manifest(&fixture).unwrap();
     let mounts = input["storageMounts"].as_array_mut().unwrap();
-    for index in 0..70 {
+    for index in 0..64 {
+        let existing = skills.join(format!("skill-{index}"));
+        fs::create_dir(&existing).unwrap();
+        mounts.push(json!({ "mountPath": existing, "cached": true }));
+    }
+    for index in 0..6 {
         mounts.push(json!({
             "mountPath": skills.join(format!("absent-{index}")), "cached": true
         }));
     }
-    // Check the existing sibling with the shared parent after the timing sample.
     mounts.push(json!({ "mountPath": retained, "cached": true }));
     let absent_parent = fixture.dir.path().join("absent-parent");
     for name in ["a", "b"] {
@@ -215,7 +219,7 @@ fn wide_manifest_retains_siblings_and_isolates_the_changed_artifact() {
         b"retained skill"
     );
     assert_eq!(fs::metadata(&retained).unwrap().ino(), retained_inode);
-    assert_eq!(fs::read_dir(&skills).unwrap().count(), 1);
+    assert_eq!(fs::read_dir(&skills).unwrap().count(), 65);
     assert!(!absent_parent.exists());
     assert_eq!(fs::read(memory.join("new.md")).unwrap(), b"new memory");
     assert!(!memory.join("old.md").exists());
@@ -247,7 +251,9 @@ fn wide_manifest_with_an_aliased_cached_target_uses_synchronous_cleanup() {
     let mut input = manifest(&fixture).unwrap();
     let mounts = input["storageMounts"].as_array_mut().unwrap();
     for index in 0..64 {
-        mounts.push(json!({ "mountPath": cached.join(index.to_string()), "cached": true }));
+        let sibling = cached.join(index.to_string());
+        fs::create_dir(&sibling).unwrap();
+        mounts.push(json!({ "mountPath": sibling, "cached": true }));
     }
     mounts.push(json!({ "mountPath": alias, "cached": true }));
     let output = fixture

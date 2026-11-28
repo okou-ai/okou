@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const MIN_PARALLEL_TARGETS: usize = 64;
+const WIDE_TARGET_COUNT: usize = 64;
 const TARGET_READERS: usize = 4;
 const SAMPLE_TARGETS: usize = 16;
 const SLOW_SAMPLE: Duration = Duration::from_millis(1);
@@ -80,7 +80,7 @@ impl Quarantine {
         {
             return Ok(None);
         }
-        if !check_targets(&targets)? {
+        if !check_targets(manifest, home, &targets)? {
             return Ok(None);
         }
         // Existing final exec/park and terminal cache preparation own every
@@ -135,14 +135,102 @@ impl Quarantine {
     }
 }
 
-fn check_targets(targets: &[&Path]) -> io::Result<bool> {
-    if targets.len() < MIN_PARALLEL_TARGETS {
+#[cfg(target_os = "linux")]
+fn unchecked_after_listing<'a>(manifest: &'a Manifest, home: &Path) -> Option<Vec<&'a Path>> {
+    use guest_contracts::storage_manifest::StorageEntry;
+    use std::ffi::OsStr;
+    use std::mem::MaybeUninit;
+    use std::os::unix::ffi::OsStrExt;
+
+    fn retained_parent(entry: &StorageEntry) -> Option<&Path> {
+        if entry.cached && entry.archive_url.is_none() {
+            Path::new(&entry.mount_path).parent()
+        } else {
+            None
+        }
+    }
+
+    if manifest.storages.len() < WIDE_TARGET_COUNT {
+        return None;
+    }
+    let groups = || {
+        manifest.storages.chunk_by(|left, right| {
+            retained_parent(left).is_some_and(|parent| retained_parent(right) == Some(parent))
+        })
+    };
+    if !groups().any(|group| group.len() >= WIDE_TARGET_COUNT) {
+        return None;
+    }
+
+    let mut unchecked = Vec::new();
+    let mut buffer = [MaybeUninit::uninit(); 4096];
+    for group in groups() {
+        let paths = || group.iter().map(|entry| Path::new(&entry.mount_path));
+        // Account for the declared names plus "." and "..".
+        let entry_budget = group.len().saturating_add(2);
+        let parent = group
+            .first()
+            .and_then(retained_parent)
+            .filter(|path| group.len() >= WIDE_TARGET_COUNT && path.starts_with(home))
+            .and_then(|path| CleanupDirectory::open(path).ok());
+        let Some(mut listing) = parent
+            .as_ref()
+            .and_then(|parent| parent.read_ext_directory(entry_budget, &mut buffer))
+        else {
+            unchecked.extend(paths());
+            continue;
+        };
+
+        // For quarantine, a typed direct child of the checked parent proves
+        // that the retained root is a real directory.
+        let mut unverified = paths().filter_map(Path::file_name).collect::<HashSet<_>>();
+        for _ in 0..unverified.len().saturating_add(2) {
+            let Some(entry) = listing.next() else {
+                break;
+            };
+            let entry = entry.ok()?;
+            if entry.file_type() == rustix::fs::FileType::Directory {
+                unverified.remove(OsStr::from_bytes(entry.file_name().to_bytes()));
+                if unverified.is_empty() {
+                    break;
+                }
+            }
+        }
+        unchecked.extend(paths().filter(|path| {
+            path.file_name()
+                .is_none_or(|name| unverified.contains(name))
+        }));
+    }
+    unchecked.extend(
+        manifest
+            .artifacts
+            .iter()
+            .map(|entry| Path::new(&entry.mount_path)),
+    );
+    let total = manifest.storages.len() + manifest.artifacts.len();
+    (unchecked.len() < total).then_some(unchecked)
+}
+
+fn check_targets(manifest: &Manifest, home: &Path, targets: &[&Path]) -> io::Result<bool> {
+    if targets.len() < WIDE_TARGET_COUNT {
         return check_target_group(targets, None);
     }
 
-    let (sample, targets) = targets.split_at(SAMPLE_TARGETS);
+    // A rejected listing can still warm the ancestors that the original
+    // sample would read. Include the probe in that sample's elapsed time.
     let started = Instant::now();
-    // Keep the existing sample cost for the decision to use parallel readers.
+    #[cfg(not(target_os = "linux"))]
+    let _ = (manifest, home);
+    #[cfg(target_os = "linux")]
+    let unchecked = unchecked_after_listing(manifest, home);
+    #[cfg(target_os = "linux")]
+    let (targets, started) = match unchecked.as_deref() {
+        Some(paths) if paths.len() < WIDE_TARGET_COUNT => return check_target_slice(paths),
+        Some(paths) => (paths, Instant::now()),
+        None => (targets, started),
+    };
+
+    let (sample, targets) = targets.split_at(SAMPLE_TARGETS);
     if !check_target_group(sample, None)? {
         return Ok(false);
     }
