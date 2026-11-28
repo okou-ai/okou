@@ -500,7 +500,6 @@ def _select_diagnostic_snapshot(
     flow: http.HTTPFlow,
     classification: request_classification.Allow
     | request_classification.FirewallAllow
-    | request_classification.FirewallAmbiguous
     | None = None,
 ) -> builtin_connector_diagnostics.DiagnosticCatalogSnapshot:
     pinned = _diagnostic_snapshot_from_flow(flow)

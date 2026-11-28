@@ -155,7 +155,7 @@ def find_candidate(
     Model-provider routes are retained only as exclusions and are checked
     before connector ownership.
 
-    Select the most-specific matching base tier before resolving ownership.
+    Select the most-specific matching base tier before resolving diagnostic ownership.
     Broader bases cannot introduce owners or ambiguity into that tier.
     Selection is intentionally asymmetric. A base owned by one eligible
     connector matches broadly without enforcing its catalog permission method
@@ -189,6 +189,7 @@ def find_candidate(
         method,
         catalog.compiled_connector_firewalls,
         catalog.compiled_network_policies,
+        diagnostic_base_tier=True,
     )
     if isinstance(match, matching.FirewallAmbiguous):
         return _find_shared_base_candidate(
@@ -268,6 +269,7 @@ def resolve_shared_base_ownership(
         method,
         catalog.compiled_connector_firewalls,
         catalog.compiled_network_policies,
+        diagnostic_base_tier=True,
     )
     if not isinstance(base_match, matching.FirewallAmbiguous):
         return None

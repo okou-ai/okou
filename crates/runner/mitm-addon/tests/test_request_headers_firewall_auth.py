@@ -277,15 +277,14 @@ async def test_ambiguous_shared_route_requestheaders_never_fetches_auth(
         result = mitm_addon.requestheaders(flow)
         assert result is None
 
-        _assert_no_request_stream(flow)
+        assert callable(flow.request.stream)
         assert flow.response is None
         auth_fetch.assert_not_awaited()
 
         await mitm_addon.request(flow)
 
     auth_fetch.assert_not_awaited()
-    assert flow.response is not None
-    assert flow.response.status_code == 409
+    assert flow.response is None
     assert "Authorization" not in flow.request.headers
 
 

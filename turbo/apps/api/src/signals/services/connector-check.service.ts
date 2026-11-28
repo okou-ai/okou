@@ -1489,7 +1489,12 @@ async function resolveUrlMode(
           value: connectorRuntimeTargetKey(requestedTarget),
         }
       : { status: "absent" },
-    awsDiagnosticDecisionOptions(request.aws),
+    {
+      ...awsDiagnosticDecisionOptions(request.aws),
+      ...(timeline.kind === "run"
+        ? { ownerSelection: "intent-before-specificity" as const }
+        : {}),
+    },
   );
 
   if (decision.kind === "invalid_input") {

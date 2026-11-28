@@ -56,6 +56,8 @@ REQUEST_HEADERS_PROBE_METADATA_KEYS = (
     metadata_keys.NETWORK_LOG_TARGET,
     metadata_keys.HTTP_REQUEST_START_MONOTONIC,
     metadata_keys.AWS_SIGV4_REQUEST_INSPECTION,
+    metadata_keys.CONNECTOR_ROUTE_REASON,
+    metadata_keys.CONNECTOR_ROUTE_CANDIDATES,
 )
 
 _BROWSER_USER_AGENT_MARKERS = (
@@ -234,14 +236,6 @@ class OutlookSendBlocked:
 
 
 @dataclass(frozen=True)
-class FirewallAmbiguous:
-    sandbox_info: dict
-    firewall_ambiguous: matching.FirewallAmbiguous
-    builtin_firewall_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None
-    kind: Literal["firewall_ambiguous"] = field(init=False, default="firewall_ambiguous")
-
-
-@dataclass(frozen=True)
 class FirewallInvalidInput:
     sandbox_info: dict
     firewall_invalid_input: matching.FirewallInvalidInput
@@ -303,7 +297,6 @@ BlockingRequestClassification = (
     | PlatformPathDenied
     | GmailSendBlocked
     | OutlookSendBlocked
-    | FirewallAmbiguous
     | FirewallBlock
     | FirewallInvalidInput
     | PublicDestinationDenied
@@ -636,17 +629,9 @@ def _classify_request(
         )
         if isinstance(result, matching.FirewallInvalidInput):
             return FirewallInvalidInput(sandbox_info=sandbox_info, firewall_invalid_input=result)
-        if (
-            isinstance(result, matching.FirewallAmbiguous)
-            and result.reason != "conflicting_credential_placeholders"
-        ):
-            if platform_connector_api_fallback is not None:
-                return platform_connector_api_fallback
-            return FirewallAmbiguous(
-                sandbox_info=sandbox_info,
-                firewall_ambiguous=result,
-                builtin_firewall_catalog_snapshot=registry_state.builtin_firewall_catalog_snapshot,
-            )
+        if isinstance(result, matching.FirewallAmbiguous):
+            flow.metadata[metadata_keys.CONNECTOR_ROUTE_REASON] = result.reason
+            flow.metadata[metadata_keys.CONNECTOR_ROUTE_CANDIDATES] = list(result.candidates)
         if isinstance(result, matching.FirewallBlock):
             if platform_connector_api_fallback is not None and (
                 not _firewall_base_is_exact_platform_connector_resource(
@@ -732,7 +717,6 @@ def classification_needs_request_timing(classification: RequestClassification) -
         "browser_allow",
         "gmail_send_blocked",
         "outlook_send_blocked",
-        "firewall_ambiguous",
         "firewall_block",
         "firewall_invalid_input",
         "firewall_allow",

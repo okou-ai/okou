@@ -3904,17 +3904,12 @@
       "name": "port does not change parameterized hostname specificity",
       "firewalls": [
         {
-          "name": "broad",
+          "name": "example",
           "apis": [
             {
               "base": "https://api.{domain}:8443",
               "auth": {}
-            }
-          ]
-        },
-        {
-          "name": "specific",
-          "apis": [
+            },
             {
               "base": "https://{sub}.example:8443",
               "auth": {}
@@ -3928,7 +3923,7 @@
       },
       "expected": {
         "kind": "allow",
-        "firewallName": "specific",
+        "firewallName": "example",
         "base": "https://{sub}.example:8443",
         "relativePath": "/items"
       }
@@ -5610,7 +5605,7 @@
           "name": "broad",
           "apis": [
             {
-              "base": "https://api.example.com",
+              "base": "https://api.example.com/other",
               "auth": {}
             }
           ]

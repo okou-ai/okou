@@ -85,6 +85,8 @@ export interface FirewallAwsDiagnosticContext {
 }
 
 export interface FirewallRequestDecisionOptions {
+  /** Use active Runner owner selection for Run-scoped diagnostics. */
+  readonly ownerSelection?: "intent-before-specificity";
   /**
    * Enables AWS-aware rule evaluation only for diagnostic callers. Omitting
    * this option preserves the historical fail-closed behavior of other
@@ -272,6 +274,7 @@ interface FirewallMatchCollection {
 }
 
 interface FirewallRequestInterpretation {
+  readonly explicitOwner?: boolean;
   readonly decision: FirewallRequestDecision;
   /** Selected-owner API and rule matches before specificity can hide an alias. */
   readonly authorizationRoutes: ReadonlySet<string>;
@@ -2218,16 +2221,6 @@ function acceptCollectedApi(
   return true;
 }
 
-function canRuleAffectCollection(
-  collection: FirewallMatchCollection,
-  specificity: PathSpecificity,
-): boolean {
-  if (collection.bestRuleSpecificity === null) return true;
-  return (
-    comparePathSpecificity(specificity, collection.bestRuleSpecificity) >= 0
-  );
-}
-
 function recordCollectedRule(
   collection: FirewallMatchCollection,
   match: CollectedRuleMatch,
@@ -2253,7 +2246,7 @@ function collectDecisionRules(
   upperMethod: string,
   awsContext: FirewallAwsDiagnosticContext | undefined,
   recordWinning: boolean,
-  applicableRoutes: Map<string, Set<string>> | undefined,
+  authorizationRoutes: Set<string>,
 ): void {
   for (const [ruleOrder, rule] of apiMatch.api.rules.entries()) {
     if (rule.method !== "ANY" && rule.method !== upperMethod) continue;
@@ -2265,27 +2258,13 @@ function collectDecisionRules(
     }
     // URI checks retain applicable rules even when they cannot win precedence.
     if (
-      !(
-        recordWinning && canRuleAffectCollection(collection, rule.specificity)
-      ) &&
-      applicableRoutes === undefined
-    )
-      continue;
-    if (
       matchFirewallPath(apiMatch.baseMatch.relativePath, rule.path) === null
     ) {
       continue;
     }
-    if (applicableRoutes !== undefined) {
-      let routes = applicableRoutes.get(apiMatch.firewall.name);
-      if (routes === undefined) {
-        routes = new Set();
-        applicableRoutes.set(apiMatch.firewall.name, routes);
-      }
-      routes.add(
-        authorizationRouteIdentity(["rule", apiMatch.order, ruleOrder]),
-      );
-    }
+    authorizationRoutes.add(
+      authorizationRouteIdentity(["rule", apiMatch.order, ruleOrder]),
+    );
     if (recordWinning) recordCollectedRule(collection, { apiMatch, rule });
   }
 }
@@ -2307,11 +2286,11 @@ function winningApiMatches(
   return matches;
 }
 
-function winningOwnerNames(
-  collection: FirewallMatchCollection,
+function matchedOwnerNames(
+  matches: readonly CollectedApiMatch[],
 ): readonly string[] {
   const names = new Set<string>();
-  for (const apiMatch of winningApiMatches(collection)) {
+  for (const apiMatch of matches) {
     if (!apiMatch.firewall.nameMalformed) {
       names.add(apiMatch.firewall.name);
     }
@@ -2320,11 +2299,11 @@ function winningOwnerNames(
 }
 
 function ownerNameForIntent(
-  collection: FirewallMatchCollection,
+  matches: readonly CollectedApiMatch[],
   intentValue: string,
 ): string | null {
   const names = new Set<string>();
-  for (const apiMatch of winningApiMatches(collection)) {
+  for (const apiMatch of matches) {
     if (
       !apiMatch.firewall.nameMalformed &&
       apiMatch.firewall.intentIdentity === intentValue
@@ -2394,6 +2373,7 @@ type OwnerSelection =
   | {
       readonly kind: "selected";
       readonly name: string | null;
+      readonly explicitOwner?: boolean;
     }
   | {
       readonly kind: "ambiguous";
@@ -2404,21 +2384,21 @@ type OwnerSelection =
     };
 
 function selectOwner(
-  collection: FirewallMatchCollection,
+  matches: readonly CollectedApiMatch[],
   intent: FirewallConnectorIntent,
   upperMethod: string,
   path: string,
 ): OwnerSelection {
-  const [owner, ...otherOwners] = winningOwnerNames(collection);
+  const [owner, ...otherOwners] = matchedOwnerNames(matches);
   if (owner === undefined) return { kind: "selected", name: null };
   if (otherOwners.length === 0) {
     return { kind: "selected", name: owner };
   }
   const owners = [owner, ...otherOwners];
   if (intent.status === "present") {
-    const selectedName = ownerNameForIntent(collection, intent.value);
+    const selectedName = ownerNameForIntent(matches, intent.value);
     if (selectedName !== null) {
-      return { kind: "selected", name: selectedName };
+      return { kind: "selected", name: selectedName, explicitOwner: true };
     }
   }
   return {
@@ -2591,33 +2571,22 @@ export function matchFirewallBaseUrl(
   }
 }
 
-function matchFirewallRequestInterpretation(
-  decisionFirewalls: readonly DecisionFirewall[],
-  method: string,
-  url: string,
-  compiledNetworkPolicies: CompiledNetworkPolicies,
-  connectorIntent: FirewallConnectorIntent,
+function validAwsDiagnosticContext(
   options: FirewallRequestDecisionOptions,
-  requestPath: string,
-  trackAuthorizationRoutes: boolean,
-): FirewallRequestInterpretation {
-  const awsDiagnosticEnabled = options.awsDiagnostic !== undefined;
-  if (decisionFirewalls.length === 0)
-    return { decision: { kind: "no_match" }, authorizationRoutes: new Set() };
-
-  const suppliedAwsContext = options.awsDiagnostic?.context;
-  const awsContext =
-    suppliedAwsContext !== undefined &&
-    isValidAwsDiagnosticContext(suppliedAwsContext)
-      ? suppliedAwsContext
-      : undefined;
-
-  const upperMethod = method.toUpperCase();
-  const collection = createMatchCollection();
-  const applicableRoutes = trackAuthorizationRoutes
-    ? new Map<string, Set<string>>()
+): FirewallAwsDiagnosticContext | undefined {
+  const context = options.awsDiagnostic?.context;
+  return context !== undefined && isValidAwsDiagnosticContext(context)
+    ? context
     : undefined;
+}
+
+function matchRequestApiBases(
+  decisionFirewalls: readonly DecisionFirewall[],
+  url: string,
+  requestPath: string,
+): CollectedApiMatch[] | FirewallRequestInterpretation {
   const unsafePath = url.includes("\\") || hasUnsafeFirewallPath(requestPath);
+  const matchedApis: CollectedApiMatch[] = [];
   let apiOrder = 0;
 
   for (const firewall of decisionFirewalls) {
@@ -2658,33 +2627,49 @@ function matchFirewallRequestInterpretation(
         },
         score: baseMatch.score,
       };
-      if (applicableRoutes !== undefined) {
-        let routes = applicableRoutes.get(firewall.name);
-        if (routes === undefined) {
-          routes = new Set();
-          applicableRoutes.set(firewall.name, routes);
-        }
-        routes.add(authorizationRouteIdentity(["api", order]));
-      }
-      const recordWinning = acceptCollectedApi(collection, apiMatch);
-      if (!recordWinning && applicableRoutes === undefined) continue;
-      collectDecisionRules(
-        collection,
-        apiMatch,
-        upperMethod,
-        awsContext,
-        recordWinning,
-        applicableRoutes,
-      );
+      matchedApis.push(apiMatch);
     }
   }
+  return matchedApis;
+}
 
-  const selection = selectOwner(
-    collection,
-    connectorIntent,
+function matchFirewallRequestInterpretation(
+  decisionFirewalls: readonly DecisionFirewall[],
+  method: string,
+  url: string,
+  compiledNetworkPolicies: CompiledNetworkPolicies,
+  connectorIntent: FirewallConnectorIntent,
+  options: FirewallRequestDecisionOptions,
+  requestPath: string,
+): FirewallRequestInterpretation {
+  const matchedApis = matchRequestApiBases(decisionFirewalls, url, requestPath);
+  if (!Array.isArray(matchedApis)) return matchedApis;
+  const awsContext = validAwsDiagnosticContext(options);
+  const upperMethod = method.toUpperCase();
+  const earlySelection =
+    options.ownerSelection === "intent-before-specificity"
+      ? selectOwner(matchedApis, connectorIntent, upperMethod, requestPath)
+      : undefined;
+  if (earlySelection?.kind === "ambiguous")
+    return {
+      decision: earlySelection.decision,
+      authorizationRoutes: new Set(),
+    };
+  const { collection, applicableRoutes } = collectInterpretationMatches(
+    matchedApis,
     upperMethod,
-    requestPath,
+    awsContext,
+    earlySelection,
   );
+
+  const selection =
+    earlySelection ??
+    selectOwner(
+      winningApiMatches(collection),
+      connectorIntent,
+      upperMethod,
+      requestPath,
+    );
   if (selection.kind === "ambiguous")
     return { decision: selection.decision, authorizationRoutes: new Set() };
   const decision = reduceSelectedOwner(
@@ -2693,19 +2678,59 @@ function matchFirewallRequestInterpretation(
     compiledNetworkPolicies,
   );
   return {
+    ...(earlySelection?.explicitOwner === true ? { explicitOwner: true } : {}),
     decision: annotateIncompleteAwsContext(
       decision,
       collection,
       selection.name,
       upperMethod,
       awsContext,
-      awsDiagnosticEnabled,
+      options.awsDiagnostic !== undefined,
     ),
     authorizationRoutes:
       selection.name === null
         ? new Set()
-        : (applicableRoutes?.get(selection.name) ?? new Set()),
+        : (applicableRoutes.get(selection.name) ?? new Set()),
   };
+}
+
+function collectInterpretationMatches(
+  matchedApis: readonly CollectedApiMatch[],
+  upperMethod: string,
+  awsContext: FirewallAwsDiagnosticContext | undefined,
+  earlySelection: Extract<OwnerSelection, { kind: "selected" }> | undefined,
+): {
+  collection: FirewallMatchCollection;
+  applicableRoutes: ReadonlyMap<string, Set<string>>;
+} {
+  const collection = createMatchCollection();
+  const applicableRoutes = new Map<string, Set<string>>();
+  const earlyOwnerName = earlySelection?.name ?? null;
+  for (const apiMatch of matchedApis) {
+    const { firewall, order } = apiMatch;
+    if (
+      earlyOwnerName !== null &&
+      firewall.name !== earlyOwnerName &&
+      (earlySelection?.explicitOwner || !firewall.nameMalformed)
+    )
+      continue;
+    let routes = applicableRoutes.get(firewall.name);
+    if (routes === undefined) {
+      routes = new Set();
+      applicableRoutes.set(firewall.name, routes);
+    }
+    routes.add(authorizationRouteIdentity(["api", order]));
+    const recordWinning = acceptCollectedApi(collection, apiMatch);
+    collectDecisionRules(
+      collection,
+      apiMatch,
+      upperMethod,
+      awsContext,
+      recordWinning,
+      routes,
+    );
+  }
+  return { collection, applicableRoutes };
 }
 
 interface AuthorityApi {
@@ -2820,6 +2845,31 @@ function isOriginalGrantedRule(
   );
 }
 
+function certificateBaseProof(
+  candidate: AuthorityApi,
+  analysis: PathAnalysis,
+  ownerName: string,
+  resolveOwnerFirst: boolean,
+  explicitOwner: boolean,
+):
+  | {
+      paths: NonNullable<DecisionApi["paths"]>;
+      proof: PathApplicability;
+    }
+  | "unsafe"
+  | null {
+  const { api, firewall } = candidate;
+  const paths = api.paths;
+  if (paths === undefined) return null;
+  analysis.graph.budget.charge();
+  const otherOwner = firewall.name !== ownerName;
+  if (explicitOwner && otherOwner) return null;
+  const proof = analysis.applicability(paths.base);
+  if (resolveOwnerFirst && otherOwner && !firewall.nameMalformed)
+    return proof.possible ? "unsafe" : null;
+  return { paths, proof };
+}
+
 function certifiesRawAllow(
   original: Extract<FirewallRequestDecision, { kind: "allow" }>,
   originalRoutes: ReadonlySet<string>,
@@ -2829,12 +2879,11 @@ function certifiesRawAllow(
   policies: CompiledNetworkPolicies,
   intent: FirewallConnectorIntent,
   options: FirewallRequestDecisionOptions,
+  explicitOwner: boolean,
 ): boolean {
-  const context = options.awsDiagnostic?.context;
-  const awsContext =
-    context !== undefined && isValidAwsDiagnosticContext(context)
-      ? context
-      : undefined;
+  const resolveOwnerFirst =
+    options.ownerSelection === "intent-before-specificity";
+  const awsContext = validAwsDiagnosticContext(options);
   const facts = new Map<string, SelectionCandidate>();
   let selected: string | undefined;
   let sourceOrder = 0;
@@ -2850,14 +2899,20 @@ function certifiesRawAllow(
     }) ?? unknownCandidates[0];
   for (const candidate of authorities) {
     const { firewall, api, order } = candidate;
-    const paths = api.paths;
-    if (paths === undefined) continue;
-    analysis.graph.budget.charge();
+    const base = certificateBaseProof(
+      candidate,
+      analysis,
+      original.firewallName,
+      resolveOwnerFirst,
+      explicitOwner,
+    );
+    if (base === "unsafe") return false;
+    if (base === null) continue;
     sourceOrder += 1;
     const apiId = authorizationRouteIdentity(["api", order]);
     facts.set(apiId, {
       owner: firewall.name,
-      proof: semanticPriority(analysis.applicability(paths.base), api, false),
+      proof: semanticPriority(base.proof, api, false),
       tieRank: (api.permissionless ? MAX_REQUEST_WORK : 0) - sourceOrder,
       rawPriority: [api.rawBaseScore, ...fallback],
     });
@@ -2875,7 +2930,7 @@ function certifiesRawAllow(
       facts.set(id, {
         owner: firewall.name,
         proof: semanticPriority(
-          analysis.applicability(paths.rules[ruleOrder]!),
+          analysis.applicability(base.paths.rules[ruleOrder]!),
           api,
           true,
         ),
@@ -2902,7 +2957,8 @@ function certifiesRawAllow(
       facts,
       originalRoutes,
       selected,
-      intent.status === "present" &&
+      !resolveOwnerFirst &&
+        intent.status === "present" &&
         authorities.some(({ firewall }) => {
           return (
             firewall.name === original.firewallName &&
@@ -2954,7 +3010,6 @@ export function matchFirewallRequestDecision(
       connectorIntent,
       options,
       path,
-      true,
     );
     const original = raw.decision;
     if (original.kind !== "allow" && original.kind !== "no_match")
@@ -2978,6 +3033,7 @@ export function matchFirewallRequestDecision(
         policies,
         connectorIntent,
         options,
+        raw.explicitOwner === true,
       )
     ) {
       return {

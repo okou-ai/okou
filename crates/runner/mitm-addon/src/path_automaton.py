@@ -622,15 +622,13 @@ def certifies_selection(
     *,
     original_owner_sources: frozenset[str],
     selected: str,
-    explicit_owner_intent: bool,
     budget: WorkBudget,
 ) -> bool:
     """Certify a raw winner using matching-conditioned priority envelopes.
 
     Priorities contain the existing base tier and relative-rule coordinates;
-    the caller supplies its unchanged policy/order tie rank. Other owners may
-    change below the winner, but an equal tier needs the existing usable intent.
-    This function supplies no route, captures, owner or credentials.
+    the caller supplies its policy/order tie rank. A tie with another owner
+    cannot certify the selected route.
     """
     winner = candidates.get(selected)
     if winner is None or not winner.proof.certain or winner.proof.minimum is None:
@@ -650,21 +648,17 @@ def certifies_selection(
         if proof.maximum is None:
             return False
         comparison = (winner.proof.minimum > proof.maximum) - (winner.proof.minimum < proof.maximum)
-        if comparison < 0:
+        if comparison < 0 or (comparison == 0 and candidate.owner != winner.owner):
             return False
         if comparison == 0:
-            if candidate.owner != winner.owner:
-                if not explicit_owner_intent:
-                    return False
-            else:
-                if (
-                    winner.raw_priority is not None
-                    and candidate.raw_priority is not None
-                    and winner.raw_priority != candidate.raw_priority
-                ):
-                    # A newly tied API can introduce conflicting auth bindings,
-                    # even if declaration order would retain the raw route.
-                    return False
-                if candidate.tie_rank > winner.tie_rank:
-                    return False
+            if (
+                winner.raw_priority is not None
+                and candidate.raw_priority is not None
+                and winner.raw_priority != candidate.raw_priority
+            ):
+                # A newly tied API can introduce conflicting auth bindings,
+                # even if declaration order would retain the raw route.
+                return False
+            if candidate.tie_rank > winner.tie_rank:
+                return False
     return possible == certain == original_owner_sources
