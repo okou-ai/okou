@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
+import type { ConnectorCatalogArtifactConnector } from "../connector-catalog/artifacts/artifacts";
+import { connectorCatalogFirewallConfig } from "../connector-catalog/artifacts/relationships";
 import { canonicalJsonValue } from "../connector-catalog/entry-payload";
+import { extractSecretNamesFromApis } from "../firewall-types";
+import { connectorCredentialPlaceholder } from "./credential-placeholder";
 
 import type {
   Firewall,
@@ -64,6 +68,29 @@ export function projectRunnerRuntimeFirewall(
   return firewall.placeholders === undefined
     ? projected
     : { ...projected, placeholders: { ...firewall.placeholders } };
+}
+
+export function projectRunnerConnectorFirewall(
+  connector: Pick<ConnectorCatalogArtifactConnector, "slug" | "firewall"> & {
+    readonly mcp?: ConnectorCatalogArtifactConnector["mcp"] | null;
+  },
+): RunnerBuiltinFirewall | null {
+  const firewall = connectorCatalogFirewallConfig(connector);
+  if (firewall === null) {
+    return null;
+  }
+  const projected = projectRunnerRuntimeFirewall(firewall);
+  if (connector.mcp === null || connector.mcp === undefined) {
+    return projected;
+  }
+
+  const placeholders = { ...projected.placeholders };
+  for (const name of extractSecretNamesFromApis(firewall.apis)) {
+    placeholders[name] ??= connectorCredentialPlaceholder(connector.slug, name);
+  }
+  return Object.keys(placeholders).length === 0
+    ? projected
+    : { ...projected, placeholders };
 }
 
 export function createRunnerRuntimeFirewallCatalog(

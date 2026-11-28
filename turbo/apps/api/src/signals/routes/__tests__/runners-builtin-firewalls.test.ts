@@ -6,6 +6,7 @@ import {
 import { MODEL_PROVIDER_FIREWALL_CONFIGS } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import {
   createRunnerRuntimeFirewallCatalog,
+  projectRunnerConnectorFirewall,
   projectRunnerRuntimeFirewall,
 } from "@okouai/connectors/firewall-metadata/runner-runtime-catalog";
 import { describe, expect, it } from "vitest";
@@ -13,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { API_TEST_CONNECTOR_FIREWALL_CONFIGS } from "../../../test-fixtures/connector-catalog";
+import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
 import { runnersRoutes } from "../runners";
 
 const context = testContext();
@@ -32,8 +33,9 @@ const CHATGPT_ACCOUNT_ID_AUTH_HEADER = [
   "{{ secrets.CHATGPT_ACCOUNT_ID }}",
 ].join("");
 const EXPECTED_RUNNER_FIREWALL_CATALOG = createRunnerRuntimeFirewallCatalog([
-  ...API_TEST_CONNECTOR_FIREWALL_CONFIGS.map((firewall) => {
-    return projectRunnerRuntimeFirewall(firewall);
+  ...API_TEST_CONNECTOR_CATALOG.connectors.flatMap((connector) => {
+    const firewall = projectRunnerConnectorFirewall(connector);
+    return firewall === null ? [] : [firewall];
   }),
   ...Object.values(MODEL_PROVIDER_FIREWALL_CONFIGS).map((firewall) => {
     return projectRunnerRuntimeFirewall(firewall);
@@ -55,6 +57,35 @@ function rawApp() {
 }
 
 describe("runner builtin firewall resolver", () => {
+  it("publishes source-specific placeholders for authenticated MCP firewalls", async () => {
+    const response = await accept(
+      client().resolve({
+        headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
+        body: {
+          names: [
+            "automatic-mcp-oauth",
+            "automatic-mcp-query",
+            "manual-mcp",
+            "public-mcp",
+          ],
+        },
+      }),
+      [200],
+    );
+
+    const { firewalls } = response.body;
+    expect(firewalls["automatic-mcp-oauth"]?.placeholders).toStrictEqual({
+      MCP_ACCESS_TOKEN: "OkouConnectorfcb2a95b37ac1d878635",
+    });
+    expect(firewalls["automatic-mcp-query"]?.placeholders).toStrictEqual({
+      MCP_ACCESS_TOKEN: "OkouConnector216093f2b5437666c3e0",
+    });
+    expect(firewalls["manual-mcp"]?.placeholders).toStrictEqual({
+      MCP_API_KEY: "OkouConnector82e9b080a665d4a56d3e",
+    });
+    expect(firewalls["public-mcp"]).not.toHaveProperty("placeholders");
+  });
+
   it("requires runner authentication", async () => {
     const response = await accept(
       client().resolve({

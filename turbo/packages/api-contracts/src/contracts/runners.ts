@@ -27,7 +27,6 @@ import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
   firewallApiSchema,
-  firewallSchema,
   networkPoliciesSchema,
   networkPolicySchema,
   runnerBuiltinFirewallSchema,
@@ -331,7 +330,7 @@ export const connectorRuntimeCustomAvailableResultSchema =
     state: literal("available"),
     firewall: executionFirewallInlineEntrySchema.extend({
       customConnectorId: uuid(),
-      firewall: firewallSchema.extend({
+      firewall: executionFirewallInlineEntrySchema.shape.firewall.extend({
         apis: array(
           firewallApiSchema.extend({
             id: string().min(1),

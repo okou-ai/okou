@@ -4638,6 +4638,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           permissions: [],
         });
         const mcpSecretKey = `CUSTOM_${mcp.id.replaceAll("-", "")}_S_SECRET`;
+        expect(mcpFirewall.firewall.placeholders).toStrictEqual({
+          [mcpSecretKey]: expect.stringMatching(/^OkouConnector[0-9a-f]{20}$/),
+        });
         expect(mcpApi?.auth.headers?.Authorization).toBe(
           `Bearer \${{ secrets.${mcpSecretKey} }}`,
         );
@@ -4656,10 +4659,45 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const target = mcpTarget;
-        const [initialResult] = await api.syncConnectorRuntime(run.runId, {
-          targets: [target],
+        const httpFirewall = findFirewallEntry(
+          execution.firewalls,
+          `custom_connector_${http.id.replaceAll("-", "")}`,
+        );
+        const httpSecretKey = `CUSTOM_${http.id.replaceAll("-", "")}_S_SECRET`;
+        expect(httpFirewall).toMatchObject({
+          kind: "inline",
+          firewall: {
+            placeholders: {
+              [httpSecretKey]: expect.stringMatching(
+                /^OkouConnector[0-9a-f]{20}$/,
+              ),
+            },
+          },
         });
+        const [initialResult, httpResult] = await api.syncConnectorRuntime(
+          run.runId,
+          {
+            targets: [
+              target,
+              customConnectorRuntimeRegistration(execution, http.id),
+            ],
+          },
+        );
         const initialRuntime = availableCustomConnectorRuntime(initialResult);
+        const httpPlaceholders =
+          availableCustomConnectorRuntime(httpResult).firewall.firewall
+            .placeholders;
+        expect(httpPlaceholders).toStrictEqual(
+          httpFirewall?.kind === "inline"
+            ? httpFirewall.firewall.placeholders
+            : undefined,
+        );
+        expect(httpPlaceholders?.[httpSecretKey]).not.toBe(
+          mcpFirewall.firewall.placeholders?.[mcpSecretKey],
+        );
+        expect(initialRuntime.firewall.firewall.placeholders).toStrictEqual(
+          mcpFirewall.firewall.placeholders,
+        );
         expect(
           initialRuntime.firewall.firewall.apis[0]?.permissions,
         ).toStrictEqual([]);

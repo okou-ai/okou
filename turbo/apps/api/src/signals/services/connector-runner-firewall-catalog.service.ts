@@ -1,6 +1,7 @@
 import { MODEL_PROVIDER_FIREWALL_CONFIGS } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import {
   createRunnerRuntimeFirewallCatalog,
+  projectRunnerConnectorFirewall,
   projectRunnerRuntimeFirewall,
 } from "@okouai/connectors/firewall-metadata/runner-runtime-catalog";
 import type { RunnerBuiltinFirewall } from "@okouai/connectors/firewall-contracts";
@@ -17,7 +18,6 @@ import { db$ } from "../external/db";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { connectorCatalogRuntimeColumns } from "./connector-catalog-columns";
 import { connectorCatalogCurrentWhere } from "./connector-catalog-slug-source.service";
-import { connectorCatalogFirewallConfig } from "@okouai/connectors/connector-catalog/artifacts/relationships";
 
 const MODEL_PROVIDER_FIREWALL_PREFIX = "model-provider:";
 
@@ -59,11 +59,11 @@ const localModelProviderFirewalls = singleton(
 );
 
 function createCatalog(
-  connectors: readonly Parameters<typeof connectorCatalogFirewallConfig>[0][],
+  connectors: readonly Parameters<typeof projectRunnerConnectorFirewall>[0][],
 ): ConnectorRunnerFirewallCatalog {
   const connectorFirewalls = connectors.flatMap((connector) => {
-    const firewall = connectorCatalogFirewallConfig(connector);
-    return firewall === null ? [] : [projectRunnerRuntimeFirewall(firewall)];
+    const firewall = projectRunnerConnectorFirewall(connector);
+    return firewall === null ? [] : [firewall];
   });
   const materialized = createRunnerRuntimeFirewallCatalog([
     ...connectorFirewalls,
@@ -119,11 +119,12 @@ export const connectorRunnerFirewallCatalog$ = computed(async (get) => {
     return cache.catalog;
   }
   // The digest covers every connector firewall, so read all entries at the
-  // captured hash, selecting only the slug and firewall rules.
+  // captured hash, including whether each entry is an MCP connector.
   const connectors = await db
     .select({
       slug: connectorCatalogRuntimeColumns.slug,
       firewall: connectorCatalogRuntimeColumns.firewall,
+      mcp: connectorCatalogRuntimeColumns.mcp,
     })
     .from(connectorCatalogEntries)
     .where(eq(connectorCatalogEntries.hash, captured.hash))

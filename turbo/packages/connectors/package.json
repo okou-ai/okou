@@ -72,6 +72,10 @@
       "import": "./src/public-destination-policy.ts",
       "types": "./src/public-destination-policy.ts"
     },
+    "./firewall-metadata/credential-placeholder": {
+      "import": "./src/firewall-metadata/credential-placeholder.ts",
+      "types": "./src/firewall-metadata/credential-placeholder.ts"
+    },
     "./firewall-metadata/policy": {
       "import": "./src/firewall-metadata/policy.ts",
       "types": "./src/firewall-metadata/policy.ts"
